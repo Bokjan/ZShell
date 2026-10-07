@@ -46,8 +46,29 @@ fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri
     Ok(menu)
 }
 
+/// Holding a key should repeat it, as in other terminals, rather than open the accent
+/// picker (macOS "press and hold"; arrow keys repeat either way, having no accents). Set as
+/// a registration default, so `defaults write org.boyin.zshell ApplePressAndHoldEnabled
+/// -bool true` still brings the picker back.
+#[cfg(target_os = "macos")]
+fn disable_press_and_hold() {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
+
+    let key = NSString::from_str("ApplePressAndHoldEnabled");
+    let value = NSNumber::new_bool(false);
+    let defaults: objc2::rc::Retained<NSDictionary<NSString, AnyObject>> =
+        NSDictionary::from_slices(&[&*key], &[value.as_ref() as &AnyObject]);
+    // SAFETY: the dictionary holds only property list objects (an NSString key and an
+    // NSNumber value), as registerDefaults requires.
+    unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&defaults) };
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before AppKit reads it.
+    #[cfg(target_os = "macos")]
+    disable_press_and_hold();
     let builder = tauri::Builder::default();
     // Tauri only gives macOS a default menu; other platforms keep having none.
     #[cfg(target_os = "macos")]

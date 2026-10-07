@@ -6505,6 +6505,8 @@ dependencies = [
  "anyhow",
  "keyring",
  "libc",
+ "objc2",
+ "objc2-foundation",
  "portable-pty",
  "russh",
  "russh-sftp",

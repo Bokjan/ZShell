@@ -177,6 +177,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 ## 注意事项
 
 - macOS 上 xterm.js 运行在 WKWebView 里，需重点测试 CJK 输入法（候选框位置、组字过程）。
+- macOS 默认开启"按住按键显示重音字符"（`ApplePressAndHoldEnabled`），在 WKWebView 里长按字母键只会弹出重音选择而不重复输入（方向键没有重音字符，不受影响）。应用启动时以注册默认值（registration domain）把它设为关闭，与 Terminal.app / iTerm2 的行为一致；用户仍可用 `defaults write org.boyin.zshell ApplePressAndHoldEnabled -bool true` 恢复。
 - 中文 / emoji 宽度依赖 unicode11 插件，远端 `LANG` 需为 UTF-8。
 - russh 使用 `ring` 加密后端（而非默认的 aws-lc-rs），避免 Windows 上依赖 CMake/NASM。
 - 版本号只在 `src-tauri/Cargo.toml` 维护：`tauri.conf.json` 不写 `version` 时 Tauri 取 Cargo 包版本（应用包的 `CFBundleShortVersionString`、安装包文件名），`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
