@@ -6,3 +6,11 @@ export const hasShiftShortcutModifiers = (e: KeyboardEvent) =>
 
 /** Platform-style label for a ⇧⌘ / Ctrl+Shift shortcut, e.g. "⇧⌘E" or "Ctrl+Shift+E". */
 export const shiftShortcutLabel = (key: string) => (isMac ? `⇧⌘${key}` : `Ctrl+Shift+${key}`);
+
+/** The find shortcut: ⌘F on macOS; Ctrl+Shift+F elsewhere, since Ctrl+F belongs to the shell. */
+export const isFindShortcut = (e: KeyboardEvent) =>
+  e.code === "KeyF" &&
+  !e.altKey &&
+  (isMac ? e.metaKey && !e.ctrlKey && !e.shiftKey : e.ctrlKey && e.shiftKey && !e.metaKey);
+
+export const findShortcutLabel = isMac ? "⌘F" : "Ctrl+Shift+F";

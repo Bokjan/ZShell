@@ -35,8 +35,19 @@ pub enum SessionInput {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SessionEvent {
     Connected,
-    Closed { error: Option<String> },
+    Closed { reason: CloseReason, error: Option<Error> },
     Forward { rule_id: String, state: ForwardState },
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CloseReason {
+    /// The remote shell exited or closed the session.
+    Exited,
+    /// The connection broke after the session had started.
+    Lost,
+    /// Connecting, authenticating or starting the shell failed.
+    Failed,
 }
 
 /// Output side of a session: terminal bytes and lifecycle events. Cloneable, so features

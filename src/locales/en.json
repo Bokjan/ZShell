@@ -25,7 +25,25 @@
   },
   "terminal": {
     "reconnectHint": "Press Enter to reconnect",
-    "retryHint": "Press Enter to retry"
+    "retryHint": "Press Enter to retry",
+    "reconnectIn_one": "Reconnecting in {count} second. Press Enter to reconnect now or Ctrl+C to cancel.",
+    "reconnectIn_other": "Reconnecting in {count} seconds. Press Enter to reconnect now or Ctrl+C to cancel.",
+    "reconnectCancelled": "Automatic reconnection cancelled. Press Enter to reconnect."
+  },
+  "search": {
+    "placeholder": "Find",
+    "caseSensitive": "Match case",
+    "wholeWord": "Match whole word",
+    "regex": "Use regular expression",
+    "previous": "Previous match (Shift+Enter)",
+    "next": "Next match (Enter)",
+    "close": "Close (Esc)",
+    "noResults": "No results",
+    "invalidRegex": "Invalid regular expression",
+    "tooManyResults": "More than {limit} results",
+    "results_one": "{count} result",
+    "results_other": "{count} results",
+    "position": "{current} of {total}"
   },
   "profile": {
     "titleNew": "New Session",
@@ -48,7 +66,12 @@
     "keyHint": "If the key has a passphrase, you will be asked in the terminal when connecting.",
     "agentHint": "Uses the keys loaded in the system SSH agent.",
     "deleteConfirm": "Click again to delete",
-    "invalidPort": "Port must be an integer between 1 and 65535"
+    "invalidPort": "Port must be an integer between 1 and 65535",
+    "advanced": "Advanced",
+    "keepalive": "Keepalive interval (seconds)",
+    "keepaliveHint": "0 turns keepalives off. The connection is considered lost after 3 unanswered keepalives.",
+    "autoReconnect": "Reconnect automatically when the connection is lost",
+    "invalidKeepalive": "The keepalive interval must be an integer between 0 and 3600"
   },
   "sftp": {
     "notConnectedYet": "Remote files are available once connected",

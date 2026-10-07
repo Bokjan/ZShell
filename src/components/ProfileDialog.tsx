@@ -22,6 +22,8 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
   const [keyPath, setKeyPath] = useState(
     profile?.auth.type === "publicKey" ? profile.auth.keyPath : "~/.ssh/id_ed25519",
   );
+  const [keepalive, setKeepalive] = useState(String(profile?.keepaliveInterval ?? 30));
+  const [autoReconnect, setAutoReconnect] = useState(profile?.autoReconnect ?? true);
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -40,6 +42,11 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
       setError(t("profile.invalidPort"));
       return;
     }
+    const keepaliveInterval = Number(keepalive);
+    if (keepalive.trim() === "" || !Number.isInteger(keepaliveInterval) || keepaliveInterval < 0 || keepaliveInterval > 3600) {
+      setError(t("profile.invalidKeepalive"));
+      return;
+    }
     const auth: AuthMethod =
       authType === "publicKey" ? { type: "publicKey", keyPath: keyPath.trim() } : { type: authType };
     // Only password auth keeps a stored password; switching away clears it.
@@ -51,7 +58,17 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
     try {
       await saveProfile(
         // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
-        { id: profile?.id ?? "", name, host, port: portNumber, username, auth, forwards: profile?.forwards ?? [] },
+        {
+          id: profile?.id ?? "",
+          name,
+          host,
+          port: portNumber,
+          username,
+          auth,
+          keepaliveInterval,
+          autoReconnect,
+          forwards: profile?.forwards ?? [],
+        },
         passwordUpdate,
       );
       onChanged();
@@ -155,6 +172,19 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
           </>
         )}
         {authType === "agent" && <p className="hint">{t("profile.agentHint")}</p>}
+
+        <details className="advanced">
+          <summary>{t("profile.advanced")}</summary>
+          <label>
+            {t("profile.keepalive")}
+            <input value={keepalive} onChange={(e) => setKeepalive(e.target.value)} inputMode="numeric" />
+          </label>
+          <p className="hint">{t("profile.keepaliveHint")}</p>
+          <label className="checkbox">
+            <input type="checkbox" checked={autoReconnect} onChange={(e) => setAutoReconnect(e.target.checked)} />
+            {t("profile.autoReconnect")}
+          </label>
+        </details>
 
         {error && <p className="error">{error}</p>}
 

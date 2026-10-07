@@ -25,6 +25,10 @@ export interface Profile {
   port: number;
   username: string;
   auth: AuthMethod;
+  /** Seconds between keepalive messages; 0 disables them. */
+  keepaliveInterval: number;
+  /** Reconnect automatically when an established connection is lost. */
+  autoReconnect: boolean;
   /** Edited with `setProfileForwards`; `saveProfile` leaves them unchanged. */
   forwards: ForwardRule[];
 }
@@ -35,9 +39,12 @@ export type ForwardState =
   | { type: "failed"; error: CommandError }
   | { type: "stopped" };
 
+/** exited: the remote shell ended; lost: an established connection broke; failed: never got connected. */
+export type CloseReason = "exited" | "lost" | "failed";
+
 export type SessionEvent =
   | { type: "connected" }
-  | { type: "closed"; error: string | null }
+  | { type: "closed"; reason: CloseReason; error: CommandError | null }
   | { type: "forward"; ruleId: string; state: ForwardState };
 
 export type SessionId = number;

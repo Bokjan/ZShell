@@ -53,6 +53,7 @@ export function SessionPane({ tab, profile, active, onStatus, onForward, onProfi
       <TerminalView
         profileId={tab.profileId}
         active={active}
+        autoReconnect={profile?.autoReconnect ?? true}
         onStatus={onStatus}
         onSession={setSessionId}
         onForward={onForward}

@@ -59,6 +59,8 @@
   - 状态（Starting / Active{实际监听地址, 连接数, 最近一次连接错误} / Failed / Stopped）通过会话事件 Channel 以 `SessionEvent::Forward` 推送，前端按标签页累积，会话关闭时清空。每次启动分配一个代号（generation），只有当前代号的任务能上报状态，避免被替换的旧任务覆盖新状态。
   - 重启规则（编辑运行中的规则）时，新任务先等待旧任务结束、并等待旧 `-R` 的 cancel 请求完成，再重新监听，避免同一端口重启时"地址已被占用"。
   - 前端：标签栏右侧的分段选择器（Files | Forwards）切换侧面板，再次点击当前段关闭面板；快捷键 ⇧⌘E / ⇧⌘P（Windows 为 Ctrl+Shift+E / P），在捕获阶段拦截，终端收不到。Forwards 段上的徽标显示运行中的规则数，有失败时显示红点。新增规则在已连接时立即启动；编辑运行中的规则会以新定义重启。
+- **keepalive 与断线重连**：每个会话配置有 `keepaliveInterval`（秒，默认 30，0 关闭；连续 3 次无响应判定断线）和 `autoReconnect`（默认开）。会话结束时 `SessionEvent::Closed` 带 `reason`：`exited`（远端发了 exit-status 或关闭 channel）、`lost`（已建立的连接断开）、`failed`（连接、认证或启动 shell 阶段失败），以及结构化错误。断线原因由 `ClientHandler::disconnected` 记录（如 `Keepalive timeout`、`early eof`），作为错误的技术细节显示。前端在 `lost` 时按 2、4、8、16、30 秒退避自动重连（30 秒封顶，一直重试到标签页关闭）；重试期间的 `failed` 继续退避，但认证类错误（`auth.*`）和主机密钥被拒绝时停止；Enter 立即重连，Ctrl+C 取消，`online` 事件（如睡眠唤醒后网络恢复）立即重试。重连是新会话：SFTP 面板回到原目录，自动启动的转发规则重新启动。
+- **终端搜索**：`@xterm/addon-search`，终端右上角的浮动搜索条（区分大小写 / 整词 / 正则、上一个 / 下一个、"3 of 17" 计数，高亮上限 1000 条）。快捷键 macOS ⌘F，Windows Ctrl+Shift+F（Ctrl+F 留给 shell）。注意 addon-search 0.16 只切换选项时不会重新高亮（先保存新选项再比较），搜索前先调用 `clearDecorations()` 清掉缓存的搜索词来绕过。WebKit 点击按钮不会让按钮获得焦点，搜索条在 mousedown 时阻止默认行为，让焦点留在输入框。
 - **ProxyJump**：在跳板机连接上开 `direct-tcpip` channel，作为下一跳 SSH 的传输层。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
 

@@ -1,11 +1,12 @@
 //! russh client callbacks: server host key verification (answered by the session task, see
-//! [`super::host_key`]) and channels the server opens for remote port forwards.
+//! [`super::host_key`]), channels the server opens for remote port forwards, and why the
+//! connection ended.
 
-use russh::client::{self, ChannelOpenHandle, Msg, Session};
+use russh::client::{self, ChannelOpenHandle, DisconnectReason, Msg, Session};
 use russh::keys::known_hosts::check_known_hosts;
 use russh::keys::{PublicKey, PublicKeyOrCertificate};
 use russh::Channel;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use super::host_key::{HostKeyQuery, HostKeyStatus};
 use crate::forward::{Incoming, RemoteRoutes};
@@ -18,11 +19,19 @@ pub struct ClientHandler {
     /// present the same key, and is checked without involving the user.
     verified: Option<PublicKey>,
     routes: RemoteRoutes,
+    /// Receives a description of why the connection ended (untranslated technical detail).
+    disconnect: watch::Sender<Option<String>>,
 }
 
 impl ClientHandler {
-    pub fn new(host: String, port: u16, queries: mpsc::Sender<HostKeyQuery>, routes: RemoteRoutes) -> Self {
-        Self { host, port, queries, verified: None, routes }
+    pub fn new(
+        host: String,
+        port: u16,
+        queries: mpsc::Sender<HostKeyQuery>,
+        routes: RemoteRoutes,
+        disconnect: watch::Sender<Option<String>>,
+    ) -> Self {
+        Self { host, port, queries, verified: None, routes, disconnect }
     }
 }
 
@@ -74,5 +83,20 @@ impl client::Handler for ClientHandler {
     ) -> Result<(), Self::Error> {
         self.routes.route(connected_address, connected_port, Incoming { channel, reply });
         Ok(())
+    }
+
+    async fn disconnected(&mut self, reason: DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
+        match reason {
+            DisconnectReason::ReceivedDisconnect(info) => {
+                let message = if info.message.is_empty() { format!("{:?}", info.reason_code) } else { info.message };
+                self.disconnect.send_replace(Some(message));
+                Ok(())
+            }
+            DisconnectReason::Error(e) => {
+                self.disconnect.send_replace(Some(e.to_string()));
+                // Returned so that the connection task ends with it, as russh expects.
+                Err(e)
+            }
+        }
     }
 }

@@ -1,41 +1,58 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 
-import { errorMessage, openSshSession, type ForwardState, type Session } from "../lib/api";
+import { errorMessage, openSshSession, type CommandError, type ForwardState, type Session } from "../lib/api";
+import { isFindShortcut } from "../lib/platform";
+import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
 interface Props {
   profileId: string;
   active: boolean;
+  /** Reconnect automatically when an established connection is lost. */
+  autoReconnect: boolean;
   onStatus(status: SessionStatus): void;
   /** Reports the backend session id, or null once it has closed. */
   onSession(id: number | null): void;
   onForward(ruleId: string, state: ForwardState): void;
 }
 
+/** Seconds to wait before each automatic reconnection attempt; the last one repeats. */
+const RETRY_DELAYS = [2, 4, 8, 16, 30];
+
+/** Failures that retrying cannot fix: authentication problems and untrusted host keys. */
+const isPermanent = (error: CommandError | null) =>
+  !!error && (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected");
+
 const ignore = () => {};
 
-export function TerminalView({ profileId, active, onStatus, onSession, onForward }: Props) {
+export function TerminalView({ profileId, active, autoReconnect, onStatus, onSession, onForward }: Props) {
   const { t } = useTranslation();
   const tRef = useRef(t);
   tRef.current = t;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
   const onSessionRef = useRef(onSession);
   onSessionRef.current = onSession;
   const onForwardRef = useRef(onForward);
   onForwardRef.current = onForward;
+  const autoReconnectRef = useRef(autoReconnect);
+  autoReconnectRef.current = autoReconnect;
+  // Incremented by the find shortcut; 0 means the search bar is closed.
+  const [searchKey, setSearchKey] = useState(0);
 
   useEffect(() => {
     const container = containerRef.current!;
@@ -48,6 +65,8 @@ export function TerminalView({ profileId, active, onStatus, onSession, onForward
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
+    term.loadAddon(search);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
     term.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
@@ -62,12 +81,33 @@ export function TerminalView({ profileId, active, onStatus, onSession, onForward
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
+    searchRef.current = search;
 
+    const dim = (text: string) => term.write(`\x1b[2m${text}\x1b[0m\r\n`);
     let disposed = false;
     let session: Session | undefined;
     let closed = false;
+    // Automatic reconnection: the number of attempts so far and the pending one, if any.
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const cancelRetry = () => {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    };
+
+    const scheduleRetry = () => {
+      const delay = RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)];
+      attempt++;
+      dim(tRef.current("terminal.reconnectIn", { count: delay }));
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        connect();
+      }, delay * 1000);
+    };
 
     const connect = () => {
+      cancelRetry();
       closed = false;
       onStatusRef.current("connecting");
       let ended = false;
@@ -81,6 +121,7 @@ export function TerminalView({ profileId, active, onStatus, onSession, onForward
         (event) => {
           if (disposed) return;
           if (event.type === "connected") {
+            attempt = 0;
             onStatusRef.current("connected");
             return;
           }
@@ -93,7 +134,16 @@ export function TerminalView({ profileId, active, onStatus, onSession, onForward
           onSessionRef.current(null);
           void handle?.close().catch(ignore);
           onStatusRef.current("closed");
-          term.write(`\x1b[2m${tRef.current("terminal.reconnectHint")}\x1b[0m\r\n`);
+          // Retry lost connections, and keep retrying while the network or server is down.
+          const retry =
+            autoReconnectRef.current &&
+            (event.reason === "lost" || (event.reason === "failed" && attempt > 0)) &&
+            !isPermanent(event.error);
+          if (retry) scheduleRetry();
+          else {
+            attempt = 0;
+            dim(tRef.current("terminal.reconnectHint"));
+          }
         },
       )
         .then((s) => {
@@ -106,18 +156,29 @@ export function TerminalView({ profileId, active, onStatus, onSession, onForward
         })
         .catch((e) => {
           closed = true;
+          attempt = 0;
           onStatusRef.current("closed");
-          term.write(`\r\n\x1b[31m${errorMessage(e)}\x1b[0m\r\n\x1b[2m${tRef.current("terminal.retryHint")}\x1b[0m\r\n`);
+          term.write(`\r\n\x1b[31m${errorMessage(e)}\x1b[0m\r\n`);
+          dim(tRef.current("terminal.retryHint"));
         });
     };
 
+    // Don't wait out the delay once the network is back (e.g. after waking from sleep).
+    const onOnline = () => retryTimer !== undefined && connect();
+    window.addEventListener("online", onOnline);
+
     const subscriptions: IDisposable[] = [
       term.onData((data) => {
-        if (closed) {
-          if (data.includes("\r")) connect();
+        if (!closed) {
+          void session?.write(data);
           return;
         }
-        void session?.write(data);
+        if (data.includes("\r")) connect();
+        else if (data.includes("\x03") && retryTimer !== undefined) {
+          cancelRetry();
+          attempt = 0;
+          dim(tRef.current("terminal.reconnectCancelled"));
+        }
       }),
       term.onResize(({ cols, rows }) => void session?.resize(cols, rows)),
     ];
@@ -127,11 +188,13 @@ export function TerminalView({ profileId, active, onStatus, onSession, onForward
 
     return () => {
       disposed = true;
+      cancelRetry();
+      window.removeEventListener("online", onOnline);
       observer.disconnect();
       subscriptions.forEach((s) => s.dispose());
       void session?.close().catch(ignore);
       term.dispose();
-      termRef.current = fitRef.current = null;
+      termRef.current = fitRef.current = searchRef.current = null;
     };
   }, [profileId]);
 
@@ -141,8 +204,31 @@ export function TerminalView({ profileId, active, onStatus, onSession, onForward
       fitRef.current?.fit();
       termRef.current?.focus();
     });
-    return () => cancelAnimationFrame(frame);
+    // Capture phase, so the shortcut never reaches the terminal.
+    const onKey = (e: KeyboardEvent) => {
+      if (!isFindShortcut(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSearchKey((key) => key + 1);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey, true);
+    };
   }, [active]);
 
-  return <div className="terminal-view" ref={containerRef} />;
+  const closeSearch = () => {
+    setSearchKey(0);
+    termRef.current?.focus();
+  };
+
+  return (
+    <div className="terminal-wrap">
+      <div className="terminal-view" ref={containerRef} />
+      {searchKey > 0 && searchRef.current && (
+        <SearchBar addon={searchRef.current} focusKey={searchKey} onClose={closeSearch} />
+      )}
+    </div>
+  );
 }

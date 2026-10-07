@@ -33,7 +33,8 @@
       "connectFailed": "Cannot connect to {target}",
       "handshakeFailed": "SSH handshake failed",
       "hostKeyRejected": "Host key not trusted, connection aborted",
-      "channelFailed": "Cannot open a session channel"
+      "channelFailed": "Cannot open a session channel",
+      "connectionLost": "The connection was lost"
     },
     "auth": {
       "cancelled": "Cancelled",

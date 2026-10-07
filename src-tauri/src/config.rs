@@ -21,9 +21,24 @@ pub struct Profile {
     pub port: u16,
     pub username: String,
     pub auth: AuthMethod,
+    /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
+    /// drop the connection.
+    #[serde(default = "default_keepalive_interval")]
+    pub keepalive_interval: u32,
+    /// Reconnect automatically when an established connection is lost.
+    #[serde(default = "default_true")]
+    pub auto_reconnect: bool,
     /// Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
     #[serde(default)]
     pub forwards: Vec<ForwardRule>,
+}
+
+fn default_keepalive_interval() -> u32 {
+    30
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
