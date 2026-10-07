@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::forward::ForwardRule;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +21,9 @@ pub struct Profile {
     pub port: u16,
     pub username: String,
     pub auth: AuthMethod,
+    /// Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
+    #[serde(default)]
+    pub forwards: Vec<ForwardRule>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -74,12 +78,39 @@ impl ProfileStore {
         let mut profiles = self.profiles.lock().unwrap();
         let mut updated = profiles.clone();
         match updated.iter_mut().find(|p| !profile.id.is_empty() && p.id == profile.id) {
-            Some(existing) => *existing = profile.clone(),
+            Some(existing) => {
+                profile.forwards = std::mem::take(&mut existing.forwards);
+                *existing = profile.clone();
+            }
             None => {
                 profile.id = uuid::Uuid::new_v4().to_string();
+                profile.forwards.clear();
                 updated.push(profile.clone());
             }
         }
+        self.persist(&updated)?;
+        *profiles = updated;
+        Ok(profile)
+    }
+
+    /// Replaces a profile's port forwarding rules, assigning ids to new ones.
+    pub fn set_forwards(&self, id: &str, forwards: Vec<ForwardRule>) -> Result<Profile> {
+        let forwards = forwards
+            .into_iter()
+            .map(|rule| {
+                let mut rule = rule.normalize()?;
+                if rule.id.is_empty() {
+                    rule.id = uuid::Uuid::new_v4().to_string();
+                }
+                Ok(rule)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut profiles = self.profiles.lock().unwrap();
+        let mut updated = profiles.clone();
+        let profile = updated.iter_mut().find(|p| p.id == id).ok_or_else(|| Error::new("profile.notFound"))?;
+        profile.forwards = forwards;
+        let profile = profile.clone();
         self.persist(&updated)?;
         *profiles = updated;
         Ok(profile)

@@ -18,7 +18,10 @@
   "tabs": {
     "close": "Close",
     "files": "Files",
-    "filesHint": "Show/hide the SFTP file panel"
+    "filesHint": "Show/hide the SFTP file panel ({shortcut})",
+    "forwards": "Forwards",
+    "forwardsHint": "Show/hide the port forwarding panel ({shortcut})",
+    "forwardsHintFailed": "Show/hide the port forwarding panel ({shortcut}). Some rules failed to start."
   },
   "terminal": {
     "reconnectHint": "Press Enter to reconnect",
@@ -89,5 +92,63 @@
     "progress_one": "{transferred} / {total} · {done}/{count} file",
     "progress_other": "{transferred} / {total} · {done}/{count} files",
     "progressCurrent": "{progress} · {file}"
+  },
+  "forwards": {
+    "title": "Port Forwarding",
+    "add": "Add Rule",
+    "empty": "No forwarding rules yet. Rules are saved with this session and can start automatically when it connects.",
+    "profileMissing": "This session has been deleted, so its forwarding rules are no longer available.",
+    "notConnected": "Rules can be started once connected.",
+    "edit": "Edit",
+    "delete": "Delete",
+    "start": "Start",
+    "stop": "Stop",
+    "autoStartTag": "Auto-start",
+    "kind": {
+      "local": "Local",
+      "remote": "Remote",
+      "dynamic": "SOCKS"
+    },
+    "kindName": {
+      "local": "Local forward (-L)",
+      "remote": "Remote forward (-R)",
+      "dynamic": "Dynamic SOCKS proxy (-D)"
+    },
+    "explain": {
+      "local": "Connections to {bind} on this computer are forwarded through the server to {target}.",
+      "remote": "Connections to {bind} on the server are forwarded through this computer to {target}.",
+      "dynamic": "A SOCKS proxy at {bind} on this computer; applications using it connect through the server."
+    },
+    "status": {
+      "stopped": "Stopped",
+      "starting": "Starting…",
+      "listening": "Listening on {address}",
+      "listeningRemote": "Listening on {address} on the server",
+      "listeningWithConnections_one": "{listening} · {count} connection",
+      "listeningWithConnections_other": "{listening} · {count} connections",
+      "lastError": "Last connection failed: {error}"
+    },
+    "deleteTitle": "Delete Rule",
+    "deleteMessage": "Delete the forwarding rule {rule}?",
+    "dialog": {
+      "titleNew": "New Forwarding Rule",
+      "titleEdit": "Edit Forwarding Rule",
+      "type": "Type",
+      "listenLocal": "Listen on this computer",
+      "listenRemote": "Listen on the server",
+      "listenSocks": "SOCKS proxy on this computer",
+      "targetFromServer": "Destination, reached from the server",
+      "targetFromLocal": "Destination, reached from this computer",
+      "address": "Address",
+      "port": "Port",
+      "portZeroHint": "Port 0 picks a free port.",
+      "exposedLocal": "Other computers on your network will be able to connect to this port.",
+      "exposedRemote": "Servers only listen on non-loopback addresses when GatewayPorts is enabled.",
+      "description": "Description",
+      "descriptionPlaceholder": "Optional",
+      "autoStart": "Start automatically when connected",
+      "invalidBindPort": "The listening port must be an integer between 0 and 65535",
+      "invalidTarget": "A destination host and a port between 1 and 65535 are required"
+    }
   }
 }

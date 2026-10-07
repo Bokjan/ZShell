@@ -5,6 +5,8 @@
 //! consumes [`SessionInput`] (keystrokes, resizes) from the frontend. Closing a session
 //! aborts its task.
 //!
+//! Port forwards report their state through the same event channel ([`SessionSink`]).
+//!
 //! SSH shells are the only backend for now; local PTYs (M5) will plug in the same way.
 
 use std::collections::HashMap;
@@ -19,6 +21,7 @@ use tokio::sync::mpsc;
 use unicode_width::UnicodeWidthChar;
 
 use crate::error::{Error, Result};
+use crate::forward::ForwardState;
 
 pub type SessionId = u32;
 
@@ -29,22 +32,22 @@ pub enum SessionInput {
 }
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SessionEvent {
     Connected,
     Closed { error: Option<String> },
+    Forward { rule_id: String, state: ForwardState },
 }
 
-/// The terminal side of a session, as seen by its backend task.
-pub struct TermIo {
+/// Output side of a session: terminal bytes and lifecycle events. Cloneable, so features
+/// running beside the shell (port forwarding) can report to the same tab.
+#[derive(Clone)]
+pub struct SessionSink {
     output: Channel,
     events: Channel<SessionEvent>,
-    input: mpsc::UnboundedReceiver<SessionInput>,
-    /// Latest terminal size (cols, rows) reported by the frontend.
-    pub size: (u16, u16),
 }
 
-impl TermIo {
+impl SessionSink {
     pub fn write(&self, bytes: Vec<u8>) {
         // A send error means the frontend is gone; the session will be closed shortly.
         let _ = self.output.send(InvokeResponseBody::Raw(bytes));
@@ -57,6 +60,32 @@ impl TermIo {
 
     pub fn event(&self, event: SessionEvent) {
         let _ = self.events.send(event);
+    }
+}
+
+/// The terminal side of a session, as seen by its backend task.
+pub struct TermIo {
+    sink: SessionSink,
+    input: mpsc::UnboundedReceiver<SessionInput>,
+    /// Latest terminal size (cols, rows) reported by the frontend.
+    pub size: (u16, u16),
+}
+
+impl TermIo {
+    pub fn write(&self, bytes: Vec<u8>) {
+        self.sink.write(bytes);
+    }
+
+    pub fn print(&self, text: &str) {
+        self.sink.print(text);
+    }
+
+    pub fn event(&self, event: SessionEvent) {
+        self.sink.event(event);
+    }
+
+    pub fn sink(&self) -> SessionSink {
+        self.sink.clone()
     }
 
     /// Receives the next input, keeping [`TermIo::size`] up to date.
@@ -140,7 +169,7 @@ impl SessionManager {
     {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (tx, rx) = mpsc::unbounded_channel();
-        let io = TermIo { output, events, input: rx, size };
+        let io = TermIo { sink: SessionSink { output, events }, input: rx, size };
         let task = tauri::async_runtime::spawn(backend(id, io));
         self.sessions.lock().unwrap().insert(id, SessionEntry { input: tx, task });
         id

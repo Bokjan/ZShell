@@ -214,22 +214,65 @@ main {
   flex: 1;
 }
 
-.tab-bar-button {
+/* Side panel selector: one segment per panel; clicking the selected one closes the panel. */
+
+.panel-switch {
   align-self: center;
+  display: flex;
+  flex-shrink: 0;
   margin: 0 8px;
-  padding: 3px 10px;
   border: 1px solid #3c3c3c;
   border-radius: 4px;
+}
+.panel-switch button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: none;
   background: none;
   color: var(--text-muted);
+  white-space: nowrap;
 }
-.tab-bar-button.on {
-  border-color: var(--accent);
+.panel-switch button + button {
+  border-left: 1px solid #3c3c3c;
+}
+.panel-switch button:first-child {
+  border-radius: 3px 0 0 3px;
+}
+.panel-switch button:last-child {
+  border-radius: 0 3px 3px 0;
+}
+.panel-switch button:hover:not(:disabled) {
   color: var(--text);
 }
-.tab-bar-button:disabled {
+.panel-switch button.on {
+  background: rgb(59 130 246 / 0.18);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+.panel-switch button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.badge {
+  min-width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--ok);
+  color: #0b2e17;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+.badge.failed {
+  min-width: 8px;
+  height: 8px;
+  padding: 0;
+  background: var(--danger);
 }
 
 /* Side panel + splitter */
@@ -255,6 +298,26 @@ body.resizing {
 }
 body.resizing .terminal-view {
   pointer-events: none;
+}
+
+.side-panel-page {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.panel-error {
+  padding: 6px 10px;
+  background: rgb(239 68 68 / 0.12);
+  color: var(--danger);
+  font-size: 12px;
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+.panel-note {
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 /* SFTP panel */
@@ -507,6 +570,224 @@ body.resizing .terminal-view {
   font-size: 12px;
 }
 
+/* Port forwarding panel */
+
+.forwards-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.forwards-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.forwards-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.forwards-toolbar button {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: 12px;
+}
+.forwards-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.forwards-list:empty {
+  display: none;
+}
+.forward-rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+}
+.forward-rule:hover {
+  background: var(--bg-hover);
+}
+.forward-kind {
+  flex-shrink: 0;
+  min-width: 52px;
+  margin-top: 1px;
+  padding: 1px 5px;
+  box-sizing: border-box;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+  background: var(--bg-active);
+}
+.forward-kind.local {
+  color: #93c5fd;
+}
+.forward-kind.remote {
+  color: #c4b5fd;
+}
+.forward-kind.dynamic {
+  color: #fcd34d;
+}
+.forward-main {
+  flex: 1;
+  min-width: 0;
+}
+.forward-mapping {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Menlo, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.forward-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.forward-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.forward-status .status-dot {
+  margin-top: 4px;
+  background: var(--text-muted);
+}
+.forward-rule.starting .status-dot {
+  background: var(--warn);
+}
+.forward-rule.active .status-dot {
+  background: var(--ok);
+}
+.forward-rule.failed .status-dot {
+  background: var(--danger);
+}
+.forward-status-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.forward-rule.failed .forward-status-text {
+  color: var(--danger);
+}
+.forward-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  font-size: 10px;
+}
+.forward-last-error {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--warn);
+}
+/* Transparent rather than hidden, so the buttons stay clickable and reachable by keyboard. */
+.forward-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  opacity: 0;
+}
+.forward-rule:hover .forward-actions,
+.forward-actions:focus-within {
+  opacity: 1;
+}
+.forward-actions button {
+  border: none;
+  background: none;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.forward-actions button:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.forwards-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Toggle switch: <label class="switch"><input type="checkbox"><span /></label> */
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 28px;
+  height: 16px;
+  margin-top: 1px;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.switch input:disabled {
+  cursor: default;
+}
+.switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: var(--bg-active);
+  pointer-events: none;
+  transition: background 0.15s;
+}
+.switch span::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s, background 0.15s;
+}
+.switch input:checked + span {
+  background: var(--accent);
+}
+.switch input:checked + span::after {
+  transform: translateX(12px);
+  background: white;
+}
+.switch input:disabled + span {
+  opacity: 0.4;
+}
+.switch input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Dialog */
 
 .dialog-backdrop {
@@ -575,6 +856,25 @@ body.resizing .terminal-view {
   margin: -4px 0 0;
   font-size: 12px;
   color: var(--text-muted);
+}
+.dialog .hint.warning {
+  color: var(--warn);
+}
+.dialog fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.dialog legend {
+  padding: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.forward-dialog {
+  width: 420px;
 }
 .dialog .error {
   margin: 0;

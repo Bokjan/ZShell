@@ -11,7 +11,7 @@ use russh::keys::agent::AgentIdentity;
 use russh::keys::{load_secret_key, PrivateKey, PrivateKeyWithHashAlg};
 use russh::MethodKind;
 
-use super::host_key::ClientHandler;
+use super::handler::ClientHandler;
 use crate::config::{AuthMethod, Profile};
 use crate::error::Error;
 use crate::secrets;

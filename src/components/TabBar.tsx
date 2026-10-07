@@ -1,26 +1,53 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { ForwardState } from "../lib/api";
+import { shiftShortcutLabel } from "../lib/platform";
 import type { SessionStatus } from "./TerminalView";
+
+export type SidePanel = "files" | "forwards";
 
 export interface Tab {
   key: number;
   profileId: string;
   title: string;
   status: SessionStatus;
-  filesOpen: boolean;
+  /** The side panel shown next to the terminal, if any. */
+  sidePanel: SidePanel | null;
+  /** Live state of the profile's forwarding rules on this tab's connection, by rule id. */
+  forwards: Record<string, ForwardState>;
 }
+
+/** Keyboard shortcut (with ⇧⌘ / Ctrl+Shift) toggling each side panel, by `KeyboardEvent.code`. */
+export const PANEL_SHORTCUTS: Record<string, SidePanel> = { KeyE: "files", KeyP: "forwards" };
 
 interface Props {
   tabs: Tab[];
   activeKey: number | null;
   onSelect(key: number): void;
   onClose(key: number): void;
-  onToggleFiles(): void;
+  onTogglePanel(panel: SidePanel): void;
 }
 
-export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Props) {
+export function TabBar({ tabs, activeKey, onSelect, onClose, onTogglePanel }: Props) {
   const { t } = useTranslation();
   const activeTab = tabs.find((t) => t.key === activeKey);
+  const states = Object.values(activeTab?.forwards ?? {});
+  const running = states.filter((s) => s.type === "starting" || s.type === "active").length;
+  const failed = states.some((s) => s.type === "failed");
+
+  const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
+    <button
+      className={activeTab?.sidePanel === panel ? "on" : undefined}
+      disabled={!activeTab}
+      onClick={() => onTogglePanel(panel)}
+      title={hint}
+    >
+      {label}
+      {badge}
+    </button>
+  );
+
   return (
     <nav className="tab-bar">
       {tabs.map((tab) => (
@@ -46,14 +73,17 @@ export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Pr
         </div>
       ))}
       <span className="grow" />
-      <button
-        className={`tab-bar-button${activeTab?.filesOpen ? " on" : ""}`}
-        disabled={!activeTab}
-        onClick={onToggleFiles}
-        title={t("tabs.filesHint")}
-      >
-        {t("tabs.files")}
-      </button>
+      <div className="panel-switch">
+        {segment("files", t("tabs.files"), t("tabs.filesHint", { shortcut: shiftShortcutLabel("E") }))}
+        {segment(
+          "forwards",
+          t("tabs.forwards"),
+          failed
+            ? t("tabs.forwardsHintFailed", { shortcut: shiftShortcutLabel("P") })
+            : t("tabs.forwardsHint", { shortcut: shiftShortcutLabel("P") }),
+          failed ? <span className="badge failed" /> : running > 0 && <span className="badge">{running}</span>,
+        )}
+      </div>
     </nav>
   );
 }

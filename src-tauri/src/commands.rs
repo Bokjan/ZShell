@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::config::{Profile, ProfileStore};
 use crate::error::{Error, Result};
+use crate::forward::ForwardRule;
 use crate::i18n;
 use crate::secrets;
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
@@ -35,6 +36,11 @@ pub fn profile_save(store: State<'_, ProfileStore>, profile: Profile, password: 
         Some(password) => secrets::set_password(&profile.id, password)?,
     }
     Ok(profile)
+}
+
+#[tauri::command]
+pub fn profile_set_forwards(store: State<'_, ProfileStore>, profile_id: String, forwards: Vec<ForwardRule>) -> Result<Profile> {
+    store.set_forwards(&profile_id, forwards)
 }
 
 #[tauri::command]
@@ -158,4 +164,19 @@ pub async fn sftp_download(
 #[tauri::command]
 pub fn transfer_cancel(transfers: State<'_, transfer::Transfers>, transfer_id: String) {
     transfers.cancel(&transfer_id);
+}
+
+/// Starts (or restarts with a new definition) a forwarding rule on the session's connection.
+/// Progress is reported through the session's event channel.
+#[tauri::command]
+pub fn forward_start(connections: State<'_, Connections>, id: SessionId, rule: ForwardRule) -> Result<()> {
+    let rule = rule.normalize()?;
+    connections.get(id)?.forwards().start(rule, false);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn forward_stop(connections: State<'_, Connections>, id: SessionId, rule_id: String) -> Result<()> {
+    connections.get(id)?.forwards().stop(&rule_id);
+    Ok(())
 }

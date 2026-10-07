@@ -4,6 +4,7 @@ mod i18n;
 mod commands;
 mod config;
 mod error;
+mod forward;
 mod secrets;
 mod session;
 mod sftp;
@@ -33,6 +34,7 @@ pub fn run() {
             commands::set_locale,
             commands::profiles_list,
             commands::profile_save,
+            commands::profile_set_forwards,
             commands::profile_delete,
             commands::ssh_open,
             commands::session_write,
@@ -47,6 +49,8 @@ pub fn run() {
             commands::sftp_upload,
             commands::sftp_download,
             commands::transfer_cancel,
+            commands::forward_start,
+            commands::forward_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

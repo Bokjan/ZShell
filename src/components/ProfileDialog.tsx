@@ -50,7 +50,8 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
 
     try {
       await saveProfile(
-        { id: profile?.id ?? "", name, host, port: portNumber, username, auth },
+        // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
+        { id: profile?.id ?? "", name, host, port: portNumber, username, auth, forwards: profile?.forwards ?? [] },
         passwordUpdate,
       );
       onChanged();

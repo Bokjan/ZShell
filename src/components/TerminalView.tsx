@@ -8,7 +8,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 
-import { errorMessage, openSshSession, type Session } from "../lib/api";
+import { errorMessage, openSshSession, type ForwardState, type Session } from "../lib/api";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
@@ -18,11 +18,12 @@ interface Props {
   onStatus(status: SessionStatus): void;
   /** Reports the backend session id, or null once it has closed. */
   onSession(id: number | null): void;
+  onForward(ruleId: string, state: ForwardState): void;
 }
 
 const ignore = () => {};
 
-export function TerminalView({ profileId, active, onStatus, onSession }: Props) {
+export function TerminalView({ profileId, active, onStatus, onSession, onForward }: Props) {
   const { t } = useTranslation();
   const tRef = useRef(t);
   tRef.current = t;
@@ -33,6 +34,8 @@ export function TerminalView({ profileId, active, onStatus, onSession }: Props) 
   onStatusRef.current = onStatus;
   const onSessionRef = useRef(onSession);
   onSessionRef.current = onSession;
+  const onForwardRef = useRef(onForward);
+  onForwardRef.current = onForward;
 
   useEffect(() => {
     const container = containerRef.current!;
@@ -79,6 +82,10 @@ export function TerminalView({ profileId, active, onStatus, onSession }: Props) 
           if (disposed) return;
           if (event.type === "connected") {
             onStatusRef.current("connected");
+            return;
+          }
+          if (event.type === "forward") {
+            onForwardRef.current(event.ruleId, event.state);
             return;
           }
           ended = closed = true;

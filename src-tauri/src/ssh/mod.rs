@@ -2,6 +2,7 @@
 
 mod auth;
 mod connections;
+mod handler;
 mod host_key;
 
 use std::sync::Arc;
@@ -14,9 +15,10 @@ use tokio::sync::mpsc;
 
 use crate::config::Profile;
 use crate::error::Error;
+use crate::forward::RemoteRoutes;
 use crate::session::{SessionEvent, SessionId, SessionInput, TermIo};
-pub use connections::Connections;
-use host_key::ClientHandler;
+pub use connections::{Connections, SshHandle};
+use handler::ClientHandler;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -36,10 +38,14 @@ pub async fn run(profile: Profile, id: SessionId, mut io: TermIo, connections: C
 async fn shell(profile: &Profile, id: SessionId, io: &mut TermIo, connections: &Connections) -> Result<Option<u32>> {
     let connecting = t!("terminal.connecting", user = profile.username, host = profile.host, port = profile.port);
     io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
-    let mut session = connect(profile, io).await?;
+    let routes = RemoteRoutes::default();
+    let mut session = connect(profile, io, routes.clone()).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
-    connections.insert(id, session.clone());
+    let connection = connections.insert(id, session.clone(), routes, io.sink());
+    for rule in profile.forwards.iter().filter(|rule| rule.auto_start) {
+        connection.forwards().start(rule.clone(), true);
+    }
 
     let channel = session.channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
     let (cols, rows) = io.size;
@@ -71,7 +77,7 @@ async fn shell(profile: &Profile, id: SessionId, io: &mut TermIo, connections: &
     Ok(exit_status)
 }
 
-async fn connect(profile: &Profile, io: &mut TermIo) -> Result<client::Handle<ClientHandler>> {
+async fn connect(profile: &Profile, io: &mut TermIo, routes: RemoteRoutes) -> Result<SshHandle> {
     let target = format!("{}:{}", profile.host, profile.port);
     let stream = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&target))
         .await
@@ -85,7 +91,7 @@ async fn connect(profile: &Profile, io: &mut TermIo) -> Result<client::Handle<Cl
         ..Default::default()
     });
     let (queries_tx, mut queries) = mpsc::channel(1);
-    let handler = ClientHandler::new(profile.host.clone(), profile.port, queries_tx);
+    let handler = ClientHandler::new(profile.host.clone(), profile.port, queries_tx, routes);
 
     // Drive the handshake while answering host key questions from the handler.
     let handshake = client::connect_stream(config, stream, handler);

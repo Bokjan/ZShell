@@ -1,5 +1,5 @@
 //! Live SSH connections, keyed by the terminal session that owns them, so other features
-//! (SFTP now, port forwarding later) can open extra channels on the same connection.
+//! (SFTP, port forwarding) can open extra channels on the same connection.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -9,18 +9,24 @@ use russh::{client, Disconnect};
 use russh_sftp::client::SftpSession;
 use tokio::sync::OnceCell;
 
-use super::host_key::ClientHandler;
+use super::handler::ClientHandler;
 use crate::error::{Error, Result};
-use crate::session::SessionId;
+use crate::forward::{Forwards, RemoteRoutes};
+use crate::session::{SessionId, SessionSink};
 
 pub type SshHandle = client::Handle<ClientHandler>;
 
 pub struct Connection {
     handle: Arc<SshHandle>,
     sftp: OnceCell<Arc<SftpSession>>,
+    forwards: Forwards,
 }
 
 impl Connection {
+    pub fn forwards(&self) -> &Forwards {
+        &self.forwards
+    }
+
     /// The connection's SFTP session, opened on first use.
     pub async fn sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
         self.sftp
@@ -39,9 +45,13 @@ impl Connection {
 pub struct Connections(Arc<Mutex<HashMap<SessionId, Arc<Connection>>>>);
 
 impl Connections {
-    pub fn insert(&self, id: SessionId, handle: Arc<SshHandle>) {
-        let connection = Connection { handle, sftp: OnceCell::new() };
-        self.0.lock().unwrap().insert(id, Arc::new(connection));
+    /// `routes` must be the table given to the connection's [`ClientHandler`]; forward
+    /// states are reported through `sink`.
+    pub fn insert(&self, id: SessionId, handle: Arc<SshHandle>, routes: RemoteRoutes, sink: SessionSink) -> Arc<Connection> {
+        let forwards = Forwards::new(handle.clone(), routes, sink);
+        let connection = Arc::new(Connection { handle, sftp: OnceCell::new(), forwards });
+        self.0.lock().unwrap().insert(id, connection.clone());
+        connection
     }
 
     pub fn get(&self, id: SessionId) -> Result<Arc<Connection>> {
@@ -53,6 +63,7 @@ impl Connections {
         let Some(connection) = self.0.lock().unwrap().remove(&id) else {
             return;
         };
+        connection.forwards.stop_all();
         tauri::async_runtime::spawn(async move {
             if let Some(sftp) = connection.sftp.get() {
                 let _ = sftp.close().await;

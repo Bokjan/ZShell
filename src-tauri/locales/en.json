@@ -14,6 +14,9 @@
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of ~/.ssh/known_hosts.\nIf the key change is expected, remove that line and reconnect."
   },
+  "forward": {
+    "autoStartFailed": "Port forwarding {forward} could not be started: {error}"
+  },
   "errors": {
     "unexpected": "Unexpected error",
     "credentialStore": "Credential store error",
@@ -62,6 +65,20 @@
       "createDirFailed": "Cannot create folder {path}",
       "uploadFailed": "Failed to upload {path}",
       "downloadFailed": "Failed to download {path}"
+    },
+    "forward": {
+      "missingTarget": "Local and remote forwards need a target host and port",
+      "bindFailed": "Cannot listen on {address}",
+      "acceptFailed": "Cannot accept a connection",
+      "remoteRefused": "The server refused to listen on {address}",
+      "channelFailed": "The server could not connect to {target}",
+      "connectFailed": "Cannot connect to {target}",
+      "connectTimeout": "Connection to {target} timed out",
+      "socksVersion": "Unsupported SOCKS version {version}",
+      "socksAuth": "The SOCKS client requires authentication, which is not supported",
+      "socksCommand": "Unsupported SOCKS command {command}; only CONNECT is supported",
+      "socksAddressType": "Unsupported SOCKS address type {type}",
+      "socksProtocol": "Invalid SOCKS request"
     }
   }
 }

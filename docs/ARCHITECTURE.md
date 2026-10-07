@@ -52,6 +52,13 @@
 - **主机校验**：读写 `~/.ssh/known_hosts`，首次连接确认指纹，指纹变化时显式告警。
 - **连接注册表**：`ssh::Connections` 以会话 id 登记认证完成的连接（`Arc<Handle>`），SFTP 首次使用时在该连接上开 `sftp` subsystem channel 并缓存；shell 结束或标签页关闭时统一断开。
 - **传输**：上传/下载先扫描生成计划（目录 + 文件 + 总字节数），再逐个文件复制（256 KiB 缓冲，russh-sftp 内部并发读写请求），进度经 Channel 每 100 ms 推送一次；取消通过共享的 `AtomicBool`，未完成的文件会被删除。下载到"下载"文件夹时顶层重名自动改为 `name (1).ext`。
+- **端口转发**：规则（`-L` / `-R` / `-D`）保存在会话配置的 `forwards` 中，只能通过 `profile_set_forwards` 修改，`profile_save` 会保留原有规则。认证完成后自动启动勾选了"自动启动"的规则，失败时在终端打印一行黄色提示。每条运行中的规则是一个任务，持有自己的监听器（`-R` 则是 `RemoteRoutes` 中的路由）和一个 `JoinSet`（承载的所有连接），停止规则即中止任务，已建立的连接随之断开。
+  - `-L`：本地监听，每个连接开一个 `direct-tcpip` channel 后双向拷贝。
+  - `-D`：本地 SOCKS 服务端（SOCKS5 无认证 CONNECT，兼容 SOCKS4/4a），目标地址交给服务器解析；channel 打开成功后才回复成功，失败时按原因回复。
+  - `-R`：`tcpip-forward` 请求服务器监听（端口 0 由服务器分配）。服务器为每个连接开 `forwarded-tcpip` channel，`ClientHandler::server_channel_open_forwarded_tcpip` 按 (地址, 端口) 查路由（找不到再只按端口匹配），通过 mpsc 交给规则任务，不阻塞 russh 的连接任务；规则任务先连本地目标，连上才 accept，否则以 `ConnectFailed` 拒绝（与 OpenSSH 一致）。任务结束时注销路由并发送 `cancel-tcpip-forward`。
+  - 状态（Starting / Active{实际监听地址, 连接数, 最近一次连接错误} / Failed / Stopped）通过会话事件 Channel 以 `SessionEvent::Forward` 推送，前端按标签页累积，会话关闭时清空。每次启动分配一个代号（generation），只有当前代号的任务能上报状态，避免被替换的旧任务覆盖新状态。
+  - 重启规则（编辑运行中的规则）时，新任务先等待旧任务结束、并等待旧 `-R` 的 cancel 请求完成，再重新监听，避免同一端口重启时"地址已被占用"。
+  - 前端：标签栏右侧的分段选择器（Files | Forwards）切换侧面板，再次点击当前段关闭面板；快捷键 ⇧⌘E / ⇧⌘P（Windows 为 Ctrl+Shift+E / P），在捕获阶段拦截，终端收不到。Forwards 段上的徽标显示运行中的规则数，有失败时显示红点。新增规则在已连接时立即启动；编辑运行中的规则会以新定义重启。
 - **ProxyJump**：在跳板机连接上开 `direct-tcpip` channel，作为下一跳 SSH 的传输层。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
 
@@ -111,12 +118,12 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 |---|---|---|
 | `session/` | 终端会话抽象与管理（`TermIo`、`SessionManager`） | M0 ✅ |
 | `commands.rs` | Tauri 命令入口 | M0 ✅ |
-| `ssh/` | 连接与 shell（`mod.rs`）、主机密钥校验（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
+| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`：主机密钥、`forwarded-tcpip`）、主机密钥确认（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
 | `config.rs` | 会话配置存储（`profiles.json`）；ssh_config 导入（M4） | M1 ✅ |
 | `secrets.rs` | keyring 封装 | M1 ✅ |
 | `ssh/connections.rs` | 连接注册表，供 SFTP / 端口转发复用连接 | M2 ✅ |
 | `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`） | M2 ✅ |
-| `forward/` | `-L` / `-R` / `-D`（SOCKS5） | M3 |
+| `forward/` | 规则与运行管理（`mod.rs`）、`-L`（`local.rs`）、`-R`（`remote.rs`）、`-D`（`dynamic.rs`）、SOCKS 协议（`socks.rs`） | M3 ✅ |
 | `pty/` | 本地终端（portable-pty），作为 session 的另一种后端 | M5 |
 | `i18n.rs` | 后端消息目录、语言协商、`t!` 宏 | ✅ |
 | `error.rs` | 结构化错误（code / params / detail），消息经消息目录渲染 | ✅ |
@@ -128,7 +135,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 | **M0 骨架** ✅ | Tauri + React + xterm.js；Channel 二进制输出链路；loopback 会话 |
 | **M1 MVP** ✅ | 密码/私钥/agent 登录；交互式 shell；多标签；resize；known_hosts；会话保存 + 钥匙串 |
 | **M2 SFTP** ✅ | 浏览、上传下载（进度）、拖拽、重命名/删除/新建/chmod |
-| **M3 端口转发** | `-L` / `-R` / `-D`，规则随会话保存，可自动启动 |
+| **M3 端口转发** ✅ | `-L` / `-R` / `-D`，规则随会话保存，可自动启动 |
 | **M4 增强** | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题 |
 | **M5 本地终端** | portable-pty（macOS zsh / Windows PowerShell） |
 | **i18n 架构** ✅ | 前端 i18next（类型检查 key）与后端消息目录；结构化错误；语言协商与 `set_locale`；仅英语 |

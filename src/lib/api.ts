@@ -2,6 +2,22 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 
 export type AuthMethod = { type: "password" } | { type: "publicKey"; keyPath: string } | { type: "agent" };
 
+export type ForwardKind = "local" | "remote" | "dynamic";
+
+/** A saved port forwarding rule; `target*` is unused for dynamic (SOCKS) rules. */
+export interface ForwardRule {
+  /** Empty for a new rule; assigned on save. */
+  id: string;
+  kind: ForwardKind;
+  bindHost: string;
+  /** 0 picks a free port. */
+  bindPort: number;
+  targetHost: string;
+  targetPort: number;
+  description: string;
+  autoStart: boolean;
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -9,9 +25,20 @@ export interface Profile {
   port: number;
   username: string;
   auth: AuthMethod;
+  /** Edited with `setProfileForwards`; `saveProfile` leaves them unchanged. */
+  forwards: ForwardRule[];
 }
 
-export type SessionEvent = { type: "connected" } | { type: "closed"; error: string | null };
+export type ForwardState =
+  | { type: "starting" }
+  | { type: "active"; bound: string; connections: number; lastError: CommandError | null }
+  | { type: "failed"; error: CommandError }
+  | { type: "stopped" };
+
+export type SessionEvent =
+  | { type: "connected" }
+  | { type: "closed"; error: string | null }
+  | { type: "forward"; ruleId: string; state: ForwardState };
 
 export type SessionId = number;
 
@@ -44,6 +71,17 @@ export const saveProfile = (profile: Profile, password?: string) =>
   invoke<Profile>("profile_save", { profile, password: password ?? null });
 
 export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id });
+
+/** Replaces the profile's forwarding rules; resolves to the updated profile (with rule ids). */
+export const setProfileForwards = (profileId: string, forwards: ForwardRule[]) =>
+  invoke<Profile>("profile_set_forwards", { profileId, forwards });
+
+/** Rule states arrive as `forward` session events. */
+export const forwards = {
+  /** Starts the rule, or restarts it with this definition if it is running. */
+  start: (id: SessionId, rule: ForwardRule) => invoke<void>("forward_start", { id, rule }),
+  stop: (id: SessionId, ruleId: string) => invoke<void>("forward_stop", { id, ruleId }),
+};
 
 export async function openSshSession(
   profileId: string,
