@@ -67,12 +67,12 @@
 - **设置与主题**：应用设置存在 `settings.json`（与 `profiles.json` 同目录，后端校验并夹取数值，文件损坏时回退默认值）。前端 `SettingsProvider` 在启动时读取，就绪后才渲染界面，修改即时生效并保存（较旧的保存结果不会覆盖较新的修改）。
   - 外观：跟随系统 / 深色 / 浅色。`<html data-theme>` 选择 CSS 变量组（样式中不再写死颜色，全部走变量）；原生窗口用 `setTheme`（跟随系统时传 null）同步标题栏，用 `setBackgroundColor` 同步调整大小时露出的背景。`tauri.conf.json` 不再写死窗口背景色（否则 macOS 标题栏会一直沿用该颜色），改由 `index.html` 的内联样式按系统外观给出首帧背景，避免闪烁。
   - 终端：内置配色（Default Dark/Light、Solarized Dark/Light、Dracula、One Dark、Nord、GitHub Light，"跟随外观"时取 Default Dark/Light），字体（用户字体后总是追加默认字体栈，包括中文字体）、字号、光标样式与闪烁、回滚行数。修改后通过 `term.options` 应用到所有已打开的终端；搜索高亮颜色按配色的深浅选择。
-  - 入口：侧栏底部齿轮；macOS 应用菜单的"Settings…"（⌘,，必须是原生菜单项，macOS 会在 web view 之前处理 ⌘,；菜单只在 macOS 上设置，Windows 保持无菜单栏），Windows 上由前端处理 Ctrl+,。M6 的语言设置将放进同一个对话框。
+  - 入口：侧栏底部的 Settings 行；macOS 应用菜单的"Settings…"（⌘,，必须是原生菜单项，macOS 会在 web view 之前处理 ⌘,；菜单只在 macOS 上设置，Windows 保持无菜单栏），Windows 上由前端处理 Ctrl+,。M7 的语言设置将放进同一个对话框。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
 
 ## 国际化（i18n）
 
-i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言的翻译和语言设置界面排期在 MVP 之后（里程碑 M6）。
+i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言的翻译和语言设置界面排期在 MVP 之后（里程碑 M7）。
 
 ### 文案来源与处理方式
 
@@ -107,7 +107,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 - 单元测试 `catalog_covers_all_keys_in_sources` 扫描源码中的 `t!("…")` 与 `Error::new("…")`，确保英语语言包包含所有 key。
 - OpenSSH 风格、用户可能依赖其字面形式的提示保持英文，不进语言包：`user@host's password:`、`Enter passphrase for key '…':`、`Permission denied, please try again.`，以及 `(yes/no)` 的回答词。
 
-### 新增一种语言（M6 起）
+### 新增一种语言（M7 起）
 
 1. 新建 `src/locales/<lang>.json` 和 `src-tauri/locales/<lang>.json`，按英语文件逐 key 翻译（可只翻译部分，缺失项回退英语）。
 2. 在 `src/i18n/index.ts` 的 `resources` 和 `src-tauri/src/i18n.rs` 的 `SOURCES` 中登记该语言。
@@ -149,7 +149,19 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 | **M4 增强** ✅ | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题；另含"自动"认证与设置界面 |
 | **M5 本地终端** | portable-pty（macOS zsh / Windows PowerShell） |
 | **i18n 架构** ✅ | 前端 i18next（类型检查 key）与后端消息目录；结构化错误；语言协商与 `set_locale`；仅英语 |
-| **M6 翻译** | 语言设置界面；首批翻译简体中文（zh-CN），之后按需增加其他语言 |
+| **M6 标题栏集成** | 标签栏画进窗口标题栏，标签栏末尾的 "+" 打开本地终端；见下文「标题栏集成（M6 规划）」 |
+| **M7 翻译** | 语言设置界面；首批翻译简体中文（zh-CN），之后按需增加其他语言 |
+
+## 标题栏集成（M6 规划）
+
+目标是两个平台外观一致，并省出一行高度：标签栏画进窗口标题栏区域（类似 Windows Terminal、VS Code）。实现前另出详细设计。
+
+- **不做自绘菜单栏**：macOS 的菜单栏是系统级的，应用无法去掉，且 WKWebView 的 ⌘C / ⌘V / ⌘A / ⌘Q 和 ⌘, 都依赖原生菜单，macOS 保留原生菜单栏；Windows 上的菜单项很少（新建本地终端、设置），不值得做一套菜单控件。Windows 也不启用原生菜单栏（传统 Win32 样式，深色模式支持有限）。
+- **macOS**：`titleBarStyle: "Overlay"` 并隐藏标题，保留红绿灯按钮，标签栏左侧为其留出空间。
+- **Windows**：`decorations: false`，自绘最小化 / 最大化 / 关闭按钮；保留窗口阴影与圆角。
+- **拖动区域**：标签栏空白处用 `data-tauri-drag-region` 拖动窗口、双击最大化，与标签点击、关闭按钮以及将来的标签拖拽排序互不干扰。
+- **入口**：标签栏末尾的 "+" 打开本地终端，替代 M5 临时的侧栏标题栏按钮（macOS File 菜单中的 "New Local Terminal" 保留）。没有标签页时标签栏也要显示，保证入口始终可见。
+- **风险**：Windows 11 悬停最大化按钮时的贴靠布局面板在自绘按钮上会丢失，需要额外处理（参考 decorum 插件的做法）；双击最大化、阴影、圆角、多显示器 DPI 都需在 Windows 上逐项验证（本地无法编译 Windows target，依赖 CI 与手动测试）；Windows 上现有的标题栏深浅色同步（`setTheme`）将不再需要。
 
 ## 注意事项
 
