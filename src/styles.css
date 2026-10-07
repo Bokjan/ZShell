@@ -1,0 +1,14 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.terminal-view {
+  height: 100%;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
