@@ -5,6 +5,7 @@ export interface Tab {
   profileId: string;
   title: string;
   status: SessionStatus;
+  filesOpen: boolean;
 }
 
 interface Props {
@@ -12,9 +13,11 @@ interface Props {
   activeKey: number | null;
   onSelect(key: number): void;
   onClose(key: number): void;
+  onToggleFiles(): void;
 }
 
-export function TabBar({ tabs, activeKey, onSelect, onClose }: Props) {
+export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Props) {
+  const activeTab = tabs.find((t) => t.key === activeKey);
   return (
     <nav className="tab-bar">
       {tabs.map((tab) => (
@@ -39,6 +42,15 @@ export function TabBar({ tabs, activeKey, onSelect, onClose }: Props) {
           </button>
         </div>
       ))}
+      <span className="grow" />
+      <button
+        className={`tab-bar-button${activeTab?.filesOpen ? " on" : ""}`}
+        disabled={!activeTab}
+        onClick={onToggleFiles}
+        title="显示/隐藏 SFTP 文件面板"
+      >
+        文件
+      </button>
     </nav>
   );
 }

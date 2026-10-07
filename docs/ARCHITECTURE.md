@@ -45,6 +45,8 @@
 - **认证**：密码、私钥文件（含口令）、ssh-agent（macOS `SSH_AUTH_SOCK`；Windows OpenSSH
   命名管道 / Pageant）、keyboard-interactive（2FA）。
 - **主机校验**：读写 `~/.ssh/known_hosts`，首次连接确认指纹，指纹变化时显式告警。
+- **连接注册表**：`ssh::Connections` 以会话 id 登记认证完成的连接（`Arc<Handle>`），SFTP 首次使用时在该连接上开 `sftp` subsystem channel 并缓存；shell 结束或标签页关闭时统一断开。
+- **传输**：上传/下载先扫描生成计划（目录 + 文件 + 总字节数），再逐个文件复制（256 KiB 缓冲，russh-sftp 内部并发读写请求），进度经 Channel 每 100 ms 推送一次；取消通过共享的 `AtomicBool`，未完成的文件会被删除。下载到"下载"文件夹时顶层重名自动改为 `name (1).ext`。
 - **ProxyJump**：在跳板机连接上开 `direct-tcpip` channel，作为下一跳 SSH 的传输层。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
 
@@ -57,7 +59,8 @@
 | `ssh/` | 连接与 shell（`mod.rs`）、主机密钥校验（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
 | `config.rs` | 会话配置存储（`profiles.json`）；ssh_config 导入（M4） | M1 ✅ |
 | `secrets.rs` | keyring 封装 | M1 ✅ |
-| `sftp/` | 目录浏览、传输任务与进度 | M2 |
+| `ssh/connections.rs` | 连接注册表，供 SFTP / 端口转发复用连接 | M2 ✅ |
+| `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`） | M2 ✅ |
 | `forward/` | `-L` / `-R` / `-D`（SOCKS5） | M3 |
 | `pty/` | 本地终端（portable-pty），作为 session 的另一种后端 | M5 |
 
@@ -67,7 +70,7 @@
 |---|---|
 | **M0 骨架** ✅ | Tauri + React + xterm.js；Channel 二进制输出链路；loopback 会话 |
 | **M1 MVP** ✅ | 密码/私钥/agent 登录；交互式 shell；多标签；resize；known_hosts；会话保存 + 钥匙串 |
-| **M2 SFTP** | 浏览、上传下载（进度）、拖拽、重命名/删除/新建/chmod |
+| **M2 SFTP** ✅ | 浏览、上传下载（进度）、拖拽、重命名/删除/新建/chmod |
 | **M3 端口转发** | `-L` / `-R` / `-D`，规则随会话保存，可自动启动 |
 | **M4 增强** | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题 |
 | **M5 本地终端** | portable-pty（macOS zsh / Windows PowerShell） |

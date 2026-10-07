@@ -180,29 +180,328 @@ main {
   background: var(--text-muted);
 }
 
-/* Terminals: all stay mounted at full size; only the active one is visible. */
+/* Session panes: all stay mounted at full size; only the active one is visible. */
 
 .terminals {
   position: relative;
   flex: 1;
   min-height: 0;
 }
-.terminal-view {
+.session-pane {
   position: absolute;
   inset: 0;
-  padding: 6px 8px;
+  display: flex;
   visibility: hidden;
+}
+.session-pane.active {
+  visibility: visible;
+}
+.terminal-view {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
   user-select: text;
   -webkit-user-select: text;
-}
-.terminal-view.active {
-  visibility: visible;
 }
 .placeholder {
   display: grid;
   place-items: center;
   height: 100%;
   color: var(--text-muted);
+}
+.grow {
+  flex: 1;
+}
+
+.tab-bar-button {
+  align-self: center;
+  margin: 0 8px;
+  padding: 3px 10px;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+}
+.tab-bar-button.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.tab-bar-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Side panel + splitter */
+
+.side-panel {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  border-left: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+.splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+}
+body.resizing {
+  cursor: col-resize;
+}
+body.resizing .terminal-view {
+  pointer-events: none;
+}
+
+/* SFTP panel */
+
+.sftp-panel {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sftp-panel.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+.sftp-panel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sftp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 4px;
+}
+.sftp-path {
+  flex: 1;
+  margin-left: 4px;
+}
+.sftp-path input,
+.sftp-list input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.sftp-path input:focus,
+.sftp-list input:focus {
+  border-color: var(--accent);
+}
+.sftp-actions {
+  display: flex;
+  gap: 6px;
+  padding: 2px 8px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sftp-actions button {
+  padding: 3px 10px;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: 12px;
+}
+.sftp-error {
+  padding: 6px 10px;
+  background: rgb(239 68 68 / 0.12);
+  color: var(--danger);
+  font-size: 12px;
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+.sftp-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.sftp-list.loading {
+  opacity: 0.6;
+}
+.sftp-list table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.sftp-list td {
+  padding: 3px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sftp-list tr {
+  cursor: default;
+}
+.sftp-list tr:hover {
+  background: var(--bg-hover);
+}
+.sftp-list tr.selected {
+  background: var(--bg-active);
+}
+.file-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-name > span:last-child,
+.file-name form {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.symlink {
+  font-style: italic;
+}
+.col-size {
+  width: 70px;
+}
+.col-time {
+  width: 92px;
+}
+.file-size {
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.file-time {
+  position: relative;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.row-actions {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding-right: 4px;
+}
+.sftp-list tr:hover .row-actions {
+  display: flex;
+}
+.sftp-list tr:hover .file-time-text {
+  visibility: hidden;
+}
+.row-actions button {
+  border: none;
+  background: none;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.row-actions button:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.sftp-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.drop-hint {
+  position: absolute;
+  inset: auto 12px 12px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Transfers */
+
+.transfers {
+  max-height: 40%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.transfers header {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.transfers ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 8px;
+  overflow-y: auto;
+}
+.transfers li {
+  padding: 5px 0;
+}
+.transfer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.transfer-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.transfer-kind {
+  color: var(--text-muted);
+}
+.progress {
+  height: 3px;
+  margin: 4px 0 3px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+.progress > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+.transfers li.done .progress > div {
+  background: var(--ok);
+}
+.transfers li.error .progress > div,
+.transfers li.cancelled .progress > div {
+  background: var(--text-muted);
+}
+.transfer-detail {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.transfers li.error .transfer-detail {
+  color: var(--danger);
+}
+.link-button {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  color: var(--accent);
+  font-size: 12px;
 }
 
 /* Dialog */
@@ -266,9 +565,6 @@ main {
   display: flex;
   gap: 10px;
 }
-.dialog .grow {
-  flex: 1;
-}
 .dialog .port {
   width: 80px;
 }
@@ -299,4 +595,13 @@ main {
 }
 .dialog footer button.danger {
   color: var(--danger);
+}
+.dialog footer button.danger-fill {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.dialog-message {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
 }

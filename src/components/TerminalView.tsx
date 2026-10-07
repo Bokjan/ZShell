@@ -15,16 +15,20 @@ interface Props {
   profileId: string;
   active: boolean;
   onStatus(status: SessionStatus): void;
+  /** Reports the backend session id, or null once it has closed. */
+  onSession(id: number | null): void;
 }
 
 const ignore = () => {};
 
-export function TerminalView({ profileId, active, onStatus }: Props) {
+export function TerminalView({ profileId, active, onStatus, onSession }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
+  const onSessionRef = useRef(onSession);
+  onSessionRef.current = onSession;
 
   useEffect(() => {
     const container = containerRef.current!;
@@ -75,6 +79,7 @@ export function TerminalView({ profileId, active, onStatus }: Props) {
           }
           ended = closed = true;
           session = undefined;
+          onSessionRef.current(null);
           void handle?.close().catch(ignore);
           onStatusRef.current("closed");
           term.write("\x1b[2m按 Enter 重新连接\x1b[0m\r\n");
@@ -83,7 +88,10 @@ export function TerminalView({ profileId, active, onStatus }: Props) {
         .then((s) => {
           handle = s;
           if (disposed || ended) void s.close().catch(ignore);
-          else session = s;
+          else {
+            session = s;
+            onSessionRef.current(s.id);
+          }
         })
         .catch((e) => {
           closed = true;
@@ -125,5 +133,5 @@ export function TerminalView({ profileId, active, onStatus }: Props) {
     return () => cancelAnimationFrame(frame);
   }, [active]);
 
-  return <div className={`terminal-view${active ? " active" : ""}`} ref={containerRef} />;
+  return <div className="terminal-view" ref={containerRef} />;
 }

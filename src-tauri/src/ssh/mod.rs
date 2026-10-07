@@ -1,25 +1,28 @@
 //! SSH shell sessions on top of russh.
 
 mod auth;
+mod connections;
 mod host_key;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use russh::{client, ChannelMsg, Disconnect};
+use russh::{client, ChannelMsg};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
 use crate::config::Profile;
-use crate::session::{SessionEvent, SessionInput, TermIo};
+use crate::session::{SessionEvent, SessionId, SessionInput, TermIo};
+pub use connections::Connections;
 use host_key::ClientHandler;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Session backend: connects, authenticates and bridges a remote shell to the terminal.
-pub async fn run(profile: Profile, mut io: TermIo) {
-    let result = shell(&profile, &mut io).await;
+pub async fn run(profile: Profile, id: SessionId, mut io: TermIo, connections: Connections) {
+    let result = shell(&profile, id, &mut io, &connections).await;
+    connections.close(id);
     match &result {
         Ok(Some(code)) => io.print(&format!("\n\x1b[2m[连接已关闭，退出码 {code}]\x1b[0m\n")),
         Ok(None) => io.print("\n\x1b[2m[连接已关闭]\x1b[0m\n"),
@@ -29,13 +32,15 @@ pub async fn run(profile: Profile, mut io: TermIo) {
 }
 
 /// Returns the remote exit status, if the server reported one.
-async fn shell(profile: &Profile, io: &mut TermIo) -> Result<Option<u32>> {
+async fn shell(profile: &Profile, id: SessionId, io: &mut TermIo, connections: &Connections) -> Result<Option<u32>> {
     io.print(&format!(
         "\x1b[2m正在连接 {}@{}:{} ...\x1b[0m\n",
         profile.username, profile.host, profile.port
     ));
     let mut session = connect(profile, io).await?;
     auth::authenticate(&mut session, profile, io).await?;
+    let session = Arc::new(session);
+    connections.insert(id, session.clone());
 
     let channel = session.channel_open_session().await.context("无法打开会话通道")?;
     let (cols, rows) = io.size;
@@ -64,7 +69,6 @@ async fn shell(profile: &Profile, io: &mut TermIo) -> Result<Option<u32>> {
             },
         }
     }
-    let _ = session.disconnect(Disconnect::ByApplication, "", "en").await;
     Ok(exit_status)
 }
 

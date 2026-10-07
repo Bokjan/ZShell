@@ -135,13 +135,13 @@ impl SessionManager {
         backend: F,
     ) -> SessionId
     where
-        F: FnOnce(TermIo) -> Fut,
+        F: FnOnce(SessionId, TermIo) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (tx, rx) = mpsc::unbounded_channel();
         let io = TermIo { output, events, input: rx, size };
-        let task = tauri::async_runtime::spawn(backend(io));
+        let task = tauri::async_runtime::spawn(backend(id, io));
         self.sessions.lock().unwrap().insert(id, SessionEntry { input: tx, task });
         id
     }

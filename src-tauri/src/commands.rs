@@ -1,11 +1,17 @@
+// Commands take injected state plus IPC arguments, so long parameter lists are expected.
+#![allow(clippy::too_many_arguments)]
+
+use std::path::PathBuf;
+
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::config::{Profile, ProfileStore};
 use crate::error::Result;
 use crate::secrets;
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
-use crate::ssh;
+use crate::sftp::{self, transfer, Listing};
+use crate::ssh::{self, Connections};
 
 #[tauri::command]
 pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
@@ -35,6 +41,7 @@ pub fn profile_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> 
 pub fn ssh_open(
     store: State<'_, ProfileStore>,
     sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
     profile_id: String,
     cols: u16,
     rows: u16,
@@ -42,7 +49,8 @@ pub fn ssh_open(
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let profile = store.get(&profile_id)?;
-    Ok(sessions.spawn(on_output, on_event, (cols, rows), |io| ssh::run(profile, io)))
+    let connections = connections.inner().clone();
+    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, id, io, connections)))
 }
 
 #[tauri::command]
@@ -56,6 +64,89 @@ pub fn session_resize(sessions: State<'_, SessionManager>, id: SessionId, cols: 
 }
 
 #[tauri::command]
-pub fn session_close(sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
+pub fn session_close(sessions: State<'_, SessionManager>, connections: State<'_, Connections>, id: SessionId) -> Result<()> {
+    connections.close(id);
     sessions.remove(id)
+}
+
+/// Opens (or reuses) the session's SFTP channel and returns the remote home directory.
+#[tauri::command]
+pub async fn sftp_open(connections: State<'_, Connections>, id: SessionId) -> Result<String> {
+    let sftp = connections.get(id)?.sftp().await?;
+    Ok(sftp.canonicalize(".").await?)
+}
+
+#[tauri::command]
+pub async fn sftp_list(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<Listing> {
+    let sftp = connections.get(id)?.sftp().await?;
+    Ok(sftp::list(&sftp, &path).await?)
+}
+
+#[tauri::command]
+pub async fn sftp_mkdir(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<()> {
+    let sftp = connections.get(id)?.sftp().await?;
+    Ok(sftp.create_dir(path).await?)
+}
+
+#[tauri::command]
+pub async fn sftp_rename(connections: State<'_, Connections>, id: SessionId, from: String, to: String) -> Result<()> {
+    let sftp = connections.get(id)?.sftp().await?;
+    Ok(sftp.rename(from, to).await?)
+}
+
+#[tauri::command]
+pub async fn sftp_remove(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<()> {
+    let sftp = connections.get(id)?.sftp().await?;
+    Ok(sftp::remove(&sftp, &path).await?)
+}
+
+#[tauri::command]
+pub async fn sftp_chmod(connections: State<'_, Connections>, id: SessionId, path: String, mode: u32) -> Result<()> {
+    let sftp = connections.get(id)?.sftp().await?;
+    Ok(sftp::chmod(&sftp, &path, mode).await?)
+}
+
+#[tauri::command]
+pub async fn sftp_upload(
+    connections: State<'_, Connections>,
+    transfers: State<'_, transfer::Transfers>,
+    id: SessionId,
+    transfer_id: String,
+    local_paths: Vec<PathBuf>,
+    remote_dir: String,
+    on_progress: Channel<transfer::Progress>,
+) -> Result<()> {
+    let sftp = connections.get(id)?.sftp().await?;
+    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
+    let result = transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await;
+    transfers.finish(&transfer_id);
+    Ok(result?)
+}
+
+/// Downloads into `local_dir` (default: the Downloads folder); returns the created paths.
+#[tauri::command]
+pub async fn sftp_download(
+    app: AppHandle,
+    connections: State<'_, Connections>,
+    transfers: State<'_, transfer::Transfers>,
+    id: SessionId,
+    transfer_id: String,
+    remote_paths: Vec<String>,
+    local_dir: Option<PathBuf>,
+    on_progress: Channel<transfer::Progress>,
+) -> Result<Vec<PathBuf>> {
+    let sftp = connections.get(id)?.sftp().await?;
+    let local_dir = match local_dir {
+        Some(dir) => dir,
+        None => app.path().download_dir()?,
+    };
+    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
+    let result = transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await;
+    transfers.finish(&transfer_id);
+    Ok(result?)
+}
+
+#[tauri::command]
+pub fn transfer_cancel(transfers: State<'_, transfer::Transfers>, transfer_id: String) {
+    transfers.cancel(&transfer_id);
 }
