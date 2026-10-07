@@ -6,7 +6,7 @@ use crate::session::SessionId;
 pub enum Error {
     #[error("session {0} not found")]
     SessionNotFound(SessionId),
-    #[error("会话 {0} 尚未建立 SSH 连接")]
+    #[error("session {0} has no SSH connection yet")]
     NotConnected(SessionId),
     #[error("profile {0} not found")]
     ProfileNotFound(String),

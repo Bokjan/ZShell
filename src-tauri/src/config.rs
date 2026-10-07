@@ -65,7 +65,7 @@ impl ProfileStore {
         profile.host = profile.host.trim().to_owned();
         profile.username = profile.username.trim().to_owned();
         if profile.host.is_empty() || profile.username.is_empty() || profile.port == 0 {
-            return Err(Error::Invalid("主机、端口和用户名不能为空".into()));
+            return Err(Error::Invalid("Host, port and username are required".into()));
         }
         if profile.name.is_empty() {
             profile.name = format!("{}@{}", profile.username, profile.host);

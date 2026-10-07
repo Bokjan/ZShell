@@ -82,7 +82,7 @@ export function TerminalView({ profileId, active, onStatus, onSession }: Props) 
           onSessionRef.current(null);
           void handle?.close().catch(ignore);
           onStatusRef.current("closed");
-          term.write("\x1b[2m按 Enter 重新连接\x1b[0m\r\n");
+          term.write("\x1b[2mPress Enter to reconnect\x1b[0m\r\n");
         },
       )
         .then((s) => {
@@ -96,7 +96,7 @@ export function TerminalView({ profileId, active, onStatus, onSession }: Props) 
         .catch((e) => {
           closed = true;
           onStatusRef.current("closed");
-          term.write(`\r\n\x1b[31m${e}\x1b[0m\r\n\x1b[2m按 Enter 重试\x1b[0m\r\n`);
+          term.write(`\r\n\x1b[31m${e}\x1b[0m\r\n\x1b[2mPress Enter to retry\x1b[0m\r\n`);
         });
     };
 

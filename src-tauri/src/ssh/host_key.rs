@@ -80,32 +80,33 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
         HostKeyStatus::Changed { line } => {
             io.print(&format!(
                 "\x1b[1;31m@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\
-                 @    警告：远程主机标识已改变！                           @\n\
+                 @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n\
                  @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\x1b[0m\n\
-                 可能有人正在进行中间人攻击，也可能只是主机密钥被更换了。\n\
-                 服务器当前的 {algorithm} 密钥指纹为：\n  {fingerprint}\n\
-                 与 ~/.ssh/known_hosts 第 {line} 行记录的不一致。\n\
-                 如确认密钥更换是正常的，请删除该行后重新连接。\n"
+                 Someone could be eavesdropping on you right now (man-in-the-middle attack)!\n\
+                 It is also possible that the host key has just been changed.\n\
+                 The {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\n\
+                 It does not match line {line} of ~/.ssh/known_hosts.\n\
+                 If the key change is expected, remove that line and reconnect.\n"
             ));
             false
         }
         HostKeyStatus::Unknown => {
             io.print(&format!(
-                "无法确认主机 '{host}' 的真实性。\n\
-                 {algorithm} 密钥指纹为 {fingerprint}。\n\
-                 确定要继续连接吗 (yes/no)? "
+                "The authenticity of host '{host}' can't be established.\n\
+                 {algorithm} key fingerprint is {fingerprint}.\n\
+                 Are you sure you want to continue connecting (yes/no)? "
             ));
             loop {
                 match io.read_line(true).await.as_deref().map(str::trim) {
                     Some(answer) if answer.eq_ignore_ascii_case("yes") => break,
                     Some(answer) if answer.eq_ignore_ascii_case("no") => return false,
                     None => return false,
-                    Some(_) => io.print("请输入 'yes' 或 'no': "),
+                    Some(_) => io.print("Please type 'yes' or 'no': "),
                 }
             }
             match learn_known_hosts(host, port, &query.key) {
-                Ok(()) => io.print(&format!("已将 '{host}' ({algorithm}) 添加到 known_hosts。\n")),
-                Err(e) => io.print(&format!("\x1b[33m无法写入 known_hosts：{e}\x1b[0m\n")),
+                Ok(()) => io.print(&format!("Permanently added '{host}' ({algorithm}) to the list of known hosts.\n")),
+                Err(e) => io.print(&format!("\x1b[33mCould not write to known_hosts: {e}\x1b[0m\n")),
             }
             true
         }

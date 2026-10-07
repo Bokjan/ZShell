@@ -11,17 +11,17 @@ export function Sidebar({ profiles, onOpen, onEdit, onNew }: Props) {
   return (
     <aside className="sidebar">
       <header>
-        <span>会话</span>
-        <button className="icon-button" title="新建会话" onClick={onNew}>
+        <span>Sessions</span>
+        <button className="icon-button" title="New session" onClick={onNew}>
           +
         </button>
       </header>
       {profiles.length === 0 ? (
-        <p className="sidebar-empty">还没有会话，点击 + 新建</p>
+        <p className="sidebar-empty">No sessions yet. Click + to add one.</p>
       ) : (
         <ul>
           {profiles.map((p) => (
-            <li key={p.id} onClick={() => onOpen(p)} title="点击打开新标签页">
+            <li key={p.id} onClick={() => onOpen(p)} title="Click to open in a new tab">
               <div className="profile-name">{p.name}</div>
               <div className="profile-meta">
                 {p.username}@{p.host}
@@ -29,7 +29,7 @@ export function Sidebar({ profiles, onOpen, onEdit, onNew }: Props) {
               </div>
               <button
                 className="icon-button profile-edit"
-                title="编辑"
+                title="Edit"
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit(p);

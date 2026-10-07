@@ -63,7 +63,7 @@ impl Reporter {
 
     fn check_cancelled(&self) -> Result<()> {
         if self.cancelled.load(Ordering::Relaxed) {
-            bail!("已取消");
+            bail!("cancelled");
         }
         Ok(())
     }
@@ -100,9 +100,9 @@ struct Plan<S, D> {
 pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &str, reporter: &mut Reporter) -> Result<()> {
     let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
     for local in local_paths {
-        let name = local.file_name().context("无效的本地路径")?.to_string_lossy();
+        let name = local.file_name().context("invalid local path")?.to_string_lossy();
         let remote = join(remote_dir, &name);
-        let metadata = tokio::fs::metadata(local).await.with_context(|| format!("无法读取 {}", local.display()))?;
+        let metadata = tokio::fs::metadata(local).await.with_context(|| format!("cannot read {}", local.display()))?;
         if metadata.is_dir() {
             scan_local_dir(local, remote, &mut plan, reporter).await?;
         } else {
@@ -114,18 +114,18 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
 
     for dir in &plan.dirs {
         if !sftp.try_exists(dir).await? {
-            sftp.create_dir(dir).await.with_context(|| format!("无法创建目录 {dir}"))?;
+            sftp.create_dir(dir).await.with_context(|| format!("cannot create directory {dir}"))?;
         }
     }
     for (local, remote) in &plan.files {
         reporter.start_file(file_name(remote).to_owned());
-        let mut src = tokio::fs::File::open(local).await.with_context(|| format!("无法打开 {}", local.display()))?;
-        let mut dst = sftp.create(remote).await.with_context(|| format!("无法创建 {remote}"))?;
+        let mut src = tokio::fs::File::open(local).await.with_context(|| format!("cannot open {}", local.display()))?;
+        let mut dst = sftp.create(remote).await.with_context(|| format!("cannot create {remote}"))?;
         let result = copy(&mut src, &mut dst, reporter).await;
         let _ = dst.shutdown().await;
         if let Err(e) = result {
             let _ = sftp.remove_file(remote).await;
-            return Err(e.context(format!("上传 {} 失败", local.display())));
+            return Err(e.context(format!("failed to upload {}", local.display())));
         }
         reporter.finish_file();
     }
@@ -137,7 +137,7 @@ async fn scan_local_dir(root: &Path, remote_root: String, plan: &mut Plan<PathBu
     while let Some((local, remote)) = pending.pop() {
         reporter.check_cancelled()?;
         plan.dirs.push(remote.clone());
-        let mut entries = tokio::fs::read_dir(&local).await.with_context(|| format!("无法读取 {}", local.display()))?;
+        let mut entries = tokio::fs::read_dir(&local).await.with_context(|| format!("cannot read {}", local.display()))?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             let child = join(&remote, &entry.file_name().to_string_lossy());
@@ -165,7 +165,7 @@ pub async fn download(
     let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
     let mut roots = Vec::new();
     for remote in remote_paths {
-        let metadata = sftp.metadata(remote).await.with_context(|| format!("无法读取 {remote}"))?;
+        let metadata = sftp.metadata(remote).await.with_context(|| format!("cannot read {remote}"))?;
         let local = unique_path(local_dir.join(file_name(remote)));
         if metadata.file_type().is_dir() {
             scan_remote_dir(sftp, remote.clone(), local.clone(), &mut plan, reporter).await?;
@@ -178,18 +178,18 @@ pub async fn download(
     reporter.progress.files_total = plan.files.len();
 
     for dir in &plan.dirs {
-        tokio::fs::create_dir_all(dir).await.with_context(|| format!("无法创建目录 {}", dir.display()))?;
+        tokio::fs::create_dir_all(dir).await.with_context(|| format!("cannot create directory {}", dir.display()))?;
     }
     for (remote, local) in &plan.files {
         reporter.start_file(file_name(remote).to_owned());
-        let mut src = sftp.open(remote).await.with_context(|| format!("无法打开 {remote}"))?;
-        let mut dst = tokio::fs::File::create(local).await.with_context(|| format!("无法创建 {}", local.display()))?;
+        let mut src = sftp.open(remote).await.with_context(|| format!("cannot open {remote}"))?;
+        let mut dst = tokio::fs::File::create(local).await.with_context(|| format!("cannot create {}", local.display()))?;
         let result = copy(&mut src, &mut dst, reporter).await;
         let _ = src.shutdown().await;
         if let Err(e) = result {
             drop(dst);
             let _ = tokio::fs::remove_file(local).await;
-            return Err(e.context(format!("下载 {remote} 失败")));
+            return Err(e.context(format!("failed to download {remote}")));
         }
         reporter.finish_file();
     }
@@ -207,7 +207,7 @@ async fn scan_remote_dir(
     while let Some((remote, local)) = pending.pop() {
         reporter.check_cancelled()?;
         plan.dirs.push(local.clone());
-        for entry in sftp.read_dir(&remote).await.with_context(|| format!("无法读取 {remote}"))? {
+        for entry in sftp.read_dir(&remote).await.with_context(|| format!("cannot read {remote}"))? {
             let name = entry.file_name();
             if name == "." || name == ".." {
                 continue;

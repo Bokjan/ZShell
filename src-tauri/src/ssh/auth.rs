@@ -46,17 +46,17 @@ async fn password(session: &mut Session, profile: &Profile, io: &mut TermIo) -> 
         if session.authenticate_password(user, password).await?.success() {
             return Ok(());
         }
-        io.print("已保存的密码被服务器拒绝。\n");
+        io.print("The saved password was rejected by the server.\n");
     }
     for _ in 0..MAX_ATTEMPTS {
         io.print(&format!("{user}@{}'s password: ", profile.host));
-        let password = io.read_line(false).await.context("已取消")?;
+        let password = io.read_line(false).await.context("cancelled")?;
         if session.authenticate_password(user, password).await?.success() {
             return Ok(());
         }
         io.print("Permission denied, please try again.\n");
     }
-    bail!("密码认证失败")
+    bail!("password authentication failed")
 }
 
 async fn keyboard_interactive(
@@ -87,7 +87,7 @@ async fn keyboard_interactive(
                             }
                         }
                         io.print(&prompt.prompt);
-                        answers.push(io.read_line(prompt.echo).await.context("已取消")?);
+                        answers.push(io.read_line(prompt.echo).await.context("cancelled")?);
                     }
                     response = session.authenticate_keyboard_interactive_respond(answers).await?;
                 }
@@ -95,7 +95,7 @@ async fn keyboard_interactive(
         }
         io.print("Permission denied, please try again.\n");
     }
-    bail!("认证失败")
+    bail!("authentication failed")
 }
 
 async fn public_key(session: &mut Session, user: &str, key_path: &str, io: &mut TermIo) -> Result<()> {
@@ -109,7 +109,7 @@ async fn public_key(session: &mut Session, user: &str, key_path: &str, io: &mut 
     let result = session
         .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg))
         .await?;
-    ensure!(result.success(), "服务器拒绝了私钥 {}", path.display());
+    ensure!(result.success(), "the server rejected private key {}", path.display());
     Ok(())
 }
 
@@ -117,23 +117,23 @@ async fn load_key(path: &PathBuf, io: &mut TermIo) -> Result<PrivateKey> {
     match load_secret_key(path, None) {
         Ok(key) => return Ok(key),
         Err(russh::keys::Error::KeyIsEncrypted) => {}
-        Err(e) => return Err(e).with_context(|| format!("无法读取私钥 {}", path.display())),
+        Err(e) => return Err(e).with_context(|| format!("cannot read private key {}", path.display())),
     }
     for _ in 0..MAX_ATTEMPTS {
         io.print(&format!("Enter passphrase for key '{}': ", path.display()));
-        let passphrase = io.read_line(false).await.context("已取消")?;
+        let passphrase = io.read_line(false).await.context("cancelled")?;
         match load_secret_key(path, Some(&passphrase)) {
             Ok(key) => return Ok(key),
-            Err(_) => io.print("密码短语错误。\n"),
+            Err(_) => io.print("Incorrect passphrase.\n"),
         }
     }
-    bail!("无法解密私钥 {}", path.display())
+    bail!("cannot decrypt private key {}", path.display())
 }
 
 async fn agent(session: &mut Session, user: &str) -> Result<()> {
-    let mut agent = connect_agent().await.context("无法连接 SSH agent")?;
-    let identities = agent.request_identities().await.context("无法读取 SSH agent 中的密钥")?;
-    ensure!(!identities.is_empty(), "SSH agent 中没有密钥");
+    let mut agent = connect_agent().await.context("cannot connect to the SSH agent")?;
+    let identities = agent.request_identities().await.context("cannot list SSH agent keys")?;
+    ensure!(!identities.is_empty(), "the SSH agent has no keys");
 
     let rsa_hash = session.best_supported_rsa_hash().await?.flatten();
     for identity in identities {
@@ -145,12 +145,12 @@ async fn agent(session: &mut Session, user: &str) -> Result<()> {
         let result = session
             .authenticate_publickey_with(user, key, hash_alg, &mut agent)
             .await
-            .map_err(|e| anyhow!("SSH agent 签名失败：{e:?}"))?;
+            .map_err(|e| anyhow!("SSH agent signing failed: {e:?}"))?;
         if result.success() {
             return Ok(());
         }
     }
-    bail!("服务器拒绝了 SSH agent 中的所有密钥")
+    bail!("the server rejected all SSH agent keys")
 }
 
 type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin>>;

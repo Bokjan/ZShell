@@ -26,10 +26,10 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished }
   return (
     <section className="transfers">
       <header>
-        <span>传输</span>
+        <span>Transfers</span>
         {transfers.some((t) => t.status !== "running") && (
           <button className="link-button" onClick={onClearFinished}>
-            清除已完成
+            Clear finished
           </button>
         )}
       </header>
@@ -46,16 +46,16 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished }
                 </span>
                 {t.status === "running" && (
                   <button className="link-button" onClick={() => onCancel(t.id)}>
-                    取消
+                    Cancel
                   </button>
                 )}
                 {t.status === "done" && t.results?.[0] && (
                   <button className="link-button" onClick={() => void revealItemInDir(t.results![0])}>
-                    显示
+                    Show
                   </button>
                 )}
                 {t.status !== "running" && (
-                  <button className="link-button" title="移除" onClick={() => onDismiss(t.id)}>
+                  <button className="link-button" title="Remove" onClick={() => onDismiss(t.id)}>
                     ×
                   </button>
                 )}
@@ -67,10 +67,10 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished }
                 {t.status === "error"
                   ? t.error
                   : t.status === "cancelled"
-                    ? "已取消"
+                    ? "Cancelled"
                     : p
-                      ? `${formatSize(p.transferred)} / ${formatSize(p.total)} · ${p.filesDone}/${p.filesTotal} 个文件${t.status === "running" && p.current ? ` · ${p.current}` : ""}`
-                      : "准备中…"}
+                      ? `${formatSize(p.transferred)} / ${formatSize(p.total)} · ${p.filesDone}/${p.filesTotal} files${t.status === "running" && p.current ? ` · ${p.current}` : ""}`
+                      : "Preparing…"}
               </div>
             </li>
           );

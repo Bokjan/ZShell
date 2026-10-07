@@ -66,7 +66,7 @@ function App() {
               onStatus={(status: SessionStatus) => updateTab(tab.key, { status })}
             />
           ))}
-          {tabs.length === 0 && <div className="placeholder">从左侧选择一个会话开始连接</div>}
+          {tabs.length === 0 && <div className="placeholder">Select a session on the left to connect</div>}
         </div>
       </main>
       {editing !== undefined && <ProfileDialog profile={editing} onClose={closeDialog} onChanged={reloadProfiles} />}

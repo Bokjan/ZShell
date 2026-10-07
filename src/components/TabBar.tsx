@@ -32,7 +32,7 @@ export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Pr
           <span className="tab-title">{tab.title}</span>
           <button
             className="tab-close"
-            title="关闭"
+            title="Close"
             onClick={(e) => {
               e.stopPropagation();
               onClose(tab.key);
@@ -47,9 +47,9 @@ export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Pr
         className={`tab-bar-button${activeTab?.filesOpen ? " on" : ""}`}
         disabled={!activeTab}
         onClick={onToggleFiles}
-        title="显示/隐藏 SFTP 文件面板"
+        title="Show/hide the SFTP file panel"
       >
-        文件
+        Files
       </button>
     </nav>
   );

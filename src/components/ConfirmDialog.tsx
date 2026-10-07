@@ -30,7 +30,7 @@ export function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm,
         <footer>
           <span className="grow" />
           <button type="button" onClick={onCancel}>
-            取消
+            Cancel
           </button>
           <button type="submit" className={danger ? "primary danger-fill" : "primary"} autoFocus>
             {confirmLabel}

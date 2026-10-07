@@ -24,7 +24,7 @@ interface Confirm {
 
 const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name : `${dir}/${name}`);
 const parentPath = (path: string) => path.replace(/\/[^/]+\/?$/, "") || "/";
-const labelFor = (names: string[]) => (names.length === 1 ? names[0] : `${names[0]} 等 ${names.length} 项`);
+const labelFor = (names: string[]) => (names.length === 1 ? names[0] : `${names[0]} and ${names.length - 1} more`);
 
 export function SftpPanel({ sessionId, connected, active }: Props) {
   const [cwd, setCwd] = useState<string | null>(null);
@@ -102,9 +102,9 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     const conflicts = localPaths.map(basename).filter((name) => existing.has(name));
     if (conflicts.length === 0) return void start();
     setConfirm({
-      title: "覆盖文件",
-      message: `以下项目已存在，继续将覆盖它们：\n${conflicts.join("\n")}`,
-      confirmLabel: "覆盖",
+      title: "Replace Files",
+      message: `These items already exist and will be replaced:\n${conflicts.join("\n")}`,
+      confirmLabel: "Replace",
       danger: true,
       action: start,
     });
@@ -119,7 +119,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
 
   const pickAndUpload = async (directory: boolean) => {
     if (!cwd) return;
-    const picked = await open({ multiple: true, directory, title: directory ? "选择要上传的文件夹" : "选择要上传的文件" });
+    const picked = await open({ multiple: true, directory, title: directory ? "Choose folders to upload" : "Choose files to upload" });
     if (picked) upload(Array.isArray(picked) ? picked : [picked], cwd);
   };
 
@@ -176,7 +176,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     e.preventDefault();
     if (!chmodTarget || sessionId == null || !cwd) return;
     if (!/^[0-7]{3,4}$/.test(chmodTarget.value)) {
-      setError("权限需为 3–4 位八进制数，例如 644 或 0755");
+      setError("Permissions must be 3–4 octal digits, e.g. 644 or 0755");
       return;
     }
     const { entry, value } = chmodTarget;
@@ -191,11 +191,11 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
 
   const askRemove = (entry: FileEntry) =>
     setConfirm({
-      title: "删除",
+      title: "Delete",
       message: entry.isDir && !entry.isSymlink
-        ? `确定删除文件夹「${entry.name}」及其中的所有内容吗？此操作无法撤销。`
-        : `确定删除「${entry.name}」吗？此操作无法撤销。`,
-      confirmLabel: "删除",
+        ? `Delete the folder "${entry.name}" and everything in it? This cannot be undone.`
+        : `Delete "${entry.name}"? This cannot be undone.`,
+      confirmLabel: "Delete",
       danger: true,
       action: async () => {
         if (sessionId == null || !cwd) return;
@@ -213,7 +213,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   if (!connected && cwd == null) {
     return (
       <div className="sftp-panel" ref={panelRef}>
-        <div className="sftp-empty">连接建立后可浏览远程文件</div>
+        <div className="sftp-empty">Remote files are available once connected</div>
       </div>
     );
   }
@@ -221,10 +221,10 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   return (
     <div className={`sftp-panel${dragOver ? " drag-over" : ""}`} ref={panelRef}>
       <div className="sftp-toolbar">
-        <button className="icon-button" title="上级目录" disabled={!cwd || cwd === "/"} onClick={() => cwd && load(parentPath(cwd))}>
+        <button className="icon-button" title="Parent folder" disabled={!cwd || cwd === "/"} onClick={() => cwd && load(parentPath(cwd))}>
           ↑
         </button>
-        <button className="icon-button" title="刷新" disabled={!cwd} onClick={refresh}>
+        <button className="icon-button" title="Refresh" disabled={!cwd} onClick={refresh}>
           ⟳
         </button>
         <form
@@ -234,27 +234,27 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
             void load(pathInput.trim() || ".");
           }}
         >
-          <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} spellCheck={false} title="输入路径后回车跳转" />
+          <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} spellCheck={false} title="Type a path and press Enter" />
         </form>
       </div>
       <div className="sftp-actions">
         <button disabled={!connected || !cwd} onClick={() => pickAndUpload(false)}>
-          上传文件
+          Upload Files
         </button>
         <button disabled={!connected || !cwd} onClick={() => pickAndUpload(true)}>
-          上传文件夹
+          Upload Folder
         </button>
         <button disabled={!connected || !cwd} onClick={() => setNewFolder("")}>
-          新建文件夹
+          New Folder
         </button>
       </div>
 
       {error && (
-        <div className="sftp-error" onClick={() => setError(null)} title="点击关闭">
+        <div className="sftp-error" onClick={() => setError(null)} title="Click to dismiss">
           {error}
         </div>
       )}
-      {!connected && <div className="sftp-error">连接已断开</div>}
+      {!connected && <div className="sftp-error">Disconnected</div>}
 
       <div className={`sftp-list${loading ? " loading" : ""}`}>
         <table>
@@ -270,7 +270,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                   <form onSubmit={submitNewFolder}>
                     <input
                       autoFocus
-                      placeholder="新文件夹名称"
+                      placeholder="New folder name"
                       value={newFolder}
                       onChange={(e) => setNewFolder(e.target.value)}
                       onBlur={() => setNewFolder(null)}
@@ -311,21 +311,21 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                 <td className="file-time">
                   <span className="file-time-text">{formatTime(entry.modified)}</span>
                   <span className="row-actions">
-                    <button title="下载到“下载”文件夹" onClick={() => download(entry)}>
+                    <button title="Download to the Downloads folder" onClick={() => download(entry)}>
                       ⬇
                     </button>
-                    <button title="重命名" onClick={() => setRenaming({ path: entry.path, value: entry.name })}>
+                    <button title="Rename" onClick={() => setRenaming({ path: entry.path, value: entry.name })}>
                       ✎
                     </button>
                     <button
-                      title="修改权限"
+                      title="Change permissions"
                       onClick={() =>
                         setChmodTarget({ entry, value: ((entry.permissions ?? 0o644) & 0o7777).toString(8).padStart(3, "0") })
                       }
                     >
                       ⚿
                     </button>
-                    <button title="删除" onClick={() => askRemove(entry)}>
+                    <button title="Delete" onClick={() => askRemove(entry)}>
                       🗑
                     </button>
                   </span>
@@ -334,7 +334,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
             ))}
           </tbody>
         </table>
-        {entries.length === 0 && !loading && cwd && <div className="sftp-empty">空文件夹</div>}
+        {entries.length === 0 && !loading && cwd && <div className="sftp-empty">Empty folder</div>}
       </div>
 
       <TransferList
@@ -347,14 +347,14 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
         onClearFinished={() => setTransfers((ts) => ts.filter((t) => t.status === "running"))}
       />
 
-      {dragOver && <div className="drop-hint">松开以上传到 {cwd}</div>}
+      {dragOver && <div className="drop-hint">Drop to upload to {cwd}</div>}
 
       {chmodTarget && (
         <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setChmodTarget(null)}>
           <form className="dialog" onSubmit={submitChmod}>
-            <h2>修改权限</h2>
+            <h2>Change Permissions</h2>
             <label>
-              「{chmodTarget.entry.name}」的权限（八进制）
+              Permissions for "{chmodTarget.entry.name}" (octal)
               <input
                 autoFocus
                 value={chmodTarget.value}
@@ -366,10 +366,10 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
             <footer>
               <span className="grow" />
               <button type="button" onClick={() => setChmodTarget(null)}>
-                取消
+                Cancel
               </button>
               <button type="submit" className="primary">
-                确定
+                OK
               </button>
             </footer>
           </form>

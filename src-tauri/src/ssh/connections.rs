@@ -27,7 +27,7 @@ impl Connection {
             .get_or_try_init(|| async {
                 let channel = self.handle.channel_open_session().await?;
                 channel.request_subsystem(true, "sftp").await?;
-                let sftp = SftpSession::new(channel.into_stream()).await.context("服务器不支持 SFTP")?;
+                let sftp = SftpSession::new(channel.into_stream()).await.context("the server does not support SFTP")?;
                 Ok(Arc::new(sftp))
             })
             .await
