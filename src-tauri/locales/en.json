@@ -18,6 +18,9 @@
   "forward": {
     "autoStartFailed": "Port forwarding {forward} could not be started: {error}"
   },
+  "menu": {
+    "settings": "Settings…"
+  },
   "errors": {
     "unexpected": "Unexpected error",
     "credentialStore": "Credential store error",

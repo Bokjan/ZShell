@@ -14,3 +14,9 @@ export const isFindShortcut = (e: KeyboardEvent) =>
   (isMac ? e.metaKey && !e.ctrlKey && !e.shiftKey : e.ctrlKey && e.shiftKey && !e.metaKey);
 
 export const findShortcutLabel = isMac ? "⌘F" : "Ctrl+Shift+F";
+
+/** The settings shortcut: ⌘, on macOS, Ctrl+, elsewhere. */
+export const isSettingsShortcut = (e: KeyboardEvent) =>
+  e.code === "Comma" && !e.altKey && !e.shiftKey && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+
+export const settingsShortcutLabel = isMac ? "⌘," : "Ctrl+,";

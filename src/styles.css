@@ -1,3 +1,5 @@
+/* Theme: dark by default; `data-theme="light"` on <html> (set from the settings) switches. */
+
 :root {
   --bg: #1e1e1e;
   --bg-sidebar: #181818;
@@ -5,16 +7,54 @@
   --bg-hover: #2a2d2e;
   --bg-active: #37373d;
   --border: #2b2b2b;
+  --input-border: #3c3c3c;
   --text: #cccccc;
   --text-muted: #8b8b8b;
   --accent: #3b82f6;
+  --accent-soft: rgb(59 130 246 / 0.18);
+  --on-accent: #ffffff;
   --danger: #ef4444;
+  --danger-soft: rgb(239 68 68 / 0.12);
   --ok: #22c55e;
+  --on-ok: #0b2e17;
   --warn: #eab308;
+  --kind-local: #93c5fd;
+  --kind-remote: #c4b5fd;
+  --kind-dynamic: #fcd34d;
+  --backdrop: rgb(0 0 0 / 0.45);
+  --shadow: rgb(0 0 0 / 0.45);
 
   color: var(--text);
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-sidebar: #f3f3f3;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e8e8e8;
+  --bg-active: #dcdcdc;
+  --border: #e2e2e2;
+  --input-border: #c8c8c8;
+  --text: #1f1f1f;
+  --text-muted: #6b6b6b;
+  --accent: #2563eb;
+  --accent-soft: rgb(37 99 235 / 0.12);
+  --on-accent: #ffffff;
+  --danger: #dc2626;
+  --danger-soft: rgb(220 38 38 / 0.08);
+  --ok: #16a34a;
+  --on-ok: #ffffff;
+  /* Dark enough to read as text on white, still clearly amber as a dot. */
+  --warn: #b45309;
+  --kind-local: #1d4ed8;
+  --kind-remote: #6d28d9;
+  --kind-dynamic: #a16207;
+  --backdrop: rgb(0 0 0 / 0.25);
+  --shadow: rgb(0 0 0 / 0.18);
+
+  color-scheme: light;
 }
 
 html,
@@ -123,6 +163,11 @@ main {
 }
 .profile-edit {
   visibility: visible;
+}
+.sidebar-footer {
+  margin-top: auto;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
 }
 .sidebar-empty {
   padding: 0 14px;
@@ -233,14 +278,14 @@ main {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-elevated);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
+  box-shadow: 0 6px 20px var(--shadow);
 }
 .search-bar input {
   width: 200px;
   min-width: 80px;
   flex-shrink: 1;
   padding: 3px 6px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
@@ -265,7 +310,7 @@ main {
 }
 .search-flag.on {
   border-color: var(--accent);
-  background: rgb(59 130 246 / 0.18);
+  background: var(--accent-soft);
   color: var(--text);
 }
 .search-status {
@@ -302,7 +347,7 @@ main {
   display: flex;
   flex-shrink: 0;
   margin: 0 8px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
 }
 .panel-switch button {
@@ -316,7 +361,7 @@ main {
   white-space: nowrap;
 }
 .panel-switch button + button {
-  border-left: 1px solid #3c3c3c;
+  border-left: 1px solid var(--input-border);
 }
 .panel-switch button:first-child {
   border-radius: 3px 0 0 3px;
@@ -328,7 +373,7 @@ main {
   color: var(--text);
 }
 .panel-switch button.on {
-  background: rgb(59 130 246 / 0.18);
+  background: var(--accent-soft);
   box-shadow: inset 0 0 0 1px var(--accent);
   color: var(--text);
 }
@@ -343,7 +388,7 @@ main {
   padding: 0 4px;
   border-radius: 8px;
   background: var(--ok);
-  color: #0b2e17;
+  color: var(--on-ok);
   font-size: 10px;
   font-weight: 600;
   line-height: 16px;
@@ -388,7 +433,7 @@ body.resizing .terminal-view {
 }
 .panel-error {
   padding: 6px 10px;
-  background: rgb(239 68 68 / 0.12);
+  background: var(--danger-soft);
   color: var(--danger);
   font-size: 12px;
   white-space: pre-wrap;
@@ -433,7 +478,7 @@ body.resizing .terminal-view {
   width: 100%;
   box-sizing: border-box;
   padding: 3px 6px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
@@ -452,14 +497,14 @@ body.resizing .terminal-view {
 }
 .sftp-actions button {
   padding: 3px 10px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
   font-size: 12px;
 }
 .sftp-error {
   padding: 6px 10px;
-  background: rgb(239 68 68 / 0.12);
+  background: var(--danger-soft);
   color: var(--danger);
   font-size: 12px;
   white-space: pre-wrap;
@@ -567,7 +612,7 @@ body.resizing .terminal-view {
   padding: 10px;
   border-radius: 6px;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   text-align: center;
   pointer-events: none;
 }
@@ -681,7 +726,7 @@ body.resizing .terminal-view {
 .forwards-toolbar button {
   flex-shrink: 0;
   padding: 3px 10px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
   font-size: 12px;
@@ -721,13 +766,13 @@ body.resizing .terminal-view {
   background: var(--bg-active);
 }
 .forward-kind.local {
-  color: #93c5fd;
+  color: var(--kind-local);
 }
 .forward-kind.remote {
-  color: #c4b5fd;
+  color: var(--kind-remote);
 }
 .forward-kind.dynamic {
-  color: #fcd34d;
+  color: var(--kind-dynamic);
 }
 .forward-main {
   flex: 1;
@@ -778,7 +823,7 @@ body.resizing .terminal-view {
 .forward-tag {
   flex-shrink: 0;
   padding: 0 5px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 3px;
   font-size: 10px;
 }
@@ -859,7 +904,7 @@ body.resizing .terminal-view {
 }
 .switch input:checked + span::after {
   transform: translateX(12px);
-  background: white;
+  background: var(--on-accent);
 }
 .switch input:disabled + span {
   opacity: 0.4;
@@ -876,7 +921,7 @@ body.resizing .terminal-view {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgb(0 0 0 / 0.45);
+  background: var(--backdrop);
   z-index: 10;
 }
 .dialog {
@@ -889,7 +934,7 @@ body.resizing .terminal-view {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  box-shadow: 0 12px 40px var(--shadow);
 }
 .dialog h2 {
   margin: 0 0 4px;
@@ -911,7 +956,7 @@ body.resizing .terminal-view {
 .dialog input:not([type="checkbox"]),
 .dialog select {
   padding: 6px 8px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
@@ -968,14 +1013,14 @@ body.resizing .terminal-view {
 }
 .dialog footer button {
   padding: 5px 14px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
 }
 .dialog footer button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 .dialog footer button.danger {
   color: var(--danger);
@@ -1012,7 +1057,7 @@ body.resizing .terminal-view {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   counter-reset: hop;
 }
@@ -1050,7 +1095,7 @@ body.resizing .terminal-view {
 .dialog button.secondary {
   flex-shrink: 0;
   padding: 5px 10px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
   font-size: 13px;
@@ -1075,7 +1120,7 @@ body.resizing .terminal-view {
   padding: 0;
   overflow-y: auto;
   list-style: none;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
 }
 .import-list li {
@@ -1119,6 +1164,99 @@ body.resizing .terminal-view {
 }
 .import-notes .warning {
   color: var(--warn);
+}
+/* Settings */
+
+.settings-dialog {
+  width: 560px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.settings-dialog section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-dialog section + section {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.settings-dialog h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--input-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.segmented button {
+  padding: 4px 14px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+}
+.segmented button + button {
+  border-left: 1px solid var(--input-border);
+}
+.segmented button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.scheme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.scheme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+}
+.scheme-card:hover {
+  border-color: var(--text-muted);
+}
+.scheme-card.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.scheme-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+.scheme-swatches {
+  display: flex;
+  gap: 3px;
+}
+.scheme-swatches span {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
+.scheme-name {
+  padding: 0 4px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 12px;
+}
+.dialog input[aria-invalid="true"] {
+  border-color: var(--danger);
 }
 .dialog-message {
   margin: 0;

@@ -64,6 +64,10 @@
 - **终端搜索**：`@xterm/addon-search`，终端右上角的浮动搜索条（区分大小写 / 整词 / 正则、上一个 / 下一个、"3 of 17" 计数，高亮上限 1000 条）。快捷键 macOS ⌘F，Windows Ctrl+Shift+F（Ctrl+F 留给 shell）。注意 addon-search 0.16 只切换选项时不会重新高亮（先保存新选项再比较），搜索前先调用 `clearDecorations()` 清掉缓存的搜索词来绕过。WebKit 点击按钮不会让按钮获得焦点，搜索条在 mousedown 时阻止默认行为，让焦点留在输入框。
 - **ProxyJump**：会话配置的 `jumpHosts` 按顺序引用其他会话（相当于 `ProxyJump a,b`），每一跳使用被引用会话的地址和认证方式，但不展开它自己的跳板机。连接时逐跳建立：在上一跳的连接上开 `direct-tcpip` channel 到下一跳，以其 `ChannelStream` 作为下一跳 SSH 握手的传输层；主机密钥按每一跳自己的 host:port 校验，各跳的提示都在同一个终端里。`Connection` 持有各跳板机连接，关闭时从目标往回逐个断开。保存时校验引用存在、不引用自身、不重复；被其他会话用作跳板机的会话不能删除。
 - **ssh_config 导入**：一次性复制（导入后与 config 文件无关联）。`ssh2-config` 解析（支持 `Include`），列出不含通配符的 `Host` 别名，用 `query(alias)` 得到合并 `Host *` 等默认值后的参数（与 OpenSSH 一样先出现的值生效）。映射：HostName（支持 `%h`）、Port、User（缺省为本机用户名）、第一个 IdentityFile → 私钥认证（没有则为"自动"）、ProxyJump → 跳板机（config 中的别名一并导入，`[user@]host[:port]` 写法复用同地址的已有会话或新建）、ServerAliveInterval → keepalive、LocalForward / RemoteForward / DynamicForward → 转发规则（不自动启动；受 `ssh2-config` 限制，LocalForward 和 DynamicForward 每个 Host 块只保留最后一条）。与已有会话同名或同地址的主机标为"已存在"、不再导入。ProxyCommand、ForwardAgent、CertificateFile 等未导入的选项在列表中标出。
+- **设置与主题**：应用设置存在 `settings.json`（与 `profiles.json` 同目录，后端校验并夹取数值，文件损坏时回退默认值）。前端 `SettingsProvider` 在启动时读取，就绪后才渲染界面，修改即时生效并保存（较旧的保存结果不会覆盖较新的修改）。
+  - 外观：跟随系统 / 深色 / 浅色。`<html data-theme>` 选择 CSS 变量组（样式中不再写死颜色，全部走变量）；原生窗口用 `setTheme`（跟随系统时传 null）同步标题栏，用 `setBackgroundColor` 同步调整大小时露出的背景。`tauri.conf.json` 不再写死窗口背景色（否则 macOS 标题栏会一直沿用该颜色），改由 `index.html` 的内联样式按系统外观给出首帧背景，避免闪烁。
+  - 终端：内置配色（Default Dark/Light、Solarized Dark/Light、Dracula、One Dark、Nord、GitHub Light，"跟随外观"时取 Default Dark/Light），字体（用户字体后总是追加默认字体栈，包括中文字体）、字号、光标样式与闪烁、回滚行数。修改后通过 `term.options` 应用到所有已打开的终端；搜索高亮颜色按配色的深浅选择。
+  - 入口：侧栏底部齿轮；macOS 应用菜单的"Settings…"（⌘,，必须是原生菜单项，macOS 会在 web view 之前处理 ⌘,；菜单只在 macOS 上设置，Windows 保持无菜单栏），Windows 上由前端处理 Ctrl+,。M6 的语言设置将放进同一个对话框。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
 
 ## 国际化（i18n）
@@ -125,6 +129,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 | `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`：主机密钥、`forwarded-tcpip`、断线原因）、主机密钥确认（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
 | `config.rs` | 会话配置存储（`profiles.json`） | M1 ✅ |
 | `import.rs` | 从 OpenSSH client config 导入会话 | M4 ✅ |
+| `settings.rs` | 应用设置存储（`settings.json`：外观、终端配色与字体等） | M4 ✅ |
 | `secrets.rs` | keyring 封装 | M1 ✅ |
 | `ssh/connections.rs` | 连接注册表，供 SFTP / 端口转发复用连接 | M2 ✅ |
 | `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`） | M2 ✅ |
@@ -141,7 +146,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 | **M1 MVP** ✅ | 密码/私钥/agent 登录；交互式 shell；多标签；resize；known_hosts；会话保存 + 钥匙串 |
 | **M2 SFTP** ✅ | 浏览、上传下载（进度）、拖拽、重命名/删除/新建/chmod |
 | **M3 端口转发** ✅ | `-L` / `-R` / `-D`，规则随会话保存，可自动启动 |
-| **M4 增强** | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题 |
+| **M4 增强** ✅ | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题；另含"自动"认证与设置界面 |
 | **M5 本地终端** | portable-pty（macOS zsh / Windows PowerShell） |
 | **i18n 架构** ✅ | 前端 i18next（类型检查 key）与后端消息目录；结构化错误；语言协商与 `set_locale`；仅英语 |
 | **M6 翻译** | 语言设置界面；首批翻译简体中文（zh-CN），之后按需增加其他语言 |

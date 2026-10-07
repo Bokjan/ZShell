@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ZShell</title>
+    <!-- Background before the app's CSS loads, so startup never flashes the wrong color. -->
+    <style>
+      html { background: #1e1e1e; }
+      @media (prefers-color-scheme: light) { html { background: #ffffff; } }
+    </style>
   </head>
 
   <body>

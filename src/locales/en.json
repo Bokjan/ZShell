@@ -15,7 +15,8 @@
     "openHint": "Click to open in a new tab",
     "edit": "Edit",
     "import": "Import from SSH config",
-    "metaVia": "{address} via {names}"
+    "metaVia": "{address} via {names}",
+    "settings": "Settings ({shortcut})"
   },
   "tabs": {
     "close": "Close",
@@ -202,5 +203,33 @@
     "hint": "Jump hosts are imported along with the hosts that use them. Port forwards are imported without auto-start.",
     "import_one": "Import {count} Host",
     "import_other": "Import {count} Hosts"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "appearances": {
+      "system": "System",
+      "dark": "Dark",
+      "light": "Light"
+    },
+    "terminal": "Terminal",
+    "colorScheme": "Color scheme",
+    "schemeAuto": "Match appearance",
+    "schemeDefaultDark": "Default Dark",
+    "schemeDefaultLight": "Default Light",
+    "fontFamily": "Font",
+    "fontFamilyPlaceholder": "Default (Menlo / Cascadia Mono)",
+    "fontSize": "Size",
+    "fontHint": "Missing characters, such as Chinese, fall back to system fonts.",
+    "cursorStyle": "Cursor",
+    "cursorStyles": {
+      "block": "Block",
+      "bar": "Bar",
+      "underline": "Underline"
+    },
+    "cursorBlink": "Blinking cursor",
+    "scrollback": "Scrollback lines",
+    "reset": "Restore defaults",
+    "done": "Done"
   }
 }

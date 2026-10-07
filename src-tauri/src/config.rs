@@ -2,7 +2,7 @@
 //! Passwords are never stored here; see [`crate::secrets`].
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -172,13 +172,18 @@ impl ProfileStore {
     }
 
     fn persist(&self, profiles: &[Profile]) -> Result<()> {
-        if let Some(dir) = self.path.parent() {
-            fs::create_dir_all(dir)?;
-        }
-        // Write-then-rename so a crash never leaves a truncated file behind.
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, serde_json::to_vec_pretty(profiles)?)?;
-        fs::rename(&tmp, &self.path)?;
-        Ok(())
+        write_json_atomic(&self.path, &profiles)
     }
+}
+
+/// Writes `value` as pretty JSON, via a temporary file and a rename so that a crash never
+/// leaves a truncated file behind.
+pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_vec_pretty(value)?)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
 }

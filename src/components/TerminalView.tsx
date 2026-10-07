@@ -11,6 +11,8 @@ import "@xterm/xterm/css/xterm.css";
 
 import { errorMessage, openSshSession, type CommandError, type ForwardState, type Session } from "../lib/api";
 import { isFindShortcut } from "../lib/platform";
+import { useSettings } from "../lib/settings";
+import { fontStack, resolveScheme, searchDecorations } from "../lib/terminalSchemes";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
@@ -53,15 +55,24 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
   autoReconnectRef.current = autoReconnect;
   // Incremented by the find shortcut; 0 means the search bar is closed.
   const [searchKey, setSearchKey] = useState(0);
+  const { settings, theme } = useSettings();
+  const scheme = resolveScheme(settings.terminal.colorScheme, theme);
+  const options = {
+    theme: scheme.theme,
+    fontFamily: fontStack(settings.terminal.fontFamily),
+    fontSize: settings.terminal.fontSize,
+    cursorStyle: settings.terminal.cursorStyle,
+    cursorBlink: settings.terminal.cursorBlink,
+    scrollback: settings.terminal.scrollback,
+  };
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
     const container = containerRef.current!;
     const term = new Terminal({
       allowProposedApi: true, // required by the unicode11 addon
-      cursorBlink: true,
-      fontFamily: 'Menlo, "Cascadia Mono", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
-      fontSize: 13,
-      theme: { background: "#1e1e1e" },
+      ...optionsRef.current,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -198,6 +209,20 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
     };
   }, [profileId]);
 
+  // Apply appearance and font changes to the running terminal.
+  const { theme: termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback } = options;
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = termTheme;
+    term.options.fontFamily = fontFamily;
+    term.options.fontSize = fontSize;
+    term.options.cursorStyle = cursorStyle;
+    term.options.cursorBlink = cursorBlink;
+    term.options.scrollback = scrollback;
+    fitRef.current?.fit();
+  }, [termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback]);
+
   useEffect(() => {
     if (!active) return;
     const frame = requestAnimationFrame(() => {
@@ -224,10 +249,16 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
   };
 
   return (
-    <div className="terminal-wrap">
+    // The scheme's background also fills the padding around the terminal.
+    <div className="terminal-wrap" style={{ background: scheme.theme.background }}>
       <div className="terminal-view" ref={containerRef} />
       {searchKey > 0 && searchRef.current && (
-        <SearchBar addon={searchRef.current} focusKey={searchKey} onClose={closeSearch} />
+        <SearchBar
+          addon={searchRef.current}
+          decorations={searchDecorations(scheme)}
+          focusKey={searchKey}
+          onClose={closeSearch}
+        />
       )}
     </div>
   );

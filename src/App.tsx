@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 
 import { ImportDialog } from "./components/ImportDialog";
 import { ProfileDialog } from "./components/ProfileDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPane } from "./components/SessionPane";
 import { PANEL_SHORTCUTS, TabBar, type SidePanel, type Tab } from "./components/TabBar";
 import type { SessionStatus } from "./components/TerminalView";
 import { listProfiles, type ForwardState, type Profile } from "./lib/api";
-import { hasShiftShortcutModifiers } from "./lib/platform";
+import { hasShiftShortcutModifiers, isSettingsShortcut } from "./lib/platform";
 import "./styles.css";
 
 function App() {
@@ -19,6 +21,7 @@ function App() {
   // undefined: dialog closed; null: creating a new profile.
   const [editing, setEditing] = useState<Profile | null | undefined>(undefined);
   const [importing, setImporting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const nextKey = useRef(1);
   const activeKeyRef = useRef(activeKey);
   activeKeyRef.current = activeKey;
@@ -56,6 +59,12 @@ function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isSettingsShortcut(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSettingsOpen(true);
+        return;
+      }
       const panel = PANEL_SHORTCUTS[e.code];
       if (!panel || !hasShiftShortcutModifiers(e)) return;
       // Capture phase, so the terminal never sees the keystroke.
@@ -66,6 +75,12 @@ function App() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [togglePanel]);
+
+  // From the macOS app menu's "Settings…" item (⌘,).
+  useEffect(() => {
+    const unlisten = listen("open-settings", () => setSettingsOpen(true));
+    return () => void unlisten.then((f) => f());
+  }, []);
 
   const onStatus = (key: number, status: SessionStatus) =>
     // Forward events can precede "connected" (auto-start runs right after authentication),
@@ -80,6 +95,7 @@ function App() {
 
   const closeDialog = useCallback(() => setEditing(undefined), []);
   const closeImport = useCallback(() => setImporting(false), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   return (
     <div className="app">
@@ -89,6 +105,7 @@ function App() {
         onEdit={setEditing}
         onNew={() => setEditing(null)}
         onImport={() => setImporting(true)}
+        onSettings={() => setSettingsOpen(true)}
       />
       <main>
         {tabs.length > 0 && (
@@ -119,6 +136,7 @@ function App() {
         <ProfileDialog profile={editing} profiles={profiles} onClose={closeDialog} onChanged={reloadProfiles} />
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
+      {settingsOpen && <SettingsDialog onClose={closeSettings} />}
     </div>
   );
 }

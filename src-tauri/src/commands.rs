@@ -12,6 +12,7 @@ use crate::forward::ForwardRule;
 use crate::i18n;
 use crate::import;
 use crate::secrets;
+use crate::settings::{Settings, SettingsStore};
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
 use crate::sftp::{self, transfer, Listing};
 use crate::ssh::{self, Connections};
@@ -20,6 +21,17 @@ use crate::ssh::{self, Connections};
 #[tauri::command]
 pub fn set_locale(locale: String) -> &'static str {
     i18n::set_locale(&locale)
+}
+
+#[tauri::command]
+pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
+    store.get()
+}
+
+/// Stores the settings; returns them as validated (e.g. with the font size clamped).
+#[tauri::command]
+pub fn settings_set(store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {
+    store.set(settings)
 }
 
 #[tauri::command]

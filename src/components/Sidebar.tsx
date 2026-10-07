@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 
 import type { Profile } from "../lib/api";
+import { settingsShortcutLabel } from "../lib/platform";
 
 interface Props {
   profiles: Profile[];
@@ -8,9 +9,10 @@ interface Props {
   onEdit(profile: Profile): void;
   onNew(): void;
   onImport(): void;
+  onSettings(): void;
 }
 
-export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport }: Props) {
+export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport, onSettings }: Props) {
   const { t } = useTranslation();
   const meta = (p: Profile) => {
     const address = `${p.username}@${p.host}${p.port !== 22 ? `:${p.port}` : ""}`;
@@ -53,6 +55,15 @@ export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport }: Props) {
           ))}
         </ul>
       )}
+      <footer className="sidebar-footer">
+        <button
+          className="icon-button"
+          title={t("sidebar.settings", { shortcut: settingsShortcutLabel })}
+          onClick={onSettings}
+        >
+          ⚙
+        </button>
+      </footer>
     </aside>
   );
 }

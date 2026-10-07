@@ -4,6 +4,8 @@ import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 
 interface Props {
   addon: SearchAddon;
+  /** Highlight colors suited to the terminal's color scheme. */
+  decorations: ISearchOptions["decorations"];
   /** Changes whenever the find shortcut is pressed again, to refocus the input. */
   focusKey: number;
   onClose(): void;
@@ -11,13 +13,6 @@ interface Props {
 
 /** Matches beyond this many are not highlighted or counted. */
 export const HIGHLIGHT_LIMIT = 1000;
-
-const DECORATIONS: ISearchOptions["decorations"] = {
-  matchBackground: "#4b3d12",
-  matchOverviewRuler: "#d1a73a",
-  activeMatchBackground: "#a8761a",
-  activeMatchColorOverviewRuler: "#f2c14e",
-};
 
 type Flag = "caseSensitive" | "wholeWord" | "regex";
 
@@ -28,7 +23,7 @@ const FLAGS: { flag: Flag; label: string; title: "search.caseSensitive" | "searc
 ];
 
 /** Find bar floating over the terminal, backed by xterm's search addon. */
-export function SearchBar({ addon, focusKey, onClose }: Props) {
+export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [flags, setFlags] = useState<Record<Flag, boolean>>({ caseSensitive: false, wholeWord: false, regex: false });
@@ -53,7 +48,7 @@ export function SearchBar({ addon, focusKey, onClose }: Props) {
 
   const find = (forward: boolean, incremental = false) => {
     if (!query) return;
-    const options: ISearchOptions = { ...flags, incremental, decorations: DECORATIONS };
+    const options: ISearchOptions = { ...flags, incremental, decorations };
     try {
       if (forward) addon.findNext(query, options);
       else addon.findPrevious(query, options);
