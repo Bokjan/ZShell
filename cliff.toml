@@ -1,0 +1,40 @@
+# git-cliff configuration: generates CHANGELOG.md from the Conventional Commits history.
+# Before tagging a release: pnpm dlx git-cliff --tag vX.Y.Z -o CHANGELOG.md
+# The release workflow uses the tag's section of CHANGELOG.md as the release notes.
+
+[changelog]
+header = """
+# Changelog
+
+User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
+
+"""
+# The release workflow finds a version's notes by its "## [X.Y.Z]" heading.
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.breaking %}**Breaking:** {% endif %}{% if commit.scope %}{{ commit.scope }}: {% endif %}{{ commit.message | upper_first }}\
+{% endfor %}
+{% endfor %}\n
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+# Only user-facing changes; docs, ci, chore, refactor and the like are left out unless breaking.
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = ".*", skip = true },
+]
+protect_breaking_commits = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
