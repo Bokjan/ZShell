@@ -180,6 +180,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 - macOS 默认开启"按住按键显示重音字符"（`ApplePressAndHoldEnabled`），在 WKWebView 里长按字母键只会弹出重音选择而不重复输入（方向键没有重音字符，不受影响）。应用启动时以注册默认值（registration domain）把它设为关闭，与 Terminal.app / iTerm2 的行为一致；用户仍可用 `defaults write org.boyin.zshell ApplePressAndHoldEnabled -bool true` 恢复。
 - 中文 / emoji 宽度依赖 unicode11 插件，远端 `LANG` 需为 UTF-8。
 - russh 使用 `ring` 加密后端（而非默认的 aws-lc-rs），避免 Windows 上依赖 CMake/NASM。
+- 图标：贝壳螺旋起笔的"Z"，以块状光标收尾（沙色底、珊瑚色线条）。母版为 `src-tauri/icons/source/icon.svg`（满幅，用于 Windows 与各尺寸 PNG）和 `icon-macos.svg`（同一图形按 Apple 网格放置：1024 画布中央 824 的圆角方形，四周留 100 边距），两者需同步修改；`scripts/generate-icons.sh` 用 `tauri icon` 重新生成全部图标，再用 macOS 母版覆盖 `icon.icns`，并删掉 CLI 总会生成的移动端图标。
 - 版本号只在 `src-tauri/Cargo.toml` 维护：`tauri.conf.json` 不写 `version` 时 Tauri 取 Cargo 包版本（应用包的 `CFBundleShortVersionString`、安装包文件名），`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
 - CI：
   - `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证本地无法编译的 Windows 专用代码（ConPTY、OpenSSH agent 命名管道 / Pageant）能通过编译。
