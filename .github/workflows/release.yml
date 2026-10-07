@@ -1,0 +1,96 @@
+# Builds the macOS and Windows packages.
+# - Pushing a tag vX.Y.Z (matching the version in src-tauri/Cargo.toml) creates a draft
+#   GitHub release with all packages attached; publish it by hand after checking it.
+# - Running the workflow by hand only builds, and attaches the packages to the run as
+#   workflow artifacts.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check that the tag matches the app version
+        run: |
+          version=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d '"' -f 2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in src-tauri/Cargo.toml"
+            exit 1
+          fi
+      # Created once here, so the parallel build jobs upload into the same release instead
+      # of racing to create it.
+      - name: Create a draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            -f tag_name="$GITHUB_REF_NAME" -f name="ZShell $GITHUB_REF_NAME" \
+            -F draft=true -F generate_release_notes=true --jq .id)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create-release
+    # Also runs when create-release was skipped (manual runs).
+    if: ${{ !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Universal binary for Apple Silicon and Intel: .app and .dmg.
+          - name: macOS
+            os: macos-latest
+            args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          # NSIS installer (-setup.exe) and MSI.
+          - name: Windows
+            os: windows-latest
+            args: ''
+          # The bare executable, runnable without installing (needs the WebView2 runtime,
+          # which Windows 11 and up-to-date Windows 10 include).
+          - name: Windows standalone
+            os: windows-latest
+            args: --no-bundle
+            standalone: true
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.name }}
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Ad-hoc signature (no certificate) so that the downloaded bundle is consistently
+          # signed; Apple Silicon refuses to run unsigned code. Ignored on Windows.
+          APPLE_SIGNING_IDENTITY: '-'
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+          uploadPlainBinary: ${{ matrix.standalone == true }}
+          releaseAssetNamePattern: ${{ matrix.standalone && '[name]_[version]_[arch]_standalone[ext]' || '' }}
+          uploadWorkflowArtifacts: ${{ github.event_name == 'workflow_dispatch' }}

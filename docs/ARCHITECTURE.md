@@ -180,4 +180,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 - 中文 / emoji 宽度依赖 unicode11 插件，远端 `LANG` 需为 UTF-8。
 - russh 使用 `ring` 加密后端（而非默认的 aws-lc-rs），避免 Windows 上依赖 CMake/NASM。
 - 版本号只在 `src-tauri/Cargo.toml` 维护：`tauri.conf.json` 不写 `version` 时 Tauri 取 Cargo 包版本（应用包的 `CFBundleShortVersionString`、安装包文件名），`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
-- Windows 构建计划用 GitHub Actions（`tauri-apps/tauri-action`）完成。目前已有 `.github/workflows/windows.yml`：在 `windows-latest` 上构建前端后跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证本地无法编译的 Windows 专用代码（ConPTY、OpenSSH agent 命名管道 / Pageant）至少能通过编译；打包与发布尚未接入。
+- CI：
+  - `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证本地无法编译的 Windows 专用代码（ConPTY、OpenSSH agent 命名管道 / Pageant）能通过编译。
+  - `.github/workflows/release.yml`：推送 `vX.Y.Z` tag 时先校验 tag 与 `Cargo.toml` 版本一致，创建草稿 release（由一个 job 统一创建，避免并行 job 重复创建），再并行打包并上传：macOS 通用包（`universal-apple-darwin`，`.app` 与 `.dmg`），Windows NSIS 安装包与 MSI，以及 Windows 免安装的单独 exe（`--no-bundle` + `uploadPlainBinary`，文件名 `ZShell_<版本>_x64_standalone.exe`，需要系统有 WebView2 运行时；配置仍写在 `%APPDATA%`，不是便携模式）。草稿检查后手动发布。手动运行该 workflow 只打包，产物作为 workflow artifacts。
+  - 尚未签名：macOS 只做 ad-hoc 签名（`APPLE_SIGNING_IDENTITY=-`，保证 Apple Silicon 能运行），下载后需在"隐私与安全性"中放行或去掉 quarantine；Windows 未签名，SmartScreen 会提示。以后接入证书只需给 workflow 配 secret。
