@@ -1,6 +1,10 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-export type AuthMethod = { type: "password" } | { type: "publicKey"; keyPath: string } | { type: "agent" };
+export type AuthMethod =
+  | { type: "auto" }
+  | { type: "password" }
+  | { type: "publicKey"; keyPath: string }
+  | { type: "agent" };
 
 export type ForwardKind = "local" | "remote" | "dynamic";
 
@@ -25,6 +29,8 @@ export interface Profile {
   port: number;
   username: string;
   auth: AuthMethod;
+  /** Ids of the profiles to connect through, first hop first (ProxyJump). */
+  jumpHosts: string[];
   /** Seconds between keepalive messages; 0 disables them. */
   keepaliveInterval: number;
   /** Reconnect automatically when an established connection is lost. */
@@ -82,6 +88,31 @@ export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id
 /** Replaces the profile's forwarding rules; resolves to the updated profile (with rule ids). */
 export const setProfileForwards = (profileId: string, forwards: ForwardRule[]) =>
   invoke<Profile>("profile_set_forwards", { profileId, forwards });
+
+/** A host from an OpenSSH client config, as it would be imported. */
+export interface ImportCandidate {
+  alias: string;
+  host: string;
+  port: number;
+  username: string;
+  auth: AuthMethod;
+  /** ProxyJump entries as written in the config. */
+  jumpHosts: string[];
+  keepaliveInterval: number;
+  forwards: ForwardRule[];
+  /** Name of an existing profile for the same host; such hosts are not imported again. */
+  existing: string | null;
+  /** Config options that are not imported. */
+  skipped: string[];
+}
+
+export const sshConfig = {
+  /** `~/.ssh/config`, whether or not it exists. */
+  defaultPath: () => invoke<string | null>("ssh_config_default_path"),
+  scan: (path: string) => invoke<ImportCandidate[]>("ssh_config_scan", { path }),
+  /** Imports the hosts (and the jump hosts they need); resolves to the new profiles. */
+  import: (path: string, aliases: string[]) => invoke<Profile[]>("ssh_config_import", { path, aliases }),
+};
 
 /** Rule states arrive as `forward` session events. */
 export const forwards = {

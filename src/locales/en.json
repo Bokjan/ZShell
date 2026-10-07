@@ -13,7 +13,9 @@
     "newSession": "New session",
     "empty": "No sessions yet. Click + to add one.",
     "openHint": "Click to open in a new tab",
-    "edit": "Edit"
+    "edit": "Edit",
+    "import": "Import from SSH config",
+    "metaVia": "{address} via {names}"
   },
   "tabs": {
     "close": "Close",
@@ -54,6 +56,7 @@
     "port": "Port",
     "username": "Username",
     "auth": "Authentication",
+    "authAuto": "Automatic",
     "authPassword": "Password",
     "authPublicKey": "Private key file",
     "authAgent": "SSH Agent",
@@ -71,7 +74,15 @@
     "keepalive": "Keepalive interval (seconds)",
     "keepaliveHint": "0 turns keepalives off. The connection is considered lost after 3 unanswered keepalives.",
     "autoReconnect": "Reconnect automatically when the connection is lost",
-    "invalidKeepalive": "The keepalive interval must be an integer between 0 and 3600"
+    "invalidKeepalive": "The keepalive interval must be an integer between 0 and 3600",
+    "autoHint": "Tries the SSH agent's keys and ~/.ssh/id_ed25519, id_ecdsa and id_rsa, then keyboard-interactive or password, as ssh does.",
+    "passwordAutoHint": "Used if the server asks for a password. Passwords are stored in the system keychain.",
+    "jumpHosts": "Jump hosts",
+    "addJumpHost": "Add a jump host…",
+    "jumpHostsHint": "Connects through these sessions in order, like ProxyJump.",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "removeJumpHost": "Remove"
   },
   "sftp": {
     "notConnectedYet": "Remote files are available once connected",
@@ -173,5 +184,23 @@
       "invalidBindPort": "The listening port must be an integer between 0 and 65535",
       "invalidTarget": "A destination host and a port between 1 and 65535 are required"
     }
+  },
+  "importDialog": {
+    "title": "Import from SSH Config",
+    "path": "Config file",
+    "load": "Load",
+    "browse": "Browse…",
+    "chooseFile": "Choose an SSH config file",
+    "selectAll": "Select all",
+    "selectNone": "Select none",
+    "existing": "Already added as {name}",
+    "via": "via {names}",
+    "forwards_one": "{count} port forward",
+    "forwards_other": "{count} port forwards",
+    "skipped": "Not imported: {options}",
+    "empty": "No hosts found. Only Host entries without wildcards can be imported.",
+    "hint": "Jump hosts are imported along with the hosts that use them. Port forwards are imported without auto-start.",
+    "import_one": "Import {count} Host",
+    "import_other": "Import {count} Hosts"
   }
 }

@@ -1,15 +1,18 @@
 //! User authentication. Prompts (passwords, passphrases, keyboard-interactive questions)
 //! are shown inline in the terminal, the way OpenSSH does it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
 use russh::client::{AuthResult, Handle, KeyboardInteractiveAuthResponse};
 use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::agent::AgentIdentity;
-use russh::keys::{load_secret_key, PrivateKey, PrivateKeyWithHashAlg};
-use russh::MethodKind;
+use russh::keys::ssh_encoding::Encode;
+use russh::keys::ssh_key::private::KeypairData;
+use russh::keys::ssh_key::Signature;
+use russh::keys::{load_secret_key, HashAlg, PrivateKey, PrivateKeyWithHashAlg};
+use russh::{MethodKind, MethodSet, Signer};
 
 use super::handler::ClientHandler;
 use crate::config::{AuthMethod, Profile};
@@ -19,26 +22,65 @@ use crate::session::TermIo;
 
 const MAX_ATTEMPTS: usize = 3;
 
+/// Key files tried by automatic authentication, in `~/.ssh`.
+const DEFAULT_KEYS: &[&str] = &["id_ed25519", "id_ecdsa", "id_rsa"];
+
 type Session = Handle<ClientHandler>;
 
 pub async fn authenticate(session: &mut Session, profile: &Profile, io: &mut TermIo) -> Result<()> {
     let user = profile.username.as_str();
     match &profile.auth {
+        AuthMethod::Auto => auto(session, profile, io).await,
         AuthMethod::Password => password(session, profile, io).await,
         AuthMethod::PublicKey { key_path } => public_key(session, user, key_path, io).await,
         AuthMethod::Agent => agent(session, user).await,
     }
 }
 
+/// What OpenSSH tries by default: the agent's keys, the default key files, then
+/// keyboard-interactive or password.
+async fn auto(session: &mut Session, profile: &Profile, io: &mut TermIo) -> Result<()> {
+    let user = profile.username.as_str();
+    let Some(methods) = offered_methods(session, user).await? else {
+        return Ok(());
+    };
+    if methods.contains(&MethodKind::PublicKey) {
+        if try_agent(session, user).await? {
+            return Ok(());
+        }
+        let ssh_dir = std::env::home_dir().unwrap_or_default().join(".ssh");
+        let paths: Vec<PathBuf> = DEFAULT_KEYS.iter().map(|name| ssh_dir.join(name)).collect();
+        for path in paths {
+            if path.is_file() && try_key_file(session, user, &path, io).await? {
+                return Ok(());
+            }
+        }
+    }
+    if methods.contains(&MethodKind::Password) || methods.contains(&MethodKind::KeyboardInteractive) {
+        return password_methods(session, profile, &methods, io).await;
+    }
+    bail!(Error::new("auth.failed"))
+}
+
+/// The methods the server accepts for `user`, or `None` if it let us in without any.
+async fn offered_methods(session: &mut Session, user: &str) -> Result<Option<MethodSet>> {
+    Ok(match session.authenticate_none(user).await? {
+        AuthResult::Success => None,
+        AuthResult::Failure { remaining_methods, .. } => Some(remaining_methods),
+    })
+}
+
 async fn password(session: &mut Session, profile: &Profile, io: &mut TermIo) -> Result<()> {
+    // Ask the server which methods it accepts: many only allow keyboard-interactive.
+    match offered_methods(session, &profile.username).await? {
+        Some(methods) => password_methods(session, profile, &methods, io).await,
+        None => Ok(()),
+    }
+}
+
+async fn password_methods(session: &mut Session, profile: &Profile, methods: &MethodSet, io: &mut TermIo) -> Result<()> {
     let user = profile.username.as_str();
     let mut saved = secrets::get_password(&profile.id);
-
-    // Ask the server which methods it accepts: many only allow keyboard-interactive.
-    let methods = match session.authenticate_none(user).await? {
-        AuthResult::Success => return Ok(()),
-        AuthResult::Failure { remaining_methods, .. } => remaining_methods,
-    };
     if !methods.contains(&MethodKind::Password) && methods.contains(&MethodKind::KeyboardInteractive) {
         return keyboard_interactive(session, user, saved, io).await;
     }
@@ -129,6 +171,123 @@ async fn load_key(path: &PathBuf, io: &mut TermIo) -> Result<PrivateKey> {
         }
     }
     bail!(Error::new("auth.keyDecryptFailed").param("path", path.display()))
+}
+
+/// Tries one key file without failing: unreadable files and rejected keys return `false`.
+/// An encrypted key's passphrase is only asked for once the server accepts its public key.
+async fn try_key_file(session: &mut Session, user: &str, path: &Path, io: &mut TermIo) -> Result<bool> {
+    let key = match load_secret_key(path, None) {
+        Ok(key) => key,
+        Err(russh::keys::Error::KeyIsEncrypted) => return try_encrypted_key(session, user, path, io).await,
+        Err(_) => return Ok(false),
+    };
+    let hash_alg = rsa_hash(session, key.public_key()).await?;
+    let result = session
+        .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg))
+        .await?;
+    Ok(result.success())
+}
+
+async fn try_encrypted_key(session: &mut Session, user: &str, path: &Path, io: &mut TermIo) -> Result<bool> {
+    // The OpenSSH format keeps the public key readable; legacy PEM keys need the passphrase first.
+    let Ok(encrypted) = PrivateKey::read_openssh_file(path) else {
+        let key = load_key(&path.to_path_buf(), io).await?;
+        let hash_alg = rsa_hash(session, key.public_key()).await?;
+        let result = session
+            .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg))
+            .await?;
+        return Ok(result.success());
+    };
+    let public = encrypted.public_key().clone();
+    let hash_alg = rsa_hash(session, &public).await?;
+    let mut signer = PassphraseSigner { path, key: &encrypted, io, cancelled: false };
+    let result = session
+        .authenticate_publickey_with(user, public, hash_alg, &mut signer)
+        .await
+        .map_err(|_| Error::new("auth.failed"))?;
+    ensure!(!signer.cancelled, Error::new("auth.cancelled"));
+    Ok(result.success())
+}
+
+async fn rsa_hash(session: &Session, key: &russh::keys::PublicKey) -> Result<Option<HashAlg>> {
+    Ok(if key.algorithm().is_rsa() { session.best_supported_rsa_hash().await?.flatten() } else { None })
+}
+
+/// Signs with an encrypted key, asking for its passphrase when russh needs the signature,
+/// which is only after the server has accepted the public key.
+struct PassphraseSigner<'a> {
+    path: &'a Path,
+    key: &'a PrivateKey,
+    io: &'a mut TermIo,
+    cancelled: bool,
+}
+
+#[derive(Debug)]
+struct SignError;
+
+impl From<russh::SendError> for SignError {
+    fn from(_: russh::SendError) -> Self {
+        SignError
+    }
+}
+
+impl Signer for PassphraseSigner<'_> {
+    type Error = SignError;
+
+    async fn auth_sign(&mut self, _key: &AgentIdentity, hash_alg: Option<HashAlg>, mut data: Vec<u8>) -> Result<Vec<u8>, SignError> {
+        let signature = match self.decrypt().await {
+            Some(key) => sign(&key, hash_alg, &data).ok(),
+            None => None,
+        };
+        // Failing here would leave russh waiting for a signature forever. An invalid one
+        // instead makes the server reject this key, and authentication moves on.
+        let blob = signature.unwrap_or_else(|| invalid_signature(self.key));
+        blob.encode(&mut data).map_err(|_| SignError)?;
+        Ok(data)
+    }
+}
+
+impl PassphraseSigner<'_> {
+    async fn decrypt(&mut self) -> Option<PrivateKey> {
+        for _ in 0..MAX_ATTEMPTS {
+            self.io.print(&format!("Enter passphrase for key '{}': ", self.path.display()));
+            let Some(passphrase) = self.io.read_line(false).await else {
+                self.cancelled = true;
+                return None;
+            };
+            match self.key.decrypt(passphrase) {
+                Ok(key) => return Some(key),
+                Err(_) => self.io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
+            }
+        }
+        None
+    }
+}
+
+/// An SSH signature blob over `data`, honouring the negotiated hash for RSA keys.
+fn sign(key: &PrivateKey, hash_alg: Option<HashAlg>, data: &[u8]) -> Result<Vec<u8>> {
+    let signature: Signature = match key.key_data() {
+        KeypairData::Rsa(rsa) => russh::keys::signature::Signer::try_sign(&(rsa, hash_alg), data)?,
+        _ => russh::keys::signature::Signer::try_sign(key, data)?,
+    };
+    Ok(signature.encode_vec()?)
+}
+
+/// A well-formed signature blob that cannot verify.
+fn invalid_signature(key: &PrivateKey) -> Vec<u8> {
+    let mut blob = Vec::new();
+    let _ = key.algorithm().as_str().encode(&mut blob);
+    let _ = [0u8; 0].as_slice().encode(&mut blob);
+    blob
+}
+
+/// Tries the agent's keys without failing: no agent, no keys or rejected keys return `false`.
+async fn try_agent(session: &mut Session, user: &str) -> Result<bool> {
+    match agent(session, user).await {
+        Ok(()) => Ok(true),
+        Err(e) if e.downcast_ref::<Error>().is_some() => Ok(false),
+        Err(e) => Err(e),
+    }
 }
 
 async fn agent(session: &mut Session, user: &str) -> Result<()> {

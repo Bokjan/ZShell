@@ -106,6 +106,10 @@ main {
   font-size: 11px;
   color: var(--text-muted);
 }
+.sidebar-actions {
+  display: flex;
+  gap: 2px;
+}
 .profile-edit {
   position: absolute;
   top: 50%;
@@ -113,7 +117,11 @@ main {
   transform: translateY(-50%);
   visibility: hidden;
 }
-.sidebar li:hover .profile-edit {
+.sidebar li:hover .sidebar-actions {
+  display: flex;
+  gap: 2px;
+}
+.profile-edit {
   visibility: visible;
 }
 .sidebar-empty {
@@ -992,6 +1000,125 @@ body.resizing .terminal-view {
   cursor: pointer;
   color: var(--text-muted);
   font-size: 12px;
+}
+.dialog .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.jump-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  counter-reset: hop;
+}
+.jump-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 8px;
+  color: var(--text);
+  font-size: 13px;
+  counter-increment: hop;
+}
+.jump-list li + li {
+  border-top: 1px solid var(--border);
+}
+.jump-list li::before {
+  content: counter(hop) ".";
+  min-width: 18px;
+  color: var(--text-muted);
+}
+.jump-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jump-list .icon-button {
+  font-size: 13px;
+}
+.jump-list .icon-button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.dialog button.secondary {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: 13px;
+}
+.dialog button.secondary:disabled {
+  opacity: 0.5;
+}
+.dialog .row input.grow {
+  min-width: 0;
+}
+.import-dialog {
+  width: 520px;
+}
+.import-select {
+  display: flex;
+  gap: 10px;
+  margin-bottom: -4px;
+}
+.import-list {
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+}
+.import-list li {
+  padding: 6px 10px;
+}
+.import-list li + li {
+  border-top: 1px solid var(--border);
+}
+.import-list li.existing {
+  opacity: 0.6;
+}
+.import-list label.checkbox {
+  color: var(--text);
+  font-size: 13px;
+}
+.import-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.import-alias {
+  font-weight: 600;
+}
+.import-address {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.import-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 2px 0 0 22px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.import-notes:empty {
+  display: none;
+}
+.import-notes .warning {
+  color: var(--warn);
 }
 .dialog-message {
   margin: 0;

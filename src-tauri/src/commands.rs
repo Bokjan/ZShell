@@ -10,6 +10,7 @@ use crate::config::{Profile, ProfileStore};
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::i18n;
+use crate::import;
 use crate::secrets;
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
 use crate::sftp::{self, transfer, Listing};
@@ -43,6 +44,25 @@ pub fn profile_set_forwards(store: State<'_, ProfileStore>, profile_id: String, 
     store.set_forwards(&profile_id, forwards)
 }
 
+/// The default OpenSSH client config path (`~/.ssh/config`), whether or not it exists.
+#[tauri::command]
+pub fn ssh_config_default_path() -> Option<PathBuf> {
+    import::default_path()
+}
+
+#[tauri::command]
+pub fn ssh_config_scan(store: State<'_, ProfileStore>, path: PathBuf) -> Result<Vec<import::Candidate>> {
+    import::scan(&path, &store.list())
+}
+
+/// Imports the selected hosts (and the jump hosts they need); returns the new profiles.
+#[tauri::command]
+pub fn ssh_config_import(store: State<'_, ProfileStore>, path: PathBuf, aliases: Vec<String>) -> Result<Vec<Profile>> {
+    let profiles = import::plan(&path, &aliases, &store.list())?;
+    store.add_all(profiles.clone())?;
+    Ok(profiles)
+}
+
 #[tauri::command]
 pub fn profile_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
     store.delete(&id)?;
@@ -62,8 +82,9 @@ pub fn ssh_open(
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let profile = store.get(&profile_id)?;
+    let jumps = store.jump_hosts(&profile)?;
     let connections = connections.inner().clone();
-    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, id, io, connections)))
+    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, jumps, id, io, connections)))
 }
 
 #[tauri::command]

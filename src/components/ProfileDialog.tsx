@@ -6,28 +6,46 @@ import { deleteProfile, errorMessage, saveProfile, type AuthMethod, type Profile
 interface Props {
   /** null creates a new profile. */
   profile: Profile | null;
+  /** All profiles, to pick jump hosts from. */
+  profiles: Profile[];
   onClose(): void;
   onChanged(): void;
 }
 
 type AuthType = AuthMethod["type"];
 
-export function ProfileDialog({ profile, onClose, onChanged }: Props) {
+export function ProfileDialog({ profile, profiles, onClose, onChanged }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(profile?.name ?? "");
   const [host, setHost] = useState(profile?.host ?? "");
   const [port, setPort] = useState(String(profile?.port ?? 22));
   const [username, setUsername] = useState(profile?.username ?? "");
-  const [authType, setAuthType] = useState<AuthType>(profile?.auth.type ?? "password");
+  const [authType, setAuthType] = useState<AuthType>(profile?.auth.type ?? "auto");
   const [keyPath, setKeyPath] = useState(
     profile?.auth.type === "publicKey" ? profile.auth.keyPath : "~/.ssh/id_ed25519",
   );
+  const [jumpHosts, setJumpHosts] = useState<string[]>(profile?.jumpHosts ?? []);
   const [keepalive, setKeepalive] = useState(String(profile?.keepaliveInterval ?? 30));
   const [autoReconnect, setAutoReconnect] = useState(profile?.autoReconnect ?? true);
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Start expanded when the profile already uses advanced settings.
+  const [advancedOpen] = useState(
+    !!profile && (profile.jumpHosts.length > 0 || profile.keepaliveInterval !== 30 || !profile.autoReconnect),
+  );
+  // Automatic authentication falls back to a password, so it can keep a stored one too.
+  const usesPassword = authType === "password" || authType === "auto";
+  const profileName = (id: string) => profiles.find((p) => p.id === id)?.name ?? id;
+  const jumpCandidates = profiles.filter((p) => p.id !== profile?.id && !jumpHosts.includes(p.id));
+
+  const moveJumpHost = (index: number, offset: number) =>
+    setJumpHosts((hosts) => {
+      const next = [...hosts];
+      [next[index], next[index + offset]] = [next[index + offset], next[index]];
+      return next;
+    });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -49,9 +67,9 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
     }
     const auth: AuthMethod =
       authType === "publicKey" ? { type: "publicKey", keyPath: keyPath.trim() } : { type: authType };
-    // Only password auth keeps a stored password; switching away clears it.
+    // Only password and automatic auth keep a stored password; switching away clears it.
     let passwordUpdate: string | undefined;
-    if (authType !== "password") passwordUpdate = profile ? "" : undefined;
+    if (!usesPassword) passwordUpdate = profile ? "" : undefined;
     else if (clearPassword) passwordUpdate = "";
     else if (password) passwordUpdate = password;
 
@@ -65,6 +83,7 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
           port: portNumber,
           username,
           auth,
+          jumpHosts,
           keepaliveInterval,
           autoReconnect,
           forwards: profile?.forwards ?? [],
@@ -135,13 +154,15 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
         <label>
           {t("profile.auth")}
           <select value={authType} onChange={(e) => setAuthType(e.target.value as AuthType)}>
+            <option value="auto">{t("profile.authAuto")}</option>
             <option value="password">{t("profile.authPassword")}</option>
             <option value="publicKey">{t("profile.authPublicKey")}</option>
             <option value="agent">{t("profile.authAgent")}</option>
           </select>
         </label>
 
-        {authType === "password" && (
+        {authType === "auto" && <p className="hint">{t("profile.autoHint")}</p>}
+        {usesPassword && (
           <>
             <label>
               {t("profile.password")}
@@ -150,10 +171,14 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={clearPassword}
-                placeholder={profile ? t("profile.passwordKeepPlaceholder") : t("profile.passwordAskPlaceholder")}
+                placeholder={
+                  profile ? t("profile.passwordKeepPlaceholder") : t("profile.passwordAskPlaceholder")
+                }
               />
             </label>
-            <p className="hint">{t("profile.passwordHint")}</p>
+            <p className="hint">
+              {authType === "auto" ? t("profile.passwordAutoHint") : t("profile.passwordHint")}
+            </p>
             {profile && (
               <label className="checkbox">
                 <input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} />
@@ -173,8 +198,59 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
         )}
         {authType === "agent" && <p className="hint">{t("profile.agentHint")}</p>}
 
-        <details className="advanced">
+        <details className="advanced" open={advancedOpen}>
           <summary>{t("profile.advanced")}</summary>
+          <div className="field">
+            <span>{t("profile.jumpHosts")}</span>
+            {jumpHosts.length > 0 && (
+              <ol className="jump-list">
+                {jumpHosts.map((id, index) => (
+                  <li key={id}>
+                    <span className="jump-name">{profileName(id)}</span>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title={t("profile.moveUp")}
+                      disabled={index === 0}
+                      onClick={() => moveJumpHost(index, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title={t("profile.moveDown")}
+                      disabled={index === jumpHosts.length - 1}
+                      onClick={() => moveJumpHost(index, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title={t("profile.removeJumpHost")}
+                      onClick={() => setJumpHosts((hosts) => hosts.filter((h) => h !== id))}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+            <select
+              value=""
+              disabled={jumpCandidates.length === 0}
+              onChange={(e) => e.target.value && setJumpHosts((hosts) => [...hosts, e.target.value])}
+            >
+              <option value="">{t("profile.addJumpHost")}</option>
+              {jumpCandidates.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="hint">{t("profile.jumpHostsHint")}</p>
           <label>
             {t("profile.keepalive")}
             <input value={keepalive} onChange={(e) => setKeepalive(e.target.value)} inputMode="numeric" />

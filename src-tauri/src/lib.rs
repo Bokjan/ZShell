@@ -5,6 +5,7 @@ mod commands;
 mod config;
 mod error;
 mod forward;
+mod import;
 mod secrets;
 mod session;
 mod sftp;
@@ -36,6 +37,9 @@ pub fn run() {
             commands::profile_save,
             commands::profile_set_forwards,
             commands::profile_delete,
+            commands::ssh_config_default_path,
+            commands::ssh_config_scan,
+            commands::ssh_config_import,
             commands::ssh_open,
             commands::session_write,
             commands::session_resize,

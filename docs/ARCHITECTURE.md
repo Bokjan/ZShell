@@ -47,8 +47,9 @@
 - **终端内提示**：主机指纹确认、密码、私钥口令、keyboard-interactive 问题都直接在终端里询问
   （`TermIo::read_line`），与 OpenSSH 体验一致，无需额外弹窗。russh 在自己的任务里回调
   `check_server_key`，因此 handler 通过 mpsc + oneshot 把问题转交给会话任务。
-- **认证**：密码、私钥文件（含口令）、ssh-agent（macOS `SSH_AUTH_SOCK`；Windows OpenSSH
-  命名管道 / Pageant）、keyboard-interactive（2FA）。
+- **认证**：自动（默认）、密码、私钥文件（含口令）、ssh-agent（macOS `SSH_AUTH_SOCK`；Windows OpenSSH 命名管道 / Pageant）、keyboard-interactive（2FA）。
+  - "自动"按 OpenSSH 的默认顺序尝试：agent 中的密钥 → `~/.ssh/id_ed25519`、`id_ecdsa`、`id_rsa` → keyboard-interactive / 密码（可使用钥匙串中保存的密码）。
+  - 加密的默认私钥只有在服务器接受其公钥后才询问口令：用 russh 的 `authenticate_publickey_with` 先发探测请求，收到 PK_OK 后才调用自定义 `Signer`，此时在终端询问口令、解密并签名。签名器不能返回错误（russh 会一直等待签名，连接卡死），口令错误或取消时返回格式正确但无效的签名，服务器拒绝该密钥后继续尝试下一种方式；取消则随后中止认证。
 - **主机校验**：读写 `~/.ssh/known_hosts`，首次连接确认指纹，指纹变化时显式告警。
 - **连接注册表**：`ssh::Connections` 以会话 id 登记认证完成的连接（`Arc<Handle>`），SFTP 首次使用时在该连接上开 `sftp` subsystem channel 并缓存；shell 结束或标签页关闭时统一断开。
 - **传输**：上传/下载先扫描生成计划（目录 + 文件 + 总字节数），再逐个文件复制（256 KiB 缓冲，russh-sftp 内部并发读写请求），进度经 Channel 每 100 ms 推送一次；取消通过共享的 `AtomicBool`，未完成的文件会被删除。下载到"下载"文件夹时顶层重名自动改为 `name (1).ext`。
@@ -61,7 +62,8 @@
   - 前端：标签栏右侧的分段选择器（Files | Forwards）切换侧面板，再次点击当前段关闭面板；快捷键 ⇧⌘E / ⇧⌘P（Windows 为 Ctrl+Shift+E / P），在捕获阶段拦截，终端收不到。Forwards 段上的徽标显示运行中的规则数，有失败时显示红点。新增规则在已连接时立即启动；编辑运行中的规则会以新定义重启。
 - **keepalive 与断线重连**：每个会话配置有 `keepaliveInterval`（秒，默认 30，0 关闭；连续 3 次无响应判定断线）和 `autoReconnect`（默认开）。会话结束时 `SessionEvent::Closed` 带 `reason`：`exited`（远端发了 exit-status 或关闭 channel）、`lost`（已建立的连接断开）、`failed`（连接、认证或启动 shell 阶段失败），以及结构化错误。断线原因由 `ClientHandler::disconnected` 记录（如 `Keepalive timeout`、`early eof`），作为错误的技术细节显示。前端在 `lost` 时按 2、4、8、16、30 秒退避自动重连（30 秒封顶，一直重试到标签页关闭）；重试期间的 `failed` 继续退避，但认证类错误（`auth.*`）和主机密钥被拒绝时停止；Enter 立即重连，Ctrl+C 取消，`online` 事件（如睡眠唤醒后网络恢复）立即重试。重连是新会话：SFTP 面板回到原目录，自动启动的转发规则重新启动。
 - **终端搜索**：`@xterm/addon-search`，终端右上角的浮动搜索条（区分大小写 / 整词 / 正则、上一个 / 下一个、"3 of 17" 计数，高亮上限 1000 条）。快捷键 macOS ⌘F，Windows Ctrl+Shift+F（Ctrl+F 留给 shell）。注意 addon-search 0.16 只切换选项时不会重新高亮（先保存新选项再比较），搜索前先调用 `clearDecorations()` 清掉缓存的搜索词来绕过。WebKit 点击按钮不会让按钮获得焦点，搜索条在 mousedown 时阻止默认行为，让焦点留在输入框。
-- **ProxyJump**：在跳板机连接上开 `direct-tcpip` channel，作为下一跳 SSH 的传输层。
+- **ProxyJump**：会话配置的 `jumpHosts` 按顺序引用其他会话（相当于 `ProxyJump a,b`），每一跳使用被引用会话的地址和认证方式，但不展开它自己的跳板机。连接时逐跳建立：在上一跳的连接上开 `direct-tcpip` channel 到下一跳，以其 `ChannelStream` 作为下一跳 SSH 握手的传输层；主机密钥按每一跳自己的 host:port 校验，各跳的提示都在同一个终端里。`Connection` 持有各跳板机连接，关闭时从目标往回逐个断开。保存时校验引用存在、不引用自身、不重复；被其他会话用作跳板机的会话不能删除。
+- **ssh_config 导入**：一次性复制（导入后与 config 文件无关联）。`ssh2-config` 解析（支持 `Include`），列出不含通配符的 `Host` 别名，用 `query(alias)` 得到合并 `Host *` 等默认值后的参数（与 OpenSSH 一样先出现的值生效）。映射：HostName（支持 `%h`）、Port、User（缺省为本机用户名）、第一个 IdentityFile → 私钥认证（没有则为"自动"）、ProxyJump → 跳板机（config 中的别名一并导入，`[user@]host[:port]` 写法复用同地址的已有会话或新建）、ServerAliveInterval → keepalive、LocalForward / RemoteForward / DynamicForward → 转发规则（不自动启动；受 `ssh2-config` 限制，LocalForward 和 DynamicForward 每个 Host 块只保留最后一条）。与已有会话同名或同地址的主机标为"已存在"、不再导入。ProxyCommand、ForwardAgent、CertificateFile 等未导入的选项在列表中标出。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
 
 ## 国际化（i18n）
@@ -120,8 +122,9 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 |---|---|---|
 | `session/` | 终端会话抽象与管理（`TermIo`、`SessionManager`） | M0 ✅ |
 | `commands.rs` | Tauri 命令入口 | M0 ✅ |
-| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`：主机密钥、`forwarded-tcpip`）、主机密钥确认（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
-| `config.rs` | 会话配置存储（`profiles.json`）；ssh_config 导入（M4） | M1 ✅ |
+| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`：主机密钥、`forwarded-tcpip`、断线原因）、主机密钥确认（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
+| `config.rs` | 会话配置存储（`profiles.json`） | M1 ✅ |
+| `import.rs` | 从 OpenSSH client config 导入会话 | M4 ✅ |
 | `secrets.rs` | keyring 封装 | M1 ✅ |
 | `ssh/connections.rs` | 连接注册表，供 SFTP / 端口转发复用连接 | M2 ✅ |
 | `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`） | M2 ✅ |

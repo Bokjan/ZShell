@@ -4,7 +4,8 @@
     "closed": "[Connection closed]",
     "closedWithStatus": "[Connection closed, exit status {status}]",
     "savedPasswordRejected": "The saved password was rejected by the server.",
-    "incorrectPassphrase": "Incorrect passphrase."
+    "incorrectPassphrase": "Incorrect passphrase.",
+    "connectingVia": "Connecting to {user}@{host}:{port} via {jump} ..."
   },
   "hostKey": {
     "unknown": "The authenticity of host '{host}' can't be established.\n{algorithm} key fingerprint is {fingerprint}.\nAre you sure you want to continue connecting",
@@ -26,7 +27,9 @@
     },
     "profile": {
       "notFound": "Session profile not found",
-      "missingFields": "Host, port and username are required"
+      "missingFields": "Host, port and username are required",
+      "invalidJumpHost": "A jump host refers to a missing session or to this session itself",
+      "usedAsJumpHost": "This session is a jump host for {names}; remove it there first"
     },
     "ssh": {
       "connectTimeout": "Connection to {target} timed out",
@@ -34,7 +37,8 @@
       "handshakeFailed": "SSH handshake failed",
       "hostKeyRejected": "Host key not trusted, connection aborted",
       "channelFailed": "Cannot open a session channel",
-      "connectionLost": "The connection was lost"
+      "connectionLost": "The connection was lost",
+      "jumpFailed": "Jump host {jump} cannot connect to {target}"
     },
     "auth": {
       "cancelled": "Cancelled",
@@ -80,6 +84,10 @@
       "socksCommand": "Unsupported SOCKS command {command}; only CONNECT is supported",
       "socksAddressType": "Unsupported SOCKS address type {type}",
       "socksProtocol": "Invalid SOCKS request"
+    },
+    "import": {
+      "readFailed": "Cannot read {path}",
+      "parseFailed": "Cannot parse {path}"
     }
   }
 }

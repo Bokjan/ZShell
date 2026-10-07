@@ -7,17 +7,29 @@ interface Props {
   onOpen(profile: Profile): void;
   onEdit(profile: Profile): void;
   onNew(): void;
+  onImport(): void;
 }
 
-export function Sidebar({ profiles, onOpen, onEdit, onNew }: Props) {
+export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport }: Props) {
   const { t } = useTranslation();
+  const meta = (p: Profile) => {
+    const address = `${p.username}@${p.host}${p.port !== 22 ? `:${p.port}` : ""}`;
+    if (p.jumpHosts.length === 0) return address;
+    const names = p.jumpHosts.map((id) => profiles.find((j) => j.id === id)?.name ?? "?").join(", ");
+    return t("sidebar.metaVia", { address, names });
+  };
   return (
     <aside className="sidebar">
       <header>
         <span>{t("sidebar.title")}</span>
-        <button className="icon-button" title={t("sidebar.newSession")} onClick={onNew}>
-          +
-        </button>
+        <span className="sidebar-actions">
+          <button className="icon-button" title={t("sidebar.import")} onClick={onImport}>
+            ⇣
+          </button>
+          <button className="icon-button" title={t("sidebar.newSession")} onClick={onNew}>
+            +
+          </button>
+        </span>
       </header>
       {profiles.length === 0 ? (
         <p className="sidebar-empty">{t("sidebar.empty")}</p>
@@ -26,10 +38,7 @@ export function Sidebar({ profiles, onOpen, onEdit, onNew }: Props) {
           {profiles.map((p) => (
             <li key={p.id} onClick={() => onOpen(p)} title={t("sidebar.openHint")}>
               <div className="profile-name">{p.name}</div>
-              <div className="profile-meta">
-                {p.username}@{p.host}
-                {p.port !== 22 && `:${p.port}`}
-              </div>
+              <div className="profile-meta">{meta(p)}</div>
               <button
                 className="icon-button profile-edit"
                 title={t("sidebar.edit")}

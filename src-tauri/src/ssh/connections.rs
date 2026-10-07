@@ -18,6 +18,8 @@ pub type SshHandle = client::Handle<ClientHandler>;
 
 pub struct Connection {
     handle: Arc<SshHandle>,
+    /// Connections to the jump hosts this one runs through, first hop first.
+    jumps: Vec<Arc<SshHandle>>,
     sftp: OnceCell<Arc<SftpSession>>,
     forwards: Forwards,
 }
@@ -47,9 +49,16 @@ pub struct Connections(Arc<Mutex<HashMap<SessionId, Arc<Connection>>>>);
 impl Connections {
     /// `routes` must be the table given to the connection's [`ClientHandler`]; forward
     /// states are reported through `sink`.
-    pub fn insert(&self, id: SessionId, handle: Arc<SshHandle>, routes: RemoteRoutes, sink: SessionSink) -> Arc<Connection> {
+    pub fn insert(
+        &self,
+        id: SessionId,
+        handle: Arc<SshHandle>,
+        jumps: Vec<Arc<SshHandle>>,
+        routes: RemoteRoutes,
+        sink: SessionSink,
+    ) -> Arc<Connection> {
         let forwards = Forwards::new(handle.clone(), routes, sink);
-        let connection = Arc::new(Connection { handle, sftp: OnceCell::new(), forwards });
+        let connection = Arc::new(Connection { handle, jumps, sftp: OnceCell::new(), forwards });
         self.0.lock().unwrap().insert(id, connection.clone());
         connection
     }
@@ -69,6 +78,9 @@ impl Connections {
                 let _ = sftp.close().await;
             }
             let _ = connection.handle.disconnect(Disconnect::ByApplication, "", "en").await;
+            for jump in connection.jumps.iter().rev() {
+                let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
+            }
         });
     }
 }

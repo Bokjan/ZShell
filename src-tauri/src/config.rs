@@ -21,6 +21,10 @@ pub struct Profile {
     pub port: u16,
     pub username: String,
     pub auth: AuthMethod,
+    /// Profiles to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
+    /// own profile's address and authentication, but not that profile's jump hosts.
+    #[serde(default)]
+    pub jump_hosts: Vec<String>,
     /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
     /// drop the connection.
     #[serde(default = "default_keepalive_interval")]
@@ -44,6 +48,8 @@ fn default_true() -> bool {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum AuthMethod {
+    /// Agent keys, default key files, then keyboard-interactive / password, like OpenSSH.
+    Auto,
     Password,
     PublicKey { key_path: String },
     Agent,
@@ -91,6 +97,13 @@ impl ProfileStore {
         }
 
         let mut profiles = self.profiles.lock().unwrap();
+        let mut seen = std::collections::HashSet::new();
+        for jump in &profile.jump_hosts {
+            let known = profiles.iter().any(|p| p.id == *jump);
+            if !known || *jump == profile.id || !seen.insert(jump) {
+                return Err(Error::new("profile.invalidJumpHost"));
+            }
+        }
         let mut updated = profiles.clone();
         match updated.iter_mut().find(|p| !profile.id.is_empty() && p.id == profile.id) {
             Some(existing) => {
@@ -131,8 +144,27 @@ impl ProfileStore {
         Ok(profile)
     }
 
+    /// The profiles to connect through to reach `profile`.
+    pub fn jump_hosts(&self, profile: &Profile) -> Result<Vec<Profile>> {
+        profile.jump_hosts.iter().map(|id| self.get(id).map_err(|_| Error::new("profile.invalidJumpHost"))).collect()
+    }
+
+    /// Adds profiles that already have ids (from an import) in one write.
+    pub fn add_all(&self, new: Vec<Profile>) -> Result<()> {
+        let mut profiles = self.profiles.lock().unwrap();
+        let mut updated = profiles.clone();
+        updated.extend(new);
+        self.persist(&updated)?;
+        *profiles = updated;
+        Ok(())
+    }
+
     pub fn delete(&self, id: &str) -> Result<()> {
         let mut profiles = self.profiles.lock().unwrap();
+        let users: Vec<&str> = profiles.iter().filter(|p| p.jump_hosts.iter().any(|j| j == id)).map(|p| p.name.as_str()).collect();
+        if !users.is_empty() {
+            return Err(Error::new("profile.usedAsJumpHost").param("names", users.join(", ")));
+        }
         let updated: Vec<_> = profiles.iter().filter(|p| p.id != id).cloned().collect();
         self.persist(&updated)?;
         *profiles = updated;

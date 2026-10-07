@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ImportDialog } from "./components/ImportDialog";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPane } from "./components/SessionPane";
@@ -17,6 +18,7 @@ function App() {
   const [activeKey, setActiveKey] = useState<number | null>(null);
   // undefined: dialog closed; null: creating a new profile.
   const [editing, setEditing] = useState<Profile | null | undefined>(undefined);
+  const [importing, setImporting] = useState(false);
   const nextKey = useRef(1);
   const activeKeyRef = useRef(activeKey);
   activeKeyRef.current = activeKey;
@@ -77,10 +79,17 @@ function App() {
     setProfiles((profiles) => profiles.map((p) => (p.id === updated.id ? updated : p)));
 
   const closeDialog = useCallback(() => setEditing(undefined), []);
+  const closeImport = useCallback(() => setImporting(false), []);
 
   return (
     <div className="app">
-      <Sidebar profiles={profiles} onOpen={openTab} onEdit={setEditing} onNew={() => setEditing(null)} />
+      <Sidebar
+        profiles={profiles}
+        onOpen={openTab}
+        onEdit={setEditing}
+        onNew={() => setEditing(null)}
+        onImport={() => setImporting(true)}
+      />
       <main>
         {tabs.length > 0 && (
           <TabBar
@@ -106,7 +115,10 @@ function App() {
           {tabs.length === 0 && <div className="placeholder">{t("app.placeholder")}</div>}
         </div>
       </main>
-      {editing !== undefined && <ProfileDialog profile={editing} onClose={closeDialog} onChanged={reloadProfiles} />}
+      {editing !== undefined && (
+        <ProfileDialog profile={editing} profiles={profiles} onClose={closeDialog} onChanged={reloadProfiles} />
+      )}
+      {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
     </div>
   );
 }
