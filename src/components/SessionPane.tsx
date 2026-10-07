@@ -1,6 +1,7 @@
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import type { ForwardState, Profile, SessionId } from "../lib/api";
+import { dragHorizontally } from "../lib/drag";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { SftpPanel } from "./SftpPanel";
 import type { SidePanel, Tab } from "./TabBar";
@@ -30,20 +31,8 @@ export function SessionPane({ tab, profile, active, onStatus, onForward, onProfi
   const connected = tab.status === "connected" && sessionId != null;
 
   const startResize = (e: ReactMouseEvent) => {
-    e.preventDefault();
     const rect = paneRef.current!.getBoundingClientRect();
-    const onMove = (ev: MouseEvent) => {
-      const width = rect.right - ev.clientX;
-      setPanelWidth(Math.max(MIN_PANEL, Math.min(width, rect.width - MIN_TERMINAL)));
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.classList.remove("resizing");
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    document.body.classList.add("resizing");
+    dragHorizontally(e, (x) => setPanelWidth(Math.max(MIN_PANEL, Math.min(rect.right - x, rect.width - MIN_TERMINAL))));
   };
 
   const page = (panel: SidePanel) => ({ display: tab.sidePanel === panel ? undefined : "none" });

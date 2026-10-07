@@ -16,7 +16,8 @@
     "edit": "Edit",
     "import": "Import from SSH config",
     "metaVia": "{address} via {names}",
-    "settings": "Settings"
+    "settings": "Settings",
+    "resizeHint": "Drag to resize, double-click to reset"
   },
   "tabs": {
     "close": "Close",
