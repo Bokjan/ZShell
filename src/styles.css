@@ -173,10 +173,42 @@ main {
 .profile-edit {
   visibility: visible;
 }
+/* Inset like the session list, and kept clear of the window's rounded bottom corner. */
 .sidebar-footer {
   margin-top: auto;
-  padding: 6px 8px;
+  padding: 6px 6px 10px;
   border-top: 1px solid var(--border);
+}
+.sidebar-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  text-align: left;
+}
+.sidebar-settings:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.sidebar-settings svg {
+  flex-shrink: 0;
+}
+.sidebar-settings span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-settings kbd {
+  font: inherit;
+  font-size: 11px;
+  opacity: 0.8;
 }
 .sidebar-empty {
   padding: 0 14px;

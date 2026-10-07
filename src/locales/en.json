@@ -16,7 +16,7 @@
     "edit": "Edit",
     "import": "Import from SSH config",
     "metaVia": "{address} via {names}",
-    "settings": "Settings ({shortcut})"
+    "settings": "Settings"
   },
   "tabs": {
     "close": "Close",
