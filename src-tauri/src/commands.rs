@@ -1,14 +1,48 @@
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::config::{Profile, ProfileStore};
 use crate::error::Result;
-use crate::session::{loopback, SessionId, SessionInput, SessionManager};
+use crate::secrets;
+use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
+use crate::ssh;
 
 #[tauri::command]
-pub fn session_open_loopback(sessions: State<'_, SessionManager>, on_output: Channel) -> SessionId {
-    let (id, input) = sessions.register();
-    tauri::async_runtime::spawn(loopback::run(on_output, input));
-    id
+pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
+    store.list()
+}
+
+/// `password`: `None` keeps the stored password, `Some("")` clears it.
+#[tauri::command]
+pub fn profile_save(store: State<'_, ProfileStore>, profile: Profile, password: Option<String>) -> Result<Profile> {
+    let profile = store.save(profile)?;
+    match password.as_deref() {
+        None => {}
+        Some("") => secrets::delete_password(&profile.id)?,
+        Some(password) => secrets::set_password(&profile.id, password)?,
+    }
+    Ok(profile)
+}
+
+#[tauri::command]
+pub fn profile_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
+    store.delete(&id)?;
+    secrets::delete_password(&id)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn ssh_open(
+    store: State<'_, ProfileStore>,
+    sessions: State<'_, SessionManager>,
+    profile_id: String,
+    cols: u16,
+    rows: u16,
+    on_output: Channel,
+    on_event: Channel<SessionEvent>,
+) -> Result<SessionId> {
+    let profile = store.get(&profile_id)?;
+    Ok(sessions.spawn(on_output, on_event, (cols, rows), |io| ssh::run(profile, io)))
 }
 
 #[tauri::command]

@@ -6,6 +6,16 @@ use crate::session::SessionId;
 pub enum Error {
     #[error("session {0} not found")]
     SessionNotFound(SessionId),
+    #[error("profile {0} not found")]
+    ProfileNotFound(String),
+    #[error("{0}")]
+    Invalid(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("credential store: {0}")]
+    Keyring(#[from] keyring::Error),
 }
 
 // Commands return errors to the frontend as plain message strings.

@@ -37,8 +37,11 @@
 - **终端数据流**：远端输出经 Tauri 2 `Channel` 以 `InvokeResponseBody::Raw` 推送，前端收到
   `ArrayBuffer` 后直接 `term.write(Uint8Array)`；不走 event 系统（JSON 序列化开销大）。
   键盘输入走 `invoke`，尺寸变化发 `window-change`。
-- **会话抽象**：`session::SessionManager` 持有每个会话的输入队列（`SessionInput`），后端任务
-  （loopback / SSH shell / 本地 PTY）消费队列、向 Channel 写输出。关闭会话 = 丢弃发送端。
+- **会话抽象**：`session::SessionManager` 为每个会话创建 `TermIo`（输出 Channel、事件 Channel、
+  输入队列），后端任务（SSH shell / 本地 PTY）持有它运行；关闭会话 = 中止该任务。
+- **终端内提示**：主机指纹确认、密码、私钥口令、keyboard-interactive 问题都直接在终端里询问
+  （`TermIo::read_line`），与 OpenSSH 体验一致，无需额外弹窗。russh 在自己的任务里回调
+  `check_server_key`，因此 handler 通过 mpsc + oneshot 把问题转交给会话任务。
 - **认证**：密码、私钥文件（含口令）、ssh-agent（macOS `SSH_AUTH_SOCK`；Windows OpenSSH
   命名管道 / Pageant）、keyboard-interactive（2FA）。
 - **主机校验**：读写 `~/.ssh/known_hosts`，首次连接确认指纹，指纹变化时显式告警。
@@ -49,11 +52,11 @@
 
 | 模块 | 职责 | 阶段 |
 |---|---|---|
-| `session/` | 终端会话抽象与管理；`loopback` 本地回显后端 | M0 ✅ |
+| `session/` | 终端会话抽象与管理（`TermIo`、`SessionManager`） | M0 ✅ |
 | `commands.rs` | Tauri 命令入口 | M0 ✅ |
-| `ssh/` | russh 客户端、认证、known_hosts、ConnectionManager | M1 |
-| `config/` | 会话存储、ssh_config 导入 | M1 / M4 |
-| `secrets/` | keyring 封装 | M1 |
+| `ssh/` | 连接与 shell（`mod.rs`）、主机密钥校验（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
+| `config.rs` | 会话配置存储（`profiles.json`）；ssh_config 导入（M4） | M1 ✅ |
+| `secrets.rs` | keyring 封装 | M1 ✅ |
 | `sftp/` | 目录浏览、传输任务与进度 | M2 |
 | `forward/` | `-L` / `-R` / `-D`（SOCKS5） | M3 |
 | `pty/` | 本地终端（portable-pty），作为 session 的另一种后端 | M5 |
@@ -63,7 +66,7 @@
 | 阶段 | 内容 |
 |---|---|
 | **M0 骨架** ✅ | Tauri + React + xterm.js；Channel 二进制输出链路；loopback 会话 |
-| **M1 MVP** | 密码/私钥/agent 登录；交互式 shell；多标签；resize；known_hosts；会话保存 + 钥匙串 |
+| **M1 MVP** ✅ | 密码/私钥/agent 登录；交互式 shell；多标签；resize；known_hosts；会话保存 + 钥匙串 |
 | **M2 SFTP** | 浏览、上传下载（进度）、拖拽、重命名/删除/新建/chmod |
 | **M3 端口转发** | `-L` / `-R` / `-D`，规则随会话保存，可自动启动 |
 | **M4 增强** | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题 |
@@ -73,4 +76,5 @@
 
 - macOS 上 xterm.js 运行在 WKWebView 里，需重点测试中文输入法（候选框位置、组字过程）。
 - 中文 / emoji 宽度依赖 unicode11 插件，远端 `LANG` 需为 UTF-8。
+- russh 使用 `ring` 加密后端（而非默认的 aws-lc-rs），避免 Windows 上依赖 CMake/NASM。
 - Windows 构建计划用 GitHub Actions（`tauri-apps/tauri-action`）完成。

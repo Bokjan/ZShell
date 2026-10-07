@@ -21,9 +21,13 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1.53.2", features = ["sync", "macros"] }
+tokio = { version = "1.53.2", features = ["sync", "macros", "net", "time"] }
 thiserror = "2.0.21"
 unicode-width = "0.2.2"
+russh = { version = "0.64.1", default-features = false, features = ["ring", "flate2", "rsa"] }
+keyring = "4.2.0"
+uuid = { version = "1.27.0", features = ["v4"] }
+anyhow = "1.0.104"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
