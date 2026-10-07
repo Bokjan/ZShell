@@ -157,7 +157,15 @@ main {
 }
 .sidebar-actions {
   display: flex;
+  align-items: center;
   gap: 2px;
+}
+/* SVG icons sit beside text glyphs: give them the same box. */
+.sidebar-actions .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
 }
 .profile-edit {
   position: absolute;

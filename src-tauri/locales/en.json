@@ -5,7 +5,10 @@
     "closedWithStatus": "[Connection closed, exit status {status}]",
     "savedPasswordRejected": "The saved password was rejected by the server.",
     "incorrectPassphrase": "Incorrect passphrase.",
-    "connectingVia": "Connecting to {user}@{host}:{port} via {jump} ..."
+    "connectingVia": "Connecting to {user}@{host}:{port} via {jump} ...",
+    "processExited": "[Process exited]",
+    "processExitedWithCode": "[Process exited with code {code}]",
+    "processSignaled": "[Process terminated by signal: {signal}]"
   },
   "hostKey": {
     "unknown": "The authenticity of host '{host}' can't be established.\n{algorithm} key fingerprint is {fingerprint}.\nAre you sure you want to continue connecting",
@@ -19,7 +22,8 @@
     "autoStartFailed": "Port forwarding {forward} could not be started: {error}"
   },
   "menu": {
-    "settings": "Settings…"
+    "settings": "Settings…",
+    "newLocalTerminal": "New Local Terminal"
   },
   "errors": {
     "unexpected": "Unexpected error",
@@ -27,6 +31,10 @@
     "session": {
       "notFound": "Session not found",
       "notConnected": "The session has no SSH connection yet"
+    },
+    "pty": {
+      "openFailed": "Cannot create a pseudo terminal",
+      "spawnFailed": "Cannot start the shell {shell}"
     },
     "profile": {
       "notFound": "Session profile not found",

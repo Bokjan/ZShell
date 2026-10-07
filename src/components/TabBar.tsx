@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ForwardState } from "../lib/api";
+import type { ForwardState, SessionTarget } from "../lib/api";
 import { shiftShortcutLabel } from "../lib/platform";
 import type { SessionStatus } from "./TerminalView";
 
@@ -9,10 +9,10 @@ export type SidePanel = "files" | "forwards";
 
 export interface Tab {
   key: number;
-  profileId: string;
+  target: SessionTarget;
   title: string;
   status: SessionStatus;
-  /** The side panel shown next to the terminal, if any. */
+  /** The side panel shown next to the terminal, if any (SSH tabs only). */
   sidePanel: SidePanel | null;
   /** Live state of the profile's forwarding rules on this tab's connection, by rule id. */
   forwards: Record<string, ForwardState>;
@@ -35,13 +35,15 @@ export function TabBar({ tabs, activeKey, onSelect, onClose, onTogglePanel }: Pr
   const states = Object.values(activeTab?.forwards ?? {});
   const running = states.filter((s) => s.type === "starting" || s.type === "active").length;
   const failed = states.some((s) => s.type === "failed");
+  // Files and forwards work on an SSH connection.
+  const local = activeTab?.target.kind === "local";
 
   const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
     <button
       className={activeTab?.sidePanel === panel ? "on" : undefined}
-      disabled={!activeTab}
+      disabled={!activeTab || local}
       onClick={() => onTogglePanel(panel)}
-      title={hint}
+      title={local ? t("tabs.panelUnavailable") : hint}
     >
       {label}
       {badge}

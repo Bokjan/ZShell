@@ -9,9 +9,11 @@ import { Sidebar } from "./components/Sidebar";
 import { SessionPane } from "./components/SessionPane";
 import { PANEL_SHORTCUTS, TabBar, type SidePanel, type Tab } from "./components/TabBar";
 import type { SessionStatus } from "./components/TerminalView";
-import { listProfiles, type ForwardState, type Profile } from "./lib/api";
+import { listProfiles, localShellName, type ForwardState, type Profile, type SessionTarget } from "./lib/api";
 import { hasShiftShortcutModifiers, isSettingsShortcut } from "./lib/platform";
 import "./styles.css";
+
+const profileIdOf = (tab: Tab) => (tab.target.kind === "ssh" ? tab.target.profileId : undefined);
 
 function App() {
   const { t } = useTranslation();
@@ -22,29 +24,44 @@ function App() {
   const [editing, setEditing] = useState<Profile | null | undefined>(undefined);
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Title for local terminal tabs, e.g. "zsh".
+  const [shellName, setShellName] = useState<string | null>(null);
   const nextKey = useRef(1);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   const activeKeyRef = useRef(activeKey);
   activeKeyRef.current = activeKey;
+  const localTitleRef = useRef("");
+  localTitleRef.current = shellName ?? t("tabs.localTitle");
 
   const reloadProfiles = useCallback(() => {
     listProfiles().then(setProfiles).catch(console.error);
   }, []);
   useEffect(reloadProfiles, [reloadProfiles]);
+  useEffect(() => {
+    localShellName().then(setShellName).catch(console.error);
+  }, []);
 
-  const openTab = (profile: Profile) => {
+  const addTab = useCallback((target: SessionTarget, title: string) => {
     const key = nextKey.current++;
-    setTabs((tabs) => [...tabs, { key, profileId: profile.id, title: profile.name, status: "connecting", sidePanel: null, forwards: {} }]);
+    setTabs((tabs) => [...tabs, { key, target, title, status: "connecting", sidePanel: null, forwards: {} }]);
     setActiveKey(key);
-  };
+  }, []);
 
-  const closeTab = (key: number) => {
+  const openTab = (profile: Profile) => addTab({ kind: "ssh", profileId: profile.id }, profile.name);
+
+  const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab]);
+
+  const closeTab = useCallback((key: number) => {
+    const tabs = tabsRef.current;
     const index = tabs.findIndex((t) => t.key === key);
+    if (index < 0) return;
     const remaining = tabs.filter((t) => t.key !== key);
     setTabs(remaining);
-    if (key === activeKey) {
+    if (key === activeKeyRef.current) {
       setActiveKey(remaining[Math.min(index, remaining.length - 1)]?.key ?? null);
     }
-  };
+  }, []);
 
   const updateTab = (key: number, patch: Partial<Tab>) =>
     setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, ...patch } : t)));
@@ -52,7 +69,9 @@ function App() {
   const togglePanel = useCallback((panel: SidePanel) => {
     setTabs((tabs) =>
       tabs.map((t) =>
-        t.key === activeKeyRef.current ? { ...t, sidePanel: t.sidePanel === panel ? null : panel } : t,
+        t.key === activeKeyRef.current && t.target.kind === "ssh"
+          ? { ...t, sidePanel: t.sidePanel === panel ? null : panel }
+          : t,
       ),
     );
   }, []);
@@ -82,10 +101,21 @@ function App() {
     return () => void unlisten.then((f) => f());
   }, []);
 
+  // From the macOS File menu's "New Local Terminal" item.
+  useEffect(() => {
+    const unlisten = listen("open-local-terminal", openLocalTab);
+    return () => void unlisten.then((f) => f());
+  }, [openLocalTab]);
+
   const onStatus = (key: number, status: SessionStatus) =>
     // Forward events can precede "connected" (auto-start runs right after authentication),
     // so states are only reset when a connection attempt starts or ends.
     updateTab(key, status === "connected" ? { status } : { status, forwards: {} });
+
+  // A local shell that exits cleanly (`exit`, Ctrl+D) closes its tab, like Terminal.app.
+  const onExited = (tab: Tab, status: number | null) => {
+    if (tab.target.kind === "local" && status === 0) closeTab(tab.key);
+  };
 
   const onForward = (key: number, ruleId: string, state: ForwardState) =>
     setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, forwards: { ...t.forwards, [ruleId]: state } } : t)));
@@ -105,6 +135,7 @@ function App() {
         onEdit={setEditing}
         onNew={() => setEditing(null)}
         onImport={() => setImporting(true)}
+        onLocalTerminal={openLocalTab}
         onSettings={() => setSettingsOpen(true)}
       />
       <main>
@@ -122,9 +153,10 @@ function App() {
             <SessionPane
               key={tab.key}
               tab={tab}
-              profile={profiles.find((p) => p.id === tab.profileId)}
+              profile={profiles.find((p) => p.id === profileIdOf(tab))}
               active={tab.key === activeKey}
               onStatus={(status) => onStatus(tab.key, status)}
+              onExited={(status) => onExited(tab, status)}
               onForward={(ruleId, state) => onForward(tab.key, ruleId, state)}
               onProfileChanged={onProfileChanged}
             />

@@ -42,26 +42,26 @@ pub async fn run(profile: Profile, jumps: Vec<Profile>, id: SessionId, mut io: T
         Err(e) => Outcome::Failed(e.into()),
     };
     connections.close(id);
-    let (reason, error) = match outcome {
+    let (reason, error, status) = match outcome {
         Outcome::Exited(status) => {
             let message = match status {
                 Some(status) => t!("terminal.closedWithStatus", status = status),
                 None => t!("terminal.closed"),
             };
             io.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
-            (CloseReason::Exited, None)
+            (CloseReason::Exited, None, status)
         }
         Outcome::Lost(e) => {
             // The shell may have left the cursor mid-line.
             io.print(&format!("\n\x1b[31m{e}\x1b[0m\n"));
-            (CloseReason::Lost, Some(e))
+            (CloseReason::Lost, Some(e), None)
         }
         Outcome::Failed(e) => {
             io.print(&format!("\x1b[31m{e}\x1b[0m\n"));
-            (CloseReason::Failed, Some(e))
+            (CloseReason::Failed, Some(e), None)
         }
     };
-    io.event(SessionEvent::Closed { reason, error });
+    io.event(SessionEvent::Closed { reason, error, status });
 }
 
 /// Connects (through the jump hosts, if any), authenticates and starts the remote shell.

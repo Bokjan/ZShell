@@ -6,7 +6,7 @@
     "delete": "Delete"
   },
   "app": {
-    "placeholder": "Select a session on the left to connect"
+    "placeholder": "Select a session on the left to connect, or open a local terminal"
   },
   "sidebar": {
     "title": "Sessions",
@@ -15,6 +15,7 @@
     "openHint": "Click to open in a new tab",
     "edit": "Edit",
     "import": "Import from SSH config",
+    "newLocalTerminal": "New local terminal",
     "metaVia": "{address} via {names}",
     "settings": "Settings",
     "resizeHint": "Drag to resize, double-click to reset"
@@ -25,11 +26,14 @@
     "filesHint": "Show/hide the SFTP file panel ({shortcut})",
     "forwards": "Forwards",
     "forwardsHint": "Show/hide the port forwarding panel ({shortcut})",
-    "forwardsHintFailed": "Show/hide the port forwarding panel ({shortcut}). Some rules failed to start."
+    "forwardsHintFailed": "Show/hide the port forwarding panel ({shortcut}). Some rules failed to start.",
+    "panelUnavailable": "Not available for local terminals",
+    "localTitle": "Local"
   },
   "terminal": {
     "reconnectHint": "Press Enter to reconnect",
     "retryHint": "Press Enter to retry",
+    "restartHint": "Press Enter to start a new shell",
     "reconnectIn_one": "Reconnecting in {count} second. Press Enter to reconnect now or Ctrl+C to cancel.",
     "reconnectIn_other": "Reconnecting in {count} seconds. Press Enter to reconnect now or Ctrl+C to cancel.",
     "reconnectCancelled": "Automatic reconnection cancelled. Press Enter to reconnect."

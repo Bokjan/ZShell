@@ -11,6 +11,7 @@ use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::i18n;
 use crate::import;
+use crate::pty;
 use crate::secrets;
 use crate::settings::{Settings, SettingsStore};
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
@@ -99,6 +100,25 @@ pub fn ssh_open(
     Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, jumps, id, io, connections)))
 }
 
+/// Starts the user's default shell in a local pseudo terminal.
+#[tauri::command]
+pub fn local_open(
+    sessions: State<'_, SessionManager>,
+    cols: u16,
+    rows: u16,
+    on_output: Channel,
+    on_event: Channel<SessionEvent>,
+) -> SessionId {
+    let shell = pty::default_shell();
+    sessions.spawn(on_output, on_event, (cols, rows), |_, io| pty::run(shell, io))
+}
+
+/// Short name of the default local shell, e.g. "zsh" or "pwsh".
+#[tauri::command]
+pub fn local_shell_name() -> String {
+    pty::default_shell().name()
+}
+
 #[tauri::command]
 pub fn session_write(sessions: State<'_, SessionManager>, id: SessionId, data: String) -> Result<()> {
     sessions.send(id, SessionInput::Data(data.into_bytes()))
@@ -107,6 +127,12 @@ pub fn session_write(sessions: State<'_, SessionManager>, id: SessionId, data: S
 #[tauri::command]
 pub fn session_resize(sessions: State<'_, SessionManager>, id: SessionId, cols: u16, rows: u16) -> Result<()> {
     sessions.send(id, SessionInput::Resize { cols, rows })
+}
+
+/// Records that the frontend has processed `bytes` of the session's output.
+#[tauri::command]
+pub fn session_ack(sessions: State<'_, SessionManager>, id: SessionId, bytes: usize) -> Result<()> {
+    sessions.ack(id, bytes)
 }
 
 #[tauri::command]

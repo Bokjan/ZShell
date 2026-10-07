@@ -9,10 +9,11 @@ import { TerminalView, type SessionStatus } from "./TerminalView";
 
 interface Props {
   tab: Tab;
-  /** Undefined if the profile was deleted while the tab is open. */
+  /** Undefined for local terminals, and if the profile was deleted while the tab is open. */
   profile: Profile | undefined;
   active: boolean;
   onStatus(status: SessionStatus): void;
+  onExited(status: number | null): void;
   onForward(ruleId: string, state: ForwardState): void;
   onProfileChanged(profile: Profile): void;
 }
@@ -20,8 +21,11 @@ interface Props {
 const MIN_PANEL = 280;
 const MIN_TERMINAL = 240;
 
-/** One tab's content: the terminal plus a side panel (files or port forwards) on the same connection. */
-export function SessionPane({ tab, profile, active, onStatus, onForward, onProfileChanged }: Props) {
+/**
+ * One tab's content: the terminal plus, for SSH tabs, a side panel (files or port forwards)
+ * on the same connection.
+ */
+export function SessionPane({ tab, profile, active, onStatus, onExited, onForward, onProfileChanged }: Props) {
   const [sessionId, setSessionId] = useState<SessionId | null>(null);
   const [panelWidth, setPanelWidth] = useState(420);
   // Keep panels mounted once opened so their state (directory, transfers) survives switching.
@@ -40,10 +44,11 @@ export function SessionPane({ tab, profile, active, onStatus, onForward, onProfi
   return (
     <div className={`session-pane${active ? " active" : ""}`} ref={paneRef}>
       <TerminalView
-        profileId={tab.profileId}
+        target={tab.target}
         active={active}
         autoReconnect={profile?.autoReconnect ?? true}
         onStatus={onStatus}
+        onExited={onExited}
         onSession={setSessionId}
         onForward={onForward}
       />

@@ -68,6 +68,16 @@
   - 外观：跟随系统 / 深色 / 浅色。`<html data-theme>` 选择 CSS 变量组（样式中不再写死颜色，全部走变量）；原生窗口用 `setTheme`（跟随系统时传 null）同步标题栏，用 `setBackgroundColor` 同步调整大小时露出的背景。`tauri.conf.json` 不再写死窗口背景色（否则 macOS 标题栏会一直沿用该颜色），改由 `index.html` 的内联样式按系统外观给出首帧背景，避免闪烁。
   - 终端：内置配色（Default Dark/Light、Solarized Dark/Light、Dracula、One Dark、Nord、GitHub Light，"跟随外观"时取 Default Dark/Light），字体（用户字体后总是追加默认字体栈，包括中文字体）、字号、光标样式与闪烁、回滚行数。修改后通过 `term.options` 应用到所有已打开的终端；搜索高亮颜色按配色的深浅选择。
   - 入口：侧栏底部的 Settings 行；macOS 应用菜单的"Settings…"（⌘,，必须是原生菜单项，macOS 会在 web view 之前处理 ⌘,；菜单只在 macOS 上设置，Windows 保持无菜单栏），Windows 上由前端处理 Ctrl+,。M7 的语言设置将放进同一个对话框。
+- **本地终端**：`pty` 模块用 `portable-pty`（Windows 走 ConPTY）在伪终端里运行默认 shell，作为 `SessionManager::spawn` 的另一种后端（命令 `local_open`），输入、resize、关闭沿用 `session_write` / `session_resize` / `session_close`。
+  - 默认 shell：macOS 取用户的登录 shell（`$SHELL`，否则查 passwd），以登录 shell 方式启动（argv0 为 `-zsh`）：从 Finder 启动的应用只有 launchd 给的最小 PATH，`/etc/zprofile`（`path_helper`）和 `~/.zprofile`（Homebrew 的 `brew shellenv`）才会补全 PATH，与 Terminal.app 一致。Windows 优先 PATH 中的 `pwsh.exe`（PowerShell 7），否则用系统自带的 Windows PowerShell，参数 `-NoLogo`；PATH 查找只检查目录项本身，兼容 Microsoft Store 安装的 App execution alias。工作目录为用户主目录。
+  - 环境变量：继承应用环境；`TERM=xterm-256color`（仅 unix，Windows 与 Windows Terminal 一样不设）、`COLORTERM=truecolor`、`TERM_PROGRAM=ZShell`、`TERM_PROGRAM_VERSION`；删除其他终端留下的 `TERM_SESSION_ID`、`ITERM_*`、`LC_TERMINAL*`。macOS 上 `LANG` / `LC_ALL` / `LC_CTYPE` 都没设时，按系统语言（`sys-locale`，如 `zh-Hans-CN`）生成 `zh_CN.UTF-8`，`/usr/share/locale` 下没有该区域时退回 `en_US.UTF-8`。
+  - 线程：portable-pty 的读写是阻塞的，每个会话在任务之外有三个线程：读输出（直接写 `SessionSink`）、写输入（子进程不读时写会阻塞，经 mpsc 喂入）、等待子进程退出（经 oneshot 交回状态）。spawn 后立即关闭 slave 端，否则读端收不到 EOF（Windows 上 slave 还共享 pseudoconsole）。
+  - 结束：以子进程退出为准而非读端 EOF——后台进程可能一直占着终端，ConPTY 也要关闭 pseudoconsole 后才关输出管道。shell 退出后等读线程把剩余输出读完（unix 最多 200 ms；Windows 先在单独线程关闭 pseudoconsole 刷出剩余输出，最多 1 s），再打印 `[Process exited]` / `[Process exited with code N]` / `[Process terminated by signal: …]`，`SessionEvent::Closed` 带 `status`（SSH 也填 exit-status）。启动失败为 `failed`（`pty.openFailed` / `pty.spawnFailed`），不会出现 `lost`。
+  - 关闭标签页：会话任务被中止时 `Pty` 的 Drop 在单独线程里结束 shell。unix 发 SIGHUP（shell 会转发给作业），2 秒后仍未退出则 SIGKILL；Windows 先关闭 pseudoconsole（向附着的进程发 CTRL_CLOSE_EVENT），2 秒后仍未退出则 `TerminateProcess`。关闭 pseudoconsole 会阻塞到输出被读走，因此关闭前先解除流控，读线程继续读。
+  - 流控：本地输出没有网络限速（`cat` 大文件、`yes` 每秒可达数百 MB），会撑爆 WebView。`SessionSink` 统计已发给前端、未确认的字节数（`session::Flow`）；前端在 `term.write` 的回调里累计已处理字节，每 64 KiB 调一次 `session_ack`；PTY 读线程在未确认超过 2 MiB 时暂停读取、降到 512 KiB 以下再继续，压力经 PTY 缓冲区传回产生输出的程序。会话关闭时解除等待。SSH 会话也计数和确认，但 bridge 尚未据此暂停读取。
+  - 前端：标签页的 `target` 为 `{ kind: "ssh", profileId }` 或 `{ kind: "local" }`；本地标签页标题为 shell 名（`local_shell_name`，如 `zsh`），没有 Files / Forwards 面板（分段选择器置灰，⇧⌘E / ⇧⌘P 无效），不自动重连。shell 以 0 退出（`exit`、Ctrl+D）时自动关闭标签页（同 Terminal.app 的默认行为）；非 0 退出或启动失败时保留，按 Enter 重新启动 shell。
+  - 入口：侧栏标题栏的终端图标按钮；macOS 另有 File 菜单的"New Local Terminal"。不设快捷键。M6 标题栏集成后改为标签栏末尾的 "+"。
+  - ConPTY 注意事项：需要 Windows 10 1809 及以上（portable-pty 运行时加载 `CreatePseudoConsole`）。ConPTY 自身也是终端模拟器：启动时可能发 `ESC[6n` 查询光标位置（xterm.js 自动应答），请求的 win32-input-mode 被 xterm.js 忽略后回退到 VT 输入；Ctrl+C 以 `\x03` 发入，由 ConPTY 转为 CTRL_C_EVENT。Windows PowerShell 5.1 调用的原生程序可能按 OEM 代码页输出导致中文乱码，暂不修改用户的 `[Console]::OutputEncoding`（已知限制）。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
 
 ## 国际化（i18n）
@@ -124,7 +134,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 
 | 模块 | 职责 | 阶段 |
 |---|---|---|
-| `session/` | 终端会话抽象与管理（`TermIo`、`SessionManager`） | M0 ✅ |
+| `session/` | 终端会话抽象与管理（`TermIo`、`SessionManager`、输出流控 `Flow`） | M0 ✅ |
 | `commands.rs` | Tauri 命令入口 | M0 ✅ |
 | `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`：主机密钥、`forwarded-tcpip`、断线原因）、主机密钥确认（`host_key.rs`）、认证（`auth.rs`） | M1 ✅ |
 | `config.rs` | 会话配置存储（`profiles.json`） | M1 ✅ |
@@ -134,7 +144,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 | `ssh/connections.rs` | 连接注册表，供 SFTP / 端口转发复用连接 | M2 ✅ |
 | `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`） | M2 ✅ |
 | `forward/` | 规则与运行管理（`mod.rs`）、`-L`（`local.rs`）、`-R`（`remote.rs`）、`-D`（`dynamic.rs`）、SOCKS 协议（`socks.rs`） | M3 ✅ |
-| `pty/` | 本地终端（portable-pty），作为 session 的另一种后端 | M5 |
+| `pty/` | 本地终端（portable-pty），作为 session 的另一种后端（`mod.rs`）；默认 shell 与环境变量（`shell.rs`） | M5 ✅ |
 | `i18n.rs` | 后端消息目录、语言协商、`t!` 宏 | ✅ |
 | `error.rs` | 结构化错误（code / params / detail），消息经消息目录渲染 | ✅ |
 
@@ -147,7 +157,7 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 | **M2 SFTP** ✅ | 浏览、上传下载（进度）、拖拽、重命名/删除/新建/chmod |
 | **M3 端口转发** ✅ | `-L` / `-R` / `-D`，规则随会话保存，可自动启动 |
 | **M4 增强** ✅ | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题；另含"自动"认证与设置界面 |
-| **M5 本地终端** | portable-pty（macOS zsh / Windows PowerShell） |
+| **M5 本地终端** ✅ | portable-pty（macOS 登录 shell / Windows PowerShell，ConPTY）；输出流控；Windows CI 编译检查 |
 | **i18n 架构** ✅ | 前端 i18next（类型检查 key）与后端消息目录；结构化错误；语言协商与 `set_locale`；仅英语 |
 | **M6 标题栏集成** | 标签栏画进窗口标题栏，标签栏末尾的 "+" 打开本地终端；见下文「标题栏集成（M6 规划）」 |
 | **M7 翻译** | 语言设置界面；首批翻译简体中文（zh-CN），之后按需增加其他语言 |
@@ -168,4 +178,4 @@ i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言�
 - macOS 上 xterm.js 运行在 WKWebView 里，需重点测试 CJK 输入法（候选框位置、组字过程）。
 - 中文 / emoji 宽度依赖 unicode11 插件，远端 `LANG` 需为 UTF-8。
 - russh 使用 `ring` 加密后端（而非默认的 aws-lc-rs），避免 Windows 上依赖 CMake/NASM。
-- Windows 构建计划用 GitHub Actions（`tauri-apps/tauri-action`）完成。
+- Windows 构建计划用 GitHub Actions（`tauri-apps/tauri-action`）完成。目前已有 `.github/workflows/windows.yml`：在 `windows-latest` 上构建前端后跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证本地无法编译的 Windows 专用代码（ConPTY、OpenSSH agent 命名管道 / Pageant）至少能通过编译；打包与发布尚未接入。

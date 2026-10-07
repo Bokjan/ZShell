@@ -7,12 +7,17 @@
 //!
 //! Port forwards report their state through the same event channel ([`SessionSink`]).
 //!
-//! SSH shells are the only backend for now; local PTYs (M5) will plug in the same way.
+//! Backends: remote shells over SSH (`ssh::run`) and local shells in a pseudo terminal
+//! (`pty::run`).
+//!
+//! Output is flow controlled: the frontend acknowledges the bytes xterm.js has processed
+//! ([`SessionManager::ack`]), and backends that can produce output faster than the terminal
+//! renders it (local PTYs) wait on [`Flow`] before reading more.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Condvar, Mutex};
 
 use serde::Serialize;
 use tauri::async_runtime::JoinHandle;
@@ -35,19 +40,69 @@ pub enum SessionInput {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SessionEvent {
     Connected,
-    Closed { reason: CloseReason, error: Option<Error> },
+    /// `status`: the exit status of the shell, if it reported one.
+    Closed { reason: CloseReason, error: Option<Error>, status: Option<u32> },
     Forward { rule_id: String, state: ForwardState },
 }
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CloseReason {
-    /// The remote shell exited or closed the session.
+    /// The shell exited or the remote side closed the session.
     Exited,
     /// The connection broke after the session had started.
     Lost,
     /// Connecting, authenticating or starting the shell failed.
     Failed,
+}
+
+/// Pause reading once this many output bytes are unacknowledged...
+const FLOW_HIGH: usize = 2 << 20;
+/// ...and resume once the frontend has caught up to this many.
+const FLOW_LOW: usize = 512 << 10;
+
+/// Output flow control: counts the bytes sent to the frontend and not yet acknowledged.
+#[derive(Default)]
+pub struct Flow {
+    state: Mutex<FlowState>,
+    resumed: Condvar,
+}
+
+#[derive(Default)]
+struct FlowState {
+    unacked: usize,
+    closed: bool,
+}
+
+impl Flow {
+    fn sent(&self, bytes: usize) {
+        let mut state = self.state.lock().unwrap();
+        state.unacked = state.unacked.saturating_add(bytes);
+    }
+
+    pub fn ack(&self, bytes: usize) {
+        let mut state = self.state.lock().unwrap();
+        state.unacked = state.unacked.saturating_sub(bytes);
+        if state.unacked <= FLOW_LOW {
+            self.resumed.notify_all();
+        }
+    }
+
+    /// Blocks while the frontend is too far behind. For backends reading on their own
+    /// thread; returns immediately once the session is closing.
+    pub fn wait_ready(&self) {
+        let state = self.state.lock().unwrap();
+        if state.unacked < FLOW_HIGH {
+            return;
+        }
+        let _state = self.resumed.wait_while(state, |s| s.unacked > FLOW_LOW && !s.closed).unwrap();
+    }
+
+    /// Stops all waiting, for good (the session is closing).
+    pub fn close(&self) {
+        self.state.lock().unwrap().closed = true;
+        self.resumed.notify_all();
+    }
 }
 
 /// Output side of a session: terminal bytes and lifecycle events. Cloneable, so features
@@ -56,12 +111,18 @@ pub enum CloseReason {
 pub struct SessionSink {
     output: Channel,
     events: Channel<SessionEvent>,
+    flow: Arc<Flow>,
 }
 
 impl SessionSink {
     pub fn write(&self, bytes: Vec<u8>) {
+        self.flow.sent(bytes.len());
         // A send error means the frontend is gone; the session will be closed shortly.
         let _ = self.output.send(InvokeResponseBody::Raw(bytes));
+    }
+
+    pub fn flow(&self) -> Arc<Flow> {
+        self.flow.clone()
     }
 
     /// Writes text, translating bare `\n` to `\r\n`.
@@ -83,6 +144,37 @@ pub struct TermIo {
 }
 
 impl TermIo {
+    fn new(output: Channel, events: Channel<SessionEvent>, size: (u16, u16)) -> (Self, mpsc::UnboundedSender<SessionInput>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let sink = SessionSink { output, events, flow: Arc::default() };
+        (Self { sink, input: rx, size }, tx)
+    }
+
+    /// A session without a frontend, for backend tests: returns the input sender and the
+    /// channels' receiving ends (raw output bytes, events as JSON).
+    #[cfg(test)]
+    #[cfg_attr(not(unix), allow(dead_code))] // Only the PTY tests (unix) use it so far.
+    pub fn detached(
+        size: (u16, u16),
+    ) -> (Self, mpsc::UnboundedSender<SessionInput>, std::sync::mpsc::Receiver<Vec<u8>>, std::sync::mpsc::Receiver<String>) {
+        let (output_tx, output_rx) = std::sync::mpsc::channel();
+        let output = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(bytes) = body {
+                let _ = output_tx.send(bytes);
+            }
+            Ok(())
+        });
+        let (events_tx, events_rx) = std::sync::mpsc::channel();
+        let events = Channel::new(move |body| {
+            if let InvokeResponseBody::Json(json) = body {
+                let _ = events_tx.send(json);
+            }
+            Ok(())
+        });
+        let (io, input) = Self::new(output, events, size);
+        (io, input, output_rx, events_rx)
+    }
+
     pub fn write(&self, bytes: Vec<u8>) {
         self.sink.write(bytes);
     }
@@ -156,6 +248,7 @@ impl TermIo {
 
 struct SessionEntry {
     input: mpsc::UnboundedSender<SessionInput>,
+    flow: Arc<Flow>,
     task: JoinHandle<()>,
 }
 
@@ -179,10 +272,10 @@ impl SessionManager {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let (tx, rx) = mpsc::unbounded_channel();
-        let io = TermIo { sink: SessionSink { output, events }, input: rx, size };
+        let (io, input) = TermIo::new(output, events, size);
+        let flow = io.sink.flow();
         let task = tauri::async_runtime::spawn(backend(id, io));
-        self.sessions.lock().unwrap().insert(id, SessionEntry { input: tx, task });
+        self.sessions.lock().unwrap().insert(id, SessionEntry { input, flow, task });
         id
     }
 
@@ -194,8 +287,17 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Records that the frontend has processed `bytes` of output.
+    pub fn ack(&self, id: SessionId, bytes: usize) -> Result<()> {
+        let sessions = self.sessions.lock().unwrap();
+        let entry = sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?;
+        entry.flow.ack(bytes);
+        Ok(())
+    }
+
     pub fn remove(&self, id: SessionId) -> Result<()> {
         let entry = self.sessions.lock().unwrap().remove(&id).ok_or_else(|| Error::new("session.notFound"))?;
+        entry.flow.close();
         entry.task.abort();
         Ok(())
     }

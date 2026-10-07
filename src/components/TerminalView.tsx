@@ -9,7 +9,14 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 
-import { errorMessage, openSshSession, type CommandError, type ForwardState, type Session } from "../lib/api";
+import {
+  errorMessage,
+  openSession,
+  type CommandError,
+  type ForwardState,
+  type Session,
+  type SessionTarget,
+} from "../lib/api";
 import { isFindShortcut } from "../lib/platform";
 import { useSettings } from "../lib/settings";
 import { fontStack, resolveScheme, searchDecorations } from "../lib/terminalSchemes";
@@ -17,12 +24,17 @@ import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
+/** Identifies the target, so that the terminal reconnects only when it really changes. */
+const targetKey = (target: SessionTarget) => (target.kind === "ssh" ? `ssh:${target.profileId}` : "local");
+
 interface Props {
-  profileId: string;
+  target: SessionTarget;
   active: boolean;
-  /** Reconnect automatically when an established connection is lost. */
+  /** Reconnect automatically when an established SSH connection is lost. */
   autoReconnect: boolean;
   onStatus(status: SessionStatus): void;
+  /** The shell exited (rather than failing to start or losing the connection). */
+  onExited(status: number | null): void;
   /** Reports the backend session id, or null once it has closed. */
   onSession(id: number | null): void;
   onForward(ruleId: string, state: ForwardState): void;
@@ -35,9 +47,12 @@ const RETRY_DELAYS = [2, 4, 8, 16, 30];
 const isPermanent = (error: CommandError | null) =>
   !!error && (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected");
 
+/** Acknowledge processed output in batches of this many bytes (see `Session.ack`). */
+const ACK_BATCH = 64 * 1024;
+
 const ignore = () => {};
 
-export function TerminalView({ profileId, active, autoReconnect, onStatus, onSession, onForward }: Props) {
+export function TerminalView({ target, active, autoReconnect, onStatus, onExited, onSession, onForward }: Props) {
   const { t } = useTranslation();
   const tRef = useRef(t);
   tRef.current = t;
@@ -45,8 +60,12 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
+  const targetRef = useRef(target);
+  targetRef.current = target;
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
+  const onExitedRef = useRef(onExited);
+  onExitedRef.current = onExited;
   const onSessionRef = useRef(onSession);
   onSessionRef.current = onSession;
   const onForwardRef = useRef(onForward);
@@ -121,13 +140,25 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
       cancelRetry();
       closed = false;
       onStatusRef.current("connecting");
+      const local = targetRef.current.kind === "local";
       let ended = false;
       let handle: Session | undefined;
-      openSshSession(
-        profileId,
+      // Output bytes processed by xterm.js and not yet acknowledged.
+      let processed = 0;
+      const acknowledge = () => {
+        if (!handle || processed < ACK_BATCH) return;
+        void handle.ack(processed).catch(ignore);
+        processed = 0;
+      };
+      openSession(
+        targetRef.current,
         { cols: term.cols, rows: term.rows },
         (data) => {
-          if (!disposed) term.write(new Uint8Array(data));
+          if (disposed) return;
+          term.write(new Uint8Array(data), () => {
+            processed += data.byteLength;
+            acknowledge();
+          });
         },
         (event) => {
           if (disposed) return;
@@ -145,6 +176,11 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
           onSessionRef.current(null);
           void handle?.close().catch(ignore);
           onStatusRef.current("closed");
+          if (event.reason === "exited") onExitedRef.current(event.status);
+          if (local) {
+            dim(tRef.current(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
+            return;
+          }
           // Retry lost connections, and keep retrying while the network or server is down.
           const retry =
             autoReconnectRef.current &&
@@ -163,6 +199,8 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
           else {
             session = s;
             onSessionRef.current(s.id);
+            // Output can arrive before the session id does.
+            acknowledge();
           }
         })
         .catch((e) => {
@@ -207,7 +245,7 @@ export function TerminalView({ profileId, active, autoReconnect, onStatus, onSes
       term.dispose();
       termRef.current = fitRef.current = searchRef.current = null;
     };
-  }, [profileId]);
+  }, [targetKey(target)]);
 
   // Apply appearance and font changes to the running terminal.
   const { theme: termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback } = options;

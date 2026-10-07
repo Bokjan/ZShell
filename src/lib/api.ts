@@ -45,15 +45,19 @@ export type ForwardState =
   | { type: "failed"; error: CommandError }
   | { type: "stopped" };
 
-/** exited: the remote shell ended; lost: an established connection broke; failed: never got connected. */
+/** exited: the shell ended; lost: an established connection broke; failed: never got connected. */
 export type CloseReason = "exited" | "lost" | "failed";
 
 export type SessionEvent =
   | { type: "connected" }
-  | { type: "closed"; reason: CloseReason; error: CommandError | null }
+  /** `status`: the shell's exit status, if it reported one. */
+  | { type: "closed"; reason: CloseReason; error: CommandError | null; status: number | null }
   | { type: "forward"; ruleId: string; state: ForwardState };
 
 export type SessionId = number;
+
+/** What a terminal tab runs: a saved SSH session, or the default shell on this computer. */
+export type SessionTarget = { kind: "ssh"; profileId: string } | { kind: "local" };
 
 /** Error returned by backend commands; `message` is already localized by the backend. */
 export interface CommandError {
@@ -74,6 +78,8 @@ export interface Session {
   id: SessionId;
   write(data: string): Promise<void>;
   resize(cols: number, rows: number): Promise<void>;
+  /** Reports output bytes the terminal has processed (flow control). */
+  ack(bytes: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -121,8 +127,8 @@ export const forwards = {
   stop: (id: SessionId, ruleId: string) => invoke<void>("forward_stop", { id, ruleId }),
 };
 
-export async function openSshSession(
-  profileId: string,
+export async function openSession(
+  target: SessionTarget,
   size: { cols: number; rows: number },
   onOutput: (data: ArrayBuffer) => void,
   onEvent: (event: SessionEvent) => void,
@@ -131,14 +137,22 @@ export async function openSshSession(
   output.onmessage = onOutput;
   const events = new Channel<SessionEvent>();
   events.onmessage = onEvent;
-  const id = await invoke<SessionId>("ssh_open", { profileId, ...size, onOutput: output, onEvent: events });
+  const args = { ...size, onOutput: output, onEvent: events };
+  const id =
+    target.kind === "ssh"
+      ? await invoke<SessionId>("ssh_open", { profileId: target.profileId, ...args })
+      : await invoke<SessionId>("local_open", args);
   return {
     id,
     write: (data) => invoke("session_write", { id, data }),
     resize: (cols, rows) => invoke("session_resize", { id, cols, rows }),
+    ack: (bytes) => invoke("session_ack", { id, bytes }),
     close: () => invoke("session_close", { id }),
   };
 }
+
+/** Short name of the default local shell, e.g. "zsh" or "pwsh". */
+export const localShellName = () => invoke<string>("local_shell_name");
 
 export interface FileEntry {
   name: string;

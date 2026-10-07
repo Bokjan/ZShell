@@ -6,6 +6,7 @@ mod config;
 mod error;
 mod forward;
 mod import;
+mod pty;
 mod secrets;
 mod session;
 mod settings;
@@ -21,10 +22,12 @@ use sftp::transfer::Transfers;
 use ssh::Connections;
 
 const SETTINGS_MENU_ID: &str = "settings";
+const LOCAL_TERMINAL_MENU_ID: &str = "new-local-terminal";
 
 /// The default macOS menu, plus "Settings…" (⌘,) in the app menu, where Mac users expect
-/// it. The shortcut has to be a menu item there: macOS handles ⌘, before the web view sees
-/// it. Elsewhere the frontend handles Ctrl+, itself.
+/// it, and "New Local Terminal" in the File menu. The settings shortcut has to be a menu
+/// item: macOS handles ⌘, before the web view sees it. Elsewhere the frontend handles
+/// Ctrl+, itself.
 #[cfg(target_os = "macos")]
 fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
     let menu = tauri::menu::Menu::default(app)?;
@@ -33,6 +36,12 @@ fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri
         // After "About ZShell" and its separator.
         app_submenu.insert(&settings, 2)?;
         app_submenu.insert(&tauri::menu::PredefinedMenuItem::separator(app)?, 3)?;
+    }
+    if let Some(tauri::menu::MenuItemKind::Submenu(file_submenu)) = menu.items()?.get(1) {
+        let local = tauri::menu::MenuItem::with_id(app, LOCAL_TERMINAL_MENU_ID, t!("menu.newLocalTerminal"), true, None::<&str>)?;
+        // Before "Close Window".
+        file_submenu.insert(&local, 0)?;
+        file_submenu.insert(&tauri::menu::PredefinedMenuItem::separator(app)?, 1)?;
     }
     Ok(menu)
 }
@@ -55,6 +64,8 @@ pub fn run() {
         .on_menu_event(|app, event| {
             if event.id() == SETTINGS_MENU_ID {
                 let _ = app.emit("open-settings", ());
+            } else if event.id() == LOCAL_TERMINAL_MENU_ID {
+                let _ = app.emit("open-local-terminal", ());
             }
         })
         .manage(SessionManager::default())
@@ -72,8 +83,11 @@ pub fn run() {
             commands::ssh_config_scan,
             commands::ssh_config_import,
             commands::ssh_open,
+            commands::local_open,
+            commands::local_shell_name,
             commands::session_write,
             commands::session_resize,
+            commands::session_ack,
             commands::session_close,
             commands::sftp_open,
             commands::sftp_list,

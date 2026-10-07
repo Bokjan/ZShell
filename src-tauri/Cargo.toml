@@ -30,7 +30,13 @@ anyhow = "1.0.104"
 russh-sftp = "3.0.1"
 tauri-plugin-dialog = "2.8.1"
 ssh2-config = "0.8"
+portable-pty = "0.9"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+sys-locale = "0.3.2"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

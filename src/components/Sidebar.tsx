@@ -11,6 +11,7 @@ interface Props {
   onEdit(profile: Profile): void;
   onNew(): void;
   onImport(): void;
+  onLocalTerminal(): void;
   onSettings(): void;
 }
 
@@ -39,7 +40,7 @@ function storeWidth(width: number) {
   }
 }
 
-export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport, onSettings }: Props) {
+export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport, onLocalTerminal, onSettings }: Props) {
   const { t } = useTranslation();
   const [width, setWidth] = useState(storedWidth);
   const widthRef = useRef(width);
@@ -70,6 +71,9 @@ export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport, onSettings 
       <header>
         <span>{t("sidebar.title")}</span>
         <span className="sidebar-actions">
+          <button className="icon-button" title={t("sidebar.newLocalTerminal")} onClick={onLocalTerminal}>
+            <TerminalIcon />
+          </button>
           <button className="icon-button" title={t("sidebar.import")} onClick={onImport}>
             ⇣
           </button>
@@ -109,6 +113,16 @@ export function Sidebar({ profiles, onOpen, onEdit, onNew, onImport, onSettings 
       </footer>
       <div className="sidebar-splitter" onMouseDown={startResize} onDoubleClick={resetWidth} title={t("sidebar.resizeHint")} />
     </aside>
+  );
+}
+
+/** A prompt in a window, for local terminals. */
+function TerminalIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+      <path d="M4.5 6l2 2-2 2M8.5 10.5h3" />
+    </svg>
   );
 }
 
