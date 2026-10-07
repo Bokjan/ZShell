@@ -79,6 +79,7 @@
   - 入口：侧栏标题栏的终端图标按钮；macOS 另有 File 菜单的"New Local Terminal"。不设快捷键。M6 标题栏集成后改为标签栏末尾的 "+"。
   - ConPTY 注意事项：需要 Windows 10 1809 及以上（portable-pty 运行时加载 `CreatePseudoConsole`）。ConPTY 自身也是终端模拟器：启动时可能发 `ESC[6n` 查询光标位置（xterm.js 自动应答），请求的 win32-input-mode 被 xterm.js 忽略后回退到 VT 输入；Ctrl+C 以 `\x03` 发入，由 ConPTY 转为 CTRL_C_EVENT。Windows PowerShell 5.1 调用的原生程序可能按 OEM 代码页输出导致中文乱码，暂不修改用户的 `[Console]::OutputEncoding`（已知限制）。
 - **会话配置**：本地 JSON/TOML 文件；密码与口令只存系统钥匙串。
+- **应用标识**：bundle identifier 为 `org.boyin.zshell`，配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）和钥匙串服务名都用它。
 
 ## 国际化（i18n）
 

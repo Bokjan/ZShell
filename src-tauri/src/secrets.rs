@@ -2,7 +2,7 @@
 
 use keyring::Entry;
 
-const SERVICE: &str = "com.bokjan.zshell";
+const SERVICE: &str = "org.boyin.zshell";
 
 pub fn get_password(profile_id: &str) -> Option<String> {
     Entry::new(SERVICE, profile_id).ok()?.get_password().ok()
