@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 interface Props {
   title: string;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm, onCancel }: Props) {
+  const { t } = useTranslation();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
     window.addEventListener("keydown", onKey);
@@ -30,7 +32,7 @@ export function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm,
         <footer>
           <span className="grow" />
           <button type="button" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="submit" className={danger ? "primary danger-fill" : "primary"} autoFocus>
             {confirmLabel}

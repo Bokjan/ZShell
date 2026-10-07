@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import type { Profile } from "../lib/api";
 
 interface Props {
@@ -8,20 +10,21 @@ interface Props {
 }
 
 export function Sidebar({ profiles, onOpen, onEdit, onNew }: Props) {
+  const { t } = useTranslation();
   return (
     <aside className="sidebar">
       <header>
-        <span>Sessions</span>
-        <button className="icon-button" title="New session" onClick={onNew}>
+        <span>{t("sidebar.title")}</span>
+        <button className="icon-button" title={t("sidebar.newSession")} onClick={onNew}>
           +
         </button>
       </header>
       {profiles.length === 0 ? (
-        <p className="sidebar-empty">No sessions yet. Click + to add one.</p>
+        <p className="sidebar-empty">{t("sidebar.empty")}</p>
       ) : (
         <ul>
           {profiles.map((p) => (
-            <li key={p.id} onClick={() => onOpen(p)} title="Click to open in a new tab">
+            <li key={p.id} onClick={() => onOpen(p)} title={t("sidebar.openHint")}>
               <div className="profile-name">{p.name}</div>
               <div className="profile-meta">
                 {p.username}@{p.host}
@@ -29,7 +32,7 @@ export function Sidebar({ profiles, onOpen, onEdit, onNew }: Props) {
               </div>
               <button
                 className="icon-button profile-edit"
-                title="Edit"
+                title={t("sidebar.edit")}
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit(p);

@@ -15,6 +15,21 @@ export type SessionEvent = { type: "connected" } | { type: "closed"; error: stri
 
 export type SessionId = number;
 
+/** Error returned by backend commands; `message` is already localized by the backend. */
+export interface CommandError {
+  code: string;
+  params: Record<string, string>;
+  message: string;
+}
+
+function isCommandError(e: unknown): e is CommandError {
+  return typeof e === "object" && e !== null && "code" in e && "message" in e;
+}
+
+export const errorMessage = (e: unknown): string => (isCommandError(e) ? e.message : String(e));
+
+export const errorCode = (e: unknown): string | null => (isCommandError(e) ? e.code : null);
+
 export interface Session {
   id: SessionId;
   write(data: string): Promise<void>;

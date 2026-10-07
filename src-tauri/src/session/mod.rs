@@ -148,14 +148,14 @@ impl SessionManager {
 
     pub fn send(&self, id: SessionId, input: SessionInput) -> Result<()> {
         let sessions = self.sessions.lock().unwrap();
-        let entry = sessions.get(&id).ok_or(Error::SessionNotFound(id))?;
+        let entry = sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?;
         // A send error means the backend already exited; it will be removed on close.
         let _ = entry.input.send(input);
         Ok(())
     }
 
     pub fn remove(&self, id: SessionId) -> Result<()> {
-        let entry = self.sessions.lock().unwrap().remove(&id).ok_or(Error::SessionNotFound(id))?;
+        let entry = self.sessions.lock().unwrap().remove(&id).ok_or_else(|| Error::new("session.notFound"))?;
         entry.task.abort();
         Ok(())
     }

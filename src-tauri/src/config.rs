@@ -56,7 +56,7 @@ impl ProfileStore {
             .iter()
             .find(|p| p.id == id)
             .cloned()
-            .ok_or_else(|| Error::ProfileNotFound(id.to_owned()))
+            .ok_or_else(|| Error::new("profile.notFound"))
     }
 
     /// Inserts or updates a profile and returns it with its id filled in.
@@ -65,7 +65,7 @@ impl ProfileStore {
         profile.host = profile.host.trim().to_owned();
         profile.username = profile.username.trim().to_owned();
         if profile.host.is_empty() || profile.username.is_empty() || profile.port == 0 {
-            return Err(Error::Invalid("Host, port and username are required".into()));
+            return Err(Error::new("profile.missingFields"));
         }
         if profile.name.is_empty() {
             profile.name = format!("{}@{}", profile.username, profile.host);

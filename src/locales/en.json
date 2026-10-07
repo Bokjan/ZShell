@@ -1,0 +1,93 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "ok": "OK",
+    "save": "Save",
+    "delete": "Delete"
+  },
+  "app": {
+    "placeholder": "Select a session on the left to connect"
+  },
+  "sidebar": {
+    "title": "Sessions",
+    "newSession": "New session",
+    "empty": "No sessions yet. Click + to add one.",
+    "openHint": "Click to open in a new tab",
+    "edit": "Edit"
+  },
+  "tabs": {
+    "close": "Close",
+    "files": "Files",
+    "filesHint": "Show/hide the SFTP file panel"
+  },
+  "terminal": {
+    "reconnectHint": "Press Enter to reconnect",
+    "retryHint": "Press Enter to retry"
+  },
+  "profile": {
+    "titleNew": "New Session",
+    "titleEdit": "Edit Session",
+    "name": "Name",
+    "namePlaceholder": "Defaults to user@host",
+    "host": "Host",
+    "port": "Port",
+    "username": "Username",
+    "auth": "Authentication",
+    "authPassword": "Password",
+    "authPublicKey": "Private key file",
+    "authAgent": "SSH Agent",
+    "password": "Password",
+    "passwordKeepPlaceholder": "Leave empty to keep unchanged",
+    "passwordAskPlaceholder": "Leave empty to be asked when connecting",
+    "passwordHint": "Passwords are stored in the system keychain.",
+    "clearPassword": "Clear saved password",
+    "keyPath": "Private key path",
+    "keyHint": "If the key has a passphrase, you will be asked in the terminal when connecting.",
+    "agentHint": "Uses the keys loaded in the system SSH agent.",
+    "deleteConfirm": "Click again to delete",
+    "invalidPort": "Port must be an integer between 1 and 65535"
+  },
+  "sftp": {
+    "notConnectedYet": "Remote files are available once connected",
+    "disconnected": "Disconnected",
+    "parentFolder": "Parent folder",
+    "refresh": "Refresh",
+    "pathHint": "Type a path and press Enter",
+    "uploadFiles": "Upload Files",
+    "uploadFolder": "Upload Folder",
+    "newFolder": "New Folder",
+    "newFolderPlaceholder": "New folder name",
+    "dismissHint": "Click to dismiss",
+    "download": "Download to the Downloads folder",
+    "rename": "Rename",
+    "changePermissions": "Change permissions",
+    "delete": "Delete",
+    "emptyFolder": "Empty folder",
+    "dropHint": "Drop to upload to {path}",
+    "chooseFiles": "Choose files to upload",
+    "chooseFolders": "Choose folders to upload",
+    "replaceTitle": "Replace Files",
+    "replaceMessage": "These items already exist and will be replaced:\n{names}",
+    "replace": "Replace",
+    "deleteTitle": "Delete",
+    "deleteFolderMessage": "Delete the folder \"{name}\" and everything in it? This cannot be undone.",
+    "deleteFileMessage": "Delete \"{name}\"? This cannot be undone.",
+    "chmodTitle": "Change Permissions",
+    "chmodLabel": "Permissions for \"{name}\" (octal)",
+    "chmodInvalid": "Permissions must be 3–4 octal digits, e.g. 644 or 0755"
+  },
+  "transfer": {
+    "title": "Transfers",
+    "clearFinished": "Clear finished",
+    "cancel": "Cancel",
+    "show": "Show",
+    "remove": "Remove",
+    "cancelled": "Cancelled",
+    "preparing": "Preparing…",
+    "labelMore_one": "{name} and {count} more",
+    "labelMore_other": "{name} and {count} more",
+    "progress_one": "{transferred} / {total} · {done}/{count} file",
+    "progress_other": "{transferred} / {total} · {done}/{count} files",
+    "progressCurrent": "{progress} · {file}"
+  }
+}

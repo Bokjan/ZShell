@@ -13,6 +13,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
 use crate::config::Profile;
+use crate::error::Error;
 use crate::session::{SessionEvent, SessionId, SessionInput, TermIo};
 pub use connections::Connections;
 use host_key::ClientHandler;
@@ -24,8 +25,8 @@ pub async fn run(profile: Profile, id: SessionId, mut io: TermIo, connections: C
     let result = shell(&profile, id, &mut io, &connections).await;
     connections.close(id);
     match &result {
-        Ok(Some(code)) => io.print(&format!("\n\x1b[2m[Connection closed, exit status {code}]\x1b[0m\n")),
-        Ok(None) => io.print("\n\x1b[2m[Connection closed]\x1b[0m\n"),
+        Ok(Some(status)) => io.print(&format!("\n\x1b[2m{}\x1b[0m\n", t!("terminal.closedWithStatus", status = status))),
+        Ok(None) => io.print(&format!("\n\x1b[2m{}\x1b[0m\n", t!("terminal.closed"))),
         Err(e) => io.print(&format!("\n\x1b[31m{e:#}\x1b[0m\n")),
     }
     io.event(SessionEvent::Closed { error: result.err().map(|e| format!("{e:#}")) });
@@ -33,16 +34,14 @@ pub async fn run(profile: Profile, id: SessionId, mut io: TermIo, connections: C
 
 /// Returns the remote exit status, if the server reported one.
 async fn shell(profile: &Profile, id: SessionId, io: &mut TermIo, connections: &Connections) -> Result<Option<u32>> {
-    io.print(&format!(
-        "\x1b[2mConnecting to {}@{}:{} ...\x1b[0m\n",
-        profile.username, profile.host, profile.port
-    ));
+    let connecting = t!("terminal.connecting", user = profile.username, host = profile.host, port = profile.port);
+    io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
     let mut session = connect(profile, io).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
     connections.insert(id, session.clone());
 
-    let channel = session.channel_open_session().await.context("cannot open a session channel")?;
+    let channel = session.channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
     let (cols, rows) = io.size;
     channel.request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[]).await?;
     channel.request_shell(false).await?;
@@ -76,8 +75,8 @@ async fn connect(profile: &Profile, io: &mut TermIo) -> Result<client::Handle<Cl
     let target = format!("{}:{}", profile.host, profile.port);
     let stream = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&target))
         .await
-        .map_err(|_| anyhow!("connection to {target} timed out"))?
-        .with_context(|| format!("cannot connect to {target}"))?;
+        .map_err(|_| Error::new("ssh.connectTimeout").param("target", &target))?
+        .context(Error::new("ssh.connectFailed").param("target", &target))?;
     stream.set_nodelay(true)?;
 
     let config = Arc::new(client::Config {
@@ -95,8 +94,8 @@ async fn connect(profile: &Profile, io: &mut TermIo) -> Result<client::Handle<Cl
         tokio::select! {
             result = &mut handshake => {
                 return result.map_err(|e| match e {
-                    russh::Error::UnknownKey => anyhow!("host key not trusted, connection aborted"),
-                    e => anyhow!(e).context("SSH handshake failed"),
+                    russh::Error::UnknownKey => anyhow!(Error::new("ssh.hostKeyRejected")),
+                    e => anyhow!(e).context(Error::new("ssh.handshakeFailed")),
                 });
             }
             Some(query) = queries.recv() => {

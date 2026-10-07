@@ -7,11 +7,18 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 use crate::config::{Profile, ProfileStore};
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::i18n;
 use crate::secrets;
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
 use crate::sftp::{self, transfer, Listing};
 use crate::ssh::{self, Connections};
+
+/// Selects the language for backend text; returns the locale actually used.
+#[tauri::command]
+pub fn set_locale(locale: String) -> &'static str {
+    i18n::set_locale(&locale)
+}
 
 #[tauri::command]
 pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
@@ -73,37 +80,39 @@ pub fn session_close(sessions: State<'_, SessionManager>, connections: State<'_,
 #[tauri::command]
 pub async fn sftp_open(connections: State<'_, Connections>, id: SessionId) -> Result<String> {
     let sftp = connections.get(id)?.sftp().await?;
-    Ok(sftp.canonicalize(".").await?)
+    sftp.canonicalize(".").await.map_err(|e| Error::new("sftp.listFailed").param("path", "~").detail(e))
 }
 
 #[tauri::command]
 pub async fn sftp_list(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<Listing> {
     let sftp = connections.get(id)?.sftp().await?;
-    Ok(sftp::list(&sftp, &path).await?)
+    sftp::list(&sftp, &path).await.map_err(|e| Error::from(e.context(Error::new("sftp.listFailed").param("path", &path))))
 }
 
 #[tauri::command]
 pub async fn sftp_mkdir(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<()> {
     let sftp = connections.get(id)?.sftp().await?;
-    Ok(sftp.create_dir(path).await?)
+    sftp.create_dir(&path).await.map_err(|e| Error::new("sftp.mkdirFailed").param("path", &path).detail(e))
 }
 
 #[tauri::command]
 pub async fn sftp_rename(connections: State<'_, Connections>, id: SessionId, from: String, to: String) -> Result<()> {
     let sftp = connections.get(id)?.sftp().await?;
-    Ok(sftp.rename(from, to).await?)
+    sftp.rename(&from, &to)
+        .await
+        .map_err(|e| Error::new("sftp.renameFailed").param("from", &from).param("to", &to).detail(e))
 }
 
 #[tauri::command]
 pub async fn sftp_remove(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<()> {
     let sftp = connections.get(id)?.sftp().await?;
-    Ok(sftp::remove(&sftp, &path).await?)
+    sftp::remove(&sftp, &path).await.map_err(|e| Error::from(e.context(Error::new("sftp.removeFailed").param("path", &path))))
 }
 
 #[tauri::command]
 pub async fn sftp_chmod(connections: State<'_, Connections>, id: SessionId, path: String, mode: u32) -> Result<()> {
     let sftp = connections.get(id)?.sftp().await?;
-    Ok(sftp::chmod(&sftp, &path, mode).await?)
+    sftp::chmod(&sftp, &path, mode).await.map_err(|e| Error::from(e.context(Error::new("sftp.chmodFailed").param("path", &path))))
 }
 
 #[tauri::command]

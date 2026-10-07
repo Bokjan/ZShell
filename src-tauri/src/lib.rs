@@ -1,3 +1,6 @@
+#[macro_use]
+mod i18n;
+
 mod commands;
 mod config;
 mod error;
@@ -27,6 +30,7 @@ pub fn run() {
         .manage(Connections::default())
         .manage(Transfers::default())
         .invoke_handler(tauri::generate_handler![
+            commands::set_locale,
             commands::profiles_list,
             commands::profile_save,
             commands::profile_delete,

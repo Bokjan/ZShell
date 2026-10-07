@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -7,7 +8,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 
-import { openSshSession, type Session } from "../lib/api";
+import { errorMessage, openSshSession, type Session } from "../lib/api";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
@@ -22,6 +23,9 @@ interface Props {
 const ignore = () => {};
 
 export function TerminalView({ profileId, active, onStatus, onSession }: Props) {
+  const { t } = useTranslation();
+  const tRef = useRef(t);
+  tRef.current = t;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -82,7 +86,7 @@ export function TerminalView({ profileId, active, onStatus, onSession }: Props) 
           onSessionRef.current(null);
           void handle?.close().catch(ignore);
           onStatusRef.current("closed");
-          term.write("\x1b[2mPress Enter to reconnect\x1b[0m\r\n");
+          term.write(`\x1b[2m${tRef.current("terminal.reconnectHint")}\x1b[0m\r\n`);
         },
       )
         .then((s) => {
@@ -96,7 +100,7 @@ export function TerminalView({ profileId, active, onStatus, onSession }: Props) 
         .catch((e) => {
           closed = true;
           onStatusRef.current("closed");
-          term.write(`\r\n\x1b[31m${e}\x1b[0m\r\n\x1b[2mPress Enter to retry\x1b[0m\r\n`);
+          term.write(`\r\n\x1b[31m${errorMessage(e)}\x1b[0m\r\n\x1b[2m${tRef.current("terminal.retryHint")}\x1b[0m\r\n`);
         });
     };
 

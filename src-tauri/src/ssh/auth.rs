@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use russh::client::{AuthResult, Handle, KeyboardInteractiveAuthResponse};
 use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::agent::AgentIdentity;
@@ -13,6 +13,7 @@ use russh::MethodKind;
 
 use super::host_key::ClientHandler;
 use crate::config::{AuthMethod, Profile};
+use crate::error::Error;
 use crate::secrets;
 use crate::session::TermIo;
 
@@ -46,17 +47,17 @@ async fn password(session: &mut Session, profile: &Profile, io: &mut TermIo) -> 
         if session.authenticate_password(user, password).await?.success() {
             return Ok(());
         }
-        io.print("The saved password was rejected by the server.\n");
+        io.print(&format!("{}\n", t!("terminal.savedPasswordRejected")));
     }
     for _ in 0..MAX_ATTEMPTS {
         io.print(&format!("{user}@{}'s password: ", profile.host));
-        let password = io.read_line(false).await.context("cancelled")?;
+        let password = io.read_line(false).await.context(Error::new("auth.cancelled"))?;
         if session.authenticate_password(user, password).await?.success() {
             return Ok(());
         }
         io.print("Permission denied, please try again.\n");
     }
-    bail!("password authentication failed")
+    bail!(Error::new("auth.passwordFailed"))
 }
 
 async fn keyboard_interactive(
@@ -87,7 +88,7 @@ async fn keyboard_interactive(
                             }
                         }
                         io.print(&prompt.prompt);
-                        answers.push(io.read_line(prompt.echo).await.context("cancelled")?);
+                        answers.push(io.read_line(prompt.echo).await.context(Error::new("auth.cancelled"))?);
                     }
                     response = session.authenticate_keyboard_interactive_respond(answers).await?;
                 }
@@ -95,7 +96,7 @@ async fn keyboard_interactive(
         }
         io.print("Permission denied, please try again.\n");
     }
-    bail!("authentication failed")
+    bail!(Error::new("auth.failed"))
 }
 
 async fn public_key(session: &mut Session, user: &str, key_path: &str, io: &mut TermIo) -> Result<()> {
@@ -109,7 +110,7 @@ async fn public_key(session: &mut Session, user: &str, key_path: &str, io: &mut 
     let result = session
         .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg))
         .await?;
-    ensure!(result.success(), "the server rejected private key {}", path.display());
+    ensure!(result.success(), Error::new("auth.keyRejected").param("path", path.display()));
     Ok(())
 }
 
@@ -117,23 +118,23 @@ async fn load_key(path: &PathBuf, io: &mut TermIo) -> Result<PrivateKey> {
     match load_secret_key(path, None) {
         Ok(key) => return Ok(key),
         Err(russh::keys::Error::KeyIsEncrypted) => {}
-        Err(e) => return Err(e).with_context(|| format!("cannot read private key {}", path.display())),
+        Err(e) => return Err(e).context(Error::new("auth.keyReadFailed").param("path", path.display())),
     }
     for _ in 0..MAX_ATTEMPTS {
         io.print(&format!("Enter passphrase for key '{}': ", path.display()));
-        let passphrase = io.read_line(false).await.context("cancelled")?;
+        let passphrase = io.read_line(false).await.context(Error::new("auth.cancelled"))?;
         match load_secret_key(path, Some(&passphrase)) {
             Ok(key) => return Ok(key),
-            Err(_) => io.print("Incorrect passphrase.\n"),
+            Err(_) => io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
         }
     }
-    bail!("cannot decrypt private key {}", path.display())
+    bail!(Error::new("auth.keyDecryptFailed").param("path", path.display()))
 }
 
 async fn agent(session: &mut Session, user: &str) -> Result<()> {
-    let mut agent = connect_agent().await.context("cannot connect to the SSH agent")?;
-    let identities = agent.request_identities().await.context("cannot list SSH agent keys")?;
-    ensure!(!identities.is_empty(), "the SSH agent has no keys");
+    let mut agent = connect_agent().await.context(Error::new("auth.agentConnectFailed"))?;
+    let identities = agent.request_identities().await.context(Error::new("auth.agentListFailed"))?;
+    ensure!(!identities.is_empty(), Error::new("auth.agentEmpty"));
 
     let rsa_hash = session.best_supported_rsa_hash().await?.flatten();
     for identity in identities {
@@ -145,12 +146,12 @@ async fn agent(session: &mut Session, user: &str) -> Result<()> {
         let result = session
             .authenticate_publickey_with(user, key, hash_alg, &mut agent)
             .await
-            .map_err(|e| anyhow!("SSH agent signing failed: {e:?}"))?;
+            .map_err(|e| Error::new("auth.agentSignFailed").detail(format!("{e:?}")))?;
         if result.success() {
             return Ok(());
         }
     }
-    bail!("the server rejected all SSH agent keys")
+    bail!(Error::new("auth.agentAllRejected"))
 }
 
 type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin>>;

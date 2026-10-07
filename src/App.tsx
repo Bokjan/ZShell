@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ProfileDialog } from "./components/ProfileDialog";
 import { Sidebar } from "./components/Sidebar";
@@ -9,6 +10,7 @@ import { listProfiles, type Profile } from "./lib/api";
 import "./styles.css";
 
 function App() {
+  const { t } = useTranslation();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeKey, setActiveKey] = useState<number | null>(null);
@@ -66,7 +68,7 @@ function App() {
               onStatus={(status: SessionStatus) => updateTab(tab.key, { status })}
             />
           ))}
-          {tabs.length === 0 && <div className="placeholder">Select a session on the left to connect</div>}
+          {tabs.length === 0 && <div className="placeholder">{t("app.placeholder")}</div>}
         </div>
       </main>
       {editing !== undefined && <ProfileDialog profile={editing} onClose={closeDialog} onChanged={reloadProfiles} />}

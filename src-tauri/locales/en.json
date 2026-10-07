@@ -1,0 +1,67 @@
+{
+  "terminal": {
+    "connecting": "Connecting to {user}@{host}:{port} ...",
+    "closed": "[Connection closed]",
+    "closedWithStatus": "[Connection closed, exit status {status}]",
+    "savedPasswordRejected": "The saved password was rejected by the server.",
+    "incorrectPassphrase": "Incorrect passphrase."
+  },
+  "hostKey": {
+    "unknown": "The authenticity of host '{host}' can't be established.\n{algorithm} key fingerprint is {fingerprint}.\nAre you sure you want to continue connecting",
+    "typeYesOrNo": "Please type 'yes' or 'no':",
+    "added": "Permanently added '{host}' ({algorithm}) to the list of known hosts.",
+    "saveFailed": "Could not write to known_hosts: {error}",
+    "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of ~/.ssh/known_hosts.\nIf the key change is expected, remove that line and reconnect."
+  },
+  "errors": {
+    "unexpected": "Unexpected error",
+    "credentialStore": "Credential store error",
+    "session": {
+      "notFound": "Session not found",
+      "notConnected": "The session has no SSH connection yet"
+    },
+    "profile": {
+      "notFound": "Session profile not found",
+      "missingFields": "Host, port and username are required"
+    },
+    "ssh": {
+      "connectTimeout": "Connection to {target} timed out",
+      "connectFailed": "Cannot connect to {target}",
+      "handshakeFailed": "SSH handshake failed",
+      "hostKeyRejected": "Host key not trusted, connection aborted",
+      "channelFailed": "Cannot open a session channel"
+    },
+    "auth": {
+      "cancelled": "Cancelled",
+      "passwordFailed": "Password authentication failed",
+      "failed": "Authentication failed",
+      "keyRejected": "The server rejected private key {path}",
+      "keyReadFailed": "Cannot read private key {path}",
+      "keyDecryptFailed": "Cannot decrypt private key {path}",
+      "agentConnectFailed": "Cannot connect to the SSH agent",
+      "agentListFailed": "Cannot list SSH agent keys",
+      "agentEmpty": "The SSH agent has no keys",
+      "agentSignFailed": "SSH agent signing failed",
+      "agentAllRejected": "The server rejected all SSH agent keys"
+    },
+    "sftp": {
+      "unsupported": "The server does not support SFTP",
+      "listFailed": "Cannot list {path}",
+      "mkdirFailed": "Cannot create folder {path}",
+      "renameFailed": "Cannot rename {from} to {to}",
+      "removeFailed": "Cannot delete {path}",
+      "chmodFailed": "Cannot change permissions of {path}"
+    },
+    "transfer": {
+      "cancelled": "Cancelled",
+      "invalidPath": "Invalid local path {path}",
+      "readFailed": "Cannot read {path}",
+      "openFailed": "Cannot open {path}",
+      "createFailed": "Cannot create {path}",
+      "createDirFailed": "Cannot create folder {path}",
+      "uploadFailed": "Failed to upload {path}",
+      "downloadFailed": "Failed to download {path}"
+    }
+  }
+}

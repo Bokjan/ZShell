@@ -372,7 +372,8 @@ body.resizing .terminal-view {
   width: 70px;
 }
 .col-time {
-  width: 92px;
+  /* Wide enough for 12-hour formats like "10/07, 09:34 PM". */
+  width: 120px;
 }
 .file-size {
   text-align: right;

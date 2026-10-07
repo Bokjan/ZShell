@@ -78,35 +78,26 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
     let fingerprint = query.key.fingerprint(HashAlg::Sha256);
     match query.status {
         HostKeyStatus::Changed { line } => {
-            io.print(&format!(
-                "\x1b[1;31m@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\
-                 @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n\
-                 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\x1b[0m\n\
-                 Someone could be eavesdropping on you right now (man-in-the-middle attack)!\n\
-                 It is also possible that the host key has just been changed.\n\
-                 The {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\n\
-                 It does not match line {line} of ~/.ssh/known_hosts.\n\
-                 If the key change is expected, remove that line and reconnect.\n"
-            ));
+            let banner = t!("hostKey.changedBanner");
+            let details = t!("hostKey.changedDetails", algorithm = algorithm, fingerprint = fingerprint, line = line);
+            io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }
         HostKeyStatus::Unknown => {
-            io.print(&format!(
-                "The authenticity of host '{host}' can't be established.\n\
-                 {algorithm} key fingerprint is {fingerprint}.\n\
-                 Are you sure you want to continue connecting (yes/no)? "
-            ));
+            io.print(&t!("hostKey.unknown", host = host, algorithm = algorithm, fingerprint = fingerprint));
+            // The answer words stay "yes"/"no" in every language, as in OpenSSH.
+            io.print(" (yes/no)? ");
             loop {
                 match io.read_line(true).await.as_deref().map(str::trim) {
                     Some(answer) if answer.eq_ignore_ascii_case("yes") => break,
                     Some(answer) if answer.eq_ignore_ascii_case("no") => return false,
                     None => return false,
-                    Some(_) => io.print("Please type 'yes' or 'no': "),
+                    Some(_) => io.print(&format!("{} ", t!("hostKey.typeYesOrNo"))),
                 }
             }
             match learn_known_hosts(host, port, &query.key) {
-                Ok(()) => io.print(&format!("Permanently added '{host}' ({algorithm}) to the list of known hosts.\n")),
-                Err(e) => io.print(&format!("\x1b[33mCould not write to known_hosts: {e}\x1b[0m\n")),
+                Ok(()) => io.print(&format!("{}\n", t!("hostKey.added", host = host, algorithm = algorithm))),
+                Err(e) => io.print(&format!("\x1b[33m{}\x1b[0m\n", t!("hostKey.saveFailed", error = e))),
             }
             true
         }

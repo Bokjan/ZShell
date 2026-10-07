@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
-import { deleteProfile, saveProfile, type AuthMethod, type Profile } from "../lib/api";
+import { deleteProfile, errorMessage, saveProfile, type AuthMethod, type Profile } from "../lib/api";
 
 interface Props {
   /** null creates a new profile. */
@@ -12,6 +13,7 @@ interface Props {
 type AuthType = AuthMethod["type"];
 
 export function ProfileDialog({ profile, onClose, onChanged }: Props) {
+  const { t } = useTranslation();
   const [name, setName] = useState(profile?.name ?? "");
   const [host, setHost] = useState(profile?.host ?? "");
   const [port, setPort] = useState(String(profile?.port ?? 22));
@@ -35,7 +37,7 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
     e.preventDefault();
     const portNumber = Number(port);
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
-      setError("Port must be an integer between 1 and 65535");
+      setError(t("profile.invalidPort"));
       return;
     }
     const auth: AuthMethod =
@@ -54,7 +56,7 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
       onChanged();
       onClose();
     } catch (err) {
-      setError(String(err));
+      setError(errorMessage(err));
     }
   };
 
@@ -69,22 +71,22 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
       onChanged();
       onClose();
     } catch (err) {
-      setError(String(err));
+      setError(errorMessage(err));
     }
   };
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form className="dialog" onSubmit={submit}>
-        <h2>{profile ? "Edit Session" : "New Session"}</h2>
+        <h2>{profile ? t("profile.titleEdit") : t("profile.titleNew")}</h2>
 
         <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Defaults to user@host" />
+          {t("profile.name")}
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("profile.namePlaceholder")} />
         </label>
         <div className="row">
           <label className="grow">
-            Host
+            {t("profile.host")}
             <input
               value={host}
               onChange={(e) => setHost(e.target.value)}
@@ -97,12 +99,12 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
             />
           </label>
           <label className="port">
-            Port
+            {t("profile.port")}
             <input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" required />
           </label>
         </div>
         <label>
-          Username
+          {t("profile.username")}
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -113,31 +115,31 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
           />
         </label>
         <label>
-          Authentication
+          {t("profile.auth")}
           <select value={authType} onChange={(e) => setAuthType(e.target.value as AuthType)}>
-            <option value="password">Password</option>
-            <option value="publicKey">Private key file</option>
-            <option value="agent">SSH Agent</option>
+            <option value="password">{t("profile.authPassword")}</option>
+            <option value="publicKey">{t("profile.authPublicKey")}</option>
+            <option value="agent">{t("profile.authAgent")}</option>
           </select>
         </label>
 
         {authType === "password" && (
           <>
             <label>
-              Password
+              {t("profile.password")}
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={clearPassword}
-                placeholder={profile ? "Leave empty to keep unchanged" : "Leave empty to be asked when connecting"}
+                placeholder={profile ? t("profile.passwordKeepPlaceholder") : t("profile.passwordAskPlaceholder")}
               />
             </label>
-            <p className="hint">Passwords are stored in the system keychain.</p>
+            <p className="hint">{t("profile.passwordHint")}</p>
             {profile && (
               <label className="checkbox">
                 <input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} />
-                Clear saved password
+                {t("profile.clearPassword")}
               </label>
             )}
           </>
@@ -145,28 +147,28 @@ export function ProfileDialog({ profile, onClose, onChanged }: Props) {
         {authType === "publicKey" && (
           <>
             <label>
-              Private key path
+              {t("profile.keyPath")}
               <input value={keyPath} onChange={(e) => setKeyPath(e.target.value)} required spellCheck={false} />
             </label>
-            <p className="hint">If the key has a passphrase, you will be asked in the terminal when connecting.</p>
+            <p className="hint">{t("profile.keyHint")}</p>
           </>
         )}
-        {authType === "agent" && <p className="hint">Uses the keys loaded in the system SSH agent.</p>}
+        {authType === "agent" && <p className="hint">{t("profile.agentHint")}</p>}
 
         {error && <p className="error">{error}</p>}
 
         <footer>
           {profile && (
             <button type="button" className="danger" onClick={remove}>
-              {confirmingDelete ? "Click again to delete" : "Delete"}
+              {confirmingDelete ? t("profile.deleteConfirm") : t("common.delete")}
             </button>
           )}
           <span className="grow" />
           <button type="button" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="submit" className="primary">
-            Save
+            {t("common.save")}
           </button>
         </footer>
       </form>

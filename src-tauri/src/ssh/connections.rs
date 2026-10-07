@@ -27,7 +27,7 @@ impl Connection {
             .get_or_try_init(|| async {
                 let channel = self.handle.channel_open_session().await?;
                 channel.request_subsystem(true, "sftp").await?;
-                let sftp = SftpSession::new(channel.into_stream()).await.context("the server does not support SFTP")?;
+                let sftp = SftpSession::new(channel.into_stream()).await.context(Error::new("sftp.unsupported"))?;
                 Ok(Arc::new(sftp))
             })
             .await
@@ -45,7 +45,7 @@ impl Connections {
     }
 
     pub fn get(&self, id: SessionId) -> Result<Arc<Connection>> {
-        self.0.lock().unwrap().get(&id).cloned().ok_or(Error::NotConnected(id))
+        self.0.lock().unwrap().get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))
     }
 
     /// Unregisters the connection and disconnects it in the background. Idempotent.

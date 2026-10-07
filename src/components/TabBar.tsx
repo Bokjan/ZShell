@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import type { SessionStatus } from "./TerminalView";
 
 export interface Tab {
@@ -17,6 +19,7 @@ interface Props {
 }
 
 export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Props) {
+  const { t } = useTranslation();
   const activeTab = tabs.find((t) => t.key === activeKey);
   return (
     <nav className="tab-bar">
@@ -32,7 +35,7 @@ export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Pr
           <span className="tab-title">{tab.title}</span>
           <button
             className="tab-close"
-            title="Close"
+            title={t("tabs.close")}
             onClick={(e) => {
               e.stopPropagation();
               onClose(tab.key);
@@ -47,9 +50,9 @@ export function TabBar({ tabs, activeKey, onSelect, onClose, onToggleFiles }: Pr
         className={`tab-bar-button${activeTab?.filesOpen ? " on" : ""}`}
         disabled={!activeTab}
         onClick={onToggleFiles}
-        title="Show/hide the SFTP file panel"
+        title={t("tabs.filesHint")}
       >
-        Files
+        {t("tabs.files")}
       </button>
     </nav>
   );

@@ -57,37 +57,53 @@
 
 ## 国际化（i18n）
 
-当前所有文案以英语硬编码；翻译接入排期在 MVP 之后（见里程碑 M6）。架构上按以下方式设计，现阶段新写的代码需遵守「开发约束」，以降低日后接入成本。
+i18n 架构已接入，目前只有英语（`en`）一种语言；其他语言的翻译和语言设置界面排期在 MVP 之后（里程碑 M6）。
 
 ### 文案来源与处理方式
 
 | 来源 | 示例 | 处理 |
 |---|---|---|
-| 前端界面 | 按钮、对话框、提示、传输状态 | 前端 i18n 库按 key 翻译 |
-| 后端命令错误 | `cannot read {path}`、`profile not found` | 改为结构化错误，由前端翻译 |
-| 后端写入终端的提示 | 主机指纹确认、密码提示、连接关闭 | Rust 端消息目录，按当前语言渲染 |
-| 远端/系统产生的文本 | 服务器 banner、keyboard-interactive 问题、SFTP 状态消息、系统错误 | 原样显示，不翻译 |
+| 前端界面 | 按钮、对话框、提示、传输状态 | 前端 `i18next` 按 key 翻译 |
+| 后端命令错误 | `Cannot list {path}`、`Session profile not found` | 后端消息目录按当前语言渲染，连同 `code` / `params` 返回 |
+| 后端写入终端的提示 | 主机指纹确认、连接关闭、口令错误 | 后端消息目录按当前语言渲染 |
+| 远端/系统产生的文本 | 服务器 banner、keyboard-interactive 问题、SFTP 状态、OS 错误 | 原样显示，不翻译（作为错误的技术细节附在译文之后） |
+
+每条文案只在一处维护：界面文案在前端语言包，后端产生的文案在后端语言包。
+
+### 目录与格式
+
+- 前端：`src/locales/<lang>.json`；后端：`src-tauri/locales/<lang>.json`（编译期嵌入）。
+- 两端都是嵌套 JSON，key 为点分路径（`sftp.uploadFiles`、`errors.transfer.readFailed`），占位符统一为 `{name}`。
+- 前端复数用 i18next 的后缀约定（`transfer.progress_one` / `_other`，参数 `count`），按 `Intl.PluralRules` 选择。
+- 英语为源语言，也是缺失 key 时的兜底。
 
 ### 前端
 
-- 选用 `i18next` + `react-i18next`：成熟、支持插值与复数（如 `{{count}} files`）、按需加载语言包。
-- 语言包放在 `src/locales/<lang>.json`，英语 `en.json` 为源文件和兜底；key 按模块分组（`sftp.uploadFiles`、`profile.authPassword` 等）。
-- 语言选择：首次启动跟随系统语言（`tauri-plugin-os` 的 locale，或 `navigator.language`），设置中可手动切换并持久化；不支持的语言回退到英语。
-- 日期、数字、文件大小用 `Intl.DateTimeFormat` / `Intl.NumberFormat` 按当前语言格式化（替换 `src/lib/format.ts` 中的手写格式）。
-- 原生文件对话框标题等经插件传入的字符串同样走翻译。
+- `src/i18n/index.ts`：初始化 i18next（插值前后缀改为 `{` `}`，与后端一致），按 `navigator.languages` 选择最匹配的已支持语言（`zh-Hans-CN` → `zh-Hans` → `zh` → `en`），并调用后端 `set_locale` 保持两端一致；`changeLanguage()` 供将来的语言设置使用。
+- `src/i18n/i18next.d.ts`：以 `en.json` 为类型源，`t()` 的 key 写错会在 `tsc` 阶段报错。
+- 组件中用 `useTranslation()` 的 `t()`；写入 xterm 的提示同样走 `t()`。
+- 日期与数字用 `Intl.DateTimeFormat` / `Intl.NumberFormat` 按当前语言格式化（`src/lib/format.ts`）。
+- 后端错误用 `errorMessage()` 显示，逻辑判断用 `errorCode()`（例如传输取消判断 `transfer.cancelled`），不匹配文案内容。
 
 ### 后端
 
-- **命令错误结构化**：`error::Error` 序列化为 `{ code, params, message }`，`code` 为稳定的错误标识（如 `sftp.readFailed`），`params` 为插值参数，`message` 为英文兜底（含底层原因）。前端按 `code` 翻译，无对应翻译时显示 `message`。
-- **终端提示**：Rust 端引入消息目录（候选：`rust-i18n` 或 Fluent `fluent-bundle`），语言包随应用打包；前端在启动和切换语言时调用 `set_locale` 命令，`TermIo` 输出提示时按当前语言取文案。
-- OpenSSH 风格、用户可能依赖其字面形式的提示（如 `user@host's password:`、`(yes/no)` 的回答词）保持英文，避免脚本或习惯被打破。
+- `src-tauri/src/i18n.rs`：消息目录、语言协商（同上的回退规则）、`set_locale` 命令背后的全局语言；`t!("key", name = value)` 宏取译文。
+- `error::Error` 为 `{ code, params, detail }`：消息由 `errors.<code>` 渲染，底层原因（OS / 库 / 服务器文本）作为不翻译的 `detail` 追加；序列化给前端为 `{ code, params, message }`。后端内部通过 anyhow 的 `.context(Error::new(..))` 附加，转换回 `Error` 时取最外层的 code。
+- 单元测试 `catalog_covers_all_keys_in_sources` 扫描源码中的 `t!("…")` 与 `Error::new("…")`，确保英语语言包包含所有 key。
+- OpenSSH 风格、用户可能依赖其字面形式的提示保持英文，不进语言包：`user@host's password:`、`Enter passphrase for key '…':`、`Permission denied, please try again.`，以及 `(yes/no)` 的回答词。
 
-### 开发约束（现在起遵守）
+### 新增一种语言（M6 起）
 
-- 文案用完整句子加参数，不拼接句子片段（便于不同语序的语言翻译）。
-- 不根据文案内容做逻辑判断（例如传输取消状态用标志位，而非匹配错误字符串）。
-- 界面布局不假设文案长度（按钮、列宽留足余量，长文本省略或换行），CJK 字体保留回退。
-- 大写等样式用 CSS（`text-transform`）实现，不写进文案本身。
+1. 新建 `src/locales/<lang>.json` 和 `src-tauri/locales/<lang>.json`，按英语文件逐 key 翻译（可只翻译部分，缺失项回退英语）。
+2. 在 `src/i18n/index.ts` 的 `resources` 和 `src-tauri/src/i18n.rs` 的 `SOURCES` 中登记该语言。
+3. 首次加入第二种语言时，同时加入语言设置界面（调用 `changeLanguage()`，并持久化用户选择）。
+
+### 开发约束
+
+- 新文案一律加入语言包，不在组件或后端代码里写死用户可见的文本。
+- 用完整句子加参数，不拼接句子片段（便于不同语序的语言翻译）。
+- 不根据文案内容做逻辑判断，用错误码或状态。
+- 界面布局不假设文案长度，CJK 字体保留回退；大小写等样式用 CSS（`text-transform`）实现。
 
 ## Rust 模块规划（`src-tauri/src/`）
 
@@ -102,7 +118,8 @@
 | `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`） | M2 ✅ |
 | `forward/` | `-L` / `-R` / `-D`（SOCKS5） | M3 |
 | `pty/` | 本地终端（portable-pty），作为 session 的另一种后端 | M5 |
-| `i18n/` | 终端提示的消息目录、`set_locale`；错误码定义 | M6 |
+| `i18n.rs` | 后端消息目录、语言协商、`t!` 宏 | ✅ |
+| `error.rs` | 结构化错误（code / params / detail），消息经消息目录渲染 | ✅ |
 
 ## 里程碑
 
@@ -114,7 +131,8 @@
 | **M3 端口转发** | `-L` / `-R` / `-D`，规则随会话保存，可自动启动 |
 | **M4 增强** | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题 |
 | **M5 本地终端** | portable-pty（macOS zsh / Windows PowerShell） |
-| **M6 国际化** | 接入前端 i18next 与后端消息目录；结构化错误；语言设置；首批翻译简体中文（zh-CN），之后按需增加其他语言 |
+| **i18n 架构** ✅ | 前端 i18next（类型检查 key）与后端消息目录；结构化错误；语言协商与 `set_locale`；仅英语 |
+| **M6 翻译** | 语言设置界面；首批翻译简体中文（zh-CN），之后按需增加其他语言 |
 
 ## 注意事项
 

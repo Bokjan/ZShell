@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 
-import { sftp, type FileEntry, type SessionId } from "../lib/api";
+import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from "../lib/api";
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { TransferList, type Transfer } from "./TransferList";
@@ -24,9 +25,9 @@ interface Confirm {
 
 const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name : `${dir}/${name}`);
 const parentPath = (path: string) => path.replace(/\/[^/]+\/?$/, "") || "/";
-const labelFor = (names: string[]) => (names.length === 1 ? names[0] : `${names[0]} and ${names.length - 1} more`);
 
 export function SftpPanel({ sessionId, connected, active }: Props) {
+  const { t } = useTranslation();
   const [cwd, setCwd] = useState<string | null>(null);
   const [pathInput, setPathInput] = useState("");
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -43,7 +44,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   const cwdRef = useRef<string | null>(null);
   cwdRef.current = cwd;
 
-  const fail = (e: unknown) => setError(String(e));
+  const fail = (e: unknown) => setError(errorMessage(e));
 
   const load = useCallback(
     async (path: string) => {
@@ -78,7 +79,8 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   const updateTransfer = (id: string, patch: Partial<Transfer>) =>
     setTransfers((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
-  const cancelled = useRef(new Set<string>());
+  const labelFor = (names: string[]) =>
+    names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 });
 
   const runTransfer = async (kind: Transfer["kind"], names: string[], run: (id: string) => Promise<string[] | void>) => {
     const id = crypto.randomUUID();
@@ -87,7 +89,10 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
       const results = await run(id);
       updateTransfer(id, { status: "done", results: results ?? undefined });
     } catch (e) {
-      updateTransfer(id, cancelled.current.has(id) ? { status: "cancelled" } : { status: "error", error: String(e) });
+      updateTransfer(
+        id,
+        errorCode(e) === "transfer.cancelled" ? { status: "cancelled" } : { status: "error", error: errorMessage(e) },
+      );
     }
   };
 
@@ -102,9 +107,9 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     const conflicts = localPaths.map(basename).filter((name) => existing.has(name));
     if (conflicts.length === 0) return void start();
     setConfirm({
-      title: "Replace Files",
-      message: `These items already exist and will be replaced:\n${conflicts.join("\n")}`,
-      confirmLabel: "Replace",
+      title: t("sftp.replaceTitle"),
+      message: t("sftp.replaceMessage", { names: conflicts.join("\n") }),
+      confirmLabel: t("sftp.replace"),
       danger: true,
       action: start,
     });
@@ -119,7 +124,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
 
   const pickAndUpload = async (directory: boolean) => {
     if (!cwd) return;
-    const picked = await open({ multiple: true, directory, title: directory ? "Choose folders to upload" : "Choose files to upload" });
+    const picked = await open({ multiple: true, directory, title: directory ? t("sftp.chooseFolders") : t("sftp.chooseFiles") });
     if (picked) upload(Array.isArray(picked) ? picked : [picked], cwd);
   };
 
@@ -176,7 +181,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     e.preventDefault();
     if (!chmodTarget || sessionId == null || !cwd) return;
     if (!/^[0-7]{3,4}$/.test(chmodTarget.value)) {
-      setError("Permissions must be 3–4 octal digits, e.g. 644 or 0755");
+      setError(t("sftp.chmodInvalid"));
       return;
     }
     const { entry, value } = chmodTarget;
@@ -191,11 +196,12 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
 
   const askRemove = (entry: FileEntry) =>
     setConfirm({
-      title: "Delete",
-      message: entry.isDir && !entry.isSymlink
-        ? `Delete the folder "${entry.name}" and everything in it? This cannot be undone.`
-        : `Delete "${entry.name}"? This cannot be undone.`,
-      confirmLabel: "Delete",
+      title: t("sftp.deleteTitle"),
+      message:
+        entry.isDir && !entry.isSymlink
+          ? t("sftp.deleteFolderMessage", { name: entry.name })
+          : t("sftp.deleteFileMessage", { name: entry.name }),
+      confirmLabel: t("common.delete"),
       danger: true,
       action: async () => {
         if (sessionId == null || !cwd) return;
@@ -213,7 +219,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   if (!connected && cwd == null) {
     return (
       <div className="sftp-panel" ref={panelRef}>
-        <div className="sftp-empty">Remote files are available once connected</div>
+        <div className="sftp-empty">{t("sftp.notConnectedYet")}</div>
       </div>
     );
   }
@@ -221,10 +227,10 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   return (
     <div className={`sftp-panel${dragOver ? " drag-over" : ""}`} ref={panelRef}>
       <div className="sftp-toolbar">
-        <button className="icon-button" title="Parent folder" disabled={!cwd || cwd === "/"} onClick={() => cwd && load(parentPath(cwd))}>
+        <button className="icon-button" title={t("sftp.parentFolder")} disabled={!cwd || cwd === "/"} onClick={() => cwd && load(parentPath(cwd))}>
           ↑
         </button>
-        <button className="icon-button" title="Refresh" disabled={!cwd} onClick={refresh}>
+        <button className="icon-button" title={t("sftp.refresh")} disabled={!cwd} onClick={refresh}>
           ⟳
         </button>
         <form
@@ -234,27 +240,27 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
             void load(pathInput.trim() || ".");
           }}
         >
-          <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} spellCheck={false} title="Type a path and press Enter" />
+          <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} spellCheck={false} title={t("sftp.pathHint")} />
         </form>
       </div>
       <div className="sftp-actions">
         <button disabled={!connected || !cwd} onClick={() => pickAndUpload(false)}>
-          Upload Files
+          {t("sftp.uploadFiles")}
         </button>
         <button disabled={!connected || !cwd} onClick={() => pickAndUpload(true)}>
-          Upload Folder
+          {t("sftp.uploadFolder")}
         </button>
         <button disabled={!connected || !cwd} onClick={() => setNewFolder("")}>
-          New Folder
+          {t("sftp.newFolder")}
         </button>
       </div>
 
       {error && (
-        <div className="sftp-error" onClick={() => setError(null)} title="Click to dismiss">
+        <div className="sftp-error" onClick={() => setError(null)} title={t("sftp.dismissHint")}>
           {error}
         </div>
       )}
-      {!connected && <div className="sftp-error">Disconnected</div>}
+      {!connected && <div className="sftp-error">{t("sftp.disconnected")}</div>}
 
       <div className={`sftp-list${loading ? " loading" : ""}`}>
         <table>
@@ -270,7 +276,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                   <form onSubmit={submitNewFolder}>
                     <input
                       autoFocus
-                      placeholder="New folder name"
+                      placeholder={t("sftp.newFolderPlaceholder")}
                       value={newFolder}
                       onChange={(e) => setNewFolder(e.target.value)}
                       onBlur={() => setNewFolder(null)}
@@ -311,21 +317,21 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                 <td className="file-time">
                   <span className="file-time-text">{formatTime(entry.modified)}</span>
                   <span className="row-actions">
-                    <button title="Download to the Downloads folder" onClick={() => download(entry)}>
+                    <button title={t("sftp.download")} onClick={() => download(entry)}>
                       ⬇
                     </button>
-                    <button title="Rename" onClick={() => setRenaming({ path: entry.path, value: entry.name })}>
+                    <button title={t("sftp.rename")} onClick={() => setRenaming({ path: entry.path, value: entry.name })}>
                       ✎
                     </button>
                     <button
-                      title="Change permissions"
+                      title={t("sftp.changePermissions")}
                       onClick={() =>
                         setChmodTarget({ entry, value: ((entry.permissions ?? 0o644) & 0o7777).toString(8).padStart(3, "0") })
                       }
                     >
                       ⚿
                     </button>
-                    <button title="Delete" onClick={() => askRemove(entry)}>
+                    <button title={t("sftp.delete")} onClick={() => askRemove(entry)}>
                       🗑
                     </button>
                   </span>
@@ -334,27 +340,24 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
             ))}
           </tbody>
         </table>
-        {entries.length === 0 && !loading && cwd && <div className="sftp-empty">Empty folder</div>}
+        {entries.length === 0 && !loading && cwd && <div className="sftp-empty">{t("sftp.emptyFolder")}</div>}
       </div>
 
       <TransferList
         transfers={transfers}
-        onCancel={(id) => {
-          cancelled.current.add(id);
-          void sftp.cancel(id);
-        }}
+        onCancel={(id) => void sftp.cancel(id)}
         onDismiss={(id) => setTransfers((ts) => ts.filter((t) => t.id !== id))}
         onClearFinished={() => setTransfers((ts) => ts.filter((t) => t.status === "running"))}
       />
 
-      {dragOver && <div className="drop-hint">Drop to upload to {cwd}</div>}
+      {dragOver && <div className="drop-hint">{t("sftp.dropHint", { path: cwd ?? "" })}</div>}
 
       {chmodTarget && (
         <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setChmodTarget(null)}>
           <form className="dialog" onSubmit={submitChmod}>
-            <h2>Change Permissions</h2>
+            <h2>{t("sftp.chmodTitle")}</h2>
             <label>
-              Permissions for "{chmodTarget.entry.name}" (octal)
+              {t("sftp.chmodLabel", { name: chmodTarget.entry.name })}
               <input
                 autoFocus
                 value={chmodTarget.value}
@@ -366,10 +369,10 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
             <footer>
               <span className="grow" />
               <button type="button" onClick={() => setChmodTarget(null)}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button type="submit" className="primary">
-                OK
+                {t("common.ok")}
               </button>
             </footer>
           </form>
