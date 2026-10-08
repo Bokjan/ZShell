@@ -104,5 +104,6 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
           uploadPlainBinary: ${{ matrix.standalone == true }}
-          releaseAssetNamePattern: ${{ matrix.standalone && '[name]_[version]_[arch]_standalone[ext]' || '' }}
+          # The plain binary's [name] is "binary", so the app name is spelled out.
+          releaseAssetNamePattern: ${{ matrix.standalone && 'ZShell_[version]_[arch]_standalone[ext]' || '' }}
           uploadWorkflowArtifacts: ${{ github.event_name == 'workflow_dispatch' }}
