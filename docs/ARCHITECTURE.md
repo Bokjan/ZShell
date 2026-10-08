@@ -46,6 +46,7 @@
 | `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`） |
 | `forward/` | 转发规则运行管理（`mod.rs`）、`-L` / `-R` / `-D`（`local.rs` / `remote.rs` / `dynamic.rs`）、SOCKS（`socks.rs`） |
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
+| `zmodem/` | rz / sz：检测与会话接管（`mod.rs`）、帧格式与 CRC（`frame.rs`）、收发字节流（`link.rs`）、接收（`receive.rs`）、发送（`send.rs`） |
 | `config.rs` / `settings.rs` / `secrets.rs` | 会话配置 `profiles.json`、应用设置 `settings.json`、钥匙串 |
 | `import.rs` | ssh_config 导入 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
@@ -60,7 +61,8 @@
 - **会话是一个后台任务**：`SessionManager` 为每个会话创建 `TermIo`（输出 Channel、事件 Channel、输入队列），后端任务（SSH shell 或本地 PTY）持有它运行；关闭会话即中止任务。新的会话后端只需实现同样的任务形态。
 - **终端输出不走 event**：经 Tauri 2 `Channel` 以 `InvokeResponseBody::Raw` 推送，前端直接 `term.write(Uint8Array)`，避免 JSON 序列化开销。输入走 `invoke`，尺寸变化发 `window-change`。
 - **输出流控**：前端在 `term.write` 回调里累计已处理字节，每 64 KiB 调一次 `session_ack`；后端未确认超过 2 MiB 时暂停读取，降到 512 KiB 以下再继续。目前只有本地 PTY 据此暂停（SSH 有网络限速，只计数）。
-- **会话事件**：`Connected`、`Forward`（转发规则状态）、`Closed { reason, status, error }`。`reason` 为 `exited`（shell 退出）、`lost`（已建立的连接断开）、`failed`（连接、认证或启动阶段失败），前端据此决定重连、自动关闭标签或提示。
+- **SSH 读写并行**：写入等待服务器窗口时仍持续读取输出。russh 在连接任务里把输出送入有界队列，队列满会卡住连接任务，窗口调整也就收不到，形成死锁（大段粘贴、ZMODEM 上传时远端还在输出）。写入未完成时不取新的输入，以此形成背压。本地终端的输入队列同样有界（写线程按 shell 的读取速度消费）。
+- **会话事件**：`Connected`、`Forward`（转发规则状态）、`Zmodem`（见下文）、`Closed { reason, status, error }`。`reason` 为 `exited`（shell 退出）、`lost`（已建立的连接断开）、`failed`（连接、认证或启动阶段失败），前端据此决定重连、自动关闭标签或提示。
 
 ### SSH
 
@@ -76,6 +78,14 @@
 
 - **SFTP 传输**：先扫描生成计划（目录、文件、总字节数），再逐个文件复制；进度经 Channel 每 100 ms 推送一次；取消通过共享的 `AtomicBool`，未完成的文件会被删除。
 - **端口转发**：规则保存在会话配置的 `forwards` 中，只能通过 `profile_set_forwards` 修改（`profile_save` 保留原有规则）。每条运行中的规则是一个任务，持有自己的监听器和承载的连接，停止规则即中止任务。状态（Starting / Active / Failed / Stopped）经会话事件推送；每次启动分配一个代号（generation），被替换的旧任务不能覆盖新状态。`-R` 的 `forwarded-tcpip` channel 由 `ClientHandler` 按路由表转交给规则任务，不阻塞 russh 的连接任务。
+
+### ZMODEM
+
+- **位置**：在会话层而不是某个后端：SSH 与本地终端（包括在本地终端里 ssh 登录后）都适用。协议自己实现（帧、CRC、转义、收发状态机），以 lrzsz 为对照测试。
+- **检测与接管**：后端把远端输出交给 `SessionSink::output`，在其中查找 `sz` 的 ZRQINIT / `rz` 的 ZRINIT 十六进制头（`**\x18B00` / `**\x18B01`，可跨两次输出）。识别后到传输结束：输出交给传输任务而不再写入终端；用户按键被丢弃，Ctrl+C 取消；传输任务要发送的数据经 `TermIo::recv` 注入，与键盘输入走同一条路到后端，并有背压。开头的头部在 2 秒内没有完整到达（例如 `cat` 了一个二进制文件），即视为误判，回到普通输出。结束后剩余的输出（shell 提示符）交还终端。
+- **与前端交互**：经 `Zmodem { phase }` 会话事件。`sz` 时先问保存位置（`zmodem_save_to`，默认"下载"文件夹，可在设置中改为每次询问）；`rz` 时问要发送的文件（`zmodem_send_files`）：终端上方显示提示条并立即弹出文件选择框，选择框取消后提示条仍在，可以拖入文件、重新选择或取消；`zmodem_cancel` 随时取消。进度（文件名、已传 / 总量、速度）和每个文件的结果由后端写在终端里。
+- **兼容性**：发送时转义全部控制字符（相当于 `rz -e`），接收时也在 ZRINIT 里要求对方这样做，以通过会过滤控制字符的堡垒机；使用对方支持的 32 位 CRC；对方不支持全双工时逐包确认。下载的同名文件按 SFTP 的规则改名，保留修改时间。
+- **取消与出错**：向对方发送取消序列（连续 CAN），删除未完成的本地文件，在终端里提示。下载被取消时，对方已发出的数据还在路上，先丢弃一段时间，只保留最后一个 CAN 之后的输出（对方退出后的 shell 提示符）。对方超时无响应时按 lrzsz 的习惯重发（每次 10 秒，最多 5 次）后放弃。
 
 ### 本地终端
 

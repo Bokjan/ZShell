@@ -10,6 +10,9 @@
 //! Backends: remote shells over SSH (`ssh::run`) and local shells in a pseudo terminal
 //! (`pty::run`).
 //!
+//! Remote output goes through [`SessionSink::output`], where ZMODEM transfers are detected and
+//! take over the session until they end (see [`crate::zmodem`]).
+//!
 //! Output is flow controlled: the frontend acknowledges the bytes xterm.js has processed
 //! ([`SessionManager::ack`]), and backends that can produce output faster than the terminal
 //! renders it (local PTYs) wait on [`Flow`] before reading more.
@@ -27,6 +30,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::error::{Error, Result};
 use crate::forward::ForwardState;
+use crate::zmodem::{self, Zmodem};
 
 pub type SessionId = u32;
 
@@ -43,6 +47,8 @@ pub enum SessionEvent {
     /// `status`: the exit status of the shell, if it reported one.
     Closed { reason: CloseReason, error: Option<Error>, status: Option<u32> },
     Forward { rule_id: String, state: ForwardState },
+    /// A ZMODEM transfer needs an answer, is running, or has ended.
+    Zmodem { phase: zmodem::Phase },
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -112,9 +118,20 @@ pub struct SessionSink {
     output: Channel,
     events: Channel<SessionEvent>,
     flow: Arc<Flow>,
+    zmodem: Arc<Zmodem>,
 }
 
 impl SessionSink {
+    /// Output from the remote side (or the local shell): shown in the terminal, unless a
+    /// ZMODEM transfer starts or is running.
+    pub fn output(&self, bytes: Vec<u8>) {
+        let shown = self.zmodem.output(bytes, self);
+        if !shown.is_empty() {
+            self.write(shown);
+        }
+    }
+
+    /// Writes to the terminal directly (our own messages, or output already filtered).
     pub fn write(&self, bytes: Vec<u8>) {
         self.flow.sent(bytes.len());
         // A send error means the frontend is gone; the session will be closed shortly.
@@ -159,6 +176,8 @@ pub struct TermIo {
     sink: SessionSink,
     foreground: Foreground,
     input: mpsc::UnboundedReceiver<SessionInput>,
+    /// What a ZMODEM transfer sends to the remote side.
+    zmodem_out: mpsc::Receiver<Vec<u8>>,
     /// Latest terminal size (cols, rows) reported by the frontend.
     pub size: (u16, u16),
 }
@@ -166,8 +185,9 @@ pub struct TermIo {
 impl TermIo {
     fn new(output: Channel, events: Channel<SessionEvent>, size: (u16, u16)) -> (Self, mpsc::UnboundedSender<SessionInput>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let sink = SessionSink { output, events, flow: Arc::default() };
-        (Self { sink, foreground: Foreground::default(), input: rx, size }, tx)
+        let (zmodem, zmodem_out) = Zmodem::new();
+        let sink = SessionSink { output, events, flow: Arc::default(), zmodem };
+        (Self { sink, foreground: Foreground::default(), input: rx, zmodem_out, size }, tx)
     }
 
     /// A session without a frontend, for backend tests: returns the input sender and the
@@ -195,8 +215,9 @@ impl TermIo {
         (io, input, output_rx, events_rx)
     }
 
-    pub fn write(&self, bytes: Vec<u8>) {
-        self.sink.write(bytes);
+    /// Output from the remote side; see [`SessionSink::output`].
+    pub fn output(&self, bytes: Vec<u8>) {
+        self.sink.output(bytes);
     }
 
     pub fn print(&self, text: &str) {
@@ -215,13 +236,25 @@ impl TermIo {
         self.foreground.clone()
     }
 
-    /// Receives the next input, keeping [`TermIo::size`] up to date.
+    /// Receives the next input for the remote side, keeping [`TermIo::size`] up to date.
+    /// During a ZMODEM transfer that is the transfer's data; keystrokes only cancel it.
     pub async fn recv(&mut self) -> Option<SessionInput> {
-        let input = self.input.recv().await;
-        if let Some(SessionInput::Resize { cols, rows }) = input {
-            self.size = (cols, rows);
+        loop {
+            let input = tokio::select! {
+                biased;
+                Some(data) = self.zmodem_out.recv() => return Some(SessionInput::Data(data)),
+                input = self.input.recv() => input,
+            };
+            match &input {
+                Some(SessionInput::Data(data)) if self.sink.zmodem.is_active() => {
+                    self.sink.zmodem.input(data);
+                    continue;
+                }
+                Some(SessionInput::Resize { cols, rows }) => self.size = (*cols, *rows),
+                _ => {}
+            }
+            return input;
         }
-        input
     }
 
     /// Reads one line typed into the terminal, for prompts shown before the remote shell
@@ -274,6 +307,7 @@ struct SessionEntry {
     input: mpsc::UnboundedSender<SessionInput>,
     flow: Arc<Flow>,
     foreground: Foreground,
+    zmodem: Arc<Zmodem>,
     task: JoinHandle<()>,
 }
 
@@ -300,8 +334,9 @@ impl SessionManager {
         let (io, input) = TermIo::new(output, events, size);
         let flow = io.sink.flow();
         let foreground = io.foreground();
+        let zmodem = io.sink.zmodem.clone();
         let task = tauri::async_runtime::spawn(backend(id, io));
-        self.sessions.lock().unwrap().insert(id, SessionEntry { input, flow, foreground, task });
+        self.sessions.lock().unwrap().insert(id, SessionEntry { input, flow, foreground, zmodem, task });
         id
     }
 
@@ -329,6 +364,11 @@ impl SessionManager {
             sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.foreground.clone()
         };
         Ok(foreground.get())
+    }
+
+    pub fn zmodem(&self, id: SessionId) -> Result<Arc<Zmodem>> {
+        let sessions = self.sessions.lock().unwrap();
+        Ok(sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.zmodem.clone())
     }
 
     pub fn remove(&self, id: SessionId) -> Result<()> {

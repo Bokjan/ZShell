@@ -12,6 +12,7 @@ mod session;
 mod settings;
 mod sftp;
 mod ssh;
+mod zmodem;
 
 use tauri::{Emitter, Manager};
 
@@ -181,6 +182,9 @@ pub fn run() {
             commands::transfer_cancel,
             commands::forward_start,
             commands::forward_stop,
+            commands::zmodem_save_to,
+            commands::zmodem_send_files,
+            commands::zmodem_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

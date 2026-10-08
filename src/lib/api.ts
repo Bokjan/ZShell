@@ -48,11 +48,18 @@ export type ForwardState =
 /** exited: the shell ended; lost: an established connection broke; failed: never got connected. */
 export type CloseReason = "exited" | "lost" | "failed";
 
+/**
+ * A ZMODEM transfer in the terminal: `sz` asks where to save (answer with `zmodem.saveTo`),
+ * `rz` asks for files (`zmodem.sendFiles`), then it runs until "idle".
+ */
+export type ZmodemPhase = "chooseDestination" | "chooseFiles" | "transferring" | "idle";
+
 export type SessionEvent =
   | { type: "connected" }
   /** `status`: the shell's exit status, if it reported one. */
   | { type: "closed"; reason: CloseReason; error: CommandError | null; status: number | null }
-  | { type: "forward"; ruleId: string; state: ForwardState };
+  | { type: "forward"; ruleId: string; state: ForwardState }
+  | { type: "zmodem"; phase: ZmodemPhase };
 
 export type SessionId = number;
 
@@ -162,6 +169,14 @@ export async function openSession(
  * or null. Always null for SSH sessions.
  */
 export const sessionForeground = (id: SessionId) => invoke<string | null>("session_foreground", { id });
+
+export const zmodem = {
+  /** `dir` null saves into the Downloads folder. */
+  saveTo: (id: SessionId, dir: string | null) => invoke<void>("zmodem_save_to", { id, dir }),
+  sendFiles: (id: SessionId, paths: string[]) => invoke<void>("zmodem_send_files", { id, paths }),
+  /** Cancels the transfer, also while it waits for an answer. */
+  cancel: (id: SessionId) => invoke<void>("zmodem_cancel", { id }),
+};
 
 /** Short name of the default local shell, e.g. "zsh" or "pwsh". */
 export const localShellName = () => invoke<string>("local_shell_name");

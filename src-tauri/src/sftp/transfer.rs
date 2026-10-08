@@ -262,7 +262,7 @@ fn with_file_context(e: anyhow::Error, context: Error) -> anyhow::Error {
 }
 
 /// `name.ext` → `name (1).ext`, `name (2).ext`, … until the path is free.
-fn unique_path(path: PathBuf) -> PathBuf {
+pub(crate) fn unique_path(path: PathBuf) -> PathBuf {
     if !path.exists() {
         return path;
     }

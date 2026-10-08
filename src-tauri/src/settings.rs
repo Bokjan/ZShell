@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, terminal, tabs), persisted as `settings.json` next to
+//! App-wide preferences (appearance, terminal, tabs, ZMODEM), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ pub struct Settings {
     pub appearance: Appearance,
     pub terminal: TerminalSettings,
     pub tabs: TabSettings,
+    pub zmodem: ZmodemSettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -76,9 +77,21 @@ pub enum CursorStyle {
     Underline,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ZmodemSettings {
+    /// Ask for a folder when `sz` sends files, instead of saving into Downloads.
+    pub ask_download_location: bool,
+}
+
 impl Default for Settings {
     fn default() -> Self {
-        Self { appearance: Appearance::System, terminal: TerminalSettings::default(), tabs: TabSettings::default() }
+        Self {
+            appearance: Appearance::System,
+            terminal: TerminalSettings::default(),
+            tabs: TabSettings::default(),
+            zmodem: ZmodemSettings::default(),
+        }
     }
 }
 

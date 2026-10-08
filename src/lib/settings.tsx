@@ -31,10 +31,16 @@ export interface TabSettings {
   confirmClose: boolean;
 }
 
+export interface ZmodemSettings {
+  /** Ask for a folder when `sz` sends files, instead of saving into Downloads. */
+  askDownloadLocation: boolean;
+}
+
 export interface Settings {
   appearance: Appearance;
   terminal: TerminalSettings;
   tabs: TabSettings;
+  zmodem: ZmodemSettings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -52,6 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
     optionAsMeta: false,
   },
   tabs: { followRemoteTitle: true, confirmClose: true },
+  zmodem: { askDownloadLocation: false },
 };
 
 interface SettingsContextValue {

@@ -148,7 +148,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
         let sent = tokio::select! {
             msg = reader.wait() => match msg {
                 Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                    io.write(data.to_vec());
+                    io.output(data.to_vec());
                     Ok(())
                 }
                 Some(ChannelMsg::ExitStatus { exit_status: status }) => {

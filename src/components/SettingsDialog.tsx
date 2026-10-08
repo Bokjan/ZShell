@@ -10,6 +10,7 @@ import {
   type RightClick,
   type TabSettings,
   type TerminalSettings,
+  type ZmodemSettings,
 } from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
 
@@ -64,6 +65,7 @@ export function SettingsDialog({ onClose }: Props) {
   const terminal = settings.terminal;
   const setTerminal = (patch: Partial<TerminalSettings>) => update({ ...settings, terminal: { ...terminal, ...patch } });
   const setTabs = (patch: Partial<TabSettings>) => update({ ...settings, tabs: { ...settings.tabs, ...patch } });
+  const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -249,6 +251,19 @@ export function SettingsDialog({ onClose }: Props) {
             />
             {t("settings.confirmClose")}
           </label>
+        </section>
+
+        <section>
+          <h3>{t("settings.zmodem")}</h3>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={settings.zmodem.askDownloadLocation}
+              onChange={(e) => setZmodem({ askDownloadLocation: e.target.checked })}
+            />
+            {t("settings.zmodemAskLocation")}
+          </label>
+          <p className="hint">{t("settings.zmodemAskLocationHint")}</p>
         </section>
 
         <footer>

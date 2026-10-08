@@ -22,6 +22,8 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+ZMODEM 的测试除了自己的收发互测，还与 lrzsz 的 `lsz` / `lrz` 对传（含经由伪终端），未安装 lrzsz 时跳过（`brew install lrzsz`；CI 上没有）。
+
 `cargo test` 中的 `catalog_covers_all_keys_in_sources` 会检查后端源码用到的消息 key 都在英语语言包中（见 [I18N.md](I18N.md)）。
 
 ## 约定
@@ -69,6 +71,8 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 ```
 
 测试 HOME 中放一个空的 `.zshrc`，否则 zsh 会显示新用户向导。
+
+**ZMODEM**：在临时 sshd 的会话或本地终端里运行 `sz` / `rz`（Homebrew 装在 `/opt/homebrew/bin`）。SSH 会话以真实 HOME 登录，`rz` 收到的文件写在当前目录，先 `cd` 到临时目录。
 
 **只能在真机键盘上验证的**：按键长按重复（合成的按键事件不会自动重复）、输入法组字与候选框位置。
 

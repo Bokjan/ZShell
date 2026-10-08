@@ -11,13 +11,13 @@ mod shell;
 
 use std::io::{ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc as std_mpsc, Arc};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, ChildKiller, ExitStatus, MasterPty, PtySize};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::error::Error;
 use crate::session::{CloseReason, Flow, Foreground, ForegroundProbe, SessionEvent, SessionInput, SessionSink, TermIo};
@@ -31,6 +31,9 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a shell gets to exit after its terminal is closed before it is killed.
 const KILL_GRACE: Duration = Duration::from_secs(2);
 const READ_BUFFER: usize = 64 << 10;
+/// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
+/// is paced by how fast the shell reads).
+const INPUT_QUEUE: usize = 16;
 
 /// Session backend: runs `shell` in a pseudo terminal until it exits.
 pub async fn run(shell: Shell, mut io: TermIo) {
@@ -67,7 +70,7 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 struct Pty {
     master: Option<Box<dyn MasterPty + Send>>,
     /// Feeds the writer thread; dropping it stops the thread.
-    input: Option<std_mpsc::Sender<Vec<u8>>>,
+    input: Option<mpsc::Sender<Vec<u8>>>,
     /// The exit status, once the shell exits (`None` if it could not be determined).
     exit: oneshot::Receiver<Option<ExitStatus>>,
     /// Completes when the reader thread reaches the end of the output.
@@ -99,7 +102,7 @@ impl Pty {
             let _ = output_done_tx.send(());
         });
 
-        let (input, inputs) = std_mpsc::channel();
+        let (input, inputs) = mpsc::channel(INPUT_QUEUE);
         thread::spawn(move || write_input(writer, inputs));
 
         let killer = child.clone_killer();
@@ -137,7 +140,7 @@ impl Pty {
                 input = io.recv() => match input {
                     Some(SessionInput::Data(data)) => {
                         if let Some(input) = &self.input {
-                            let _ = input.send(data);
+                            let _ = input.send(data).await;
                         }
                     }
                     Some(SessionInput::Resize { cols, rows }) => {
@@ -295,7 +298,7 @@ fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink) {
         flow.wait_ready();
         match reader.read(&mut buffer) {
             Ok(0) => break,
-            Ok(n) => sink.write(buffer[..n].to_vec()),
+            Ok(n) => sink.output(buffer[..n].to_vec()),
             Err(e) if e.kind() == ErrorKind::Interrupted => {}
             // EIO on macOS once the shell and its children have all closed the terminal.
             Err(_) => break,
@@ -303,8 +306,8 @@ fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink) {
     }
 }
 
-fn write_input(mut writer: Box<dyn Write + Send>, inputs: std_mpsc::Receiver<Vec<u8>>) {
-    for data in inputs {
+fn write_input(mut writer: Box<dyn Write + Send>, mut inputs: mpsc::Receiver<Vec<u8>>) {
+    while let Some(data) = inputs.blocking_recv() {
         if writer.write_all(&data).and_then(|()| writer.flush()).is_err() {
             break;
         }

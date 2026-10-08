@@ -8,6 +8,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
 import {
@@ -19,6 +21,8 @@ import {
   type Session,
   type SessionId,
   type SessionTarget,
+  type ZmodemPhase,
+  zmodem,
 } from "../lib/api";
 import {
   clipboardKey,
@@ -34,6 +38,7 @@ import { fontStack, resolveScheme, searchDecorations } from "../lib/terminalSche
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
+import { ZmodemBar } from "./ZmodemBar";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
@@ -115,6 +120,9 @@ export function TerminalView({
   const reconnectRef = useRef<() => void>(ignore);
   /** Pastes text, asking first if it would run several commands; set while the terminal exists. */
   const pasteRef = useRef<(text: string) => void>(ignore);
+  /** The current backend session, for answering ZMODEM transfers. */
+  const sessionIdRef = useRef<SessionId | null>(null);
+  const onZmodemRef = useRef<(phase: ZmodemPhase) => void>(ignore);
   const autoReconnectRef = useRef(autoReconnect);
   autoReconnectRef.current = autoReconnect;
   // Incremented by the find shortcut; 0 means the search bar is closed.
@@ -122,6 +130,10 @@ export function TerminalView({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Multi-line text waiting for the user to confirm the paste.
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
+  // A ZMODEM transfer waiting for files or running; null when there is none.
+  const [zmodemPhase, setZmodemPhase] = useState<Exclude<ZmodemPhase, "idle"> | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const { settings, theme, update } = useSettings();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -237,8 +249,14 @@ export function TerminalView({
             onForwardRef.current(event.ruleId, event.state);
             return;
           }
+          if (event.type === "zmodem") {
+            onZmodemRef.current(event.phase);
+            return;
+          }
           ended = closed = true;
           session = undefined;
+          sessionIdRef.current = null;
+          setZmodemPhase(null);
           onSessionRef.current(null);
           void handle?.close().catch(ignore);
           onStatusRef.current("closed");
@@ -265,6 +283,7 @@ export function TerminalView({
           if (stale() || ended) void s.close().catch(ignore);
           else {
             session = s;
+            sessionIdRef.current = s.id;
             onSessionRef.current(s.id);
             // Output can arrive before the session id does.
             acknowledge();
@@ -288,6 +307,8 @@ export function TerminalView({
     reconnectRef.current = () => {
       const old = session;
       session = undefined;
+      sessionIdRef.current = null;
+      setZmodemPhase(null);
       onSessionRef.current(null);
       void old?.close().catch(ignore);
       attempt = 0;
@@ -444,6 +465,67 @@ export function TerminalView({
 
   const focus = () => termRef.current?.focus();
 
+  // ZMODEM: `sz` asks where to save (the Downloads folder unless the settings say to ask),
+  // `rz` for files: the picker opens right away, and the bar stays for dropping files,
+  // choosing again or cancelling.
+  const chooseFiles = () => {
+    const id = sessionIdRef.current;
+    if (id == null) return;
+    void openDialog({ multiple: true, title: t("zmodem.chooseFilesTitle") }).then((picked) => {
+      if (picked && picked.length > 0) void zmodem.sendFiles(id, picked).catch(console.error);
+      focus();
+    });
+  };
+
+  const cancelZmodem = () => {
+    const id = sessionIdRef.current;
+    if (id != null) void zmodem.cancel(id).catch(console.error);
+  };
+
+  onZmodemRef.current = (phase) => {
+    const id = sessionIdRef.current;
+    if (id == null) return;
+    setZmodemPhase(phase === "idle" ? null : phase);
+    if (phase === "chooseFiles") chooseFiles();
+    else if (phase === "chooseDestination") {
+      if (!settings.zmodem.askDownloadLocation) void zmodem.saveTo(id, null).catch(console.error);
+      else {
+        void openDialog({ directory: true, title: t("zmodem.chooseFolderTitle") }).then((dir) => {
+          if (typeof dir === "string") void zmodem.saveTo(id, dir).catch(console.error);
+          else void zmodem.cancel(id).catch(console.error);
+          focus();
+        });
+      }
+    }
+  };
+
+  // While `rz` waits, files dropped on this terminal are sent.
+  const waitingForFiles = active && zmodemPhase === "chooseFiles";
+  useEffect(() => {
+    if (!waitingForFiles) return;
+    const inside = (pos: { x: number; y: number }) => {
+      const rect = wrapRef.current?.getBoundingClientRect();
+      const x = pos.x / window.devicePixelRatio;
+      const y = pos.y / window.devicePixelRatio;
+      return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    };
+    const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
+      if (payload.type === "leave") setDragOver(false);
+      else if (payload.type === "enter" || payload.type === "over") setDragOver(inside(payload.position));
+      else if (payload.type === "drop") {
+        setDragOver(false);
+        const id = sessionIdRef.current;
+        if (inside(payload.position) && id != null && payload.paths.length > 0) {
+          void zmodem.sendFiles(id, payload.paths).catch(console.error);
+        }
+      }
+    });
+    return () => {
+      setDragOver(false);
+      void unlisten.then((f) => f());
+    };
+  }, [waitingForFiles]);
+
   const menuItems = () => {
     const term = termRef.current!;
     return [
@@ -481,8 +563,11 @@ export function TerminalView({
 
   return (
     // The scheme's background also fills the padding around the terminal.
-    <div className="terminal-wrap" style={{ background: scheme.theme.background }}>
+    <div className="terminal-wrap" ref={wrapRef} style={{ background: scheme.theme.background }}>
       <div className="terminal-view" ref={containerRef} />
+      {zmodemPhase && (
+        <ZmodemBar phase={zmodemPhase} dragOver={dragOver} onChooseFiles={chooseFiles} onCancel={cancelZmodem} />
+      )}
       {menu && termRef.current && (
         <ContextMenu
           x={menu.x}

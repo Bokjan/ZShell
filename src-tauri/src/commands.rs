@@ -17,6 +17,7 @@ use crate::settings::{Settings, SettingsStore};
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
 use crate::sftp::{self, transfer, Listing};
 use crate::ssh::{self, Connections};
+use crate::zmodem;
 
 /// Selects the language for backend text; returns the locale actually used.
 #[tauri::command]
@@ -265,5 +266,30 @@ pub fn forward_start(connections: State<'_, Connections>, id: SessionId, rule: F
 #[tauri::command]
 pub fn forward_stop(connections: State<'_, Connections>, id: SessionId, rule_id: String) -> Result<()> {
     connections.get(id)?.forwards().stop(&rule_id);
+    Ok(())
+}
+
+/// Answers a ZMODEM download (`sz`): save into `dir`, or the Downloads folder.
+#[tauri::command]
+pub fn zmodem_save_to(app: AppHandle, sessions: State<'_, SessionManager>, id: SessionId, dir: Option<PathBuf>) -> Result<()> {
+    let dir = match dir {
+        Some(dir) => dir,
+        None => app.path().download_dir()?,
+    };
+    sessions.zmodem(id)?.reply(zmodem::Reply::Destination(dir));
+    Ok(())
+}
+
+/// Answers a ZMODEM upload (`rz`) with the files to send.
+#[tauri::command]
+pub fn zmodem_send_files(sessions: State<'_, SessionManager>, id: SessionId, paths: Vec<PathBuf>) -> Result<()> {
+    sessions.zmodem(id)?.reply(zmodem::Reply::Files(paths));
+    Ok(())
+}
+
+/// Cancels the session's ZMODEM transfer, including one waiting for an answer.
+#[tauri::command]
+pub fn zmodem_cancel(sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
+    sessions.zmodem(id)?.cancel();
     Ok(())
 }

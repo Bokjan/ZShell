@@ -265,6 +265,9 @@
     "followRemoteTitle": "Show the title set by the shell",
     "followRemoteTitleHint": "Otherwise tabs show the session name. Renamed tabs keep their new name.",
     "confirmClose": "Ask before closing tabs that are connected or running a program",
+    "zmodem": "File Transfer (ZMODEM)",
+    "zmodemAskLocation": "Ask where to save files received with sz",
+    "zmodemAskLocationHint": "Otherwise they are saved in the Downloads folder.",
     "reset": "Restore defaults",
     "done": "Done"
   },
@@ -283,5 +286,13 @@
     "message_one": "The text ends with a line break, so it may run as a command as soon as it is pasted.",
     "message_other": "The text has {count} lines. Each line may run as a command as soon as it is pasted.",
     "confirm": "Paste"
+  },
+  "zmodem": {
+    "waitingForFiles": "rz is waiting: choose files or drop them here",
+    "dropToSend": "Drop to send with ZMODEM",
+    "transferring": "ZMODEM transfer running. Ctrl+C or Cancel stops it.",
+    "chooseFiles": "Choose Files…",
+    "chooseFilesTitle": "Choose files to send",
+    "chooseFolderTitle": "Choose where to save the received files"
   }
 }

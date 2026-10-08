@@ -11,13 +11,14 @@ A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tau
 - **Jump hosts**: connect through one or more other sessions, like OpenSSH's `ProxyJump`.
 - **Stays connected**: keepalives detect dead connections, and lost connections are re-established automatically.
 - **SFTP file panel**: browse, upload and download with progress, drop files to upload, rename, delete, create folders and change permissions.
+- **ZMODEM**: `rz` and `sz` in the terminal, for hosts without SFTP such as those behind bastion hosts, over SSH and in local terminals. Choose files or drop them on the terminal for `rz`; files from `sz` go to the Downloads folder (or ask where).
 - **Port forwarding**: local (`-L`), remote (`-R`) and dynamic SOCKS (`-D`) rules, saved with the session, optionally started on connect, with live status.
 - **Import from `~/.ssh/config`**: hosts, users, ports, keys, jump hosts and forwards.
 - **Local terminals**: your login shell on macOS, PowerShell on Windows.
 - **Terminal**: context menu, copy on select, right-click to paste, confirmation before pasting multiple lines, Option as Meta on macOS, search with regular expressions, built-in color schemes, custom fonts, light and dark appearance.
 - **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program.
 
-Planned next: ZMODEM (`rz` / `sz`), session folders and search. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: session folders, search and quick connect. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 

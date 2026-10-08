@@ -340,6 +340,48 @@ main {
   user-select: text;
   -webkit-user-select: text;
 }
+/* ZMODEM bar over the top of the terminal, while rz waits for files or a transfer runs */
+
+.zmodem-bar {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 36px);
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 6px 20px var(--shadow);
+}
+.zmodem-bar.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 20px var(--shadow);
+}
+.zmodem-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zmodem-bar button {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: 12px;
+}
+.zmodem-bar button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 /* Find bar over the terminal's top-right corner */
 
 .search-bar {
