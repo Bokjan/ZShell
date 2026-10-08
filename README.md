@@ -69,8 +69,8 @@ Add a session with **+** in the sidebar, or import hosts from your SSH config, t
 
 ### Where data is stored
 
-- Sessions and settings: `~/Library/Application Support/org.boyin.zshell/` on macOS, `%APPDATA%\org.boyin.zshell\` on Windows (`profiles.json`, `folders.json` and `settings.json`).
-- Passwords and passphrases: the macOS Keychain or the Windows Credential Manager, never in those files.
+- Sessions and settings: `~/Library/Application Support/org.boyin.zshell/` on macOS, `%APPDATA%\org.boyin.zshell\` on Windows (`profiles.json`, `folders.json`, `settings.json`, `commands.json` and `logs.json`).
+- Saved passwords: the macOS Keychain or the Windows Credential Manager, never in those files. Passphrases for private keys are asked each time and never saved.
 - Known hosts: `~/.ssh/known_hosts`, shared with OpenSSH.
 
 ## Development
@@ -91,3 +91,11 @@ Documentation for contributors is in Chinese:
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): testing, conventions, CI and releases
 
 Recommended editor setup: [VS Code](https://code.visualstudio.com/) with the [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) and [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) extensions.
+
+## License
+
+Copyright © 2026 Boyin Chen. All rights reserved.
+
+ZShell is free to use, but it is not open source. The source code is published for transparency and reference only; no license is granted to copy, modify or redistribute it. The released builds (from the [releases page](https://github.com/Bokjan/ZShell/releases) and the Microsoft Store) may be used free of charge, including for work.
+
+See [PRIVACY.md](PRIVACY.md) for the privacy policy.
