@@ -102,7 +102,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 ## CI
 
 - `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证 Windows 专用代码能通过编译。
-- `.github/workflows/release.yml`：见下文「发布」。手动运行该 workflow 只打包，产物作为 workflow artifacts；勾选 "Microsoft Store only" 时只打 Store 包，省去 macOS 与其他 Windows 包。
+- `.github/workflows/release.yml`：只能手动运行。在版本 tag 上运行时创建草稿 release（见下文「发布」）；在分支上运行时只打包，产物作为 workflow artifacts。勾选 "Microsoft Store only" 时只打 Store 包，省去 macOS 与其他 Windows 包。
 - `.github/dependabot.yml`：每周检查 npm、Cargo 和 GitHub Actions 的依赖更新。各生态的 minor / patch 更新合并为一个 PR，Tauri（及 xterm.js、russh）的相关包各自成组；major 更新单独成 PR。提交前缀为 `chore(deps)` / `ci`，不进更新日志。Dependabot 的 PR 会触发 Windows CI。
 
 ## 发布
@@ -112,12 +112,14 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 - `profiles.json`、`settings.json` 等配置保持向后兼容：新字段加默认值，旧文件照常读取。只有不得不放弃兼容时才升 major，并在更新日志里标为破坏性变更。
 - 不用预发布后缀（`-beta.1` 之类）：Windows 的 MSI 只接受数字版本号。
 
+**升版本号与发布分开**：每个里程碑都升版本号并打 tag，但不一定发布。git-cliff 以 tag 划分版本，所以没发布的版本也要打 tag 并推送，否则下一版的更新日志会把这一版的提交再算一遍；推送 tag 不会触发构建，要发布时再单独运行 release workflow，之前任何一个已推送的版本都可以补发。
+
 **步骤**（`scripts/release.sh`，需在 main 上且工作区干净）：
 1. `scripts/release.sh prepare X.Y.Z`：修改 `src-tauri/Cargo.toml` 中的版本号并更新 `Cargo.lock`，用 git-cliff 在 `CHANGELOG.md` 顶部加上该版本一节（`--unreleased --prepend`，之前各版本已润色的内容不变）。git-cliff 的配置在 `cliff.toml`，只收录 `feat` / `fix` / `perf` 和破坏性变更，其他类型（`docs`、`ci`、`chore`、`refactor` 等）不出现在更新日志里，因此提交类型要选准。
 2. 润色该版本一节：合并同一功能的多条、去掉内部里程碑编号，内容保持英语。
 3. `scripts/release.sh tag`：运行 `pnpm build`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
-4. `git push origin main vX.Y.Z`。
-5. workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（以该节为发布说明；避免并行 job 重复创建），然后并行打包并上传：
+4. `git push origin main vX.Y.Z`。只升版本号的话到此为止。
+5. 要发布时：`scripts/release.sh publish [X.Y.Z]`（默认当前版本），用 `gh workflow run release.yml --ref vX.Y.Z` 在该 tag 上运行 release workflow。workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（以该节为发布说明；避免并行 job 重复创建），然后并行打包并上传：
    - macOS 通用包（`universal-apple-darwin`，`.app` 与 `.dmg`）。
    - Windows NSIS 安装包与 MSI。
    - Windows 免安装的单独 exe（`--no-bundle` + `uploadPlainBinary`，文件名 `ZShell_<版本>_x64_standalone.exe`）。需要系统有 WebView2 运行时；配置仍写在 `%APPDATA%`，不是便携模式。

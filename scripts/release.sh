@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prepares a release in two steps, with a pause for editing the release notes in between:
+# Sets a new version in two steps, with a pause for editing the release notes in between,
+# and builds a release of it only when asked:
 #
 #   scripts/release.sh prepare X.Y.Z   sets the version in src-tauri/Cargo.toml (and
 #                                       Cargo.lock) and adds the version's section to
@@ -8,8 +9,12 @@
 #   scripts/release.sh tag [git commit options...]
 #                                       runs the checks, commits "chore: release vX.Y.Z"
 #                                       and tags it vX.Y.Z
+#   (git push origin main vX.Y.Z)
+#   scripts/release.sh publish [X.Y.Z]  runs the release workflow on the pushed tag, which
+#                                       builds a draft GitHub release
 #
-# Pushing is left to you; the release workflow starts when the tag is pushed.
+# Every version is tagged, released or not: git-cliff starts the next version's section
+# after the latest tag. Pushing the tag builds nothing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -70,12 +75,26 @@ $unexpected"
   git tag -a "v$version" -m "ZShell v$version"
 
   echo
-  echo "Tagged v$version. To publish it, push both; the release workflow builds a draft release:"
+  echo "Tagged v$version. Push both (this builds nothing):"
   echo "  git push origin main v$version"
+  echo "To build a draft release of it, then or later:"
+  echo "  $0 publish"
+}
+
+publish() {
+  local version=${1:-$(current_version)}
+  git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null ||
+    die "tag v$version is not on origin; push it first: git push origin main v$version"
+  gh workflow run release.yml --ref "v$version"
+
+  echo
+  echo "Started the release workflow for v$version; it creates a draft release. Follow it with:"
+  echo "  gh run list --workflow release.yml"
 }
 
 case ${1:-} in
   prepare) shift; prepare "$@" ;;
   tag) shift; tag "$@" ;;
-  *) die "usage: $0 prepare X.Y.Z | $0 tag [git commit options...]" ;;
+  publish) shift; publish "$@" ;;
+  *) die "usage: $0 prepare X.Y.Z | $0 tag [git commit options...] | $0 publish [X.Y.Z]" ;;
 esac

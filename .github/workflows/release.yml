@@ -1,14 +1,14 @@
-# Builds the macOS and Windows packages.
-# - Pushing a tag vX.Y.Z (matching the version in src-tauri/Cargo.toml) creates a draft
+# Builds the macOS and Windows packages; only when run by hand (`scripts/release.sh publish`),
+# since version tags are also pushed for versions that are not released.
+# - Run on a tag vX.Y.Z (matching the version in src-tauri/Cargo.toml), it creates a draft
 #   GitHub release with all packages attached and the version's section of CHANGELOG.md as
 #   its notes; publish it by hand after checking it.
-# - Running the workflow by hand only builds, and attaches the packages to the run as
-#   workflow artifacts; "Microsoft Store only" skips the other packages.
+# - Run on a branch, it only builds, and attaches the packages to the run as workflow
+#   artifacts.
+# "Microsoft Store only" skips the other packages.
 name: Release
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       store_only:
@@ -117,7 +117,7 @@ jobs:
           uploadPlainBinary: ${{ matrix.standalone == true }}
           # The plain binary's [name] is "binary", so the app name is spelled out.
           releaseAssetNamePattern: ${{ matrix.standalone && 'ZShell_[version]_[arch]_standalone[ext]' || '' }}
-          uploadWorkflowArtifacts: ${{ github.event_name == 'workflow_dispatch' }}
+          uploadWorkflowArtifacts: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
   # The Microsoft Store bundle (x64 and ARM64), uploaded to Partner Center by hand.
   store:
@@ -159,7 +159,7 @@ jobs:
         run: gh release upload "$env:GITHUB_REF_NAME" (Get-Item src-tauri/target/msix/*.msixbundle)
         shell: pwsh
       - uses: actions/upload-artifact@v7
-        if: github.event_name == 'workflow_dispatch'
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
           name: Microsoft Store
           path: src-tauri/target/msix/*.msixbundle
