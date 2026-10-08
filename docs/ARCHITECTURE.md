@@ -43,11 +43,12 @@
 |---|---|
 | `session/` | 会话抽象：`TermIo`、`SessionManager`、`SessionSink`、输出流控 `Flow` |
 | `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`）、主机密钥确认（`host_key.rs`）、认证（`auth.rs`）、连接注册表（`connections.rs`） |
-| `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`）、本地编辑远端文件（`edit.rs`）、拖出窗口（`drag/`） |
+| `sftp/` | 目录浏览与文件操作（`mod.rs`）、递归上传下载与进度（`transfer.rs`）、本地编辑远端文件（`edit.rs`）、拖出窗口（`drag/`）、文件名转码（`names.rs`） |
 | `forward/` | 转发规则运行管理（`mod.rs`）、`-L` / `-R` / `-D`（`local.rs` / `remote.rs` / `dynamic.rs`）、SOCKS（`socks.rs`） |
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
 | `zmodem/` | rz / sz：检测与会话接管（`mod.rs`）、帧格式与 CRC（`frame.rs`）、收发字节流（`link.rs`）、接收（`receive.rs`）、发送（`send.rs`） |
 | `config.rs` / `settings.rs` / `secrets.rs` | 会话配置 `profiles.json`、应用设置 `settings.json`、钥匙串 |
+| `encoding.rs` | 会话的字符编码：支持的编码、流式解码与编码 |
 | `import.rs` / `backup.rs` | ssh_config 导入；会话导出与导入 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
 | `commands.rs` | Tauri 命令入口 |
@@ -62,6 +63,12 @@
 - **终端输出不走 event**：经 Tauri 2 `Channel` 以 `InvokeResponseBody::Raw` 推送，前端直接 `term.write(Uint8Array)`，避免 JSON 序列化开销。输入走 `invoke`，尺寸变化发 `window-change`。
 - **输出流控**：前端在 `term.write` 回调里累计已处理字节，每 64 KiB 调一次 `session_ack`；后端未确认超过 2 MiB 时暂停读取，降到 512 KiB 以下再继续。目前只有本地 PTY 据此暂停（SSH 有网络限速，只计数）。
 - **SSH 读写并行**：写入等待服务器窗口时仍持续读取输出。russh 在连接任务里把输出送入有界队列，队列满会卡住连接任务，窗口调整也就收不到，形成死锁（大段粘贴、ZMODEM 上传时远端还在输出）。写入未完成时不取新的输入，以此形成背压。本地终端的输入队列同样有界（写线程按 shell 的读取速度消费）。
+- **字符编码**：会话配置的 `encoding`（默认 UTF-8，另有 GB18030、GBK、Big5、Shift_JIS、EUC-JP、EUC-KR、Windows-1252）只用于 SSH 会话。应用内部一律是 UTF-8，在与远端交界的地方转换：
+  - 输出：`SessionSink::output` 先在原始字节上检测 ZMODEM，要显示的部分再经 `SessionSink::remote` 流式解码（跨两次读取的多字节字符能拼完整），然后写入终端和日志，所以日志记的是转码后的文本。ZMODEM 结束后交还的剩余输出同样走 `remote`；我们自己的提示文字本来就是 UTF-8，直接 `write`。
+  - 输入：`TermIo::recv` 把键盘、粘贴、撰写栏、快速命令、登录后命令编码后交给后端。ZMODEM 数据不转；终端内的认证提示（`read_line`）读 UTF-8，这是 SSH 协议的规定。目标编码表示不了的字符发 `?`。
+  - SFTP：russh-sftp 把文件名一律按 UTF-8 读（有损），所以非 UTF-8 会话在 SFTP 通道与 russh-sftp 之间加一层（`sftp/names.rs`），按 SFTP v3 的包格式只改写路径字段：请求里的路径转成会话编码，`SSH_FXP_NAME` 回复里的文件名转成 UTF-8，其余原样转发。
+  - ZMODEM：`ZFILE` 里的文件名按会话编码收发。
+  - 选 UTF-8 时以上全部跳过。修改编码从下一次连接起生效；复制标签沿用源连接当时的配置。
 - **会话事件**：`Connected`、`Forward`（转发规则状态）、`Zmodem`（见下文）、`Closed { reason, status, error }`。`reason` 为 `exited`（shell 退出）、`lost`（已建立的连接断开）、`failed`（连接、认证或启动阶段失败），前端据此决定重连、自动关闭标签或提示。
 
 ### SSH
@@ -70,6 +77,8 @@
 - **复制标签**：已连接的 SSH 标签复制时，新标签用 `ssh_open_shared` 在源标签的连接上开一个新的 shell channel，不重新连接和认证（类似 OpenSSH 的 ControlMaster），也不重复自动启动转发。`Connections` 按会话 id 登记，多个会话可以指向同一连接，最后一个使用它的会话结束时才断开。转发状态推送给连接上所有会话的标签，后加入的标签先收到各规则的当前状态。源连接已断开时按正常流程新建连接；复制出的标签断线重连也总是新建连接。
 - **提示都在终端里**：主机指纹确认、密码、私钥口令、keyboard-interactive 问题都通过 `TermIo::read_line` 在终端里询问，与 OpenSSH 一致，不弹窗。russh 在自己的任务里回调 `check_server_key`，handler 通过 mpsc + oneshot 把问题转交给会话任务。
 - **认证**："自动"（默认）按 OpenSSH 的顺序尝试 agent 中的密钥 → `~/.ssh/id_ed25519`、`id_ecdsa`、`id_rsa` → keyboard-interactive / 密码（可用钥匙串中的密码）。加密的私钥只在服务器接受其公钥后才询问口令（细节见 `ssh/auth.rs`）。
+- **shell 通道的选项**：先请求 agent 转发（`auth-agent-req@openssh.com`），再按会话的 `termType`（默认 `xterm-256color`）开 pty，逐个发 `env` 请求，最后启动 shell。`env` 请求用 `want_reply=false`，与 OpenSSH 一样不报告被服务器 `AcceptEnv` 拒绝的变量。复制标签的新 shell 用连接登记时保存的会话配置。
+- **agent 转发**：只转发给目标主机，不转发给跳板机。`ClientHandler` 只在本连接请求过转发时接受服务器开的 auth-agent 通道（russh 默认会接受）。每个通道各连一次本地 agent，与认证共用 `connect_agent`（macOS 用 `SSH_AUTH_SOCK`，Windows 先试 OpenSSH 命名管道再试 Pageant），在单独的任务里双向转发，不阻塞 russh 的连接任务；连不上本地 agent 时拒绝该通道。
 - **主机校验**：读写 `~/.ssh/known_hosts`，首次连接确认指纹，指纹变化时显式告警。
 - **ProxyJump**：会话的 `jumpHosts` 按顺序引用其他会话，每一跳用被引用会话的地址和认证，但不展开它自己的跳板机。在上一跳连接上开 `direct-tcpip` channel，以其 `ChannelStream` 作为下一跳的传输层；主机密钥按每一跳自己的 host:port 校验，各跳的提示都在同一个终端里。被引用的会话不能删除。
 - **keepalive 与重连**：会话配置 `keepaliveInterval`（默认 30 秒，连续 3 次无响应判定断线）与 `autoReconnect`（默认开）。`lost` 时前端按 2、4、8、16、30 秒退避重连，一直重试到标签页关闭；认证错误和主机密钥被拒绝时停止。Enter 立即重连，Ctrl+C 取消，`online` 事件立即重试。重连是新会话：SFTP 面板回到原目录，自动启动的转发规则重新启动。
@@ -107,7 +116,9 @@
 - **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`，含文件夹与会话，不含密码）。导入时同名、否则同地址（用户、主机、端口）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；文件夹按名称路径合并；导入的会话一律分配新 id。
 - **快速连接**：标签目标 `quick`（`ssh_quick_open`）不需要已保存的会话，用"自动"认证，未写用户名时用本机用户名（同 `ssh host`）。"另存为会话"把标签目标改为新会话但不重连（`TerminalView` 只在本地与 SSH 之间切换时重建终端），下次连接起使用会话的设置。
 - **会话日志**：后端在 `SessionSink::write` 里把终端显示的全部内容（远端输出、回显、我们自己的提示，不含 ZMODEM 数据）写入文件，不经过前端；所以密码等不回显的输入不会进日志。纯文本格式用 vte 解析，维护单行的单元格与光标列，应用回车、退格、光标左右移动与行内擦除，使 shell 的行编辑和进度条得到屏幕上的最终结果；原始格式原样写入。新会话打开时由前端说明日志如何开始（`LogOpen`）：按会话的 `autoLog` 或设置中的"自动记录本地终端"、续写（重连时接着写同一个文件并插入重连标记）或不记录（该标签手动停止过）；日志在会话启动前就开始写，所以包含最早的连接提示。ZShell 写过的日志记在 `logs.json`，按天数清理（启动时、之后每 6 小时、修改设置时）、删除某会话的日志、删除全部都只针对索引中的文件，并跳过正在写的文件，日志目录中的其他文件不会被删除。默认目录为"文档/ZShellLogs"。
-- **ssh_config 导入**：一次性复制，导入后与 config 文件无关联。与已有会话同名或同地址的主机不再导入，不支持的选项（ProxyCommand、ForwardAgent 等）在列表中标出。
+- **ssh_config 导入**：一次性复制，导入后与 config 文件无关联。与已有会话同名或同地址的主机不再导入；`ForwardAgent`、`SetEnv` 一并映射，不支持的选项（ProxyCommand、SendEnv 等）在列表中标出。
+- **单会话外观**：会话的 `appearance` 可覆盖配色、背景色、字体和字号，未设置的项跟随设置。只由前端解释（`sessionScheme`），编辑后已打开的标签立即应用；快速连接与本地终端总是跟随设置。设了背景色的会话，标签左侧有一条同色相、固定中等亮度的色条，深色、浅色背景都能看清。
+- **登录后命令**：由前端发送。每个新 shell（首次连接、重连、复制标签）收到 `Connected` 后开始：远端输出停顿 300 ms，且光标前的文字像提示符（非空、不以 `:` 或 `?` 结尾，这样 `sudo -i` 能先问完密码）时，才发下一条。按 Ctrl+C 放弃剩下的命令。
 
 ## 交互约定
 
@@ -168,6 +179,6 @@
 
 - macOS 上 xterm.js 运行在 WKWebView 里，CJK 输入法（候选框位置、组字过程）需在真机上测试。
 - macOS 默认的"按住按键显示重音字符"会让 WKWebView 里长按字母键不重复。应用启动时以注册默认值把 `ApplePressAndHoldEnabled` 设为关闭（与 Terminal.app / iTerm2 一致），用户仍可用 `defaults write org.boyin.zshell ApplePressAndHoldEnabled -bool true` 恢复。
-- 中文 / emoji 宽度依赖 unicode11 插件，远端 `LANG` 需为 UTF-8。
+- 中文 / emoji 宽度依赖 unicode11 插件。远端不是 UTF-8 时在会话配置里选编码。
 - ConPTY 需要 Windows 10 1809 及以上。Windows PowerShell 5.1 调用的原生程序可能按 OEM 代码页输出导致中文乱码，暂不修改用户的 `[Console]::OutputEncoding`（已知限制）。
 - ssh-agent：macOS 用 `SSH_AUTH_SOCK`；Windows 用 OpenSSH 命名管道或 Pageant。

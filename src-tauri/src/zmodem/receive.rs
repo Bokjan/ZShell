@@ -74,7 +74,7 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     link.send_header(Header::new(Kind::Nak), Encoding::Hex).await?;
                     continue;
                 }
-                let info = FileInfo::parse(&data);
+                let info = FileInfo::parse(&data, link.charset);
                 if let Some(incoming) = current.as_ref().filter(|incoming| incoming.name == info.name) {
                     // Our ZRPOS was lost and the sender is offering the same file again.
                     link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?;
@@ -184,9 +184,10 @@ struct FileInfo {
 }
 
 impl FileInfo {
-    fn parse(data: &[u8]) -> Self {
+    /// `charset`: the encoding of the name.
+    fn parse(data: &[u8], charset: &'static encoding_rs::Encoding) -> Self {
         let mut parts = data.splitn(2, |&b| b == 0);
-        let name = String::from_utf8_lossy(parts.next().unwrap_or_default()).into_owned();
+        let name = crate::encoding::decode(charset, parts.next().unwrap_or_default());
         let rest = parts.next().unwrap_or_default();
         let rest = String::from_utf8_lossy(rest.split(|&b| b == 0).next().unwrap_or_default()).into_owned();
         let mut fields = rest.split_ascii_whitespace();
@@ -213,12 +214,14 @@ mod tests {
 
     #[test]
     fn parses_file_info() {
-        let info = FileInfo::parse(b"report.pdf\x0012345 14712345671 100644 0 1 12345\x00");
+        let info = FileInfo::parse(b"report.pdf\x0012345 14712345671 100644 0 1 12345\x00", encoding_rs::UTF_8);
         assert_eq!(info.name, "report.pdf");
         assert_eq!(info.size, Some(12345));
         assert_eq!(info.modified, Some(SystemTime::UNIX_EPOCH + Duration::from_secs(0o14712345671)));
-        let bare = FileInfo::parse(b"a.txt\x00\x00");
+        let bare = FileInfo::parse(b"a.txt\x00\x00", encoding_rs::UTF_8);
         assert_eq!((bare.name.as_str(), bare.size, bare.modified), ("a.txt", None, None));
+        let gbk = FileInfo::parse(b"\xc4\xe3\xba\xc3.txt\x00\x00", crate::encoding::for_profile("gbk"));
+        assert_eq!(gbk.name, "你好.txt");
     }
 
     #[test]

@@ -84,6 +84,8 @@ export function SessionPane({
         menuItems={menuItems}
         logOpen={logOpen}
         onLog={onLog}
+        appearance={profile?.appearance}
+        loginCommands={profile?.loginCommands ?? []}
       />
       {mounted.length > 0 && (
         <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>

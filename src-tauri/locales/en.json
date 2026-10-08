@@ -54,7 +54,10 @@
       "notFound": "Session profile not found",
       "missingFields": "Host, port and username are required",
       "invalidJumpHost": "A jump host refers to a missing session or to this session itself",
-      "usedAsJumpHost": "This session is a jump host for {names}; remove it there first"
+      "usedAsJumpHost": "This session is a jump host for {names}; remove it there first",
+      "invalidEncoding": "Unsupported character encoding: {encoding}",
+      "invalidTermType": "The terminal type cannot contain spaces or special characters",
+      "invalidEnvName": "Invalid environment variable name: \"{name}\""
     },
     "ssh": {
       "connectTimeout": "Connection to {target} timed out",

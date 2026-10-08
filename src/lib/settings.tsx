@@ -9,6 +9,10 @@ export type CursorStyle = "block" | "bar" | "underline";
 /** What right-clicking the terminal does. */
 export type RightClick = "menu" | "paste";
 
+/** The terminal font sizes allowed, in the settings and in sessions. */
+export const FONT_SIZE_MIN = 6;
+export const FONT_SIZE_MAX = 48;
+
 export interface TerminalSettings {
   /** A scheme id from terminalSchemes.ts, or "auto" to follow the appearance. */
   colorScheme: string;

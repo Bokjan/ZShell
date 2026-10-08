@@ -86,6 +86,8 @@ interface Props {
   syncing: boolean;
   /** Tabs that just received text from the compose bar or a quick command; they flash. */
   flashing: number[];
+  /** The color a tab is marked with (its session's background color), if any. */
+  colorOf(tab: Tab): string | undefined;
 }
 
 /** How far the pointer moves before a press on a tab becomes a drag. */
@@ -116,6 +118,7 @@ export function TabBar({
   inScope,
   syncing,
   flashing,
+  colorOf,
 }: Props) {
   const { t } = useTranslation();
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
@@ -231,6 +234,7 @@ export function TabBar({
       <div className="tab-strip" ref={stripRef} onWheel={onWheel}>
         {tabs.map((tab) => {
           const title = tabTitle(tab, followRemoteTitle);
+          const color = colorOf(tab);
           return (
             <div
               key={tab.key}
@@ -254,6 +258,7 @@ export function TabBar({
               }}
               title={editing === tab.key ? undefined : `${title}\n${t("tabs.renameHint")}`}
             >
+              {color && <span className="tab-color" style={{ background: color }} />}
               <span className={`status-dot ${tab.status}`} />
               {isLogging(tab) && <span className="tab-log" title={t("tabs.logging", { path: tab.logPath })} />}
               {editing === tab.key ? (

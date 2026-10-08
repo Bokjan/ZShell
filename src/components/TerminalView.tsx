@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -19,6 +19,7 @@ import {
   type CommandError,
   type ForwardState,
   type LogOpen,
+  type ProfileAppearance,
   type Session,
   type SessionId,
   type SessionTarget,
@@ -35,7 +36,7 @@ import {
   selectAllShortcutLabel,
 } from "../lib/platform";
 import { useSettings } from "../lib/settings";
-import { fontStack, resolveScheme, searchDecorations } from "../lib/terminalSchemes";
+import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
@@ -74,6 +75,10 @@ interface Props {
   logOpen: LogOpen;
   /** The session's log started (its path) or stopped (null). */
   onLog(path: string | null): void;
+  /** The session's own colors and font, over the settings. */
+  appearance?: ProfileAppearance;
+  /** Typed into each new shell, one after another as the shell shows its prompt. */
+  loginCommands: string[];
 }
 
 /** Mouse (SGR, X10) and focus reports the terminal sends for programs; not typed input. */
@@ -91,6 +96,19 @@ const ACK_BATCH = 64 * 1024;
 
 /** Characters of a multi-line paste shown in the confirmation dialog. */
 const PASTE_PREVIEW = 4000;
+
+/** How long the output must pause before the next login command is typed. */
+const LOGIN_COMMAND_IDLE_MS = 300;
+
+/**
+ * Whether the text before the cursor looks like a shell prompt: not empty, and not ending
+ * like the questions that come before one (passwords and passphrases end with ":", yes/no
+ * questions with "?"), so `sudo -i` gets its password before the next command.
+ */
+const looksLikePrompt = (line: string) => {
+  const text = line.trimEnd();
+  return text !== "" && !/[:?]$/.test(text);
+};
 
 const ignore = () => {};
 
@@ -113,6 +131,8 @@ export function TerminalView({
   menuItems: extraMenuItems,
   logOpen,
   onLog,
+  appearance,
+  loginCommands,
 }: Props) {
   const { t } = useTranslation();
   const tRef = useRef(t);
@@ -141,6 +161,8 @@ export function TerminalView({
   onLogRef.current = onLog;
   const shareFromRef = useRef(shareFrom);
   shareFromRef.current = shareFrom;
+  const loginCommandsRef = useRef(loginCommands);
+  loginCommandsRef.current = loginCommands;
   /** Closes the current session and connects again; set while the terminal exists. */
   const reconnectRef = useRef<() => void>(ignore);
   /** Pastes text, asking first if it would run several commands; set while the terminal exists. */
@@ -162,11 +184,14 @@ export function TerminalView({
   const { settings, theme, update } = useSettings();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  const scheme = resolveScheme(settings.terminal.colorScheme, theme);
+  const scheme = useMemo(
+    () => sessionScheme(settings.terminal.colorScheme, theme, appearance),
+    [settings.terminal.colorScheme, theme, appearance?.colorScheme, appearance?.background],
+  );
   const options = {
     theme: scheme.theme,
-    fontFamily: fontStack(settings.terminal.fontFamily),
-    fontSize: settings.terminal.fontSize,
+    fontFamily: fontStack(appearance?.fontFamily ?? settings.terminal.fontFamily),
+    fontSize: appearance?.fontSize ?? settings.terminal.fontSize,
     cursorStyle: settings.terminal.cursorStyle,
     cursorBlink: settings.terminal.cursorBlink,
     scrollback: settings.terminal.scrollback,
@@ -219,6 +244,27 @@ export function TerminalView({
     let generation = 0;
     // Used for the first attempt only: reconnecting always makes a new connection.
     let shareFrom = shareFromRef.current;
+    // The login commands not yet typed into the current shell, and the wait for its prompt.
+    let loginPending: string[] = [];
+    let loginTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const stopLoginCommands = () => {
+      loginPending = [];
+      clearTimeout(loginTimer);
+    };
+
+    // Called whenever output has been shown: types the next command once the output pauses
+    // at something that looks like a prompt.
+    const awaitPrompt = () => {
+      if (loginPending.length === 0) return;
+      clearTimeout(loginTimer);
+      loginTimer = setTimeout(() => {
+        const buffer = term.buffer.active;
+        const line = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX) ?? "";
+        if (!session || closed || !looksLikePrompt(line)) return;
+        void session.write(`${loginPending.shift()}\r`).catch(ignore);
+      }, LOGIN_COMMAND_IDLE_MS);
+    };
 
     const cancelRetry = () => {
       clearTimeout(retryTimer);
@@ -237,6 +283,7 @@ export function TerminalView({
 
     const connect = () => {
       cancelRetry();
+      stopLoginCommands();
       closed = false;
       onStatusRef.current("connecting");
       const local = targetRef.current.kind === "local";
@@ -261,6 +308,7 @@ export function TerminalView({
           term.write(new Uint8Array(data), () => {
             processed += data.byteLength;
             acknowledge();
+            awaitPrompt();
           });
         },
         (event) => {
@@ -268,6 +316,8 @@ export function TerminalView({
           if (event.type === "connected") {
             attempt = 0;
             onStatusRef.current("connected");
+            loginPending = [...loginCommandsRef.current];
+            awaitPrompt();
             return;
           }
           if (event.type === "forward") {
@@ -284,6 +334,7 @@ export function TerminalView({
             return;
           }
           ended = closed = true;
+          stopLoginCommands();
           session = undefined;
           sessionIdRef.current = null;
           setZmodemPhase(null);
@@ -318,6 +369,7 @@ export function TerminalView({
             onSessionRef.current(s.id);
             // Output can arrive before the session id does.
             acknowledge();
+            awaitPrompt();
           }
         })
         .catch((e) => {
@@ -412,6 +464,7 @@ export function TerminalView({
     const subscriptions: IDisposable[] = [
       term.onData((data) => {
         if (!closed) {
+          if (data.includes("\x03")) stopLoginCommands();
           void session?.write(data);
           if (session && !REPORT.test(data)) onInputRef.current(data);
           return;
@@ -433,6 +486,7 @@ export function TerminalView({
     return () => {
       disposed = true;
       cancelRetry();
+      stopLoginCommands();
       window.removeEventListener("online", onOnline);
       window.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("paste", onPaste, true);

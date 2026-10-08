@@ -1,5 +1,7 @@
 import type { ITheme } from "@xterm/xterm";
 
+import type { ProfileAppearance } from "./api";
+
 export interface TerminalScheme {
   id: string;
   /** Proper name of the scheme; null for the defaults, whose names are translated. */
@@ -213,6 +215,50 @@ export const TERMINAL_SCHEMES: TerminalScheme[] = [
 export function resolveScheme(id: string, appearance: "dark" | "light"): TerminalScheme {
   const found = TERMINAL_SCHEMES.find((s) => s.id === id);
   return found ?? TERMINAL_SCHEMES.find((s) => s.id === `default-${appearance}`)!;
+}
+
+/**
+ * The scheme of a session's terminal: the session's own choice over the setting's, with its
+ * background color if it has one (see `ProfileAppearance`).
+ */
+export function sessionScheme(
+  settingId: string,
+  appearance: "dark" | "light",
+  own: ProfileAppearance | undefined,
+): TerminalScheme {
+  const scheme = resolveScheme(own?.colorScheme ?? settingId, appearance);
+  const background = own?.background;
+  if (!background) return scheme;
+  return { ...scheme, dark: isDark(background), theme: { ...scheme.theme, background } };
+}
+
+/**
+ * A tab's mark for a session background color: the same hue at a middle lightness, so dark
+ * and light backgrounds alike stand out against the tab bar.
+ */
+export function tabMark(color: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let hue = 0;
+  if (d > 0) {
+    if (max === r) hue = ((g - b) / d) % 6;
+    else if (max === g) hue = (b - r) / d + 2;
+    else hue = (r - g) / d + 4;
+  }
+  const lightness = (max + min) / 2;
+  const saturation = d === 0 ? 0 : d / (1 - Math.abs(2 * lightness - 1));
+  return `hsl(${Math.round(hue * 60 + 360) % 360} ${Math.round(Math.max(saturation, d > 0 ? 0.5 : 0) * 100)}% 55%)`;
+}
+
+/** Whether a #rrggbb color is dark (relative luminance, as WCAG defines it). */
+function isDark(color: string): boolean {
+  const channel = (i: number) => {
+    const c = parseInt(color.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5) < 0.18;
 }
 
 /** Search highlight colors that read well on the scheme's background (#RRGGBB only). */

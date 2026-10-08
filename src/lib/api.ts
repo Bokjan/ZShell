@@ -43,7 +43,38 @@ export interface Profile {
   commandGroup?: string;
   /** Record a session log from the start of each connection. */
   autoLog: boolean;
+  /** Let the remote shell use the local SSH agent (ForwardAgent). */
+  forwardAgent: boolean;
+  /** The remote side's character encoding, one of `ENCODINGS`. */
+  encoding: string;
+  /** The terminal type the remote shell is told (TERM). */
+  termType: string;
+  /** Environment variables for the remote shell (SetEnv). */
+  env: EnvVar[];
+  /** Typed into each new shell, in order, each once the shell shows a prompt. */
+  loginCommands: string[];
+  /** Terminal appearance for this session; absent values follow the settings. */
+  appearance?: ProfileAppearance;
 }
+
+export interface EnvVar {
+  name: string;
+  value: string;
+}
+
+export interface ProfileAppearance {
+  /** A color scheme id, or "auto". */
+  colorScheme?: string;
+  /** Replaces the scheme's background, as #rrggbb. */
+  background?: string;
+  fontFamily?: string;
+  fontSize?: number;
+}
+
+/** The character encodings a session can use (WHATWG labels, as the backend stores them). */
+export const ENCODINGS = ["utf-8", "gb18030", "gbk", "big5", "shift_jis", "euc-jp", "euc-kr", "windows-1252"] as const;
+
+export const DEFAULT_TERM_TYPE = "xterm-256color";
 
 export interface Folder {
   /** Empty for a new folder; assigned on save. */
@@ -208,6 +239,9 @@ export interface ImportCandidate {
   jumpHosts: string[];
   keepaliveInterval: number;
   forwards: ForwardRule[];
+  forwardAgent: boolean;
+  /** From SetEnv. */
+  env: EnvVar[];
   /** Name of an existing profile for the same host; such hosts are not imported again. */
   existing: string | null;
   /** Config options that are not imported. */

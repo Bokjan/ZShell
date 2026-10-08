@@ -12,6 +12,7 @@ use russh_sftp::client::SftpSession;
 use tokio::sync::{watch, OnceCell};
 
 use super::handler::ClientHandler;
+use crate::config::Profile;
 use crate::error::{Error, Result};
 use crate::forward::{Forwards, RemoteRoutes};
 use crate::session::{SessionId, SessionSink};
@@ -20,6 +21,9 @@ pub type SshHandle = client::Handle<ClientHandler>;
 
 pub struct Connection {
     handle: Arc<SshHandle>,
+    /// The profile as it was when connecting; shells opened later (duplicated tabs) use its
+    /// terminal options and encoding.
+    profile: Profile,
     /// Connections to the jump hosts this one runs through, first hop first.
     jumps: Vec<Arc<SshHandle>>,
     sftp: OnceCell<Arc<SftpSession>>,
@@ -31,6 +35,10 @@ pub struct Connection {
 impl Connection {
     pub fn handle(&self) -> &SshHandle {
         &self.handle
+    }
+
+    pub fn profile(&self) -> &Profile {
+        &self.profile
     }
 
     pub fn disconnect_reason(&self) -> watch::Receiver<Option<String>> {
@@ -47,7 +55,8 @@ impl Connection {
             .get_or_try_init(|| async {
                 let channel = self.handle.channel_open_session().await?;
                 channel.request_subsystem(true, "sftp").await?;
-                let sftp = SftpSession::new(channel.into_stream()).await.context(Error::new("sftp.unsupported"))?;
+                let stream = crate::sftp::names::convert(channel.into_stream(), crate::encoding::for_profile(&self.profile.encoding));
+                let sftp = SftpSession::new(stream).await.context(Error::new("sftp.unsupported"))?;
                 Ok(Arc::new(sftp))
             })
             .await
@@ -61,17 +70,19 @@ pub struct Connections(Arc<Mutex<HashMap<SessionId, Arc<Connection>>>>);
 impl Connections {
     /// `routes` and `disconnect` must be the ones given to the connection's
     /// [`ClientHandler`]; forward states are reported through `sink`.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert(
         &self,
         id: SessionId,
         handle: Arc<SshHandle>,
+        profile: Profile,
         jumps: Vec<Arc<SshHandle>>,
         routes: RemoteRoutes,
         disconnect: watch::Receiver<Option<String>>,
         sink: SessionSink,
     ) -> Arc<Connection> {
         let forwards = Forwards::new(handle.clone(), routes);
-        let connection = Arc::new(Connection { handle, jumps, sftp: OnceCell::new(), forwards, disconnect });
+        let connection = Arc::new(Connection { handle, profile, jumps, sftp: OnceCell::new(), forwards, disconnect });
         self.attach(id, connection.clone(), sink);
         connection
     }

@@ -34,6 +34,7 @@ portable-pty = "0.9"
 tauri-plugin-clipboard-manager = "2"
 vte = "0.15"
 chrono = "0.4"
+encoding_rs = "0.8"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

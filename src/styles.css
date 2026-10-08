@@ -357,6 +357,7 @@ body.dragging-row {
   display: none;
 }
 .tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -373,6 +374,14 @@ body.dragging-row {
 .tab.dragging {
   opacity: 0.7;
   cursor: grabbing;
+}
+/* The session's own background color (e.g. red for production), along the left edge. */
+.tab-color {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
 }
 /* A tab writing its session log. */
 .tab-log {
@@ -1701,8 +1710,8 @@ body.resizing .terminal-view {
   background: var(--backdrop);
   z-index: 10;
 }
-/* Scrolls when taller than the space below the title bar (the session dialog with its
-   advanced settings open, on a small window). */
+/* Scrolls when taller than the space below the title bar (the session dialog on a small
+   window). */
 .dialog {
   width: 380px;
   max-width: calc(100vw - 32px);
@@ -1828,27 +1837,6 @@ body.resizing .terminal-view {
   background: var(--danger);
   border-color: var(--danger);
 }
-.dialog details.advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.dialog details.advanced[open] summary {
-  margin-bottom: 10px;
-}
-.dialog details.advanced > label + label,
-.dialog details.advanced > .hint + label {
-  margin-top: 10px;
-}
-/* The details element is not a flex container, so hints need their own spacing here. */
-.dialog details.advanced > .hint {
-  margin: 4px 0 0;
-}
-.dialog summary {
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 12px;
-}
 .dialog .field {
   display: flex;
   flex-direction: column;
@@ -1970,6 +1958,68 @@ body.resizing .terminal-view {
 }
 .command-dialog {
   width: 460px;
+}
+.profile-dialog {
+  width: 440px;
+  overflow: hidden;
+}
+/* Only the pages scroll; the title, the page switcher and the buttons stay. */
+.profile-dialog > * {
+  flex-shrink: 0;
+}
+.profile-dialog > .profile-body {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -20px;
+  padding: 0 20px;
+}
+.dialog .profile-pages {
+  align-self: stretch;
+  margin-bottom: 4px;
+}
+.profile-pages button {
+  flex: 1;
+}
+.profile-stack {
+  display: grid;
+}
+.profile-page {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Takes its space but can't be seen or focused. */
+.profile-page.hidden {
+  visibility: hidden;
+}
+.dialog .profile-page-hint {
+  margin: 0;
+}
+.profile-scheme {
+  align-items: flex-end;
+}
+.profile-scheme .scheme-preview {
+  width: 140px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.profile-background {
+  align-items: center;
+}
+.dialog input[type="color"] {
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.dialog input[type="color"]:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .command-text {
   padding: 6px 8px;

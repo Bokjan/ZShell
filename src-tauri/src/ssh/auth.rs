@@ -315,6 +315,11 @@ async fn agent(session: &mut Session, user: &str) -> Result<()> {
 
 type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin>>;
 
+/// A connection to the local agent for a forwarded agent channel.
+pub async fn agent_stream() -> Result<Box<dyn AgentStream + Send + Unpin>> {
+    Ok(connect_agent().await?.into_inner())
+}
+
 #[cfg(unix)]
 async fn connect_agent() -> Result<DynAgent> {
     Ok(AgentClient::connect_env().await?.dynamic())

@@ -4,6 +4,7 @@ mod i18n;
 mod backup;
 mod commands;
 mod config;
+mod encoding;
 mod error;
 mod forward;
 mod import;

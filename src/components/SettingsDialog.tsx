@@ -8,6 +8,8 @@ import { basename, formatSize } from "../lib/format";
 import { isMac } from "../lib/platform";
 import {
   DEFAULT_SETTINGS,
+  FONT_SIZE_MAX,
+  FONT_SIZE_MIN,
   useSettings,
   type Appearance,
   type CursorStyle,
@@ -21,6 +23,7 @@ import {
   type ZmodemSettings,
 } from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
+import { SchemePreview, schemeLabel } from "./SchemePreview";
 
 interface Props {
   onClose(): void;
@@ -53,23 +56,6 @@ function NumberField({ value, min, max, onChange }: { value: number; min: number
   );
 }
 
-/** Miniature terminal in the scheme's colors. */
-function SchemePreview({ scheme }: { scheme: TerminalScheme }) {
-  const t = scheme.theme;
-  return (
-    <span className="scheme-preview" style={{ background: t.background, color: t.foreground }}>
-      <span className="scheme-prompt">
-        <span style={{ color: t.green }}>~</span> <span style={{ color: t.blue }}>$</span> ls
-      </span>
-      <span className="scheme-swatches">
-        {[t.red, t.green, t.yellow, t.blue, t.magenta, t.cyan].map((color, i) => (
-          <span key={i} style={{ background: color }} />
-        ))}
-      </span>
-    </span>
-  );
-}
-
 export function SettingsDialog({ onClose }: Props) {
   const { t } = useTranslation();
   const { settings, theme, update } = useSettings();
@@ -87,8 +73,7 @@ export function SettingsDialog({ onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const schemeName = (scheme: TerminalScheme) =>
-    scheme.name ?? (scheme.dark ? t("settings.schemeDefaultDark") : t("settings.schemeDefaultLight"));
+  const schemeName = (scheme: TerminalScheme) => schemeLabel(scheme, t);
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -156,7 +141,12 @@ export function SettingsDialog({ onClose }: Props) {
             </label>
             <label className="port">
               {t("settings.fontSize")}
-              <NumberField value={terminal.fontSize} min={6} max={48} onChange={(fontSize) => setTerminal({ fontSize })} />
+              <NumberField
+                value={terminal.fontSize}
+                min={FONT_SIZE_MIN}
+                max={FONT_SIZE_MAX}
+                onChange={(fontSize) => setTerminal({ fontSize })}
+              />
             </label>
           </div>
           <p className="hint">{t("settings.fontHint")}</p>

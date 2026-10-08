@@ -11,7 +11,9 @@
 //! (`pty::run`).
 //!
 //! Remote output goes through [`SessionSink::output`], where ZMODEM transfers are detected and
-//! take over the session until they end (see [`crate::zmodem`]).
+//! take over the session until they end (see [`crate::zmodem`]). What the terminal shows is then
+//! decoded from the session's character encoding ([`SessionSink::remote`]), and keystrokes are
+//! encoded on the way back ([`TermIo::recv`]); ZMODEM data and our own messages are not.
 //!
 //! Output is flow controlled: the frontend acknowledges the bytes xterm.js has processed
 //! ([`SessionManager::ack`]), and backends that can produce output faster than the terminal
@@ -28,6 +30,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use tokio::sync::mpsc;
 use unicode_width::UnicodeWidthChar;
 
+use crate::encoding::Codec;
 use crate::error::{Error, Result};
 use crate::forward::ForwardState;
 use crate::logging::LogSlot;
@@ -123,6 +126,8 @@ pub struct SessionSink {
     flow: Arc<Flow>,
     zmodem: Arc<Zmodem>,
     log: Arc<LogSlot>,
+    /// The session's character encoding; `None` for UTF-8.
+    codec: Option<Arc<Codec>>,
 }
 
 impl SessionSink {
@@ -131,8 +136,21 @@ impl SessionSink {
     pub fn output(&self, bytes: Vec<u8>) {
         let shown = self.zmodem.output(bytes, self);
         if !shown.is_empty() {
-            self.write(shown);
+            self.remote(shown);
         }
+    }
+
+    /// Remote output for the terminal, past ZMODEM detection: converted to UTF-8 first.
+    pub fn remote(&self, bytes: Vec<u8>) {
+        match &self.codec {
+            Some(codec) => self.write(codec.decode(&bytes)),
+            None => self.write(bytes),
+        }
+    }
+
+    /// The remote side's character encoding (for file names in ZMODEM transfers).
+    pub fn encoding(&self) -> &'static encoding_rs::Encoding {
+        self.codec.as_ref().map_or(encoding_rs::UTF_8, |codec| codec.encoding())
     }
 
     /// Writes to the terminal directly (our own messages, or output already filtered), and
@@ -198,10 +216,12 @@ impl TermIo {
         events: Channel<SessionEvent>,
         size: (u16, u16),
         log: Arc<LogSlot>,
+        encoding: &'static encoding_rs::Encoding,
     ) -> (Self, mpsc::UnboundedSender<SessionInput>) {
         let (tx, rx) = mpsc::unbounded_channel();
         let (zmodem, zmodem_out) = Zmodem::new();
-        let sink = SessionSink { output, events, flow: Arc::default(), zmodem, log };
+        let codec = Codec::new(encoding).map(Arc::new);
+        let sink = SessionSink { output, events, flow: Arc::default(), zmodem, log, codec };
         (Self { sink, foreground: Foreground::default(), input: rx, zmodem_out, size }, tx)
     }
 
@@ -226,7 +246,8 @@ impl TermIo {
             }
             Ok(())
         });
-        let (io, input) = Self::new(output, events, size, LogSlot::new(crate::logging::LogInfo::default()));
+        let log = LogSlot::new(crate::logging::LogInfo::default());
+        let (io, input) = Self::new(output, events, size, log, encoding_rs::UTF_8);
         (io, input, output_rx, events_rx)
     }
 
@@ -253,7 +274,14 @@ impl TermIo {
 
     /// Receives the next input for the remote side, keeping [`TermIo::size`] up to date.
     /// During a ZMODEM transfer that is the transfer's data; keystrokes only cancel it.
+    /// Keystrokes are converted to the session's encoding.
     pub async fn recv(&mut self) -> Option<SessionInput> {
+        self.next_input(true).await
+    }
+
+    /// `convert`: whether keystrokes are converted to the session's encoding. Prompts read
+    /// UTF-8, which is also what the SSH protocol uses for passwords and answers.
+    async fn next_input(&mut self, convert: bool) -> Option<SessionInput> {
         loop {
             let input = tokio::select! {
                 biased;
@@ -264,6 +292,11 @@ impl TermIo {
                 Some(SessionInput::Data(data)) if self.sink.zmodem.is_active() => {
                     self.sink.zmodem.input(data);
                     continue;
+                }
+                Some(SessionInput::Data(data)) if convert => {
+                    if let Some(codec) = &self.sink.codec {
+                        return Some(SessionInput::Data(codec.encode(data)));
+                    }
                 }
                 Some(SessionInput::Resize { cols, rows }) => self.size = (*cols, *rows),
                 _ => {}
@@ -277,7 +310,7 @@ impl TermIo {
     pub async fn read_line(&mut self, echo: bool) -> Option<String> {
         let mut line = String::new();
         loop {
-            let SessionInput::Data(data) = self.recv().await? else {
+            let SessionInput::Data(data) = self.next_input(false).await? else {
                 continue;
             };
             // Escape sequences (arrow keys etc.) are not supported in prompts.
@@ -336,12 +369,15 @@ pub struct SessionManager {
 impl SessionManager {
     /// Starts a session whose backend task is produced by `backend`, logging to `log` (which
     /// may already be writing, so that the log starts with the session's first output).
+    /// `encoding` is the remote side's character encoding.
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn<F, Fut>(
         &self,
         output: Channel,
         events: Channel<SessionEvent>,
         size: (u16, u16),
         log: Arc<LogSlot>,
+        encoding: &'static encoding_rs::Encoding,
         backend: F,
     ) -> SessionId
     where
@@ -349,7 +385,7 @@ impl SessionManager {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let (io, input) = TermIo::new(output, events, size, log);
+        let (io, input) = TermIo::new(output, events, size, log, encoding);
         let sink = io.sink();
         let flow = io.sink.flow();
         let foreground = io.foreground();

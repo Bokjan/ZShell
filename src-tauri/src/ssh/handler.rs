@@ -1,11 +1,11 @@
 //! russh client callbacks: server host key verification (answered by the session task, see
-//! [`super::host_key`]), channels the server opens for remote port forwards, and why the
-//! connection ended.
+//! [`super::host_key`]), channels the server opens for remote port forwards and agent
+//! forwarding, and why the connection ended.
 
 use russh::client::{self, ChannelOpenHandle, DisconnectReason, Msg, Session};
 use russh::keys::known_hosts::check_known_hosts;
 use russh::keys::{PublicKey, PublicKeyOrCertificate};
-use russh::Channel;
+use russh::{Channel, ChannelOpenFailure};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::host_key::{HostKeyQuery, HostKeyStatus};
@@ -14,6 +14,8 @@ use crate::forward::{Incoming, RemoteRoutes};
 pub struct ClientHandler {
     host: String,
     port: u16,
+    /// Whether we asked for agent forwarding; agent channels are refused otherwise.
+    forward_agent: bool,
     queries: mpsc::Sender<HostKeyQuery>,
     /// The key accepted during the initial key exchange. Re-keying later in the session must
     /// present the same key, and is checked without involving the user.
@@ -27,11 +29,12 @@ impl ClientHandler {
     pub fn new(
         host: String,
         port: u16,
+        forward_agent: bool,
         queries: mpsc::Sender<HostKeyQuery>,
         routes: RemoteRoutes,
         disconnect: watch::Sender<Option<String>>,
     ) -> Self {
-        Self { host, port, queries, verified: None, routes, disconnect }
+        Self { host, port, forward_agent, queries, verified: None, routes, disconnect }
     }
 }
 
@@ -82,6 +85,32 @@ impl client::Handler for ClientHandler {
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
         self.routes.route(connected_address, connected_port, Incoming { channel, reply });
+        Ok(())
+    }
+
+    /// Connects each agent channel to the local agent (a connection of its own), off russh's
+    /// connection task. Refused when we didn't ask for forwarding (russh would accept it) or
+    /// there is no local agent.
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        channel: Channel<Msg>,
+        reply: ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if !self.forward_agent {
+            reply.reject(ChannelOpenFailure::AdministrativelyProhibited).await;
+            return Ok(());
+        }
+        tauri::async_runtime::spawn(async move {
+            match super::auth::agent_stream().await {
+                Ok(mut agent) => {
+                    reply.accept().await;
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut stream, &mut agent).await;
+                }
+                Err(_) => reply.reject(ChannelOpenFailure::ConnectFailed).await,
+            }
+        });
         Ok(())
     }
 

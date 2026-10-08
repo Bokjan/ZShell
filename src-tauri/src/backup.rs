@@ -170,23 +170,13 @@ impl FolderMerger<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AuthMethod;
 
     fn profile(id: &str, name: &str, host: &str, folder: Option<&str>, jumps: &[&str]) -> Profile {
         Profile {
             id: id.into(),
-            name: name.into(),
-            host: host.into(),
-            port: 22,
-            username: "alice".into(),
-            auth: AuthMethod::Auto,
             jump_hosts: jumps.iter().map(|j| j.to_string()).collect(),
-            keepalive_interval: 30,
-            auto_reconnect: true,
-            forwards: Vec::new(),
             folder: folder.map(Into::into),
-            command_group: None,
-            auto_log: false,
+            ..Profile::new(name.into(), host.into(), 22, "alice".into())
         }
     }
 

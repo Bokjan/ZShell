@@ -45,9 +45,10 @@ pub async fn send(link: &mut Link, rinit: Header, paths: &[PathBuf], report: &mu
     let mut bytes_left: u64 = files.iter().map(|f| f.size).sum();
     for (index, file) in files.iter().enumerate() {
         let files_left = files.len() - index;
-        let info = format!("{}\0{} {:o} {:o} 0 {files_left} {bytes_left}\0", file.name, file.size, file.modified, file.mode);
+        let mut info = crate::encoding::encode(link.charset, &file.name);
+        info.extend(format!("\0{} {:o} {:o} 0 {files_left} {bytes_left}\0", file.size, file.modified, file.mode).into_bytes());
         bytes_left -= file.size;
-        match send_file(link, file, info.as_bytes(), encoding, streaming, report).await {
+        match send_file(link, file, &info, encoding, streaming, report).await {
             Ok(()) => {}
             // A file that went away or became unreadable midway; the receiver is told it ended.
             Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code() == "transfer.readFailed") => report.failed(e),

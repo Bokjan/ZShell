@@ -42,6 +42,8 @@ pub struct Link {
     cans: u8,
     /// The encoding of the last header read; binary ones set the CRC of their subpackets.
     pub last_encoding: Encoding,
+    /// The remote side's character encoding, for file names.
+    pub charset: &'static encoding_rs::Encoding,
 }
 
 impl Link {
@@ -58,6 +60,7 @@ impl Link {
             cancel,
             cans: 0,
             last_encoding: Encoding::Hex,
+            charset: encoding_rs::UTF_8,
         }
     }
 

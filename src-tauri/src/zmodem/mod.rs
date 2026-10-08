@@ -121,7 +121,8 @@ impl Zmodem {
         let _ = incoming.send(scan[start..].to_vec());
         let (cancel, cancel_rx) = watch::channel(false);
         *state = State::Active(Active { incoming, cancel, reply: None });
-        let link = Link::new(incoming_rx, self.outgoing.clone(), cancel_rx);
+        let mut link = Link::new(incoming_rx, self.outgoing.clone(), cancel_rx);
+        link.charset = sink.encoding();
         tauri::async_runtime::spawn(run(self.clone(), direction, link, sink.clone()));
         bytes[..start.saturating_sub(shown)].to_vec()
     }
@@ -168,7 +169,7 @@ impl Zmodem {
         let rest = link.take_rest();
         *state = State::Idle { tail: Vec::new() };
         if !rest.is_empty() {
-            sink.write(rest);
+            sink.remote(rest);
         }
     }
 }
@@ -212,7 +213,7 @@ async fn run(zmodem: Arc<Zmodem>, direction: Direction, mut link: Link, sink: Se
                 // Typically the shell prompt, once the remote program has exited.
                 let after: Vec<u8> = after.into_iter().skip_while(|&b| b == 0x08).collect();
                 if !after.is_empty() {
-                    sink.write(after);
+                    sink.remote(after);
                 }
             }
         }

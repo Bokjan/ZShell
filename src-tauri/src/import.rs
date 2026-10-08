@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForwardListen, SshConfig};
 
-use crate::config::{AuthMethod, Profile};
+use crate::config::{AuthMethod, EnvVar, Profile};
 use crate::error::{Error, Result};
 use crate::forward::{ForwardKind, ForwardRule};
 
@@ -40,6 +40,9 @@ pub struct Candidate {
     pub jump_hosts: Vec<String>,
     pub keepalive_interval: u32,
     pub forwards: Vec<ForwardRule>,
+    pub forward_agent: bool,
+    /// From `SetEnv`.
+    pub env: Vec<EnvVar>,
     /// The name of an existing profile for the same alias or address; such hosts are not
     /// imported again.
     pub existing: Option<String>,
@@ -109,6 +112,8 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile]) -> Result<Ve
         let mut profile = new_profile(ids[&candidate.alias].clone(), candidate.alias, candidate.host, candidate.port, candidate.username);
         profile.auth = candidate.auth;
         profile.keepalive_interval = candidate.keepalive_interval;
+        profile.forward_agent = candidate.forward_agent;
+        profile.env = candidate.env;
         profile.jump_hosts = jump_hosts;
         // Normalizing fills in the default bind address, as saving from the panel does.
         profile.forwards = candidate
@@ -168,8 +173,10 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
     if params.certificate_file.is_some() {
         skipped.push("CertificateFile".to_owned());
     }
-    if params.forward_agent == Some(true) {
-        skipped.push("ForwardAgent".to_owned());
+    let forward_agent = params.forward_agent == Some(true);
+    let env = params.unsupported_fields.get("setenv").map(|args| set_env(args, &mut skipped)).unwrap_or_default();
+    if params.unsupported_fields.contains_key("sendenv") {
+        skipped.push("SendEnv".to_owned());
     }
     skipped.extend(
         NOTABLE_UNSUPPORTED
@@ -182,7 +189,42 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
         .iter()
         .find(|p| p.name == alias || (p.host == host && p.port == port && p.username == username))
         .map(|p| p.name.clone());
-    Candidate { alias, host, port, username, auth, jump_hosts, keepalive_interval, forwards, existing, skipped }
+    Candidate {
+        alias,
+        host,
+        port,
+        username,
+        auth,
+        jump_hosts,
+        keepalive_interval,
+        forwards,
+        forward_agent,
+        env,
+        existing,
+        skipped,
+    }
+}
+
+/// `SetEnv NAME=value ...`, with the quotes of `NAME="a value"` removed. Entries without a
+/// name are reported as skipped.
+fn set_env(args: &[String], skipped: &mut Vec<String>) -> Vec<EnvVar> {
+    let mut vars = Vec::new();
+    for arg in args {
+        let mut text = String::new();
+        let mut chars = arg.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => {}
+                '\\' => text.extend(chars.next()),
+                c => text.push(c),
+            }
+        }
+        match text.split_once('=') {
+            Some((name, value)) if !name.is_empty() => vars.push(EnvVar { name: name.to_owned(), value: value.to_owned() }),
+            _ => skipped.push("SetEnv".to_owned()),
+        }
+    }
+    vars
 }
 
 /// Forwarding rules from `LocalForward`, `RemoteForward` and `DynamicForward`; Unix socket
@@ -281,21 +323,7 @@ fn new_id() -> String {
 }
 
 fn new_profile(id: String, name: String, host: String, port: u16, username: String) -> Profile {
-    Profile {
-        id,
-        name,
-        host,
-        port,
-        username,
-        auth: AuthMethod::Auto,
-        jump_hosts: Vec::new(),
-        keepalive_interval: 30,
-        auto_reconnect: true,
-        forwards: Vec::new(),
-        folder: None,
-        command_group: None,
-        auto_log: false,
-    }
+    Profile { id, ..Profile::new(name, host, port, username) }
 }
 
 #[cfg(test)]
@@ -344,6 +372,9 @@ Host legacy
     User root
     IdentityFile /keys/legacy
     ProxyCommand nc -X 5 %h %p
+    ForwardAgent yes
+    SetEnv LANG=zh_CN.GBK GREETING=\"hello world\"
+    SendEnv LC_*
     DynamicForward 127.0.0.1:1080
     RemoteForward 9000 localhost:3000
 
@@ -375,7 +406,10 @@ Host *
         let legacy = &candidates[3];
         assert_eq!(legacy.username, "root");
         assert!(matches!(&legacy.auth, AuthMethod::PublicKey { key_path } if key_path == "/keys/legacy"));
-        assert_eq!(legacy.skipped, ["proxycommand"]);
+        assert_eq!(legacy.skipped, ["SendEnv", "proxycommand"]);
+        assert!(legacy.forward_agent && !db.forward_agent);
+        let env: Vec<_> = legacy.env.iter().map(|v| (v.name.as_str(), v.value.as_str())).collect();
+        assert_eq!(env, [("LANG", "zh_CN.GBK"), ("GREETING", "hello world")]);
         let kinds: Vec<_> = legacy.forwards.iter().map(|f| f.kind).collect();
         assert_eq!(kinds, [ForwardKind::Remote, ForwardKind::Dynamic]);
     }

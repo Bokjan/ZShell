@@ -50,7 +50,7 @@ pub async fn run(profile: Profile, jumps: Vec<Profile>, id: SessionId, mut io: T
 /// registered for this session. No prompts, no auto-started forwards: like a second
 /// OpenSSH session through a ControlMaster.
 pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo, connections: Connections) {
-    let outcome = match open_shell(connection.handle(), &mut io).await {
+    let outcome = match open_shell(connection.handle(), connection.profile(), &mut io).await {
         Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason()).await,
         Err(e) => Outcome::Failed(e.into()),
     };
@@ -99,7 +99,8 @@ async fn start(
     let mut transport = None;
     for (index, hop) in jumps.iter().enumerate() {
         let next = jumps.get(index + 1).unwrap_or(profile);
-        let mut session = connect(hop, transport.take(), io, RemoteRoutes::default(), watch::channel(None).0).await?;
+        // The agent is only forwarded to the target, where the shell runs.
+        let mut session = connect(hop, false, transport.take(), io, RemoteRoutes::default(), watch::channel(None).0).await?;
         auth::authenticate(&mut session, hop, io).await?;
         let target = host_port(&next.host, next.port);
         let channel = session
@@ -112,22 +113,31 @@ async fn start(
 
     let routes = RemoteRoutes::default();
     let (disconnect_tx, disconnect) = watch::channel(None);
-    let mut session = connect(profile, transport, io, routes.clone(), disconnect_tx).await?;
+    let mut session = connect(profile, profile.forward_agent, transport, io, routes.clone(), disconnect_tx).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
-    let connection = connections.insert(id, session.clone(), jump_handles, routes, disconnect.clone(), io.sink());
+    let connection =
+        connections.insert(id, session.clone(), profile.clone(), jump_handles, routes, disconnect.clone(), io.sink());
     for rule in profile.forwards.iter().filter(|rule| rule.auto_start) {
         connection.forwards().start(rule.clone(), true);
     }
-    let channel = open_shell(&session, io).await?;
+    let channel = open_shell(&session, profile, io).await?;
     Ok((channel, disconnect))
 }
 
-/// Starts an interactive shell in a new channel on an authenticated connection.
-async fn open_shell(session: &SshHandle, io: &mut TermIo) -> Result<Channel<Msg>> {
+/// Starts an interactive shell in a new channel on an authenticated connection, with the
+/// profile's terminal type, environment and agent forwarding. Like OpenSSH, rejected
+/// environment variables are not reported (the server's `AcceptEnv` decides).
+async fn open_shell(session: &SshHandle, profile: &Profile, io: &mut TermIo) -> Result<Channel<Msg>> {
     let channel = session.channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
+    if profile.forward_agent {
+        channel.agent_forward(false).await?;
+    }
     let (cols, rows) = io.size;
-    channel.request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[]).await?;
+    channel.request_pty(false, &profile.term_type, cols.into(), rows.into(), 0, 0, &[]).await?;
+    for var in &profile.env {
+        channel.set_env(false, var.name.clone(), var.value.clone()).await?;
+    }
     channel.request_shell(false).await?;
     io.event(SessionEvent::Connected);
     Ok(channel)
@@ -198,9 +208,11 @@ async fn in_flight<F: Future + Unpin>(write: &mut Option<F>) -> F::Output {
 }
 
 /// Connects to one hop: over TCP, or through `via` (a channel from the previous jump host,
-/// with that host's name), then performs the SSH handshake.
+/// with that host's name), then performs the SSH handshake. `forward_agent`: whether the
+/// server may open agent channels.
 async fn connect(
     hop: &Profile,
+    forward_agent: bool,
     via: Option<(ChannelStream<Msg>, String)>,
     io: &mut TermIo,
     routes: RemoteRoutes,
@@ -215,15 +227,16 @@ async fn connect(
             .map_err(|_| Error::new("ssh.connectTimeout").param("target", &target))?
             .context(Error::new("ssh.connectFailed").param("target", &target))?;
         stream.set_nodelay(true)?;
-        return handshake(hop, stream, io, routes, disconnect).await;
+        return handshake(hop, forward_agent, stream, io, routes, disconnect).await;
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);
     io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
-    handshake(hop, stream, io, routes, disconnect).await
+    handshake(hop, forward_agent, stream, io, routes, disconnect).await
 }
 
 async fn handshake<S>(
     hop: &Profile,
+    forward_agent: bool,
     stream: S,
     io: &mut TermIo,
     routes: RemoteRoutes,
@@ -238,7 +251,7 @@ where
         ..Default::default()
     });
     let (queries_tx, mut queries) = mpsc::channel(1);
-    let handler = ClientHandler::new(hop.host.clone(), hop.port, queries_tx, routes, disconnect);
+    let handler = ClientHandler::new(hop.host.clone(), hop.port, forward_agent, queries_tx, routes, disconnect);
 
     // Drive the handshake while answering host key questions from the handler.
     let handshake = client::connect_stream(config, stream, handler);

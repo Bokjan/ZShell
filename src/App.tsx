@@ -46,6 +46,7 @@ import { storeBarVisible, storedBarVisible, tabGroup } from "./lib/quickCommands
 import { asTyped, CLOSED_COMPOSE, isConnected, scopeTabs, sendsToMany, type Compose, type SendResult } from "./lib/compose";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { useSettings } from "./lib/settings";
+import { tabMark } from "./lib/terminalSchemes";
 import { useTitleBar } from "./lib/window";
 import "./styles.css";
 
@@ -516,6 +517,10 @@ function App() {
           inScope={sendsToMany(compose) ? scopeTabs(compose, tabs, activeKey).map((tab) => tab.key) : []}
           syncing={compose.open && compose.sync}
           flashing={flashing}
+          colorOf={(tab) => {
+            const background = profiles.find((p) => p.id === profileIdOf(tab))?.appearance?.background;
+            return background && tabMark(background);
+          }}
         />
         {compose.open && tabs.length > 0 && (
           <ComposeBar

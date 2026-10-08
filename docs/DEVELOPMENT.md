@@ -75,6 +75,8 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 **ZMODEM**：在临时 sshd 的会话或本地终端里运行 `sz` / `rz`（Homebrew 装在 `/opt/homebrew/bin`）。SSH 会话以真实 HOME 登录，`rz` 收到的文件写在当前目录，先 `cd` 到临时目录。
 
+**非 UTF-8 文件名**：APFS 不接受非 UTF-8 的文件名，在本机的临时 sshd 上造不出 GBK 文件名，SFTP 与 ZMODEM 的文件名转码只有单元测试覆盖；GBK 会话里新建中文名的文件夹会被服务器拒绝，这恰好说明名字已按 GBK 发出。终端的输出和输入可以用 `printf` 写出 GBK 字节的文件、`head -c 4 | xxd` 查看键入的字节来验证。
+
 **只能在真机键盘上验证的**：按键长按重复（合成的按键事件不会自动重复）、输入法组字与候选框位置。
 
 ## 图标

@@ -7,7 +7,8 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::backup;
-use crate::config::{AuthMethod, Folder, Item, Profile, ProfileStore};
+use crate::config::{Folder, Item, Profile, ProfileStore};
+use crate::encoding;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::i18n;
@@ -179,7 +180,8 @@ pub fn ssh_open(
         profile: Some(profile.id.clone()),
     });
     let opened = logs.open(&slot, log.unwrap_or_default(), profile.auto_log, &settings.get().logs);
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |id, io| ssh::run(profile, jumps, id, io, connections));
+    let encoding = encoding::for_profile(&profile.encoding);
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding, |id, io| ssh::run(profile, jumps, id, io, connections));
     report_log(&sessions, id, opened);
     Ok(id)
 }
@@ -219,21 +221,7 @@ pub fn ssh_quick_open(
         "" => local_username(),
         name => name.to_owned(),
     };
-    let profile = Profile {
-        id: String::new(),
-        name: format!("{username}@{host}"),
-        host: host.trim().to_owned(),
-        port,
-        username,
-        auth: AuthMethod::Auto,
-        jump_hosts: Vec::new(),
-        keepalive_interval: 30,
-        auto_reconnect: true,
-        forwards: Vec::new(),
-        folder: None,
-        command_group: None,
-        auto_log: false,
-    };
+    let profile = Profile::new(format!("{username}@{host}"), host.trim().to_owned(), port, username);
     if profile.host.is_empty() || profile.username.is_empty() || port == 0 {
         return Err(Error::new("profile.missingFields"));
     }
@@ -246,7 +234,9 @@ pub fn ssh_quick_open(
         profile: None,
     });
     let opened = logs.open(&slot, log.unwrap_or_default(), false, &settings.get().logs);
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |id, io| ssh::run(profile, Vec::new(), id, io, connections));
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding_rs::UTF_8, |id, io| {
+        ssh::run(profile, Vec::new(), id, io, connections)
+    });
     report_log(&sessions, id, opened);
     Ok(id)
 }
@@ -281,7 +271,8 @@ pub fn ssh_open_shared(
     let auto = info.profile.as_ref().and_then(|id| store.get(id).ok()).is_some_and(|p| p.auto_log);
     let slot = LogSlot::new(info);
     let opened = logs.open(&slot, log.unwrap_or_default(), auto, &settings.get().logs);
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |id, io| {
+    let encoding = encoding::for_profile(&connection.profile().encoding);
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding, |id, io| {
         connections.attach(id, connection.clone(), io.sink());
         ssh::run_shared(connection, id, io, connections)
     });
@@ -305,7 +296,7 @@ pub fn local_open(
     let settings = settings.get().logs;
     let slot = LogSlot::new(LogInfo { session: shell.name(), host: "localhost".to_owned(), user: local_username(), profile: None });
     let opened = logs.open(&slot, log.unwrap_or_default(), settings.auto_local, &settings);
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |_, io| pty::run(shell, io));
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding_rs::UTF_8, |_, io| pty::run(shell, io));
     report_log(&sessions, id, opened);
     id
 }

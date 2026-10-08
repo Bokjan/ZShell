@@ -50,6 +50,123 @@ pub struct Profile {
     /// The quick command group its tabs show first; `None` for the default group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_group: Option<String>,
+    /// Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
+    #[serde(default)]
+    pub forward_agent: bool,
+    /// The remote side's character encoding, one of [`crate::encoding::SUPPORTED`].
+    #[serde(default = "default_encoding")]
+    pub encoding: String,
+    /// The terminal type the remote shell is told (`TERM`).
+    #[serde(default = "default_term_type")]
+    pub term_type: String,
+    /// Environment variables for the remote shell (OpenSSH's `SetEnv`); the server only
+    /// accepts those its `AcceptEnv` allows.
+    #[serde(default)]
+    pub env: Vec<EnvVar>,
+    /// Commands typed into each new shell, in order, each once the shell shows a prompt.
+    /// Sent by the frontend.
+    #[serde(default)]
+    pub login_commands: Vec<String>,
+    /// Terminal appearance for this session; unset values follow the settings.
+    #[serde(default, skip_serializing_if = "ProfileAppearance::is_empty")]
+    pub appearance: ProfileAppearance,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnvVar {
+    pub name: String,
+    pub value: String,
+}
+
+/// Overrides of the terminal settings for one session. Only the frontend interprets them.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileAppearance {
+    /// A built-in color scheme id, or "auto", as in the settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_scheme: Option<String>,
+    /// Replaces the color scheme's background, as `#rrggbb` (a red one for production).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<u16>,
+}
+
+impl ProfileAppearance {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Drops values that are blank or out of range.
+    fn normalize(mut self) -> Self {
+        let trimmed = |value: Option<String>| value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+        self.color_scheme = trimmed(self.color_scheme);
+        self.font_family = trimmed(self.font_family);
+        self.background = trimmed(self.background).filter(|color| is_hex_color(color)).map(|c| c.to_ascii_lowercase());
+        self.font_size = self.font_size.filter(|size| (crate::settings::FONT_SIZE_MIN..=crate::settings::FONT_SIZE_MAX).contains(size));
+        self
+    }
+}
+
+fn is_hex_color(color: &str) -> bool {
+    color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+impl Profile {
+    /// A profile with the default settings, before it is saved (no id).
+    pub fn new(name: String, host: String, port: u16, username: String) -> Self {
+        Self {
+            id: String::new(),
+            name,
+            host,
+            port,
+            username,
+            auth: AuthMethod::Auto,
+            jump_hosts: Vec::new(),
+            keepalive_interval: default_keepalive_interval(),
+            auto_reconnect: true,
+            forwards: Vec::new(),
+            folder: None,
+            auto_log: false,
+            command_group: None,
+            forward_agent: false,
+            encoding: default_encoding(),
+            term_type: default_term_type(),
+            env: Vec::new(),
+            login_commands: Vec::new(),
+            appearance: ProfileAppearance::default(),
+        }
+    }
+
+    /// Checks and tidies what the user edits beyond the address (encoding, terminal type,
+    /// environment, login commands, appearance).
+    fn normalize_session_options(&mut self) -> Result<()> {
+        if crate::encoding::lookup(&self.encoding).is_none() {
+            return Err(Error::new("profile.invalidEncoding").param("encoding", &self.encoding));
+        }
+        self.term_type = self.term_type.trim().to_owned();
+        if self.term_type.is_empty() {
+            self.term_type = default_term_type();
+        }
+        if !self.term_type.chars().all(|c| c.is_ascii_graphic()) {
+            return Err(Error::new("profile.invalidTermType"));
+        }
+        for var in &mut self.env {
+            var.name = var.name.trim().to_owned();
+            if var.name.is_empty() || var.name.contains(['=', '\0']) || var.name.chars().any(char::is_whitespace) {
+                return Err(Error::new("profile.invalidEnvName").param("name", &var.name));
+            }
+        }
+        self.login_commands = std::mem::take(&mut self.login_commands)
+            .into_iter()
+            .map(|command| command.trim_end().to_owned())
+            .filter(|command| !command.trim().is_empty())
+            .collect();
+        self.appearance = std::mem::take(&mut self.appearance).normalize();
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -78,6 +195,14 @@ fn default_keepalive_interval() -> u32 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_encoding() -> String {
+    crate::encoding::DEFAULT.to_owned()
+}
+
+pub fn default_term_type() -> String {
+    "xterm-256color".to_owned()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -182,6 +307,7 @@ impl ProfileStore {
         if profile.name.is_empty() {
             profile.name = format!("{}@{}", profile.username, profile.host);
         }
+        profile.normalize_session_options()?;
 
         self.update(|state| {
             let mut seen = std::collections::HashSet::new();
@@ -389,19 +515,8 @@ mod tests {
 
     fn new_profile(name: &str, folder: Option<&str>) -> Profile {
         Profile {
-            id: String::new(),
-            name: name.into(),
-            host: format!("{name}.example.com"),
-            port: 22,
-            username: "alice".into(),
-            auth: AuthMethod::Auto,
-            jump_hosts: Vec::new(),
-            keepalive_interval: 30,
-            auto_reconnect: true,
-            forwards: Vec::new(),
             folder: folder.map(Into::into),
-            command_group: None,
-            auto_log: false,
+            ..Profile::new(name.into(), format!("{name}.example.com"), 22, "alice".into())
         }
     }
 

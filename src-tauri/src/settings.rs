@@ -30,6 +30,10 @@ pub enum Appearance {
     Light,
 }
 
+/// The terminal font sizes allowed, here and in session profiles.
+pub const FONT_SIZE_MIN: u16 = 6;
+pub const FONT_SIZE_MAX: u16 = 48;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TerminalSettings {
@@ -194,7 +198,7 @@ impl Settings {
     fn normalize(mut self) -> Self {
         let terminal = &mut self.terminal;
         terminal.font_family = terminal.font_family.trim().to_owned();
-        terminal.font_size = terminal.font_size.clamp(6, 48);
+        terminal.font_size = terminal.font_size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
         terminal.scrollback = terminal.scrollback.min(100_000);
         if terminal.color_scheme.trim().is_empty() {
             terminal.color_scheme = "auto".to_owned();
