@@ -2,6 +2,13 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.1.0] - 2026-10-08
+
+### Features
+
+- Settings has an About section with the version, the privacy policy and the licenses of the third-party software ZShell includes, searchable by package.
+- Windows: in S mode, which doesn't allow command-line shells, the ways to open a local terminal are hidden.
+
 ## [1.0.0] - 2026-10-08
 
 The first release, for macOS (Apple Silicon and Intel) and Windows 10 1809 or later.
