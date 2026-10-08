@@ -100,6 +100,27 @@ pub fn ssh_open(
     Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, jumps, id, io, connections)))
 }
 
+/// Opens another shell on the SSH connection of session `source` (duplicating its tab),
+/// without connecting or authenticating again. Fails with `session.notConnected` if that
+/// session has no connection (any more).
+#[tauri::command]
+pub fn ssh_open_shared(
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    source: SessionId,
+    cols: u16,
+    rows: u16,
+    on_output: Channel,
+    on_event: Channel<SessionEvent>,
+) -> Result<SessionId> {
+    let connection = connections.get(source)?;
+    let connections = connections.inner().clone();
+    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| {
+        connections.attach(id, connection.clone(), io.sink());
+        ssh::run_shared(connection, id, io, connections)
+    }))
+}
+
 /// Starts the user's default shell in a local pseudo terminal.
 #[tauri::command]
 pub fn local_open(
@@ -133,6 +154,13 @@ pub fn session_resize(sessions: State<'_, SessionManager>, id: SessionId, cols: 
 #[tauri::command]
 pub fn session_ack(sessions: State<'_, SessionManager>, id: SessionId, bytes: usize) -> Result<()> {
     sessions.ack(id, bytes)
+}
+
+/// The program running in the session's terminal other than the shell (an empty string if
+/// its name is unknown), or `None`. Only local terminals can tell.
+#[tauri::command]
+pub fn session_foreground(sessions: State<'_, SessionManager>, id: SessionId) -> Result<Option<String>> {
+    sessions.foreground(id)
 }
 
 #[tauri::command]

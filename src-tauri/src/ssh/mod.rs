@@ -19,7 +19,7 @@ use crate::config::Profile;
 use crate::error::Error;
 use crate::forward::{host_port, RemoteRoutes};
 use crate::session::{CloseReason, SessionEvent, SessionId, SessionInput, TermIo};
-pub use connections::{Connections, SshHandle};
+pub use connections::{Connection, Connections, SshHandle};
 use handler::ClientHandler;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -42,6 +42,24 @@ pub async fn run(profile: Profile, jumps: Vec<Profile>, id: SessionId, mut io: T
         Err(e) => Outcome::Failed(e.into()),
     };
     connections.close(id);
+    finish(outcome, &io);
+}
+
+/// Session backend for a duplicated tab: a new shell on `connection`, which is already
+/// registered for this session. No prompts, no auto-started forwards: like a second
+/// OpenSSH session through a ControlMaster.
+pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo, connections: Connections) {
+    let outcome = match open_shell(connection.handle(), &mut io).await {
+        Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason()).await,
+        Err(e) => Outcome::Failed(e.into()),
+    };
+    drop(connection);
+    connections.close(id);
+    finish(outcome, &io);
+}
+
+/// Reports how the session ended, in the terminal and as its `Closed` event.
+fn finish(outcome: Outcome, io: &TermIo) {
     let (reason, error, status) = match outcome {
         Outcome::Exited(status) => {
             let message = match status {
@@ -96,17 +114,22 @@ async fn start(
     let mut session = connect(profile, transport, io, routes.clone(), disconnect_tx).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
-    let connection = connections.insert(id, session.clone(), jump_handles, routes, io.sink());
+    let connection = connections.insert(id, session.clone(), jump_handles, routes, disconnect.clone(), io.sink());
     for rule in profile.forwards.iter().filter(|rule| rule.auto_start) {
         connection.forwards().start(rule.clone(), true);
     }
+    let channel = open_shell(&session, io).await?;
+    Ok((channel, disconnect))
+}
 
+/// Starts an interactive shell in a new channel on an authenticated connection.
+async fn open_shell(session: &SshHandle, io: &mut TermIo) -> Result<Channel<Msg>> {
     let channel = session.channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
     let (cols, rows) = io.size;
     channel.request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[]).await?;
     channel.request_shell(false).await?;
     io.event(SessionEvent::Connected);
-    Ok((channel, disconnect))
+    Ok(channel)
 }
 
 /// Copies between the shell channel and the terminal until either side ends.

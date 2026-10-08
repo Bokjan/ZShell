@@ -20,3 +20,40 @@ export const isSettingsShortcut = (e: KeyboardEvent) =>
   e.code === "Comma" && !e.altKey && !e.shiftKey && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
 
 export const settingsShortcutLabel = isMac ? "⌘," : "Ctrl+,";
+
+/**
+ * Terminal clipboard keys outside macOS, where the native Edit menu handles ⌘C / ⌘V:
+ * Ctrl+Shift+C / Ctrl+Insert copy; Ctrl+Shift+V, Ctrl+V and Shift+Insert paste. Plain Ctrl+C
+ * copies only while there is a selection (the caller checks), as in Windows Terminal.
+ */
+export function clipboardKey(e: KeyboardEvent): "copy" | "copyIfSelected" | "paste" | null {
+  if (isMac || e.altKey || e.metaKey) return null;
+  if (e.code === "Insert") return e.ctrlKey && !e.shiftKey ? "copy" : e.shiftKey && !e.ctrlKey ? "paste" : null;
+  if (!e.ctrlKey) return null;
+  if (e.code === "KeyC") return e.shiftKey ? "copy" : "copyIfSelected";
+  if (e.code === "KeyV") return "paste";
+  return null;
+}
+
+export const copyShortcutLabel = isMac ? "⌘C" : "Ctrl+Shift+C";
+export const pasteShortcutLabel = isMac ? "⌘V" : "Ctrl+Shift+V";
+/** Only macOS has a select-all shortcut in the terminal (Ctrl+A belongs to the shell). */
+export const selectAllShortcutLabel = isMac ? "⌘A" : undefined;
+
+/** Tab shortcuts: which tab to activate or close, if `e` is one. */
+export type TabShortcut = { type: "next" } | { type: "previous" } | { type: "index"; index: number } | { type: "close" };
+
+export function tabShortcut(e: KeyboardEvent): TabShortcut | null {
+  // Ctrl+Tab on both platforms, as in browsers.
+  if (e.code === "Tab" && e.ctrlKey && !e.altKey && !e.metaKey) return { type: e.shiftKey ? "previous" : "next" };
+  // ⌘1–9 / Alt+1–9; 9 is the last tab.
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit && !e.shiftKey && (isMac ? e.metaKey && !e.ctrlKey && !e.altKey : e.altKey && !e.ctrlKey && !e.metaKey)) {
+    return { type: "index", index: Number(digit[1]) - 1 };
+  }
+  // ⌘W is a native menu item on macOS (see lib.rs).
+  if (!isMac && e.code === "KeyW" && hasShiftShortcutModifiers(e)) return { type: "close" };
+  return null;
+}
+
+export const closeTabShortcutLabel = isMac ? "⌘W" : "Ctrl+Shift+W";

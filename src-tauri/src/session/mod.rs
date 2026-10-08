@@ -135,9 +135,29 @@ impl SessionSink {
     }
 }
 
+/// Names the program running in the foreground of a session's terminal, if it is not the
+/// shell itself (an empty name if it cannot be determined).
+pub type ForegroundProbe = Box<dyn Fn() -> Option<String> + Send>;
+
+/// Where a backend that can tell (local PTYs) installs its [`ForegroundProbe`], for the
+/// frontend to ask before closing a tab.
+#[derive(Clone, Default)]
+pub struct Foreground(Arc<Mutex<Option<ForegroundProbe>>>);
+
+impl Foreground {
+    pub fn set(&self, probe: Option<ForegroundProbe>) {
+        *self.0.lock().unwrap() = probe;
+    }
+
+    pub fn get(&self) -> Option<String> {
+        self.0.lock().unwrap().as_ref().and_then(|probe| probe())
+    }
+}
+
 /// The terminal side of a session, as seen by its backend task.
 pub struct TermIo {
     sink: SessionSink,
+    foreground: Foreground,
     input: mpsc::UnboundedReceiver<SessionInput>,
     /// Latest terminal size (cols, rows) reported by the frontend.
     pub size: (u16, u16),
@@ -147,7 +167,7 @@ impl TermIo {
     fn new(output: Channel, events: Channel<SessionEvent>, size: (u16, u16)) -> (Self, mpsc::UnboundedSender<SessionInput>) {
         let (tx, rx) = mpsc::unbounded_channel();
         let sink = SessionSink { output, events, flow: Arc::default() };
-        (Self { sink, input: rx, size }, tx)
+        (Self { sink, foreground: Foreground::default(), input: rx, size }, tx)
     }
 
     /// A session without a frontend, for backend tests: returns the input sender and the
@@ -189,6 +209,10 @@ impl TermIo {
 
     pub fn sink(&self) -> SessionSink {
         self.sink.clone()
+    }
+
+    pub fn foreground(&self) -> Foreground {
+        self.foreground.clone()
     }
 
     /// Receives the next input, keeping [`TermIo::size`] up to date.
@@ -249,6 +273,7 @@ impl TermIo {
 struct SessionEntry {
     input: mpsc::UnboundedSender<SessionInput>,
     flow: Arc<Flow>,
+    foreground: Foreground,
     task: JoinHandle<()>,
 }
 
@@ -274,8 +299,9 @@ impl SessionManager {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (io, input) = TermIo::new(output, events, size);
         let flow = io.sink.flow();
+        let foreground = io.foreground();
         let task = tauri::async_runtime::spawn(backend(id, io));
-        self.sessions.lock().unwrap().insert(id, SessionEntry { input, flow, task });
+        self.sessions.lock().unwrap().insert(id, SessionEntry { input, flow, foreground, task });
         id
     }
 
@@ -293,6 +319,16 @@ impl SessionManager {
         let entry = sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?;
         entry.flow.ack(bytes);
         Ok(())
+    }
+
+    /// The program running in the session's foreground other than its shell, if any (see
+    /// [`ForegroundProbe`]); always `None` for sessions that cannot tell.
+    pub fn foreground(&self, id: SessionId) -> Result<Option<String>> {
+        let foreground = {
+            let sessions = self.sessions.lock().unwrap();
+            sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.foreground.clone()
+        };
+        Ok(foreground.get())
     }
 
     pub fn remove(&self, id: SessionId) -> Result<()> {

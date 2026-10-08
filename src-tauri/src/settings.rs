@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, terminal), persisted as `settings.json` next to
+//! App-wide preferences (appearance, terminal, tabs), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -14,6 +14,7 @@ use crate::error::Result;
 pub struct Settings {
     pub appearance: Appearance,
     pub terminal: TerminalSettings,
+    pub tabs: TabSettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -38,6 +39,32 @@ pub struct TerminalSettings {
     pub cursor_blink: bool,
     /// Lines kept above the screen.
     pub scrollback: u32,
+    /// Copy text to the clipboard as soon as it is selected.
+    pub copy_on_select: bool,
+    pub right_click: RightClick,
+    /// Ask before pasting text with line breaks while the shell would run each line.
+    pub confirm_multiline_paste: bool,
+    /// macOS: the Option key sends Meta (Esc-prefixed) sequences instead of special characters.
+    pub option_as_meta: bool,
+}
+
+/// What right-clicking the terminal does.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RightClick {
+    #[default]
+    Menu,
+    /// Paste, as in Xshell and PuTTY.
+    Paste,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TabSettings {
+    /// Show the title set by the shell (OSC 0 / 2) instead of the session name.
+    pub follow_remote_title: bool,
+    /// Ask before closing tabs that are connected or running a program.
+    pub confirm_close: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -51,7 +78,7 @@ pub enum CursorStyle {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { appearance: Appearance::System, terminal: TerminalSettings::default() }
+        Self { appearance: Appearance::System, terminal: TerminalSettings::default(), tabs: TabSettings::default() }
     }
 }
 
@@ -64,7 +91,17 @@ impl Default for TerminalSettings {
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
             scrollback: 5000,
+            copy_on_select: false,
+            right_click: RightClick::Menu,
+            confirm_multiline_paste: true,
+            option_as_meta: false,
         }
+    }
+}
+
+impl Default for TabSettings {
+    fn default() -> Self {
+        Self { follow_remote_title: true, confirm_close: true }
     }
 }
 
@@ -124,5 +161,6 @@ mod tests {
         assert_eq!(settings.terminal.font_size, 48);
         assert_eq!(settings.terminal.color_scheme, "auto");
         assert_eq!(settings.terminal.scrollback, 5000);
+        assert!(settings.terminal.confirm_multiline_paste && settings.tabs.confirm_close);
     }
 }

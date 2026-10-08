@@ -20,7 +20,7 @@ use portable_pty::{native_pty_system, ChildKiller, ExitStatus, MasterPty, PtySiz
 use tokio::sync::oneshot;
 
 use crate::error::Error;
-use crate::session::{CloseReason, Flow, SessionEvent, SessionInput, SessionSink, TermIo};
+use crate::session::{CloseReason, Flow, Foreground, ForegroundProbe, SessionEvent, SessionInput, SessionSink, TermIo};
 pub use shell::{default_shell, Shell};
 
 /// How long to wait for the rest of the output once the shell has exited.
@@ -76,6 +76,7 @@ struct Pty {
     pid: Option<u32>,
     exited: Arc<AtomicBool>,
     flow: Arc<Flow>,
+    foreground: Foreground,
 }
 
 impl Pty {
@@ -103,6 +104,8 @@ impl Pty {
 
         let killer = child.clone_killer();
         let pid = child.process_id();
+        let foreground = io.foreground();
+        foreground.set(foreground_probe(&*pair.master, pid));
         let exited = Arc::new(AtomicBool::new(false));
         let (exit_tx, exit) = oneshot::channel();
         let exited_flag = exited.clone();
@@ -121,6 +124,7 @@ impl Pty {
             pid,
             exited,
             flow,
+            foreground,
         })
     }
 
@@ -164,6 +168,8 @@ impl Pty {
 
 impl Drop for Pty {
     fn drop(&mut self) {
+        // Before the terminal is closed: the probe uses its handle.
+        self.foreground.set(None);
         // The reader must keep reading: closing a pseudo console blocks until its output is
         // read, and the frontend no longer acknowledges anything.
         self.flow.close();
@@ -202,6 +208,71 @@ fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn Chil
     drop(master);
     if !exited.load(Ordering::SeqCst) && !wait_for(exited, KILL_GRACE) {
         let _ = killer.kill();
+    }
+}
+
+/// The terminal's foreground process group, when it is not the shell's: a program started
+/// from the shell is running (background jobs don't count).
+#[cfg(unix)]
+fn foreground_probe(master: &dyn MasterPty, shell: Option<u32>) -> Option<ForegroundProbe> {
+    let fd = master.as_raw_fd()?;
+    let shell = libc::pid_t::try_from(shell?).ok()?;
+    Some(Box::new(move || {
+        // SAFETY: plain syscall on the terminal's descriptor, which stays open while the probe
+        // is installed (`Pty::drop` removes it first).
+        let group = unsafe { libc::tcgetpgrp(fd) };
+        (group > 0 && group != shell).then(|| process_name(group))
+    }))
+}
+
+#[cfg(target_os = "macos")]
+fn process_name(pid: libc::pid_t) -> String {
+    let mut buffer = [0u8; 256];
+    // SAFETY: the buffer is valid for writes of its full length.
+    let len = unsafe { libc::proc_name(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+    String::from_utf8_lossy(&buffer[..usize::try_from(len).unwrap_or(0)]).into_owned()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn process_name(pid: libc::pid_t) -> String {
+    std::fs::read_to_string(format!("/proc/{pid}/comm")).map(|name| name.trim_end().to_owned()).unwrap_or_default()
+}
+
+/// A child process of the shell. Windows has no foreground process groups, and ConPTY's
+/// own conhost is not the shell's child.
+#[cfg(windows)]
+fn foreground_probe(_master: &dyn MasterPty, shell: Option<u32>) -> Option<ForegroundProbe> {
+    let shell = shell?;
+    Some(Box::new(move || child_process_name(shell)))
+}
+
+#[cfg(windows)]
+fn child_process_name(parent: u32) -> Option<String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+
+    // SAFETY: plain Win32 calls; `entry` is initialized with its size as the API requires, and
+    // the snapshot handle is closed once.
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut found = None;
+        let mut more = Process32FirstW(snapshot, &mut entry) != 0;
+        while more {
+            if entry.th32ParentProcessID == parent {
+                let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                found = Some(shell::display_name(&String::from_utf16_lossy(&entry.szExeFile[..len])));
+                break;
+            }
+            more = Process32NextW(snapshot, &mut entry) != 0;
+        }
+        CloseHandle(snapshot);
+        found
     }
 }
 
@@ -255,6 +326,14 @@ mod tests {
         Shell { command, program: "/bin/sh".to_owned() }
     }
 
+    /// An interactive shell, which runs commands in their own process groups (job control).
+    fn sh_interactive() -> Shell {
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.arg("-i");
+        shell::configure(&mut command);
+        Shell { command, program: "/bin/sh".to_owned() }
+    }
+
     fn text(output: &Receiver<Vec<u8>>) -> String {
         String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned()
     }
@@ -292,6 +371,24 @@ mod tests {
         let events: Vec<String> = events.try_iter().collect();
         assert_eq!(events.len(), 1, "{events:?}");
         assert!(events[0].contains(r#""reason":"failed""#) && events[0].contains(r#""code":"pty.spawnFailed""#), "{events:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reports_foreground_programs() {
+        let (io, input, _output, _events) = TermIo::detached((80, 24));
+        let foreground = io.foreground();
+        let session = tokio::spawn(run(sh_interactive(), io));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(foreground.get(), None);
+        input.send(SessionInput::Data(b"sleep 5\r".to_vec())).unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(foreground.get().as_deref(), Some("sleep"));
+        input.send(SessionInput::Data(b"\x03".to_vec())).unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(foreground.get(), None);
+        input.send(SessionInput::Data(b"exit\r".to_vec())).unwrap();
+        session.await.unwrap();
+        assert_eq!(foreground.get(), None);
     }
 
     /// Without acknowledgements the reader stops after about `FLOW_HIGH` bytes, and the

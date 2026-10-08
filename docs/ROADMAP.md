@@ -8,12 +8,13 @@
 - 优先补齐每天高频使用的操作（剪贴板、标签页、会话列表），再补 Xshell 的效率功能；不追求逐项对齐 Xshell。
 - 行为尽量与 OpenSSH 一致（认证顺序、known_hosts、ssh_config 语义），减少"在 ZShell 里能连、命令行不能连"或反过来的情况。
 
-## 现状（2026-10-08，M5 之后）
+## 现状（2026-10-08，M6 之后）
 
 ### 已具备
 
 - SSH：密码 / 私钥 / agent / keyboard-interactive / 自动认证，known_hosts，密码存钥匙串，多跳 ProxyJump，keepalive 与带退避的自动重连。
-- 终端：多标签、搜索、配色 / 字体 / 光标 / 回滚设置、本地终端（macOS 登录 shell、Windows PowerShell）。
+- 终端：搜索、配色 / 字体 / 光标 / 回滚设置、本地终端（macOS 登录 shell、Windows PowerShell）；剪贴板快捷键、右键菜单、选中即复制、右键粘贴、多行粘贴确认、macOS Option 作为 Meta。
+- 标签页：拖拽排序、重命名、复制（复用同一连接）、跟随远端标题、切换快捷键、关闭确认、右键菜单。
 - SFTP：浏览、上传下载（进度、取消、拖入上传）、重命名 / 删除 / 新建 / chmod。
 - 端口转发：`-L` / `-R` / `-D`，规则随会话保存、可自动启动，实时状态。
 - ssh_config 导入、i18n 架构、macOS / Windows 发布流程。
@@ -28,9 +29,6 @@
 
 | 方面 | 差距 | 优先级 |
 |---|---|---|
-| 剪贴板 | Windows 上没有复制快捷键（Ctrl+C 发给 shell）；没有右键菜单、选中即复制、右键粘贴、多行粘贴确认 | P0 |
-| 键盘 | macOS 上 Option 不能作为 Meta（bash / zsh 的 Alt+B/F/D、emacs 不可用） | P0 |
-| 标签页 | 不能拖拽排序、重命名、复制；不跟随远端标题；没有切换快捷键；关闭已连接标签不确认 | P0 |
 | ZMODEM | 没有 rz/sz，堡垒机后面（通常没有 SFTP）无法传文件 | P0 |
 | 会话管理 | 只有平铺列表：没有分组、搜索、快速连接、复制会话、右键菜单、导出导入 | P0 |
 | 批量与效率 | 没有发送到所有会话（撰写栏）、快速命令、会话日志 | P1 |
@@ -52,7 +50,7 @@
 | **M4 增强** ✅ | ssh_config 导入、ProxyJump、keepalive 与断线重连、终端搜索、主题；"自动"认证与设置界面 | |
 | **M5 本地终端** ✅ | portable-pty（macOS 登录 shell / Windows PowerShell，ConPTY）；输出流控；Windows CI 编译检查 | |
 | **i18n 架构** ✅ | 前端 i18next 与后端消息目录；结构化错误；语言协商；仅英语 | |
-| **M6 终端与标签页** | 剪贴板与右键菜单、Option 作为 Meta、标签页操作 | P0 |
+| **M6 终端与标签页** ✅ | 剪贴板与右键菜单、Option 作为 Meta、标签页操作 | |
 | **M7 ZMODEM** | rz/sz 上传下载 | P0 |
 | **M8 会话管理** | 分组、搜索、快速连接、复制会话、右键菜单、导出导入 | P0 |
 | **M9 标题栏集成** | 标签栏画进窗口标题栏，"+" 新建本地终端 | — |
@@ -61,25 +59,6 @@
 | **M12 会话配置** | agent 转发、字符编码、单会话外观、登录后命令 | P1 |
 | **M13 分屏** | 标签页内左右 / 上下分屏 | P1 |
 | **M14 翻译** | 语言设置界面，首批简体中文 | — |
-
-### M6 终端与标签页
-
-目标：日常复制粘贴、键盘操作和标签页管理不再需要回到 Xshell。
-
-- **剪贴板**
-  - 复制：macOS ⌘C；Windows Ctrl+Shift+C，另外在有选区时 Ctrl+C 复制而不发送（与 Windows Terminal 一致，无选区时仍发 `^C`）。
-  - 粘贴：macOS ⌘V；Windows Ctrl+Shift+V 与 Ctrl+V。
-  - 设置项：选中即复制（默认关）；右键行为：菜单（默认）/ 粘贴（Xshell、PuTTY 习惯）。
-  - 多行粘贴确认：粘贴内容含换行且远端未开启 bracketed paste 时，弹框显示内容并确认；可在设置中关闭。
-- **终端右键菜单**：复制、粘贴、全选、查找、清屏（清除回滚）、重置终端。
-- **Option 作为 Meta**（仅 macOS 设置项，默认开）：对应 xterm.js 的 `macOptionIsMeta`；同时开启 `macOptionClickForcesSelection`，在开启鼠标模式的程序（vim、tmux）里仍可按住 Option 选择文本。
-- **标签页**
-  - 拖拽排序；双击或右键重命名（重命名后不再跟随远端标题）。
-  - 跟随远端标题（OSC 0/2，xterm.js `onTitleChange`），可在设置中关闭，此时显示会话名。
-  - 复制标签：SSH 标签在已有连接上开一个新的 shell channel，不重新认证（架构已支持一连接多 channel）；连接已断开时按正常流程新建连接。
-  - 快捷键：Ctrl+Tab / Ctrl+Shift+Tab 切换，macOS ⌘1–9 / Windows Alt+1–9 跳转，⌘W / Ctrl+Shift+W 关闭。
-  - 关闭仍在连接中的 SSH 标签、或仍有前台进程的本地标签时确认（可关闭此确认）。
-  - 标签右键菜单：复制、重命名、重新连接、关闭、关闭其他、关闭右侧。
 
 ### M7 ZMODEM
 
@@ -111,7 +90,7 @@
 - **macOS**：`titleBarStyle: "Overlay"` 并隐藏标题，保留红绿灯按钮，标签栏左侧为其留出空间。
 - **Windows**：`decorations: false`，自绘最小化 / 最大化 / 关闭按钮；保留窗口阴影与圆角。
 - **拖动区域**：标签栏空白处用 `data-tauri-drag-region` 拖动窗口、双击最大化，与标签点击、关闭按钮以及标签拖拽排序互不干扰。
-- **入口**：标签栏末尾的 "+" 打开本地终端，替代 M5 临时的侧栏标题栏按钮（macOS File 菜单中的 "New Local Terminal" 保留）。没有标签页时标签栏也要显示，保证入口始终可见。
+- **入口**：标签栏末尾的 "+" 打开本地终端，替代 M5 临时的侧栏标题栏按钮（macOS File 菜单中的 "New Local Terminal" 不再保留）。没有标签页时标签栏也要显示，保证入口始终可见。
 - **风险**：Windows 11 悬停最大化按钮时的贴靠布局面板在自绘按钮上会丢失，需要额外处理（参考 decorum 插件的做法）；双击最大化、阴影、圆角、多显示器 DPI 都需在 Windows 上逐项验证（本地无法编译 Windows target，依赖 CI 与手动测试）；Windows 上现有的标题栏深浅色同步（`setTheme`）将不再需要。
 
 ### M10 批量与效率

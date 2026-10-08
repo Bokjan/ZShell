@@ -127,21 +127,27 @@ export const forwards = {
   stop: (id: SessionId, ruleId: string) => invoke<void>("forward_stop", { id, ruleId }),
 };
 
+/**
+ * Starts a session for `target`. With `shareFrom` (SSH only), the shell runs on that
+ * session's connection without connecting again; this fails with `session.notConnected` if
+ * the connection is gone.
+ */
 export async function openSession(
   target: SessionTarget,
   size: { cols: number; rows: number },
   onOutput: (data: ArrayBuffer) => void,
   onEvent: (event: SessionEvent) => void,
+  shareFrom?: SessionId,
 ): Promise<Session> {
   const output = new Channel<ArrayBuffer>();
   output.onmessage = onOutput;
   const events = new Channel<SessionEvent>();
   events.onmessage = onEvent;
   const args = { ...size, onOutput: output, onEvent: events };
-  const id =
-    target.kind === "ssh"
-      ? await invoke<SessionId>("ssh_open", { profileId: target.profileId, ...args })
-      : await invoke<SessionId>("local_open", args);
+  let id: SessionId;
+  if (target.kind === "local") id = await invoke<SessionId>("local_open", args);
+  else if (shareFrom !== undefined) id = await invoke<SessionId>("ssh_open_shared", { source: shareFrom, ...args });
+  else id = await invoke<SessionId>("ssh_open", { profileId: target.profileId, ...args });
   return {
     id,
     write: (data) => invoke("session_write", { id, data }),
@@ -150,6 +156,12 @@ export async function openSession(
     close: () => invoke("session_close", { id }),
   };
 }
+
+/**
+ * The program running in a local terminal other than its shell ("" if its name is unknown),
+ * or null. Always null for SSH sessions.
+ */
+export const sessionForeground = (id: SessionId) => invoke<string | null>("session_foreground", { id });
 
 /** Short name of the default local shell, e.g. "zsh" or "pwsh". */
 export const localShellName = () => invoke<string>("local_shell_name");

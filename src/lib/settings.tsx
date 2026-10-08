@@ -4,6 +4,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type Appearance = "system" | "dark" | "light";
 export type CursorStyle = "block" | "bar" | "underline";
+/** What right-clicking the terminal does. */
+export type RightClick = "menu" | "paste";
 
 export interface TerminalSettings {
   /** A scheme id from terminalSchemes.ts, or "auto" to follow the appearance. */
@@ -14,16 +16,42 @@ export interface TerminalSettings {
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   scrollback: number;
+  copyOnSelect: boolean;
+  rightClick: RightClick;
+  /** Ask before pasting text with line breaks while the shell would run each line. */
+  confirmMultilinePaste: boolean;
+  /** macOS only: Option sends Meta (Esc-prefixed) sequences. */
+  optionAsMeta: boolean;
+}
+
+export interface TabSettings {
+  /** Show the title set by the shell instead of the session name. */
+  followRemoteTitle: boolean;
+  /** Ask before closing tabs that are connected or running a program. */
+  confirmClose: boolean;
 }
 
 export interface Settings {
   appearance: Appearance;
   terminal: TerminalSettings;
+  tabs: TabSettings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   appearance: "system",
-  terminal: { colorScheme: "auto", fontFamily: "", fontSize: 13, cursorStyle: "block", cursorBlink: true, scrollback: 5000 },
+  terminal: {
+    colorScheme: "auto",
+    fontFamily: "",
+    fontSize: 13,
+    cursorStyle: "block",
+    cursorBlink: true,
+    scrollback: 5000,
+    copyOnSelect: false,
+    rightClick: "menu",
+    confirmMultilinePaste: true,
+    optionAsMeta: false,
+  },
+  tabs: { followRemoteTitle: true, confirmClose: true },
 };
 
 interface SettingsContextValue {

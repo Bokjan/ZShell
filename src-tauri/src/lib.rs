@@ -23,27 +23,77 @@ use ssh::Connections;
 
 const SETTINGS_MENU_ID: &str = "settings";
 const LOCAL_TERMINAL_MENU_ID: &str = "new-local-terminal";
+const CLOSE_TAB_MENU_ID: &str = "close-tab";
+const CLOSE_WINDOW_MENU_ID: &str = "close-window";
 
-/// The default macOS menu, plus "Settings…" (⌘,) in the app menu, where Mac users expect
-/// it, and "New Local Terminal" in the File menu. The settings shortcut has to be a menu
-/// item: macOS handles ⌘, before the web view sees it. Elsewhere the frontend handles
-/// Ctrl+, itself.
+/// The macOS menu: Tauri's default one, with "Settings…" (⌘,) in the app menu, where Mac
+/// users expect it, and a File menu with "New Local Terminal", "Close Tab" (⌘W) and "Close
+/// Window" (⇧⌘W), as in Terminal.app; the predefined "Close Window" item would take ⌘W.
+/// These shortcuts have to be menu items: macOS handles them before the web view sees them.
+/// Elsewhere the frontend handles Ctrl+, and Ctrl+Shift+W itself.
 #[cfg(target_os = "macos")]
 fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
-    let menu = tauri::menu::Menu::default(app)?;
-    if let Some(tauri::menu::MenuItemKind::Submenu(app_submenu)) = menu.items()?.first() {
-        let settings = tauri::menu::MenuItem::with_id(app, SETTINGS_MENU_ID, t!("menu.settings"), true, Some("CmdOrCtrl+,"))?;
-        // After "About ZShell" and its separator.
-        app_submenu.insert(&settings, 2)?;
-        app_submenu.insert(&tauri::menu::PredefinedMenuItem::separator(app)?, 3)?;
-    }
-    if let Some(tauri::menu::MenuItemKind::Submenu(file_submenu)) = menu.items()?.get(1) {
-        let local = tauri::menu::MenuItem::with_id(app, LOCAL_TERMINAL_MENU_ID, t!("menu.newLocalTerminal"), true, None::<&str>)?;
-        // Before "Close Window".
-        file_submenu.insert(&local, 0)?;
-        file_submenu.insert(&tauri::menu::PredefinedMenuItem::separator(app)?, 1)?;
-    }
-    Ok(menu)
+    use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID};
+
+    let info = app.package_info();
+    let about = AboutMetadata { name: Some(info.name.clone()), version: Some(info.version.to_string()), ..Default::default() };
+    let separator = || PredefinedMenuItem::separator(app);
+    Menu::with_items(
+        app,
+        &[
+            &Submenu::with_items(
+                app,
+                info.name.clone(),
+                true,
+                &[
+                    &PredefinedMenuItem::about(app, None, Some(about))?,
+                    &separator()?,
+                    &MenuItem::with_id(app, SETTINGS_MENU_ID, t!("menu.settings"), true, Some("CmdOrCtrl+,"))?,
+                    &separator()?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &separator()?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &separator()?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                t!("menu.file"),
+                true,
+                &[
+                    &MenuItem::with_id(app, LOCAL_TERMINAL_MENU_ID, t!("menu.newLocalTerminal"), true, None::<&str>)?,
+                    &separator()?,
+                    &MenuItem::with_id(app, CLOSE_TAB_MENU_ID, t!("menu.closeTab"), true, Some("CmdOrCtrl+W"))?,
+                    &MenuItem::with_id(app, CLOSE_WINDOW_MENU_ID, t!("menu.closeWindow"), true, Some("CmdOrCtrl+Shift+W"))?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                t!("menu.edit"),
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::redo(app, None)?,
+                    &separator()?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(app, t!("menu.view"), true, &[&PredefinedMenuItem::fullscreen(app, None)?])?,
+            &Submenu::with_id_and_items(
+                app,
+                WINDOW_SUBMENU_ID,
+                t!("menu.window"),
+                true,
+                &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?],
+            )?,
+            &Submenu::with_id_and_items(app, HELP_SUBMENU_ID, t!("menu.help"), true, &[])?,
+        ],
+    )
 }
 
 /// Holding a key should repeat it, as in other terminals, rather than open the accent
@@ -76,6 +126,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             app.manage(ProfileStore::load(config_dir.join("profiles.json"))?);
@@ -87,6 +138,13 @@ pub fn run() {
                 let _ = app.emit("open-settings", ());
             } else if event.id() == LOCAL_TERMINAL_MENU_ID {
                 let _ = app.emit("open-local-terminal", ());
+            } else if event.id() == CLOSE_TAB_MENU_ID {
+                // The frontend may ask first, and closes the window when there are no tabs.
+                let _ = app.emit("close-tab", ());
+            } else if event.id() == CLOSE_WINDOW_MENU_ID {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.close();
+                }
             }
         })
         .manage(SessionManager::default())
@@ -104,11 +162,13 @@ pub fn run() {
             commands::ssh_config_scan,
             commands::ssh_config_import,
             commands::ssh_open,
+            commands::ssh_open_shared,
             commands::local_open,
             commands::local_shell_name,
             commands::session_write,
             commands::session_resize,
             commands::session_ack,
+            commands::session_foreground,
             commands::session_close,
             commands::sftp_open,
             commands::sftp_list,

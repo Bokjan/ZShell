@@ -14,7 +14,9 @@ interface Props {
   active: boolean;
   onStatus(status: SessionStatus): void;
   onExited(status: number | null): void;
+  onSession(id: SessionId | null): void;
   onForward(ruleId: string, state: ForwardState): void;
+  onTitle(title: string): void;
   onProfileChanged(profile: Profile): void;
 }
 
@@ -25,8 +27,18 @@ const MIN_TERMINAL = 240;
  * One tab's content: the terminal plus, for SSH tabs, a side panel (files or port forwards)
  * on the same connection.
  */
-export function SessionPane({ tab, profile, active, onStatus, onExited, onForward, onProfileChanged }: Props) {
-  const [sessionId, setSessionId] = useState<SessionId | null>(null);
+export function SessionPane({
+  tab,
+  profile,
+  active,
+  onStatus,
+  onExited,
+  onSession,
+  onForward,
+  onTitle,
+  onProfileChanged,
+}: Props) {
+  const { sessionId } = tab;
   const [panelWidth, setPanelWidth] = useState(420);
   // Keep panels mounted once opened so their state (directory, transfers) survives switching.
   const [mounted, setMounted] = useState<SidePanel[]>([]);
@@ -45,12 +57,15 @@ export function SessionPane({ tab, profile, active, onStatus, onExited, onForwar
     <div className={`session-pane${active ? " active" : ""}`} ref={paneRef}>
       <TerminalView
         target={tab.target}
+        shareFrom={tab.shareFrom}
+        reconnectKey={tab.reconnectKey}
         active={active}
         autoReconnect={profile?.autoReconnect ?? true}
         onStatus={onStatus}
         onExited={onExited}
-        onSession={setSessionId}
+        onSession={onSession}
         onForward={onForward}
+        onTitle={onTitle}
       />
       {mounted.length > 0 && (
         <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>

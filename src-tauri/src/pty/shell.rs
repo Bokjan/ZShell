@@ -76,7 +76,7 @@ pub fn configure(command: &mut CommandBuilder) {
     }
 }
 
-fn display_name(program: &str) -> String {
+pub(super) fn display_name(program: &str) -> String {
     Path::new(program).file_stem().map_or_else(|| program.to_owned(), |stem| stem.to_string_lossy().into_owned())
 }
 

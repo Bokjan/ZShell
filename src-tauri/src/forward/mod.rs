@@ -3,9 +3,9 @@
 //!
 //! Each running rule is one task that owns its listener (or, for remote rules, its route in
 //! [`RemoteRoutes`]) and a [`JoinSet`] of the connections it carries, so stopping a rule
-//! closes everything it opened. State changes are pushed to the tab as
-//! [`SessionEvent::Forward`]; a generation number keeps a replaced or stopped task from
-//! reporting after the fact.
+//! closes everything it opened. State changes are pushed as [`SessionEvent::Forward`] to every
+//! tab with a shell on the connection; a generation number keeps a replaced or stopped task
+//! from reporting after the fact.
 
 mod dynamic;
 mod local;
@@ -27,7 +27,7 @@ use tokio::net::TcpStream;
 use tokio::task::{JoinError, JoinSet};
 
 use crate::error::{Error, Result};
-use crate::session::{SessionEvent, SessionSink};
+use crate::session::{SessionEvent, SessionId, SessionSink};
 use crate::ssh::SshHandle;
 pub use remote::{Incoming, RemoteRoutes};
 
@@ -117,10 +117,18 @@ struct Running {
     task: JoinHandle<()>,
 }
 
+/// The tabs that show this connection's forwards, and the latest state of each rule, so a
+/// tab that attaches later (a duplicated tab) starts with the current states.
+#[derive(Default)]
+struct Watchers {
+    sinks: Vec<(SessionId, SessionSink)>,
+    states: HashMap<String, ForwardState>,
+}
+
 struct Shared {
     handle: Arc<SshHandle>,
     routes: RemoteRoutes,
-    sink: SessionSink,
+    watchers: Mutex<Watchers>,
     running: Mutex<HashMap<String, Running>>,
     /// In-flight `cancel-tcpip-forward` requests of stopped remote rules, by rule id.
     cancels: Mutex<HashMap<String, JoinHandle<()>>>,
@@ -131,15 +139,28 @@ struct Shared {
 pub struct Forwards(Arc<Shared>);
 
 impl Forwards {
-    pub fn new(handle: Arc<SshHandle>, routes: RemoteRoutes, sink: SessionSink) -> Self {
+    pub fn new(handle: Arc<SshHandle>, routes: RemoteRoutes) -> Self {
         Self(Arc::new(Shared {
             handle,
             routes,
-            sink,
+            watchers: Mutex::default(),
             running: Mutex::new(HashMap::new()),
             cancels: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(0),
         }))
+    }
+
+    /// Reports rule states to session `id` from now on, starting with the current ones.
+    pub fn attach(&self, id: SessionId, sink: SessionSink) {
+        let mut watchers = self.0.watchers.lock().unwrap();
+        for (rule_id, state) in &watchers.states {
+            sink.event(SessionEvent::Forward { rule_id: rule_id.clone(), state: state.clone() });
+        }
+        watchers.sinks.push((id, sink));
+    }
+
+    pub fn detach(&self, id: SessionId) {
+        self.0.watchers.lock().unwrap().sinks.retain(|(watcher, _)| *watcher != id);
     }
 
     /// Starts `rule`, restarting it if it is already running. With `announce`, a failure to
@@ -153,7 +174,7 @@ impl Forwards {
             old.task.abort();
             old.task
         });
-        self.0.sink.event(SessionEvent::Forward { rule_id: rule.id.clone(), state: ForwardState::Starting });
+        self.0.report(&rule.id, ForwardState::Starting);
         let task = tauri::async_runtime::spawn(run(rule.clone(), ctx, previous, announce));
         running.insert(rule.id, Running { generation: Some(generation), task });
     }
@@ -164,13 +185,29 @@ impl Forwards {
             old.task.abort();
             old.generation = None;
         }
-        self.0.sink.event(SessionEvent::Forward { rule_id: rule_id.to_owned(), state: ForwardState::Stopped });
+        self.0.report(rule_id, ForwardState::Stopped);
     }
 
     /// Stops every rule without reporting; used when the connection closes.
     pub fn stop_all(&self) {
         for (_, old) in self.0.running.lock().unwrap().drain() {
             old.task.abort();
+        }
+    }
+}
+
+impl Shared {
+    fn report(&self, rule_id: &str, state: ForwardState) {
+        let mut watchers = self.watchers.lock().unwrap();
+        for (_, sink) in &watchers.sinks {
+            sink.event(SessionEvent::Forward { rule_id: rule_id.to_owned(), state: state.clone() });
+        }
+        watchers.states.insert(rule_id.to_owned(), state);
+    }
+
+    fn print(&self, text: &str) {
+        for (_, sink) in &self.watchers.lock().unwrap().sinks {
+            sink.print(text);
         }
     }
 }
@@ -193,7 +230,7 @@ impl Ctx {
         // superseded task can never overwrite the state of its successor.
         let running = self.shared.running.lock().unwrap();
         if running.get(&self.rule_id).is_some_and(|r| r.generation == Some(self.generation)) {
-            self.shared.sink.event(SessionEvent::Forward { rule_id: self.rule_id.clone(), state });
+            self.shared.report(&self.rule_id, state);
         }
     }
 }
@@ -219,7 +256,7 @@ async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<()>>, anno
         if announce {
             let forward = describe(&rule);
             let message = t!("forward.autoStartFailed", forward = forward, error = error);
-            ctx.shared.sink.print(&format!("\r\n\x1b[33m{message}\x1b[0m\n"));
+            ctx.shared.print(&format!("\r\n\x1b[33m{message}\x1b[0m\n"));
         }
         ctx.report(ForwardState::Failed { error });
     }

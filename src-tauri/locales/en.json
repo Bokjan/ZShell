@@ -22,8 +22,15 @@
     "autoStartFailed": "Port forwarding {forward} could not be started: {error}"
   },
   "menu": {
+    "file": "File",
+    "edit": "Edit",
+    "view": "View",
+    "window": "Window",
+    "help": "Help",
     "settings": "Settings…",
-    "newLocalTerminal": "New Local Terminal"
+    "newLocalTerminal": "New Local Terminal",
+    "closeTab": "Close Tab",
+    "closeWindow": "Close Window"
   },
   "errors": {
     "unexpected": "Unexpected error",

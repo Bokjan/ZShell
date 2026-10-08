@@ -7,16 +7,17 @@ A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tau
 ## Features
 
 - **SSH sessions**: password, private key, SSH agent and keyboard-interactive (two-factor) authentication, plus an automatic mode that tries them in OpenSSH's order. Host keys are checked against `~/.ssh/known_hosts`, and saved passwords are kept in the system keychain.
-- **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, so you authenticate once.
+- **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, so you authenticate once. Duplicating a tab opens another shell on the same connection.
 - **Jump hosts**: connect through one or more other sessions, like OpenSSH's `ProxyJump`.
 - **Stays connected**: keepalives detect dead connections, and lost connections are re-established automatically.
 - **SFTP file panel**: browse, upload and download with progress, drop files to upload, rename, delete, create folders and change permissions.
 - **Port forwarding**: local (`-L`), remote (`-R`) and dynamic SOCKS (`-D`) rules, saved with the session, optionally started on connect, with live status.
 - **Import from `~/.ssh/config`**: hosts, users, ports, keys, jump hosts and forwards.
 - **Local terminals**: your login shell on macOS, PowerShell on Windows.
-- **Terminal**: search with regular expressions, built-in color schemes, custom fonts, light and dark appearance.
+- **Terminal**: context menu, copy on select, right-click to paste, confirmation before pasting multiple lines, Option as Meta on macOS, search with regular expressions, built-in color schemes, custom fonts, light and dark appearance.
+- **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program.
 
-Planned next: clipboard and context menus, tab management, ZMODEM (`rz` / `sz`), session folders and search. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: ZMODEM (`rz` / `sz`), session folders and search. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -42,10 +43,15 @@ The builds are not signed with a developer certificate yet, so the system warns 
 
 ## Usage
 
-Add a session with **+** in the sidebar, or import hosts from your SSH config, then click a session to open it in a new tab. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect.
+Add a session with **+** in the sidebar, or import hosts from your SSH config, then click a session to open it in a new tab. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect. Right-click the terminal or a tab for more actions; double-click a tab to rename it.
 
 | Action | macOS | Windows |
 |---|---|---|
+| Copy | ⌘C | Ctrl+Shift+C, or Ctrl+C with a selection |
+| Paste | ⌘V | Ctrl+Shift+V or Ctrl+V |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab / Ctrl+Shift+Tab |
+| Go to tab 1–8 / last tab | ⌘1–8 / ⌘9 | Alt+1–8 / Alt+9 |
+| Close tab | ⌘W | Ctrl+Shift+W |
 | Settings | ⌘, | Ctrl+, |
 | Find in terminal | ⌘F | Ctrl+Shift+F |
 | Show/hide the file panel | ⇧⌘E | Ctrl+Shift+E |

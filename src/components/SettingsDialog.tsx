@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DEFAULT_SETTINGS, useSettings, type Appearance, type CursorStyle, type TerminalSettings } from "../lib/settings";
+import { isMac } from "../lib/platform";
+import {
+  DEFAULT_SETTINGS,
+  useSettings,
+  type Appearance,
+  type CursorStyle,
+  type RightClick,
+  type TabSettings,
+  type TerminalSettings,
+} from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
 
 interface Props {
@@ -10,6 +19,7 @@ interface Props {
 
 const APPEARANCES: Appearance[] = ["system", "dark", "light"];
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
+const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 
 /** A number field that only reports values that are integers within range. */
 function NumberField({ value, min, max, onChange }: { value: number; min: number; max: number; onChange(n: number): void }) {
@@ -53,6 +63,7 @@ export function SettingsDialog({ onClose }: Props) {
   const { settings, theme, update } = useSettings();
   const terminal = settings.terminal;
   const setTerminal = (patch: Partial<TerminalSettings>) => update({ ...settings, terminal: { ...terminal, ...patch } });
+  const setTabs = (patch: Partial<TabSettings>) => update({ ...settings, tabs: { ...settings.tabs, ...patch } });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -165,6 +176,78 @@ export function SettingsDialog({ onClose }: Props) {
               onChange={(e) => setTerminal({ cursorBlink: e.target.checked })}
             />
             {t("settings.cursorBlink")}
+          </label>
+        </section>
+
+        <section>
+          <h3>{t("settings.mouseAndClipboard")}</h3>
+          <div className="field">
+            <span>{t("settings.rightClick")}</span>
+            <div className="segmented" role="radiogroup">
+              {RIGHT_CLICKS.map((rightClick) => (
+                <button
+                  key={rightClick}
+                  role="radio"
+                  aria-checked={terminal.rightClick === rightClick}
+                  className={terminal.rightClick === rightClick ? "on" : undefined}
+                  onClick={() => setTerminal({ rightClick })}
+                >
+                  {t(`settings.rightClicks.${rightClick}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="hint">{t("settings.rightClickHint")}</p>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={terminal.copyOnSelect}
+              onChange={(e) => setTerminal({ copyOnSelect: e.target.checked })}
+            />
+            {t("settings.copyOnSelect")}
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={terminal.confirmMultilinePaste}
+              onChange={(e) => setTerminal({ confirmMultilinePaste: e.target.checked })}
+            />
+            {t("settings.confirmMultilinePaste")}
+          </label>
+          <p className="hint">{t("settings.confirmMultilinePasteHint")}</p>
+          {isMac && (
+            <>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={terminal.optionAsMeta}
+                  onChange={(e) => setTerminal({ optionAsMeta: e.target.checked })}
+                />
+                {t("settings.optionAsMeta")}
+              </label>
+              <p className="hint">{t("settings.optionAsMetaHint")}</p>
+            </>
+          )}
+        </section>
+
+        <section>
+          <h3>{t("settings.tabs")}</h3>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={settings.tabs.followRemoteTitle}
+              onChange={(e) => setTabs({ followRemoteTitle: e.target.checked })}
+            />
+            {t("settings.followRemoteTitle")}
+          </label>
+          <p className="hint">{t("settings.followRemoteTitleHint")}</p>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={settings.tabs.confirmClose}
+              onChange={(e) => setTabs({ confirmClose: e.target.checked })}
+            />
+            {t("settings.confirmClose")}
           </label>
         </section>
 
