@@ -41,6 +41,8 @@ export interface Profile {
   folder?: string;
   /** The quick command group its tabs show first; absent for the default group. */
   commandGroup?: string;
+  /** Record a session log from the start of each connection. */
+  autoLog: boolean;
 }
 
 export interface Folder {
@@ -74,7 +76,12 @@ export type SessionEvent =
   /** `status`: the shell's exit status, if it reported one. */
   | { type: "closed"; reason: CloseReason; error: CommandError | null; status: number | null }
   | { type: "forward"; ruleId: string; state: ForwardState }
-  | { type: "zmodem"; phase: ZmodemPhase };
+  | { type: "zmodem"; phase: ZmodemPhase }
+  /** The session's log started (`path`), stopped (neither), or couldn't start (`error`). */
+  | { type: "log"; path: string | null; error: CommandError | null };
+
+/** How a new session's log starts: as the session or settings say, on with a file after reconnecting, or not at all. */
+export type LogOpen = { mode: "auto" } | { mode: "append"; path: string } | { mode: "off" };
 
 export type SessionId = number;
 
@@ -233,12 +240,13 @@ export async function openSession(
   onOutput: (data: ArrayBuffer) => void,
   onEvent: (event: SessionEvent) => void,
   shareFrom?: SessionId,
+  log: LogOpen = { mode: "auto" },
 ): Promise<Session> {
   const output = new Channel<ArrayBuffer>();
   output.onmessage = onOutput;
   const events = new Channel<SessionEvent>();
   events.onmessage = onEvent;
-  const args = { ...size, onOutput: output, onEvent: events };
+  const args = { ...size, log, onOutput: output, onEvent: events };
   let id: SessionId;
   if (target.kind === "local") id = await invoke<SessionId>("local_open", args);
   else if (target.kind === "quick") {
@@ -254,6 +262,22 @@ export async function openSession(
     close: () => invoke("session_close", { id }),
   };
 }
+
+export const sessionLog = {
+  /** Starts logging in a new file; the session reports it with a `log` event. */
+  start: (id: SessionId) => invoke<string>("session_log_start", { id }),
+  stop: (id: SessionId) => invoke<void>("session_log_stop", { id }),
+};
+
+export const logs = {
+  /** How many logs ZShell has written (and still exist), and their total size. */
+  summary: () => invoke<{ count: number; bytes: number }>("logs_summary"),
+  /** Where new logs go; created if needed. */
+  directory: () => invoke<string>("logs_directory"),
+  count: (profileId: string) => invoke<number>("logs_count", { profileId }),
+  /** Deletes a session's logs, or all of them; those being written are kept. Returns how many were deleted. */
+  delete: (profileId?: string) => invoke<number>("logs_delete", { profileId }),
+};
 
 /** Writes to a session as if typed in its terminal (the compose bar, quick commands). */
 export const writeSession = (id: SessionId, data: string) => invoke<void>("session_write", { id, data });

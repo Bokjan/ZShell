@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, terminal, tabs, sidebar, ZMODEM), persisted as `settings.json` next to
+//! App-wide preferences (appearance, terminal, tabs, sidebar, ZMODEM, session logs), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -17,6 +17,7 @@ pub struct Settings {
     pub tabs: TabSettings,
     pub sidebar: SidebarSettings,
     pub zmodem: ZmodemSettings,
+    pub logs: LogSettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -98,6 +99,48 @@ pub struct ZmodemSettings {
     pub ask_download_location: bool,
 }
 
+/// Session logs (see `logging.rs`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LogSettings {
+    /// Where logs are written; empty for the default (`ZShellLogs` in Documents).
+    pub directory: String,
+    /// File name, with `{session}`, `{host}`, `{user}`, `{date}` and `{time}` replaced.
+    pub file_name: String,
+    pub format: LogFormat,
+    /// Start each line with the time it was written (plain text only).
+    pub timestamps: bool,
+    /// Record local terminals from the start, as sessions can be set to.
+    pub auto_local: bool,
+    /// Delete logs older than this many days; 0 keeps them.
+    pub keep_days: u32,
+}
+
+pub const DEFAULT_LOG_FILE_NAME: &str = "{session}_{date}_{time}.log";
+
+impl Default for LogSettings {
+    fn default() -> Self {
+        Self {
+            directory: String::new(),
+            file_name: DEFAULT_LOG_FILE_NAME.to_owned(),
+            format: LogFormat::Text,
+            timestamps: false,
+            auto_local: false,
+            keep_days: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LogFormat {
+    /// Plain text: control sequences (colors, cursor movement) removed.
+    #[default]
+    Text,
+    /// What the terminal received, control sequences included (`less -R` shows the colors).
+    Raw,
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -106,6 +149,7 @@ impl Default for Settings {
             tabs: TabSettings::default(),
             sidebar: SidebarSettings::default(),
             zmodem: ZmodemSettings::default(),
+            logs: LogSettings::default(),
         }
     }
 }
@@ -142,6 +186,13 @@ impl Settings {
         if terminal.color_scheme.trim().is_empty() {
             terminal.color_scheme = "auto".to_owned();
         }
+        let logs = &mut self.logs;
+        logs.directory = logs.directory.trim().to_owned();
+        logs.file_name = logs.file_name.trim().to_owned();
+        if logs.file_name.is_empty() {
+            logs.file_name = DEFAULT_LOG_FILE_NAME.to_owned();
+        }
+        logs.keep_days = logs.keep_days.min(3650);
         self
     }
 }

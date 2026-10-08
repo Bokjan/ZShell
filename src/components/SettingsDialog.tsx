@@ -1,12 +1,18 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
+import { logs } from "../lib/api";
+import { formatSize } from "../lib/format";
 import { isMac } from "../lib/platform";
 import {
   DEFAULT_SETTINGS,
   useSettings,
   type Appearance,
   type CursorStyle,
+  type LogFormat,
+  type LogSettings,
   type RightClick,
   type SidebarSettings,
   type TabSettings,
@@ -22,6 +28,9 @@ interface Props {
 const APPEARANCES: Appearance[] = ["system", "dark", "light"];
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
+const LOG_FORMATS: LogFormat[] = ["text", "raw"];
+/** Retention choices, in days; 0 keeps logs. */
+const KEEP_DAYS = [0, 7, 30, 90, 365];
 
 /** A number field that only reports values that are integers within range. */
 function NumberField({ value, min, max, onChange }: { value: number; min: number; max: number; onChange(n: number): void }) {
@@ -68,6 +77,7 @@ export function SettingsDialog({ onClose }: Props) {
   const setTabs = (patch: Partial<TabSettings>) => update({ ...settings, tabs: { ...settings.tabs, ...patch } });
   const setSidebar = (patch: Partial<SidebarSettings>) => update({ ...settings, sidebar: { ...settings.sidebar, ...patch } });
   const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
+  const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -280,6 +290,8 @@ export function SettingsDialog({ onClose }: Props) {
           <p className="hint">{t("settings.zmodemAskLocationHint")}</p>
         </section>
 
+        <LogSection settings={settings.logs} onChange={setLogs} />
+
         <footer>
           <button type="button" onClick={() => update(DEFAULT_SETTINGS)}>
             {t("settings.reset")}
@@ -291,5 +303,131 @@ export function SettingsDialog({ onClose }: Props) {
         </footer>
       </div>
     </div>
+  );
+}
+
+/** Session logs: where and how they are written, how long they are kept, deleting them. */
+function LogSection({ settings, onChange }: { settings: LogSettings; onChange(patch: Partial<LogSettings>): void }) {
+  const { t } = useTranslation();
+  const [directory, setDirectory] = useState("");
+  const [summary, setSummary] = useState<{ count: number; bytes: number } | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [fileName, setFileName] = useState(settings.fileName);
+  useEffect(() => setFileName(settings.fileName), [settings.fileName]);
+
+  const refresh = useCallback(() => {
+    logs.summary().then(setSummary).catch(console.error);
+  }, []);
+  useEffect(refresh, [refresh]);
+  // The folder in effect (the default one when none is chosen).
+  useEffect(() => {
+    logs.directory().then(setDirectory).catch(console.error);
+  }, [settings.directory]);
+
+  const choose = async () => {
+    const picked = await openDialog({ directory: true, defaultPath: directory || undefined }).catch(() => null);
+    if (typeof picked === "string") onChange({ directory: picked });
+  };
+
+  const deleteAll = () => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setConfirmingDelete(false);
+    logs.delete().then(refresh, console.error);
+  };
+
+  // The file name is saved when the field is left, so that clearing it to type another
+  // doesn't bring the default back in the middle.
+  const commitFileName = () => {
+    if (fileName.trim() !== settings.fileName) onChange({ fileName: fileName.trim() });
+  };
+
+  return (
+    <section>
+      <h3>{t("settings.logs")}</h3>
+      <div className="field">
+        <span>{t("settings.logDirectory")}</span>
+        <div className="row">
+          <input className="grow" value={directory} readOnly title={directory} />
+          <button type="button" onClick={() => void choose()}>
+            {t("settings.logChoose")}
+          </button>
+          <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
+            {t("settings.logShow")}
+          </button>
+        </div>
+      </div>
+      {settings.directory && (
+        <button type="button" className="link" onClick={() => onChange({ directory: "" })}>
+          {t("settings.logDefaultDirectory")}
+        </button>
+      )}
+      <label>
+        {t("settings.logFileName")}
+        <input
+          value={fileName}
+          onChange={(e) => setFileName(e.target.value)}
+          onBlur={commitFileName}
+          onKeyDown={(e) => e.key === "Enter" && commitFileName()}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+        />
+      </label>
+      <p className="hint">{t("settings.logFileNameHint")}</p>
+      <div className="row">
+        <label className="grow">
+          {t("settings.logFormat")}
+          <select value={settings.format} onChange={(e) => onChange({ format: e.target.value as LogFormat })}>
+            {LOG_FORMATS.map((format) => (
+              <option key={format} value={format}>
+                {t(`settings.logFormats.${format}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grow">
+          {t("settings.logKeep")}
+          <select value={settings.keepDays} onChange={(e) => onChange({ keepDays: Number(e.target.value) })}>
+            {/* A value set by hand in the file stays selectable. */}
+            {[...new Set([...KEEP_DAYS, settings.keepDays])].map((days) => (
+              <option key={days} value={days}>
+                {days === 0 ? t("settings.logKeepForever") : t("settings.logKeepDays", { count: days })}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={settings.timestamps}
+          disabled={settings.format === "raw"}
+          onChange={(e) => onChange({ timestamps: e.target.checked })}
+        />
+        {t("settings.logTimestamps")}
+      </label>
+      <label className="checkbox">
+        <input type="checkbox" checked={settings.autoLocal} onChange={(e) => onChange({ autoLocal: e.target.checked })} />
+        {t("settings.logAutoLocal")}
+      </label>
+      <p className="hint">{t("settings.logAutoHint")}</p>
+      <div className="row log-summary">
+        <span className="grow">
+          {summary && t("settings.logSummary", { count: summary.count, size: formatSize(summary.bytes) })}
+        </span>
+        <button
+          type="button"
+          className="danger"
+          disabled={!summary || summary.count === 0}
+          onClick={deleteAll}
+          onBlur={() => setConfirmingDelete(false)}
+        >
+          {confirmingDelete ? t("settings.logDeleteAllConfirm", { count: summary?.count ?? 0 }) : t("settings.logDeleteAll")}
+        </button>
+      </div>
+    </section>
   );
 }

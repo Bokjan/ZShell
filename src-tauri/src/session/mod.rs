@@ -30,6 +30,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::error::{Error, Result};
 use crate::forward::ForwardState;
+use crate::logging::LogSlot;
 use crate::zmodem::{self, Zmodem};
 
 pub type SessionId = u32;
@@ -49,6 +50,8 @@ pub enum SessionEvent {
     Forward { rule_id: String, state: ForwardState },
     /// A ZMODEM transfer needs an answer, is running, or has ended.
     Zmodem { phase: zmodem::Phase },
+    /// The session's log started (`path`), stopped (neither), or couldn't start (`error`).
+    Log { path: Option<String>, error: Option<Error> },
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -119,6 +122,7 @@ pub struct SessionSink {
     events: Channel<SessionEvent>,
     flow: Arc<Flow>,
     zmodem: Arc<Zmodem>,
+    log: Arc<LogSlot>,
 }
 
 impl SessionSink {
@@ -131,8 +135,10 @@ impl SessionSink {
         }
     }
 
-    /// Writes to the terminal directly (our own messages, or output already filtered).
+    /// Writes to the terminal directly (our own messages, or output already filtered), and
+    /// to the session's log.
     pub fn write(&self, bytes: Vec<u8>) {
+        self.log.write(&bytes);
         self.flow.sent(bytes.len());
         // A send error means the frontend is gone; the session will be closed shortly.
         let _ = self.output.send(InvokeResponseBody::Raw(bytes));
@@ -140,6 +146,10 @@ impl SessionSink {
 
     pub fn flow(&self) -> Arc<Flow> {
         self.flow.clone()
+    }
+
+    pub fn log(&self) -> &LogSlot {
+        &self.log
     }
 
     /// Writes text, translating bare `\n` to `\r\n`.
@@ -183,10 +193,15 @@ pub struct TermIo {
 }
 
 impl TermIo {
-    fn new(output: Channel, events: Channel<SessionEvent>, size: (u16, u16)) -> (Self, mpsc::UnboundedSender<SessionInput>) {
+    fn new(
+        output: Channel,
+        events: Channel<SessionEvent>,
+        size: (u16, u16),
+        log: Arc<LogSlot>,
+    ) -> (Self, mpsc::UnboundedSender<SessionInput>) {
         let (tx, rx) = mpsc::unbounded_channel();
         let (zmodem, zmodem_out) = Zmodem::new();
-        let sink = SessionSink { output, events, flow: Arc::default(), zmodem };
+        let sink = SessionSink { output, events, flow: Arc::default(), zmodem, log };
         (Self { sink, foreground: Foreground::default(), input: rx, zmodem_out, size }, tx)
     }
 
@@ -211,7 +226,7 @@ impl TermIo {
             }
             Ok(())
         });
-        let (io, input) = Self::new(output, events, size);
+        let (io, input) = Self::new(output, events, size, LogSlot::new(crate::logging::LogInfo::default()));
         (io, input, output_rx, events_rx)
     }
 
@@ -305,6 +320,7 @@ impl TermIo {
 
 struct SessionEntry {
     input: mpsc::UnboundedSender<SessionInput>,
+    sink: SessionSink,
     flow: Arc<Flow>,
     foreground: Foreground,
     zmodem: Arc<Zmodem>,
@@ -318,12 +334,14 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    /// Starts a session whose backend task is produced by `backend`.
+    /// Starts a session whose backend task is produced by `backend`, logging to `log` (which
+    /// may already be writing, so that the log starts with the session's first output).
     pub fn spawn<F, Fut>(
         &self,
         output: Channel,
         events: Channel<SessionEvent>,
         size: (u16, u16),
+        log: Arc<LogSlot>,
         backend: F,
     ) -> SessionId
     where
@@ -331,12 +349,13 @@ impl SessionManager {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let (io, input) = TermIo::new(output, events, size);
+        let (io, input) = TermIo::new(output, events, size, log);
+        let sink = io.sink();
         let flow = io.sink.flow();
         let foreground = io.foreground();
         let zmodem = io.sink.zmodem.clone();
         let task = tauri::async_runtime::spawn(backend(id, io));
-        self.sessions.lock().unwrap().insert(id, SessionEntry { input, flow, foreground, zmodem, task });
+        self.sessions.lock().unwrap().insert(id, SessionEntry { input, sink, flow, foreground, zmodem, task });
         id
     }
 
@@ -364,6 +383,12 @@ impl SessionManager {
             sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.foreground.clone()
         };
         Ok(foreground.get())
+    }
+
+    /// The session's output side: its log, and events for its tab.
+    pub fn sink(&self, id: SessionId) -> Result<SessionSink> {
+        let sessions = self.sessions.lock().unwrap();
+        Ok(sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.sink.clone())
     }
 
     pub fn zmodem(&self, id: SessionId) -> Result<Arc<Zmodem>> {

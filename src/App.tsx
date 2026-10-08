@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
@@ -20,11 +21,13 @@ import {
   localShellName,
   localUsername,
   quickCommands,
+  sessionLog,
   sessionForeground,
   tree,
   writeSession,
   type Folder,
   type ForwardState,
+  type LogOpen,
   type Profile,
   type QuickCommand,
   type QuickCommands,
@@ -84,7 +87,13 @@ const newTab = (key: number, target: SessionTarget, title: string, shareFrom?: S
   sidePanel: null,
   forwards: {},
   commandGroup: null,
+  logPath: null,
+  logStopped: false,
 });
+
+/** How a tab's next session starts logging (see `Tab.logPath`). */
+const logOpen = (tab: Tab): LogOpen =>
+  tab.logPath ? { mode: "append", path: tab.logPath } : tab.logStopped ? { mode: "off" } : { mode: "auto" };
 
 function App() {
   const { t } = useTranslation();
@@ -403,6 +412,24 @@ function App() {
     ];
   };
 
+  const setLogging = (key: number, start: boolean) => {
+    const tab = tabsRef.current.find((t) => t.key === key);
+    if (tab?.sessionId == null) return;
+    // The session reports the path (or an error) with a `log` event.
+    if (start) {
+      updateTab(key, { logStopped: false });
+      sessionLog.start(tab.sessionId).catch(console.error);
+    } else {
+      updateTab(key, { logStopped: true });
+      sessionLog.stop(tab.sessionId).catch(console.error);
+    }
+  };
+
+  const showLog = (key: number) => {
+    const path = tabsRef.current.find((t) => t.key === key)?.logPath;
+    if (path) revealItemInDir(path).catch(console.error);
+  };
+
   const onStatus = (key: number, status: SessionStatus) => {
     // Forward events can precede "connected" (auto-start runs right after authentication),
     // so states are only reset when a connection attempt starts or ends.
@@ -479,6 +506,8 @@ function App() {
           onReconnect={(key) =>
             setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, reconnectKey: t.reconnectKey + 1 } : t)))
           }
+          onLog={setLogging}
+          onShowLog={showLog}
           onTogglePanel={togglePanel}
           composeOpen={compose.open}
           onToggleCompose={toggleCompose}
@@ -512,6 +541,8 @@ function App() {
               onTitle={(title) => updateTab(tab.key, { remoteTitle: title || null })}
               onInput={(data) => onInput(tab, data)}
               menuItems={terminalMenu(tab)}
+              logOpen={logOpen(tab)}
+              onLog={(path) => updateTab(tab.key, { logPath: path })}
               syncing={compose.open && compose.sync && tab.key === activeKey}
               onProfileChanged={onProfileChanged}
             />

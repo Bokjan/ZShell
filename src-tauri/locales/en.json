@@ -32,8 +32,15 @@
     "closeWindow": "Close Window",
     "quit": "Quit {name}"
   },
+  "log": {
+    "started": "=== {session} ({address}), log started {time} ===",
+    "resumed": "=== Reconnected {time} ==="
+  },
   "errors": {
     "unexpected": "Unexpected error",
+    "log": {
+      "createFailed": "Could not write the session log {path}"
+    },
     "credentialStore": "Credential store error",
     "session": {
       "notFound": "Session not found",

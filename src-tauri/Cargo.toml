@@ -32,6 +32,8 @@ tauri-plugin-dialog = "2.8.1"
 ssh2-config = "0.8"
 portable-pty = "0.9"
 tauri-plugin-clipboard-manager = "2"
+vte = "0.15"
+chrono = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

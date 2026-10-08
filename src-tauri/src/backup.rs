@@ -186,6 +186,7 @@ mod tests {
             forwards: Vec::new(),
             folder: folder.map(Into::into),
             command_group: None,
+            auto_log: false,
         }
     }
 

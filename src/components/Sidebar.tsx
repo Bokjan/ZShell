@@ -7,6 +7,7 @@ import {
   deleteProfile,
   duplicateProfile,
   errorMessage,
+  logs,
   sessionsFile,
   tree,
   type Folder,
@@ -106,6 +107,8 @@ export function Sidebar(props: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [deleting, setDeleting] = useState<Profile | null>(null);
+  // A session whose logs are about to be deleted, with how many it has.
+  const [deletingLogs, setDeletingLogs] = useState<{ profile: Profile; count: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ item: TreeItem; drop: Drop | null } | null>(null);
   // A sessions file being imported.
@@ -191,6 +194,10 @@ export function Sidebar(props: Props) {
     { label: t("sidebar.duplicate"), onSelect: () => duplicate(profile) },
     { label: t("sidebar.copyAddress"), onSelect: () => void writeText(address(profile)).catch(fail) },
     "separator",
+    {
+      label: t("sidebar.deleteLogs"),
+      onSelect: () => logs.count(profile.id).then((count) => setDeletingLogs({ profile, count }), fail),
+    },
     { label: t("sidebar.delete"), danger: true, onSelect: () => setDeleting(profile) },
   ];
 
@@ -512,6 +519,29 @@ export function Sidebar(props: Props) {
           onCancel={() => setDeleting(null)}
         />
       )}
+      {deletingLogs &&
+        (deletingLogs.count === 0 ? (
+          <ConfirmDialog
+            title={t("sidebar.deleteLogsTitle")}
+            message={t("sidebar.noLogs", { name: deletingLogs.profile.name })}
+            confirmLabel={t("common.ok")}
+            onConfirm={() => setDeletingLogs(null)}
+            onCancel={() => setDeletingLogs(null)}
+          />
+        ) : (
+          <ConfirmDialog
+            title={t("sidebar.deleteLogsTitle")}
+            message={t("sidebar.deleteLogsMessage", { count: deletingLogs.count, name: deletingLogs.profile.name })}
+            confirmLabel={t("common.delete")}
+            danger
+            onConfirm={() => {
+              const { profile } = deletingLogs;
+              setDeletingLogs(null);
+              logs.delete(profile.id).catch(fail);
+            }}
+            onCancel={() => setDeletingLogs(null)}
+          />
+        ))}
     </aside>
   );
 }

@@ -97,12 +97,13 @@
 
 ### 配置与设置
 
-- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`commands.json`（快速命令）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
+- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`commands.json`（快速命令）、`logs.json`（会话日志索引）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
 - **设置**：分为 `appearance`、`terminal`、`tabs` 三组；后端校验并夹取数值，文件损坏时回退默认值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。
 - **主题**：`<html data-theme>` 选择 CSS 变量组，样式中不写死颜色；原生窗口用 `setTheme` 同步原生菜单与对话框（Windows 上还决定 WebView2 的 `prefers-color-scheme`），用 `setBackgroundColor` 同步调整大小时露出的背景；首帧背景由 `index.html` 的内联样式按系统外观给出，避免闪烁。终端配色、字体等通过 `term.options` 应用到所有已打开的终端。
 - **会话与文件夹**：会话的 `folder` 字段指向所在文件夹，文件夹存在 `folders.json`（`parent` 可嵌套）。`profiles.json` 仍是数组，旧版本照常读取。文件中的顺序即显示顺序，每个文件夹里先列子文件夹、再列会话；拖拽只有一个后端操作 `tree_move`（放进某文件夹、排在某项之前或末尾）。删除文件夹时其中的内容移到上一级，不删除会话。加载时修正指向不存在文件夹的引用和循环。文件夹折叠状态与最近连接是本机的界面状态，与侧栏宽度一样存在 localStorage。
 - **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`，含文件夹与会话，不含密码）。导入时同名、否则同地址（用户、主机、端口）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；文件夹按名称路径合并；导入的会话一律分配新 id。
 - **快速连接**：标签目标 `quick`（`ssh_quick_open`）不需要已保存的会话，用"自动"认证，未写用户名时用本机用户名（同 `ssh host`）。"另存为会话"把标签目标改为新会话但不重连（`TerminalView` 只在本地与 SSH 之间切换时重建终端），下次连接起使用会话的设置。
+- **会话日志**：后端在 `SessionSink::write` 里把终端显示的全部内容（远端输出、回显、我们自己的提示，不含 ZMODEM 数据）写入文件，不经过前端；所以密码等不回显的输入不会进日志。纯文本格式用 vte 解析，维护单行的单元格与光标列，应用回车、退格、光标左右移动与行内擦除，使 shell 的行编辑和进度条得到屏幕上的最终结果；原始格式原样写入。新会话打开时由前端说明日志如何开始（`LogOpen`）：按会话的 `autoLog` 或设置中的"自动记录本地终端"、续写（重连时接着写同一个文件并插入重连标记）或不记录（该标签手动停止过）；日志在会话启动前就开始写，所以包含最早的连接提示。ZShell 写过的日志记在 `logs.json`，按天数清理（启动时、之后每 6 小时、修改设置时）、删除某会话的日志、删除全部都只针对索引中的文件，并跳过正在写的文件，日志目录中的其他文件不会被删除。默认目录为"文档/ZShellLogs"。
 - **ssh_config 导入**：一次性复制，导入后与 config 文件无关联。与已有会话同名或同地址的主机不再导入，不支持的选项（ProxyCommand、ForwardAgent 等）在列表中标出。
 
 ## 交互约定

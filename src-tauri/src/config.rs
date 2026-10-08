@@ -44,6 +44,9 @@ pub struct Profile {
     /// [`ProfileStore::move_item`]; `save` keeps it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder: Option<String>,
+    /// Record a session log from the start of each connection.
+    #[serde(default)]
+    pub auto_log: bool,
     /// The quick command group its tabs show first; `None` for the default group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_group: Option<String>,
@@ -398,6 +401,7 @@ mod tests {
             forwards: Vec::new(),
             folder: folder.map(Into::into),
             command_group: None,
+            auto_log: false,
         }
     }
 

@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::i18n;
 use crate::import;
+use crate::logging::{LogInfo, LogOpen, LogSlot, LogSummary, Logs};
 use crate::pty;
 use crate::quick::{QuickCommandStore, QuickCommands};
 use crate::secrets;
@@ -34,8 +35,11 @@ pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
 
 /// Stores the settings; returns them as validated (e.g. with the font size clamped).
 #[tauri::command]
-pub fn settings_set(store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {
-    store.set(settings)
+pub fn settings_set(store: State<'_, SettingsStore>, logs: State<'_, Logs>, settings: Settings) -> Result<Settings> {
+    let settings = store.set(settings)?;
+    // A shorter retention applies right away.
+    logs.clean_up(settings.logs.keep_days);
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -154,16 +158,42 @@ pub fn ssh_open(
     store: State<'_, ProfileStore>,
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
+    logs: State<'_, Logs>,
+    settings: State<'_, SettingsStore>,
     profile_id: String,
     cols: u16,
     rows: u16,
+    log: Option<LogOpen>,
     on_output: Channel,
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let profile = store.get(&profile_id)?;
     let jumps = store.jump_hosts(&profile)?;
     let connections = connections.inner().clone();
-    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, jumps, id, io, connections)))
+    let slot = LogSlot::new(LogInfo {
+        session: profile.name.clone(),
+        host: profile.host.clone(),
+        user: profile.username.clone(),
+        profile: Some(profile.id.clone()),
+    });
+    let opened = logs.open(&slot, log.unwrap_or_default(), profile.auto_log, &settings.get().logs);
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |id, io| ssh::run(profile, jumps, id, io, connections));
+    report_log(&sessions, id, opened);
+    Ok(id)
+}
+
+/// Tells a new session's tab about the log it started with, or why that failed.
+fn report_log(sessions: &SessionManager, id: SessionId, opened: Option<Result<PathBuf>>) {
+    if let (Some(opened), Ok(sink)) = (opened, sessions.sink(id)) {
+        sink.event(log_event(opened));
+    }
+}
+
+fn log_event(result: Result<PathBuf>) -> SessionEvent {
+    match result {
+        Ok(path) => SessionEvent::Log { path: Some(path.display().to_string()), error: None },
+        Err(error) => SessionEvent::Log { path: None, error: Some(error) },
+    }
 }
 
 /// Connects to `username@host:port` without a saved session (quick connect), with automatic
@@ -172,11 +202,14 @@ pub fn ssh_open(
 pub fn ssh_quick_open(
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
+    logs: State<'_, Logs>,
+    settings: State<'_, SettingsStore>,
     username: String,
     host: String,
     port: u16,
     cols: u16,
     rows: u16,
+    log: Option<LogOpen>,
     on_output: Channel,
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
@@ -197,12 +230,23 @@ pub fn ssh_quick_open(
         forwards: Vec::new(),
         folder: None,
         command_group: None,
+        auto_log: false,
     };
     if profile.host.is_empty() || profile.username.is_empty() || port == 0 {
         return Err(Error::new("profile.missingFields"));
     }
     let connections = connections.inner().clone();
-    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, Vec::new(), id, io, connections)))
+    // Logged only when started by hand: there is no session to record automatically.
+    let slot = LogSlot::new(LogInfo {
+        session: profile.name.clone(),
+        host: profile.host.clone(),
+        user: profile.username.clone(),
+        profile: None,
+    });
+    let opened = logs.open(&slot, log.unwrap_or_default(), false, &settings.get().logs);
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |id, io| ssh::run(profile, Vec::new(), id, io, connections));
+    report_log(&sessions, id, opened);
+    Ok(id)
 }
 
 /// The user name `ssh` uses when none is given.
@@ -216,33 +260,104 @@ pub fn local_username() -> String {
 /// session has no connection (any more).
 #[tauri::command]
 pub fn ssh_open_shared(
+    store: State<'_, ProfileStore>,
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
+    logs: State<'_, Logs>,
+    settings: State<'_, SettingsStore>,
     source: SessionId,
     cols: u16,
     rows: u16,
+    log: Option<LogOpen>,
     on_output: Channel,
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let connection = connections.get(source)?;
     let connections = connections.inner().clone();
-    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| {
+    // Named like the source's log; a log of its own, as a new tab of the session would get.
+    let info = sessions.sink(source)?.log().info.clone();
+    let auto = info.profile.as_ref().and_then(|id| store.get(id).ok()).is_some_and(|p| p.auto_log);
+    let slot = LogSlot::new(info);
+    let opened = logs.open(&slot, log.unwrap_or_default(), auto, &settings.get().logs);
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |id, io| {
         connections.attach(id, connection.clone(), io.sink());
         ssh::run_shared(connection, id, io, connections)
-    }))
+    });
+    report_log(&sessions, id, opened);
+    Ok(id)
 }
 
 /// Starts the user's default shell in a local pseudo terminal.
 #[tauri::command]
 pub fn local_open(
     sessions: State<'_, SessionManager>,
+    logs: State<'_, Logs>,
+    settings: State<'_, SettingsStore>,
     cols: u16,
     rows: u16,
+    log: Option<LogOpen>,
     on_output: Channel,
     on_event: Channel<SessionEvent>,
 ) -> SessionId {
     let shell = pty::default_shell();
-    sessions.spawn(on_output, on_event, (cols, rows), |_, io| pty::run(shell, io))
+    let settings = settings.get().logs;
+    let slot = LogSlot::new(LogInfo { session: shell.name(), host: "localhost".to_owned(), user: local_username(), profile: None });
+    let opened = logs.open(&slot, log.unwrap_or_default(), settings.auto_local, &settings);
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, |_, io| pty::run(shell, io));
+    report_log(&sessions, id, opened);
+    id
+}
+
+/// Starts logging a session by hand, in a new file; returns its path.
+#[tauri::command]
+pub fn session_log_start(
+    sessions: State<'_, SessionManager>,
+    logs: State<'_, Logs>,
+    settings: State<'_, SettingsStore>,
+    id: SessionId,
+) -> Result<PathBuf> {
+    let sink = sessions.sink(id)?;
+    let path = logs.start(sink.log(), &settings.get().logs)?;
+    sink.event(log_event(Ok(path.clone())));
+    Ok(path)
+}
+
+#[tauri::command]
+pub fn session_log_stop(sessions: State<'_, SessionManager>, logs: State<'_, Logs>, id: SessionId) -> Result<()> {
+    let sink = sessions.sink(id)?;
+    logs.stop(sink.log());
+    sink.event(SessionEvent::Log { path: None, error: None });
+    Ok(())
+}
+
+/// How many logs ZShell has written (and still exist), and their size.
+#[tauri::command]
+pub fn logs_summary(logs: State<'_, Logs>) -> LogSummary {
+    logs.summary()
+}
+
+/// Where new logs go; created if needed, to be shown in the file manager.
+#[tauri::command]
+pub fn logs_directory(logs: State<'_, Logs>, settings: State<'_, SettingsStore>) -> PathBuf {
+    let dir = logs.directory(&settings.get().logs);
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// How many logs a saved session has.
+#[tauri::command]
+pub fn logs_count(logs: State<'_, Logs>, profile_id: String) -> usize {
+    logs.count(&profile_id)
+}
+
+/// Deletes the logs of a saved session, or all logs (`profile_id` absent), except those
+/// being written; returns how many were deleted.
+#[tauri::command]
+pub fn logs_delete(logs: State<'_, Logs>, profile_id: Option<String>) -> usize {
+    match profile_id {
+        Some(id) => logs.delete_for(&id),
+        None => logs.delete_all(),
+    }
 }
 
 /// Short name of the default local shell, e.g. "zsh" or "pwsh".

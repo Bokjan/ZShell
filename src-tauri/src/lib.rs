@@ -7,6 +7,7 @@ mod config;
 mod error;
 mod forward;
 mod import;
+mod logging;
 mod pty;
 mod quick;
 mod secrets;
@@ -20,6 +21,7 @@ mod zmodem;
 use tauri::{Emitter, Manager};
 
 use config::ProfileStore;
+use logging::Logs;
 use quick::QuickCommandStore;
 use session::SessionManager;
 use settings::SettingsStore;
@@ -118,6 +120,18 @@ fn disable_press_and_hold() {
     unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&defaults) };
 }
 
+/// Deletes logs past the retention in the settings, now and every few hours.
+fn clean_up_logs(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut timer = tokio::time::interval(std::time::Duration::from_secs(6 * 3600));
+        loop {
+            timer.tick().await;
+            let keep_days = app.state::<SettingsStore>().get().logs.keep_days;
+            app.state::<Logs>().clean_up(keep_days);
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before AppKit reads it.
@@ -136,6 +150,9 @@ pub fn run() {
             app.manage(ProfileStore::load(config_dir.join("profiles.json"))?);
             app.manage(SettingsStore::load(config_dir.join("settings.json")));
             app.manage(QuickCommandStore::load(config_dir.join("commands.json")));
+            let documents = app.path().document_dir().unwrap_or_else(|_| config_dir.clone());
+            app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs")));
+            clean_up_logs(app.handle().clone());
             window::create_main(app)?;
             Ok(())
         })
@@ -190,6 +207,12 @@ pub fn run() {
             commands::ssh_open_shared,
             commands::local_open,
             commands::local_shell_name,
+            commands::session_log_start,
+            commands::session_log_stop,
+            commands::logs_summary,
+            commands::logs_directory,
+            commands::logs_count,
+            commands::logs_delete,
             commands::session_write,
             commands::session_resize,
             commands::session_ack,

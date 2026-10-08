@@ -374,6 +374,15 @@ body.dragging-row {
   opacity: 0.7;
   cursor: grabbing;
 }
+/* A tab writing its session log. */
+.tab-log {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  margin-left: -2px;
+  border-radius: 1px;
+  background: var(--danger);
+}
 .tab-title-input {
   width: 120px;
   min-width: 0;
@@ -1938,6 +1947,35 @@ body.resizing .terminal-view {
   width: 560px;
   max-height: calc(100vh - var(--titlebar-height) - 48px);
   overflow-y: auto;
+}
+.settings-dialog .row button {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: 12px;
+}
+.settings-dialog .row button.danger {
+  color: var(--danger);
+}
+.settings-dialog .row button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.settings-dialog button.link {
+  align-self: flex-start;
+  margin-top: -6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+.log-summary {
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 .settings-dialog section {
   display: flex;

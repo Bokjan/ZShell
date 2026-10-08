@@ -43,12 +43,31 @@ export interface ZmodemSettings {
   askDownloadLocation: boolean;
 }
 
+export type LogFormat = "text" | "raw";
+
+export interface LogSettings {
+  /** Empty for the default, `ZShellLogs` in Documents. */
+  directory: string;
+  /** With `{session}`, `{host}`, `{user}`, `{date}` and `{time}`. */
+  fileName: string;
+  format: LogFormat;
+  /** Start each line with its time (plain text only). */
+  timestamps: boolean;
+  /** Record local terminals from the start. */
+  autoLocal: boolean;
+  /** Delete logs older than this many days; 0 keeps them. */
+  keepDays: number;
+}
+
+export const DEFAULT_LOG_FILE_NAME = "{session}_{date}_{time}.log";
+
 export interface Settings {
   appearance: Appearance;
   terminal: TerminalSettings;
   tabs: TabSettings;
   sidebar: SidebarSettings;
   zmodem: ZmodemSettings;
+  logs: LogSettings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -68,6 +87,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tabs: { followRemoteTitle: true, confirmClose: true },
   sidebar: { showRecent: true },
   zmodem: { askDownloadLocation: false },
+  logs: { directory: "", fileName: DEFAULT_LOG_FILE_NAME, format: "text", timestamps: false, autoLocal: false, keepDays: 0 },
 };
 
 interface SettingsContextValue {

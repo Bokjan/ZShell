@@ -1,6 +1,6 @@
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import type { ForwardState, Profile, SessionId } from "../lib/api";
+import type { ForwardState, LogOpen, Profile, SessionId } from "../lib/api";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally } from "../lib/drag";
 import { ForwardsPanel } from "./ForwardsPanel";
@@ -24,6 +24,8 @@ interface Props {
   syncing: boolean;
   /** Added to the end of the terminal's context menu (quick commands). */
   menuItems: MenuItem[];
+  logOpen: LogOpen;
+  onLog(path: string | null): void;
   onProfileChanged(profile: Profile): void;
 }
 
@@ -46,6 +48,8 @@ export function SessionPane({
   onInput,
   syncing,
   menuItems,
+  logOpen,
+  onLog,
   onProfileChanged,
 }: Props) {
   const { sessionId } = tab;
@@ -78,6 +82,8 @@ export function SessionPane({
         onTitle={onTitle}
         onInput={onInput}
         menuItems={menuItems}
+        logOpen={logOpen}
+        onLog={onLog}
       />
       {mounted.length > 0 && (
         <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>

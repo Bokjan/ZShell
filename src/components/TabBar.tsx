@@ -40,7 +40,14 @@ export interface Tab {
   forwards: Record<string, ForwardState>;
   /** The quick command group picked in this tab; null shows its session's. */
   commandGroup: string | null;
+  /** The log this tab writes, kept across reconnections (which go on with it). */
+  logPath: string | null;
+  /** Logging was stopped by hand: reconnections don't start it again. */
+  logStopped: boolean;
 }
+
+/** Whether the tab is writing its log now. */
+export const isLogging = (tab: Tab) => tab.logPath !== null && tab.status !== "closed";
 
 export const tabTitle = (tab: Tab, followRemoteTitle: boolean) =>
   tab.customTitle ?? ((followRemoteTitle && tab.remoteTitle) || tab.title);
@@ -65,6 +72,9 @@ interface Props {
   /** Saves a quick connection tab as a session. */
   onSaveAsSession(key: number): void;
   onReconnect(key: number): void;
+  /** Starts (`true`) or stops logging the tab's session. */
+  onLog(key: number, start: boolean): void;
+  onShowLog(key: number): void;
   onTogglePanel(panel: SidePanel): void;
   composeOpen: boolean;
   onToggleCompose(): void;
@@ -96,6 +106,8 @@ export function TabBar({
   onDuplicate,
   onSaveAsSession,
   onReconnect,
+  onLog,
+  onShowLog,
   onTogglePanel,
   composeOpen,
   onToggleCompose,
@@ -180,6 +192,10 @@ export function TabBar({
     ];
     if (tab.target.kind !== "local") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
     if (tab.target.kind === "quick") items.push({ label: t("tabs.saveAsSession"), onSelect: () => onSaveAsSession(key) });
+    items.push("separator");
+    if (isLogging(tab)) items.push({ label: t("tabs.stopLog"), onSelect: () => onLog(key, false) });
+    else items.push({ label: t("tabs.startLog"), disabled: tab.status !== "connected", onSelect: () => onLog(key, true) });
+    if (tab.logPath) items.push({ label: t("tabs.showLog"), onSelect: () => onShowLog(key) });
     items.push(
       "separator",
       { label: t("tabs.close"), shortcut: closeTabShortcutLabel, onSelect: () => onClose([key]) },
@@ -239,6 +255,7 @@ export function TabBar({
               title={editing === tab.key ? undefined : `${title}\n${t("tabs.renameHint")}`}
             >
               <span className={`status-dot ${tab.status}`} />
+              {isLogging(tab) && <span className="tab-log" title={t("tabs.logging", { path: tab.logPath })} />}
               {editing === tab.key ? (
                 <TitleEditor
                   initial={title}

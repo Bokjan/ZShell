@@ -18,6 +18,7 @@ import {
   openSession,
   type CommandError,
   type ForwardState,
+  type LogOpen,
   type Session,
   type SessionId,
   type SessionTarget,
@@ -69,6 +70,10 @@ interface Props {
   onInput(data: string): void;
   /** Added to the end of the context menu (quick commands). */
   menuItems: MenuItem[];
+  /** How each new session (connection) starts its log. */
+  logOpen: LogOpen;
+  /** The session's log started (its path) or stopped (null). */
+  onLog(path: string | null): void;
 }
 
 /** Mouse (SGR, X10) and focus reports the terminal sends for programs; not typed input. */
@@ -106,6 +111,8 @@ export function TerminalView({
   onTitle,
   onInput,
   menuItems: extraMenuItems,
+  logOpen,
+  onLog,
 }: Props) {
   const { t } = useTranslation();
   const tRef = useRef(t);
@@ -128,6 +135,10 @@ export function TerminalView({
   onTitleRef.current = onTitle;
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+  const logOpenRef = useRef(logOpen);
+  logOpenRef.current = logOpen;
+  const onLogRef = useRef(onLog);
+  onLogRef.current = onLog;
   const shareFromRef = useRef(shareFrom);
   shareFromRef.current = shareFrom;
   /** Closes the current session and connects again; set while the terminal exists. */
@@ -267,6 +278,11 @@ export function TerminalView({
             onZmodemRef.current(event.phase);
             return;
           }
+          if (event.type === "log") {
+            if (event.error) dim(tRef.current("terminal.logFailed", { message: event.error.message }));
+            onLogRef.current(event.path);
+            return;
+          }
           ended = closed = true;
           session = undefined;
           sessionIdRef.current = null;
@@ -291,6 +307,7 @@ export function TerminalView({
           }
         },
         source,
+        logOpenRef.current,
       )
         .then((s) => {
           handle = s;

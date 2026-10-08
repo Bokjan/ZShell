@@ -44,6 +44,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
   const [jumpHosts, setJumpHosts] = useState<string[]>(profile?.jumpHosts ?? []);
   const [keepalive, setKeepalive] = useState(String(profile?.keepaliveInterval ?? 30));
   const [autoReconnect, setAutoReconnect] = useState(profile?.autoReconnect ?? true);
+  const [autoLog, setAutoLog] = useState(profile?.autoLog ?? false);
   // A group deleted since falls back to the default group, as its tabs do.
   const [commandGroup, setCommandGroup] = useState(() =>
     commandGroups.some((group) => group.id === profile?.commandGroup) ? profile!.commandGroup! : DEFAULT_GROUP,
@@ -58,6 +59,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
       (profile.jumpHosts.length > 0 ||
         profile.keepaliveInterval !== 30 ||
         !profile.autoReconnect ||
+        profile.autoLog ||
         (profile.commandGroup ?? DEFAULT_GROUP) !== DEFAULT_GROUP),
   );
   // Automatic authentication falls back to a password, so it can keep a stored one too.
@@ -111,6 +113,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
           jumpHosts,
           keepaliveInterval,
           autoReconnect,
+          autoLog,
           commandGroup: commandGroup === DEFAULT_GROUP ? undefined : commandGroup,
           forwards: profile?.forwards ?? [],
           // Where a new profile goes; the backend keeps an existing one's folder.
@@ -292,6 +295,11 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
             <input type="checkbox" checked={autoReconnect} onChange={(e) => setAutoReconnect(e.target.checked)} />
             {t("profile.autoReconnect")}
           </label>
+          <label className="checkbox">
+            <input type="checkbox" checked={autoLog} onChange={(e) => setAutoLog(e.target.checked)} />
+            {t("profile.autoLog")}
+          </label>
+          <p className="hint">{t("profile.autoLogHint")}</p>
           <label>
             {t("profile.commandGroup")}
             <select value={commandGroup} onChange={(e) => setCommandGroup(e.target.value)}>
