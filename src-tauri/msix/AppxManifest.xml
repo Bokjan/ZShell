@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifest of the Microsoft Store package. scripts/package-msix.ps1 fills in the version as
+  X.Y.Z.0 (the Store requires the fourth part to be 0) and the architecture (x64 or arm64).
+  The identity and publisher must match "Product identity" in Partner Center exactly.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="BoyinChen.ZShell"
+    Publisher="CN=20DD91C3-3AB8-4FFF-820A-61DA2E2C9AD9"
+    Version="{version}"
+    ProcessorArchitecture="{arch}" />
+
+  <Properties>
+    <DisplayName>ZShell</DisplayName>
+    <PublisherDisplayName>Boyin Chen</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <!-- 1809 is also what ConPTY, used by local terminals, needs. -->
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="ZShell" Executable="zshell.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="ZShell"
+        Description="SSH client with SFTP, port forwarding and local terminals"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- A regular desktop app outside the app container: it starts local shells and
+         talks to SSH agents over named pipes and window messages. -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

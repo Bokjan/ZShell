@@ -41,7 +41,7 @@
 
 ## 里程碑
 
-按计划顺序排列。翻译与其他里程碑没有依赖，可以随时提前。
+按计划顺序排列。翻译、上架 Store 与其他里程碑没有依赖，可以随时提前。
 
 | 阶段 | 内容 | 优先级 |
 |---|---|---|
@@ -65,6 +65,7 @@
 | **M16 known_hosts 管理** | 查看、搜索、删除主机密钥记录 | P2 |
 | **M17 应用锁** | 用 Touch ID / Windows Hello 锁定应用 | P2 |
 | **M18 翻译** | 语言设置界面，首批简体中文 | — |
+| **M19 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
 
 ### M13 Telnet 与串口
 
@@ -102,6 +103,21 @@
 ### M18 翻译
 
 语言设置界面，首批简体中文；做法见 [I18N.md](I18N.md)「新增一种语言」。
+
+### M19 Microsoft Store
+
+- 形式：MSIX，作为 full trust 桌面应用打包（`runFullTrust`，不进 AppContainer）。提交后由 Store 用微软的证书重新签名，不需要自己的代码签名证书；安装、更新、卸载由 Store 负责，应用本身没有自动更新，不用改。不选 EXE / MSI 上架：那条路要求安装包用受信任 CA 的证书签名，且 Store 不负责更新。GitHub Release 的 NSIS / MSI / 单独 exe 照旧，与 Store 版可以同时安装。
+- 打包：Tauri 不产出 MSIX。release workflow 增加一个 Store job，`tauri build --no-bundle` 之后由 `scripts/package-msix.ps1` 用 Windows SDK 的 `makeappx` 把 `zshell.exe`、图标与 `AppxManifest.xml` 打成 `.msix`，上传到 release（不签名，只用于提交 Store）。清单模板放在 `src-tauri/msix/`，版本号由 `Cargo.toml` 的 `X.Y.Z` 填成 `X.Y.Z.0`（Store 要求第四段为 0，且每次提交的版本必须更高）。
+- 架构：x64 与 ARM64（`aarch64-pc-windows-msvc`，在 x64 runner 上交叉编译），用 `makeappx bundle` 合成一个 `.msixbundle` 提交。
+- 身份：清单中 `Identity` 的 `Name`、`Publisher` 与 `PublisherDisplayName` 照抄 Partner Center 的「产品标识」页，必须完全一致，否则上传会被拒。这些不是机密，直接提交到仓库。
+- 图标：`tauri icon` 已生成 `Square44x44Logo`、`Square150x150Logo`、`StoreLogo`，清单直接引用。任务栏用的 `targetsize-*` 无底板变体以后按需补。
+- 文件系统虚拟化：保持 MSIX 的默认行为。应用在 `AppData` 下新建的文件写到包的私有目录（`%LOCALAPPDATA%\Packages\BoyinChen.ZShell_0mrn21pkbrd8j\LocalCache`），卸载时删除；已有的文件原地读写。因此机器上已有 GitHub 版的配置时，Store 版直接沿用它；全新安装的配置只有 Store 版看得到。关闭虚拟化需要受限能力 `unvirtualizedResources`，微软说明它只给特定的游戏使用，不考虑。
+- 临时文件："用本地编辑器编辑"与拖出到资源管理器的临时文件写在 `%TEMP%`，它也在 `AppData\Local` 下，被重定向后外部编辑器和资源管理器可能看不到。实测若如此，有包身份时（`GetCurrentPackageFullName` 成功）改用包的临时目录 `ApplicationData::Current().TemporaryFolder()`（`…\Packages\<PFN>\TempState`），那是真实路径，外部进程可以访问。
+- 系统要求：最低 Windows 10 1809（与本地终端的 ConPTY 要求一致）。WebView2 使用系统自带的运行时（Windows 11 与更新过的 Windows 10 都有），包里不带安装器。
+- S 模式：Windows 的 S 模式只能运行 Store 应用，也不允许启动 PowerShell 等命令行程序。已处理：后端用 `WindowsIntegrityPolicy::IsEnabled` 检测，S 模式下前端隐藏新建本地终端的入口（"+" 按钮、快捷键、设置里的自动记录本地终端）；SSH 等其他功能不受影响。
+- 打包后实测：本地终端（ConPTY 启动 PowerShell）、OpenSSH agent 命名管道与 Pageant、凭据管理器里的密码、用本地编辑器编辑与拖出、会话日志写入「文档」、自绘标题栏与贴靠布局。本地测试用 `Add-AppxPackage -Register AppxManifest.xml` 注册解包后的目录（需开启开发者模式），不用签名。
+- 提交：先在 Partner Center 手动上传每个版本的 `.msixbundle`；流程稳定后再考虑用 Store 提交 API（`msstore` CLI，需要把 Entra ID 应用的凭据配成 secret）自动提交。
+- 商店页面：描述、截图、年龄分级在 Partner Center 填写；提交时说明使用 `runFullTrust` 的理由（完整的桌面应用，需要启动本地 shell、访问 SSH agent 等）。隐私政策写明应用不收集数据、配置只保存在本机，放在仓库里，用 GitHub 链接。
 
 ## 暂不排期（P2）
 
