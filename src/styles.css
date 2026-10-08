@@ -1181,6 +1181,41 @@ body.resizing .terminal-view {
   background: var(--bg-active);
   font-size: 12px;
 }
+.sftp-toolbar .icon-button svg {
+  display: block;
+}
+.sftp-toolbar .icon-button.on {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.sftp-toolbar .icon-button.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.sftp-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.sftp-filter input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.sftp-status {
+  padding: 3px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
 .sftp-error {
   padding: 6px 10px;
   background: var(--danger-soft);
@@ -1208,14 +1243,53 @@ body.resizing .terminal-view {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.sftp-list:focus {
+  outline: none;
+}
 .sftp-list tr {
   cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
 }
-.sftp-list tr:hover {
+.sftp-list tbody tr:hover {
   background: var(--bg-hover);
 }
-.sftp-list tr.selected {
+.sftp-list tbody tr.selected {
   background: var(--bg-active);
+}
+.sftp-list:focus tbody tr.selected {
+  background: var(--accent-soft);
+}
+.sftp-list tbody tr.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.sftp-list thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: normal;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sftp-list thead th.file-size {
+  text-align: right;
+}
+.sftp-list thead th:hover {
+  color: var(--text);
+}
+.sort-arrow {
+  margin-left: 3px;
 }
 .file-name {
   display: flex;
@@ -1249,36 +1323,8 @@ body.resizing .terminal-view {
   font-size: 12px;
 }
 .file-time {
-  position: relative;
   color: var(--text-muted);
   font-size: 12px;
-}
-.row-actions {
-  position: absolute;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-  padding-right: 4px;
-}
-.sftp-list tr:hover .row-actions {
-  display: flex;
-}
-.sftp-list tr:hover .file-time-text {
-  visibility: hidden;
-}
-.row-actions button {
-  border: none;
-  background: none;
-  padding: 1px 4px;
-  border-radius: 3px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.row-actions button:hover {
-  background: var(--bg-active);
-  color: var(--text);
 }
 .sftp-empty {
   padding: 20px;

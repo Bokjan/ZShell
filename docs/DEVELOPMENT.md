@@ -56,6 +56,7 @@ PidFile /path/to/T/sshd.pid
 UsePAM no
 StrictModes no
 AllowTcpForwarding yes
+Subsystem sftp /usr/libexec/sftp-server
 LogLevel VERBOSE
 ```
 

@@ -10,8 +10,8 @@ A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tau
 - **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, so you authenticate once. Duplicating a tab opens another shell on the same connection.
 - **Jump hosts**: connect through one or more other sessions, like OpenSSH's `ProxyJump`.
 - **Stays connected**: keepalives detect dead connections, and lost connections are re-established automatically.
-- **SFTP file panel**: browse, upload and download with progress, drop files to upload, rename, delete, create folders and change permissions.
-- **ZMODEM**: `rz` and `sz` in the terminal, for hosts without SFTP such as those behind bastion hosts, over SSH and in local terminals. Choose files or drop them on the terminal for `rz`; files from `sz` go to the Downloads folder (or ask where).
+- **SFTP file panel**: browse with sorting, a name filter and hidden files on or off; select several items with ⇧ / ⌘ (Ctrl) and act on them from the context menu or the keyboard; upload and download with progress, to the download folder or a place you choose; drag files in to upload (onto a folder, too), out to Finder or Explorer to download, or onto a folder to move them; open a remote file in your editor and have it uploaded each time you save; rename, delete, create folders and change permissions.
+- **ZMODEM**: `rz` and `sz` in the terminal, for hosts without SFTP such as those behind bastion hosts, over SSH and in local terminals. Choose files or drop them on the terminal for `rz`; files from `sz` go to the download folder (or ask where).
 - **Port forwarding**: local (`-L`), remote (`-R`) and dynamic SOCKS (`-D`) rules, saved with the session, optionally started on connect, with live status.
 - **Import from `~/.ssh/config`**: hosts, users, ports, keys, jump hosts and forwards.
 - **Session management**: nested folders arranged by drag and drop, search, quick connect by typing `user@host[:port]`, recently opened sessions, duplicate, and export/import to a file (without passwords) for backups and other computers.
@@ -22,7 +22,7 @@ A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tau
 - **Send to several tabs**: a compose bar sends a command to the current tab, all tabs or selected ones, and can sync what you type in the terminal to them.
 - **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program. The tab bar sits in the window's title bar on both macOS and Windows.
 
-Planned next: SFTP improvements (multiple selection, save as, dragging out, editing in a local editor). See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: more session settings (agent forwarding, character encodings, per-session appearance, commands after login). See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 

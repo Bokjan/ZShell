@@ -6862,10 +6862,12 @@ name = "zshell"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "block2",
  "chrono",
  "keyring",
  "libc",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
  "portable-pty",
  "russh",
@@ -6883,6 +6885,7 @@ dependencies = [
  "unicode-width",
  "uuid",
  "vte",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

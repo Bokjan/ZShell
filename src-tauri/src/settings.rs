@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, terminal, tabs, sidebar, ZMODEM, session logs), persisted as `settings.json` next to
+//! App-wide preferences (appearance, terminal, tabs, sidebar, files, ZMODEM, session logs), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -16,6 +16,7 @@ pub struct Settings {
     pub terminal: TerminalSettings,
     pub tabs: TabSettings,
     pub sidebar: SidebarSettings,
+    pub files: FileSettings,
     pub zmodem: ZmodemSettings,
     pub logs: LogSettings,
 }
@@ -92,6 +93,17 @@ impl Default for SidebarSettings {
     }
 }
 
+/// Remote files: SFTP and ZMODEM downloads, and editing remote files locally.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FileSettings {
+    /// Where downloads go without asking; empty for the Downloads folder.
+    pub download_directory: String,
+    /// The application remote files are edited with (a `.app` on macOS, an executable on
+    /// Windows); empty for the one the system opens the file type with.
+    pub editor: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ZmodemSettings {
@@ -148,6 +160,7 @@ impl Default for Settings {
             terminal: TerminalSettings::default(),
             tabs: TabSettings::default(),
             sidebar: SidebarSettings::default(),
+            files: FileSettings::default(),
             zmodem: ZmodemSettings::default(),
             logs: LogSettings::default(),
         }
@@ -186,6 +199,9 @@ impl Settings {
         if terminal.color_scheme.trim().is_empty() {
             terminal.color_scheme = "auto".to_owned();
         }
+        let files = &mut self.files;
+        files.download_directory = files.download_directory.trim().to_owned();
+        files.editor = files.editor.trim().to_owned();
         let logs = &mut self.logs;
         logs.directory = logs.directory.trim().to_owned();
         logs.file_name = logs.file_name.trim().to_owned();

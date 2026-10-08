@@ -38,6 +38,13 @@ export interface SidebarSettings {
   showRecent: boolean;
 }
 
+export interface FileSettings {
+  /** Where downloads go without asking; empty for the Downloads folder. */
+  downloadDirectory: string;
+  /** The application remote files are edited with; empty for the system's default. */
+  editor: string;
+}
+
 export interface ZmodemSettings {
   /** Ask for a folder when `sz` sends files, instead of saving into Downloads. */
   askDownloadLocation: boolean;
@@ -66,6 +73,7 @@ export interface Settings {
   terminal: TerminalSettings;
   tabs: TabSettings;
   sidebar: SidebarSettings;
+  files: FileSettings;
   zmodem: ZmodemSettings;
   logs: LogSettings;
 }
@@ -86,6 +94,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   tabs: { followRemoteTitle: true, confirmClose: true },
   sidebar: { showRecent: true },
+  files: { downloadDirectory: "", editor: "" },
   zmodem: { askDownloadLocation: false },
   logs: { directory: "", fileName: DEFAULT_LOG_FILE_NAME, format: "text", timestamps: false, autoLocal: false, keepDays: 0 },
 };

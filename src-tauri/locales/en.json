@@ -131,6 +131,11 @@
     },
     "export": {
       "writeFailed": "Cannot write {path}"
+    },
+    "edit": {
+      "notFound": "The file is no longer being edited",
+      "conflict": "{name} was changed on the server after you opened it",
+      "openFailed": "Cannot open {path} in the editor"
     }
   },
   "zmodem": {

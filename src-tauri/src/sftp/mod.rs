@@ -1,5 +1,7 @@
 //! Remote file management over SFTP. Remote paths are POSIX-style strings.
 
+pub mod drag;
+pub mod edit;
 pub mod transfer;
 
 use anyhow::Result;

@@ -25,6 +25,7 @@ use logging::Logs;
 use quick::QuickCommandStore;
 use session::SessionManager;
 use settings::SettingsStore;
+use sftp::edit::Edits;
 use sftp::transfer::Transfers;
 use ssh::Connections;
 
@@ -153,6 +154,7 @@ pub fn run() {
             let documents = app.path().document_dir().unwrap_or_else(|_| config_dir.clone());
             app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs")));
             clean_up_logs(app.handle().clone());
+            app.manage(Edits::new(app.path().temp_dir()?.join("ZShell-edit")));
             window::create_main(app)?;
             Ok(())
         })
@@ -226,6 +228,13 @@ pub fn run() {
             commands::sftp_chmod,
             commands::sftp_upload,
             commands::sftp_download,
+            commands::sftp_download_as,
+            commands::downloads_directory,
+            commands::sftp_edit_open,
+            commands::sftp_edit_reopen,
+            commands::sftp_edit_upload,
+            commands::sftp_edit_stop,
+            commands::sftp_drag_out,
             commands::transfer_cancel,
             commands::forward_start,
             commands::forward_stop,

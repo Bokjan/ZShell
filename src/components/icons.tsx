@@ -25,3 +25,24 @@ export function QuickIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+/** A magnifying glass, for filtering. */
+export function SearchIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.5 10.5L14 14" />
+    </svg>
+  );
+}
+
+/** An eye, crossed out when `crossed`, for showing and hiding hidden files. */
+export function EyeIcon({ size = 14, crossed = false }: { size?: number; crossed?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+      <circle cx="8" cy="8" r="2" />
+      {crossed && <path d="M2.5 13.5l11-11" />}
+    </svg>
+  );
+}

@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { dirname, join } from "@tauri-apps/api/path";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open } from "@tauri-apps/plugin-dialog";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from "../lib/api";
+import { pathRange, storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";
+import { isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { EyeIcon, SearchIcon } from "./icons";
 import { TransferList, type Transfer } from "./TransferList";
 
 interface Props {
@@ -23,8 +29,44 @@ interface Confirm {
   action(): void;
 }
 
+interface Menu {
+  x: number;
+  y: number;
+  items: MenuItem[];
+}
+
+/** A mouse press on a row that becomes a drag once the mouse moves far enough. */
+interface Press {
+  x: number;
+  y: number;
+  path: string;
+}
+
+const DRAG_DISTANCE = 5;
+const DOWNLOAD_TO_KEY = "zshell.downloadToDirectory";
+
 const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name : `${dir}/${name}`);
 const parentPath = (path: string) => path.replace(/\/[^/]+\/?$/, "") || "/";
+
+/** Whether moving `paths` into `dir` would do nothing or put a folder inside itself. */
+const isPointlessMove = (paths: string[], dir: string) =>
+  paths.some((path) => dir === path || dir.startsWith(`${path}/`)) || paths.every((path) => parentPath(path) === dir);
+
+function storedDownloadTo() {
+  try {
+    return localStorage.getItem(DOWNLOAD_TO_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeDownloadTo(dir: string) {
+  try {
+    localStorage.setItem(DOWNLOAD_TO_KEY, dir);
+  } catch {
+    // The dialog then opens in its default place.
+  }
+}
 
 export function SftpPanel({ sessionId, connected, active }: Props) {
   const { t } = useTranslation();
@@ -33,18 +75,61 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [view, setView] = useState<FileView>(storedView);
+  /** The name filter; null while the filter field is closed. */
+  const [filter, setFilter] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
+  /** Where a ⇧ range starts, and the row the arrow keys move from. */
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const [chmodTarget, setChmodTarget] = useState<{ entry: FileEntry; value: string } | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [menu, setMenu] = useState<Menu | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  /** Files from another application are over the panel. */
   const [dragOver, setDragOver] = useState(false);
+  /** The folder that what is being dragged would go into. */
+  const [dropDir, setDropDir] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
   const cwdRef = useRef<string | null>(null);
   cwdRef.current = cwd;
+  const sessionRef = useRef({ sessionId, connected });
+  sessionRef.current = { sessionId, connected };
+  const transfersRef = useRef(transfers);
+  transfersRef.current = transfers;
+  const pressRef = useRef<Press | null>(null);
+  /** The rows the last two presses in the list were on (null elsewhere). */
+  const pressedRowsRef = useRef<[string | null, string | null]>([null, null]);
+  /** The paths being dragged out of this panel, until shortly after the drag ends. */
+  const draggingRef = useRef<string[] | null>(null);
+  const dropDirRef = useRef<string | null>(null);
+
+  const visible = useMemo(() => visibleEntries(entries, view, filter ?? ""), [entries, view, filter]);
+  // What actions apply to: the selected entries that are shown, in the listed order.
+  const selected = useMemo(() => visible.filter((entry) => selection.has(entry.path)), [visible, selection]);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
 
   const fail = (e: unknown) => setError(errorMessage(e));
+
+  const changeView = (patch: Partial<FileView>) =>
+    setView((current) => {
+      const next = { ...current, ...patch };
+      storeView(next);
+      return next;
+    });
+
+  const select = (paths: string[], anchorPath: string | null = paths[0] ?? null) => {
+    setSelection(new Set(paths));
+    setAnchor(anchorPath);
+    setCursor(paths.length > 0 ? paths[paths.length - 1] : null);
+  };
 
   const load = useCallback(
     async (path: string) => {
@@ -52,10 +137,16 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
       setLoading(true);
       try {
         const listing = await sftp.list(sessionId, path);
+        // Refreshing keeps the selection; another folder starts afresh.
+        if (listing.path !== cwdRef.current) {
+          setSelection(new Set());
+          setAnchor(null);
+          setCursor(null);
+          setFilter(null);
+        }
         setCwd(listing.path);
         setPathInput(listing.path);
         setEntries(listing.entries);
-        setSelected(null);
         setError(null);
       } catch (e) {
         setPathInput(cwdRef.current ?? "");
@@ -79,6 +170,12 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   const updateTransfer = (id: string, patch: Partial<Transfer>) =>
     setTransfers((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
+  const failTransfer = (id: string, e: unknown) =>
+    updateTransfer(
+      id,
+      errorCode(e) === "transfer.cancelled" ? { status: "cancelled" } : { status: "error", error: errorMessage(e) },
+    );
+
   const labelFor = (names: string[]) =>
     names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 });
 
@@ -89,21 +186,22 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
       const results = await run(id);
       updateTransfer(id, { status: "done", results: results ?? undefined });
     } catch (e) {
-      updateTransfer(
-        id,
-        errorCode(e) === "transfer.cancelled" ? { status: "cancelled" } : { status: "error", error: errorMessage(e) },
-      );
+      failTransfer(id, e);
     }
   };
 
-  const upload = (localPaths: string[], remoteDir: string) => {
+  const upload = async (localPaths: string[], remoteDir: string) => {
     if (sessionId == null || localPaths.length === 0) return;
     const start = () =>
       runTransfer("upload", localPaths.map(basename), async (id) => {
         await sftp.upload(sessionId, id, localPaths, remoteDir, (progress) => updateTransfer(id, { progress }));
         if (cwdRef.current === remoteDir) void load(remoteDir);
       });
-    const existing = new Set(remoteDir === cwd ? entries.map((e) => e.name) : []);
+    const names =
+      remoteDir === cwd
+        ? entries.map((e) => e.name)
+        : await sftp.list(sessionId, remoteDir).then((listing) => listing.entries.map((e) => e.name), () => []);
+    const existing = new Set(names);
     const conflicts = localPaths.map(basename).filter((name) => existing.has(name));
     if (conflicts.length === 0) return void start();
     setConfirm({
@@ -115,36 +213,228 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     });
   };
 
-  const download = (entry: FileEntry) => {
-    if (sessionId == null) return;
-    void runTransfer("download", [entry.name], (id) =>
-      sftp.download(sessionId, id, [entry.path], null, (progress) => updateTransfer(id, { progress })),
+  /** Downloads into `localDir`, or the download folder from the settings. */
+  const download = (targets: FileEntry[], localDir: string | null = null) => {
+    if (sessionId == null || targets.length === 0) return;
+    void runTransfer(
+      "download",
+      targets.map((e) => e.name),
+      (id) => sftp.download(sessionId, id, targets.map((e) => e.path), localDir, (progress) => updateTransfer(id, { progress })),
     );
+  };
+
+  /** A single file is saved under a name of the user's choosing; anything else into a folder. */
+  const downloadTo = async (targets: FileEntry[]) => {
+    if (sessionId == null || targets.length === 0) return;
+    const last = storedDownloadTo();
+    const [first] = targets;
+    if (targets.length === 1 && !first.isDir) {
+      const defaultPath = last ? await join(last, first.name).catch(() => first.name) : first.name;
+      const path = await save({ defaultPath, title: t("sftp.downloadToTitle") }).catch(() => null);
+      if (!path) return;
+      storeDownloadTo(await dirname(path));
+      void runTransfer("download", [first.name], async (id) => [
+        await sftp.downloadAs(sessionId, id, first.path, path, (progress) => updateTransfer(id, { progress })),
+      ]);
+      return;
+    }
+    const dir = await open({ directory: true, defaultPath: last ?? undefined, title: t("sftp.downloadToFolderTitle") }).catch(
+      () => null,
+    );
+    if (typeof dir !== "string") return;
+    storeDownloadTo(dir);
+    download(targets, dir);
+  };
+
+  // Editing in a local editor: each save is uploaded through the current connection; saves
+  // made while disconnected wait for the reconnection.
+  const uploadEdit = async (id: string, force = false) => {
+    const { sessionId, connected } = sessionRef.current;
+    const transfer = transfersRef.current.find((t) => t.id === id);
+    if (!transfer || transfer.status !== "editing") return;
+    if (sessionId == null || !connected) return updateTransfer(id, { save: { state: "waiting" } });
+    updateTransfer(id, { save: { state: "uploading" } });
+    try {
+      await sftp.editUpload(sessionId, id, force);
+      updateTransfer(id, { save: { state: "uploaded", at: Date.now() } });
+      const dir = cwdRef.current;
+      if (transfer.remotePath && dir === parentPath(transfer.remotePath)) void load(dir);
+    } catch (e) {
+      if (errorCode(e) !== "edit.conflict") return updateTransfer(id, { save: { state: "failed", error: errorMessage(e) } });
+      // Until the user decides.
+      updateTransfer(id, { save: { state: "skipped" } });
+      setConfirm({
+        title: t("sftp.editConflictTitle"),
+        message: t("sftp.editConflictMessage", { name: transfer.label }),
+        confirmLabel: t("sftp.editConflictReplace"),
+        danger: true,
+        action: () => void uploadEdit(id, true),
+      });
+    }
+  };
+  const uploadEditRef = useRef(uploadEdit);
+  uploadEditRef.current = uploadEdit;
+
+  useEffect(() => {
+    if (sessionId == null || !connected) return;
+    for (const transfer of transfersRef.current) {
+      if (transfer.status === "editing" && transfer.save?.state === "waiting") void uploadEditRef.current(transfer.id);
+    }
+  }, [sessionId, connected]);
+
+  // Closing the tab stops watching its files.
+  useEffect(
+    () => () => {
+      for (const transfer of transfersRef.current) if (transfer.status === "editing") void sftp.editStop(transfer.id);
+    },
+    [],
+  );
+
+  const openInEditor = async (entry: FileEntry) => {
+    if (sessionId == null) return;
+    const current = transfersRef.current.find((t) => t.status === "editing" && t.remotePath === entry.path);
+    if (current) return void sftp.editReopen(current.id).catch(fail);
+    const id = crypto.randomUUID();
+    setTransfers((ts) => [
+      { id, kind: "edit", label: entry.name, remotePath: entry.path, progress: null, status: "running" },
+      ...ts,
+    ]);
+    try {
+      await sftp.editOpen(
+        sessionId,
+        id,
+        entry.path,
+        (progress) => updateTransfer(id, { progress }),
+        () => void uploadEditRef.current(id),
+      );
+      updateTransfer(id, { status: "editing" });
+    } catch (e) {
+      failTransfer(id, e);
+    }
+  };
+
+  const stopEditing = (id: string) => {
+    void sftp.editStop(id);
+    setTransfers((ts) => ts.filter((t) => t.id !== id));
+  };
+
+  const move = async (paths: string[], dir: string) => {
+    if (sessionId == null) return;
+    for (const path of paths) {
+      try {
+        await sftp.rename(sessionId, path, joinPath(dir, basename(path)));
+      } catch (err) {
+        fail(err);
+        break;
+      }
+    }
+    if (cwdRef.current) void load(cwdRef.current);
+  };
+
+  // Dragging out: the items are downloaded only once dropped on another application (into a
+  // folder there, or a temporary one on Windows); dropped on a folder here, they are moved.
+  const startDrag = async (items: FileEntry[]) => {
+    const { sessionId, connected } = sessionRef.current;
+    if (sessionId == null || !connected || items.length === 0) return;
+    const id = crypto.randomUUID();
+    const paths = items.map((entry) => entry.path);
+    let listed = false;
+    draggingRef.current = paths;
+    try {
+      const result = await sftp.dragOut(sessionId, id, items, (event) => {
+        if (!listed) {
+          listed = true;
+          setTransfers((ts) => [
+            { id, kind: "download", label: labelFor(items.map((entry) => entry.name)), progress: null, status: "running" },
+            ...ts,
+          ]);
+        }
+        if (event.type === "progress") updateTransfer(id, { progress: event });
+        else if (event.type === "done") updateTransfer(id, { status: "done", results: event.paths });
+        else failTransfer(id, event.error);
+      });
+      const dir = result.outcome === "inside" ? folderAt(result.x, result.y) : undefined;
+      if (dir && !isPointlessMove(paths, dir)) void move(paths, dir);
+    } catch (e) {
+      fail(e);
+    } finally {
+      dropDirRef.current = null;
+      setDropDir(null);
+      // Drop events may arrive after the drag has ended (on Windows they all do); they must
+      // not be taken for files dropped from another application.
+      setTimeout(() => {
+        if (draggingRef.current === paths) draggingRef.current = null;
+      }, 1000);
+    }
+  };
+  const startDragRef = useRef(startDrag);
+  startDragRef.current = startDrag;
+
+  useEffect(() => {
+    const onMove = (e: globalThis.MouseEvent) => {
+      const press = pressRef.current;
+      if (!press) return;
+      if ((e.buttons & 1) === 0) {
+        pressRef.current = null;
+        return;
+      }
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < DRAG_DISTANCE) return;
+      pressRef.current = null;
+      const selected = selectedRef.current;
+      const pressed = entriesRef.current.find((entry) => entry.path === press.path);
+      if (!pressed) return;
+      void startDragRef.current(selected.some((entry) => entry.path === press.path) ? selected : [pressed]);
+    };
+    const onUp = () => (pressRef.current = null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  /** The folder at a point in the page: null on the panel elsewhere, undefined off the panel. */
+  const folderAt = (x: number, y: number) => {
+    const element = document.elementFromPoint(x, y);
+    if (!element || !panelRef.current?.contains(element)) return undefined;
+    return element.closest<HTMLElement>("[data-drop-dir]")?.dataset.dropDir ?? null;
   };
 
   const pickAndUpload = async (directory: boolean) => {
     if (!cwd) return;
     const picked = await open({ multiple: true, directory, title: directory ? t("sftp.chooseFolders") : t("sftp.chooseFiles") });
-    if (picked) upload(Array.isArray(picked) ? picked : [picked], cwd);
+    if (picked) void upload(Array.isArray(picked) ? picked : [picked], cwd);
   };
 
-  // Accept files dragged in from Finder / Explorer while this panel is visible.
+  // Drops while this panel is visible: files from Finder / Explorer are uploaded (into the
+  // folder under the pointer, else the current one); our own drags only track the folder.
   const uploadRef = useRef(upload);
   uploadRef.current = upload;
   useEffect(() => {
     if (!active) return;
-    const inside = (pos: { x: number; y: number }) => {
-      const rect = panelRef.current?.getBoundingClientRect();
-      const x = pos.x / window.devicePixelRatio;
-      const y = pos.y / window.devicePixelRatio;
-      return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-    };
+    // Physical pixels on Windows; on macOS wry passes points despite the type.
+    const scale = isMac ? 1 : window.devicePixelRatio;
+    const folderUnder = (pos: { x: number; y: number }) => folderAt(pos.x / scale, pos.y / scale);
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
-      if (payload.type === "leave") setDragOver(false);
-      else if (payload.type === "enter" || payload.type === "over") setDragOver(inside(payload.position));
-      else if (payload.type === "drop") {
+      const dragging = draggingRef.current;
+      if (payload.type === "leave") {
         setDragOver(false);
-        if (inside(payload.position) && cwdRef.current) uploadRef.current(payload.paths, cwdRef.current);
+        dropDirRef.current = null;
+        setDropDir(null);
+      } else if (payload.type === "enter" || payload.type === "over") {
+        const folder = folderUnder(payload.position);
+        const dir = folder && !(dragging && isPointlessMove(dragging, folder)) ? folder : null;
+        dropDirRef.current = dir;
+        setDropDir(dir);
+        setDragOver(!dragging && folder !== undefined);
+      } else if (payload.type === "drop") {
+        setDragOver(false);
+        setDropDir(null);
+        if (dragging) return;
+        const folder = folderUnder(payload.position);
+        const dir = folder ?? cwdRef.current;
+        if (folder !== undefined && dir) void uploadRef.current(payload.paths, dir);
       }
     });
     return () => void unlisten.then((f) => f());
@@ -155,9 +445,12 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     if (!renaming || sessionId == null || !cwd) return;
     const name = renaming.value.trim();
     setRenaming(null);
+    listRef.current?.focus();
     if (!name || name === basename(renaming.path)) return;
     try {
-      await sftp.rename(sessionId, renaming.path, joinPath(cwd, name));
+      const path = joinPath(cwd, name);
+      await sftp.rename(sessionId, renaming.path, path);
+      select([path]);
       await load(cwd);
     } catch (err) {
       fail(err);
@@ -168,9 +461,12 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     e.preventDefault();
     const name = newFolder?.trim();
     setNewFolder(null);
+    listRef.current?.focus();
     if (!name || sessionId == null || !cwd) return;
     try {
-      await sftp.mkdir(sessionId, joinPath(cwd, name));
+      const path = joinPath(cwd, name);
+      await sftp.mkdir(sessionId, path);
+      select([path]);
       await load(cwd);
     } catch (err) {
       fail(err);
@@ -194,27 +490,192 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     }
   };
 
-  const askRemove = (entry: FileEntry) =>
+  const askRemove = (targets: FileEntry[]) => {
+    if (targets.length === 0) return;
+    const [first] = targets;
     setConfirm({
       title: t("sftp.deleteTitle"),
       message:
-        entry.isDir && !entry.isSymlink
-          ? t("sftp.deleteFolderMessage", { name: entry.name })
-          : t("sftp.deleteFileMessage", { name: entry.name }),
+        targets.length > 1
+          ? t("sftp.deleteItemsMessage", { count: targets.length })
+          : first.isDir && !first.isSymlink
+            ? t("sftp.deleteFolderMessage", { name: first.name })
+            : t("sftp.deleteFileMessage", { name: first.name }),
       confirmLabel: t("common.delete"),
       danger: true,
       action: async () => {
         if (sessionId == null || !cwd) return;
-        try {
-          await sftp.remove(sessionId, entry.path);
-          await load(cwd);
-        } catch (err) {
-          fail(err);
+        for (const entry of targets) {
+          try {
+            await sftp.remove(sessionId, entry.path);
+          } catch (err) {
+            fail(err);
+            break;
+          }
         }
+        await load(cwd);
       },
     });
+  };
 
-  const activate = (entry: FileEntry) => (entry.isDir ? void load(entry.path) : download(entry));
+  const startRename = (entry: FileEntry) => setRenaming({ path: entry.path, value: entry.name });
+  const startChmod = (entry: FileEntry) =>
+    setChmodTarget({ entry, value: ((entry.permissions ?? 0o644) & 0o7777).toString(8).padStart(3, "0") });
+
+  const activate = (entry: FileEntry) => (entry.isDir ? void load(entry.path) : download([entry]));
+
+  const openFilter = (text = "") => {
+    setFilter((current) => (current ?? "") + text);
+    // Focused after it renders, also when it was already open.
+    setTimeout(() => filterRef.current?.focus());
+  };
+
+  const closeFilter = () => {
+    setFilter(null);
+    listRef.current?.focus();
+  };
+
+  const sortBy = (key: SortKey) =>
+    changeView(view.sort === key ? { descending: !view.descending } : { sort: key, descending: false });
+
+  const isMod = (e: { metaKey: boolean; ctrlKey: boolean }) => (isMac ? e.metaKey : e.ctrlKey);
+
+  const onRowMouseDown = (e: MouseEvent, entry: FileEntry) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("input")) return;
+    if (e.shiftKey && anchor) {
+      const range = pathRange(visible, anchor, entry.path);
+      setSelection(new Set(isMod(e) ? [...selection, ...range] : range));
+      setCursor(entry.path);
+    } else if (isMod(e)) {
+      const next = new Set(selection);
+      if (next.has(entry.path)) next.delete(entry.path);
+      else next.add(entry.path);
+      setSelection(next);
+      setAnchor(entry.path);
+      setCursor(entry.path);
+    } else {
+      // A press on a selected row keeps the selection, so that it can be dragged together.
+      if (!selection.has(entry.path)) select([entry.path]);
+      pressRef.current = { x: e.clientX, y: e.clientY, path: entry.path };
+    }
+  };
+
+  // WebKit also counts a click on the header (or another row) followed quickly by one on a
+  // row as a double click.
+  const isDoubleClick = (e: MouseEvent, entry: FileEntry) =>
+    !e.shiftKey && !isMod(e) && pressedRowsRef.current.every((path) => path === entry.path);
+
+  const onRowClick = (e: MouseEvent, entry: FileEntry) => {
+    if (!e.shiftKey && !isMod(e) && selection.size > 1) select([entry.path]);
+  };
+
+  const fileMenu = (targets: FileEntry[]): MenuItem[] => {
+    const one = targets.length === 1 ? targets[0] : null;
+    const offline = !connected;
+    const items: MenuItem[] = [];
+    if (one?.isDir) items.push({ label: t("sftp.open"), disabled: offline, onSelect: () => void load(one.path) });
+    items.push(
+      { label: t("sftp.download"), disabled: offline, onSelect: () => download(targets) },
+      { label: t("sftp.downloadTo"), disabled: offline, onSelect: () => void downloadTo(targets) },
+    );
+    if (one && !one.isDir) items.push({ label: t("sftp.openInEditor"), disabled: offline, onSelect: () => void openInEditor(one) });
+    items.push("separator");
+    if (one) {
+      items.push(
+        { label: t("sftp.rename"), shortcut: isMac ? undefined : "F2", disabled: offline, onSelect: () => startRename(one) },
+        { label: t("sftp.changePermissions"), disabled: offline, onSelect: () => startChmod(one) },
+      );
+    }
+    items.push(
+      {
+        label: targets.length > 1 ? t("sftp.copyPaths") : t("sftp.copyPath"),
+        onSelect: () => void writeText(targets.map((e) => e.path).join("\n")).catch(fail),
+      },
+      "separator",
+      {
+        label: t("sftp.delete"),
+        shortcut: isMac ? "⌫" : "Del",
+        danger: true,
+        disabled: offline,
+        onSelect: () => askRemove(targets),
+      },
+    );
+    return items;
+  };
+
+  const folderMenu = (): MenuItem[] => [
+    { label: t("sftp.uploadFiles"), disabled: !connected || !cwd, onSelect: () => void pickAndUpload(false) },
+    { label: t("sftp.uploadFolder"), disabled: !connected || !cwd, onSelect: () => void pickAndUpload(true) },
+    { label: t("sftp.newFolder"), disabled: !connected || !cwd, onSelect: () => setNewFolder("") },
+    "separator",
+    { label: t("sftp.refresh"), disabled: !connected || !cwd, onSelect: () => void refresh() },
+    {
+      label: view.showHidden ? t("sftp.hideHidden") : t("sftp.showHidden"),
+      onSelect: () => changeView({ showHidden: !view.showHidden }),
+    },
+  ];
+
+  const onRowContextMenu = (e: MouseEvent, entry: FileEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const targets = selection.has(entry.path) ? selected : [entry];
+    if (!selection.has(entry.path)) select([entry.path]);
+    setMenu({ x: e.clientX, y: e.clientY, items: fileMenu(targets) });
+  };
+
+  const onListContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    select([]);
+    setMenu({ x: e.clientX, y: e.clientY, items: folderMenu() });
+  };
+
+  const moveCursor = (index: number, extend: boolean) => {
+    if (visible.length === 0) return;
+    const path = visible[Math.max(0, Math.min(visible.length - 1, index))].path;
+    if (extend && anchor) {
+      setSelection(new Set(pathRange(visible, anchor, path)));
+      setCursor(path);
+    } else {
+      select([path]);
+    }
+    listRef.current?.querySelector(`tr[data-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+
+  const onListKeyDown = (e: KeyboardEvent) => {
+    if ((e.target as HTMLElement).closest("input")) return;
+    const index = visible.findIndex((entry) => entry.path === cursor);
+    const mod = isMod(e);
+    let handled = true;
+    if (e.key === "ArrowDown") moveCursor(index < 0 ? 0 : index + 1, e.shiftKey);
+    else if (e.key === "ArrowUp") moveCursor(index < 0 ? visible.length - 1 : index - 1, e.shiftKey);
+    else if (e.key === "Home") moveCursor(0, e.shiftKey);
+    else if (e.key === "End") moveCursor(visible.length - 1, e.shiftKey);
+    else if (e.key === "Enter" && !mod) {
+      if (selected.length === 1) activate(selected[0]);
+      else download(selected);
+    } else if ((e.key === "Delete" || e.key === "Backspace") && connected) askRemove(selected);
+    else if (e.key === "F2" && selected.length === 1 && connected) startRename(selected[0]);
+    else if (e.key === "Escape") {
+      if (filter !== null) closeFilter();
+      else select([]);
+    } else if (e.code === "KeyA" && mod && !e.shiftKey && !e.altKey) select(visible.map((entry) => entry.path));
+    else if (e.key.length === 1 && e.key !== " " && !e.metaKey && !e.ctrlKey && !e.altKey) openFilter(e.key);
+    else handled = false;
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const onFilterKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") closeFilter();
+    else if (e.key === "ArrowDown" || e.key === "Enter") {
+      listRef.current?.focus();
+      if (selected.length === 0) moveCursor(0, false);
+    } else return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
   if (!connected && cwd == null) {
     return (
@@ -224,10 +685,26 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     );
   }
 
+  const sortHeader = (key: SortKey, label: string, className?: string) => (
+    <th className={className} onClick={() => sortBy(key)} aria-sort={view.sort === key ? (view.descending ? "descending" : "ascending") : undefined}>
+      {label}
+      {view.sort === key && <span className="sort-arrow">{view.descending ? "▾" : "▴"}</span>}
+    </th>
+  );
+
+  const parent = cwd && cwd !== "/" ? parentPath(cwd) : null;
+  const hiddenCount = view.showHidden ? 0 : entries.filter((entry) => entry.name.startsWith(".")).length;
+
   return (
-    <div className={`sftp-panel${dragOver ? " drag-over" : ""}`} ref={panelRef}>
+    <div className={`sftp-panel${dragOver && !dropDir ? " drag-over" : ""}`} ref={panelRef}>
       <div className="sftp-toolbar">
-        <button className="icon-button" title={t("sftp.parentFolder")} disabled={!cwd || cwd === "/"} onClick={() => cwd && load(parentPath(cwd))}>
+        <button
+          className={`icon-button${parent && dropDir === parent ? " drop-target" : ""}`}
+          title={t("sftp.parentFolder")}
+          disabled={!parent}
+          data-drop-dir={parent ?? undefined}
+          onClick={() => parent && load(parent)}
+        >
           ↑
         </button>
         <button className="icon-button" title={t("sftp.refresh")} disabled={!cwd} onClick={refresh}>
@@ -242,6 +719,20 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
         >
           <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} spellCheck={false} title={t("sftp.pathHint")} />
         </form>
+        <button
+          className={`icon-button${filter !== null ? " on" : ""}`}
+          title={t("sftp.filter")}
+          onClick={() => (filter === null ? openFilter() : closeFilter())}
+        >
+          <SearchIcon />
+        </button>
+        <button
+          className="icon-button"
+          title={view.showHidden ? t("sftp.hideHiddenFiles") : t("sftp.showHiddenFiles")}
+          onClick={() => changeView({ showHidden: !view.showHidden })}
+        >
+          <EyeIcon crossed={!view.showHidden} />
+        </button>
       </div>
       <div className="sftp-actions">
         <button disabled={!connected || !cwd} onClick={() => pickAndUpload(false)}>
@@ -254,6 +745,24 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
           {t("sftp.newFolder")}
         </button>
       </div>
+      {filter !== null && (
+        <div className="sftp-filter">
+          <SearchIcon size={12} />
+          <input
+            ref={filterRef}
+            value={filter}
+            placeholder={t("sftp.filterPlaceholder")}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={onFilterKeyDown}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
+          <button className="icon-button" title={t("sftp.clearFilter")} onClick={closeFilter}>
+            ×
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="sftp-error" onClick={() => setError(null)} title={t("sftp.dismissHint")}>
@@ -262,13 +771,33 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
       )}
       {!connected && <div className="sftp-error">{t("sftp.disconnected")}</div>}
 
-      <div className={`sftp-list${loading ? " loading" : ""}`}>
+      <div
+        ref={listRef}
+        className={`sftp-list${loading ? " loading" : ""}`}
+        tabIndex={0}
+        onKeyDown={onListKeyDown}
+        onMouseDownCapture={(e) => {
+          const row = (e.target as HTMLElement).closest<HTMLElement>("tr[data-path]");
+          pressedRowsRef.current = [pressedRowsRef.current[1], row?.dataset.path ?? null];
+        }}
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget || (e.target as HTMLElement).closest(".sftp-empty")) select([]);
+        }}
+        onContextMenu={onListContextMenu}
+      >
         <table>
           <colgroup>
             <col />
             <col className="col-size" />
             <col className="col-time" />
           </colgroup>
+          <thead>
+            <tr>
+              {sortHeader("name", t("sftp.columnName"))}
+              {sortHeader("size", t("sftp.columnSize"), "file-size")}
+              {sortHeader("modified", t("sftp.columnModified"))}
+            </tr>
+          </thead>
           <tbody>
             {newFolder != null && (
               <tr>
@@ -286,12 +815,19 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                 </td>
               </tr>
             )}
-            {entries.map((entry) => (
+            {visible.map((entry) => (
               <tr
                 key={entry.path}
-                className={entry.path === selected ? "selected" : undefined}
-                onClick={() => setSelected(entry.path)}
-                onDoubleClick={() => activate(entry)}
+                data-path={entry.path}
+                data-drop-dir={entry.isDir ? entry.path : undefined}
+                className={
+                  [selection.has(entry.path) && "selected", dropDir === entry.path && "drop-target"].filter(Boolean).join(" ") ||
+                  undefined
+                }
+                onMouseDown={(e) => onRowMouseDown(e, entry)}
+                onClick={(e) => onRowClick(e, entry)}
+                onDoubleClick={(e) => isDoubleClick(e, entry) && activate(entry)}
+                onContextMenu={(e) => onRowContextMenu(e, entry)}
                 title={`${entry.name}\n${formatMode(entry.permissions, entry.isDir, entry.isSymlink)}`}
               >
                 <td>
@@ -304,7 +840,11 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                           value={renaming.value}
                           onChange={(e) => setRenaming({ path: entry.path, value: e.target.value })}
                           onBlur={() => setRenaming(null)}
-                          onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Escape") return;
+                            setRenaming(null);
+                            listRef.current?.focus();
+                          }}
                           onFocus={(e) => e.target.setSelectionRange(0, entry.name.lastIndexOf(".") > 0 ? entry.name.lastIndexOf(".") : entry.name.length)}
                         />
                       </form>
@@ -314,44 +854,37 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                   </div>
                 </td>
                 <td className="file-size">{entry.isDir ? "" : formatSize(entry.size)}</td>
-                <td className="file-time">
-                  <span className="file-time-text">{formatTime(entry.modified)}</span>
-                  <span className="row-actions">
-                    <button title={t("sftp.download")} onClick={() => download(entry)}>
-                      ⬇
-                    </button>
-                    <button title={t("sftp.rename")} onClick={() => setRenaming({ path: entry.path, value: entry.name })}>
-                      ✎
-                    </button>
-                    <button
-                      title={t("sftp.changePermissions")}
-                      onClick={() =>
-                        setChmodTarget({ entry, value: ((entry.permissions ?? 0o644) & 0o7777).toString(8).padStart(3, "0") })
-                      }
-                    >
-                      ⚿
-                    </button>
-                    <button title={t("sftp.delete")} onClick={() => askRemove(entry)}>
-                      🗑
-                    </button>
-                  </span>
-                </td>
+                <td className="file-time">{formatTime(entry.modified)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {entries.length === 0 && !loading && cwd && <div className="sftp-empty">{t("sftp.emptyFolder")}</div>}
+        {visible.length === 0 && !loading && cwd && (
+          <div className="sftp-empty">
+            {filter
+              ? t("sftp.noMatches")
+              : hiddenCount > 0
+                ? t("sftp.onlyHidden", { count: hiddenCount })
+                : t("sftp.emptyFolder")}
+          </div>
+        )}
       </div>
+      {selected.length > 1 && <div className="sftp-status">{t("sftp.selectedCount", { count: selected.length })}</div>}
 
       <TransferList
         transfers={transfers}
         onCancel={(id) => void sftp.cancel(id)}
         onDismiss={(id) => setTransfers((ts) => ts.filter((t) => t.id !== id))}
-        onClearFinished={() => setTransfers((ts) => ts.filter((t) => t.status === "running"))}
+        onClearFinished={() => setTransfers((ts) => ts.filter((t) => t.status === "running" || t.status === "editing"))}
+        onReopen={(id) => void sftp.editReopen(id).catch(fail)}
+        onStopEditing={stopEditing}
       />
 
-      {dragOver && <div className="drop-hint">{t("sftp.dropHint", { path: cwd ?? "" })}</div>}
+      {dragOver && (
+        <div className="drop-hint">{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</div>
+      )}
 
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {chmodTarget && (
         <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setChmodTarget(null)}>
           <form className="dialog" onSubmit={submitChmod}>

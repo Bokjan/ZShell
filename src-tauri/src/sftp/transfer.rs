@@ -51,7 +51,7 @@ impl Transfers {
 }
 
 pub struct Reporter {
-    channel: Channel<Progress>,
+    send: Box<dyn Fn(Progress) + Send + Sync>,
     cancelled: Arc<AtomicBool>,
     progress: Progress,
     last_emit: Instant,
@@ -59,7 +59,12 @@ pub struct Reporter {
 
 impl Reporter {
     pub fn new(channel: Channel<Progress>, cancelled: Arc<AtomicBool>) -> Self {
-        Self { channel, cancelled, progress: Progress::default(), last_emit: Instant::now() }
+        Self::with_sink(move |progress| drop(channel.send(progress)), cancelled)
+    }
+
+    /// Reports progress to `send` instead of a channel of its own.
+    pub fn with_sink(send: impl Fn(Progress) + Send + Sync + 'static, cancelled: Arc<AtomicBool>) -> Self {
+        Self { send: Box::new(send), cancelled, progress: Progress::default(), last_emit: Instant::now() }
     }
 
     fn check_cancelled(&self) -> Result<()> {
@@ -88,7 +93,7 @@ impl Reporter {
 
     fn emit(&mut self) {
         self.last_emit = Instant::now();
-        let _ = self.channel.send(self.progress.clone());
+        (self.send)(self.progress.clone());
     }
 }
 
@@ -163,22 +168,30 @@ pub async fn download(
     local_dir: &Path,
     reporter: &mut Reporter,
 ) -> Result<Vec<PathBuf>> {
+    let items: Vec<_> =
+        remote_paths.iter().map(|remote| (remote.clone(), unique_path(local_dir.join(file_name(remote))))).collect();
+    download_to(sftp, &items, reporter).await?;
+    Ok(items.into_iter().map(|(_, local)| local).collect())
+}
+
+/// Downloads each remote file or directory to the given local path, replacing files there.
+pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter) -> Result<()> {
     let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
-    let mut roots = Vec::new();
-    for remote in remote_paths {
+    for (remote, local) in items {
         let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
-        let local = unique_path(local_dir.join(file_name(remote)));
         if metadata.file_type().is_dir() {
             scan_remote_dir(sftp, remote.clone(), local.clone(), &mut plan, reporter).await?;
         } else {
             reporter.progress.total += metadata.size.unwrap_or(0);
             plan.files.push((remote.clone(), local.clone()));
         }
-        roots.push(local);
     }
     reporter.progress.files_total = plan.files.len();
 
-    for dir in &plan.dirs {
+    // The folders the items go into (for files given a path of their own), then the remote
+    // folders' copies.
+    let parents = items.iter().filter_map(|(_, local)| local.parent());
+    for dir in parents.chain(plan.dirs.iter().map(PathBuf::as_path)) {
         tokio::fs::create_dir_all(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
     }
     for (remote, local) in &plan.files {
@@ -194,7 +207,7 @@ pub async fn download(
         }
         reporter.finish_file();
     }
-    Ok(roots)
+    Ok(())
 }
 
 async fn scan_remote_dir(

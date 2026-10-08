@@ -361,5 +361,63 @@ export const sftp = {
       localDir,
       onProgress: progressChannel(onProgress),
     }),
+  /** Downloads one item to `localPath`, replacing what is there. */
+  downloadAs: (
+    id: SessionId,
+    transferId: string,
+    remotePath: string,
+    localPath: string,
+    onProgress: (p: TransferProgress) => void,
+  ) =>
+    invoke<string>("sftp_download_as", { id, transferId, remotePath, localPath, onProgress: progressChannel(onProgress) }),
+  /** The folder downloads go to without asking. */
+  downloadsDirectory: () => invoke<string>("downloads_directory"),
   cancel: (transferId: string) => invoke<void>("transfer_cancel", { transferId }),
+  /**
+   * Downloads a file into a temporary folder and opens it in the editor; `onChanged` is called
+   * each time it is saved. `editId` also identifies the download for `cancel`.
+   */
+  editOpen: (
+    id: SessionId,
+    editId: string,
+    remotePath: string,
+    onProgress: (p: TransferProgress) => void,
+    onChanged: () => void,
+  ) => {
+    const onEvent = new Channel<{ type: "changed" }>();
+    onEvent.onmessage = onChanged;
+    return invoke<string>("sftp_edit_open", { id, editId, remotePath, onProgress: progressChannel(onProgress), onEvent });
+  },
+  editReopen: (editId: string) => invoke<void>("sftp_edit_reopen", { editId }),
+  /** Fails with `edit.conflict` unless `force` when the remote file changed meanwhile. */
+  editUpload: (id: SessionId, editId: string, force: boolean) => invoke<void>("sftp_edit_upload", { id, editId, force }),
+  editStop: (editId: string) => invoke<void>("sftp_edit_stop", { editId }),
+  /**
+   * Drags the items out of the window (call while the mouse button is down). Resolves when the
+   * drag ends; items dropped on another application are then downloaded, reported through
+   * `onEvent`.
+   */
+  dragOut: (id: SessionId, transferId: string, items: FileEntry[], onEvent: (event: DragOutEvent) => void) => {
+    const channel = new Channel<DragOutEvent>();
+    channel.onmessage = onEvent;
+    return invoke<DragResult>("sftp_drag_out", {
+      id,
+      transferId,
+      items: items.map(({ path, isDir }) => ({ path, isDir })),
+      onEvent: channel,
+    });
+  },
 };
+
+/** How a drag out ended; `x` and `y` are where it was dropped in the page, for "inside". */
+export interface DragResult {
+  outcome: "cancelled" | "inside" | "outside";
+  x: number;
+  y: number;
+}
+
+/** A download for a drag out of the window, which starts once the items are dropped. */
+export type DragOutEvent =
+  | ({ type: "progress" } & TransferProgress)
+  | { type: "done"; paths: string[] }
+  | { type: "error"; error: unknown };

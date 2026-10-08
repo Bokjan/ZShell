@@ -3,14 +3,15 @@ import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { logs } from "../lib/api";
-import { formatSize } from "../lib/format";
+import { logs, sftp } from "../lib/api";
+import { basename, formatSize } from "../lib/format";
 import { isMac } from "../lib/platform";
 import {
   DEFAULT_SETTINGS,
   useSettings,
   type Appearance,
   type CursorStyle,
+  type FileSettings,
   type LogFormat,
   type LogSettings,
   type RightClick,
@@ -76,6 +77,7 @@ export function SettingsDialog({ onClose }: Props) {
   const setTerminal = (patch: Partial<TerminalSettings>) => update({ ...settings, terminal: { ...terminal, ...patch } });
   const setTabs = (patch: Partial<TabSettings>) => update({ ...settings, tabs: { ...settings.tabs, ...patch } });
   const setSidebar = (patch: Partial<SidebarSettings>) => update({ ...settings, sidebar: { ...settings.sidebar, ...patch } });
+  const setFiles = (patch: Partial<FileSettings>) => update({ ...settings, files: { ...settings.files, ...patch } });
   const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
   const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
 
@@ -277,6 +279,8 @@ export function SettingsDialog({ onClose }: Props) {
           </label>
         </section>
 
+        <FileSection settings={settings.files} onChange={setFiles} />
+
         <section>
           <h3>{t("settings.zmodem")}</h3>
           <label className="checkbox">
@@ -303,6 +307,73 @@ export function SettingsDialog({ onClose }: Props) {
         </footer>
       </div>
     </div>
+  );
+}
+
+/** Remote files: where downloads go, and the editor remote files are edited with. */
+function FileSection({ settings, onChange }: { settings: FileSettings; onChange(patch: Partial<FileSettings>): void }) {
+  const { t } = useTranslation();
+  // The folder in effect (Downloads when none is chosen).
+  const [directory, setDirectory] = useState("");
+  useEffect(() => {
+    sftp.downloadsDirectory().then(setDirectory).catch(console.error);
+  }, [settings.downloadDirectory]);
+
+  const chooseDirectory = async () => {
+    const picked = await openDialog({ directory: true, defaultPath: directory || undefined }).catch(() => null);
+    if (typeof picked === "string") onChange({ downloadDirectory: picked });
+  };
+
+  const chooseEditor = async () => {
+    const picked = await openDialog({
+      filters: [isMac ? { name: t("settings.editorApplications"), extensions: ["app"] } : { name: t("settings.editorPrograms"), extensions: ["exe"] }],
+      defaultPath: isMac ? "/Applications" : undefined,
+    }).catch(() => null);
+    if (typeof picked === "string") onChange({ editor: picked });
+  };
+
+  return (
+    <section>
+      <h3>{t("settings.files")}</h3>
+      <div className="field">
+        <span>{t("settings.downloadDirectory")}</span>
+        <div className="row">
+          <input className="grow" value={directory} readOnly title={directory} />
+          <button type="button" onClick={() => void chooseDirectory()}>
+            {t("settings.logChoose")}
+          </button>
+          <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
+            {t("settings.logShow")}
+          </button>
+        </div>
+      </div>
+      {settings.downloadDirectory && (
+        <button type="button" className="link" onClick={() => onChange({ downloadDirectory: "" })}>
+          {t("settings.downloadDirectoryDefault")}
+        </button>
+      )}
+      <p className="hint">{t("settings.downloadDirectoryHint")}</p>
+      <div className="field">
+        <span>{t("settings.editor")}</span>
+        <div className="row">
+          <input
+            className="grow"
+            value={settings.editor ? basename(settings.editor).replace(/\.(app|exe)$/i, "") : t("settings.editorDefault")}
+            readOnly
+            title={settings.editor}
+          />
+          <button type="button" onClick={() => void chooseEditor()}>
+            {t("settings.logChoose")}
+          </button>
+        </div>
+      </div>
+      {settings.editor && (
+        <button type="button" className="link" onClick={() => onChange({ editor: "" })}>
+          {t("settings.editorUseDefault")}
+        </button>
+      )}
+      <p className="hint">{t("settings.editorHint")}</p>
+    </section>
   );
 }
 
