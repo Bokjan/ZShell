@@ -65,7 +65,12 @@ interface Props {
   onForward(ruleId: string, state: ForwardState): void;
   /** The title set by the shell (OSC 0 / 2); empty when it clears it. */
   onTitle(title: string): void;
+  /** What the user typed or pasted and the session received (not mouse or focus reports). */
+  onInput(data: string): void;
 }
+
+/** Mouse (SGR, X10) and focus reports the terminal sends for programs; not typed input. */
+const REPORT = /^\x1b\[(?:<\d+;\d+;\d+[Mm]|M[\s\S]{3}|I|O)$/;
 
 /** Seconds to wait before each automatic reconnection attempt; the last one repeats. */
 const RETRY_DELAYS = [2, 4, 8, 16, 30];
@@ -97,6 +102,7 @@ export function TerminalView({
   onSession,
   onForward,
   onTitle,
+  onInput,
 }: Props) {
   const { t } = useTranslation();
   const tRef = useRef(t);
@@ -117,6 +123,8 @@ export function TerminalView({
   onForwardRef.current = onForward;
   const onTitleRef = useRef(onTitle);
   onTitleRef.current = onTitle;
+  const onInputRef = useRef(onInput);
+  onInputRef.current = onInput;
   const shareFromRef = useRef(shareFrom);
   shareFromRef.current = shareFrom;
   /** Closes the current session and connects again; set while the terminal exists. */
@@ -385,6 +393,7 @@ export function TerminalView({
       term.onData((data) => {
         if (!closed) {
           void session?.write(data);
+          if (session && !REPORT.test(data)) onInputRef.current(data);
           return;
         }
         if (data.includes("\r")) connect();

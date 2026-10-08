@@ -17,9 +17,10 @@ A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tau
 - **Session management**: nested folders arranged by drag and drop, search, quick connect by typing `user@host[:port]`, recently opened sessions, duplicate, and export/import to a file (without passwords) for backups and other computers.
 - **Local terminals**: your login shell on macOS, PowerShell on Windows.
 - **Terminal**: context menu, copy on select, right-click to paste, confirmation before pasting multiple lines, Option as Meta on macOS, search with regular expressions, built-in color schemes, custom fonts, light and dark appearance.
+- **Send to several tabs**: a compose bar sends a command to the current tab, all tabs or selected ones, and can sync what you type in the terminal to them.
 - **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program. The tab bar sits in the window's title bar on both macOS and Windows.
 
-Planned next: sending input to several sessions, quick commands and session logs. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: quick commands and session logs. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -58,6 +59,7 @@ Add a session with **+** in the sidebar, or import hosts from your SSH config, t
 | Close tab | ⌘W | Ctrl+Shift+W |
 | Settings | ⌘, | Ctrl+, |
 | Find in terminal | ⌘F | Ctrl+Shift+F |
+| Show/hide the compose bar | ⇧⌘I | Ctrl+Shift+I |
 | Show/hide the file panel | ⇧⌘E | Ctrl+Shift+E |
 | Show/hide the port forwarding panel | ⇧⌘P | Ctrl+Shift+P |
 

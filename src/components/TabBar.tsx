@@ -12,7 +12,7 @@ import type { ForwardState, SessionId, SessionTarget } from "../lib/api";
 import { closeTabShortcutLabel, isWindows, newTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { PlusIcon } from "./icons";
+import { ComposeIcon, PlusIcon } from "./icons";
 import type { SessionStatus } from "./TerminalView";
 import { WindowControls } from "./WindowControls";
 
@@ -64,6 +64,14 @@ interface Props {
   onSaveAsSession(key: number): void;
   onReconnect(key: number): void;
   onTogglePanel(panel: SidePanel): void;
+  composeOpen: boolean;
+  onToggleCompose(): void;
+  /** Tabs that the compose bar sends to besides (or instead of) the active one; marked. */
+  inScope: number[];
+  /** Typing is synced to the tabs in scope; their marks turn to the warning color. */
+  syncing: boolean;
+  /** Tabs that just received text from the compose bar or a quick command; they flash. */
+  flashing: number[];
 }
 
 /** How far the pointer moves before a press on a tab becomes a drag. */
@@ -85,6 +93,11 @@ export function TabBar({
   onSaveAsSession,
   onReconnect,
   onTogglePanel,
+  composeOpen,
+  onToggleCompose,
+  inScope,
+  syncing,
+  flashing,
 }: Props) {
   const { t } = useTranslation();
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
@@ -200,7 +213,15 @@ export function TabBar({
             <div
               key={tab.key}
               data-key={tab.key}
-              className={`tab${tab.key === activeKey ? " active" : ""}${tab.key === dragging ? " dragging" : ""}`}
+              className={[
+                "tab",
+                tab.key === activeKey && "active",
+                tab.key === dragging && "dragging",
+                inScope.includes(tab.key) && (syncing ? "in-scope syncing" : "in-scope"),
+                flashing.includes(tab.key) && "flash",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               onMouseDown={(e) => editing !== tab.key && startDrag(e, tab.key)}
               onClick={() => onSelect(tab.key)}
               onDoubleClick={() => setEditing(tab.key)}
@@ -251,6 +272,16 @@ export function TabBar({
       </button>
       {/* Grows, and keeps some room to move the window however many tabs there are. */}
       <span className="tab-bar-drag" {...DRAG_REGION} />
+      {tabs.length > 0 && (
+        <button
+          className={`compose-toggle${composeOpen ? " on" : ""}`}
+          title={t("compose.toggle", { shortcut: shiftShortcutLabel("I") })}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onToggleCompose}
+        >
+          <ComposeIcon />
+        </button>
+      )}
       {tabs.length > 0 && (
         <div className="panel-switch">
           {segment("files", t("tabs.files"), t("tabs.filesHint", { shortcut: shiftShortcutLabel("E") }))}

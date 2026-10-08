@@ -67,6 +67,26 @@
     "saveAsSession": "Save as Session…",
     "newLocalTerminal": "New local terminal ({shortcut})"
   },
+  "compose": {
+    "toggle": "Compose bar: send a command to several tabs ({shortcut})",
+    "placeholder": "Type a command, then Enter to send (Shift+Enter for a new line)",
+    "scopeHint": "Which tabs receive what is sent",
+    "scopeCurrent": "Current tab",
+    "scopeAll": "All tabs",
+    "scopeSelected": "Selected tabs",
+    "scopeAllCount": "All tabs ({count})",
+    "scopeSelectedCount": "Selected tabs ({count})",
+    "sync": "Sync input",
+    "syncHint": "Also send what you type in the terminal to these tabs",
+    "syncNeedsScope": "Choose all or selected tabs to sync input to them",
+    "send": "Send",
+    "sent_one": "Sent to {count} tab",
+    "sent_other": "Sent to {count} tabs",
+    "sentSkipped_one": "Sent to {count} tab; {skipped} not connected",
+    "sentSkipped_other": "Sent to {count} tabs; {skipped} not connected",
+    "noTargets": "No connected tab to send to",
+    "close": "Close the compose bar"
+  },
   "window": {
     "minimize": "Minimize",
     "maximize": "Maximize",

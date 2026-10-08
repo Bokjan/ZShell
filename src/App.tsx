@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
+import { ComposeBar, type SendResult } from "./components/ComposeBar";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ImportDialog } from "./components/ImportDialog";
 import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog";
@@ -17,6 +18,7 @@ import {
   localUsername,
   sessionForeground,
   tree,
+  writeSession,
   type Folder,
   type ForwardState,
   type Profile,
@@ -30,6 +32,7 @@ import {
   isSettingsShortcut,
   tabShortcut,
 } from "./lib/platform";
+import { asTyped, CLOSED_COMPOSE, isConnected, scopeTabs, sendsToMany, type Compose } from "./lib/compose";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { useSettings } from "./lib/settings";
 import { useTitleBar } from "./lib/window";
@@ -42,6 +45,14 @@ type Busy = { kind: "connected" } | { kind: "process"; name: string };
 
 /** Opening more sessions than this at once (a folder) asks first. */
 const OPEN_ALL_CONFIRM = 5;
+/** How long tabs that received text from the compose bar flash. */
+const FLASH_MS = 700;
+
+/** Moves the keyboard focus back to the active terminal (after the compose bar closes). */
+const focusActiveTerminal = () =>
+  requestAnimationFrame(() =>
+    document.querySelector<HTMLElement>(".session-pane.active .xterm-helper-textarea")?.focus(),
+  );
 
 async function busyReason(tab: Tab): Promise<Busy | null> {
   if (tab.status !== "connected" || tab.sessionId == null) return null;
@@ -78,6 +89,11 @@ function App() {
   const [openingAll, setOpeningAll] = useState<{ folder: Folder; profiles: Profile[] } | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeKey, setActiveKey] = useState<number | null>(null);
+  const [compose, setCompose] = useState<Compose>(CLOSED_COMPOSE);
+  const composeRef = useRef(compose);
+  composeRef.current = compose;
+  const [flashing, setFlashing] = useState<number[]>([]);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // The profile dialog: an existing profile, or a new one (null) with defaults; `tabKey` is
   // the quick connection tab being saved as a session.
   const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; tabKey?: number } | null>(
@@ -215,6 +231,35 @@ function App() {
   const updateTab = (key: number, patch: Partial<Tab>) =>
     setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, ...patch } : t)));
 
+  // Closing the bar turns syncing off; the scope stays for the next time, shown on the bar.
+  const toggleCompose = useCallback(() => {
+    const open = !composeRef.current.open;
+    setCompose({ ...composeRef.current, open, sync: false });
+    if (!open) focusActiveTerminal();
+  }, []);
+
+  /** Sends text as if typed to the tabs in scope (see `scopeTabs`); tabs beyond the active one flash. */
+  const sendToScope = (data: string): SendResult => {
+    const targets = scopeTabs(composeRef.current, tabsRef.current, activeKeyRef.current);
+    const sent = targets.filter(isConnected);
+    for (const tab of sent) writeSession(tab.sessionId!, data).catch(console.error);
+    if (sendsToMany(composeRef.current) && sent.length > 0) {
+      clearTimeout(flashTimer.current);
+      setFlashing(sent.map((tab) => tab.key));
+      flashTimer.current = setTimeout(() => setFlashing([]), FLASH_MS);
+    }
+    return { sent: sent.length, skipped: targets.length - sent.length };
+  };
+
+  // Syncing: what is typed in the active terminal goes to the other connected tabs in scope.
+  const onInput = (source: Tab, data: string) => {
+    const compose = composeRef.current;
+    if (!compose.open || !compose.sync || source.key !== activeKeyRef.current) return;
+    for (const tab of scopeTabs(compose, tabsRef.current, activeKeyRef.current)) {
+      if (tab.key !== source.key && isConnected(tab)) writeSession(tab.sessionId!, data).catch(console.error);
+    }
+  };
+
   const togglePanel = useCallback((panel: SidePanel) => {
     setTabs((tabs) =>
       tabs.map((t) =>
@@ -264,6 +309,12 @@ function App() {
         if (next < tabs.length) setActiveKey(tabs[next].key);
         return;
       }
+      if (e.code === "KeyI" && hasShiftShortcutModifiers(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (tabsRef.current.length > 0) toggleCompose();
+        return;
+      }
       const panel = PANEL_SHORTCUTS[e.code];
       if (!panel || !hasShiftShortcutModifiers(e)) return;
       // Capture phase, so the terminal never sees the keystroke.
@@ -273,7 +324,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [togglePanel, requestClose, openLocalTab]);
+  }, [togglePanel, requestClose, openLocalTab, toggleCompose]);
 
   // From the macOS app menu's "Settings…" item (⌘,).
   useEffect(() => {
@@ -369,7 +420,22 @@ function App() {
             setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, reconnectKey: t.reconnectKey + 1 } : t)))
           }
           onTogglePanel={togglePanel}
+          composeOpen={compose.open}
+          onToggleCompose={toggleCompose}
+          inScope={sendsToMany(compose) ? scopeTabs(compose, tabs, activeKey).map((tab) => tab.key) : []}
+          syncing={compose.open && compose.sync}
+          flashing={flashing}
         />
+        {compose.open && tabs.length > 0 && (
+          <ComposeBar
+            compose={compose}
+            tabs={tabs}
+            followRemoteTitle={settings.tabs.followRemoteTitle}
+            onChange={setCompose}
+            onSend={(text) => sendToScope(asTyped(text, true))}
+            onClose={toggleCompose}
+          />
+        )}
         <div className="terminals">
           {tabs.map((tab) => (
             <SessionPane
@@ -382,6 +448,8 @@ function App() {
               onSession={(sessionId) => updateTab(tab.key, { sessionId })}
               onForward={(ruleId, state) => onForward(tab.key, ruleId, state)}
               onTitle={(title) => updateTab(tab.key, { remoteTitle: title || null })}
+              onInput={(data) => onInput(tab, data)}
+              syncing={compose.open && compose.sync && tab.key === activeKey}
               onProfileChanged={onProfileChanged}
             />
           ))}

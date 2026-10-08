@@ -222,6 +222,9 @@ export async function openSession(
   };
 }
 
+/** Writes to a session as if typed in its terminal (the compose bar, quick commands). */
+export const writeSession = (id: SessionId, data: string) => invoke<void>("session_write", { id, data });
+
 /**
  * The program running in a local terminal other than its shell ("" if its name is unknown),
  * or null. Always null for SSH sessions.

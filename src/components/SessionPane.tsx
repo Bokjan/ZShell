@@ -17,6 +17,10 @@ interface Props {
   onSession(id: SessionId | null): void;
   onForward(ruleId: string, state: ForwardState): void;
   onTitle(title: string): void;
+  /** What the user typed in the terminal (see `TerminalView`). */
+  onInput(data: string): void;
+  /** Input typed here is sent to other tabs too (the compose bar's sync); shown on the pane. */
+  syncing: boolean;
   onProfileChanged(profile: Profile): void;
 }
 
@@ -36,6 +40,8 @@ export function SessionPane({
   onSession,
   onForward,
   onTitle,
+  onInput,
+  syncing,
   onProfileChanged,
 }: Props) {
   const { sessionId } = tab;
@@ -54,7 +60,7 @@ export function SessionPane({
   const page = (panel: SidePanel) => ({ display: tab.sidePanel === panel ? undefined : "none" });
 
   return (
-    <div className={`session-pane${active ? " active" : ""}`} ref={paneRef}>
+    <div className={`session-pane${active ? " active" : ""}${syncing ? " syncing" : ""}`} ref={paneRef}>
       <TerminalView
         target={tab.target}
         shareFrom={tab.shareFrom}
@@ -66,6 +72,7 @@ export function SessionPane({
         onSession={onSession}
         onForward={onForward}
         onTitle={onTitle}
+        onInput={onInput}
       />
       {mounted.length > 0 && (
         <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>
