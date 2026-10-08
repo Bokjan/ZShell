@@ -11,29 +11,16 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use russh::client::{self, Msg};
-use russh::{Channel, ChannelMsg, ChannelStream};
+use russh::{Channel, ChannelMsg, ChannelStream, Disconnect};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 
 use crate::config::Profile;
 use crate::error::Error;
 use crate::forward::{host_port, RemoteRoutes};
-use crate::session::{CloseReason, SessionEvent, SessionId, SessionInput, TermIo};
+use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
 pub use connections::{Connection, Connections, SshHandle};
 use handler::ClientHandler;
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// How a session ended.
-enum Outcome {
-    /// The remote shell exited or closed the channel, with its exit status if reported.
-    Exited(Option<u32>),
-    /// The connection broke after the shell had started.
-    Lost(Error),
-    /// Connecting, authenticating or starting the shell failed.
-    Failed(Error),
-}
 
 /// Session backend: connects, authenticates and bridges a remote shell to the terminal.
 /// `jumps` are the profiles of the jump hosts to connect through, first hop first.
@@ -43,7 +30,7 @@ pub async fn run(profile: Profile, jumps: Vec<Profile>, id: SessionId, mut io: T
         Err(e) => Outcome::Failed(e.into()),
     };
     connections.close(id);
-    finish(outcome, &io);
+    io.finish(outcome);
 }
 
 /// Session backend for a duplicated tab: a new shell on `connection`, which is already
@@ -56,31 +43,64 @@ pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: Term
     };
     drop(connection);
     connections.close(id);
-    finish(outcome, &io);
+    io.finish(outcome);
 }
 
-/// Reports how the session ended, in the terminal and as its `Closed` event.
-fn finish(outcome: Outcome, io: &TermIo) {
-    let (reason, error, status) = match outcome {
-        Outcome::Exited(status) => {
-            let message = match status {
-                Some(status) => t!("terminal.closedWithStatus", status = status),
-                None => t!("terminal.closed"),
-            };
-            io.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
-            (CloseReason::Exited, None, status)
+/// Connections to the jump hosts a session runs through, first hop first. Dropping it
+/// disconnects them, last hop first.
+#[derive(Default)]
+pub struct JumpChain(Vec<Arc<SshHandle>>);
+
+impl JumpChain {
+    /// Whether one of the connections has ended (which ends the tunnel through them).
+    pub fn is_broken(&self) -> bool {
+        self.0.iter().any(|jump| jump.is_closed())
+    }
+}
+
+impl Drop for JumpChain {
+    fn drop(&mut self) {
+        let jumps = std::mem::take(&mut self.0);
+        if jumps.is_empty() {
+            return;
         }
-        Outcome::Lost(e) => {
-            // The shell may have left the cursor mid-line.
-            io.print(&format!("\n\x1b[31m{e}\x1b[0m\n"));
-            (CloseReason::Lost, Some(e), None)
-        }
-        Outcome::Failed(e) => {
-            io.print(&format!("\x1b[31m{e}\x1b[0m\n"));
-            (CloseReason::Failed, Some(e), None)
-        }
-    };
-    io.event(SessionEvent::Closed { reason, error, status });
+        tauri::async_runtime::spawn(async move {
+            for jump in jumps.iter().rev() {
+                let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
+            }
+        });
+    }
+}
+
+/// A byte stream to a target through jump hosts: a `direct-tcpip` channel from the last one.
+pub struct Tunnel {
+    pub stream: ChannelStream<Msg>,
+    /// The name of the jump host the stream comes from.
+    pub via: String,
+    pub jumps: JumpChain,
+}
+
+/// Connects through the jump hosts `jumps` (each authenticating as its own profile, with its
+/// prompts in the terminal) to `host:port`; `None` without jump hosts. Each jump host opens
+/// a direct-tcpip channel to the next hop, which becomes the transport for that hop's SSH
+/// session.
+pub async fn tunnel(jumps: &[Profile], host: &str, port: u16, io: &mut TermIo) -> Result<Option<Tunnel>> {
+    let mut chain = JumpChain::default();
+    let mut transport = None;
+    for (index, hop) in jumps.iter().enumerate() {
+        let (next_host, next_port) = jumps.get(index + 1).map_or((host, port), |next| (next.host.as_str(), next.port));
+        // The agent is only forwarded to the target, where the shell runs.
+        let mut session = connect(hop, false, transport.take(), io, RemoteRoutes::default(), watch::channel(None).0).await?;
+        auth::authenticate(&mut session, hop, io).await?;
+        let target = host_port(next_host, next_port);
+        let channel = session
+            .channel_open_direct_tcpip(next_host.to_owned(), next_port.into(), "127.0.0.1", 0)
+            .await
+            .context(Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target))?;
+        chain.0.push(Arc::new(session));
+        transport = Some((channel.into_stream(), hop.name.clone()));
+    }
+    Ok(transport.map(|(stream, via)| Tunnel { stream, via, jumps: chain }))
 }
 
 /// Connects (through the jump hosts, if any), authenticates and starts the remote shell.
@@ -93,31 +113,16 @@ async fn start(
     io: &mut TermIo,
     connections: &Connections,
 ) -> Result<(Channel<Msg>, watch::Receiver<Option<String>>)> {
-    // Each jump host opens a direct-tcpip channel to the next hop, which becomes the
-    // transport for that hop's SSH session.
-    let mut jump_handles = Vec::with_capacity(jumps.len());
-    let mut transport = None;
-    for (index, hop) in jumps.iter().enumerate() {
-        let next = jumps.get(index + 1).unwrap_or(profile);
-        // The agent is only forwarded to the target, where the shell runs.
-        let mut session = connect(hop, false, transport.take(), io, RemoteRoutes::default(), watch::channel(None).0).await?;
-        auth::authenticate(&mut session, hop, io).await?;
-        let target = host_port(&next.host, next.port);
-        let channel = session
-            .channel_open_direct_tcpip(next.host.clone(), next.port.into(), "127.0.0.1", 0)
-            .await
-            .context(Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target))?;
-        transport = Some((channel.into_stream(), hop.name.clone()));
-        jump_handles.push(Arc::new(session));
-    }
-
+    let (transport, chain) = match tunnel(jumps, &profile.host, profile.port, io).await? {
+        Some(Tunnel { stream, via, jumps }) => (Some((stream, via)), jumps),
+        None => (None, JumpChain::default()),
+    };
     let routes = RemoteRoutes::default();
     let (disconnect_tx, disconnect) = watch::channel(None);
     let mut session = connect(profile, profile.forward_agent, transport, io, routes.clone(), disconnect_tx).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
-    let connection =
-        connections.insert(id, session.clone(), profile.clone(), jump_handles, routes, disconnect.clone(), io.sink());
+    let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io.sink());
     for rule in profile.forwards.iter().filter(|rule| rule.auto_start) {
         connection.forwards().start(rule.clone(), true);
     }
@@ -180,6 +185,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
                     Ok(())
                 }
                 Some(SessionInput::Resize { cols, rows }) => writer.window_change(cols.into(), rows.into(), 0, 0).await,
+                Some(SessionInput::Break) => Ok(()),
                 // The tab is closing.
                 None => return Outcome::Exited(exit_status),
             },
@@ -191,7 +197,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
     // The handler records the reason as the connection task winds down, which can be just
     // after the channel notices; give it a moment.
     let _ = tokio::time::timeout(Duration::from_millis(500), disconnect.wait_for(Option::is_some)).await;
-    let error = Error::new("ssh.connectionLost");
+    let error = Error::new("net.connectionLost");
     let reason = disconnect.borrow().clone();
     Outcome::Lost(match reason {
         Some(reason) => error.detail(reason),
@@ -221,12 +227,7 @@ async fn connect(
     let (user, host, port) = (&hop.username, &hop.host, hop.port);
     let Some((stream, jump)) = via else {
         io.print(&format!("\x1b[2m{}\x1b[0m\n", t!("terminal.connecting", user = user, host = host, port = port)));
-        let target = host_port(host, port);
-        let stream = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host.as_str(), port)))
-            .await
-            .map_err(|_| Error::new("ssh.connectTimeout").param("target", &target))?
-            .context(Error::new("ssh.connectFailed").param("target", &target))?;
-        stream.set_nodelay(true)?;
+        let stream = crate::net::connect(host, port).await?;
         return handshake(hop, forward_agent, stream, io, routes, disconnect).await;
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);

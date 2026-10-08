@@ -22,13 +22,49 @@ export interface ForwardRule {
   autoStart: boolean;
 }
 
+export type Protocol = "ssh" | "telnet" | "serial";
+
+export type Parity = "none" | "odd" | "even";
+export type FlowControl = "none" | "software" | "hardware";
+
+/** A serial line's device and settings. */
+export interface SerialOptions {
+  /** `/dev/cu.*` on macOS, `COM3` on Windows. */
+  device: string;
+  baudRate: number;
+  /** 5 to 8. */
+  dataBits: number;
+  parity: Parity;
+  /** 1 or 2. */
+  stopBits: number;
+  flowControl: FlowControl;
+}
+
+export const DEFAULT_SERIAL: SerialOptions = {
+  device: "",
+  baudRate: 115200,
+  dataBits: 8,
+  parity: "none",
+  stopBits: 1,
+  flowControl: "none",
+};
+
+/** The usual port of each network protocol. */
+export const DEFAULT_PORTS = { ssh: 22, telnet: 23 } as const;
+
 export interface Profile {
   id: string;
   name: string;
+  protocol: Protocol;
+  /** SSH and Telnet. */
   host: string;
   port: number;
+  /** Required for SSH; for Telnet, typed at the login prompt if set. */
   username: string;
+  /** SSH only. */
   auth: AuthMethod;
+  /** Serial sessions; absent when all settings are the defaults (`DEFAULT_SERIAL`, no device). */
+  serial?: SerialOptions;
   /** Ids of the profiles to connect through, first hop first (ProxyJump). */
   jumpHosts: string[];
   /** Seconds between keepalive messages; 0 disables them. */
@@ -117,12 +153,13 @@ export type LogOpen = { mode: "auto" } | { mode: "append"; path: string } | { mo
 export type SessionId = number;
 
 /**
- * What a terminal tab runs: a saved SSH session, a quick connection without one (automatic
- * authentication; an empty username is the local user's), or the default shell here.
+ * What a terminal tab runs: a saved session, a quick SSH or Telnet connection without one
+ * (SSH: automatic authentication, an empty username is the local user's), or the default
+ * shell here.
  */
 export type SessionTarget =
-  | { kind: "ssh"; profileId: string }
-  | { kind: "quick"; username: string; host: string; port: number }
+  | { kind: "profile"; profileId: string }
+  | { kind: "quick"; protocol: "ssh" | "telnet"; username: string; host: string; port: number }
   | { kind: "local" };
 
 /** Error returned by backend commands; `message` is already localized by the backend. */
@@ -205,9 +242,11 @@ export const tree = {
 export interface SessionCandidate {
   id: string;
   name: string;
+  protocol: Protocol;
   host: string;
   port: number;
   username: string;
+  serial: SerialOptions;
   /** Folder names, outermost first. */
   folder: string[];
   jumpHosts: string[];
@@ -263,6 +302,17 @@ export const forwards = {
   stop: (id: SessionId, ruleId: string) => invoke<void>("forward_stop", { id, ruleId }),
 };
 
+/** A serial port on this computer: its name (`/dev/cu.usbserial-1410`, `COM3`) and USB product. */
+export interface SerialPortInfo {
+  name: string;
+  description: string | null;
+}
+
+export const serialPorts = () => invoke<SerialPortInfo[]>("serial_ports");
+
+/** Sends a break: on a serial line, or Telnet's BRK. */
+export const sendBreak = (id: SessionId) => invoke<void>("session_break", { id });
+
 /**
  * Starts a session for `target`. With `shareFrom` (SSH only), the shell runs on that
  * session's connection without connecting again; this fails with `session.notConnected` if
@@ -284,10 +334,10 @@ export async function openSession(
   let id: SessionId;
   if (target.kind === "local") id = await invoke<SessionId>("local_open", args);
   else if (target.kind === "quick") {
-    const { username, host, port } = target;
-    id = await invoke<SessionId>("ssh_quick_open", { username, host, port, ...args });
+    const { protocol, username, host, port } = target;
+    id = await invoke<SessionId>("quick_open", { protocol, username, host, port, ...args });
   } else if (shareFrom !== undefined) id = await invoke<SessionId>("ssh_open_shared", { source: shareFrom, ...args });
-  else id = await invoke<SessionId>("ssh_open", { profileId: target.profileId, ...args });
+  else id = await invoke<SessionId>("profile_open", { profileId: target.profileId, ...args });
   return {
     id,
     write: (data) => invoke("session_write", { id, data }),

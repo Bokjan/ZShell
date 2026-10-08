@@ -8,7 +8,10 @@
     "connectingVia": "Connecting to {user}@{host}:{port} via {jump} ...",
     "processExited": "[Process exited]",
     "processExitedWithCode": "[Process exited with code {code}]",
-    "processSignaled": "[Process terminated by signal: {signal}]"
+    "processSignaled": "[Process terminated by signal: {signal}]",
+    "connectingTo": "Connecting to {host}:{port} ...",
+    "connectingToVia": "Connecting to {host}:{port} via {jump} ...",
+    "serialOpened": "Opened {device} ({settings})."
   },
   "hostKey": {
     "unknown": "The authenticity of host '{host}' can't be established.\n{algorithm} key fingerprint is {fingerprint}.\nAre you sure you want to continue connecting",
@@ -50,22 +53,32 @@
       "openFailed": "Cannot create a pseudo terminal",
       "spawnFailed": "Cannot start the shell {shell}"
     },
+    "net": {
+      "connectTimeout": "Connection to {target} timed out",
+      "connectFailed": "Cannot connect to {target}",
+      "connectionLost": "The connection was lost"
+    },
+    "serial": {
+      "openFailed": "Cannot open {device}",
+      "disconnected": "{device} was disconnected"
+    },
     "profile": {
       "notFound": "Session profile not found",
       "missingFields": "Host, port and username are required",
-      "invalidJumpHost": "A jump host refers to a missing session or to this session itself",
+      "invalidJumpHost": "A jump host refers to a missing session, a session that isn't SSH, or this session itself",
       "usedAsJumpHost": "This session is a jump host for {names}; remove it there first",
       "invalidEncoding": "Unsupported character encoding: {encoding}",
       "invalidTermType": "The terminal type cannot contain spaces or special characters",
-      "invalidEnvName": "Invalid environment variable name: \"{name}\""
+      "invalidEnvName": "Invalid environment variable name: \"{name}\"",
+      "missingHost": "Host and port are required",
+      "missingDevice": "Choose a serial device",
+      "invalidSerialSettings": "Invalid serial settings: data bits must be 5 to 8 and stop bits 1 or 2",
+      "jumpHostNotSsh": "This session is a jump host for {names}, so it must stay an SSH session"
     },
     "ssh": {
-      "connectTimeout": "Connection to {target} timed out",
-      "connectFailed": "Cannot connect to {target}",
       "handshakeFailed": "SSH handshake failed",
       "hostKeyRejected": "Host key not trusted, connection aborted",
       "channelFailed": "Cannot open a session channel",
-      "connectionLost": "The connection was lost",
       "jumpFailed": "Jump host {jump} cannot connect to {target}"
     },
     "auth": {

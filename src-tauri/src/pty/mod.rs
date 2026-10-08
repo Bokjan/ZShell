@@ -148,6 +148,7 @@ impl Pty {
                             let _ = master.resize(pty_size(cols, rows));
                         }
                     }
+                    Some(SessionInput::Break) => {}
                     None => return None,
                 },
             }

@@ -64,6 +64,17 @@ LogLevel VERBOSE
 
 **ssh-agent**：Unix socket 路径有长度限制，临时目录太深时用相对路径启动：在 `$T` 下运行 `ssh-agent -a ./a.sock`，并以 `SSH_AUTH_SOCK=./a.sock` 从同一目录启动应用。
 
+**Telnet**：macOS 没有自带 telnetd，用 `scripts/e2e/telnetd.py` 起一个测试服务器（只用 Python 标准库）：
+
+```bash
+python3 scripts/e2e/telnetd.py 2323 --home $T/work            # NVT 模式，服务器回显
+python3 scripts/e2e/telnetd.py 2324 --binary --no-echo        # 接受 BINARY；不协商回显
+```
+
+它在标准输出里记录选项协商（`DO BINARY`、`NAWS (cols, rows)`、`TTYPE IS …`），登录账号是 `alice` / `secret`，登录后在伪终端里运行 `/bin/sh`；收到 Break 时 shell 打印 `BREAK-RECEIVED`。`--no-echo` 用来测登录提示处的本地回显：登录后 shell 的伪终端自己还会回显，所以输入显示两遍，这是服务器的问题。会话配置里填上用户名可以测自动填入；隔离的 HOME 里没有钥匙串，保存的密码只有单元测试覆盖。经跳板机的 Telnet 用临时 sshd 作跳板；要模拟跳板机断线，结束 sshd 为该连接派生的 `sshd-session` 进程（会被收养到 PID 1，按 `ps` 里的 PID 结束，不要用 `pkill -P`）。服务器进程退出时 TCP 正常关闭，ZShell 视为 `exited`，测不出 `lost`。
+
+**串口**：`scripts/e2e/fakeserial.py $T/vserial --home $T/work` 创建一对伪终端，另一端运行 `/bin/sh`（像开发板的串口控制台），设备路径是指向 `/dev/ttysNNN` 的符号链接；会话的设备填 `$T/vserial`。结束脚本相当于拔出设备，再次运行（同一路径）相当于插回，用来测断线重连。伪终端没有波特率，ZShell 对它们不设速率；真实 USB 串口适配器只能在真机上测。
+
 **模拟从 Finder 启动**（没有 `LANG`、只有最小 PATH），用于测试本地终端的登录 shell 与区域设置：
 
 ```bash
@@ -73,7 +84,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 测试 HOME 中放一个空的 `.zshrc`，否则 zsh 会显示新用户向导。
 
-**ZMODEM**：在临时 sshd 的会话或本地终端里运行 `sz` / `rz`（Homebrew 装在 `/opt/homebrew/bin`）。SSH 会话以真实 HOME 登录，`rz` 收到的文件写在当前目录，先 `cd` 到临时目录。
+**ZMODEM**：在临时 sshd 的会话、测试 telnetd 或伪串口的 shell、本地终端里运行 `sz` / `rz`（Homebrew 装在 `/opt/homebrew/bin`）。SSH 会话以真实 HOME 登录，`rz` 收到的文件写在当前目录，先 `cd` 到临时目录。
 
 **非 UTF-8 文件名**：APFS 不接受非 UTF-8 的文件名，在本机的临时 sshd 上造不出 GBK 文件名，SFTP 与 ZMODEM 的文件名转码只有单元测试覆盖；GBK 会话里新建中文名的文件夹会被服务器拒绝，这恰好说明名字已按 GBK 发出。终端的输出和输入可以用 `printf` 写出 GBK 字节的文件、`head -c 4 | xxd` 查看键入的字节来验证。
 

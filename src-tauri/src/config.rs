@@ -22,16 +22,26 @@ pub struct Profile {
     #[serde(default)]
     pub id: String,
     pub name: String,
+    /// Absent in files from before Telnet and serial sessions, which are all SSH.
+    #[serde(default)]
+    pub protocol: Protocol,
+    /// SSH and Telnet; unused by serial sessions.
     pub host: String,
     pub port: u16,
+    /// Required for SSH; for Telnet, optional and typed at the login prompt.
     pub username: String,
+    /// SSH only. Telnet uses the saved password, if any, at the password prompt.
     pub auth: AuthMethod,
+    /// The device and line settings of a serial session.
+    #[serde(default, skip_serializing_if = "SerialOptions::is_default")]
+    pub serial: SerialOptions,
     /// Profiles to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
-    /// own profile's address and authentication, but not that profile's jump hosts.
+    /// own profile's address and authentication, but not that profile's jump hosts. SSH
+    /// profiles only; SSH and Telnet sessions can use them.
     #[serde(default)]
     pub jump_hosts: Vec<String>,
     /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
-    /// drop the connection.
+    /// drop the connection. Telnet uses TCP keepalives.
     #[serde(default = "default_keepalive_interval")]
     pub keepalive_interval: u32,
     /// Reconnect automatically when an established connection is lost.
@@ -70,6 +80,79 @@ pub struct Profile {
     /// Terminal appearance for this session; unset values follow the settings.
     #[serde(default, skip_serializing_if = "ProfileAppearance::is_empty")]
     pub appearance: ProfileAppearance,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Protocol {
+    #[default]
+    Ssh,
+    Telnet,
+    Serial,
+}
+
+/// A serial line's settings: 115200 8N1 without flow control unless set otherwise.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SerialOptions {
+    /// `/dev/cu.*` on macOS, `COM3` on Windows.
+    pub device: String,
+    pub baud_rate: u32,
+    /// 5 to 8.
+    pub data_bits: u8,
+    pub parity: Parity,
+    /// 1 or 2.
+    pub stop_bits: u8,
+    pub flow_control: FlowControl,
+}
+
+impl Default for SerialOptions {
+    fn default() -> Self {
+        Self {
+            device: String::new(),
+            baud_rate: 115_200,
+            data_bits: 8,
+            parity: Parity::None,
+            stop_bits: 1,
+            flow_control: FlowControl::None,
+        }
+    }
+}
+
+impl SerialOptions {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// The line settings in the usual short form, `115200 8N1`.
+    pub fn summary(&self) -> String {
+        let parity = match self.parity {
+            Parity::None => 'N',
+            Parity::Odd => 'O',
+            Parity::Even => 'E',
+        };
+        format!("{} {}{}{}", self.baud_rate, self.data_bits, parity, self.stop_bits)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Parity {
+    #[default]
+    None,
+    Odd,
+    Even,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FlowControl {
+    #[default]
+    None,
+    /// XON / XOFF.
+    Software,
+    /// RTS / CTS.
+    Hardware,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -120,10 +203,12 @@ impl Profile {
         Self {
             id: String::new(),
             name,
+            protocol: Protocol::Ssh,
             host,
             port,
             username,
             auth: AuthMethod::Auto,
+            serial: SerialOptions::default(),
             jump_hosts: Vec::new(),
             keepalive_interval: default_keepalive_interval(),
             auto_reconnect: true,
@@ -138,6 +223,51 @@ impl Profile {
             login_commands: Vec::new(),
             appearance: ProfileAppearance::default(),
         }
+    }
+
+    /// Whether `other` connects to the same place: the same user, host and port (and
+    /// protocol), or the same serial device.
+    pub fn same_target(&self, other: &Profile) -> bool {
+        self.protocol == other.protocol
+            && match self.protocol {
+                Protocol::Serial => self.serial.device == other.serial.device,
+                _ => self.host == other.host && self.port == other.port && self.username == other.username,
+            }
+    }
+
+    /// Checks and tidies the address, by protocol, and names an unnamed profile after it.
+    fn normalize_target(&mut self) -> Result<()> {
+        self.name = self.name.trim().to_owned();
+        self.host = self.host.trim().to_owned();
+        self.username = self.username.trim().to_owned();
+        self.serial.device = self.serial.device.trim().to_owned();
+        match self.protocol {
+            Protocol::Ssh if self.host.is_empty() || self.username.is_empty() || self.port == 0 => {
+                return Err(Error::new("profile.missingFields"))
+            }
+            Protocol::Telnet if self.host.is_empty() || self.port == 0 => return Err(Error::new("profile.missingHost")),
+            Protocol::Serial => {
+                let serial = &self.serial;
+                if serial.device.is_empty() {
+                    return Err(Error::new("profile.missingDevice"));
+                }
+                if serial.baud_rate == 0 || !(5..=8).contains(&serial.data_bits) || !(1..=2).contains(&serial.stop_bits) {
+                    return Err(Error::new("profile.invalidSerialSettings"));
+                }
+                // Jump hosts don't apply; keeping them would also keep those sessions from
+                // being deleted.
+                self.jump_hosts.clear();
+            }
+            _ => {}
+        }
+        if self.name.is_empty() {
+            self.name = match self.protocol {
+                Protocol::Ssh => format!("{}@{}", self.username, self.host),
+                Protocol::Telnet => self.host.clone(),
+                Protocol::Serial => self.serial.device.trim_start_matches("/dev/").to_owned(),
+            };
+        }
+        Ok(())
     }
 
     /// Checks and tidies what the user edits beyond the address (encoding, terminal type,
@@ -298,23 +428,21 @@ impl ProfileStore {
     /// Inserts or updates a profile and returns it with its id filled in. A new profile goes
     /// into `profile.folder`; an existing one stays where it is.
     pub fn save(&self, mut profile: Profile) -> Result<Profile> {
-        profile.name = profile.name.trim().to_owned();
-        profile.host = profile.host.trim().to_owned();
-        profile.username = profile.username.trim().to_owned();
-        if profile.host.is_empty() || profile.username.is_empty() || profile.port == 0 {
-            return Err(Error::new("profile.missingFields"));
-        }
-        if profile.name.is_empty() {
-            profile.name = format!("{}@{}", profile.username, profile.host);
-        }
+        profile.normalize_target()?;
         profile.normalize_session_options()?;
 
         self.update(|state| {
             let mut seen = std::collections::HashSet::new();
             for jump in &profile.jump_hosts {
-                let known = state.profiles.iter().any(|p| p.id == *jump);
-                if !known || *jump == profile.id || !seen.insert(jump) {
+                let ssh = state.profiles.iter().any(|p| p.id == *jump && p.protocol == Protocol::Ssh);
+                if !ssh || *jump == profile.id || !seen.insert(jump) {
                     return Err(Error::new("profile.invalidJumpHost"));
+                }
+            }
+            if profile.protocol != Protocol::Ssh && !profile.id.is_empty() {
+                let users = jump_host_users(state, &profile.id);
+                if !users.is_empty() {
+                    return Err(Error::new("profile.jumpHostNotSsh").param("names", users.join(", ")));
                 }
             }
             let folder_exists = profile.folder.as_ref().is_some_and(|f| state.folder_exists(f));
@@ -385,8 +513,7 @@ impl ProfileStore {
 
     pub fn delete(&self, id: &str) -> Result<()> {
         self.update(|state| {
-            let users: Vec<&str> =
-                state.profiles.iter().filter(|p| p.jump_hosts.iter().any(|j| j == id)).map(|p| p.name.as_str()).collect();
+            let users = jump_host_users(state, id);
             if !users.is_empty() {
                 return Err(Error::new("profile.usedAsJumpHost").param("names", users.join(", ")));
             }
@@ -482,6 +609,11 @@ impl ProfileStore {
     }
 }
 
+/// The names of the profiles that use profile `id` as a jump host.
+fn jump_host_users<'a>(state: &'a State, id: &str) -> Vec<&'a str> {
+    state.profiles.iter().filter(|p| p.jump_hosts.iter().any(|j| j == id)).map(|p| p.name.as_str()).collect()
+}
+
 /// A JSON file's contents, or the default if it doesn't exist yet.
 fn read_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> Result<T> {
     match fs::read(path) {
@@ -574,6 +706,52 @@ mod tests {
         let store = ProfileStore::load(dir.join("profiles.json")).unwrap();
         assert_eq!(store.list()[0].folder, None);
         assert!(store.folders().iter().any(|f| f.parent.is_none()));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reads_profiles_from_before_protocols() {
+        let json = r#"[{"id":"p","name":"web","host":"web.example.com","port":22,"username":"alice","auth":{"type":"auto"}}]"#;
+        let profiles: Vec<Profile> = serde_json::from_str(json).unwrap();
+        assert_eq!(profiles[0].protocol, Protocol::Ssh);
+        assert_eq!(profiles[0].serial, SerialOptions::default());
+        // Default serial settings are not written for every profile.
+        let written = serde_json::to_string(&profiles).unwrap();
+        assert!(written.contains(r#""protocol":"ssh""#) && !written.contains("serial"));
+    }
+
+    #[test]
+    fn checks_each_protocol_s_fields() {
+        let (store, dir) = store("protocols");
+        let telnet = |host: &str| Profile { protocol: Protocol::Telnet, ..Profile::new(String::new(), host.into(), 23, String::new()) };
+        let switch = store.save(telnet("switch.lan")).unwrap();
+        assert_eq!(switch.name, "switch.lan");
+        assert_eq!(store.save(telnet("")).unwrap_err().code(), "profile.missingHost");
+
+        let serial = |device: &str| Profile {
+            protocol: Protocol::Serial,
+            serial: SerialOptions { device: device.into(), ..SerialOptions::default() },
+            ..Profile::new(String::new(), String::new(), 22, String::new())
+        };
+        let console = store.save(serial(" /dev/cu.usbserial-1410 ")).unwrap();
+        assert_eq!((console.name.as_str(), console.serial.device.as_str()), ("cu.usbserial-1410", "/dev/cu.usbserial-1410"));
+        assert_eq!(console.serial.summary(), "115200 8N1");
+        assert_eq!(store.save(serial("")).unwrap_err().code(), "profile.missingDevice");
+        let odd = Profile { serial: SerialOptions { data_bits: 9, ..console.serial.clone() }, ..console.clone() };
+        assert_eq!(store.save(odd).unwrap_err().code(), "profile.invalidSerialSettings");
+
+        // Only SSH sessions can be jump hosts, and a jump host stays SSH.
+        let bastion = store.save(new_profile("bastion", None)).unwrap();
+        let via_switch = Profile { jump_hosts: vec![switch.id.clone()], ..telnet("router.lan") };
+        assert_eq!(store.save(via_switch).unwrap_err().code(), "profile.invalidJumpHost");
+        let router = store.save(Profile { jump_hosts: vec![bastion.id.clone()], ..telnet("router.lan") }).unwrap();
+        let bastion_telnet = Profile { protocol: Protocol::Telnet, ..bastion.clone() };
+        assert_eq!(store.save(bastion_telnet).unwrap_err().code(), "profile.jumpHostNotSsh");
+        // Serial sessions drop jump hosts.
+        let serial_router = store.save(Profile { protocol: Protocol::Serial, ..serial("COM3") }).unwrap();
+        assert!(serial_router.jump_hosts.is_empty());
+        assert!(router.same_target(&Profile { name: "other".into(), ..router.clone() }));
+        assert!(!router.same_target(&Profile { protocol: Protocol::Ssh, ..router.clone() }));
         fs::remove_dir_all(&dir).unwrap();
     }
 }

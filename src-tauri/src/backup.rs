@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{write_json_atomic, Folder, Profile};
+use crate::config::{write_json_atomic, Folder, Profile, Protocol, SerialOptions};
 use crate::error::{Error, Result};
 
 const FORMAT: &str = "zshell-sessions";
@@ -30,9 +30,11 @@ struct SessionsFile {
 pub struct Candidate {
     pub id: String,
     pub name: String,
+    pub protocol: Protocol,
     pub host: String,
     pub port: u16,
     pub username: String,
+    pub serial: SerialOptions,
     /// The names of the folders it is in, outermost first.
     pub folder: Vec<String>,
     /// The names of its jump hosts.
@@ -56,9 +58,11 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Vec<Candidate>> {
         .map(|p| Candidate {
             id: p.id.clone(),
             name: p.name.clone(),
+            protocol: p.protocol,
             host: p.host.clone(),
             port: p.port,
             username: p.username.clone(),
+            serial: p.serial.clone(),
             folder: folder_path(&file.folders, p.folder.as_deref()),
             jump_hosts: p.jump_hosts.iter().filter_map(|j| names.get(j.as_str()).map(|n| n.to_string())).collect(),
             existing: duplicate_of(p, existing).map(|e| e.name.clone()),
@@ -119,11 +123,10 @@ fn read(path: &Path) -> Result<SessionsFile> {
     Ok(file)
 }
 
-/// An existing session with the same name, else one with the same user, host and port.
+/// An existing session with the same name, else one that connects to the same place (see
+/// [`Profile::same_target`]).
 fn duplicate_of<'a>(profile: &Profile, existing: &'a [Profile]) -> Option<&'a Profile> {
-    existing.iter().find(|e| e.name == profile.name).or_else(|| {
-        existing.iter().find(|e| e.host == profile.host && e.port == profile.port && e.username == profile.username)
-    })
+    existing.iter().find(|e| e.name == profile.name).or_else(|| existing.iter().find(|e| e.same_target(profile)))
 }
 
 /// The names of `folder` and the folders around it, outermost first.

@@ -1786,6 +1786,16 @@ body.resizing .terminal-view {
 .dialog .port {
   width: 80px;
 }
+/* A text input with a small button after it (the serial device and "refresh"). */
+.dialog .input-with-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dialog .input-with-button input {
+  flex: 1;
+  min-width: 0;
+}
 .dialog .hint {
   margin: -4px 0 0;
   font-size: 12px;

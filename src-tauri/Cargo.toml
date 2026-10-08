@@ -37,6 +37,11 @@ tauri-plugin-clipboard-manager = "2"
 vte = "0.15"
 chrono = "0.4"
 encoding_rs = "0.8"
+serialport = { version = "4.10", default-features = false }
+socket2 = { version = "0.6", features = ["all"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.2", features = ["test-util"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

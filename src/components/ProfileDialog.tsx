@@ -3,24 +3,32 @@ import { useTranslation } from "react-i18next";
 
 import {
   DEFAULT_GROUP,
+  DEFAULT_PORTS,
+  DEFAULT_SERIAL,
   DEFAULT_TERM_TYPE,
   ENCODINGS,
   deleteProfile,
   errorMessage,
   saveProfile,
+  serialPorts,
   type AuthMethod,
   type CommandGroup,
   type EnvVar,
+  type FlowControl,
+  type Parity,
   type Profile,
   type ProfileAppearance,
+  type Protocol,
+  type SerialPortInfo,
 } from "../lib/api";
+import { isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 
 /** Values to start a new profile with: from a quick connection, or the folder it goes in. */
-export type ProfileDefaults = Partial<Pick<Profile, "host" | "port" | "username" | "folder">>;
+export type ProfileDefaults = Partial<Pick<Profile, "protocol" | "host" | "port" | "username" | "folder">>;
 
 interface Props {
   /** null creates a new profile. */
@@ -40,6 +48,13 @@ type AuthType = AuthMethod["type"];
 
 const PAGES = ["general", "connection", "terminal", "appearance"] as const;
 type Page = (typeof PAGES)[number];
+
+const PROTOCOLS: Protocol[] = ["ssh", "telnet", "serial"];
+
+/** Suggestions for the baud rate; any value can be typed. */
+const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
+const PARITIES: Parity[] = ["none", "odd", "even"];
+const FLOW_CONTROLS: FlowControl[] = ["none", "software", "hardware"];
 
 /** Suggestions for the terminal type; any value can be typed. */
 const TERM_TYPES = [DEFAULT_TERM_TYPE, "xterm", "vt100", "vt220", "linux"];
@@ -67,6 +82,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
   const { settings, theme } = useSettings();
   const [page, setPage] = useState<Page>("general");
   const [name, setName] = useState(profile?.name ?? "");
+  const [protocol, setProtocol] = useState<Protocol>(profile?.protocol ?? defaults?.protocol ?? "ssh");
   const [host, setHost] = useState(profile?.host ?? defaults?.host ?? "");
   const [port, setPort] = useState(String(profile?.port ?? defaults?.port ?? 22));
   const [username, setUsername] = useState(profile?.username ?? defaults?.username ?? "");
@@ -93,14 +109,38 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
   const [background, setBackground] = useState(own?.background ?? DEFAULT_BACKGROUND);
   const [fontFamily, setFontFamily] = useState(own?.fontFamily ?? "");
   const [fontSize, setFontSize] = useState(own?.fontSize ? String(own.fontSize) : "");
+  const serial = profile?.serial ?? DEFAULT_SERIAL;
+  const [device, setDevice] = useState(serial.device);
+  const [baudRate, setBaudRate] = useState(String(serial.baudRate));
+  const [dataBits, setDataBits] = useState(serial.dataBits);
+  const [parity, setParity] = useState(serial.parity);
+  const [stopBits, setStopBits] = useState(serial.stopBits);
+  const [flowControl, setFlowControl] = useState(serial.flowControl);
+  // The serial ports found here, listed once the serial protocol is chosen.
+  const [ports, setPorts] = useState<SerialPortInfo[] | null>(null);
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Automatic authentication falls back to a password, so it can keep a stored one too.
-  const usesPassword = authType === "password" || authType === "auto";
+  const ssh = protocol === "ssh";
+  // Automatic authentication falls back to a password, so it can keep a stored one too;
+  // Telnet types it at the password prompt.
+  const usesPassword = protocol === "telnet" || (ssh && (authType === "password" || authType === "auto"));
   const profileName = (id: string) => profiles.find((p) => p.id === id)?.name ?? id;
-  const jumpCandidates = profiles.filter((p) => p.id !== profile?.id && !jumpHosts.includes(p.id));
+  // Only SSH sessions can be jump hosts.
+  const jumpCandidates = profiles.filter((p) => p.id !== profile?.id && p.protocol === "ssh" && !jumpHosts.includes(p.id));
+
+  const refreshPorts = () => void serialPorts().then(setPorts, () => setPorts([]));
+  useEffect(() => {
+    if (protocol === "serial" && ports === null) refreshPorts();
+  }, [protocol, ports]);
+
+  // The port follows the protocol unless it was changed from a usual one.
+  const changeProtocol = (next: Protocol) => {
+    const usual = Object.values(DEFAULT_PORTS).map(String);
+    if (next !== "serial" && usual.includes(port)) setPort(String(DEFAULT_PORTS[next]));
+    setProtocol(next);
+  };
 
   const appearance: ProfileAppearance = {
     colorScheme: colorScheme || undefined,
@@ -131,23 +171,38 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    // Checked here rather than with `required`: the field may be on another page.
-    if (!host.trim() || !username.trim() || (authType === "publicKey" && !keyPath.trim())) {
+    // Checked here rather than with `required`: the field may be on another page. Fields
+    // of other protocols keep their values without being checked.
+    if (ssh && (!host.trim() || !username.trim() || (authType === "publicKey" && !keyPath.trim()))) {
       invalid("general", t("profile.missingFields"));
       return;
     }
-    const portNumber = Number(port);
+    if (protocol === "telnet" && !host.trim()) {
+      invalid("general", t("profile.missingHost"));
+      return;
+    }
+    if (protocol === "serial" && !device.trim()) {
+      invalid("general", t("profile.missingDevice"));
+      return;
+    }
+    const portNumber = protocol === "serial" ? (profile?.port ?? 22) : Number(port);
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
       invalid("general", t("profile.invalidPort"));
       return;
     }
+    const baud = Number(baudRate);
+    if (protocol === "serial" && (!Number.isInteger(baud) || baud < 1)) {
+      invalid("general", t("profile.invalidBaudRate"));
+      return;
+    }
     const keepaliveInterval = Number(keepalive);
-    if (keepalive.trim() === "" || !Number.isInteger(keepaliveInterval) || keepaliveInterval < 0 || keepaliveInterval > 3600) {
+    const keepaliveValid = keepalive.trim() !== "" && Number.isInteger(keepaliveInterval) && keepaliveInterval >= 0 && keepaliveInterval <= 3600;
+    if (protocol !== "serial" && !keepaliveValid) {
       invalid("connection", t("profile.invalidKeepalive"));
       return;
     }
     const envVars = parseEnv(env);
-    if (!Array.isArray(envVars)) {
+    if (ssh && !Array.isArray(envVars)) {
       invalid("terminal", t("profile.invalidEnvLine", { line: envVars.invalid }));
       return;
     }
@@ -170,17 +225,26 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
         {
           id: profile?.id ?? "",
           name,
+          protocol,
           host,
           port: portNumber,
           username,
           auth,
+          serial: {
+            device,
+            baudRate: Number.isInteger(baud) && baud > 0 ? baud : DEFAULT_SERIAL.baudRate,
+            dataBits,
+            parity,
+            stopBits,
+            flowControl,
+          },
           jumpHosts,
-          keepaliveInterval,
+          keepaliveInterval: keepaliveValid ? keepaliveInterval : (profile?.keepaliveInterval ?? 30),
           autoReconnect,
           forwardAgent,
           encoding,
           termType,
-          env: envVars,
+          env: Array.isArray(envVars) ? envVars : (profile?.env ?? []),
           loginCommands: loginCommands.split("\n"),
           appearance,
           autoLog,
@@ -217,40 +281,73 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
     }
   };
 
-  const general = (
-    <>
-      <label>
-        {t("profile.name")}
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("profile.namePlaceholder")} />
-      </label>
-      <div className="row">
-        <label className="grow">
-          {t("profile.host")}
-          <input
-            value={host}
-            onChange={(e) => setHost(e.target.value)}
-            placeholder="example.com"
-            autoFocus
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-        </label>
-        <label className="port">
-          {t("profile.port")}
-          <input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
-        </label>
-      </div>
-      <label>
-        {t("profile.username")}
+  const namePlaceholder = { ssh: "profile.namePlaceholder", telnet: "profile.namePlaceholderTelnet", serial: "profile.namePlaceholderSerial" } as const;
+
+  const address = (
+    <div className="row">
+      <label className="grow">
+        {t("profile.host")}
         <input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          value={host}
+          onChange={(e) => setHost(e.target.value)}
+          placeholder="example.com"
+          autoFocus
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
         />
       </label>
+      <label className="port">
+        {t("profile.port")}
+        <input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
+      </label>
+    </div>
+  );
+
+  const usernameField = (
+    <label>
+      {t("profile.username")}
+      <input
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        placeholder={ssh ? undefined : t("profile.optional")}
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+    </label>
+  );
+
+  const passwordField = (
+    <>
+      <label>
+        {t("profile.password")}
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={clearPassword}
+          placeholder={
+            profile ? t("profile.passwordKeepPlaceholder") : ssh ? t("profile.passwordAskPlaceholder") : t("profile.optional")
+          }
+        />
+      </label>
+      <p className="hint">
+        {!ssh ? t("profile.telnetLoginHint") : authType === "auto" ? t("profile.passwordAutoHint") : t("profile.passwordHint")}
+      </p>
+      {profile && (
+        <label className="checkbox">
+          <input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} />
+          {t("profile.clearPassword")}
+        </label>
+      )}
+    </>
+  );
+
+  const sshFields = (
+    <>
+      {address}
+      {usernameField}
       <label>
         {t("profile.auth")}
         <select value={authType} onChange={(e) => setAuthType(e.target.value as AuthType)}>
@@ -262,27 +359,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
       </label>
 
       {authType === "auto" && <p className="hint">{t("profile.autoHint")}</p>}
-      {usesPassword && (
-        <>
-          <label>
-            {t("profile.password")}
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={clearPassword}
-              placeholder={profile ? t("profile.passwordKeepPlaceholder") : t("profile.passwordAskPlaceholder")}
-            />
-          </label>
-          <p className="hint">{authType === "auto" ? t("profile.passwordAutoHint") : t("profile.passwordHint")}</p>
-          {profile && (
-            <label className="checkbox">
-              <input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} />
-              {t("profile.clearPassword")}
-            </label>
-          )}
-        </>
-      )}
+      {usesPassword && passwordField}
       {authType === "publicKey" && (
         <>
           <label>
@@ -296,73 +373,196 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
     </>
   );
 
-  const connection = (
+  const telnetFields = (
     <>
-      <div className="field">
-        <span>{t("profile.jumpHosts")}</span>
-        {jumpHosts.length > 0 && (
-          <ol className="jump-list">
-            {jumpHosts.map((id, index) => (
-              <li key={id}>
-                <span className="jump-name">{profileName(id)}</span>
-                <button
-                  type="button"
-                  className="icon-button"
-                  title={t("profile.moveUp")}
-                  disabled={index === 0}
-                  onClick={() => moveJumpHost(index, -1)}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  title={t("profile.moveDown")}
-                  disabled={index === jumpHosts.length - 1}
-                  onClick={() => moveJumpHost(index, 1)}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  title={t("profile.removeJumpHost")}
-                  onClick={() => setJumpHosts((hosts) => hosts.filter((h) => h !== id))}
-                >
-                  ×
-                </button>
-              </li>
+      {address}
+      {usernameField}
+      {passwordField}
+    </>
+  );
+
+  const serialFields = (
+    <>
+      <label>
+        {t("profile.device")}
+        <div className="input-with-button">
+          <input
+            value={device}
+            onChange={(e) => setDevice(e.target.value)}
+            list="profile-serial-ports"
+            placeholder={isWindows ? "COM3" : "/dev/cu.usbserial-1410"}
+            autoFocus
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+          <button type="button" className="icon-button" title={t("profile.refreshDevices")} onClick={refreshPorts}>
+            ⟳
+          </button>
+        </div>
+        <datalist id="profile-serial-ports">
+          {ports?.map((port) => (
+            <option key={port.name} value={port.name}>
+              {port.description ?? undefined}
+            </option>
+          ))}
+        </datalist>
+      </label>
+      {ports?.length === 0 && <p className="hint">{t("profile.noDevices")}</p>}
+      <div className="row">
+        <label className="grow">
+          {t("profile.baudRate")}
+          <input value={baudRate} onChange={(e) => setBaudRate(e.target.value)} list="profile-baud-rates" inputMode="numeric" />
+          <datalist id="profile-baud-rates">
+            {BAUD_RATES.map((rate) => (
+              <option key={rate} value={rate} />
             ))}
-          </ol>
-        )}
-        <select
-          value=""
-          disabled={jumpCandidates.length === 0}
-          onChange={(e) => e.target.value && setJumpHosts((hosts) => [...hosts, e.target.value])}
-        >
-          <option value="">{t("profile.addJumpHost")}</option>
-          {jumpCandidates.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
+          </datalist>
+        </label>
+        <label className="grow">
+          {t("profile.dataBits")}
+          <select value={dataBits} onChange={(e) => setDataBits(Number(e.target.value))}>
+            {[8, 7, 6, 5].map((bits) => (
+              <option key={bits} value={bits}>
+                {bits}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="row">
+        <label className="grow">
+          {t("profile.parity")}
+          <select value={parity} onChange={(e) => setParity(e.target.value as Parity)}>
+            {PARITIES.map((value) => (
+              <option key={value} value={value}>
+                {t(`profile.parities.${value}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grow">
+          {t("profile.stopBits")}
+          <select value={stopBits} onChange={(e) => setStopBits(Number(e.target.value))}>
+            {[1, 2].map((bits) => (
+              <option key={bits} value={bits}>
+                {bits}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label>
+        {t("profile.flowControl")}
+        <select value={flowControl} onChange={(e) => setFlowControl(e.target.value as FlowControl)}>
+          {FLOW_CONTROLS.map((value) => (
+            <option key={value} value={value}>
+              {t(`profile.flowControls.${value}`)}
             </option>
           ))}
         </select>
-      </div>
-      <p className="hint">{t("profile.jumpHostsHint")}</p>
-      <label>
-        {t("profile.keepalive")}
-        <input value={keepalive} onChange={(e) => setKeepalive(e.target.value)} inputMode="numeric" />
       </label>
-      <p className="hint">{t("profile.keepaliveHint")}</p>
+      <p className="hint">{t("profile.serialHint")}</p>
+    </>
+  );
+
+  const general = (
+    <>
+      <div className="row">
+        <label className="grow">
+          {t("profile.name")}
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t(namePlaceholder[protocol])} />
+        </label>
+        <label>
+          {t("profile.protocol")}
+          <select value={protocol} onChange={(e) => changeProtocol(e.target.value as Protocol)}>
+            {PROTOCOLS.map((value) => (
+              <option key={value} value={value}>
+                {t(`profile.protocols.${value}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {protocol === "ssh" ? sshFields : protocol === "telnet" ? telnetFields : serialFields}
+    </>
+  );
+
+  const connection = (
+    <>
+      {protocol !== "serial" && (
+        <>
+          <div className="field">
+            <span>{t("profile.jumpHosts")}</span>
+            {jumpHosts.length > 0 && (
+              <ol className="jump-list">
+                {jumpHosts.map((id, index) => (
+                  <li key={id}>
+                    <span className="jump-name">{profileName(id)}</span>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title={t("profile.moveUp")}
+                      disabled={index === 0}
+                      onClick={() => moveJumpHost(index, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title={t("profile.moveDown")}
+                      disabled={index === jumpHosts.length - 1}
+                      onClick={() => moveJumpHost(index, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title={t("profile.removeJumpHost")}
+                      onClick={() => setJumpHosts((hosts) => hosts.filter((h) => h !== id))}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+            <select
+              value=""
+              disabled={jumpCandidates.length === 0}
+              onChange={(e) => e.target.value && setJumpHosts((hosts) => [...hosts, e.target.value])}
+            >
+              <option value="">{t("profile.addJumpHost")}</option>
+              {jumpCandidates.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="hint">{t(ssh ? "profile.jumpHostsHint" : "profile.jumpHostsHintTelnet")}</p>
+          <label>
+            {t("profile.keepalive")}
+            <input value={keepalive} onChange={(e) => setKeepalive(e.target.value)} inputMode="numeric" />
+          </label>
+          <p className="hint">{t(ssh ? "profile.keepaliveHint" : "profile.keepaliveHintTelnet")}</p>
+        </>
+      )}
       <label className="checkbox">
         <input type="checkbox" checked={autoReconnect} onChange={(e) => setAutoReconnect(e.target.checked)} />
-        {t("profile.autoReconnect")}
+        {t(protocol === "serial" ? "profile.autoReconnectSerial" : "profile.autoReconnect")}
       </label>
-      <label className="checkbox">
-        <input type="checkbox" checked={forwardAgent} onChange={(e) => setForwardAgent(e.target.checked)} />
-        {t("profile.forwardAgent")}
-      </label>
-      <p className="hint">{t("profile.forwardAgentHint")}</p>
+      {ssh && (
+        <>
+          <label className="checkbox">
+            <input type="checkbox" checked={forwardAgent} onChange={(e) => setForwardAgent(e.target.checked)} />
+            {t("profile.forwardAgent")}
+          </label>
+          <p className="hint">{t("profile.forwardAgentHint")}</p>
+        </>
+      )}
     </>
   );
 
@@ -379,23 +579,25 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
             ))}
           </select>
         </label>
-        <label className="grow">
-          {t("profile.termType")}
-          <input
-            value={termType}
-            onChange={(e) => setTermType(e.target.value)}
-            list="profile-term-types"
-            placeholder={DEFAULT_TERM_TYPE}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <datalist id="profile-term-types">
-            {TERM_TYPES.map((type) => (
-              <option key={type} value={type} />
-            ))}
-          </datalist>
-        </label>
+        {protocol !== "serial" && (
+          <label className="grow">
+            {t("profile.termType")}
+            <input
+              value={termType}
+              onChange={(e) => setTermType(e.target.value)}
+              list="profile-term-types"
+              placeholder={DEFAULT_TERM_TYPE}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <datalist id="profile-term-types">
+              {TERM_TYPES.map((type) => (
+                <option key={type} value={type} />
+              ))}
+            </datalist>
+          </label>
+        )}
       </div>
       <p className="hint">{t("profile.encodingHint")}</p>
       <label>
@@ -412,20 +614,24 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
         />
       </label>
       <p className="hint">{t("profile.loginCommandsHint")}</p>
-      <label>
-        {t("profile.env")}
-        <textarea
-          className="command-text"
-          rows={2}
-          value={env}
-          onChange={(e) => setEnv(e.target.value)}
-          placeholder={t("profile.envPlaceholder")}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-        />
-      </label>
-      <p className="hint">{t("profile.envHint")}</p>
+      {ssh && (
+        <>
+          <label>
+            {t("profile.env")}
+            <textarea
+              className="command-text"
+              rows={2}
+              value={env}
+              onChange={(e) => setEnv(e.target.value)}
+              placeholder={t("profile.envPlaceholder")}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+            />
+          </label>
+          <p className="hint">{t("profile.envHint")}</p>
+        </>
+      )}
       <label className="checkbox">
         <input type="checkbox" checked={autoLog} onChange={(e) => setAutoLog(e.target.checked)} />
         {t("profile.autoLog")}

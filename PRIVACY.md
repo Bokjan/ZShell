@@ -1,19 +1,19 @@
 # Privacy Policy
 
-Last updated: 2026-10-08
+Last updated: 2026-10-09
 
-ZShell is an SSH client that runs entirely on your computer. It does not collect, transmit or share any personal data: there is no telemetry, analytics, crash reporting, advertising, user account or update check, and the developer receives nothing from your use of the app.
+ZShell is an SSH, Telnet and serial terminal that runs entirely on your computer. It does not collect, transmit or share any personal data: there is no telemetry, analytics, crash reporting, advertising, user account or update check, and the developer receives nothing from your use of the app.
 
 ## Network connections
 
-ZShell connects only to the servers you tell it to: the SSH hosts you open, the jump hosts they go through, and the destinations of your port forwarding rules. Port forwarding rules you set up also listen on the local ports you choose. Links you click in the terminal open in your default browser.
+ZShell connects only to the servers you tell it to: the SSH and Telnet hosts you open, the jump hosts they go through, and the destinations of your port forwarding rules. Serial sessions open only the serial device you choose, and the list of serial ports is read from the system when you pick one. Port forwarding rules you set up also listen on the local ports you choose. Links you click in the terminal open in your default browser.
 
 ## Data stored on your computer
 
 Everything ZShell saves stays on your computer:
 
-- **Sessions, settings, quick commands and log settings** are saved as JSON files in the app's configuration folder: `~/Library/Application Support/org.boyin.zshell` on macOS, and `%APPDATA%\org.boyin.zshell` on Windows. Sessions include host names, user names, ports, paths to private keys, port forwarding rules and the other options you set.
-- **Saved passwords** are kept only in the system's credential store (the macOS Keychain or the Windows Credential Manager, under `org.boyin.zshell`), never in a file. Passphrases for private keys are not saved.
+- **Sessions, settings, quick commands and log settings** are saved as JSON files in the app's configuration folder: `~/Library/Application Support/org.boyin.zshell` on macOS, and `%APPDATA%\org.boyin.zshell` on Windows. Sessions include host names, user names, ports, serial device names and settings, paths to private keys, port forwarding rules and the other options you set.
+- **Saved passwords** (for SSH, and for typing at a Telnet server's password prompt) are kept only in the system's credential store (the macOS Keychain or the Windows Credential Manager, under `org.boyin.zshell`), never in a file. Passphrases for private keys are not saved.
 - **Host keys** of the servers you accept are added to `~/.ssh/known_hosts`, the file OpenSSH uses. ZShell also reads `~/.ssh/config` when you import from it, and the private keys you choose for authentication.
 - **Session logs** are recorded only when you turn them on, in the folder shown in the settings (`Documents/ZShellLogs` by default).
 - **Exported sessions** are written to the file you choose, and never include passwords.

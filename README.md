@@ -2,28 +2,30 @@
 
 # ZShell
 
-A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tauri 2, Rust and xterm.js.
+A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by Xshell, built with Tauri 2, Rust and xterm.js.
 
 ## Features
 
 - **SSH sessions**: password, private key, SSH agent and keyboard-interactive (two-factor) authentication, plus an automatic mode that tries them in OpenSSH's order. Host keys are checked against `~/.ssh/known_hosts`, and saved passwords are kept in the system keychain.
 - **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, so you authenticate once. Duplicating a tab opens another shell on the same connection.
-- **Jump hosts**: connect through one or more other sessions, like OpenSSH's `ProxyJump`.
+- **Jump hosts**: connect through one or more other sessions, like OpenSSH's `ProxyJump`, for SSH and Telnet alike.
+- **Telnet**: for network devices and older systems, with the terminal type and window size reported to the server, an optional saved user name and password typed at the login prompts, and a break from the tab's menu.
+- **Serial consoles**: open a serial port (`/dev/cu.*` on macOS, `COM` ports on Windows) with the baud rate, data bits, parity, stop bits and flow control you set; the session reconnects by itself when a USB adapter is unplugged and plugged back in. Virtual ports such as QEMU's `-serial pty` work too.
 - **Stays connected**: keepalives detect dead connections, and lost connections are re-established automatically.
 - **SFTP file panel**: browse with sorting, a name filter and hidden files on or off; select several items with ⇧ / ⌘ (Ctrl) and act on them from the context menu or the keyboard; upload and download with progress, to the download folder or a place you choose; drag files in to upload (onto a folder, too), out to Finder or Explorer to download, or onto a folder to move them; open a remote file in your editor and have it uploaded each time you save; rename, delete, create folders and change permissions.
-- **ZMODEM**: `rz` and `sz` in the terminal, for hosts without SFTP such as those behind bastion hosts, over SSH and in local terminals. Choose files or drop them on the terminal for `rz`; files from `sz` go to the download folder (or ask where).
+- **ZMODEM**: `rz` and `sz` in the terminal, for hosts without SFTP such as those behind bastion hosts, over SSH, Telnet and serial lines and in local terminals. Choose files or drop them on the terminal for `rz`; files from `sz` go to the download folder (or ask where).
 - **Port forwarding**: local (`-L`), remote (`-R`) and dynamic SOCKS (`-D`) rules, saved with the session, optionally started on connect, with live status.
 - **Import from `~/.ssh/config`**: hosts, users, ports, keys, jump hosts, forwards, agent forwarding and `SetEnv`.
-- **Session management**: nested folders arranged by drag and drop, search, quick connect by typing `user@host[:port]`, recently opened sessions, duplicate, and export/import to a file (without passwords) for backups and other computers.
+- **Session management**: nested folders arranged by drag and drop, search, quick connect by typing `user@host[:port]` or `telnet host[:port]`, recently opened sessions, duplicate, and export/import to a file (without passwords) for backups and other computers.
 - **Local terminals**: your login shell on macOS, PowerShell on Windows.
 - **Terminal**: context menu, copy on select, right-click to paste, confirmation before pasting multiple lines, Option as Meta on macOS, search with regular expressions, built-in color schemes, custom fonts, light and dark appearance.
-- **Per-session settings**: SSH agent forwarding; character encodings such as GBK, GB18030, Big5 and Shift_JIS for older servers and network devices, converted in the terminal and in SFTP and ZMODEM file names; the session's own color scheme, background color (say, red for production, also marked on its tabs) and font; commands typed after login once the shell shows its prompt (`sudo -i`, `cd /srv/app`); the terminal type and environment variables sent to the server.
+- **Per-session settings**: SSH agent forwarding; character encodings such as GBK, GB18030, Big5 and Shift_JIS for older servers and network devices (over SSH, Telnet or a serial line), converted in the terminal and in SFTP and ZMODEM file names; the session's own color scheme, background color (say, red for production, also marked on its tabs) and font; commands typed after login once the shell shows its prompt (`sudo -i`, `cd /srv/app`); the terminal type and environment variables sent to the server.
 - **Session logs**: record what a terminal shows to a file, automatically for chosen sessions (and optionally local terminals) or from a tab's menu, as plain text or raw, with old logs cleaned up after a number of days if you like.
 - **Quick commands**: buttons below the terminal for commands you type often, in groups of your own, also in the terminal's menu and a searchable palette. A session can choose the group its tabs show first.
 - **Send to several tabs**: a compose bar sends a command to the current tab, all tabs or selected ones, and can sync what you type in the terminal to them.
 - **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program. The tab bar sits in the window's title bar on both macOS and Windows.
 
-Planned next: Telnet and serial sessions, connecting through proxies and `ProxyCommand`, and split panes. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: connecting through proxies and `ProxyCommand`, split panes, and managing known hosts. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -49,7 +51,7 @@ The builds are not signed with a developer certificate yet, so the system warns 
 
 ## Usage
 
-Add a session with **+** in the sidebar, or import hosts from your SSH config, then double-click a session (or select it and press Enter) to open it in a new tab. **+** at the end of the tab bar opens a local terminal. To connect without saving a session, type `user@host` or `user@host:port` in the search box and press Enter. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect. Right-click the terminal or a tab for more actions; double-click a tab to rename it.
+Add a session with **+** in the sidebar (choose SSH, Telnet or Serial as its protocol), or import hosts from your SSH config, then double-click a session (or select it and press Enter) to open it in a new tab. **+** at the end of the tab bar opens a local terminal. To connect without saving a session, type `user@host` or `user@host:port` (or `telnet host:port`) in the search box and press Enter. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect. Right-click the terminal or a tab for more actions; double-click a tab to rename it.
 
 | Action | macOS | Windows |
 |---|---|---|

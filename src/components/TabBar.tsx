@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ForwardState, SessionId, SessionTarget } from "../lib/api";
+import type { ForwardState, Protocol, SessionId, SessionTarget } from "../lib/api";
 import { closeTabShortcutLabel, isWindows, newTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -18,9 +18,14 @@ import { WindowControls } from "./WindowControls";
 
 export type SidePanel = "files" | "forwards";
 
+/** What a tab runs: a remote session's protocol, or a local terminal. */
+export type TabProtocol = Protocol | "local";
+
 export interface Tab {
   key: number;
   target: SessionTarget;
+  /** Of the current (or last) session; a saved session's may change between connections. */
+  protocol: TabProtocol;
   /** The session name: the profile's, or the local shell's. */
   title: string;
   /** Set by renaming the tab; shown instead of any other title. */
@@ -72,6 +77,8 @@ interface Props {
   /** Saves a quick connection tab as a session. */
   onSaveAsSession(key: number): void;
   onReconnect(key: number): void;
+  /** Sends a break (serial and Telnet tabs). */
+  onBreak(key: number): void;
   /** Starts (`true`) or stops logging the tab's session. */
   onLog(key: number, start: boolean): void;
   onShowLog(key: number): void;
@@ -88,6 +95,8 @@ interface Props {
   flashing: number[];
   /** The color a tab is marked with (its session's background color), if any. */
   colorOf(tab: Tab): string | undefined;
+  /** Where the tab's session connects (see `address`), for its tooltip; none for local terminals. */
+  addressOf(tab: Tab): string | undefined;
 }
 
 /** How far the pointer moves before a press on a tab becomes a drag. */
@@ -108,6 +117,7 @@ export function TabBar({
   onDuplicate,
   onSaveAsSession,
   onReconnect,
+  onBreak,
   onLog,
   onShowLog,
   onTogglePanel,
@@ -119,6 +129,7 @@ export function TabBar({
   syncing,
   flashing,
   colorOf,
+  addressOf,
 }: Props) {
   const { t } = useTranslation();
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
@@ -149,7 +160,7 @@ export function TabBar({
   const running = states.filter((s) => s.type === "starting" || s.type === "active").length;
   const failed = states.some((s) => s.type === "failed");
   // Files and forwards work on an SSH connection.
-  const local = activeTab?.target.kind === "local";
+  const unavailable = !!activeTab && activeTab.protocol !== "ssh";
 
   // Reorders live while dragging: the tab moves past each neighbor whose middle the pointer
   // crosses. Pressing doesn't take focus from the terminal.
@@ -189,11 +200,14 @@ export function TabBar({
   const menuItems = (key: number): MenuItem[] => {
     const index = tabs.findIndex((tab) => tab.key === key);
     const tab = tabs[index];
-    const items: MenuItem[] = [
-      { label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) },
-      { label: t("tabs.rename"), onSelect: () => setEditing(key) },
-    ];
-    if (tab.target.kind !== "local") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
+    const items: MenuItem[] = [];
+    // A serial device can only be open once.
+    if (tab.protocol !== "serial") items.push({ label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) });
+    items.push({ label: t("tabs.rename"), onSelect: () => setEditing(key) });
+    if (tab.protocol !== "local") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
+    if (tab.protocol === "serial" || tab.protocol === "telnet") {
+      items.push({ label: t("tabs.sendBreak"), disabled: tab.status !== "connected", onSelect: () => onBreak(key) });
+    }
     if (tab.target.kind === "quick") items.push({ label: t("tabs.saveAsSession"), onSelect: () => onSaveAsSession(key) });
     items.push("separator");
     if (isLogging(tab)) items.push({ label: t("tabs.stopLog"), onSelect: () => onLog(key, false) });
@@ -219,9 +233,9 @@ export function TabBar({
   const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
     <button
       className={activeTab?.sidePanel === panel ? "on" : undefined}
-      disabled={!activeTab || local}
+      disabled={!activeTab || unavailable}
       onClick={() => onTogglePanel(panel)}
-      title={local ? t("tabs.panelUnavailable") : hint}
+      title={unavailable ? t("tabs.panelUnavailable") : hint}
     >
       {label}
       {badge}
@@ -235,6 +249,7 @@ export function TabBar({
         {tabs.map((tab) => {
           const title = tabTitle(tab, followRemoteTitle);
           const color = colorOf(tab);
+          const where = addressOf(tab);
           return (
             <div
               key={tab.key}
@@ -256,7 +271,7 @@ export function TabBar({
                 e.preventDefault();
                 setMenu({ key: tab.key, x: e.clientX, y: e.clientY });
               }}
-              title={editing === tab.key ? undefined : `${title}\n${t("tabs.renameHint")}`}
+              title={editing === tab.key ? undefined : [title, where, t("tabs.renameHint")].filter(Boolean).join("\n")}
             >
               {color && <span className="tab-color" style={{ background: color }} />}
               <span className={`status-dot ${tab.status}`} />

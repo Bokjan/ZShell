@@ -9,13 +9,16 @@ mod error;
 mod forward;
 mod import;
 mod logging;
+mod net;
 mod pty;
 mod quick;
 mod secrets;
+mod serial;
 mod session;
 mod settings;
 mod sftp;
 mod ssh;
+mod telnet;
 mod window;
 mod zmodem;
 
@@ -201,12 +204,12 @@ pub fn run() {
             commands::sessions_export,
             commands::sessions_import_scan,
             commands::sessions_import,
-            commands::ssh_quick_open,
+            commands::quick_open,
             commands::local_username,
             commands::ssh_config_default_path,
             commands::ssh_config_scan,
             commands::ssh_config_import,
-            commands::ssh_open,
+            commands::profile_open,
             commands::ssh_open_shared,
             commands::local_open,
             commands::local_shell_name,
@@ -218,6 +221,8 @@ pub fn run() {
             commands::logs_delete,
             commands::session_write,
             commands::session_resize,
+            commands::session_break,
+            commands::serial_ports,
             commands::session_ack,
             commands::session_foreground,
             commands::session_close,

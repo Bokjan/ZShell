@@ -48,7 +48,7 @@ export type SessionStatus = "connecting" | "connected" | "closed";
  * What restarts the terminal when it changes. A quick connection saved as a session keeps
  * its terminal and connection; the next connection uses the session.
  */
-const targetKey = (target: SessionTarget) => (target.kind === "local" ? "local" : "ssh");
+const targetKey = (target: SessionTarget) => (target.kind === "local" ? "local" : "remote");
 
 interface Props {
   target: SessionTarget;

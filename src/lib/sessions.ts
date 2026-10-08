@@ -1,4 +1,4 @@
-import type { Folder, Profile } from "./api";
+import { DEFAULT_PORTS, type Folder, type Profile, type Protocol, type SerialOptions } from "./api";
 
 /** A visible line of the session tree. */
 export type Row =
@@ -7,10 +7,29 @@ export type Row =
 
 export const rowKey = (row: Row) => (row.kind === "folder" ? `f:${row.folder.id}` : `p:${row.profile.id}`);
 
-/** `user@host`, with the port if it isn't 22. */
-export const address = (p: { username: string; host: string; port: number }) => {
+/** What `address` needs: a profile, an import candidate or a quick connection. */
+export interface Addressable {
+  protocol?: Protocol;
+  username: string;
+  host: string;
+  port: number;
+  serial?: SerialOptions;
+}
+
+/** The usual short form of serial settings, `115200 8N1`. */
+export const serialSummary = (s: SerialOptions) =>
+  `${s.baudRate} ${s.dataBits}${s.parity === "none" ? "N" : s.parity === "odd" ? "O" : "E"}${s.stopBits}`;
+
+/**
+ * Where a session connects, as shown in the session list: SSH as `user@host` (with the port
+ * if it isn't 22), Telnet as `telnet://[user@]host[:port]`, serial as `COM3 · 115200 8N1`.
+ */
+export const address = (p: Addressable) => {
+  if (p.protocol === "serial") return p.serial ? `${p.serial.device} · ${serialSummary(p.serial)}` : "";
+  const protocol = p.protocol ?? "ssh";
   const host = p.host.includes(":") ? `[${p.host}]` : p.host;
-  return `${p.username ? `${p.username}@` : ""}${host}${p.port !== 22 ? `:${p.port}` : ""}`;
+  const where = `${p.username ? `${p.username}@` : ""}${host}${p.port !== DEFAULT_PORTS[protocol] ? `:${p.port}` : ""}`;
+  return protocol === "telnet" ? `telnet://${where}` : where;
 };
 
 /**
@@ -74,25 +93,33 @@ export function search(query: string, folders: Folder[], profiles: Profile[]): P
 }
 
 export interface QuickTarget {
-  /** Empty for the local user name, as with `ssh host`. */
+  protocol: "ssh" | "telnet";
+  /** Empty for SSH's local user name (as with `ssh host`), or for no Telnet login. */
   username: string;
   host: string;
   port: number;
 }
 
 /**
- * `[ssh ][user@]host[:port]` (IPv6 in brackets) as a quick connection. Plain words without a
- * user, a dot or a port are left to the search (they are more likely session names).
+ * `[ssh ][user@]host[:port]` (IPv6 in brackets) as a quick SSH connection, and
+ * `telnet [user@]host[:port]` or `telnet://[user@]host[:port]` as a Telnet one. Plain words
+ * without a user, a dot or a port are left to the search (they are more likely session
+ * names), unless they say telnet.
  */
 export function parseQuickConnect(text: string): QuickTarget | null {
-  const match = /^(?:ssh\s+)?(?:([^\s@]+)@)?(\[[0-9a-fA-F:.]+\]|[^\s:@[\]]+)(?::(\d{1,5}))?$/.exec(text.trim());
+  const match =
+    /^(?:(ssh|telnet)\s+|(ssh|telnet):\/\/)?(?:([^\s@/]+)@)?(\[[0-9a-fA-F:.]+\]|[^\s:@/[\]]+)(?::(\d{1,5}))?\/?$/i.exec(
+      text.trim(),
+    );
   if (!match) return null;
-  const [, username = "", rawHost, rawPort] = match;
+  const [, word, scheme, username = "", rawHost, rawPort] = match;
+  const protocol = (word ?? scheme ?? "ssh").toLowerCase() as QuickTarget["protocol"];
   const host = rawHost.replace(/^\[|\]$/g, "");
-  const port = rawPort ? Number(rawPort) : 22;
+  const port = rawPort ? Number(rawPort) : DEFAULT_PORTS[protocol];
   if (port < 1 || port > 65535) return null;
-  const looksLikeHost = username !== "" || rawPort !== undefined || host.includes(".") || host.includes(":");
-  return looksLikeHost ? { username, host, port } : null;
+  const looksLikeHost =
+    protocol === "telnet" || username !== "" || rawPort !== undefined || host.includes(".") || host.includes(":");
+  return looksLikeHost ? { protocol, username, host, port } : null;
 }
 
 const RECENT_KEY = "zshell.recentSessions";

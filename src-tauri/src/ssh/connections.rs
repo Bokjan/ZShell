@@ -12,6 +12,7 @@ use russh_sftp::client::SftpSession;
 use tokio::sync::{watch, OnceCell};
 
 use super::handler::ClientHandler;
+use super::JumpChain;
 use crate::config::Profile;
 use crate::error::{Error, Result};
 use crate::forward::{Forwards, RemoteRoutes};
@@ -24,8 +25,9 @@ pub struct Connection {
     /// The profile as it was when connecting; shells opened later (duplicated tabs) use its
     /// terminal options and encoding.
     profile: Profile,
-    /// Connections to the jump hosts this one runs through, first hop first.
-    jumps: Vec<Arc<SshHandle>>,
+    /// Connections to the jump hosts this one runs through; disconnected once this
+    /// connection is dropped.
+    _jumps: JumpChain,
     sftp: OnceCell<Arc<SftpSession>>,
     forwards: Forwards,
     /// Why the connection ended, once it has (see `ClientHandler`).
@@ -76,13 +78,13 @@ impl Connections {
         id: SessionId,
         handle: Arc<SshHandle>,
         profile: Profile,
-        jumps: Vec<Arc<SshHandle>>,
+        jumps: JumpChain,
         routes: RemoteRoutes,
         disconnect: watch::Receiver<Option<String>>,
         sink: SessionSink,
     ) -> Arc<Connection> {
         let forwards = Forwards::new(handle.clone(), routes);
-        let connection = Arc::new(Connection { handle, profile, jumps, sftp: OnceCell::new(), forwards, disconnect });
+        let connection = Arc::new(Connection { handle, profile, _jumps: jumps, sftp: OnceCell::new(), forwards, disconnect });
         self.attach(id, connection.clone(), sink);
         connection
     }
@@ -117,9 +119,6 @@ impl Connections {
                 let _ = sftp.close().await;
             }
             let _ = connection.handle.disconnect(Disconnect::ByApplication, "", "en").await;
-            for jump in connection.jumps.iter().rev() {
-                let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
-            }
         });
     }
 }

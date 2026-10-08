@@ -14,13 +14,14 @@ import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPane } from "./components/SessionPane";
-import { PANEL_SHORTCUTS, TabBar, tabTitle, type SidePanel, type Tab } from "./components/TabBar";
+import { PANEL_SHORTCUTS, TabBar, tabTitle, type SidePanel, type Tab, type TabProtocol } from "./components/TabBar";
 import type { SessionStatus } from "./components/TerminalView";
 import {
   listProfiles,
   localShellName,
   localUsername,
   quickCommands,
+  sendBreak,
   sessionLog,
   sessionForeground,
   tree,
@@ -50,9 +51,9 @@ import { tabMark } from "./lib/terminalSchemes";
 import { useTitleBar } from "./lib/window";
 import "./styles.css";
 
-const profileIdOf = (tab: Tab) => (tab.target.kind === "ssh" ? tab.target.profileId : undefined);
+const profileIdOf = (tab: Tab) => (tab.target.kind === "profile" ? tab.target.profileId : undefined);
 
-/** Why closing a tab needs confirmation: an SSH session is connected, or a local program runs. */
+/** Why closing a tab needs confirmation: a remote session is connected, or a local program runs. */
 type Busy = { kind: "connected" } | { kind: "process"; name: string };
 
 /** Opening more sessions than this at once (a folder) asks first. */
@@ -75,9 +76,10 @@ async function busyReason(tab: Tab): Promise<Busy | null> {
   return name === null ? null : { kind: "process", name };
 }
 
-const newTab = (key: number, target: SessionTarget, title: string, shareFrom?: SessionId): Tab => ({
+const newTab = (key: number, target: SessionTarget, protocol: TabProtocol, title: string, shareFrom?: SessionId): Tab => ({
   key,
   target,
+  protocol,
   title,
   customTitle: null,
   remoteTitle: null,
@@ -139,6 +141,8 @@ function App() {
   const nextKey = useRef(1);
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
   const activeKeyRef = useRef(activeKey);
   activeKeyRef.current = activeKey;
   const localTitleRef = useRef("");
@@ -172,18 +176,28 @@ function App() {
     localUsername().then(setUsername).catch(console.error);
   }, []);
 
-  const addTab = useCallback((target: SessionTarget, title: string) => {
-    const key = nextKey.current++;
-    setTabs((tabs) => [...tabs, newTab(key, target, title)]);
-    setActiveKey(key);
+  /** What a tab's next session will be: a saved session's protocol may have been changed. */
+  const protocolOf = useCallback((target: SessionTarget): TabProtocol => {
+    if (target.kind === "local") return "local";
+    if (target.kind === "quick") return target.protocol;
+    return profilesRef.current.find((p) => p.id === target.profileId)?.protocol ?? "ssh";
   }, []);
+
+  const addTab = useCallback(
+    (target: SessionTarget, title: string) => {
+      const key = nextKey.current++;
+      setTabs((tabs) => [...tabs, newTab(key, target, protocolOf(target), title)]);
+      setActiveKey(key);
+    },
+    [protocolOf],
+  );
 
   /** "connect" switches to a tab the session already has; "newTab" always opens one. */
   const openProfile = (profile: Profile, mode: "connect" | "newTab") => {
     setRecent(addRecent(profile.id));
-    const existing = tabsRef.current.find((t) => t.target.kind === "ssh" && t.target.profileId === profile.id);
+    const existing = tabsRef.current.find((t) => t.target.kind === "profile" && t.target.profileId === profile.id);
     if (mode === "connect" && existing) setActiveKey(existing.key);
-    else addTab({ kind: "ssh", profileId: profile.id }, profile.name);
+    else addTab({ kind: "profile", profileId: profile.id }, profile.name);
   };
 
   const openAll = (folder: Folder) => {
@@ -192,20 +206,24 @@ function App() {
     else list.forEach((p) => openProfile(p, "newTab"));
   };
 
+  // SSH without a user name logs in as the local user.
   const quickConnect = (target: QuickTarget) =>
-    addTab({ kind: "quick", ...target }, address({ ...target, username: target.username || username }));
+    addTab(
+      { kind: "quick", ...target },
+      address({ ...target, username: target.username || (target.protocol === "ssh" ? username : "") }),
+    );
 
   const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab]);
 
   // An SSH tab whose shell is up opens its copy on the same connection; anything else opens
-  // the same target anew.
+  // the same target anew. A serial device can only be open once.
   const duplicateTab = (key: number) => {
     const tabs = tabsRef.current;
     const index = tabs.findIndex((t) => t.key === key);
-    if (index < 0) return;
+    if (index < 0 || tabs[index].protocol === "serial") return;
     const tab = tabs[index];
-    const shareFrom = tab.target.kind !== "local" && tab.status === "connected" ? (tab.sessionId ?? undefined) : undefined;
-    const copy = newTab(nextKey.current++, tab.target, tab.title, shareFrom);
+    const shareFrom = tab.protocol === "ssh" && tab.status === "connected" ? (tab.sessionId ?? undefined) : undefined;
+    const copy = newTab(nextKey.current++, tab.target, protocolOf(tab.target), tab.title, shareFrom);
     setTabs([...tabs.slice(0, index + 1), copy, ...tabs.slice(index + 1)]);
     setActiveKey(copy.key);
   };
@@ -309,7 +327,7 @@ function App() {
   const togglePanel = useCallback((panel: SidePanel) => {
     setTabs((tabs) =>
       tabs.map((t) =>
-        t.key === activeKeyRef.current && t.target.kind !== "local"
+        t.key === activeKeyRef.current && t.protocol === "ssh"
           ? { ...t, sidePanel: t.sidePanel === panel ? null : panel }
           : t,
       ),
@@ -439,8 +457,17 @@ function App() {
     // Forward events can precede "connected" (auto-start runs right after authentication),
     // so states are only reset when a connection attempt starts or ends.
     if (status === "connected") updateTab(key, { status });
-    // A new shell sets its own title.
-    else if (status === "connecting") updateTab(key, { status, forwards: {}, remoteTitle: null });
+    // A new shell sets its own title. The session's protocol may have been changed since.
+    else if (status === "connecting") {
+      setTabs((tabs) =>
+        tabs.map((t) => {
+          if (t.key !== key) return t;
+          const protocol = protocolOf(t.target);
+          const sidePanel = protocol === "ssh" ? t.sidePanel : null;
+          return { ...t, status, forwards: {}, remoteTitle: null, protocol, sidePanel };
+        }),
+      );
+    }
     else updateTab(key, { status, forwards: {} });
   };
 
@@ -468,14 +495,15 @@ function App() {
   const onProfileSaved = (profile: Profile) => {
     const tabKey = editing?.tabKey;
     if (tabKey === undefined) return;
-    updateTab(tabKey, { target: { kind: "ssh", profileId: profile.id }, title: profile.name });
+    updateTab(tabKey, { target: { kind: "profile", profileId: profile.id }, title: profile.name });
   };
 
   const saveAsSession = (key: number) => {
     const tab = tabsRef.current.find((t) => t.key === key);
     if (tab?.target.kind !== "quick") return;
-    const { host, port } = tab.target;
-    setEditing({ profile: null, defaults: { host, port, username: tab.target.username || username }, tabKey: key });
+    const { protocol, host, port } = tab.target;
+    const user = tab.target.username || (protocol === "ssh" ? username : "");
+    setEditing({ profile: null, defaults: { protocol, host, port, username: user }, tabKey: key });
   };
   const closeImport = useCallback(() => setImporting(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -511,6 +539,10 @@ function App() {
           onReconnect={(key) =>
             setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, reconnectKey: t.reconnectKey + 1 } : t)))
           }
+          onBreak={(key) => {
+            const id = tabsRef.current.find((t) => t.key === key)?.sessionId;
+            if (id != null) sendBreak(id).catch(console.error);
+          }}
           onLog={setLogging}
           onShowLog={showLog}
           onTogglePanel={togglePanel}
@@ -521,6 +553,11 @@ function App() {
           inScope={sendsToMany(compose) ? scopeTabs(compose, tabs, activeKey).map((tab) => tab.key) : []}
           syncing={compose.open && compose.sync}
           flashing={flashing}
+          addressOf={(tab) => {
+            if (tab.target.kind === "local") return undefined;
+            const profile = profiles.find((p) => p.id === profileIdOf(tab));
+            return tab.target.kind === "quick" ? address(tab.target) : profile && address(profile);
+          }}
           colorOf={(tab) => {
             const background = profiles.find((p) => p.id === profileIdOf(tab))?.appearance?.background;
             return background && tabMark(background);

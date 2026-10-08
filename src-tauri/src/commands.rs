@@ -7,7 +7,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::backup;
-use crate::config::{Folder, Item, Profile, ProfileStore};
+use crate::config::{Folder, Item, Profile, ProfileStore, Protocol};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
@@ -17,12 +17,14 @@ use crate::logging::{LogInfo, LogOpen, LogSlot, LogSummary, Logs};
 use crate::pty;
 use crate::quick::{QuickCommandStore, QuickCommands};
 use crate::secrets;
+use crate::serial;
 use crate::settings::{Settings, SettingsStore};
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
 use crate::sftp::drag;
 use crate::sftp::edit::{self, EditEvent, Edits};
 use crate::sftp::{self, transfer, Listing};
 use crate::ssh::{self, Connections};
+use crate::telnet;
 use crate::zmodem;
 
 /// Selects the language for backend text; returns the locale actually used.
@@ -156,8 +158,9 @@ pub fn profile_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> 
     Ok(())
 }
 
+/// Opens a session from a saved profile, with the backend for its protocol.
 #[tauri::command]
-pub fn ssh_open(
+pub fn profile_open(
     store: State<'_, ProfileStore>,
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
@@ -171,19 +174,36 @@ pub fn ssh_open(
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let profile = store.get(&profile_id)?;
-    let jumps = store.jump_hosts(&profile)?;
-    let connections = connections.inner().clone();
-    let slot = LogSlot::new(LogInfo {
-        session: profile.name.clone(),
-        host: profile.host.clone(),
-        user: profile.username.clone(),
-        profile: Some(profile.id.clone()),
-    });
+    let jumps = match profile.protocol {
+        Protocol::Serial => Vec::new(),
+        _ => store.jump_hosts(&profile)?,
+    };
+    let slot = LogSlot::new(LogInfo { profile: Some(profile.id.clone()), ..log_info(&profile) });
     let opened = logs.open(&slot, log.unwrap_or_default(), profile.auto_log, &settings.get().logs);
     let encoding = encoding::for_profile(&profile.encoding);
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding, |id, io| ssh::run(profile, jumps, id, io, connections));
+    let size = (cols, rows);
+    let id = match profile.protocol {
+        Protocol::Ssh => {
+            let connections = connections.inner().clone();
+            sessions.spawn(on_output, on_event, size, slot, encoding, |id, io| ssh::run(profile, jumps, id, io, connections))
+        }
+        Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| {
+            let profile_id = profile.id.clone();
+            telnet::run(profile, jumps, move || secrets::get_password(&profile_id), io)
+        }),
+        Protocol::Serial => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| serial::run(profile.serial, io)),
+    };
     report_log(&sessions, id, opened);
     Ok(id)
+}
+
+/// How a session's log names it: by the profile, its address and user.
+fn log_info(profile: &Profile) -> LogInfo {
+    let host = match profile.protocol {
+        Protocol::Serial => profile.serial.device.clone(),
+        _ => profile.host.clone(),
+    };
+    LogInfo { session: profile.name.clone(), host, user: profile.username.clone(), profile: None }
 }
 
 /// Tells a new session's tab about the log it started with, or why that failed.
@@ -200,14 +220,15 @@ fn log_event(result: Result<PathBuf>) -> SessionEvent {
     }
 }
 
-/// Connects to `username@host:port` without a saved session (quick connect), with automatic
-/// authentication. An empty `username` means the local user name, as with `ssh host`.
+/// Opens an SSH or Telnet session to an address typed into the search box, without a saved
+/// profile. SSH without a user name uses the local one, like `ssh host`.
 #[tauri::command]
-pub fn ssh_quick_open(
+pub fn quick_open(
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     logs: State<'_, Logs>,
     settings: State<'_, SettingsStore>,
+    protocol: Protocol,
     username: String,
     host: String,
     port: u16,
@@ -218,25 +239,30 @@ pub fn ssh_quick_open(
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let username = match username.trim() {
-        "" => local_username(),
+        "" if protocol == Protocol::Ssh => local_username(),
         name => name.to_owned(),
     };
-    let profile = Profile::new(format!("{username}@{host}"), host.trim().to_owned(), port, username);
-    if profile.host.is_empty() || profile.username.is_empty() || port == 0 {
-        return Err(Error::new("profile.missingFields"));
+    let host = host.trim().to_owned();
+    let name = if username.is_empty() { host.clone() } else { format!("{username}@{host}") };
+    let profile = Profile { protocol, ..Profile::new(name, host, port, username) };
+    match protocol {
+        Protocol::Ssh if profile.username.is_empty() => return Err(Error::new("profile.missingFields")),
+        Protocol::Serial => return Err(Error::new("profile.missingDevice")),
+        _ if profile.host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
+        _ => {}
     }
-    let connections = connections.inner().clone();
     // Logged only when started by hand: there is no session to record automatically.
-    let slot = LogSlot::new(LogInfo {
-        session: profile.name.clone(),
-        host: profile.host.clone(),
-        user: profile.username.clone(),
-        profile: None,
-    });
+    let slot = LogSlot::new(log_info(&profile));
     let opened = logs.open(&slot, log.unwrap_or_default(), false, &settings.get().logs);
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding_rs::UTF_8, |id, io| {
-        ssh::run(profile, Vec::new(), id, io, connections)
-    });
+    let size = (cols, rows);
+    let utf8 = encoding_rs::UTF_8;
+    let id = match protocol {
+        Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, utf8, |_, io| telnet::run(profile, Vec::new(), || None, io)),
+        _ => {
+            let connections = connections.inner().clone();
+            sessions.spawn(on_output, on_event, size, slot, utf8, |id, io| ssh::run(profile, Vec::new(), id, io, connections))
+        }
+    };
     report_log(&sessions, id, opened);
     Ok(id)
 }
@@ -363,6 +389,18 @@ pub fn local_shell_name() -> Option<String> {
 #[tauri::command]
 pub fn session_write(sessions: State<'_, SessionManager>, id: SessionId, data: String) -> Result<()> {
     sessions.send(id, SessionInput::Data(data.into_bytes()))
+}
+
+/// Sends a break (serial and Telnet sessions).
+#[tauri::command]
+pub fn session_break(sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
+    sessions.send(id, SessionInput::Break)
+}
+
+/// The serial ports on this computer.
+#[tauri::command]
+pub fn serial_ports() -> Vec<serial::PortInfo> {
+    serial::ports()
 }
 
 #[tauri::command]

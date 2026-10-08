@@ -7,8 +7,8 @@
 //!
 //! Port forwards report their state through the same event channel ([`SessionSink`]).
 //!
-//! Backends: remote shells over SSH (`ssh::run`) and local shells in a pseudo terminal
-//! (`pty::run`).
+//! Backends: remote shells over SSH (`ssh::run`), Telnet (`telnet::run`), serial lines
+//! (`serial::run`) and local shells in a pseudo terminal (`pty::run`).
 //!
 //! Remote output goes through [`SessionSink::output`], where ZMODEM transfers are detected and
 //! take over the session until they end (see [`crate::zmodem`]). What the terminal shows is then
@@ -42,6 +42,8 @@ pub type SessionId = u32;
 pub enum SessionInput {
     Data(Vec<u8>),
     Resize { cols: u16, rows: u16 },
+    /// A break signal: on a serial line, or Telnet's `BRK`. Other backends ignore it.
+    Break,
 }
 
 #[derive(Clone, Serialize)]
@@ -66,6 +68,16 @@ pub enum CloseReason {
     Lost,
     /// Connecting, authenticating or starting the shell failed.
     Failed,
+}
+
+/// How a remote session (SSH, Telnet, serial) ended; see [`TermIo::finish`].
+pub enum Outcome {
+    /// The remote side closed the session, with the shell's exit status if it reported one.
+    Exited(Option<u32>),
+    /// The connection broke (or the device went away) after the session had started.
+    Lost(Error),
+    /// Connecting, authenticating or starting the session failed.
+    Failed(Error),
 }
 
 /// Pause reading once this many output bytes are unacknowledged...
@@ -228,7 +240,6 @@ impl TermIo {
     /// A session without a frontend, for backend tests: returns the input sender and the
     /// channels' receiving ends (raw output bytes, events as JSON).
     #[cfg(test)]
-    #[cfg_attr(not(unix), allow(dead_code))] // Only the PTY tests (unix) use it so far.
     pub fn detached(
         size: (u16, u16),
     ) -> (Self, mpsc::UnboundedSender<SessionInput>, std::sync::mpsc::Receiver<Vec<u8>>, std::sync::mpsc::Receiver<String>) {
@@ -262,6 +273,30 @@ impl TermIo {
 
     pub fn event(&self, event: SessionEvent) {
         self.sink.event(event);
+    }
+
+    /// Reports how a remote session ended, in the terminal and as its `Closed` event.
+    pub fn finish(&self, outcome: Outcome) {
+        let (reason, error, status) = match outcome {
+            Outcome::Exited(status) => {
+                let message = match status {
+                    Some(status) => t!("terminal.closedWithStatus", status = status),
+                    None => t!("terminal.closed"),
+                };
+                self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
+                (CloseReason::Exited, None, status)
+            }
+            Outcome::Lost(e) => {
+                // The remote program may have left the cursor mid-line.
+                self.print(&format!("\n\x1b[31m{e}\x1b[0m\n"));
+                (CloseReason::Lost, Some(e), None)
+            }
+            Outcome::Failed(e) => {
+                self.print(&format!("\x1b[31m{e}\x1b[0m\n"));
+                (CloseReason::Failed, Some(e), None)
+            }
+        };
+        self.event(SessionEvent::Closed { reason, error, status });
     }
 
     pub fn sink(&self) -> SessionSink {
