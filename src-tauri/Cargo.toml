@@ -59,6 +59,8 @@ windows = { version = "0.62", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# `#[implement]` from `windows` refers to `windows_core` by name.
+windows-core = "0.62"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 sys-locale = "0.3.2"

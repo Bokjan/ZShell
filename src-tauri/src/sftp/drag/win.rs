@@ -122,10 +122,10 @@ fn hdrop_format() -> FORMATETC {
     }
 }
 
-/// A DROPFILES block listing `paths`.
-fn drop_files<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> windows::core::Result<HGLOBAL> {
+/// A DROPFILES block listing the local paths of `items`.
+fn drop_files(items: &[(String, PathBuf)]) -> windows::core::Result<HGLOBAL> {
     let mut names: Vec<u16> = Vec::new();
-    for path in paths {
+    for (_, path) in items {
         names.extend(path.as_os_str().encode_wide());
         names.push(0);
     }
@@ -167,7 +167,7 @@ impl IDataObject_Impl for DataObject_Impl {
         if self.shared.dropped.load(Ordering::Relaxed) && !self.shared.fetch() {
             return Err(E_FAIL.into());
         }
-        let memory = drop_files(self.shared.items.iter().map(|(_, local)| local))?;
+        let memory = drop_files(&self.shared.items)?;
         Ok(STGMEDIUM {
             tymed: TYMED_HGLOBAL.0 as u32,
             u: STGMEDIUM_0 { hGlobal: memory },
