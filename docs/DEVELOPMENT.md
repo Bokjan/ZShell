@@ -91,7 +91,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 ## CI
 
 - `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证 Windows 专用代码能通过编译。
-- `.github/workflows/release.yml`：见下文「发布」。手动运行该 workflow 只打包，产物作为 workflow artifacts。
+- `.github/workflows/release.yml`：见下文「发布」。手动运行该 workflow 只打包，产物作为 workflow artifacts；勾选 "Microsoft Store only" 时只打 Store 包，省去 macOS 与其他 Windows 包。
 - `.github/dependabot.yml`：每周检查 npm、Cargo 和 GitHub Actions 的依赖更新。各生态的 minor / patch 更新合并为一个 PR，Tauri（及 xterm.js、russh）的相关包各自成组；major 更新单独成 PR。提交前缀为 `chore(deps)` / `ci`，不进更新日志。Dependabot 的 PR 会触发 Windows CI。
 
 ## 发布
@@ -113,5 +113,12 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
    - Microsoft Store 用的 `ZShell_<版本>.msixbundle`（x64 与 ARM64，由 `scripts/package-msix.ps1` 用 Windows SDK 的 `makeappx` 打包，清单模板在 `src-tauri/msix/`，不签名）。
 6. 检查草稿后手动发布，作为正式版本发布（不勾选 pre-release）。
 7. 在 Partner Center 新建提交，上传该版本的 `.msixbundle`。Store 会重新签名并负责用户的更新。
+
+**第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.txt`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置的「关于」一节读取显示。
+- Rust 依赖用 `cargo-about`：配置 `src-tauri/about.toml` 列出接受的许可证、四个发布目标（macOS 与 Windows 专用的 crate 都在内），不含 build / dev 依赖；模板是 `src-tauri/about.hbs`。双许可证优先用 MIT。新依赖带来未列出的许可证时生成失败，确认能遵守后再加进 `accepted`。
+- 有些 crate 的许可证文件名 cargo-about 认不出（windows-rs 的 `license-mit`、Tauri 插件的 `LICENSE_MIT`），在 `about.toml` 里用 `clarify` 按校验和指定；文件内容变了会生成失败，更新校验和即可。完全不带许可证文件的 crate（objc2 系列、webview2-com 等）用标准许可证文本。
+- 前端依赖取 `pnpm licenses list --prod`（运行时依赖，含间接依赖），读各包自带的 LICENSE / COPYING / NOTICE；不带文件的包（Tauri 插件的 JS 包）只写许可证标识与主页。
+- 本地需 `cargo install --locked cargo-about --features cli`（0.9 起命令行要 `cli` feature）。未安装时只生成前端部分并注明；没运行过时设置里显示"未包含"。CI 中（设置了 `CI` 环境变量）未安装则报错。release workflow 的打包 job 与 Store job 用 `taiki-e/install-action` 装预编译的 cargo-about，打包前生成。
+- 生成的文件约 420 KB（约 400 个 crate、20 个 npm 包）。
 
 **签名**：尚未签名。macOS 只做 ad-hoc 签名（`APPLE_SIGNING_IDENTITY=-`，保证 Apple Silicon 能运行），下载后需在"隐私与安全性"中放行或去掉 quarantine；Windows 未签名，SmartScreen 会提示。以后接入证书只需给 workflow 配 secret。

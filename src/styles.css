@@ -2073,6 +2073,36 @@ body.resizing .terminal-view {
   color: var(--text-muted);
   font-size: 12px;
 }
+.about-app {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.about-app span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+/* The notices scroll inside the dialog, which keeps its title and button in view. */
+.licenses-dialog {
+  width: 720px;
+  overflow: hidden;
+}
+.licenses-text {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  font: 12px/1.4 Menlo, "Cascadia Mono", Consolas, monospace;
+  /* Some license files keep each paragraph on one line. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
 .settings-dialog section {
   display: flex;
   flex-direction: column;

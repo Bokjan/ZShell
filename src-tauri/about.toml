@@ -1,0 +1,95 @@
+# cargo-about configuration for the third-party license notices that ship with the app
+# (scripts/generate-licenses.mjs, template in about.hbs).
+
+# Licenses we can comply with, in order of preference: for "MIT OR Apache-2.0" the MIT
+# text is used.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "MPL-2.0",
+    "Unicode-3.0",
+]
+# Every target a release is built for, so that macOS-only and Windows-only crates are
+# all listed.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# ZShell itself (publish = false).
+private = { ignore = true }
+# chrono puts both licenses in one file.
+workarounds = ["chrono"]
+
+# Crates whose license files cargo-about doesn't pick up because of their names
+# (license-mit, LICENSE_MIT); without these it falls back to the generic MIT text, which
+# lacks the copyright line. Dependabot updates keep working as long as the file is
+# unchanged; a changed file makes generation fail on the checksum.
+[windows.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-collections.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-core.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-future.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-implement.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-interface.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-link.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-numerics.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-result.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-strings.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-sys.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-targets.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-threading.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows-version.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows_aarch64_msvc.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+[windows_x86_64_msvc.clarify]
+license = "MIT OR Apache-2.0"
+files = [{ path = "license-mit", license = "MIT", checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }]
+
+[tauri-plugin-clipboard-manager.clarify]
+license = "Apache-2.0 OR MIT"
+files = [{ path = "LICENSE_MIT", license = "MIT", checksum = "89ff9689dcf9dd53968785d05a26f7898bb169dbfcada8d032b3e68cf0d55607" }]
+[tauri-plugin-dialog.clarify]
+license = "Apache-2.0 OR MIT"
+files = [{ path = "LICENSE_MIT", license = "MIT", checksum = "89ff9689dcf9dd53968785d05a26f7898bb169dbfcada8d032b3e68cf0d55607" }]
+[tauri-plugin-fs.clarify]
+license = "Apache-2.0 OR MIT"
+files = [{ path = "LICENSE_MIT", license = "MIT", checksum = "89ff9689dcf9dd53968785d05a26f7898bb169dbfcada8d032b3e68cf0d55607" }]
+[tauri-plugin-opener.clarify]
+license = "Apache-2.0 OR MIT"
+files = [{ path = "LICENSE_MIT", license = "MIT", checksum = "89ff9689dcf9dd53968785d05a26f7898bb169dbfcada8d032b3e68cf0d55607" }]

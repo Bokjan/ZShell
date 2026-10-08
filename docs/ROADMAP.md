@@ -116,8 +116,8 @@
 - 系统要求：最低 Windows 10 1809（与本地终端的 ConPTY 要求一致）。WebView2 使用系统自带的运行时（Windows 11 与更新过的 Windows 10 都有），包里不带安装器。
 - S 模式：Windows 的 S 模式只能运行 Store 应用，也不允许启动 PowerShell 等命令行程序。已处理：后端用 `WindowsIntegrityPolicy::IsEnabled` 检测，S 模式下前端隐藏新建本地终端的入口（"+" 按钮、快捷键、设置里的自动记录本地终端）；SSH 等其他功能不受影响。
 - 打包后实测：本地终端（ConPTY 启动 PowerShell）、OpenSSH agent 命名管道与 Pageant、凭据管理器里的密码、用本地编辑器编辑与拖出、会话日志写入「文档」、自绘标题栏与贴靠布局。本地测试用 `Add-AppxPackage -Register AppxManifest.xml` 注册解包后的目录（需开启开发者模式），不用签名。
-- 上架前提：仓库设为公开（隐私政策与 Issues 的链接要能打开）；补上第三方许可证声明（见下条）。ZShell 本身不开源，README 中声明保留所有权利，安装包免费使用。
-- 第三方许可证声明：依赖的 MIT、Apache-2.0 等许可证要求随二进制附上其许可证文本，GitHub Release 的包也同样需要。构建时生成一份合并的声明：Rust 依赖用 `cargo-about`（按 `Cargo.lock`，用模板输出），前端依赖用 `pnpm licenses list --json`，只收运行时依赖。生成的文件放进前端产物，随 exe 内嵌，单独 exe 与 MSIX 也都带着；设置里加「关于」一节，显示版本号并能查看这份声明。CI 在打包前生成；本地开发缺工具时跳过，显示"未生成"。
+- 上架前提：仓库设为公开（隐私政策与 Issues 的链接要能打开）；第三方许可证声明已补上（见下条）。ZShell 本身不开源，README 中声明保留所有权利，安装包免费使用。
+- 第三方许可证声明：已完成。构建时生成一份合并的声明（Rust 依赖用 `cargo-about`，前端只收运行时依赖），随前端产物内嵌进 exe，单独 exe 与 MSIX 都带着；设置的「关于」一节显示版本号并能查看这份声明。做法见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」。
 - 提交：先在 Partner Center 手动上传每个版本的 `.msixbundle`；流程稳定后再考虑用 Store 提交 API（`msstore` CLI，需要把 Entra ID 应用的凭据配成 secret）自动提交。
 - 商店页面：描述、截图、年龄分级在 Partner Center 填写；提交时说明使用 `runFullTrust` 的理由（完整的桌面应用，需要启动本地 shell、访问 SSH agent 等）。隐私政策写明应用不收集数据、配置只保存在本机，放在仓库里，用 GitHub 链接。
 

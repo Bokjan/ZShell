@@ -3,13 +3,18 @@
 #   GitHub release with all packages attached and the version's section of CHANGELOG.md as
 #   its notes; publish it by hand after checking it.
 # - Running the workflow by hand only builds, and attaches the packages to the run as
-#   workflow artifacts.
+#   workflow artifacts; "Microsoft Store only" skips the other packages.
 name: Release
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      store_only:
+        description: Microsoft Store only
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -55,7 +60,7 @@ jobs:
   build:
     needs: create-release
     # Also runs when create-release was skipped (manual runs).
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !failure() && !cancelled() && !inputs.store_only }}
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +99,12 @@ jobs:
         with:
           workspaces: src-tauri
           key: ${{ matrix.name }}
+      # Third-party license notices, which the frontend build embeds; fails without
+      # cargo-about rather than leaving out the Rust crates.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: pnpm licenses:generate
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -131,6 +142,10 @@ jobs:
         with:
           workspaces: src-tauri
           key: Microsoft Store
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: pnpm licenses:generate
       # Cross-compiled on the x64 runner; ring needs clang for ARM64, which the runner
       # image includes.
       - run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc

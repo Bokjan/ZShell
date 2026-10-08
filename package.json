@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "licenses:generate": "node scripts/generate-licenses.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -4,6 +4,7 @@
     "ok": "OK",
     "save": "Save",
     "delete": "Delete",
+    "close": "Close",
     "dontAskAgain": "Don't ask again"
   },
   "app": {
@@ -491,6 +492,12 @@
     "logSummary_other": "{count} logs, {size}",
     "logDeleteAll": "Delete All Logs",
     "logDeleteAllConfirm": "Click again to delete {count}",
+    "about": "About",
+    "aboutVersion": "Version {version}",
+    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
+    "privacyPolicy": "Privacy Policy",
+    "thirdPartyLicenses": "Third-Party Licenses",
+    "licensesMissing": "The third-party license notices are not included in this build.",
     "reset": "Restore defaults",
     "done": "Done"
   },
