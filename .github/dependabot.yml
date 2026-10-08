@@ -1,0 +1,44 @@
+# Weekly dependency updates. Minor and patch updates are grouped into one pull request per
+# ecosystem; major updates (including 0.x minor bumps for Cargo) get their own. Tauri's npm
+# packages and crates are released together, so each side groups them separately.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      tauri:
+        patterns: ["@tauri-apps/*"]
+      xterm:
+        patterns: ["@xterm/*"]
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      tauri:
+        patterns: ["tauri", "tauri-*"]
+      russh:
+        patterns: ["russh", "russh-*"]
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

@@ -85,6 +85,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 - `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证 Windows 专用代码能通过编译。
 - `.github/workflows/release.yml`：见下文「发布」。手动运行该 workflow 只打包，产物作为 workflow artifacts。
+- `.github/dependabot.yml`：每周检查 npm、Cargo 和 GitHub Actions 的依赖更新。各生态的 minor / patch 更新合并为一个 PR，Tauri（及 xterm.js、russh）的相关包各自成组；major 更新单独成 PR。提交前缀为 `chore(deps)` / `ci`，不进更新日志。Dependabot 的 PR 会触发 Windows CI。
 
 ## 发布
 
