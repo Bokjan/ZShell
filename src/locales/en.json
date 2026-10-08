@@ -13,13 +13,43 @@
     "title": "Sessions",
     "newSession": "New session",
     "empty": "No sessions yet. Click + to add one.",
-    "openHint": "Click to open in a new tab",
-    "edit": "Edit",
-    "import": "Import from SSH config",
+    "openHint": "Double-click to open in a new tab",
+    "edit": "Edit…",
     "newLocalTerminal": "New local terminal",
     "metaVia": "{address} via {names}",
     "settings": "Settings",
-    "resizeHint": "Drag to resize, double-click to reset"
+    "resizeHint": "Drag to resize, double-click to reset",
+    "folderHint": "Double-click to open all its sessions",
+    "newFolder": "New folder",
+    "newFolderName": "New Folder",
+    "importExport": "Import and export",
+    "importSshConfig": "Import from SSH Config…",
+    "importSessions": "Import Sessions…",
+    "exportSessions": "Export Sessions…",
+    "sessionsFileType": "ZShell sessions",
+    "searchPlaceholder": "Search or user@host ({shortcut})",
+    "noMatches": "No matching sessions",
+    "quickConnect": "Connect to {address}",
+    "recent": "Recent",
+    "all": "All sessions",
+    "connect": "Connect",
+    "connectNewTab": "Connect in New Tab",
+    "duplicate": "Duplicate",
+    "copyName": "{name} (copy)",
+    "copyAddress": "Copy Address",
+    "delete": "Delete…",
+    "deleteTitle": "Delete Session",
+    "deleteMessage": "Delete the session “{name}”? Its saved password is removed from the keychain too.",
+    "openAll": "Open All Sessions",
+    "openAllTitle_one": "Open {count} Session?",
+    "openAllTitle_other": "Open {count} Sessions?",
+    "openAllMessage_one": "This opens {count} tab for the sessions in “{folder}”.",
+    "openAllMessage_other": "This opens {count} tabs for the sessions in “{folder}” and its subfolders.",
+    "openAllConfirm": "Open All",
+    "newSessionHere": "New Session…",
+    "newFolderHere": "New Folder",
+    "rename": "Rename",
+    "deleteFolder": "Delete Folder"
   },
   "tabs": {
     "close": "Close",
@@ -35,7 +65,8 @@
     "reconnect": "Reconnect",
     "closeOthers": "Close Other Tabs",
     "closeRight": "Close Tabs to the Right",
-    "renameHint": "Double-click to rename"
+    "renameHint": "Double-click to rename",
+    "saveAsSession": "Save as Session…"
   },
   "terminal": {
     "reconnectHint": "Press Enter to reconnect",
@@ -204,7 +235,8 @@
       "autoStart": "Start automatically when connected",
       "invalidBindPort": "The listening port must be an integer between 0 and 65535",
       "invalidTarget": "A destination host and a port between 1 and 65535 are required"
-    }
+    },
+    "quickConnection": "Port forwarding rules are saved with a session. Save this connection as a session (tab menu) to use them."
   },
   "importDialog": {
     "title": "Import from SSH Config",
@@ -265,6 +297,8 @@
     "followRemoteTitle": "Show the title set by the shell",
     "followRemoteTitleHint": "Otherwise tabs show the session name. Renamed tabs keep their new name.",
     "confirmClose": "Ask before closing tabs that are connected or running a program",
+    "sidebar": "Sessions",
+    "showRecent": "Show recently opened sessions",
     "zmodem": "File Transfer (ZMODEM)",
     "zmodemAskLocation": "Ask where to save files received with sz",
     "zmodemAskLocationHint": "Otherwise they are saved in the Downloads folder.",
@@ -294,5 +328,12 @@
     "chooseFiles": "Choose Files…",
     "chooseFilesTitle": "Choose files to send",
     "chooseFolderTitle": "Choose where to save the received files"
+  },
+  "sessionImport": {
+    "title": "Import Sessions",
+    "hint": "Jump hosts are imported along with the sessions that use them, or matched to existing sessions. Folders are merged by name. Passwords are not part of the file.",
+    "empty": "The file has no sessions.",
+    "import_one": "Import {count} Session",
+    "import_other": "Import {count} Sessions"
   }
 }

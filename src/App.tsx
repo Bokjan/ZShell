@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ImportDialog } from "./components/ImportDialog";
-import { ProfileDialog } from "./components/ProfileDialog";
+import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPane } from "./components/SessionPane";
@@ -14,13 +14,17 @@ import type { SessionStatus } from "./components/TerminalView";
 import {
   listProfiles,
   localShellName,
+  localUsername,
   sessionForeground,
+  tree,
+  type Folder,
   type ForwardState,
   type Profile,
   type SessionId,
   type SessionTarget,
 } from "./lib/api";
-import { hasShiftShortcutModifiers, isSettingsShortcut, tabShortcut } from "./lib/platform";
+import { hasShiftShortcutModifiers, isSearchShortcut, isSettingsShortcut, tabShortcut } from "./lib/platform";
+import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { useSettings } from "./lib/settings";
 import "./styles.css";
 
@@ -29,9 +33,12 @@ const profileIdOf = (tab: Tab) => (tab.target.kind === "ssh" ? tab.target.profil
 /** Why closing a tab needs confirmation: an SSH session is connected, or a local program runs. */
 type Busy = { kind: "connected" } | { kind: "process"; name: string };
 
+/** Opening more sessions than this at once (a folder) asks first. */
+const OPEN_ALL_CONFIRM = 5;
+
 async function busyReason(tab: Tab): Promise<Busy | null> {
   if (tab.status !== "connected" || tab.sessionId == null) return null;
-  if (tab.target.kind === "ssh") return { kind: "connected" };
+  if (tab.target.kind !== "local") return { kind: "connected" };
   const name = await sessionForeground(tab.sessionId).catch(() => null);
   return name === null ? null : { kind: "process", name };
 }
@@ -56,16 +63,26 @@ function App() {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [recent, setRecent] = useState(storedRecent);
+  const [searchFocusKey, setSearchFocusKey] = useState(0);
+  // A folder's sessions waiting for confirmation to open them all.
+  const [openingAll, setOpeningAll] = useState<{ folder: Folder; profiles: Profile[] } | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeKey, setActiveKey] = useState<number | null>(null);
-  // undefined: dialog closed; null: creating a new profile.
-  const [editing, setEditing] = useState<Profile | null | undefined>(undefined);
+  // The profile dialog: an existing profile, or a new one (null) with defaults; `tabKey` is
+  // the quick connection tab being saved as a session.
+  const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; tabKey?: number } | null>(
+    null,
+  );
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Tabs waiting for the user to confirm closing them, with why the first busy one is busy.
   const [closing, setClosing] = useState<{ keys: number[]; busy: Busy; tab: Tab } | null>(null);
   // Title for local terminal tabs, e.g. "zsh".
   const [shellName, setShellName] = useState<string | null>(null);
+  // For quick connections without a user name.
+  const [username, setUsername] = useState("");
   const nextKey = useRef(1);
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -76,10 +93,12 @@ function App() {
 
   const reloadProfiles = useCallback(() => {
     listProfiles().then(setProfiles).catch(console.error);
+    tree.folders().then(setFolders).catch(console.error);
   }, []);
   useEffect(reloadProfiles, [reloadProfiles]);
   useEffect(() => {
     localShellName().then(setShellName).catch(console.error);
+    localUsername().then(setUsername).catch(console.error);
   }, []);
 
   const addTab = useCallback((target: SessionTarget, title: string) => {
@@ -88,7 +107,22 @@ function App() {
     setActiveKey(key);
   }, []);
 
-  const openTab = (profile: Profile) => addTab({ kind: "ssh", profileId: profile.id }, profile.name);
+  /** "connect" switches to a tab the session already has; "newTab" always opens one. */
+  const openProfile = (profile: Profile, mode: "connect" | "newTab") => {
+    setRecent(addRecent(profile.id));
+    const existing = tabsRef.current.find((t) => t.target.kind === "ssh" && t.target.profileId === profile.id);
+    if (mode === "connect" && existing) setActiveKey(existing.key);
+    else addTab({ kind: "ssh", profileId: profile.id }, profile.name);
+  };
+
+  const openAll = (folder: Folder) => {
+    const list = sessionsIn(folder.id, folders, profiles);
+    if (list.length > OPEN_ALL_CONFIRM) setOpeningAll({ folder, profiles: list });
+    else list.forEach((p) => openProfile(p, "newTab"));
+  };
+
+  const quickConnect = (target: QuickTarget) =>
+    addTab({ kind: "quick", ...target }, address({ ...target, username: target.username || username }));
 
   const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab]);
 
@@ -99,7 +133,7 @@ function App() {
     const index = tabs.findIndex((t) => t.key === key);
     if (index < 0) return;
     const tab = tabs[index];
-    const shareFrom = tab.target.kind === "ssh" && tab.status === "connected" ? (tab.sessionId ?? undefined) : undefined;
+    const shareFrom = tab.target.kind !== "local" && tab.status === "connected" ? (tab.sessionId ?? undefined) : undefined;
     const copy = newTab(nextKey.current++, tab.target, tab.title, shareFrom);
     setTabs([...tabs.slice(0, index + 1), copy, ...tabs.slice(index + 1)]);
     setActiveKey(copy.key);
@@ -157,7 +191,7 @@ function App() {
   const togglePanel = useCallback((panel: SidePanel) => {
     setTabs((tabs) =>
       tabs.map((t) =>
-        t.key === activeKeyRef.current && t.target.kind === "ssh"
+        t.key === activeKeyRef.current && t.target.kind !== "local"
           ? { ...t, sidePanel: t.sidePanel === panel ? null : panel }
           : t,
       ),
@@ -170,6 +204,12 @@ function App() {
         e.preventDefault();
         e.stopPropagation();
         setSettingsOpen(true);
+        return;
+      }
+      if (isSearchShortcut(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSearchFocusKey((key) => key + 1);
         return;
       }
       const tabKey = tabShortcut(e);
@@ -252,7 +292,21 @@ function App() {
     return busy.name ? t("closeConfirm.process", { process: busy.name, name }) : t("closeConfirm.processUnknown", { name });
   };
 
-  const closeDialog = useCallback(() => setEditing(undefined), []);
+  const closeDialog = useCallback(() => setEditing(null), []);
+
+  // A quick connection saved as a session becomes that session's tab; the connection stays.
+  const onProfileSaved = (profile: Profile) => {
+    const tabKey = editing?.tabKey;
+    if (tabKey === undefined) return;
+    updateTab(tabKey, { target: { kind: "ssh", profileId: profile.id }, title: profile.name });
+  };
+
+  const saveAsSession = (key: number) => {
+    const tab = tabsRef.current.find((t) => t.key === key);
+    if (tab?.target.kind !== "quick") return;
+    const { host, port } = tab.target;
+    setEditing({ profile: null, defaults: { host, port, username: tab.target.username || username }, tabKey: key });
+  };
   const closeImport = useCallback(() => setImporting(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
@@ -260,10 +314,16 @@ function App() {
     <div className="app">
       <Sidebar
         profiles={profiles}
-        onOpen={openTab}
-        onEdit={setEditing}
-        onNew={() => setEditing(null)}
-        onImport={() => setImporting(true)}
+        folders={folders}
+        recent={settings.sidebar.showRecent ? recent : []}
+        searchFocusKey={searchFocusKey}
+        onOpen={openProfile}
+        onOpenAll={openAll}
+        onQuickConnect={quickConnect}
+        onEdit={(profile) => setEditing({ profile })}
+        onNew={(folder) => setEditing({ profile: null, defaults: { folder } })}
+        onChanged={reloadProfiles}
+        onImportSshConfig={() => setImporting(true)}
         onLocalTerminal={openLocalTab}
         onSettings={() => setSettingsOpen(true)}
       />
@@ -278,6 +338,7 @@ function App() {
             onMove={moveTab}
             onRename={(key, customTitle) => updateTab(key, { customTitle })}
             onDuplicate={duplicateTab}
+            onSaveAsSession={saveAsSession}
             onReconnect={(key) =>
               setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, reconnectKey: t.reconnectKey + 1 } : t)))
             }
@@ -302,8 +363,27 @@ function App() {
           {tabs.length === 0 && <div className="placeholder">{t("app.placeholder")}</div>}
         </div>
       </main>
-      {editing !== undefined && (
-        <ProfileDialog profile={editing} profiles={profiles} onClose={closeDialog} onChanged={reloadProfiles} />
+      {editing && (
+        <ProfileDialog
+          profile={editing.profile}
+          defaults={editing.defaults}
+          profiles={profiles}
+          onClose={closeDialog}
+          onChanged={reloadProfiles}
+          onSaved={onProfileSaved}
+        />
+      )}
+      {openingAll && (
+        <ConfirmDialog
+          title={t("sidebar.openAllTitle", { count: openingAll.profiles.length })}
+          message={t("sidebar.openAllMessage", { count: openingAll.profiles.length, folder: openingAll.folder.name })}
+          confirmLabel={t("sidebar.openAllConfirm")}
+          onConfirm={() => {
+            openingAll.profiles.forEach((p) => openProfile(p, "newTab"));
+            setOpeningAll(null);
+          }}
+          onCancel={() => setOpeningAll(null)}
+        />
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
       {settingsOpen && <SettingsDialog onClose={closeSettings} />}

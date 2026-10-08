@@ -21,6 +21,14 @@ export const isSettingsShortcut = (e: KeyboardEvent) =>
 
 export const settingsShortcutLabel = isMac ? "⌘," : "Ctrl+,";
 
+/** Focuses the session search: ⌘K on macOS; Ctrl+Shift+K elsewhere, since Ctrl+K belongs to the shell. */
+export const isSearchShortcut = (e: KeyboardEvent) =>
+  e.code === "KeyK" &&
+  !e.altKey &&
+  (isMac ? e.metaKey && !e.ctrlKey && !e.shiftKey : e.ctrlKey && e.shiftKey && !e.metaKey);
+
+export const searchShortcutLabel = isMac ? "⌘K" : "Ctrl+Shift+K";
+
 /**
  * Terminal clipboard keys outside macOS, where the native Edit menu handles ⌘C / ⌘V:
  * Ctrl+Shift+C / Ctrl+Insert copy; Ctrl+Shift+V, Ctrl+V and Shift+Insert paste. Plain Ctrl+C

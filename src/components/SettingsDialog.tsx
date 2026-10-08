@@ -8,6 +8,7 @@ import {
   type Appearance,
   type CursorStyle,
   type RightClick,
+  type SidebarSettings,
   type TabSettings,
   type TerminalSettings,
   type ZmodemSettings,
@@ -65,6 +66,7 @@ export function SettingsDialog({ onClose }: Props) {
   const terminal = settings.terminal;
   const setTerminal = (patch: Partial<TerminalSettings>) => update({ ...settings, terminal: { ...terminal, ...patch } });
   const setTabs = (patch: Partial<TabSettings>) => update({ ...settings, tabs: { ...settings.tabs, ...patch } });
+  const setSidebar = (patch: Partial<SidebarSettings>) => update({ ...settings, sidebar: { ...settings.sidebar, ...patch } });
   const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
 
   useEffect(() => {
@@ -250,6 +252,18 @@ export function SettingsDialog({ onClose }: Props) {
               onChange={(e) => setTabs({ confirmClose: e.target.checked })}
             />
             {t("settings.confirmClose")}
+          </label>
+        </section>
+
+        <section>
+          <h3>{t("settings.sidebar")}</h3>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={settings.sidebar.showRecent}
+              onChange={(e) => setSidebar({ showRecent: e.target.checked })}
+            />
+            {t("settings.showRecent")}
           </label>
         </section>
 

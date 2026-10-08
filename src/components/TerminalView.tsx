@@ -42,8 +42,11 @@ import { ZmodemBar } from "./ZmodemBar";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
-/** Identifies the target, so that the terminal reconnects only when it really changes. */
-const targetKey = (target: SessionTarget) => (target.kind === "ssh" ? `ssh:${target.profileId}` : "local");
+/**
+ * What restarts the terminal when it changes. A quick connection saved as a session keeps
+ * its terminal and connection; the next connection uses the session.
+ */
+const targetKey = (target: SessionTarget) => (target.kind === "local" ? "local" : "ssh");
 
 interface Props {
   target: SessionTarget;

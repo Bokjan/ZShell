@@ -130,31 +130,6 @@ main {
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
-.sidebar ul {
-  list-style: none;
-  margin: 0;
-  padding: 0 6px;
-  overflow-y: auto;
-}
-.sidebar li {
-  position: relative;
-  padding: 6px 30px 6px 8px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-.sidebar li:hover {
-  background: var(--bg-hover);
-}
-.profile-name,
-.profile-meta {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.profile-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-}
 .sidebar-actions {
   display: flex;
   align-items: center;
@@ -166,20 +141,6 @@ main {
   align-items: center;
   justify-content: center;
   min-height: 20px;
-}
-.profile-edit {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
-  visibility: hidden;
-}
-.sidebar li:hover .sidebar-actions {
-  display: flex;
-  gap: 2px;
-}
-.profile-edit {
-  visibility: visible;
 }
 /* Inset like the session list, and kept clear of the window's rounded bottom corner. */
 .sidebar-footer {
@@ -219,8 +180,142 @@ main {
   opacity: 0.8;
 }
 .sidebar-empty {
-  padding: 0 14px;
+  padding: 4px 8px;
   color: var(--text-muted);
+}
+
+/* Session search, under the sidebar header */
+
+.sidebar-search {
+  padding: 0 8px 6px;
+}
+.sidebar-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.sidebar-search input:focus {
+  border-color: var(--accent);
+}
+
+/* Session tree: folders and sessions, one line each */
+
+.sidebar-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 6px 8px;
+  overflow-y: auto;
+  outline: none;
+}
+.sidebar-list.drop-end {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.sidebar-section {
+  padding: 8px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding-right: 8px;
+  border-radius: 5px;
+  cursor: default;
+  white-space: nowrap;
+}
+.tree-row:hover {
+  background: var(--bg-hover);
+}
+.tree-row.selected {
+  background: var(--bg-active);
+}
+.sidebar-list:focus-within .tree-row.selected {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tree-row.highlighted {
+  background: var(--accent-soft);
+}
+.tree-name {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.tree-row.folder .tree-name {
+  flex: 1;
+  font-weight: 500;
+}
+.tree-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.tree-row.quick .tree-name {
+  color: var(--accent);
+}
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.1s;
+}
+.chevron.open {
+  transform: rotate(90deg);
+}
+.tree-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+/* Where a dragged row would land */
+.tree-row.drop-into {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.tree-row.drop-before::before,
+.tree-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.tree-row.drop-before::before {
+  top: -1px;
+}
+.tree-row.drop-after::after {
+  bottom: -1px;
+}
+body.dragging-row {
+  cursor: grabbing;
+}
+.import-path {
+  overflow-wrap: anywhere;
 }
 
 /* Tabs */

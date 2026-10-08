@@ -1,6 +1,7 @@
 #[macro_use]
 mod i18n;
 
+mod backup;
 mod commands;
 mod config;
 mod error;
@@ -159,6 +160,16 @@ pub fn run() {
             commands::profile_save,
             commands::profile_set_forwards,
             commands::profile_delete,
+            commands::profile_duplicate,
+            commands::folders_list,
+            commands::folder_save,
+            commands::folder_delete,
+            commands::tree_move,
+            commands::sessions_export,
+            commands::sessions_import_scan,
+            commands::sessions_import,
+            commands::ssh_quick_open,
+            commands::local_username,
             commands::ssh_config_default_path,
             commands::ssh_config_scan,
             commands::ssh_config_import,

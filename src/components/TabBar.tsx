@@ -55,6 +55,8 @@ interface Props {
   /** `title` null goes back to the automatic title. */
   onRename(key: number, title: string | null): void;
   onDuplicate(key: number): void;
+  /** Saves a quick connection tab as a session. */
+  onSaveAsSession(key: number): void;
   onReconnect(key: number): void;
   onTogglePanel(panel: SidePanel): void;
 }
@@ -74,6 +76,7 @@ export function TabBar({
   onMove,
   onRename,
   onDuplicate,
+  onSaveAsSession,
   onReconnect,
   onTogglePanel,
 }: Props) {
@@ -150,7 +153,8 @@ export function TabBar({
       { label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) },
       { label: t("tabs.rename"), onSelect: () => setEditing(key) },
     ];
-    if (tab.target.kind === "ssh") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
+    if (tab.target.kind !== "local") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
+    if (tab.target.kind === "quick") items.push({ label: t("tabs.saveAsSession"), onSelect: () => onSaveAsSession(key) });
     items.push(
       "separator",
       { label: t("tabs.close"), shortcut: closeTabShortcutLabel, onSelect: () => onClose([key]) },

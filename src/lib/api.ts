@@ -37,7 +37,20 @@ export interface Profile {
   autoReconnect: boolean;
   /** Edited with `setProfileForwards`; `saveProfile` leaves them unchanged. */
   forwards: ForwardRule[];
+  /** The folder it is in; absent at the top level. Changed with `tree.move`. */
+  folder?: string;
 }
+
+export interface Folder {
+  /** Empty for a new folder; assigned on save. */
+  id: string;
+  name: string;
+  /** Absent at the top level. */
+  parent?: string;
+}
+
+/** A session or folder, as moved in the sidebar. */
+export type TreeItem = { kind: "profile"; id: string } | { kind: "folder"; id: string };
 
 export type ForwardState =
   | { type: "starting" }
@@ -63,8 +76,14 @@ export type SessionEvent =
 
 export type SessionId = number;
 
-/** What a terminal tab runs: a saved SSH session, or the default shell on this computer. */
-export type SessionTarget = { kind: "ssh"; profileId: string } | { kind: "local" };
+/**
+ * What a terminal tab runs: a saved SSH session, a quick connection without one (automatic
+ * authentication; an empty username is the local user's), or the default shell here.
+ */
+export type SessionTarget =
+  | { kind: "ssh"; profileId: string }
+  | { kind: "quick"; username: string; host: string; port: number }
+  | { kind: "local" };
 
 /** Error returned by backend commands; `message` is already localized by the backend. */
 export interface CommandError {
@@ -97,6 +116,42 @@ export const saveProfile = (profile: Profile, password?: string) =>
   invoke<Profile>("profile_save", { profile, password: password ?? null });
 
 export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id });
+
+/** Copies a profile (with its saved password) as `name`, right after it. */
+export const duplicateProfile = (id: string, name: string) => invoke<Profile>("profile_duplicate", { id, name });
+
+export const tree = {
+  folders: () => invoke<Folder[]>("folders_list"),
+  /** Creates (empty id) or renames a folder. */
+  saveFolder: (folder: Folder) => invoke<Folder>("folder_save", { folder }),
+  /** Its sessions and subfolders move up into its parent. */
+  deleteFolder: (id: string) => invoke<void>("folder_delete", { id }),
+  /** Into `parent` (null: top level), before `before` (same kind) or at the end. */
+  move: (item: TreeItem, parent: string | null, before: string | null) => invoke<void>("tree_move", { item, parent, before }),
+};
+
+/** A session in an exported file, as it would be imported. */
+export interface SessionCandidate {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  /** Folder names, outermost first. */
+  folder: string[];
+  jumpHosts: string[];
+  /** Name of an existing session with the same name or address; not imported again. */
+  existing: string | null;
+}
+
+export const sessionsFile = {
+  export: (path: string) => invoke<void>("sessions_export", { path }),
+  scan: (path: string) => invoke<SessionCandidate[]>("sessions_import_scan", { path }),
+  import: (path: string, ids: string[]) => invoke<void>("sessions_import", { path, ids }),
+};
+
+/** The user name `ssh` uses when none is given. */
+export const localUsername = () => invoke<string>("local_username");
 
 /** Replaces the profile's forwarding rules; resolves to the updated profile (with rule ids). */
 export const setProfileForwards = (profileId: string, forwards: ForwardRule[]) =>
@@ -153,7 +208,10 @@ export async function openSession(
   const args = { ...size, onOutput: output, onEvent: events };
   let id: SessionId;
   if (target.kind === "local") id = await invoke<SessionId>("local_open", args);
-  else if (shareFrom !== undefined) id = await invoke<SessionId>("ssh_open_shared", { source: shareFrom, ...args });
+  else if (target.kind === "quick") {
+    const { username, host, port } = target;
+    id = await invoke<SessionId>("ssh_quick_open", { username, host, port, ...args });
+  } else if (shareFrom !== undefined) id = await invoke<SessionId>("ssh_open_shared", { source: shareFrom, ...args });
   else id = await invoke<SessionId>("ssh_open", { profileId: target.profileId, ...args });
   return {
     id,

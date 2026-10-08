@@ -3,23 +3,29 @@ import { useTranslation } from "react-i18next";
 
 import { deleteProfile, errorMessage, saveProfile, type AuthMethod, type Profile } from "../lib/api";
 
+/** Values to start a new profile with: from a quick connection, or the folder it goes in. */
+export type ProfileDefaults = Partial<Pick<Profile, "host" | "port" | "username" | "folder">>;
+
 interface Props {
   /** null creates a new profile. */
   profile: Profile | null;
+  defaults?: ProfileDefaults;
   /** All profiles, to pick jump hosts from. */
   profiles: Profile[];
   onClose(): void;
   onChanged(): void;
+  /** Called with the saved profile (not on delete). */
+  onSaved?(profile: Profile): void;
 }
 
 type AuthType = AuthMethod["type"];
 
-export function ProfileDialog({ profile, profiles, onClose, onChanged }: Props) {
+export function ProfileDialog({ profile, defaults, profiles, onClose, onChanged, onSaved }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(profile?.name ?? "");
-  const [host, setHost] = useState(profile?.host ?? "");
-  const [port, setPort] = useState(String(profile?.port ?? 22));
-  const [username, setUsername] = useState(profile?.username ?? "");
+  const [host, setHost] = useState(profile?.host ?? defaults?.host ?? "");
+  const [port, setPort] = useState(String(profile?.port ?? defaults?.port ?? 22));
+  const [username, setUsername] = useState(profile?.username ?? defaults?.username ?? "");
   const [authType, setAuthType] = useState<AuthType>(profile?.auth.type ?? "auto");
   const [keyPath, setKeyPath] = useState(
     profile?.auth.type === "publicKey" ? profile.auth.keyPath : "~/.ssh/id_ed25519",
@@ -74,7 +80,7 @@ export function ProfileDialog({ profile, profiles, onClose, onChanged }: Props) 
     else if (password) passwordUpdate = password;
 
     try {
-      await saveProfile(
+      const saved = await saveProfile(
         // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
         {
           id: profile?.id ?? "",
@@ -87,10 +93,13 @@ export function ProfileDialog({ profile, profiles, onClose, onChanged }: Props) 
           keepaliveInterval,
           autoReconnect,
           forwards: profile?.forwards ?? [],
+          // Where a new profile goes; the backend keeps an existing one's folder.
+          folder: profile?.folder ?? defaults?.folder,
         },
         passwordUpdate,
       );
       onChanged();
+      onSaved?.(saved);
       onClose();
     } catch (err) {
       setError(errorMessage(err));

@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, terminal, tabs, ZMODEM), persisted as `settings.json` next to
+//! App-wide preferences (appearance, terminal, tabs, sidebar, ZMODEM), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ pub struct Settings {
     pub appearance: Appearance,
     pub terminal: TerminalSettings,
     pub tabs: TabSettings,
+    pub sidebar: SidebarSettings,
     pub zmodem: ZmodemSettings,
 }
 
@@ -77,6 +78,19 @@ pub enum CursorStyle {
     Underline,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SidebarSettings {
+    /// Show the most recently opened sessions above the list.
+    pub show_recent: bool,
+}
+
+impl Default for SidebarSettings {
+    fn default() -> Self {
+        Self { show_recent: true }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ZmodemSettings {
@@ -90,6 +104,7 @@ impl Default for Settings {
             appearance: Appearance::System,
             terminal: TerminalSettings::default(),
             tabs: TabSettings::default(),
+            sidebar: SidebarSettings::default(),
             zmodem: ZmodemSettings::default(),
         }
     }

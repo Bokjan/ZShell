@@ -48,7 +48,7 @@
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
 | `zmodem/` | rz / sz：检测与会话接管（`mod.rs`）、帧格式与 CRC（`frame.rs`）、收发字节流（`link.rs`）、接收（`receive.rs`）、发送（`send.rs`） |
 | `config.rs` / `settings.rs` / `secrets.rs` | 会话配置 `profiles.json`、应用设置 `settings.json`、钥匙串 |
-| `import.rs` | ssh_config 导入 |
+| `import.rs` / `backup.rs` | ssh_config 导入；会话导出与导入 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
 | `commands.rs` | Tauri 命令入口 |
 
@@ -97,9 +97,12 @@
 
 ### 配置与设置
 
-- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json` 与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
+- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json` 与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
 - **设置**：分为 `appearance`、`terminal`、`tabs` 三组；后端校验并夹取数值，文件损坏时回退默认值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。
 - **主题**：`<html data-theme>` 选择 CSS 变量组，样式中不写死颜色；原生窗口用 `setTheme` 同步标题栏，用 `setBackgroundColor` 同步调整大小时露出的背景；首帧背景由 `index.html` 的内联样式按系统外观给出，避免闪烁。终端配色、字体等通过 `term.options` 应用到所有已打开的终端。
+- **会话与文件夹**：会话的 `folder` 字段指向所在文件夹，文件夹存在 `folders.json`（`parent` 可嵌套）。`profiles.json` 仍是数组，旧版本照常读取。文件中的顺序即显示顺序，每个文件夹里先列子文件夹、再列会话；拖拽只有一个后端操作 `tree_move`（放进某文件夹、排在某项之前或末尾）。删除文件夹时其中的内容移到上一级，不删除会话。加载时修正指向不存在文件夹的引用和循环。文件夹折叠状态与最近连接是本机的界面状态，与侧栏宽度一样存在 localStorage。
+- **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`，含文件夹与会话，不含密码）。导入时同名、否则同地址（用户、主机、端口）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；文件夹按名称路径合并；导入的会话一律分配新 id。
+- **快速连接**：标签目标 `quick`（`ssh_quick_open`）不需要已保存的会话，用"自动"认证，未写用户名时用本机用户名（同 `ssh host`）。"另存为会话"把标签目标改为新会话但不重连（`TerminalView` 只在本地与 SSH 之间切换时重建终端），下次连接起使用会话的设置。
 - **ssh_config 导入**：一次性复制，导入后与 config 文件无关联。与已有会话同名或同地址的主机不再导入，不支持的选项（ProxyCommand、ForwardAgent 等）在列表中标出。
 
 ## 交互约定
@@ -114,6 +117,7 @@
   | 跳到第 1–8 个 / 最后一个标签 | ⌘1–8 / ⌘9 | Alt+1–8 / Alt+9 |
   | 关闭标签 | ⌘W（原生菜单项） | Ctrl+Shift+W |
   | 关闭窗口 | ⇧⌘W（原生菜单项） | — |
+  | 搜索会话 | ⌘K | Ctrl+Shift+K |
   | 设置 | ⌘,（原生菜单项） | Ctrl+, |
   | 终端搜索 | ⌘F | Ctrl+Shift+F |
   | SFTP 面板 | ⇧⌘E | Ctrl+Shift+E |
@@ -122,7 +126,8 @@
 - **菜单**：macOS 保留原生菜单栏（WKWebView 的 ⌘C / ⌘V / ⌘A / ⌘Q、⌘, 都依赖原生菜单项），由 `lib.rs` 显式构建：去掉预置的 "Close Window"（它占用 ⌘W），File 菜单改为 New Local Terminal、Close Tab（⌘W，交给前端，可能先确认；没有标签时关闭窗口）、Close Window（⇧⌘W），与 Terminal.app 一致。Windows 不显示菜单栏。
 - **右键菜单**：终端和标签的右键菜单是页面内绘制的 `ContextMenu`（跟随主题，两个平台一致），不用原生菜单。
 - **滚动条**：终端的滚动条由 xterm.js 自绘，颜色取配色的前景色。其余区域用系统滚动条，`color-scheme` 让它们跟随深浅色：macOS 是系统的悬浮滚动条；Windows 通过窗口配置 `scrollBarStyle: fluentOverlay` 使用 WebView2 的 Fluent 悬浮滚动条（需要 WebView2 Runtime 125 及以上，否则为默认的经典样式）。不用 `::-webkit-scrollbar` 统一自绘，以免 macOS 失去原生悬浮滚动条。标签栏放不下时横向滚动但不显示滚动条（滚轮、触控板，当前标签自动滚入视野），"文件 / 转发"切换按钮固定在右侧。
-- **入口**：本地终端在侧栏标题栏的按钮和 macOS File 菜单中；设置在侧栏底部和 macOS 应用菜单中。
+- **入口**：本地终端在侧栏标题栏的按钮和 macOS File 菜单中；设置在侧栏底部和 macOS 应用菜单中；导入导出在侧栏标题栏的菜单中。
+- **会话列表**（Xshell 风格）：单击选中，双击或 Enter 在新标签中打开；单击文件夹折叠 / 展开，双击打开其中全部会话（超过 5 个先确认）。右键"连接"在该会话已有标签时切换过去，"在新标签中连接"总是新开。键盘：↑↓ 移动，←→ 折叠展开（← 在会话上回到所在文件夹）。新建会话 / 文件夹放进当前选中的文件夹。搜索框按名称、地址、用户名过滤（多个词同时满足），↑↓ 与 Enter 打开；没有匹配且输入像地址（`[user@]host[:port]`，含 `@`、`.` 或端口）时提供快速连接。
 
 ### 剪贴板
 

@@ -81,6 +81,7 @@ export function SessionPane({
                 sessionId={sessionId}
                 connected={connected}
                 profile={profile}
+                quick={tab.target.kind === "quick"}
                 states={tab.forwards}
                 onProfileChanged={onProfileChanged}
               />

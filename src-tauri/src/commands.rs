@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-use crate::config::{Profile, ProfileStore};
+use crate::backup;
+use crate::config::{AuthMethod, Folder, Item, Profile, ProfileStore};
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::i18n;
@@ -73,8 +74,60 @@ pub fn ssh_config_scan(store: State<'_, ProfileStore>, path: PathBuf) -> Result<
 #[tauri::command]
 pub fn ssh_config_import(store: State<'_, ProfileStore>, path: PathBuf, aliases: Vec<String>) -> Result<Vec<Profile>> {
     let profiles = import::plan(&path, &aliases, &store.list())?;
-    store.add_all(profiles.clone())?;
+    store.add_all(Vec::new(), profiles.clone())?;
     Ok(profiles)
+}
+
+#[tauri::command]
+pub fn folders_list(store: State<'_, ProfileStore>) -> Vec<Folder> {
+    store.folders()
+}
+
+/// Creates a folder (empty id) or renames one; returns it as saved.
+#[tauri::command]
+pub fn folder_save(store: State<'_, ProfileStore>, folder: Folder) -> Result<Folder> {
+    store.save_folder(folder)
+}
+
+/// Deletes a folder; its sessions and subfolders move up into its parent.
+#[tauri::command]
+pub fn folder_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
+    store.delete_folder(&id)
+}
+
+/// Moves a session or folder into `parent` (`None`: top level), before `before` (a session or
+/// folder of the same kind) or at the end.
+#[tauri::command]
+pub fn tree_move(store: State<'_, ProfileStore>, item: Item, parent: Option<String>, before: Option<String>) -> Result<()> {
+    store.move_item(item, parent, before)
+}
+
+/// Copies a session, with its saved password, as `name` right after it.
+#[tauri::command]
+pub fn profile_duplicate(store: State<'_, ProfileStore>, id: String, name: String) -> Result<Profile> {
+    let copy = store.duplicate(&id, &name)?;
+    if let Some(password) = secrets::get_password(&id) {
+        secrets::set_password(&copy.id, &password)?;
+    }
+    Ok(copy)
+}
+
+/// Writes all sessions and folders (without passwords) to `path`.
+#[tauri::command]
+pub fn sessions_export(store: State<'_, ProfileStore>, path: PathBuf) -> Result<()> {
+    backup::export(&path, store.folders(), store.list())
+}
+
+#[tauri::command]
+pub fn sessions_import_scan(store: State<'_, ProfileStore>, path: PathBuf) -> Result<Vec<backup::Candidate>> {
+    backup::scan(&path, &store.list())
+}
+
+/// Imports the sessions `ids` (ids in the file) and what they need (jump hosts, folders).
+#[tauri::command]
+pub fn sessions_import(store: State<'_, ProfileStore>, path: PathBuf, ids: Vec<String>) -> Result<()> {
+    let (folders, profiles) = backup::plan(&path, &ids, &store.list(), &store.folders())?;
+    store.add_all(folders, profiles)
 }
 
 #[tauri::command]
@@ -99,6 +152,50 @@ pub fn ssh_open(
     let jumps = store.jump_hosts(&profile)?;
     let connections = connections.inner().clone();
     Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, jumps, id, io, connections)))
+}
+
+/// Connects to `username@host:port` without a saved session (quick connect), with automatic
+/// authentication. An empty `username` means the local user name, as with `ssh host`.
+#[tauri::command]
+pub fn ssh_quick_open(
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    username: String,
+    host: String,
+    port: u16,
+    cols: u16,
+    rows: u16,
+    on_output: Channel,
+    on_event: Channel<SessionEvent>,
+) -> Result<SessionId> {
+    let username = match username.trim() {
+        "" => local_username(),
+        name => name.to_owned(),
+    };
+    let profile = Profile {
+        id: String::new(),
+        name: format!("{username}@{host}"),
+        host: host.trim().to_owned(),
+        port,
+        username,
+        auth: AuthMethod::Auto,
+        jump_hosts: Vec::new(),
+        keepalive_interval: 30,
+        auto_reconnect: true,
+        forwards: Vec::new(),
+        folder: None,
+    };
+    if profile.host.is_empty() || profile.username.is_empty() || port == 0 {
+        return Err(Error::new("profile.missingFields"));
+    }
+    let connections = connections.inner().clone();
+    Ok(sessions.spawn(on_output, on_event, (cols, rows), |id, io| ssh::run(profile, Vec::new(), id, io, connections)))
+}
+
+/// The user name `ssh` uses when none is given.
+#[tauri::command]
+pub fn local_username() -> String {
+    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default()
 }
 
 /// Opens another shell on the SSH connection of session `source` (duplicating its tab),

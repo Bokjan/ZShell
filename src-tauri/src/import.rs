@@ -292,6 +292,7 @@ fn new_profile(id: String, name: String, host: String, port: u16, username: Stri
         keepalive_interval: 30,
         auto_reconnect: true,
         forwards: Vec::new(),
+        folder: None,
     }
 }
 

@@ -14,11 +14,12 @@ A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tau
 - **ZMODEM**: `rz` and `sz` in the terminal, for hosts without SFTP such as those behind bastion hosts, over SSH and in local terminals. Choose files or drop them on the terminal for `rz`; files from `sz` go to the Downloads folder (or ask where).
 - **Port forwarding**: local (`-L`), remote (`-R`) and dynamic SOCKS (`-D`) rules, saved with the session, optionally started on connect, with live status.
 - **Import from `~/.ssh/config`**: hosts, users, ports, keys, jump hosts and forwards.
+- **Session management**: nested folders arranged by drag and drop, search, quick connect by typing `user@host[:port]`, recently opened sessions, duplicate, and export/import to a file (without passwords) for backups and other computers.
 - **Local terminals**: your login shell on macOS, PowerShell on Windows.
 - **Terminal**: context menu, copy on select, right-click to paste, confirmation before pasting multiple lines, Option as Meta on macOS, search with regular expressions, built-in color schemes, custom fonts, light and dark appearance.
 - **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program.
 
-Planned next: session folders, search and quick connect. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: the tab bar in the window title bar, sending input to several sessions, quick commands and session logs. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -44,10 +45,11 @@ The builds are not signed with a developer certificate yet, so the system warns 
 
 ## Usage
 
-Add a session with **+** in the sidebar, or import hosts from your SSH config, then click a session to open it in a new tab. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect. Right-click the terminal or a tab for more actions; double-click a tab to rename it.
+Add a session with **+** in the sidebar, or import hosts from your SSH config, then double-click a session (or select it and press Enter) to open it in a new tab. To connect without saving a session, type `user@host` or `user@host:port` in the search box and press Enter. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect. Right-click the terminal or a tab for more actions; double-click a tab to rename it.
 
 | Action | macOS | Windows |
 |---|---|---|
+| Search sessions | ⌘K | Ctrl+Shift+K |
 | Copy | ⌘C | Ctrl+Shift+C, or Ctrl+C with a selection |
 | Paste | ⌘V | Ctrl+Shift+V or Ctrl+V |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab / Ctrl+Shift+Tab |
@@ -60,7 +62,7 @@ Add a session with **+** in the sidebar, or import hosts from your SSH config, t
 
 ### Where data is stored
 
-- Sessions and settings: `~/Library/Application Support/org.boyin.zshell/` on macOS, `%APPDATA%\org.boyin.zshell\` on Windows (`profiles.json` and `settings.json`).
+- Sessions and settings: `~/Library/Application Support/org.boyin.zshell/` on macOS, `%APPDATA%\org.boyin.zshell\` on Windows (`profiles.json`, `folders.json` and `settings.json`).
 - Passwords and passphrases: the macOS Keychain or the Windows Credential Manager, never in those files.
 - Known hosts: `~/.ssh/known_hosts`, shared with OpenSSH.
 

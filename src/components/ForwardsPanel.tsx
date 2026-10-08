@@ -18,6 +18,8 @@ interface Props {
   sessionId: SessionId | null;
   connected: boolean;
   profile: Profile | undefined;
+  /** A quick connection, which has no session to keep rules in. */
+  quick: boolean;
   /** Live rule states on this tab's connection, by rule id. */
   states: Record<string, ForwardState>;
   onProfileChanged(profile: Profile): void;
@@ -30,7 +32,7 @@ const mapping = (rule: ForwardRule) => {
   return rule.kind === "dynamic" ? bind : `${bind} → ${hostPort(rule.targetHost, rule.targetPort)}`;
 };
 
-export function ForwardsPanel({ sessionId, connected, profile, states, onProfileChanged }: Props) {
+export function ForwardsPanel({ sessionId, connected, profile, quick, states, onProfileChanged }: Props) {
   const { t } = useTranslation();
   // undefined: dialog closed; null: adding a new rule.
   const [editing, setEditing] = useState<ForwardRule | null | undefined>(undefined);
@@ -91,7 +93,7 @@ export function ForwardsPanel({ sessionId, connected, profile, states, onProfile
   if (!profile) {
     return (
       <div className="forwards-panel">
-        <div className="forwards-empty">{t("forwards.profileMissing")}</div>
+        <div className="forwards-empty">{quick ? t("forwards.quickConnection") : t("forwards.profileMissing")}</div>
       </div>
     );
   }
