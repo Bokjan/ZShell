@@ -30,7 +30,7 @@ ZMODEM 的测试除了自己的收发互测，还与 lrzsz 的 `lsz` / `lrz` 对
 
 - **语言**：`docs/` 用中文，其他一切（代码、注释、界面文案、README、提交信息）用英语，见 [I18N.md](I18N.md)「语言约定」。
 - **提交信息**：Conventional Commits（`feat:`、`fix:`、`docs:`、`chore:`、`refactor:`、`ci:`，可带 scope，如 `feat(sftp): …`）；正文不手动折行，每段或每个列表项一行。
-- **版本号**：只在 `src-tauri/Cargo.toml` 维护。`tauri.conf.json` 不写 `version`，Tauri 取 Cargo 包版本；`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
+- **版本号**：只在 `src-tauri/Cargo.toml` 维护，由 `scripts/release.sh` 修改（规则见下文「发布」）。`tauri.conf.json` 不写 `version`，Tauri 取 Cargo 包版本；`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
 - **文档分工**：做什么、先后顺序与未实现功能的设计写在 [ROADMAP.md](ROADMAP.md)；跨模块的设计写在 [ARCHITECTURE.md](ARCHITECTURE.md)；模块内的细节（边界情况、库的坑）写在代码注释里。根目录的 `CLAUDE.md`（英语）是给 AI 助手的项目说明，汇总上述约定；约定变化时同步更新。
 
 ## 端到端测试
@@ -96,13 +96,20 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 ## 发布
 
-1. 修改 `src-tauri/Cargo.toml` 中的版本号（`Cargo.lock` 随之更新）。
-2. 生成更新日志：`pnpm dlx git-cliff --tag vX.Y.Z -o CHANGELOG.md`。配置在 `cliff.toml`，只收录 `feat` / `fix` / `perf` 和破坏性变更，其他类型（`docs`、`ci`、`chore`、`refactor` 等）不出现在更新日志里，因此提交类型要选准。生成后可以手动润色，内容保持英语。
-3. 提交以上改动（如 `chore: release vX.Y.Z`），推送 `vX.Y.Z` tag。
-4. workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（以该节为发布说明；避免并行 job 重复创建），然后并行打包并上传：
+**版本号**：语义化版本 `X.Y.Z`，从 1.0.0 开始。
+- 每个功能里程碑发布时升 minor（1.1.0、1.2.0…），两个里程碑之间只有修复时升 patch。
+- `profiles.json`、`settings.json` 等配置保持向后兼容：新字段加默认值，旧文件照常读取。只有不得不放弃兼容时才升 major，并在更新日志里标为破坏性变更。
+- 不用预发布后缀（`-beta.1` 之类）：Windows 的 MSI 只接受数字版本号。
+
+**步骤**（`scripts/release.sh`，需在 main 上且工作区干净）：
+1. `scripts/release.sh prepare X.Y.Z`：修改 `src-tauri/Cargo.toml` 中的版本号并更新 `Cargo.lock`，用 git-cliff 在 `CHANGELOG.md` 顶部加上该版本一节（`--unreleased --prepend`，之前各版本已润色的内容不变）。git-cliff 的配置在 `cliff.toml`，只收录 `feat` / `fix` / `perf` 和破坏性变更，其他类型（`docs`、`ci`、`chore`、`refactor` 等）不出现在更新日志里，因此提交类型要选准。
+2. 润色该版本一节：合并同一功能的多条、去掉内部里程碑编号，内容保持英语。
+3. `scripts/release.sh tag`：运行 `pnpm build`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
+4. `git push origin main vX.Y.Z`。
+5. workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（以该节为发布说明；避免并行 job 重复创建），然后并行打包并上传：
    - macOS 通用包（`universal-apple-darwin`，`.app` 与 `.dmg`）。
    - Windows NSIS 安装包与 MSI。
    - Windows 免安装的单独 exe（`--no-bundle` + `uploadPlainBinary`，文件名 `ZShell_<版本>_x64_standalone.exe`）。需要系统有 WebView2 运行时；配置仍写在 `%APPDATA%`，不是便携模式。
-5. 检查草稿后手动发布。
+6. 检查草稿后手动发布，作为正式版本发布（不勾选 pre-release）。
 
 **签名**：尚未签名。macOS 只做 ad-hoc 签名（`APPLE_SIGNING_IDENTITY=-`，保证 Apple Silicon 能运行），下载后需在"隐私与安全性"中放行或去掉 quarantine；Windows 未签名，SmartScreen 会提示。以后接入证书只需给 workflow 配 secret。

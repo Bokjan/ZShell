@@ -1,5 +1,5 @@
 # git-cliff configuration: generates CHANGELOG.md from the Conventional Commits history.
-# Before tagging a release: pnpm dlx git-cliff --tag vX.Y.Z -o CHANGELOG.md
+# Run by scripts/release.sh prepare, which adds the new version's section to CHANGELOG.md.
 # The release workflow uses the tag's section of CHANGELOG.md as the release notes.
 
 [changelog]

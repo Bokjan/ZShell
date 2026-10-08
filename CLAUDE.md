@@ -41,7 +41,7 @@ Never touch the maintainer's real configuration (`profiles.json`, `settings.json
 
 ## Conventions
 
-- The app version lives only in `src-tauri/Cargo.toml`.
+- The app version lives only in `src-tauri/Cargo.toml` and follows semantic versioning: a minor release per milestone, patch releases for fixes, and configuration files stay backward compatible. Releases are made with `scripts/release.sh` (see "发布" in `docs/DEVELOPMENT.md`); ask before pushing a release tag.
 - Styles use the CSS theme variables; no hard-coded colors.
 - App shortcuts are intercepted in the capture phase so the terminal never sees them. On Windows, shortcuts that would clash with the shell use Ctrl+Shift (Ctrl+F, Ctrl+E and so on belong to the shell).
 - SSH prompts (host keys, passwords, passphrases, keyboard-interactive) are asked inline in the terminal, as OpenSSH does, not in dialogs. Follow OpenSSH's behavior where there is one.
