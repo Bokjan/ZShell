@@ -97,7 +97,7 @@
 
 ### 配置与设置
 
-- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json` 与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
+- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`commands.json`（快速命令）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
 - **设置**：分为 `appearance`、`terminal`、`tabs` 三组；后端校验并夹取数值，文件损坏时回退默认值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。
 - **主题**：`<html data-theme>` 选择 CSS 变量组，样式中不写死颜色；原生窗口用 `setTheme` 同步原生菜单与对话框（Windows 上还决定 WebView2 的 `prefers-color-scheme`），用 `setBackgroundColor` 同步调整大小时露出的背景；首帧背景由 `index.html` 的内联样式按系统外观给出，避免闪烁。终端配色、字体等通过 `term.options` 应用到所有已打开的终端。
 - **会话与文件夹**：会话的 `folder` 字段指向所在文件夹，文件夹存在 `folders.json`（`parent` 可嵌套）。`profiles.json` 仍是数组，旧版本照常读取。文件中的顺序即显示顺序，每个文件夹里先列子文件夹、再列会话；拖拽只有一个后端操作 `tree_move`（放进某文件夹、排在某项之前或末尾）。删除文件夹时其中的内容移到上一级，不删除会话。加载时修正指向不存在文件夹的引用和循环。文件夹折叠状态与最近连接是本机的界面状态，与侧栏宽度一样存在 localStorage。
@@ -122,6 +122,7 @@
   | 设置 | ⌘,（原生菜单项） | Ctrl+, |
   | 终端搜索 | ⌘F | Ctrl+Shift+F |
   | 撰写栏 | ⇧⌘I | Ctrl+Shift+I |
+  | 快速命令面板 | ⇧⌘J | Ctrl+Shift+J |
   | SFTP 面板 | ⇧⌘E | Ctrl+Shift+E |
   | 端口转发面板 | ⇧⌘P | Ctrl+Shift+P |
 
@@ -156,6 +157,7 @@
 - **关闭确认**（可关闭）：已连接的 SSH 标签，或本地终端里有前台程序时确认；关闭多个标签时合并为一次确认。对话框里可勾选"不再询问"，即关闭该设置。关闭窗口（即退出：关闭按钮、⌘Q、Alt+F4）会一次结束全部会话，有这样的标签时总是确认，不受该设置影响，也没有"不再询问"；由前端的 `onCloseRequested` 拦截。macOS 上从程序坞退出、注销或关机由系统直接终止应用，不经过确认（已知限制）。
 - **重新连接**：标签右键菜单中，关闭当前会话后立即新建连接；旧会话迟到的输出和事件按连接代号忽略。
 - **撰写栏与同步输入**：纯前端实现，按会话 id 直接 `session_write`。发送范围只在撰写栏打开时生效（`lib/compose.ts` 的 `scopeTabs`），关闭后一律只发当前标签，关闭时同步也随之关闭，避免范围停在"所有标签"而不自知。同步转发的是终端 `onData` 中用户的输入（键入与粘贴），过滤掉鼠标与焦点报告，只从当前标签转发。范围超出当前标签时标签顶部有标记（同步时为警示色），收到内容的标签闪烁；同步时当前终端四周有警示色边框（画在终端画布之上的一层，`outline` 会被 WebGL 画布遮住）。撰写栏历史只保存在内存中。
+- **快速命令**：存在 `commands.json`，按分组保存；默认分组（id `default`，名称显示为翻译文本）总是存在且排第一，删除其他分组时其中的命令移入默认分组。前端整体编辑后整体保存，后端补 id、修正重复。会话的 `commandGroup` 是其标签默认显示的分组，标签里手动切换的分组只记在该标签上；分组被删除后回退到默认分组。快速命令与撰写栏共用发送逻辑（`scopeTabs`），撰写栏打开且范围不是当前标签时按钮栏和命令面板变为警示色并列出目标标签。入口：终端下方的按钮栏（显示与否是本机界面状态，存在 localStorage）、终端右键菜单（当前分组的前 8 条）、命令面板。
 - **终端内操作**：连接结束后按 Enter 重连 / 重试 / 重启 shell，提示以暗色文字写在终端里。
 
 ## 平台注意事项

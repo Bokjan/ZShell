@@ -12,7 +12,7 @@ import type { ForwardState, SessionId, SessionTarget } from "../lib/api";
 import { closeTabShortcutLabel, isWindows, newTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { ComposeIcon, PlusIcon } from "./icons";
+import { ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import type { SessionStatus } from "./TerminalView";
 import { WindowControls } from "./WindowControls";
 
@@ -38,6 +38,8 @@ export interface Tab {
   sidePanel: SidePanel | null;
   /** Live state of the profile's forwarding rules on this tab's connection, by rule id. */
   forwards: Record<string, ForwardState>;
+  /** The quick command group picked in this tab; null shows its session's. */
+  commandGroup: string | null;
 }
 
 export const tabTitle = (tab: Tab, followRemoteTitle: boolean) =>
@@ -66,6 +68,8 @@ interface Props {
   onTogglePanel(panel: SidePanel): void;
   composeOpen: boolean;
   onToggleCompose(): void;
+  quickBarOpen: boolean;
+  onToggleQuickBar(): void;
   /** Tabs that the compose bar sends to besides (or instead of) the active one; marked. */
   inScope: number[];
   /** Typing is synced to the tabs in scope; their marks turn to the warning color. */
@@ -95,6 +99,8 @@ export function TabBar({
   onTogglePanel,
   composeOpen,
   onToggleCompose,
+  quickBarOpen,
+  onToggleQuickBar,
   inScope,
   syncing,
   flashing,
@@ -280,6 +286,16 @@ export function TabBar({
           onClick={onToggleCompose}
         >
           <ComposeIcon />
+        </button>
+      )}
+      {tabs.length > 0 && (
+        <button
+          className={`compose-toggle${quickBarOpen ? " on" : ""}`}
+          title={t("quick.toggle")}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onToggleQuickBar}
+        >
+          <QuickIcon />
         </button>
       )}
       {tabs.length > 0 && (

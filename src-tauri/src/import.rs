@@ -293,6 +293,7 @@ fn new_profile(id: String, name: String, host: String, port: u16, username: Stri
         auto_reconnect: true,
         forwards: Vec::new(),
         folder: None,
+        command_group: None,
     }
 }
 

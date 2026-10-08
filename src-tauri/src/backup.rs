@@ -185,6 +185,7 @@ mod tests {
             auto_reconnect: true,
             forwards: Vec::new(),
             folder: folder.map(Into::into),
+            command_group: None,
         }
     }
 

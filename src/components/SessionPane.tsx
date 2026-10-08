@@ -1,6 +1,7 @@
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import type { ForwardState, Profile, SessionId } from "../lib/api";
+import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally } from "../lib/drag";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { SftpPanel } from "./SftpPanel";
@@ -21,6 +22,8 @@ interface Props {
   onInput(data: string): void;
   /** Input typed here is sent to other tabs too (the compose bar's sync); shown on the pane. */
   syncing: boolean;
+  /** Added to the end of the terminal's context menu (quick commands). */
+  menuItems: MenuItem[];
   onProfileChanged(profile: Profile): void;
 }
 
@@ -42,6 +45,7 @@ export function SessionPane({
   onTitle,
   onInput,
   syncing,
+  menuItems,
   onProfileChanged,
 }: Props) {
   const { sessionId } = tab;
@@ -73,6 +77,7 @@ export function SessionPane({
         onForward={onForward}
         onTitle={onTitle}
         onInput={onInput}
+        menuItems={menuItems}
       />
       {mounted.length > 0 && (
         <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>

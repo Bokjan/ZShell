@@ -8,6 +8,8 @@ export type MenuItem =
       shortcut?: string;
       disabled?: boolean;
       danger?: boolean;
+      /** For a choice among several: shows a check mark when true, room for one when false. */
+      checked?: boolean;
       onSelect(): void;
     }
   | "separator";
@@ -114,6 +116,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
             onMouseEnter={() => setHighlight(item.disabled ? -1 : index)}
             onClick={() => choose(index)}
           >
+            {item.checked !== undefined && <span className="context-menu-check">{item.checked ? "✓" : ""}</span>}
             <span className="context-menu-label">{item.label}</span>
             {item.shortcut && <kbd>{item.shortcut}</kbd>}
           </div>

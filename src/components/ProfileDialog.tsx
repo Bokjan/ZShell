@@ -1,7 +1,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { deleteProfile, errorMessage, saveProfile, type AuthMethod, type Profile } from "../lib/api";
+import {
+  DEFAULT_GROUP,
+  deleteProfile,
+  errorMessage,
+  saveProfile,
+  type AuthMethod,
+  type CommandGroup,
+  type Profile,
+} from "../lib/api";
+import { groupName } from "../lib/quickCommands";
 
 /** Values to start a new profile with: from a quick connection, or the folder it goes in. */
 export type ProfileDefaults = Partial<Pick<Profile, "host" | "port" | "username" | "folder">>;
@@ -12,6 +21,8 @@ interface Props {
   defaults?: ProfileDefaults;
   /** All profiles, to pick jump hosts from. */
   profiles: Profile[];
+  /** To pick the quick command group its tabs show first. */
+  commandGroups: CommandGroup[];
   onClose(): void;
   onChanged(): void;
   /** Called with the saved profile (not on delete). */
@@ -20,7 +31,7 @@ interface Props {
 
 type AuthType = AuthMethod["type"];
 
-export function ProfileDialog({ profile, defaults, profiles, onClose, onChanged, onSaved }: Props) {
+export function ProfileDialog({ profile, defaults, profiles, commandGroups, onClose, onChanged, onSaved }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(profile?.name ?? "");
   const [host, setHost] = useState(profile?.host ?? defaults?.host ?? "");
@@ -33,13 +44,21 @@ export function ProfileDialog({ profile, defaults, profiles, onClose, onChanged,
   const [jumpHosts, setJumpHosts] = useState<string[]>(profile?.jumpHosts ?? []);
   const [keepalive, setKeepalive] = useState(String(profile?.keepaliveInterval ?? 30));
   const [autoReconnect, setAutoReconnect] = useState(profile?.autoReconnect ?? true);
+  // A group deleted since falls back to the default group, as its tabs do.
+  const [commandGroup, setCommandGroup] = useState(() =>
+    commandGroups.some((group) => group.id === profile?.commandGroup) ? profile!.commandGroup! : DEFAULT_GROUP,
+  );
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Start expanded when the profile already uses advanced settings.
   const [advancedOpen] = useState(
-    !!profile && (profile.jumpHosts.length > 0 || profile.keepaliveInterval !== 30 || !profile.autoReconnect),
+    !!profile &&
+      (profile.jumpHosts.length > 0 ||
+        profile.keepaliveInterval !== 30 ||
+        !profile.autoReconnect ||
+        (profile.commandGroup ?? DEFAULT_GROUP) !== DEFAULT_GROUP),
   );
   // Automatic authentication falls back to a password, so it can keep a stored one too.
   const usesPassword = authType === "password" || authType === "auto";
@@ -92,6 +111,7 @@ export function ProfileDialog({ profile, defaults, profiles, onClose, onChanged,
           jumpHosts,
           keepaliveInterval,
           autoReconnect,
+          commandGroup: commandGroup === DEFAULT_GROUP ? undefined : commandGroup,
           forwards: profile?.forwards ?? [],
           // Where a new profile goes; the backend keeps an existing one's folder.
           folder: profile?.folder ?? defaults?.folder,
@@ -102,6 +122,9 @@ export function ProfileDialog({ profile, defaults, profiles, onClose, onChanged,
       onSaved?.(saved);
       onClose();
     } catch (err) {
+      // The profile itself may have been saved with only the password change failing (the
+      // keychain), so the list is reloaded either way.
+      onChanged();
       setError(errorMessage(err));
     }
   };
@@ -269,6 +292,17 @@ export function ProfileDialog({ profile, defaults, profiles, onClose, onChanged,
             <input type="checkbox" checked={autoReconnect} onChange={(e) => setAutoReconnect(e.target.checked)} />
             {t("profile.autoReconnect")}
           </label>
+          <label>
+            {t("profile.commandGroup")}
+            <select value={commandGroup} onChange={(e) => setCommandGroup(e.target.value)}>
+              {commandGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {groupName(group, t)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="hint">{t("profile.commandGroupHint")}</p>
         </details>
 
         {error && <p className="error">{error}</p>}

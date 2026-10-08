@@ -3,10 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
-import { ComposeBar, type SendResult } from "./components/ComposeBar";
+import { CommandPalette } from "./components/CommandPalette";
+import { ComposeBar } from "./components/ComposeBar";
+import type { MenuItem } from "./components/ContextMenu";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ImportDialog } from "./components/ImportDialog";
 import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog";
+import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPane } from "./components/SessionPane";
@@ -16,12 +19,15 @@ import {
   listProfiles,
   localShellName,
   localUsername,
+  quickCommands,
   sessionForeground,
   tree,
   writeSession,
   type Folder,
   type ForwardState,
   type Profile,
+  type QuickCommand,
+  type QuickCommands,
   type SessionId,
   type SessionTarget,
 } from "./lib/api";
@@ -30,9 +36,11 @@ import {
   isNewTabShortcut,
   isSearchShortcut,
   isSettingsShortcut,
+  shiftShortcutLabel,
   tabShortcut,
 } from "./lib/platform";
-import { asTyped, CLOSED_COMPOSE, isConnected, scopeTabs, sendsToMany, type Compose } from "./lib/compose";
+import { storeBarVisible, storedBarVisible, tabGroup } from "./lib/quickCommands";
+import { asTyped, CLOSED_COMPOSE, isConnected, scopeTabs, sendsToMany, type Compose, type SendResult } from "./lib/compose";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { useSettings } from "./lib/settings";
 import { useTitleBar } from "./lib/window";
@@ -45,6 +53,8 @@ type Busy = { kind: "connected" } | { kind: "process"; name: string };
 
 /** Opening more sessions than this at once (a folder) asks first. */
 const OPEN_ALL_CONFIRM = 5;
+/** Quick commands listed in the terminal's menu; the palette has them all. */
+const MENU_COMMANDS = 8;
 /** How long tabs that received text from the compose bar flash. */
 const FLASH_MS = 700;
 
@@ -73,6 +83,7 @@ const newTab = (key: number, target: SessionTarget, title: string, shareFrom?: S
   reconnectKey: 0,
   sidePanel: null,
   forwards: {},
+  commandGroup: null,
 });
 
 function App() {
@@ -93,6 +104,10 @@ function App() {
   const composeRef = useRef(compose);
   composeRef.current = compose;
   const [flashing, setFlashing] = useState<number[]>([]);
+  const [commands, setCommands] = useState<QuickCommands | null>(null);
+  const [quickBarOpen, setQuickBarOpen] = useState(storedBarVisible);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const latestCommands = useRef(0);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // The profile dialog: an existing profile, or a new one (null) with defaults; `tabKey` is
   // the quick connection tab being saved as a session.
@@ -122,6 +137,22 @@ function App() {
     tree.folders().then(setFolders).catch(console.error);
   }, []);
   useEffect(reloadProfiles, [reloadProfiles]);
+  useEffect(() => {
+    quickCommands.get().then(setCommands).catch(console.error);
+  }, []);
+
+  // Applied immediately; the stored copy (with ids for new commands) replaces it unless a
+  // newer change was made in the meantime.
+  const saveCommands = (next: QuickCommands) => {
+    const request = ++latestCommands.current;
+    setCommands(next);
+    quickCommands.set(next).then((saved) => request === latestCommands.current && setCommands(saved), console.error);
+  };
+
+  const toggleQuickBar = () => {
+    storeBarVisible(!quickBarOpen);
+    setQuickBarOpen(!quickBarOpen);
+  };
   useEffect(() => {
     localShellName().then(setShellName).catch(console.error);
     localUsername().then(setUsername).catch(console.error);
@@ -248,7 +279,8 @@ function App() {
       setFlashing(sent.map((tab) => tab.key));
       flashTimer.current = setTimeout(() => setFlashing([]), FLASH_MS);
     }
-    return { sent: sent.length, skipped: targets.length - sent.length };
+    const titles = sent.map((tab) => tabTitle(tab, settingsRef.current.tabs.followRemoteTitle));
+    return { sent: titles, skipped: targets.length - sent.length };
   };
 
   // Syncing: what is typed in the active terminal goes to the other connected tabs in scope.
@@ -309,6 +341,12 @@ function App() {
         if (next < tabs.length) setActiveKey(tabs[next].key);
         return;
       }
+      if (e.code === "KeyJ" && hasShiftShortcutModifiers(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (tabsRef.current.length > 0) setPaletteOpen(true);
+        return;
+      }
       if (e.code === "KeyI" && hasShiftShortcutModifiers(e)) {
         e.preventDefault();
         e.stopPropagation();
@@ -342,6 +380,28 @@ function App() {
     });
     return () => void unlisten.then((f) => f());
   }, [requestClose]);
+
+  const runCommand = (command: QuickCommand) => sendToScope(asTyped(command.text, command.enter));
+
+  const activeTab = tabs.find((tab) => tab.key === activeKey);
+  const groupOf = (tab: Tab) =>
+    commands && tabGroup(commands, tab.commandGroup, profiles.find((p) => p.id === profileIdOf(tab))?.commandGroup);
+  const activeGroup = activeTab ? groupOf(activeTab) : null;
+  // Who a quick command goes to, when that is more than the active tab.
+  const commandTargets = sendsToMany(compose)
+    ? scopeTabs(compose, tabs, activeKey).map((tab) => tabTitle(tab, settings.tabs.followRemoteTitle))
+    : null;
+
+  /** Quick commands in the terminal's menu: those of the tab's group, and the palette. */
+  const terminalMenu = (tab: Tab): MenuItem[] => {
+    const group = groupOf(tab);
+    if (!commands || !group || commands.groups.every((g) => g.commands.length === 0)) return [];
+    return [
+      "separator",
+      ...group.commands.slice(0, MENU_COMMANDS).map((command) => ({ label: command.name, onSelect: () => runCommand(command) })),
+      { label: t("quick.paletteMenu"), shortcut: shiftShortcutLabel("J"), onSelect: () => setPaletteOpen(true) },
+    ];
+  };
 
   const onStatus = (key: number, status: SessionStatus) => {
     // Forward events can precede "connected" (auto-start runs right after authentication),
@@ -422,6 +482,8 @@ function App() {
           onTogglePanel={togglePanel}
           composeOpen={compose.open}
           onToggleCompose={toggleCompose}
+          quickBarOpen={quickBarOpen}
+          onToggleQuickBar={toggleQuickBar}
           inScope={sendsToMany(compose) ? scopeTabs(compose, tabs, activeKey).map((tab) => tab.key) : []}
           syncing={compose.open && compose.sync}
           flashing={flashing}
@@ -449,18 +511,30 @@ function App() {
               onForward={(ruleId, state) => onForward(tab.key, ruleId, state)}
               onTitle={(title) => updateTab(tab.key, { remoteTitle: title || null })}
               onInput={(data) => onInput(tab, data)}
+              menuItems={terminalMenu(tab)}
               syncing={compose.open && compose.sync && tab.key === activeKey}
               onProfileChanged={onProfileChanged}
             />
           ))}
           {tabs.length === 0 && <div className="placeholder">{t("app.placeholder")}</div>}
         </div>
+        {quickBarOpen && activeTab && commands && activeGroup && (
+          <QuickCommandBar
+            commands={commands}
+            group={activeGroup}
+            onPickGroup={(id) => updateTab(activeTab.key, { commandGroup: id })}
+            onChange={saveCommands}
+            onRun={runCommand}
+            targets={commandTargets}
+          />
+        )}
       </main>
       {editing && (
         <ProfileDialog
           profile={editing.profile}
           defaults={editing.defaults}
           profiles={profiles}
+          commandGroups={commands?.groups ?? []}
           onClose={closeDialog}
           onChanged={reloadProfiles}
           onSaved={onProfileSaved}
@@ -476,6 +550,18 @@ function App() {
             setOpeningAll(null);
           }}
           onCancel={() => setOpeningAll(null)}
+        />
+      )}
+      {paletteOpen && commands && activeGroup && (
+        <CommandPalette
+          commands={commands}
+          firstGroup={activeGroup.id}
+          targets={commandTargets}
+          onRun={runCommand}
+          onClose={() => {
+            setPaletteOpen(false);
+            focusActiveTerminal();
+          }}
         />
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}

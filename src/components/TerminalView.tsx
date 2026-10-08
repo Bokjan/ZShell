@@ -36,7 +36,7 @@ import {
 import { useSettings } from "../lib/settings";
 import { fontStack, resolveScheme, searchDecorations } from "../lib/terminalSchemes";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { ContextMenu } from "./ContextMenu";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 import { ZmodemBar } from "./ZmodemBar";
 
@@ -67,6 +67,8 @@ interface Props {
   onTitle(title: string): void;
   /** What the user typed or pasted and the session received (not mouse or focus reports). */
   onInput(data: string): void;
+  /** Added to the end of the context menu (quick commands). */
+  menuItems: MenuItem[];
 }
 
 /** Mouse (SGR, X10) and focus reports the terminal sends for programs; not typed input. */
@@ -103,6 +105,7 @@ export function TerminalView({
   onForward,
   onTitle,
   onInput,
+  menuItems: extraMenuItems,
 }: Props) {
   const { t } = useTranslation();
   const tRef = useRef(t);
@@ -538,7 +541,7 @@ export function TerminalView({
     };
   }, [waitingForFiles]);
 
-  const menuItems = () => {
+  const menuItems = (): MenuItem[] => {
     const term = termRef.current!;
     return [
       {
@@ -558,6 +561,7 @@ export function TerminalView({
       "separator" as const,
       { label: t("terminal.menu.clear"), onSelect: () => term.clear() },
       { label: t("terminal.menu.reset"), onSelect: () => term.reset() },
+      ...extraMenuItems,
     ];
   };
 

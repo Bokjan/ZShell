@@ -16,3 +16,12 @@ export function ComposeIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+/** A lightning bolt, for quick commands. */
+export function QuickIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8l1-5.5z" />
+    </svg>
+  );
+}

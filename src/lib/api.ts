@@ -39,6 +39,8 @@ export interface Profile {
   forwards: ForwardRule[];
   /** The folder it is in; absent at the top level. Changed with `tree.move`. */
   folder?: string;
+  /** The quick command group its tabs show first; absent for the default group. */
+  commandGroup?: string;
 }
 
 export interface Folder {
@@ -119,6 +121,37 @@ export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id
 
 /** Copies a profile (with its saved password) as `name`, right after it. */
 export const duplicateProfile = (id: string, name: string) => invoke<Profile>("profile_duplicate", { id, name });
+
+export interface QuickCommand {
+  /** Empty for a new command; assigned on save. */
+  id: string;
+  name: string;
+  /** Sent as typed; line breaks are Enter. */
+  text: string;
+  /** Press Enter after the text; otherwise it is left on the command line to be finished. */
+  enter: boolean;
+}
+
+export interface CommandGroup {
+  /** `DEFAULT_GROUP` for the group that always exists; empty for a new one. */
+  id: string;
+  /** Empty for the default group, whose name is shown translated. */
+  name: string;
+  commands: QuickCommand[];
+}
+
+export interface QuickCommands {
+  /** The default group first. */
+  groups: CommandGroup[];
+}
+
+export const DEFAULT_GROUP = "default";
+
+export const quickCommands = {
+  get: () => invoke<QuickCommands>("quick_commands_get"),
+  /** Stores all groups and commands; returns them as stored (new ones get ids). */
+  set: (commands: QuickCommands) => invoke<QuickCommands>("quick_commands_set", { commands }),
+};
 
 export const tree = {
   folders: () => invoke<Folder[]>("folders_list"),

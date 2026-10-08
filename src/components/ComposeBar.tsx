@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Compose, ComposeScope } from "../lib/compose";
+import type { Compose, ComposeScope, SendResult } from "../lib/compose";
 import { tabTitle, type Tab } from "./TabBar";
-
-/** What happened to a send, for the bar's status line. */
-export interface SendResult {
-  sent: number;
-  /** Tabs in scope that aren't connected. */
-  skipped: number;
-}
 
 interface Props {
   compose: Compose;
@@ -74,9 +67,9 @@ export function ComposeBar({ compose, tabs, followRemoteTitle, onChange, onSend,
     if (history.length > HISTORY_LIMIT) history.shift();
     historyIndex.current = history.length;
     setText("");
-    if (sent === 0) setStatus(t("compose.noTargets"));
-    else if (skipped > 0) setStatus(t("compose.sentSkipped", { count: sent, skipped }));
-    else setStatus(t("compose.sent", { count: sent }));
+    if (sent.length === 0) setStatus(t("compose.noTargets"));
+    else if (skipped > 0) setStatus(t("compose.sentSkipped", { count: sent.length, skipped }));
+    else setStatus(t("compose.sent", { count: sent.length }));
   };
 
   const recall = (index: number) => {

@@ -13,6 +13,7 @@ use crate::forward::ForwardRule;
 use crate::i18n;
 use crate::import;
 use crate::pty;
+use crate::quick::{QuickCommandStore, QuickCommands};
 use crate::secrets;
 use crate::settings::{Settings, SettingsStore};
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
@@ -35,6 +36,17 @@ pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
 #[tauri::command]
 pub fn settings_set(store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {
     store.set(settings)
+}
+
+#[tauri::command]
+pub fn quick_commands_get(store: State<'_, QuickCommandStore>) -> QuickCommands {
+    store.get()
+}
+
+/// Stores the quick commands; returns them as stored (new ones get ids).
+#[tauri::command]
+pub fn quick_commands_set(store: State<'_, QuickCommandStore>, commands: QuickCommands) -> Result<QuickCommands> {
+    store.set(commands)
 }
 
 #[tauri::command]
@@ -184,6 +196,7 @@ pub fn ssh_quick_open(
         auto_reconnect: true,
         forwards: Vec::new(),
         folder: None,
+        command_group: None,
     };
     if profile.host.is_empty() || profile.username.is_empty() || port == 0 {
         return Err(Error::new("profile.missingFields"));

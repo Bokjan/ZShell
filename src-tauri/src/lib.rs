@@ -8,6 +8,7 @@ mod error;
 mod forward;
 mod import;
 mod pty;
+mod quick;
 mod secrets;
 mod session;
 mod settings;
@@ -19,6 +20,7 @@ mod zmodem;
 use tauri::{Emitter, Manager};
 
 use config::ProfileStore;
+use quick::QuickCommandStore;
 use session::SessionManager;
 use settings::SettingsStore;
 use sftp::transfer::Transfers;
@@ -133,6 +135,7 @@ pub fn run() {
             let config_dir = app.path().app_config_dir()?;
             app.manage(ProfileStore::load(config_dir.join("profiles.json"))?);
             app.manage(SettingsStore::load(config_dir.join("settings.json")));
+            app.manage(QuickCommandStore::load(config_dir.join("commands.json")));
             window::create_main(app)?;
             Ok(())
         })
@@ -164,6 +167,8 @@ pub fn run() {
             commands::set_locale,
             commands::settings_get,
             commands::settings_set,
+            commands::quick_commands_get,
+            commands::quick_commands_set,
             commands::profiles_list,
             commands::profile_save,
             commands::profile_set_forwards,

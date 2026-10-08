@@ -12,6 +12,14 @@ export interface Compose {
   sync: boolean;
 }
 
+/** What happened to text sent to the tabs in scope. */
+export interface SendResult {
+  /** Titles of the tabs it was sent to. */
+  sent: string[];
+  /** Tabs in scope that aren't connected. */
+  skipped: number;
+}
+
 export const CLOSED_COMPOSE: Compose = { open: false, scope: "current", selected: [], sync: false };
 
 /**
