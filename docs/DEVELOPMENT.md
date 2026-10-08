@@ -114,11 +114,11 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 6. 检查草稿后手动发布，作为正式版本发布（不勾选 pre-release）。
 7. 在 Partner Center 新建提交，上传该版本的 `.msixbundle`。Store 会重新签名并负责用户的更新。
 
-**第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.txt`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置的「关于」一节读取显示。
-- Rust 依赖用 `cargo-about`：配置 `src-tauri/about.toml` 列出接受的许可证、四个发布目标（macOS 与 Windows 专用的 crate 都在内），不含 build / dev 依赖；模板是 `src-tauri/about.hbs`。双许可证优先用 MIT。新依赖带来未列出的许可证时生成失败，确认能遵守后再加进 `accepted`。
+**第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.json`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置「关于」里的许可证对话框读取显示：左栏是可搜索的包列表（按 Rust / JavaScript 分组），右栏是选中包的许可证全文。文件里每个包记录名称、版本、声明的许可证、主页和所用许可证文本的下标，相同的文本只存一份。
+- Rust 依赖用 `cargo-about`：配置 `src-tauri/about.toml` 列出接受的许可证、四个发布目标（macOS 与 Windows 专用的 crate 都在内），不含 build / dev 依赖；脚本读取 `cargo about generate --format json` 的输出。双许可证优先用 MIT。新依赖带来未列出的许可证时生成失败，确认能遵守后再加进 `accepted`。
 - 有些 crate 的许可证文件名 cargo-about 认不出（windows-rs 的 `license-mit`、Tauri 插件的 `LICENSE_MIT`），在 `about.toml` 里用 `clarify` 按校验和指定；文件内容变了会生成失败，更新校验和即可。完全不带许可证文件的 crate（objc2 系列、webview2-com 等）用标准许可证文本。
 - 前端依赖取 `pnpm licenses list --prod`（运行时依赖，含间接依赖），读各包自带的 LICENSE / COPYING / NOTICE；不带文件的包（Tauri 插件的 JS 包）只写许可证标识与主页。
 - 本地需 `cargo install --locked cargo-about --features cli`（0.9 起命令行要 `cli` feature）。未安装时只生成前端部分并注明；没运行过时设置里显示"未包含"。CI 中（设置了 `CI` 环境变量）未安装则报错。release workflow 的打包 job 与 Store job 用 `taiki-e/install-action` 装预编译的 cargo-about，打包前生成。
-- 生成的文件约 420 KB（约 400 个 crate、20 个 npm 包）。
+- 生成的文件约 420 KB（约 400 个 crate、20 个 npm 包），Tauri 默认的 `compression` 特性在构建时把前端资源用 brotli 压缩后嵌入，在 exe 里只占约 20 KB，不必另外压缩。
 
 **签名**：尚未签名。macOS 只做 ad-hoc 签名（`APPLE_SIGNING_IDENTITY=-`，保证 Apple Silicon 能运行），下载后需在"隐私与安全性"中放行或去掉 quarantine；Windows 未签名，SmartScreen 会提示。以后接入证书只需给 workflow 配 secret。

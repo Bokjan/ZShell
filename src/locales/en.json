@@ -98,6 +98,17 @@
     "noTargets": "No connected tab to send to",
     "close": "Close the compose bar"
   },
+  "licenses": {
+    "title": "Third-Party Licenses",
+    "search": "Search packages or licenses",
+    "groups": {
+      "rust": "Rust crates ({count})",
+      "npm": "JavaScript packages ({count})"
+    },
+    "noMatches": "No matching packages",
+    "rustMissing": "The Rust crates' notices were not generated in this build.",
+    "missing": "The third-party license notices are not included in this build."
+  },
   "quick": {
     "toggle": "Show/hide the quick command bar",
     "defaultGroup": "Default",
@@ -497,7 +508,6 @@
     "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "privacyPolicy": "Privacy Policy",
     "thirdPartyLicenses": "Third-Party Licenses",
-    "licensesMissing": "The third-party license notices are not included in this build.",
     "reset": "Restore defaults",
     "done": "Done"
   },

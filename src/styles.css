@@ -2082,10 +2082,105 @@ body.resizing .terminal-view {
   color: var(--text-muted);
   font-size: 12px;
 }
-/* The notices scroll inside the dialog, which keeps its title and button in view. */
+/* Packages on the left, the selected one's license on the right; both scroll inside a
+   dialog of fixed height, which keeps its title and button in view. */
 .licenses-dialog {
-  width: 720px;
+  width: 920px;
+  height: calc(100vh - var(--titlebar-height) - 70px);
+  max-height: 760px;
   overflow: hidden;
+}
+.licenses-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+.licenses-nav {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.licenses-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+/* Above the items, whose translucent version and license lines paint as their own layers. */
+.licenses-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.licenses-item {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px;
+  cursor: default;
+}
+.licenses-item:hover {
+  background: var(--bg-hover);
+}
+.licenses-item.selected {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.licenses-name {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.licenses-version,
+.licenses-license {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.licenses-license {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.licenses-empty {
+  margin: 4px 8px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.licenses-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.licenses-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+.licenses-heading span {
+  color: var(--text-muted);
+}
+.licenses-heading button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 .licenses-text {
   flex: 1;

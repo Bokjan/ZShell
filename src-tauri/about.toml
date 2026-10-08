@@ -1,5 +1,5 @@
 # cargo-about configuration for the third-party license notices that ship with the app
-# (scripts/generate-licenses.mjs, template in about.hbs).
+# (scripts/generate-licenses.mjs, which reads its JSON output).
 
 # Licenses we can comply with, in order of preference: for "MIT OR Apache-2.0" the MIT
 # text is used.

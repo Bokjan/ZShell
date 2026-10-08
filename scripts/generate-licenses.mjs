@@ -1,25 +1,26 @@
 #!/usr/bin/env node
 // Writes the third-party license notices that ship with the app to
-// public/third-party-licenses.txt, which Vite copies into the frontend build (embedded in
-// the executable) and Settings > About shows:
+// public/third-party-licenses.json, which Vite copies into the frontend build (embedded in
+// the executable, brotli-compressed by Tauri) and Settings > About shows:
 //
-// - Rust crates: cargo-about, with src-tauri/about.toml (accepted licenses, release
-//   targets, clarifications) and the src-tauri/about.hbs template.
+// - Rust crates: cargo-about's JSON output, with src-tauri/about.toml (accepted licenses,
+//   release targets, clarifications).
 // - npm packages: the runtime dependencies (not devDependencies) from
 //   `pnpm licenses list --prod`, with the license files each package ships.
 //
+// The output lists every package with the indices of its license texts; identical texts
+// are stored once.
+//
 // Without cargo-about (`cargo install --locked cargo-about --features cli`) the Rust part
-// is left out with a note, which is fine for local builds; in CI (`CI` is set) it is an
-// error, so that a release never ships incomplete notices.
+// is left out and `rustMissing` is set, which is fine for local builds; in CI (`CI` is
+// set) it is an error, so that a release never ships incomplete notices.
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const output = join(root, "public", "third-party-licenses.txt");
-const rule = "=".repeat(80);
-const separator = "-".repeat(80);
+const output = join(root, "public", "third-party-licenses.json");
 
 function run(command, args) {
   return execFileSync(command, args, {
@@ -38,7 +39,21 @@ function pnpm(args) {
   return run(cli || "pnpm", args);
 }
 
-function rustNotices() {
+const texts = [];
+const textIndex = new Map();
+/** The index of a license text, adding it if it's new. */
+function addText(text) {
+  // Leading blank lines go, the indentation of the first line stays.
+  const normalized = text.replace(/\r\n/g, "\n").replace(/^\s*\n/, "").trimEnd();
+  let index = textIndex.get(normalized);
+  if (index === undefined) {
+    index = texts.push(normalized) - 1;
+    textIndex.set(normalized, index);
+  }
+  return index;
+}
+
+function rustPackages() {
   const probe = spawnSync("cargo", ["about", "--version"], { cwd: root, stdio: "ignore" });
   if (probe.status !== 0) {
     const message = "cargo-about is not installed (cargo install --locked cargo-about --features cli)";
@@ -47,56 +62,81 @@ function rustNotices() {
       process.exit(1);
     }
     console.warn(`warning: ${message}; leaving out the Rust crates`);
-    return "The notices for Rust crates were not generated in this build.\n";
+    return null;
   }
-  return run("cargo", [
-    "about",
-    "generate",
-    "--locked",
-    "--fail",
-    "--manifest-path",
-    "src-tauri/Cargo.toml",
-    "src-tauri/about.hbs",
-  ]);
+  const about = JSON.parse(
+    run("cargo", [
+      "about",
+      "generate",
+      "--locked",
+      "--fail",
+      "--format",
+      "json",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "-c",
+      "src-tauri/about.toml",
+    ]),
+  );
+  // cargo-about lists licenses with the crates using them; turn that around.
+  const crates = new Map();
+  for (const license of about.licenses) {
+    const index = addText(license.text);
+    for (const { crate } of license.used_by) {
+      const key = `${crate.name}@${crate.version}`;
+      if (!crates.has(key)) {
+        crates.set(key, {
+          name: crate.name,
+          version: crate.version,
+          license: crate.license ?? license.id,
+          url: crate.repository ?? crate.homepage ?? null,
+          texts: [],
+        });
+      }
+      const texts = crates.get(key).texts;
+      if (!texts.includes(index)) texts.push(index);
+    }
+  }
+  return [...crates.values()];
 }
 
 /** LICENSE, LICENCE-MIT, COPYING, NOTICE and the like; not LICENSE.spdx, which is metadata. */
 const isLicenseFile = (name) => /^(licen[cs]e|copying|notice)/i.test(name) && !/\.spdx$/i.test(name);
 
-function npmNotices() {
+function npmPackages() {
   const byLicense = JSON.parse(pnpm(["licenses", "list", "--prod", "--json"]));
-  const packages = Object.values(byLicense)
+  return Object.values(byLicense)
     .flat()
     .flatMap((pkg) => pkg.versions.map((version, i) => ({ ...pkg, version, path: pkg.paths[i] })))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
-
-  return packages
     .map((pkg) => {
       const files = readdirSync(pkg.path).filter(isLicenseFile).sort();
-      // Leading blank lines go, the indentation of the first line stays.
-      const texts = files.map((file) => readFileSync(join(pkg.path, file), "utf8").replace(/^\s*\n/, "").trimEnd());
-      if (texts.length === 0) texts.push(`The package includes no license file; see ${pkg.homepage ?? "its repository"}.`);
-      const homepage = pkg.homepage ? `\n${pkg.homepage}` : "";
-      return `${separator}\n${pkg.name} ${pkg.version} (${pkg.license})${homepage}\n\n${texts.join("\n\n")}\n`;
-    })
-    .join("\n");
+      const contents = files.map((file) => readFileSync(join(pkg.path, file), "utf8"));
+      if (contents.length === 0) {
+        contents.push(`The package includes no license file; see ${pkg.homepage ?? "its repository"}.`);
+      }
+      return {
+        name: pkg.name,
+        version: pkg.version,
+        license: pkg.license,
+        url: pkg.homepage ?? null,
+        texts: contents.map(addText),
+      };
+    });
 }
 
-const notices = [
-  "ZShell includes the third-party software listed below, each under its own license.",
-  "",
-  rule,
-  "Rust crates",
-  rule,
-  rustNotices(),
-  rule,
-  "JavaScript packages",
-  rule,
-  npmNotices(),
-]
-  .join("\n")
-  .replace(/\r\n/g, "\n");
+const byName = (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version, undefined, { numeric: true });
+const rust = rustPackages();
+const notices = {
+  rust: (rust ?? []).sort(byName),
+  rustMissing: rust === null,
+  npm: npmPackages().sort(byName),
+  texts,
+};
 
+const json = JSON.stringify(notices);
 mkdirSync(dirname(output), { recursive: true });
-writeFileSync(output, notices);
-console.log(`wrote ${output} (${Math.round(Buffer.byteLength(notices) / 1024)} KB)`);
+writeFileSync(output, json);
+console.log(
+  `wrote ${output} (${notices.rust.length} crates, ${notices.npm.length} npm packages, ` +
+    `${texts.length} texts, ${Math.round(Buffer.byteLength(json) / 1024)} KB)`,
+);
