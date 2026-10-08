@@ -9,9 +9,11 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { ForwardState, SessionId, SessionTarget } from "../lib/api";
-import { closeTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
+import { closeTabShortcutLabel, isWindows, newTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
+import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import type { SessionStatus } from "./TerminalView";
+import { WindowControls } from "./WindowControls";
 
 export type SidePanel = "files" | "forwards";
 
@@ -48,6 +50,8 @@ interface Props {
   activeKey: number | null;
   followRemoteTitle: boolean;
   onSelect(key: number): void;
+  /** Opens a local terminal tab ("+"). */
+  onNew(): void;
   /** Closes these tabs, asking first if needed. */
   onClose(keys: number[]): void;
   /** Moves the tab to `index` in the tab order. */
@@ -72,6 +76,7 @@ export function TabBar({
   activeKey,
   followRemoteTitle,
   onSelect,
+  onNew,
   onClose,
   onMove,
   onRename,
@@ -184,8 +189,9 @@ export function TabBar({
     </button>
   );
 
+  // The window's title bar: always shown, so "+" and room to move the window stay available.
   return (
-    <nav className="tab-bar">
+    <nav className="tab-bar" {...DRAG_REGION}>
       <div className="tab-strip" ref={stripRef} onWheel={onWheel}>
         {tabs.map((tab) => {
           const title = tabTitle(tab, followRemoteTitle);
@@ -234,18 +240,30 @@ export function TabBar({
       {menu && tabs.some((tab) => tab.key === menu.key) && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />
       )}
-      <span className="grow" />
-      <div className="panel-switch">
-        {segment("files", t("tabs.files"), t("tabs.filesHint", { shortcut: shiftShortcutLabel("E") }))}
-        {segment(
-          "forwards",
-          t("tabs.forwards"),
-          failed
-            ? t("tabs.forwardsHintFailed", { shortcut: shiftShortcutLabel("P") })
-            : t("tabs.forwardsHint", { shortcut: shiftShortcutLabel("P") }),
-          failed ? <span className="badge failed" /> : running > 0 && <span className="badge">{running}</span>,
-        )}
-      </div>
+      <button
+        className="tab-new"
+        title={t("tabs.newLocalTerminal", { shortcut: newTabShortcutLabel })}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onNew}
+      >
+        +
+      </button>
+      {/* Grows, and keeps some room to move the window however many tabs there are. */}
+      <span className="tab-bar-drag" {...DRAG_REGION} />
+      {tabs.length > 0 && (
+        <div className="panel-switch">
+          {segment("files", t("tabs.files"), t("tabs.filesHint", { shortcut: shiftShortcutLabel("E") }))}
+          {segment(
+            "forwards",
+            t("tabs.forwards"),
+            failed
+              ? t("tabs.forwardsHintFailed", { shortcut: shiftShortcutLabel("P") })
+              : t("tabs.forwardsHint", { shortcut: shiftShortcutLabel("P") }),
+            failed ? <span className="badge failed" /> : running > 0 && <span className="badge">{running}</span>,
+          )}
+        </div>
+      )}
+      {isWindows && <WindowControls />}
     </nav>
   );
 }

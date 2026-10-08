@@ -1,4 +1,6 @@
 export const isMac = navigator.userAgent.includes("Mac");
+/** Windows draws its own window buttons (see `WindowControls`). */
+export const isWindows = navigator.userAgent.includes("Windows");
 
 /** Whether the event has the app's shortcut modifiers: ⇧⌘ on macOS, Ctrl+Shift elsewhere. */
 export const hasShiftShortcutModifiers = (e: KeyboardEvent) =>
@@ -28,6 +30,14 @@ export const isSearchShortcut = (e: KeyboardEvent) =>
   (isMac ? e.metaKey && !e.ctrlKey && !e.shiftKey : e.ctrlKey && e.shiftKey && !e.metaKey);
 
 export const searchShortcutLabel = isMac ? "⌘K" : "Ctrl+Shift+K";
+
+/** Opens a local terminal tab: ⌘T on macOS; Ctrl+Shift+T elsewhere, since Ctrl+T belongs to the shell. */
+export const isNewTabShortcut = (e: KeyboardEvent) =>
+  e.code === "KeyT" &&
+  !e.altKey &&
+  (isMac ? e.metaKey && !e.ctrlKey && !e.shiftKey : e.ctrlKey && e.shiftKey && !e.metaKey);
+
+export const newTabShortcutLabel = isMac ? "⌘T" : "Ctrl+Shift+T";
 
 /**
  * Terminal clipboard keys outside macOS, where the native Edit menu handles ⌘C / ⌘V:

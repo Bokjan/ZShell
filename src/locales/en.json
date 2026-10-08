@@ -10,12 +10,10 @@
     "placeholder": "Select a session on the left to connect, or open a local terminal"
   },
   "sidebar": {
-    "title": "Sessions",
     "newSession": "New session",
     "empty": "No sessions yet. Click + to add one.",
     "openHint": "Double-click to open in a new tab",
     "edit": "Edit…",
-    "newLocalTerminal": "New local terminal",
     "metaVia": "{address} via {names}",
     "settings": "Settings",
     "resizeHint": "Drag to resize, double-click to reset",
@@ -66,7 +64,14 @@
     "closeOthers": "Close Other Tabs",
     "closeRight": "Close Tabs to the Right",
     "renameHint": "Double-click to rename",
-    "saveAsSession": "Save as Session…"
+    "saveAsSession": "Save as Session…",
+    "newLocalTerminal": "New local terminal ({shortcut})"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore Down",
+    "close": "Close"
   },
   "terminal": {
     "reconnectHint": "Press Enter to reconnect",

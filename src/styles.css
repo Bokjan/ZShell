@@ -1,6 +1,10 @@
 /* Theme: dark by default; `data-theme="light"` on <html> (set from the settings) switches. */
 
 :root {
+  /* The window's title bar: the tab bar, and the top row of the sidebar. */
+  --titlebar-height: 34px;
+  /* Room for the traffic lights on macOS (see window.rs), which hide in full screen. */
+  --traffic-lights-width: 0px;
   --bg: #1e1e1e;
   --bg-sidebar: #181818;
   --bg-elevated: #252526;
@@ -23,6 +27,12 @@
   --kind-dynamic: #fcd34d;
   --backdrop: rgb(0 0 0 / 0.45);
   --shadow: rgb(0 0 0 / 0.45);
+  /* Window buttons on Windows, as the system draws them. */
+  --caption-hover: rgb(255 255 255 / 0.06);
+  --caption-pressed: rgb(255 255 255 / 0.04);
+  --caption-close: #c42b1c;
+  --caption-close-pressed: #b3281a;
+  --on-caption-close: #ffffff;
   /* Chevron for <select>, in --text-muted (SVG data URIs cannot use variables). */
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b8b8b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
@@ -55,6 +65,8 @@
   --kind-dynamic: #a16207;
   --backdrop: rgb(0 0 0 / 0.25);
   --shadow: rgb(0 0 0 / 0.18);
+  --caption-hover: rgb(0 0 0 / 0.04);
+  --caption-pressed: rgb(0 0 0 / 0.02);
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   color-scheme: light;
@@ -119,15 +131,16 @@ main {
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
 }
-.sidebar header {
-  text-transform: uppercase;
+:root[data-platform="mac"]:not([data-fullscreen]) {
+  --traffic-lights-width: 78px;
+}
+.sidebar-titlebar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 10px 6px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  justify-content: flex-end;
+  height: var(--titlebar-height);
+  padding: 0 8px 0 var(--traffic-lights-width);
   color: var(--text-muted);
 }
 .sidebar-actions {
@@ -323,7 +336,7 @@ body.dragging-row {
 .tab-bar {
   display: flex;
   flex-shrink: 0;
-  height: 34px;
+  height: var(--titlebar-height);
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
 }
@@ -389,6 +402,62 @@ body.dragging-row {
 }
 .tab-close:hover {
   background: var(--bg-active);
+}
+.tab-new {
+  align-self: center;
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 24px;
+}
+.tab-new:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+/* The tab strip shrinks (and scrolls) before this does. */
+.tab-bar-drag {
+  flex: 1 0 40px;
+}
+
+/* Window buttons on Windows; above dialog backdrops, so the window can always be closed. */
+.window-controls {
+  position: relative;
+  z-index: 11;
+  display: flex;
+  margin-left: 8px;
+}
+.window-controls button {
+  width: 46px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  font-size: 10px;
+}
+:root[data-window-inactive] .window-controls button {
+  color: var(--text-muted);
+}
+.window-controls button:hover,
+.window-controls button.hover {
+  background: var(--caption-hover);
+}
+.window-controls button:active,
+.window-controls button.pressed {
+  background: var(--caption-pressed);
+}
+.window-controls button.close:hover {
+  background: var(--caption-close);
+  color: var(--on-caption-close);
+}
+.window-controls button.close:active {
+  background: var(--caption-close-pressed);
+  color: var(--on-caption-close);
 }
 .status-dot {
   width: 7px;
@@ -1188,11 +1257,13 @@ body.resizing .terminal-view {
 
 /* Dialog */
 
+/* Below the title bar, which stays free to move the window (see lib/window.ts). */
 .dialog-backdrop {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
+  padding-top: var(--titlebar-height);
   background: var(--backdrop);
   z-index: 10;
 }
@@ -1462,7 +1533,7 @@ body.resizing .terminal-view {
 
 .settings-dialog {
   width: 560px;
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - var(--titlebar-height) - 48px);
   overflow-y: auto;
 }
 .settings-dialog section {

@@ -13,6 +13,7 @@ mod session;
 mod settings;
 mod sftp;
 mod ssh;
+mod window;
 mod zmodem;
 
 use tauri::{Emitter, Manager};
@@ -24,13 +25,12 @@ use sftp::transfer::Transfers;
 use ssh::Connections;
 
 const SETTINGS_MENU_ID: &str = "settings";
-const LOCAL_TERMINAL_MENU_ID: &str = "new-local-terminal";
 const CLOSE_TAB_MENU_ID: &str = "close-tab";
 const CLOSE_WINDOW_MENU_ID: &str = "close-window";
 
 /// The macOS menu: Tauri's default one, with "Settings…" (⌘,) in the app menu, where Mac
-/// users expect it, and a File menu with "New Local Terminal", "Close Tab" (⌘W) and "Close
-/// Window" (⇧⌘W), as in Terminal.app; the predefined "Close Window" item would take ⌘W.
+/// users expect it, and a File menu with "Close Tab" (⌘W) and "Close Window" (⇧⌘W), as in
+/// Terminal.app; the predefined "Close Window" item would take ⌘W.
 /// These shortcuts have to be menu items: macOS handles them before the web view sees them.
 /// Elsewhere the frontend handles Ctrl+, and Ctrl+Shift+W itself.
 #[cfg(target_os = "macos")]
@@ -65,8 +65,6 @@ fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri
                 t!("menu.file"),
                 true,
                 &[
-                    &MenuItem::with_id(app, LOCAL_TERMINAL_MENU_ID, t!("menu.newLocalTerminal"), true, None::<&str>)?,
-                    &separator()?,
                     &MenuItem::with_id(app, CLOSE_TAB_MENU_ID, t!("menu.closeTab"), true, Some("CmdOrCtrl+W"))?,
                     &MenuItem::with_id(app, CLOSE_WINDOW_MENU_ID, t!("menu.closeWindow"), true, Some("CmdOrCtrl+Shift+W"))?,
                 ],
@@ -133,13 +131,12 @@ pub fn run() {
             let config_dir = app.path().app_config_dir()?;
             app.manage(ProfileStore::load(config_dir.join("profiles.json"))?);
             app.manage(SettingsStore::load(config_dir.join("settings.json")));
+            window::create_main(app)?;
             Ok(())
         })
         .on_menu_event(|app, event| {
             if event.id() == SETTINGS_MENU_ID {
                 let _ = app.emit("open-settings", ());
-            } else if event.id() == LOCAL_TERMINAL_MENU_ID {
-                let _ = app.emit("open-local-terminal", ());
             } else if event.id() == CLOSE_TAB_MENU_ID {
                 // The frontend may ask first, and closes the window when there are no tabs.
                 let _ = app.emit("close-tab", ());
@@ -196,6 +193,9 @@ pub fn run() {
             commands::zmodem_save_to,
             commands::zmodem_send_files,
             commands::zmodem_cancel,
+            window::window_title_double_click,
+            window::window_system_menu,
+            window::window_set_maximize_button,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

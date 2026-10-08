@@ -29,6 +29,7 @@ import {
   type QuickTarget,
   type Row,
 } from "../lib/sessions";
+import { DRAG_REGION } from "../lib/window";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { SessionImportDialog } from "./SessionImportDialog";
@@ -52,7 +53,6 @@ interface Props {
   /** Sessions or folders changed here; reload them. */
   onChanged(): void;
   onImportSshConfig(): void;
-  onLocalTerminal(): void;
   onSettings(): void;
 }
 
@@ -402,12 +402,9 @@ export function Sidebar(props: Props) {
 
   return (
     <aside className="sidebar" style={{ width }} ref={asideRef}>
-      <header>
-        <span>{t("sidebar.title")}</span>
+      {/* Its part of the window's title bar, beside the traffic lights on macOS. */}
+      <header className="sidebar-titlebar" {...DRAG_REGION}>
         <span className="sidebar-actions">
-          <button className="icon-button" title={t("sidebar.newLocalTerminal")} onClick={props.onLocalTerminal}>
-            <TerminalIcon />
-          </button>
           <button className="icon-button" title={t("sidebar.importExport")} onClick={importMenu}>
             ⇅
           </button>
@@ -552,16 +549,6 @@ function Chevron({ open }: { open: boolean }) {
   return (
     <svg className={`chevron${open ? " open" : ""}`} width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
       <path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/** A prompt in a window, for local terminals. */
-function TerminalIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
-      <path d="M4.5 6l2 2-2 2M8.5 10.5h3" />
     </svg>
   );
 }

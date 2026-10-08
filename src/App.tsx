@@ -23,9 +23,16 @@ import {
   type SessionId,
   type SessionTarget,
 } from "./lib/api";
-import { hasShiftShortcutModifiers, isSearchShortcut, isSettingsShortcut, tabShortcut } from "./lib/platform";
+import {
+  hasShiftShortcutModifiers,
+  isNewTabShortcut,
+  isSearchShortcut,
+  isSettingsShortcut,
+  tabShortcut,
+} from "./lib/platform";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { useSettings } from "./lib/settings";
+import { useTitleBar } from "./lib/window";
 import "./styles.css";
 
 const profileIdOf = (tab: Tab) => (tab.target.kind === "ssh" ? tab.target.profileId : undefined);
@@ -60,6 +67,7 @@ const newTab = (key: number, target: SessionTarget, title: string, shareFrom?: S
 function App() {
   const { t } = useTranslation();
   const { settings, update } = useSettings();
+  useTitleBar();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -206,6 +214,12 @@ function App() {
         setSettingsOpen(true);
         return;
       }
+      if (isNewTabShortcut(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openLocalTab();
+        return;
+      }
       if (isSearchShortcut(e)) {
         e.preventDefault();
         e.stopPropagation();
@@ -240,19 +254,13 @@ function App() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [togglePanel, requestClose]);
+  }, [togglePanel, requestClose, openLocalTab]);
 
   // From the macOS app menu's "Settings…" item (⌘,).
   useEffect(() => {
     const unlisten = listen("open-settings", () => setSettingsOpen(true));
     return () => void unlisten.then((f) => f());
   }, []);
-
-  // From the macOS File menu's "New Local Terminal" item.
-  useEffect(() => {
-    const unlisten = listen("open-local-terminal", openLocalTab);
-    return () => void unlisten.then((f) => f());
-  }, [openLocalTab]);
 
   // From the macOS File menu's "Close Tab" item (⌘W), which closes the window once no tabs
   // are left, as in Terminal.app.
@@ -324,27 +332,25 @@ function App() {
         onNew={(folder) => setEditing({ profile: null, defaults: { folder } })}
         onChanged={reloadProfiles}
         onImportSshConfig={() => setImporting(true)}
-        onLocalTerminal={openLocalTab}
         onSettings={() => setSettingsOpen(true)}
       />
       <main>
-        {tabs.length > 0 && (
-          <TabBar
-            tabs={tabs}
-            activeKey={activeKey}
-            followRemoteTitle={settings.tabs.followRemoteTitle}
-            onSelect={setActiveKey}
-            onClose={(keys) => void requestClose(keys)}
-            onMove={moveTab}
-            onRename={(key, customTitle) => updateTab(key, { customTitle })}
-            onDuplicate={duplicateTab}
-            onSaveAsSession={saveAsSession}
-            onReconnect={(key) =>
-              setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, reconnectKey: t.reconnectKey + 1 } : t)))
-            }
-            onTogglePanel={togglePanel}
-          />
-        )}
+        <TabBar
+          tabs={tabs}
+          activeKey={activeKey}
+          followRemoteTitle={settings.tabs.followRemoteTitle}
+          onSelect={setActiveKey}
+          onNew={openLocalTab}
+          onClose={(keys) => void requestClose(keys)}
+          onMove={moveTab}
+          onRename={(key, customTitle) => updateTab(key, { customTitle })}
+          onDuplicate={duplicateTab}
+          onSaveAsSession={saveAsSession}
+          onReconnect={(key) =>
+            setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, reconnectKey: t.reconnectKey + 1 } : t)))
+          }
+          onTogglePanel={togglePanel}
+        />
         <div className="terminals">
           {tabs.map((tab) => (
             <SessionPane

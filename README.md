@@ -17,9 +17,9 @@ A cross-platform (macOS / Windows) SSH client inspired by Xshell, built with Tau
 - **Session management**: nested folders arranged by drag and drop, search, quick connect by typing `user@host[:port]`, recently opened sessions, duplicate, and export/import to a file (without passwords) for backups and other computers.
 - **Local terminals**: your login shell on macOS, PowerShell on Windows.
 - **Terminal**: context menu, copy on select, right-click to paste, confirmation before pasting multiple lines, Option as Meta on macOS, search with regular expressions, built-in color schemes, custom fonts, light and dark appearance.
-- **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program.
+- **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program. The tab bar sits in the window's title bar on both macOS and Windows.
 
-Planned next: the tab bar in the window title bar, sending input to several sessions, quick commands and session logs. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: sending input to several sessions, quick commands and session logs. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -45,11 +45,12 @@ The builds are not signed with a developer certificate yet, so the system warns 
 
 ## Usage
 
-Add a session with **+** in the sidebar, or import hosts from your SSH config, then double-click a session (or select it and press Enter) to open it in a new tab. To connect without saving a session, type `user@host` or `user@host:port` in the search box and press Enter. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect. Right-click the terminal or a tab for more actions; double-click a tab to rename it.
+Add a session with **+** in the sidebar, or import hosts from your SSH config, then double-click a session (or select it and press Enter) to open it in a new tab. **+** at the end of the tab bar opens a local terminal. To connect without saving a session, type `user@host` or `user@host:port` in the search box and press Enter. Host key confirmations, passwords and passphrases are asked in the terminal, as `ssh` does. After a disconnection, press Enter in the terminal to reconnect. Right-click the terminal or a tab for more actions; double-click a tab to rename it.
 
 | Action | macOS | Windows |
 |---|---|---|
 | Search sessions | ⌘K | Ctrl+Shift+K |
+| New local terminal | ⌘T | Ctrl+Shift+T |
 | Copy | ⌘C | Ctrl+Shift+C, or Ctrl+C with a selection |
 | Paste | ⌘V | Ctrl+Shift+V or Ctrl+V |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab / Ctrl+Shift+Tab |
