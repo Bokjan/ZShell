@@ -5,6 +5,7 @@ mod connections;
 mod handler;
 mod host_key;
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -133,10 +134,17 @@ async fn open_shell(session: &SshHandle, io: &mut TermIo) -> Result<Channel<Msg>
 }
 
 /// Copies between the shell channel and the terminal until either side ends.
+///
+/// Output keeps being read while a write waits for the server's window: russh delivers output
+/// into a bounded queue from its connection task, so a full queue would stall that task, and
+/// with it the window adjustments the write is waiting for (a large paste or a ZMODEM upload
+/// while the remote program prints). New input waits until the write is done.
 async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::Receiver<Option<String>>) -> Outcome {
     let (mut reader, writer) = channel.split();
     let mut exit_status = None;
+    let mut writing = None;
     loop {
+        let idle = writing.is_none();
         let sent = tokio::select! {
             msg = reader.wait() => match msg {
                 Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
@@ -152,8 +160,15 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
                 None => break,
                 Some(_) => Ok(()),
             },
-            input = io.recv() => match input {
-                Some(SessionInput::Data(data)) => writer.data_bytes(data).await,
+            result = in_flight(&mut writing) => {
+                writing = None;
+                result
+            }
+            input = io.recv(), if idle => match input {
+                Some(SessionInput::Data(data)) => {
+                    writing = Some(Box::pin(writer.data_bytes(data)));
+                    Ok(())
+                }
                 Some(SessionInput::Resize { cols, rows }) => writer.window_change(cols.into(), rows.into(), 0, 0).await,
                 // The tab is closing.
                 None => return Outcome::Exited(exit_status),
@@ -172,6 +187,14 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
         Some(reason) => error.detail(reason),
         None => error,
     })
+}
+
+/// Completes with the write in progress, if any; pending forever otherwise (for `select!`).
+async fn in_flight<F: Future + Unpin>(write: &mut Option<F>) -> F::Output {
+    match write {
+        Some(write) => write.await,
+        None => std::future::pending().await,
+    }
 }
 
 /// Connects to one hop: over TCP, or through `via` (a channel from the previous jump host,
