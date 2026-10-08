@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { isWindows } from "./platform";
+
 export type Appearance = "system" | "dark" | "light";
 export type CursorStyle = "block" | "bar" | "underline";
 /** What right-clicking the terminal does. */
@@ -91,6 +93,11 @@ function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
   window.setTheme(appearance === "system" ? null : theme).catch(console.error);
   window.setBackgroundColor(theme === "light" ? "#ffffff" : "#1e1e1e").catch(console.error);
   document.documentElement.style.background = theme === "light" ? "#ffffff" : "#1e1e1e";
+  // Windows: the border around a snapped window, which blends in with the title bar.
+  if (isWindows) {
+    const color = getComputedStyle(document.documentElement).getPropertyValue("--bg-sidebar").trim();
+    invoke("window_set_snapped_border_color", { color }).catch(console.error);
+  }
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {

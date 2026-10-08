@@ -187,11 +187,10 @@ function App() {
 
   const cancelClose = useCallback(() => setClosing(null), []);
 
-  // Closing the window (the close button, ⌘Q, Alt+F4) quits, so it asks like closing the
-  // tabs would.
+  // Closing the window (the close button, ⌘Q, Alt+F4) quits, ending every session at once,
+  // so it always asks, whatever the setting for closing tabs.
   useEffect(() => {
     const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
-      if (!settingsRef.current.tabs.confirmClose) return;
       const reasons = await Promise.all(tabsRef.current.map(busyReason));
       const busy = reasons.filter((reason) => reason !== null).length;
       if (busy === 0) return;
@@ -201,10 +200,7 @@ function App() {
     return () => void unlisten.then((f) => f());
   }, []);
 
-  const confirmCloseWindow = (dontAskAgain: boolean) => {
-    if (dontAskAgain) update({ ...settings, tabs: { ...settings.tabs, confirmClose: false } });
-    void getCurrentWindow().destroy();
-  };
+  const confirmCloseWindow = () => void getCurrentWindow().destroy();
 
   const cancelCloseWindow = useCallback(() => setClosingWindow(null), []);
 
@@ -422,7 +418,6 @@ function App() {
           message={t("closeConfirm.window", { count: closingWindow })}
           confirmLabel={t("closeConfirm.windowConfirm")}
           danger
-          checkboxLabel={t("common.dontAskAgain")}
           onConfirm={confirmCloseWindow}
           onCancel={cancelCloseWindow}
         />

@@ -207,6 +207,7 @@ pub fn run() {
             window::window_title_double_click,
             window::window_system_menu,
             window::window_set_maximize_button,
+            window::window_set_snapped_border_color,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

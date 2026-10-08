@@ -80,6 +80,23 @@ pub fn window_system_menu(window: WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The title bar's color (`#rrggbb`), for the window's border while it is snapped (see
+/// [`update_border`]); set with the theme. Windows only.
+#[tauri::command]
+pub fn window_set_snapped_border_color(window: WebviewWindow, color: String) -> tauri::Result<()> {
+    #[cfg(windows)]
+    {
+        if let Some(color) = win::colorref(&color) {
+            win::SNAPPED_BORDER.store(color, std::sync::atomic::Ordering::Relaxed);
+            let hwnd = window.hwnd()?.0 as isize;
+            unsafe { win::update_border(hwnd as _) };
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (window, color);
+    Ok(())
+}
+
 /// The frontend's maximize button, in CSS pixels from the top left of the window.
 #[derive(Clone, Copy, serde::Deserialize)]
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -107,9 +124,11 @@ pub fn window_set_maximize_button(window: WebviewWindow, rect: Option<Rect>) -> 
     Ok(())
 }
 
-/// After the window moved or was resized: Windows 11 draws a 1px border around a window
-/// that isn't maximized, which stays when the window is snapped to part of the screen, where
-/// it looks like a gap along the screen's edges; it is hidden there. Windows only.
+/// After the window moved or was resized: Windows 11 frames a window that isn't maximized
+/// with a 1px border outside the web view, which stays when the window is snapped to part of
+/// the screen, where it looks like a gap along the screen's edges. The space can't be given
+/// to the web view without taking over the frame's layout from Tao, so while snapped the
+/// border takes the title bar's color and blends in. Windows only.
 pub fn update_border(window: &tauri::Window) {
     #[cfg(windows)]
     {
@@ -133,13 +152,13 @@ mod win {
     //! `WS_EX_LAYERED` or `WS_EX_TRANSPARENT` would make the hit test pass through it.
 
     use std::cell::Cell;
-    use std::sync::atomic::{AtomicU8, Ordering};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Once, OnceLock};
 
     use tauri::{AppHandle, Emitter};
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
     use windows_sys::core::BOOL;
-    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE};
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
     use windows_sys::Win32::Graphics::Gdi::{GetStockObject, NULL_BRUSH};
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT};
@@ -171,15 +190,26 @@ mod win {
         })
     }
 
+    /// The border's color while snapped, a `COLORREF`; the system's until the frontend sets it.
+    pub(super) static SNAPPED_BORDER: AtomicU32 = AtomicU32::new(DWMWA_COLOR_DEFAULT);
+
+    /// `#rrggbb` as a `COLORREF` (`0x00bbggrr`).
+    pub(super) fn colorref(color: &str) -> Option<u32> {
+        let hex = color.strip_prefix('#').filter(|hex| hex.len() == 6)?;
+        let rgb = u32::from_str_radix(hex, 16).ok()?;
+        Some(((rgb & 0xff) << 16) | (rgb & 0xff00) | (rgb >> 16))
+    }
+
     /// # Safety
     /// `hwnd` is the main window.
     pub(super) unsafe fn update_border(hwnd: HWND) {
-        // 0: not set yet, 1: default, 2: none. Moves come often; the border rarely changes.
-        static BORDER: AtomicU8 = AtomicU8::new(0);
+        // The color last set; moves come often, the border rarely changes. Starts as a value
+        // no color has (the top byte of a COLORREF is 0, of the special values 0xff).
+        static BORDER: AtomicU32 = AtomicU32::new(0xffff_fff0);
         let Some(is_window_arranged) = is_window_arranged() else { return };
-        let snapped = is_window_arranged(hwnd) != 0;
-        let (state, color) = if snapped { (2, DWMWA_COLOR_NONE) } else { (1, DWMWA_COLOR_DEFAULT) };
-        if BORDER.swap(state, Ordering::Relaxed) != state {
+        let color =
+            if is_window_arranged(hwnd) != 0 { SNAPPED_BORDER.load(Ordering::Relaxed) } else { DWMWA_COLOR_DEFAULT };
+        if BORDER.swap(color, Ordering::Relaxed) != color {
             // Fails on Windows 10, which draws no such border.
             DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, (&color as *const u32).cast(), size_of::<u32>() as u32);
         }

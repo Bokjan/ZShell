@@ -135,7 +135,7 @@
 - **布局**：没有原生标题栏，窗口顶部一行（`--titlebar-height`，34px）在侧栏右边界处分为侧栏顶行与标签栏，侧栏从窗口顶部延伸到底部。标签栏始终显示，没有标签页时也有 "+" 和拖动区域。
 - **窗口**：主窗口在配置中 `create: false`，由 `window.rs` 按平台创建：macOS 用 `titleBarStyle: Overlay` 并隐藏标题，红绿灯（`trafficLightPosition`）垂直居中于顶行，侧栏顶行左侧为其留白（全屏时取消）；Windows `decorations: false`，阴影与圆角由 Tauri 的无边框阴影提供，顶边缩放由 Tauri 盖在 WebView2 上的子窗口处理。其他平台保留原生标题栏。
 - **拖动**：不用 Tauri 的 `data-tauri-drag-region`，由 `lib/window.ts` 在捕获阶段处理带 `data-window-drag` 的元素（只算直接按在元素本身上）：单击 `startDragging()`（Windows 的贴靠、拖动还原等由系统处理），双击交给后端——macOS 按系统设置"连按窗口标题栏以…"（`AppleActionOnDoubleClick`）缩放或最小化，且与原生一致在松开时执行；Windows 切换最大化；Windows 右键弹出窗口的系统菜单。标签条先于其后的拖动间隔收缩，标签再多也留有拖动区域。对话框的遮罩从标题栏下方开始，遮罩顶部那一条仍可拖动窗口。
-- **Windows 窗口按钮**：`WindowControls` 自绘，图标用系统字体 Segoe Fluent Icons / Segoe MDL2 Assets，层级高于对话框遮罩。Windows 11 的贴靠布局要求对最大化按钮位置的 `WM_NCHITTEST` 返回 `HTMAXBUTTON`，而 WebView2 的子窗口接收全部鼠标消息，所以在按钮上方放一个不绘制的原生子窗口返回它；位置由前端量出后发给后端（`window_set_maximize_button`），悬停 / 按下状态由后端发事件给前端设置样式，点击由后端发 `SC_MAXIMIZE` / `SC_RESTORE`。Windows 11 给非最大化窗口画的 1px 边框在贴靠到屏幕一部分时仍然保留，沿屏幕边缘看起来像没填满；窗口移动或改变大小时用 `IsWindowArranged`（运行时查找，较老的 Windows 10 没有）判断是否贴靠，贴靠时用 `DWMWA_BORDER_COLOR` 去掉边框，否则恢复系统默认。
+- **Windows 窗口按钮**：`WindowControls` 自绘，图标用系统字体 Segoe Fluent Icons / Segoe MDL2 Assets，层级高于对话框遮罩。Windows 11 的贴靠布局要求对最大化按钮位置的 `WM_NCHITTEST` 返回 `HTMAXBUTTON`，而 WebView2 的子窗口接收全部鼠标消息，所以在按钮上方放一个不绘制的原生子窗口返回它；位置由前端量出后发给后端（`window_set_maximize_button`），悬停 / 按下状态由后端发事件给前端设置样式，点击由后端发 `SC_MAXIMIZE` / `SC_RESTORE`。Windows 11 给非最大化窗口画的 1px 边框在贴靠到屏幕一部分时仍然保留，沿屏幕边缘看起来像没填满；这 1px 是 WebView 之外的窗口边框本身，去掉颜色只会露出透明，要让网页覆盖它须接管 Tao 的边框计算。所以窗口移动或改变大小时用 `IsWindowArranged`（运行时查找，较老的 Windows 10 没有）判断是否贴靠，贴靠时用 `DWMWA_BORDER_COLOR` 把边框设成标题栏的颜色（`--bg-sidebar`，随主题更新），否则恢复系统默认。
 
 ### 剪贴板
 
@@ -152,7 +152,7 @@
 
 - **标题**：重命名的标题 > 远端标题（OSC 0 / 2，可在设置中关闭）> 会话名。重命名为空则恢复自动标题；重连时清除旧的远端标题，由新 shell 重新设置。
 - **拖拽排序**：用鼠标事件而不是 HTML5 拖放（Windows 上 Tauri 的文件拖入会拦截 HTML5 拖放）；指针越过相邻标签的中点即交换位置。按下标签不夺走终端的焦点。
-- **关闭确认**（可关闭）：已连接的 SSH 标签，或本地终端里有前台程序时确认；关闭多个标签时合并为一次确认。关闭窗口（即退出：关闭按钮、⌘Q、Alt+F4）时同样确认，由前端的 `onCloseRequested` 拦截。对话框里可勾选"不再询问"，即关闭该设置。macOS 上从程序坞退出、注销或关机由系统直接终止应用，不经过确认（已知限制）。
+- **关闭确认**（可关闭）：已连接的 SSH 标签，或本地终端里有前台程序时确认；关闭多个标签时合并为一次确认。对话框里可勾选"不再询问"，即关闭该设置。关闭窗口（即退出：关闭按钮、⌘Q、Alt+F4）会一次结束全部会话，有这样的标签时总是确认，不受该设置影响，也没有"不再询问"；由前端的 `onCloseRequested` 拦截。macOS 上从程序坞退出、注销或关机由系统直接终止应用，不经过确认（已知限制）。
 - **重新连接**：标签右键菜单中，关闭当前会话后立即新建连接；旧会话迟到的输出和事件按连接代号忽略。
 - **终端内操作**：连接结束后按 Enter 重连 / 重试 / 重启 shell，提示以暗色文字写在终端里。
 
