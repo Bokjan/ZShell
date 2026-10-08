@@ -1,4 +1,11 @@
-import { useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ForwardState, SessionId, SessionTarget } from "../lib/api";
@@ -54,6 +61,9 @@ interface Props {
 
 /** How far the pointer moves before a press on a tab becomes a drag. */
 const DRAG_THRESHOLD = 5;
+/** While dragging a tab this close to an edge of the strip, the strip scrolls. */
+const DRAG_SCROLL_EDGE = 24;
+const DRAG_SCROLL_STEP = 12;
 
 export function TabBar({
   tabs,
@@ -68,12 +78,29 @@ export function TabBar({
   onTogglePanel,
 }: Props) {
   const { t } = useTranslation();
-  const navRef = useRef<HTMLElement>(null);
+  // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
+  const stripRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+
+  // Keep the active tab in view, e.g. after Ctrl+Tab or opening a tab.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const tab = strip?.querySelector<HTMLElement>(`.tab[data-key="${activeKey}"]`);
+    if (!strip || !tab) return;
+    if (tab.offsetLeft < strip.scrollLeft) strip.scrollLeft = tab.offsetLeft;
+    else if (tab.offsetLeft + tab.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = tab.offsetLeft + tab.offsetWidth - strip.clientWidth;
+    }
+  }, [activeKey, tabs.length]);
+
+  // A mouse wheel scrolls the strip sideways; trackpads already scroll horizontally.
+  const onWheel = (e: ReactWheelEvent) => {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) stripRef.current!.scrollLeft += e.deltaY;
+  };
   const activeTab = tabs.find((t) => t.key === activeKey);
   const states = Object.values(activeTab?.forwards ?? {});
   const running = states.filter((s) => s.type === "starting" || s.type === "active").length;
@@ -94,7 +121,11 @@ export function TabBar({
         moved = true;
         setDragging(key);
       }
-      const others = [...navRef.current!.querySelectorAll<HTMLElement>(".tab")].filter(
+      const strip = stripRef.current!;
+      const bounds = strip.getBoundingClientRect();
+      if (ev.clientX < bounds.left + DRAG_SCROLL_EDGE) strip.scrollLeft -= DRAG_SCROLL_STEP;
+      else if (ev.clientX > bounds.right - DRAG_SCROLL_EDGE) strip.scrollLeft += DRAG_SCROLL_STEP;
+      const others = [...strip.querySelectorAll<HTMLElement>(".tab")].filter(
         (el) => el.dataset.key !== String(key),
       );
       const index = others.filter((el) => {
@@ -150,50 +181,52 @@ export function TabBar({
   );
 
   return (
-    <nav className="tab-bar" ref={navRef}>
-      {tabs.map((tab) => {
-        const title = tabTitle(tab, followRemoteTitle);
-        return (
-          <div
-            key={tab.key}
-            data-key={tab.key}
-            className={`tab${tab.key === activeKey ? " active" : ""}${tab.key === dragging ? " dragging" : ""}`}
-            onMouseDown={(e) => editing !== tab.key && startDrag(e, tab.key)}
-            onClick={() => onSelect(tab.key)}
-            onDoubleClick={() => setEditing(tab.key)}
-            onAuxClick={(e) => e.button === 1 && onClose([tab.key])}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setMenu({ key: tab.key, x: e.clientX, y: e.clientY });
-            }}
-            title={editing === tab.key ? undefined : `${title}\n${t("tabs.renameHint")}`}
-          >
-            <span className={`status-dot ${tab.status}`} />
-            {editing === tab.key ? (
-              <TitleEditor
-                initial={title}
-                onDone={(value) => {
-                  setEditing(null);
-                  if (value !== null && value !== title) onRename(tab.key, value || null);
-                }}
-              />
-            ) : (
-              <span className="tab-title">{title}</span>
-            )}
-            <button
-              className="tab-close"
-              title={`${t("tabs.close")} (${closeTabShortcutLabel})`}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose([tab.key]);
+    <nav className="tab-bar">
+      <div className="tab-strip" ref={stripRef} onWheel={onWheel}>
+        {tabs.map((tab) => {
+          const title = tabTitle(tab, followRemoteTitle);
+          return (
+            <div
+              key={tab.key}
+              data-key={tab.key}
+              className={`tab${tab.key === activeKey ? " active" : ""}${tab.key === dragging ? " dragging" : ""}`}
+              onMouseDown={(e) => editing !== tab.key && startDrag(e, tab.key)}
+              onClick={() => onSelect(tab.key)}
+              onDoubleClick={() => setEditing(tab.key)}
+              onAuxClick={(e) => e.button === 1 && onClose([tab.key])}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu({ key: tab.key, x: e.clientX, y: e.clientY });
               }}
+              title={editing === tab.key ? undefined : `${title}\n${t("tabs.renameHint")}`}
             >
-              ×
-            </button>
-          </div>
-        );
-      })}
+              <span className={`status-dot ${tab.status}`} />
+              {editing === tab.key ? (
+                <TitleEditor
+                  initial={title}
+                  onDone={(value) => {
+                    setEditing(null);
+                    if (value !== null && value !== title) onRename(tab.key, value || null);
+                  }}
+                />
+              ) : (
+                <span className="tab-title">{title}</span>
+              )}
+              <button
+                className="tab-close"
+                title={`${t("tabs.close")} (${closeTabShortcutLabel})`}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose([tab.key]);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
       {menu && tabs.some((tab) => tab.key === menu.key) && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />
       )}

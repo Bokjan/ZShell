@@ -111,6 +111,7 @@
 
 - **菜单**：macOS 保留原生菜单栏（WKWebView 的 ⌘C / ⌘V / ⌘A / ⌘Q、⌘, 都依赖原生菜单项），由 `lib.rs` 显式构建：去掉预置的 "Close Window"（它占用 ⌘W），File 菜单改为 New Local Terminal、Close Tab（⌘W，交给前端，可能先确认；没有标签时关闭窗口）、Close Window（⇧⌘W），与 Terminal.app 一致。Windows 不显示菜单栏。
 - **右键菜单**：终端和标签的右键菜单是页面内绘制的 `ContextMenu`（跟随主题，两个平台一致），不用原生菜单。
+- **滚动条**：终端的滚动条由 xterm.js 自绘，颜色取配色的前景色。其余区域用系统滚动条，`color-scheme` 让它们跟随深浅色：macOS 是系统的悬浮滚动条；Windows 通过窗口配置 `scrollBarStyle: fluentOverlay` 使用 WebView2 的 Fluent 悬浮滚动条（需要 WebView2 Runtime 125 及以上，否则为默认的经典样式）。不用 `::-webkit-scrollbar` 统一自绘，以免 macOS 失去原生悬浮滚动条。标签栏放不下时横向滚动但不显示滚动条（滚轮、触控板，当前标签自动滚入视野），"文件 / 转发"切换按钮固定在右侧。
 - **入口**：本地终端在侧栏标题栏的按钮和 macOS File 菜单中；设置在侧栏底部和 macOS 应用菜单中。
 
 ### 剪贴板

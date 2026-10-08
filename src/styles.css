@@ -229,9 +229,22 @@ main {
   display: flex;
   flex-shrink: 0;
   height: 34px;
-  overflow-x: auto;
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
+}
+/* Scrolls sideways when the tabs don't fit (wheel, trackpad, or the active tab is kept in
+   view), with no scroll bar: one would not fit in the bar, and on Windows it would squeeze
+   the tabs. The panel switch stays outside, always visible. */
+.tab-strip {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-strip::-webkit-scrollbar {
+  display: none;
 }
 .tab {
   display: flex;
