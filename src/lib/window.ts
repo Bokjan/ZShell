@@ -19,6 +19,23 @@ function onTitleBar(target: EventTarget | null, y: number) {
   return target.classList.contains("dialog-backdrop") && y < height;
 }
 
+/** Text fields, which keep the web view's menu (cut, copy, paste); the terminal's input is not one. */
+function isTextField(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement) || target.closest(".xterm")) return false;
+  if (target instanceof HTMLTextAreaElement || target.isContentEditable) return true;
+  return target instanceof HTMLInputElement && !["checkbox", "radio", "button", "submit", "range", "color", "file"].includes(target.type);
+}
+
+/**
+ * Keeps the web view's own context menu (Reload, Back, Inspect) out of the app: a right click
+ * anywhere without a menu of the app's own shows nothing, except in text fields.
+ */
+export function suppressWebViewMenu() {
+  window.addEventListener("contextmenu", (e) => {
+    if (!isTextField(e.target)) e.preventDefault();
+  });
+}
+
 const titleBarDoubleClick = () => invoke("window_title_double_click").catch(console.error);
 
 /**

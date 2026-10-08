@@ -29,7 +29,8 @@
     "help": "Help",
     "settings": "Settings…",
     "closeTab": "Close Tab",
-    "closeWindow": "Close Window"
+    "closeWindow": "Close Window",
+    "quit": "Quit {name}"
   },
   "errors": {
     "unexpected": "Unexpected error",

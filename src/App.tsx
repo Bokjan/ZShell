@@ -87,6 +87,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Tabs waiting for the user to confirm closing them, with why the first busy one is busy.
   const [closing, setClosing] = useState<{ keys: number[]; busy: Busy; tab: Tab } | null>(null);
+  // The window waiting for the user to confirm closing it (quitting), with how many tabs are busy.
+  const [closingWindow, setClosingWindow] = useState<number | null>(null);
   // Title for local terminal tabs, e.g. "zsh".
   const [shellName, setShellName] = useState<string | null>(null);
   // For quick connections without a user name.
@@ -184,6 +186,27 @@ function App() {
   };
 
   const cancelClose = useCallback(() => setClosing(null), []);
+
+  // Closing the window (the close button, ⌘Q, Alt+F4) quits, so it asks like closing the
+  // tabs would.
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
+      if (!settingsRef.current.tabs.confirmClose) return;
+      const reasons = await Promise.all(tabsRef.current.map(busyReason));
+      const busy = reasons.filter((reason) => reason !== null).length;
+      if (busy === 0) return;
+      event.preventDefault();
+      setClosingWindow(busy);
+    });
+    return () => void unlisten.then((f) => f());
+  }, []);
+
+  const confirmCloseWindow = (dontAskAgain: boolean) => {
+    if (dontAskAgain) update({ ...settings, tabs: { ...settings.tabs, confirmClose: false } });
+    void getCurrentWindow().destroy();
+  };
+
+  const cancelCloseWindow = useCallback(() => setClosingWindow(null), []);
 
   const moveTab = (key: number, index: number) =>
     setTabs((tabs) => {
@@ -393,6 +416,17 @@ function App() {
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
       {settingsOpen && <SettingsDialog onClose={closeSettings} />}
+      {closingWindow !== null && (
+        <ConfirmDialog
+          title={t("closeConfirm.windowTitle")}
+          message={t("closeConfirm.window", { count: closingWindow })}
+          confirmLabel={t("closeConfirm.windowConfirm")}
+          danger
+          checkboxLabel={t("common.dontAskAgain")}
+          onConfirm={confirmCloseWindow}
+          onCancel={cancelCloseWindow}
+        />
+      )}
       {closing && (
         <ConfirmDialog
           title={closing.keys.length > 1 ? t("closeConfirm.titleMany", { count: closing.keys.length }) : t("closeConfirm.title")}

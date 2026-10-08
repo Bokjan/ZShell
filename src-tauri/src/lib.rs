@@ -27,12 +27,14 @@ use ssh::Connections;
 const SETTINGS_MENU_ID: &str = "settings";
 const CLOSE_TAB_MENU_ID: &str = "close-tab";
 const CLOSE_WINDOW_MENU_ID: &str = "close-window";
+const QUIT_MENU_ID: &str = "quit";
 
 /// The macOS menu: Tauri's default one, with "Settings…" (⌘,) in the app menu, where Mac
 /// users expect it, and a File menu with "Close Tab" (⌘W) and "Close Window" (⇧⌘W), as in
 /// Terminal.app; the predefined "Close Window" item would take ⌘W.
 /// These shortcuts have to be menu items: macOS handles them before the web view sees them.
-/// Elsewhere the frontend handles Ctrl+, and Ctrl+Shift+W itself.
+/// "Quit" closes the window rather than exiting directly, so the frontend can ask first when
+/// tabs are connected. Elsewhere the frontend handles Ctrl+, and Ctrl+Shift+W itself.
 #[cfg(target_os = "macos")]
 fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID};
@@ -57,7 +59,7 @@ fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri
                     &PredefinedMenuItem::hide(app, None)?,
                     &PredefinedMenuItem::hide_others(app, None)?,
                     &separator()?,
-                    &PredefinedMenuItem::quit(app, None)?,
+                    &MenuItem::with_id(app, QUIT_MENU_ID, t!("menu.quit", name = info.name), true, Some("CmdOrCtrl+Q"))?,
                 ],
             )?,
             &Submenu::with_items(
@@ -140,9 +142,13 @@ pub fn run() {
             } else if event.id() == CLOSE_TAB_MENU_ID {
                 // The frontend may ask first, and closes the window when there are no tabs.
                 let _ = app.emit("close-tab", ());
-            } else if event.id() == CLOSE_WINDOW_MENU_ID {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.close();
+            } else if event.id() == CLOSE_WINDOW_MENU_ID || event.id() == QUIT_MENU_ID {
+                // The last window closing quits the app; the frontend may ask first.
+                match app.get_webview_window("main") {
+                    Some(window) => {
+                        let _ = window.close();
+                    }
+                    None => app.exit(0),
                 }
             }
         })
@@ -196,6 +202,7 @@ pub fn run() {
             window::window_title_double_click,
             window::window_system_menu,
             window::window_set_maximize_button,
+            window::window_set_border_color,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

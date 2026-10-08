@@ -318,7 +318,11 @@
     "process": "“{process}” is still running in “{name}”. Closing the tab ends it.",
     "processUnknown": "A program is still running in “{name}”. Closing the tab ends it.",
     "many": "Some of these tabs are still connected or running a program.",
-    "confirm": "Close"
+    "confirm": "Close",
+    "windowTitle": "Close All Tabs?",
+    "window_one": "{count} tab is still connected or running a program. Closing the window ends it.",
+    "window_other": "{count} tabs are still connected or running a program. Closing the window ends them.",
+    "windowConfirm": "Close All"
   },
   "paste": {
     "title": "Paste Multiple Lines?",

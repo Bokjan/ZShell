@@ -30,6 +30,7 @@ import {
   type Row,
 } from "../lib/sessions";
 import { DRAG_REGION } from "../lib/window";
+import { PlusIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { SessionImportDialog } from "./SessionImportDialog";
@@ -406,13 +407,13 @@ export function Sidebar(props: Props) {
       <header className="sidebar-titlebar" {...DRAG_REGION}>
         <span className="sidebar-actions">
           <button className="icon-button" title={t("sidebar.importExport")} onClick={importMenu}>
-            ⇅
+            <ImportExportIcon />
           </button>
           <button className="icon-button" title={t("sidebar.newFolder")} onClick={() => createFolder(currentFolder())}>
             <FolderPlusIcon />
           </button>
           <button className="icon-button" title={t("sidebar.newSession")} onClick={() => onNew(currentFolder())}>
-            +
+            <PlusIcon />
           </button>
         </span>
       </header>
@@ -549,6 +550,15 @@ function Chevron({ open }: { open: boolean }) {
   return (
     <svg className={`chevron${open ? " open" : ""}`} width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
       <path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Arrows up and down, for the import and export menu. */
+function ImportExportIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 13V3M2.5 5.5L5 3l2.5 2.5M11 3v10M8.5 10.5L11 13l2.5-2.5" />
     </svg>
   );
 }

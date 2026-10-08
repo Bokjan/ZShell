@@ -12,6 +12,7 @@ import type { ForwardState, SessionId, SessionTarget } from "../lib/api";
 import { closeTabShortcutLabel, isWindows, newTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { PlusIcon } from "./icons";
 import type { SessionStatus } from "./TerminalView";
 import { WindowControls } from "./WindowControls";
 
@@ -246,7 +247,7 @@ export function TabBar({
         onMouseDown={(e) => e.preventDefault()}
         onClick={onNew}
       >
-        +
+        <PlusIcon />
       </button>
       {/* Grows, and keeps some room to move the window however many tabs there are. */}
       <span className="tab-bar-drag" {...DRAG_REGION} />

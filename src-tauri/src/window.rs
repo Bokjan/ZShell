@@ -107,6 +107,23 @@ pub fn window_set_maximize_button(window: WebviewWindow, rect: Option<Rect>) -> 
     Ok(())
 }
 
+/// Colors the 1px border Windows 11 draws around a window that isn't maximized (also when
+/// snapped to half the screen), which is light gray by default and stands out against the
+/// app; `color` is `#rrggbb`. Windows only; older Windows has no such border.
+#[tauri::command]
+pub fn window_set_border_color(window: WebviewWindow, color: String) -> tauri::Result<()> {
+    #[cfg(windows)]
+    {
+        if let Some(color) = win::colorref(&color) {
+            let hwnd = window.hwnd()?.0 as isize;
+            unsafe { win::set_border_color(hwnd as _, color) };
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (window, color);
+    Ok(())
+}
+
 #[cfg(windows)]
 mod win {
     //! Windows 11 shows the snap layouts when the pointer rests on whatever answers
@@ -123,6 +140,7 @@ mod win {
 
     use tauri::{AppHandle, Emitter};
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
     use windows_sys::Win32::Graphics::Gdi::{GetStockObject, NULL_BRUSH};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT};
@@ -138,6 +156,20 @@ mod win {
     use super::{Rect, MAIN};
 
     /// For reporting the button's state to the frontend from the window procedure.
+    /// `#rrggbb` as a `COLORREF` (`0x00bbggrr`).
+    pub(super) fn colorref(color: &str) -> Option<u32> {
+        let hex = color.strip_prefix('#').filter(|hex| hex.len() == 6)?;
+        let rgb = u32::from_str_radix(hex, 16).ok()?;
+        Some(((rgb & 0xff) << 16) | (rgb & 0xff00) | (rgb >> 16))
+    }
+
+    /// # Safety
+    /// `hwnd` is a window.
+    pub(super) unsafe fn set_border_color(hwnd: HWND, color: u32) {
+        // Fails on Windows 10, which doesn't draw the border.
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, (&color as *const u32).cast(), size_of::<u32>() as u32);
+    }
+
     pub(super) static APP: OnceLock<AppHandle> = OnceLock::new();
 
     #[derive(Clone, Copy, Default, PartialEq, serde::Serialize)]
