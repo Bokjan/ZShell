@@ -7,7 +7,8 @@
     "dontAskAgain": "Don't ask again"
   },
   "app": {
-    "placeholder": "Select a session on the left to connect, or open a local terminal"
+    "placeholder": "Select a session on the left to connect, or open a local terminal",
+    "placeholderNoLocal": "Select a session on the left to connect"
   },
   "sidebar": {
     "newSession": "New session",

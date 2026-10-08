@@ -21,7 +21,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::error::Error;
 use crate::session::{CloseReason, Flow, Foreground, ForegroundProbe, SessionEvent, SessionInput, SessionSink, TermIo};
-pub use shell::{default_shell, Shell};
+pub use shell::{default_shell, local_shells_allowed, Shell};
 
 /// How long to wait for the rest of the output once the shell has exited.
 #[cfg(unix)]

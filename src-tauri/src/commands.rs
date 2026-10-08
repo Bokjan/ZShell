@@ -353,10 +353,11 @@ pub fn logs_delete(logs: State<'_, Logs>, profile_id: Option<String>) -> usize {
     }
 }
 
-/// Short name of the default local shell, e.g. "zsh" or "pwsh".
+/// Short name of the default local shell, e.g. "zsh" or "pwsh"; none when the system doesn't
+/// allow local terminals (Windows in S mode).
 #[tauri::command]
-pub fn local_shell_name() -> String {
-    pty::default_shell().name()
+pub fn local_shell_name() -> Option<String> {
+    pty::local_shells_allowed().then(|| pty::default_shell().name())
 }
 
 #[tauri::command]

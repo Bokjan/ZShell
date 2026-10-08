@@ -60,8 +60,8 @@ interface Props {
   activeKey: number | null;
   followRemoteTitle: boolean;
   onSelect(key: number): void;
-  /** Opens a local terminal tab ("+"). */
-  onNew(): void;
+  /** Opens a local terminal tab ("+"); absent when the system doesn't allow them. */
+  onNew?(): void;
   /** Closes these tabs, asking first if needed. */
   onClose(keys: number[]): void;
   /** Moves the tab to `index` in the tab order. */
@@ -290,14 +290,16 @@ export function TabBar({
       {menu && tabs.some((tab) => tab.key === menu.key) && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />
       )}
-      <button
-        className="tab-new"
-        title={t("tabs.newLocalTerminal", { shortcut: newTabShortcutLabel })}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onNew}
-      >
-        <PlusIcon />
-      </button>
+      {onNew && (
+        <button
+          className="tab-new"
+          title={t("tabs.newLocalTerminal", { shortcut: newTabShortcutLabel })}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onNew}
+        >
+          <PlusIcon />
+        </button>
+      )}
       {/* Grows, and keeps some room to move the window however many tabs there are. */}
       <span className="tab-bar-drag" {...DRAG_REGION} />
       {tabs.length > 0 && (

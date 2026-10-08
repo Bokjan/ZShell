@@ -132,6 +132,8 @@ function App() {
   const [closingWindow, setClosingWindow] = useState<number | null>(null);
   // Title for local terminal tabs, e.g. "zsh".
   const [shellName, setShellName] = useState<string | null>(null);
+  // False on Windows in S mode, which blocks local shells.
+  const [localAllowed, setLocalAllowed] = useState(true);
   // For quick connections without a user name.
   const [username, setUsername] = useState("");
   const nextKey = useRef(1);
@@ -164,7 +166,9 @@ function App() {
     setQuickBarOpen(!quickBarOpen);
   };
   useEffect(() => {
-    localShellName().then(setShellName).catch(console.error);
+    localShellName()
+      .then((name) => (name === null ? setLocalAllowed(false) : setShellName(name)))
+      .catch(console.error);
     localUsername().then(setUsername).catch(console.error);
   }, []);
 
@@ -320,7 +324,7 @@ function App() {
         setSettingsOpen(true);
         return;
       }
-      if (isNewTabShortcut(e)) {
+      if (isNewTabShortcut(e) && localAllowed) {
         e.preventDefault();
         e.stopPropagation();
         openLocalTab();
@@ -372,7 +376,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [togglePanel, requestClose, openLocalTab, toggleCompose]);
+  }, [togglePanel, requestClose, openLocalTab, toggleCompose, localAllowed]);
 
   // From the macOS app menu's "Settings…" item (⌘,).
   useEffect(() => {
@@ -498,7 +502,7 @@ function App() {
           activeKey={activeKey}
           followRemoteTitle={settings.tabs.followRemoteTitle}
           onSelect={setActiveKey}
-          onNew={openLocalTab}
+          onNew={localAllowed ? openLocalTab : undefined}
           onClose={(keys) => void requestClose(keys)}
           onMove={moveTab}
           onRename={(key, customTitle) => updateTab(key, { customTitle })}
@@ -552,7 +556,7 @@ function App() {
               onProfileChanged={onProfileChanged}
             />
           ))}
-          {tabs.length === 0 && <div className="placeholder">{t("app.placeholder")}</div>}
+          {tabs.length === 0 && <div className="placeholder">{t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}</div>}
         </div>
         {quickBarOpen && activeTab && commands && activeGroup && (
           <QuickCommandBar
@@ -601,7 +605,7 @@ function App() {
         />
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
-      {settingsOpen && <SettingsDialog onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog localAllowed={localAllowed} onClose={closeSettings} />}
       {closingWindow !== null && (
         <ConfirmDialog
           title={t("closeConfirm.windowTitle")}

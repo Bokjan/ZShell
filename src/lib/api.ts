@@ -330,8 +330,9 @@ export const zmodem = {
   cancel: (id: SessionId) => invoke<void>("zmodem_cancel", { id }),
 };
 
-/** Short name of the default local shell, e.g. "zsh" or "pwsh". */
-export const localShellName = () => invoke<string>("local_shell_name");
+/** Short name of the default local shell, e.g. "zsh" or "pwsh"; null when the system doesn't
+ *  allow local terminals (Windows in S mode). */
+export const localShellName = () => invoke<string | null>("local_shell_name");
 
 export interface FileEntry {
   name: string;

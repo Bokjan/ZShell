@@ -26,6 +26,8 @@ import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalSchem
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 
 interface Props {
+  /** Whether the system allows local terminals (not Windows in S mode). */
+  localAllowed: boolean;
   onClose(): void;
 }
 
@@ -56,7 +58,7 @@ function NumberField({ value, min, max, onChange }: { value: number; min: number
   );
 }
 
-export function SettingsDialog({ onClose }: Props) {
+export function SettingsDialog({ localAllowed, onClose }: Props) {
   const { t } = useTranslation();
   const { settings, theme, update } = useSettings();
   const terminal = settings.terminal;
@@ -284,7 +286,7 @@ export function SettingsDialog({ onClose }: Props) {
           <p className="hint">{t("settings.zmodemAskLocationHint")}</p>
         </section>
 
-        <LogSection settings={settings.logs} onChange={setLogs} />
+        <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
 
         <footer>
           <button type="button" onClick={() => update(DEFAULT_SETTINGS)}>
@@ -368,7 +370,15 @@ function FileSection({ settings, onChange }: { settings: FileSettings; onChange(
 }
 
 /** Session logs: where and how they are written, how long they are kept, deleting them. */
-function LogSection({ settings, onChange }: { settings: LogSettings; onChange(patch: Partial<LogSettings>): void }) {
+function LogSection({
+  settings,
+  localAllowed,
+  onChange,
+}: {
+  settings: LogSettings;
+  localAllowed: boolean;
+  onChange(patch: Partial<LogSettings>): void;
+}) {
   const { t } = useTranslation();
   const [directory, setDirectory] = useState("");
   const [summary, setSummary] = useState<{ count: number; bytes: number } | null>(null);
@@ -470,10 +480,12 @@ function LogSection({ settings, onChange }: { settings: LogSettings; onChange(pa
         />
         {t("settings.logTimestamps")}
       </label>
-      <label className="checkbox">
-        <input type="checkbox" checked={settings.autoLocal} onChange={(e) => onChange({ autoLocal: e.target.checked })} />
-        {t("settings.logAutoLocal")}
-      </label>
+      {localAllowed && (
+        <label className="checkbox">
+          <input type="checkbox" checked={settings.autoLocal} onChange={(e) => onChange({ autoLocal: e.target.checked })} />
+          {t("settings.logAutoLocal")}
+        </label>
+      )}
       <p className="hint">{t("settings.logAutoHint")}</p>
       <div className="row log-summary">
         <span className="grow">

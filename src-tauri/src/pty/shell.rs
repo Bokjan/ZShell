@@ -27,6 +27,19 @@ impl Shell {
     }
 }
 
+/// Whether this system lets ZShell start a local shell.
+#[cfg(not(windows))]
+pub fn local_shells_allowed() -> bool {
+    true
+}
+
+/// Windows in S mode only runs Store apps and blocks command-line shells such as PowerShell
+/// and cmd. An error (the API is missing before Windows 10 1803) counts as no S mode.
+#[cfg(windows)]
+pub fn local_shells_allowed() -> bool {
+    !windows::System::Profile::WindowsIntegrityPolicy::IsEnabled().unwrap_or(false)
+}
+
 /// The user's default shell with ZShell's terminal environment.
 pub fn default_shell() -> Shell {
     let (mut command, program) = default_command();
