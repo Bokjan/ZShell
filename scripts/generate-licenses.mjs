@@ -15,7 +15,8 @@
 // is left out and `rustMissing` is set, which is fine for local builds; in CI (`CI` is
 // set) it is an error, so that a release never ships incomplete notices.
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,7 +65,12 @@ function rustPackages() {
     console.warn(`warning: ${message}; leaving out the Rust crates`);
     return null;
   }
-  const about = JSON.parse(
+  // Into a file: on Windows cargo-about refuses to write to stdout when it detects
+  // PowerShell, which CI runners use.
+  const dir = mkdtempSync(join(tmpdir(), "zshell-about-"));
+  const file = join(dir, "about.json");
+  let about;
+  try {
     run("cargo", [
       "about",
       "generate",
@@ -76,8 +82,13 @@ function rustPackages() {
       "src-tauri/Cargo.toml",
       "-c",
       "src-tauri/about.toml",
-    ]),
-  );
+      "-o",
+      file,
+    ]);
+    about = JSON.parse(readFileSync(file, "utf8"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
   // cargo-about lists licenses with the crates using them; turn that around.
   const crates = new Map();
   for (const license of about.licenses) {
