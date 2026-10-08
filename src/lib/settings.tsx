@@ -2,8 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { isWindows } from "./platform";
-
 export type Appearance = "system" | "dark" | "light";
 export type CursorStyle = "block" | "bar" | "underline";
 /** What right-clicking the terminal does. */
@@ -93,11 +91,6 @@ function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
   window.setTheme(appearance === "system" ? null : theme).catch(console.error);
   window.setBackgroundColor(theme === "light" ? "#ffffff" : "#1e1e1e").catch(console.error);
   document.documentElement.style.background = theme === "light" ? "#ffffff" : "#1e1e1e";
-  // The border Windows 11 draws around the window, in the color of the app's own dividers.
-  if (isWindows) {
-    const border = getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
-    invoke("window_set_border_color", { color: border }).catch(console.error);
-  }
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {

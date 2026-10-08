@@ -107,21 +107,18 @@ pub fn window_set_maximize_button(window: WebviewWindow, rect: Option<Rect>) -> 
     Ok(())
 }
 
-/// Colors the 1px border Windows 11 draws around a window that isn't maximized (also when
-/// snapped to half the screen), which is light gray by default and stands out against the
-/// app; `color` is `#rrggbb`. Windows only; older Windows has no such border.
-#[tauri::command]
-pub fn window_set_border_color(window: WebviewWindow, color: String) -> tauri::Result<()> {
+/// After the window moved or was resized: Windows 11 draws a 1px border around a window
+/// that isn't maximized, which stays when the window is snapped to part of the screen, where
+/// it looks like a gap along the screen's edges; it is hidden there. Windows only.
+pub fn update_border(window: &tauri::Window) {
     #[cfg(windows)]
     {
-        if let Some(color) = win::colorref(&color) {
-            let hwnd = window.hwnd()?.0 as isize;
-            unsafe { win::set_border_color(hwnd as _, color) };
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe { win::update_border(hwnd.0) };
         }
     }
     #[cfg(not(windows))]
-    let _ = (window, color);
-    Ok(())
+    let _ = window;
 }
 
 #[cfg(windows)]
@@ -136,13 +133,15 @@ mod win {
     //! `WS_EX_LAYERED` or `WS_EX_TRANSPARENT` would make the hit test pass through it.
 
     use std::cell::Cell;
+    use std::sync::atomic::{AtomicU8, Ordering};
     use std::sync::{Once, OnceLock};
 
     use tauri::{AppHandle, Emitter};
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
-    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
+    use windows_sys::core::BOOL;
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE};
     use windows_sys::Win32::Graphics::Gdi::{GetStockObject, NULL_BRUSH};
-    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, EnableMenuItem, GetCursorPos, GetParent, GetSystemMenu, IsZoomed, LoadCursorW,
@@ -156,18 +155,34 @@ mod win {
     use super::{Rect, MAIN};
 
     /// For reporting the button's state to the frontend from the window procedure.
-    /// `#rrggbb` as a `COLORREF` (`0x00bbggrr`).
-    pub(super) fn colorref(color: &str) -> Option<u32> {
-        let hex = color.strip_prefix('#').filter(|hex| hex.len() == 6)?;
-        let rgb = u32::from_str_radix(hex, 16).ok()?;
-        Some(((rgb & 0xff) << 16) | (rgb & 0xff00) | (rgb >> 16))
+    type IsWindowArranged = unsafe extern "system" fn(HWND) -> BOOL;
+
+    /// `IsWindowArranged` (whether the window is snapped), looked up at run time: older
+    /// Windows 10 builds don't have it, and a static import would keep the app from starting.
+    fn is_window_arranged() -> Option<IsWindowArranged> {
+        static FUNCTION: OnceLock<Option<IsWindowArranged>> = OnceLock::new();
+        *FUNCTION.get_or_init(|| unsafe {
+            let user32 = GetModuleHandleW(wide("user32.dll").as_ptr());
+            if user32.is_null() {
+                return None;
+            }
+            GetProcAddress(user32, c"IsWindowArranged".as_ptr().cast())
+                .map(|f| std::mem::transmute::<unsafe extern "system" fn() -> isize, IsWindowArranged>(f))
+        })
     }
 
     /// # Safety
-    /// `hwnd` is a window.
-    pub(super) unsafe fn set_border_color(hwnd: HWND, color: u32) {
-        // Fails on Windows 10, which doesn't draw the border.
-        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, (&color as *const u32).cast(), size_of::<u32>() as u32);
+    /// `hwnd` is the main window.
+    pub(super) unsafe fn update_border(hwnd: HWND) {
+        // 0: not set yet, 1: default, 2: none. Moves come often; the border rarely changes.
+        static BORDER: AtomicU8 = AtomicU8::new(0);
+        let Some(is_window_arranged) = is_window_arranged() else { return };
+        let snapped = is_window_arranged(hwnd) != 0;
+        let (state, color) = if snapped { (2, DWMWA_COLOR_NONE) } else { (1, DWMWA_COLOR_DEFAULT) };
+        if BORDER.swap(state, Ordering::Relaxed) != state {
+            // Fails on Windows 10, which draws no such border.
+            DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, (&color as *const u32).cast(), size_of::<u32>() as u32);
+        }
     }
 
     pub(super) static APP: OnceLock<AppHandle> = OnceLock::new();

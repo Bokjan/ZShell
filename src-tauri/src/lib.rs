@@ -152,6 +152,11 @@ pub fn run() {
                 }
             }
         })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
+                window::update_border(window);
+            }
+        })
         .manage(SessionManager::default())
         .manage(Connections::default())
         .manage(Transfers::default())
@@ -202,7 +207,6 @@ pub fn run() {
             window::window_title_double_click,
             window::window_system_menu,
             window::window_set_maximize_button,
-            window::window_set_border_color,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
