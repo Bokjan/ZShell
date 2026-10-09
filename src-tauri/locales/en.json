@@ -110,7 +110,9 @@
       "agentConnectFailed": "Cannot connect to the SSH agent",
       "agentListFailed": "Cannot list SSH agent keys",
       "agentEmpty": "The SSH agent has no keys",
-      "agentAllRejected": "The server rejected all SSH agent keys"
+      "agentAllRejected": "The server rejected all SSH agent keys",
+      "notOffered": "The server does not accept this authentication method; it accepts {methods}",
+      "moreRequired": "The server requires further authentication ({methods}), which did not succeed"
     },
     "sftp": {
       "unsupported": "The server does not support SFTP",

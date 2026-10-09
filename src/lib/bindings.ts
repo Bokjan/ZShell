@@ -12,6 +12,8 @@ export type ErrorCode =
   | "auth.keyDecryptFailed"
   | "auth.keyReadFailed"
   | "auth.keyRejected"
+  | "auth.moreRequired"
+  | "auth.notOffered"
   | "auth.passwordFailed"
   | "credentialStore"
   | "edit.conflict"
