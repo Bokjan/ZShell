@@ -69,7 +69,7 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 /// task aborted) ends the shell if it is still running.
 struct Pty {
     master: Option<Box<dyn MasterPty + Send>>,
-    /// Feeds the writer thread; dropping it stops the thread.
+    /// Feeds the writer thread; dropping it stops the thread (see [`write_input`]).
     input: Option<mpsc::Sender<Vec<u8>>>,
     /// The exit status, once the shell exits (`None` if it could not be determined).
     exit: oneshot::Receiver<Option<ExitStatus>>,
@@ -102,14 +102,15 @@ impl Pty {
             let _ = output_done_tx.send(());
         });
 
+        let exited = Arc::new(AtomicBool::new(false));
         let (input, inputs) = mpsc::channel(INPUT_QUEUE);
-        thread::spawn(move || write_input(writer, inputs));
+        let writer_exited = exited.clone();
+        thread::spawn(move || write_input(writer, inputs, &writer_exited));
 
         let killer = child.clone_killer();
         let pid = child.process_id();
         let foreground = io.foreground();
         foreground.set(foreground_probe(&*pair.master, pid));
-        let exited = Arc::new(AtomicBool::new(false));
         let (exit_tx, exit) = oneshot::channel();
         let exited_flag = exited.clone();
         thread::spawn(move || {
@@ -307,11 +308,19 @@ fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink) {
     }
 }
 
-fn write_input(mut writer: Box<dyn Write + Send>, mut inputs: mpsc::Receiver<Vec<u8>>) {
+/// Writes input until the session closes. The writer is then kept until the shell has
+/// exited: portable-pty's Unix writer sends a newline and EOF when dropped, which would
+/// submit a line typed but not entered (a program in the foreground gets SIGHUP only after
+/// the shell does). `shut_down` kills the shell within `KILL_GRACE`.
+fn write_input(mut writer: Box<dyn Write + Send>, mut inputs: mpsc::Receiver<Vec<u8>>, exited: &AtomicBool) {
     while let Some(data) = inputs.blocking_recv() {
         if writer.write_all(&data).and_then(|()| writer.flush()).is_err() {
             break;
         }
+    }
+    if !wait_for(exited, KILL_GRACE * 2) {
+        // The shell outlived SIGKILL (no pid to kill): leaking the handle is the lesser harm.
+        std::mem::forget(writer);
     }
 }
 
@@ -393,6 +402,26 @@ mod tests {
         input.send(SessionInput::Data(b"exit\r".to_vec())).unwrap();
         session.await.unwrap();
         assert_eq!(foreground.get(), None);
+    }
+
+    /// Closing the tab must not submit a line that was typed but not entered, here to a
+    /// program in the foreground (which gets SIGHUP only after the shell).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn closing_does_not_submit_typed_line() {
+        let out = std::env::temp_dir().join(format!("zshell-pty-close-{}", uuid::Uuid::new_v4()));
+        let (io, input, _output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(run(sh_interactive(), io));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let program = format!("/bin/sh -c 'read line; echo \"$line\" > {}'\r", out.display());
+        input.send(SessionInput::Data(program.into_bytes())).unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        input.send(SessionInput::Data(b"rm -rf important".to_vec())).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        session.abort();
+        tokio::time::sleep(KILL_GRACE / 2).await;
+        let submitted = out.exists();
+        let _ = std::fs::remove_file(&out);
+        assert!(!submitted, "the typed line was submitted");
     }
 
     /// Without acknowledgements the reader stops after about `FLOW_HIGH` bytes, and the
