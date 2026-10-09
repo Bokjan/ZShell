@@ -16,6 +16,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SessionPane } from "./components/SessionPane";
 import { PANEL_SHORTCUTS, TabBar, tabTitle, type SidePanel, type Tab, type TabProtocol } from "./components/TabBar";
 import type { SessionStatus } from "./components/TerminalView";
+import { Tooltips } from "./components/Tooltip";
 import {
   listProfiles,
   localShellName,
@@ -664,6 +665,7 @@ function App() {
           onCancel={cancelClose}
         />
       )}
+      <Tooltips />
     </div>
   );
 }

@@ -1806,7 +1806,27 @@ body.resizing .terminal-view {
   margin-left: 4px;
   vertical-align: -2px;
   color: var(--text-muted);
-  cursor: help;
+  outline: none;
+}
+.help-tip:hover,
+.help-tip:focus-visible {
+  color: var(--text);
+}
+.tooltip {
+  position: fixed;
+  z-index: 30;
+  max-width: 320px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 4px 12px var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
 }
 .dialog .hint.warning {
   color: var(--warn);
