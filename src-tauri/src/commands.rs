@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Serialize;
+use ts_rs::TS;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
@@ -109,7 +110,7 @@ pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
 
 /// A saved session or proxy, with the error storing its password gave, if any. It is saved
 /// either way: the dialog then goes on editing it, so that saving again doesn't add another.
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Saved<T> {
     saved: T,

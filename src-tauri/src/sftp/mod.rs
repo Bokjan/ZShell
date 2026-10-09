@@ -10,8 +10,9 @@ use anyhow::Result;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
 use serde::Serialize;
+use ts_rs::TS;
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub name: String,
@@ -25,7 +26,7 @@ pub struct FileEntry {
     pub permissions: Option<u32>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct Listing {
     /// Canonical path of the listed directory.
     pub path: String,

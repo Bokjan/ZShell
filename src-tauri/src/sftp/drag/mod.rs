@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::oneshot;
@@ -24,7 +25,8 @@ use super::transfer::{self, Progress, Reporter, Transfers};
 use crate::error::{Error, Result};
 
 /// A remote item being dragged.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, TS)]
+#[ts(rename = "DragItem")]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub path: String,
@@ -37,7 +39,8 @@ impl Item {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
+#[ts(rename = "DragOutcome")]
 #[serde(rename_all = "camelCase")]
 pub enum Outcome {
     Cancelled,
@@ -49,7 +52,7 @@ pub enum Outcome {
 
 /// How a drag ended, with where the mouse was released (in the page's CSS pixels) for drops
 /// on this window.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, TS)]
 pub struct DragResult {
     pub outcome: Outcome,
     pub x: f64,
@@ -63,7 +66,8 @@ impl DragResult {
 }
 
 /// The download of a drop, reported to the frontend as one transfer.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
+#[ts(rename = "DragOutEvent")]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum DragEvent {
     Progress(Progress),

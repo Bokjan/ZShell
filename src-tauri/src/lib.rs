@@ -2,6 +2,7 @@
 mod i18n;
 
 mod backup;
+mod bindings;
 mod commands;
 mod config;
 mod encoding;

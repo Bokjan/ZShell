@@ -8,6 +8,7 @@
 use std::fmt;
 
 use serde::ser::{Serialize, SerializeMap, Serializer};
+use ts_rs::TS;
 
 use crate::i18n;
 
@@ -65,6 +66,48 @@ impl Serialize for Error {
         map.serialize_entry("params", &params)?;
         map.serialize_entry("message", &self.message())?;
         map.end()
+    }
+}
+
+// What `Error` is serialized as, for the TypeScript bindings only.
+/// An error returned by a backend command.
+#[derive(TS)]
+#[ts(rename = "CommandError")]
+#[allow(dead_code)]
+struct Serialized {
+    #[ts(type = "ErrorCode")]
+    code: String,
+    params: std::collections::BTreeMap<String, String>,
+    /// Already localized by the backend.
+    message: String,
+}
+
+impl TS for Error {
+    type WithoutGenerics = Self;
+    type OptionInnerType = Self;
+
+    fn docs() -> Option<String> {
+        Serialized::docs()
+    }
+
+    fn name(cfg: &ts_rs::Config) -> String {
+        Serialized::name(cfg)
+    }
+
+    fn inline(cfg: &ts_rs::Config) -> String {
+        Serialized::inline(cfg)
+    }
+
+    fn decl(cfg: &ts_rs::Config) -> String {
+        Serialized::decl(cfg)
+    }
+
+    fn decl_concrete(cfg: &ts_rs::Config) -> String {
+        Serialized::decl_concrete(cfg)
+    }
+
+    fn output_path() -> Option<std::path::PathBuf> {
+        Serialized::output_path()
     }
 }
 

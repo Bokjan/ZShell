@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
+use ts_rs::TS;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -20,7 +21,8 @@ use crate::local_name::{create_unique, create_unique_file, local_file_name};
 const BUFFER_SIZE: usize = 256 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
-#[derive(Clone, Default, Serialize)]
+#[derive(Clone, Default, Serialize, TS)]
+#[ts(rename = "TransferProgress")]
 #[serde(rename_all = "camelCase")]
 pub struct Progress {
     pub transferred: u64,

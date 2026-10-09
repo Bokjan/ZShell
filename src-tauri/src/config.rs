@@ -11,13 +11,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::net::Route;
 use crate::proxy::Proxy;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
     /// Empty when creating a new profile; assigned on save.
@@ -45,6 +46,7 @@ pub struct Profile {
     /// The id of the proxy to connect through; SSH and Telnet. Not kept with jump hosts,
     /// where the first jump host's own proxy is used (see [`Route`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub proxy: Option<String>,
     /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
     /// drop the connection. Telnet uses TCP keepalives.
@@ -59,12 +61,14 @@ pub struct Profile {
     /// The folder the session is in; `None` for the top level. Changed with
     /// [`ProfileStore::move_item`]; `save` keeps it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub folder: Option<String>,
     /// Record a session log from the start of each connection.
     #[serde(default)]
     pub auto_log: bool,
     /// The quick command group its tabs show first; `None` for the default group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub command_group: Option<String>,
     /// Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
     #[serde(default)]
@@ -88,7 +92,7 @@ pub struct Profile {
     pub appearance: ProfileAppearance,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Protocol {
     #[default]
@@ -98,7 +102,7 @@ pub enum Protocol {
 }
 
 /// A serial line's settings: 115200 8N1 without flow control unless set otherwise.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SerialOptions {
     /// `/dev/cu.*` on macOS, `COM3` on Windows.
@@ -141,7 +145,7 @@ impl SerialOptions {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Parity {
     #[default]
@@ -150,7 +154,7 @@ pub enum Parity {
     Even,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum FlowControl {
     #[default]
@@ -161,25 +165,29 @@ pub enum FlowControl {
     Hardware,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct EnvVar {
     pub name: String,
     pub value: String,
 }
 
 /// Overrides of the terminal settings for one session. Only the frontend interprets them.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileAppearance {
     /// A built-in color scheme id, or "auto", as in the settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub color_scheme: Option<String>,
     /// Replaces the color scheme's background, as `#rrggbb` (a red one for production).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub background: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub font_family: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub font_size: Option<u16>,
 }
 
@@ -332,7 +340,7 @@ impl Profile {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Folder {
     /// Empty when creating a new folder; assigned on save.
@@ -341,11 +349,13 @@ pub struct Folder {
     pub name: String,
     /// The folder this one is in; `None` for the top level.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub parent: Option<String>,
 }
 
 /// A session or a folder, as dragged in the sidebar.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, TS)]
+#[ts(rename = "TreeItem")]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Item {
     Profile { id: String },
@@ -368,7 +378,7 @@ pub fn default_term_type() -> String {
     "xterm-256color".to_owned()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum AuthMethod {
     /// Agent keys, default key files, then keyboard-interactive / password, like OpenSSH.
@@ -767,7 +777,7 @@ pub fn load_json<T: serde::de::DeserializeOwned + Default>(path: &Path, set_asid
 #[derive(Default)]
 pub struct SetAside(Mutex<Vec<SetAsideFile>>);
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAsideFile {
     pub path: PathBuf,

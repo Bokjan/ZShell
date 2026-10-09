@@ -5,11 +5,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::config::{load_json, write_json_atomic, SetAside};
 use crate::error::Result;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub appearance: Appearance,
@@ -22,7 +23,7 @@ pub struct Settings {
     pub logs: LogSettings,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Appearance {
     #[default]
@@ -32,7 +33,7 @@ pub enum Appearance {
 }
 
 /// The size of the interface's text (not the terminal's, which has its own font size).
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum TextSize {
     #[default]
@@ -45,7 +46,7 @@ pub enum TextSize {
 pub const FONT_SIZE_MIN: u16 = 6;
 pub const FONT_SIZE_MAX: u16 = 48;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TerminalSettings {
     /// A built-in color scheme id, or "auto" to follow the appearance.
@@ -71,7 +72,7 @@ pub struct TerminalSettings {
 }
 
 /// What right-clicking the terminal does.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum RightClick {
     #[default]
@@ -80,7 +81,7 @@ pub enum RightClick {
     Paste,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TabSettings {
     /// Show the title set by the shell (OSC 0 / 2) instead of the session name.
@@ -89,7 +90,7 @@ pub struct TabSettings {
     pub confirm_close: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum CursorStyle {
     #[default]
@@ -98,7 +99,7 @@ pub enum CursorStyle {
     Underline,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SidebarSettings {
     /// Show the most recently opened sessions above the list.
@@ -112,7 +113,7 @@ impl Default for SidebarSettings {
 }
 
 /// Remote files: SFTP and ZMODEM downloads, and editing remote files locally.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct FileSettings {
     /// Where downloads go without asking; empty for the Downloads folder.
@@ -122,8 +123,8 @@ pub struct FileSettings {
     pub editor: String,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", from = "StoredZmodemSettings")]
+#[derive(Clone, Debug, Default, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct ZmodemSettings {
     /// What happens when `sz` sends files.
     pub receive: ZmodemReceive,
@@ -131,7 +132,7 @@ pub struct ZmodemSettings {
 
 /// What happens when `sz` sends files. Asked by default: a file that looks like `sz` output
 /// (`cat` of one) starts a download, which shouldn't happen without the user.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ZmodemReceive {
     #[default]
@@ -151,18 +152,19 @@ struct StoredZmodemSettings {
     ask_download_location: bool,
 }
 
-impl From<StoredZmodemSettings> for ZmodemSettings {
-    fn from(stored: StoredZmodemSettings) -> Self {
+impl<'de> Deserialize<'de> for ZmodemSettings {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        let stored = StoredZmodemSettings::deserialize(deserializer)?;
         let receive = stored.receive.unwrap_or(match stored.ask_download_location {
             true => ZmodemReceive::ChooseFolder,
             false => ZmodemReceive::Ask,
         });
-        Self { receive }
+        Ok(Self { receive })
     }
 }
 
 /// Session logs (see `logging.rs`).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LogSettings {
     /// Where logs are written; empty for the default (`ZShellLogs` in Documents).
@@ -193,7 +195,7 @@ impl Default for LogSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum LogFormat {
     /// Plain text: control sequences (colors, cursor movement) removed.

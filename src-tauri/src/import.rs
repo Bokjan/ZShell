@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use ts_rs::TS;
 use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForwardListen, SshConfig};
 
 use crate::config::{AuthMethod, EnvVar, Profile, Protocol};
@@ -27,7 +28,8 @@ const NOTABLE_UNSUPPORTED: &[&str] = &[
 ];
 
 /// A host found in the config, as it would be imported.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(rename = "ImportCandidate")]
 #[serde(rename_all = "camelCase")]
 pub struct Candidate {
     pub alias: String,

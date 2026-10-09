@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
 use serde::Serialize;
+use ts_rs::TS;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::error::Error;
@@ -37,7 +38,8 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
 const START_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// What the frontend is asked for, or that a transfer is running (for its cancel button).
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, TS)]
+#[ts(rename = "ZmodemPhase")]
 #[serde(rename_all = "camelCase")]
 pub enum Phase {
     /// `sz` is about to send: where should files go?

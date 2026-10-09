@@ -2,93 +2,32 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import type { Appearance, Settings, TextSize } from "./bindings";
 import { isWindows } from "./platform";
 
-export type Appearance = "system" | "dark" | "light";
-/** The size of the interface's text; the terminal has its own font size. */
-export type TextSize = "normal" | "large" | "larger";
+export type {
+  Appearance,
+  CursorStyle,
+  FileSettings,
+  LogFormat,
+  LogSettings,
+  RightClick,
+  Settings,
+  SidebarSettings,
+  TabSettings,
+  TerminalSettings,
+  TextSize,
+  ZmodemReceive,
+  ZmodemSettings,
+} from "./bindings";
+
 const TEXT_SCALES: Record<TextSize, number> = { normal: 1, large: 1.15, larger: 1.3 };
-export type CursorStyle = "block" | "bar" | "underline";
-/** What right-clicking the terminal does. */
-export type RightClick = "menu" | "paste";
 
 /** The terminal font sizes allowed, in the settings and in sessions. */
 export const FONT_SIZE_MIN = 6;
 export const FONT_SIZE_MAX = 48;
 
-export interface TerminalSettings {
-  /** A scheme id from terminalSchemes.ts, or "auto" to follow the appearance. */
-  colorScheme: string;
-  /** Preferred font family; empty uses the default stack. */
-  fontFamily: string;
-  fontSize: number;
-  cursorStyle: CursorStyle;
-  cursorBlink: boolean;
-  scrollback: number;
-  copyOnSelect: boolean;
-  rightClick: RightClick;
-  /** Ask before pasting text with line breaks while the shell would run each line. */
-  confirmMultilinePaste: boolean;
-  /** macOS only: Option sends Meta (Esc-prefixed) sequences. */
-  optionAsMeta: boolean;
-  /** Screen readers can read the terminal and hear new output. */
-  screenReader: boolean;
-}
-
-export interface TabSettings {
-  /** Show the title set by the shell instead of the session name. */
-  followRemoteTitle: boolean;
-  /** Ask before closing tabs that are connected or running a program. */
-  confirmClose: boolean;
-}
-
-export interface SidebarSettings {
-  /** Show the most recently opened sessions above the list. */
-  showRecent: boolean;
-}
-
-export interface FileSettings {
-  /** Where downloads go without asking; empty for the Downloads folder. */
-  downloadDirectory: string;
-  /** The application remote files are edited with; empty for the system's default. */
-  editor: string;
-}
-
-/** What happens when `sz` sends files: asked, saved into the download folder, or a folder chosen each time. */
-export type ZmodemReceive = "ask" | "downloads" | "chooseFolder";
-
-export interface ZmodemSettings {
-  receive: ZmodemReceive;
-}
-
-export type LogFormat = "text" | "raw";
-
-export interface LogSettings {
-  /** Empty for the default, `ZShellLogs` in Documents. */
-  directory: string;
-  /** With `{session}`, `{host}`, `{user}`, `{date}` and `{time}`. */
-  fileName: string;
-  format: LogFormat;
-  /** Start each line with its time (plain text only). */
-  timestamps: boolean;
-  /** Record local terminals from the start. */
-  autoLocal: boolean;
-  /** Delete logs older than this many days; 0 keeps them. */
-  keepDays: number;
-}
-
 export const DEFAULT_LOG_FILE_NAME = "{session}_{date}_{time}.log";
-
-export interface Settings {
-  appearance: Appearance;
-  textSize: TextSize;
-  terminal: TerminalSettings;
-  tabs: TabSettings;
-  sidebar: SidebarSettings;
-  files: FileSettings;
-  zmodem: ZmodemSettings;
-  logs: LogSettings;
-}
 
 export const DEFAULT_SETTINGS: Settings = {
   appearance: "system",

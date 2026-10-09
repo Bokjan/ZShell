@@ -25,6 +25,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
 use serde::Serialize;
+use ts_rs::TS;
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tokio::sync::mpsc;
@@ -46,7 +47,7 @@ pub enum SessionInput {
     Break,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SessionEvent {
     Connected,
@@ -59,7 +60,7 @@ pub enum SessionEvent {
     Log { path: Option<String>, error: Option<Error> },
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum CloseReason {
     /// The shell exited or the remote side closed the session.

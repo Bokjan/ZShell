@@ -17,6 +17,7 @@ use std::time::{Duration, Instant, SystemTime};
 use chrono::Local;
 use unicode_width::UnicodeWidthChar;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::config::{load_json, write_json_atomic, SetAside};
 use crate::error::{Error, Result};
@@ -34,7 +35,7 @@ pub struct LogInfo {
 }
 
 /// How a new session's log starts, as the frontend asks.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, TS)]
 #[serde(tag = "mode", rename_all = "camelCase")]
 pub enum LogOpen {
     /// As the session (or, for local terminals, the settings) says.
@@ -299,7 +300,7 @@ struct Entry {
     profile: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LogSummary {
     pub count: usize,

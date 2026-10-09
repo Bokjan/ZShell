@@ -17,12 +17,14 @@ use data_encoding::BASE64;
 use hmac::{Hmac, KeyInit, Mac};
 use russh::keys::{HashAlg, PublicKey};
 use serde::Serialize;
+use ts_rs::TS;
 use sha1::Sha1;
 
 use crate::error::{Error, Result};
 
 /// A line of the file with a host key.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, TS)]
+#[ts(rename = "KnownHost")]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     /// 1-based, counting every line of the file.

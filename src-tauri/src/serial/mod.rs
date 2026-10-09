@@ -12,6 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use ts_rs::TS;
 use serialport::{SerialPort, SerialPortType};
 use tokio::sync::mpsc;
 
@@ -65,7 +66,8 @@ impl Drop for Hold {
 }
 
 /// A serial port found on this computer.
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(rename = "SerialPortInfo")]
 #[serde(rename_all = "camelCase")]
 pub struct PortInfo {
     /// What to open: `/dev/cu.usbserial-1410`, `COM3`.

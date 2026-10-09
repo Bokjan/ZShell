@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime};
 
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
+use ts_rs::TS;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
 use tokio::io::AsyncWriteExt;
@@ -32,7 +33,7 @@ struct Stamp {
 }
 
 /// What the watcher sends the frontend.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum EditEvent {
     /// The local copy was saved (and has stayed the same for a moment).

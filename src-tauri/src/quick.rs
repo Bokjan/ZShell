@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::config::{load_json, write_json_atomic, SetAside};
 use crate::error::Result;
@@ -15,13 +16,13 @@ use crate::error::Result;
 /// name is shown translated, so it is stored empty.
 pub const DEFAULT_GROUP: &str = "default";
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct QuickCommands {
     pub groups: Vec<CommandGroup>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandGroup {
     #[serde(default)]
@@ -32,7 +33,7 @@ pub struct CommandGroup {
     pub commands: Vec<QuickCommand>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct QuickCommand {
     #[serde(default)]

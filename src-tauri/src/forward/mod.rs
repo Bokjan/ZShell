@@ -24,6 +24,7 @@ use std::time::Duration;
 use russh::client::Msg;
 use russh::Channel;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpStream;
 use tokio::task::{JoinError, JoinSet};
@@ -36,7 +37,7 @@ pub use remote::{Incoming, RemoteRoutes};
 /// How long to wait for a TCP connection to a forward's target on this computer.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ForwardKind {
     /// `-L`: listen here, connect from the server.
@@ -48,7 +49,7 @@ pub enum ForwardKind {
 }
 
 /// A saved forwarding rule. `target_*` is unused for dynamic rules.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardRule {
     /// Empty for a new rule; assigned on save.
@@ -98,7 +99,7 @@ pub fn host_port(host: &str, port: impl fmt::Display) -> String {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ForwardState {
     Starting,

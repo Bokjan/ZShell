@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::Error;
 use crate::forward::host_port;
@@ -23,7 +24,7 @@ use crate::session::TermIo;
 /// Password attempts after the saved one, as for SSH.
 const MAX_ATTEMPTS: usize = 3;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Proxy {
     /// Empty when creating a new proxy; assigned on save.
@@ -45,7 +46,7 @@ pub struct Proxy {
     pub command: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ProxyKind {
     Socks5,

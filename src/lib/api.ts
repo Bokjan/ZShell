@@ -1,44 +1,34 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-export type AuthMethod =
-  | { type: "auto" }
-  | { type: "password" }
-  | { type: "publicKey"; keyPath: string }
-  | { type: "agent" };
+import type {
+  CommandError,
+  DragItem,
+  DragOutEvent,
+  DragResult,
+  EditEvent,
+  ErrorCode,
+  FileEntry,
+  Folder,
+  ForwardRule,
+  ImportCandidate,
+  KnownHost,
+  Listing,
+  LogOpen,
+  LogSummary,
+  Profile,
+  Proxy,
+  QuickCommands,
+  Saved,
+  SerialOptions,
+  SerialPortInfo,
+  SessionCandidate,
+  SessionEvent,
+  SetAsideFile,
+  TransferProgress,
+  TreeItem,
+} from "./bindings";
 
-export type ForwardKind = "local" | "remote" | "dynamic";
-
-/** A saved port forwarding rule; `target*` is unused for dynamic (SOCKS) rules. */
-export interface ForwardRule {
-  /** Empty for a new rule; assigned on save. */
-  id: string;
-  kind: ForwardKind;
-  bindHost: string;
-  /** 0 picks a free port. */
-  bindPort: number;
-  targetHost: string;
-  targetPort: number;
-  description: string;
-  autoStart: boolean;
-}
-
-export type Protocol = "ssh" | "telnet" | "serial";
-
-export type Parity = "none" | "odd" | "even";
-export type FlowControl = "none" | "software" | "hardware";
-
-/** A serial line's device and settings. */
-export interface SerialOptions {
-  /** `/dev/cu.*` on macOS, `COM3` on Windows. */
-  device: string;
-  baudRate: number;
-  /** 5 to 8. */
-  dataBits: number;
-  parity: Parity;
-  /** 1 or 2. */
-  stopBits: number;
-  flowControl: FlowControl;
-}
+export type * from "./bindings";
 
 export const DEFAULT_SERIAL: SerialOptions = {
   device: "",
@@ -52,105 +42,10 @@ export const DEFAULT_SERIAL: SerialOptions = {
 /** The usual port of each network protocol. */
 export const DEFAULT_PORTS = { ssh: 22, telnet: 23 } as const;
 
-export interface Profile {
-  id: string;
-  name: string;
-  protocol: Protocol;
-  /** SSH and Telnet. */
-  host: string;
-  port: number;
-  /** Required for SSH; for Telnet, typed at the login prompt if set. */
-  username: string;
-  /** SSH only. */
-  auth: AuthMethod;
-  /** Serial sessions; absent when all settings are the defaults (`DEFAULT_SERIAL`, no device). */
-  serial?: SerialOptions;
-  /** Ids of the profiles to connect through, first hop first (ProxyJump). */
-  jumpHosts: string[];
-  /** The id of the proxy to connect through (SSH and Telnet); absent without one, and with jump hosts, where the first jump host's own proxy is used. */
-  proxy?: string;
-  /** Seconds between keepalive messages; 0 disables them. */
-  keepaliveInterval: number;
-  /** Reconnect automatically when an established connection is lost. */
-  autoReconnect: boolean;
-  /** Edited with `setProfileForwards`; `saveProfile` leaves them unchanged. */
-  forwards: ForwardRule[];
-  /** The folder it is in; absent at the top level. Changed with `tree.move`. */
-  folder?: string;
-  /** The quick command group its tabs show first; absent for the default group. */
-  commandGroup?: string;
-  /** Record a session log from the start of each connection. */
-  autoLog: boolean;
-  /** Let the remote shell use the local SSH agent (ForwardAgent). */
-  forwardAgent: boolean;
-  /** The remote side's character encoding, one of `ENCODINGS`. */
-  encoding: string;
-  /** The terminal type the remote shell is told (TERM). */
-  termType: string;
-  /** Environment variables for the remote shell (SetEnv). */
-  env: EnvVar[];
-  /** Typed into each new shell, in order, each once the shell shows a prompt. */
-  loginCommands: string[];
-  /** Terminal appearance for this session; absent values follow the settings. */
-  appearance?: ProfileAppearance;
-}
-
-export interface EnvVar {
-  name: string;
-  value: string;
-}
-
-export interface ProfileAppearance {
-  /** A color scheme id, or "auto". */
-  colorScheme?: string;
-  /** Replaces the scheme's background, as #rrggbb. */
-  background?: string;
-  fontFamily?: string;
-  fontSize?: number;
-}
-
 /** The character encodings a session can use (WHATWG labels, as the backend stores them). */
 export const ENCODINGS = ["utf-8", "gb18030", "gbk", "big5", "shift_jis", "euc-jp", "euc-kr", "windows-1252"] as const;
 
 export const DEFAULT_TERM_TYPE = "xterm-256color";
-
-export interface Folder {
-  /** Empty for a new folder; assigned on save. */
-  id: string;
-  name: string;
-  /** Absent at the top level. */
-  parent?: string;
-}
-
-/** A session or folder, as moved in the sidebar. */
-export type TreeItem = { kind: "profile"; id: string } | { kind: "folder"; id: string };
-
-export type ForwardState =
-  | { type: "starting" }
-  | { type: "active"; bound: string; connections: number; lastError: CommandError | null }
-  | { type: "failed"; error: CommandError }
-  | { type: "stopped" };
-
-/** exited: the shell ended; lost: an established connection broke; failed: never got connected. */
-export type CloseReason = "exited" | "lost" | "failed";
-
-/**
- * A ZMODEM transfer in the terminal: `sz` asks where to save (answer with `zmodem.saveTo`),
- * `rz` asks for files (`zmodem.sendFiles`), then it runs until "idle".
- */
-export type ZmodemPhase = "chooseDestination" | "chooseFiles" | "transferring" | "idle";
-
-export type SessionEvent =
-  | { type: "connected" }
-  /** `status`: the shell's exit status, if it reported one. */
-  | { type: "closed"; reason: CloseReason; error: CommandError | null; status: number | null }
-  | { type: "forward"; ruleId: string; state: ForwardState }
-  | { type: "zmodem"; phase: ZmodemPhase }
-  /** The session's log started (`path`), stopped (neither), or couldn't start (`error`). */
-  | { type: "log"; path: string | null; error: CommandError | null };
-
-/** How a new session's log starts: as the session or settings say, on with a file after reconnecting, or not at all. */
-export type LogOpen = { mode: "auto" } | { mode: "append"; path: string } | { mode: "off" };
 
 export type SessionId = number;
 
@@ -164,26 +59,13 @@ export type SessionTarget =
   | { kind: "quick"; protocol: "ssh" | "telnet"; username: string; host: string; port: number }
   | { kind: "local" };
 
-/** Error returned by backend commands; `message` is already localized by the backend. */
-export interface CommandError {
-  code: string;
-  params: Record<string, string>;
-  message: string;
-}
-
-/** A saved session or proxy. It is saved even when storing its password failed. */
-export interface Saved<T> {
-  saved: T;
-  passwordError: CommandError | null;
-}
-
 function isCommandError(e: unknown): e is CommandError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
 }
 
 export const errorMessage = (e: unknown): string => (isCommandError(e) ? e.message : String(e));
 
-export const errorCode = (e: unknown): string | null => (isCommandError(e) ? e.code : null);
+export const errorCode = (e: unknown): ErrorCode | null => (isCommandError(e) ? e.code : null);
 
 export interface Session {
   id: SessionId;
@@ -194,24 +76,6 @@ export interface Session {
   close(): Promise<void>;
 }
 
-export type ProxyKind = "socks5" | "http" | "command";
-
-/** A saved proxy for the first connection of a session. Fields of other kinds are kept. */
-export interface Proxy {
-  /** Empty for a new proxy; assigned on save. */
-  id: string;
-  /** Named after the address or program when saved empty. */
-  name: string;
-  kind: ProxyKind;
-  /** SOCKS5 and HTTP. */
-  host: string;
-  port: number;
-  /** SOCKS5 and HTTP; empty without authentication. The password is in the keychain. */
-  username: string;
-  /** Command proxies: run with %h, %p, %r and %% replaced (ProxyCommand). */
-  command: string;
-}
-
 export const proxies = {
   list: () => invoke<Proxy[]>("proxies_list"),
   /** `password`: undefined keeps the stored password, "" clears it. */
@@ -219,22 +83,6 @@ export const proxies = {
   /** Fails with `proxy.inUse` while a session uses it. */
   delete: (id: string) => invoke<void>("proxy_delete", { id }),
 };
-
-/** A host key line of `~/.ssh/known_hosts`. */
-export interface KnownHost {
-  /** 1-based, counting every line of the file. */
-  line: number;
-  /** The line as written; removing the entry checks it is still there. */
-  text: string;
-  /** `cert-authority` or `revoked`. */
-  marker: string | null;
-  /** Host names or patterns; hashed ones as written (`|1|salt|hash`). */
-  hosts: string[];
-  algorithm: string;
-  /** `SHA256:…`; null when the key can't be read. */
-  fingerprint: string | null;
-  comment: string | null;
-}
 
 export const knownHosts = {
   /** `~/.ssh/known_hosts`, whether or not it exists; null without a home folder. */
@@ -257,29 +105,6 @@ export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id
 /** Copies a profile (with its saved password) as `name`, right after it. */
 export const duplicateProfile = (id: string, name: string) => invoke<Profile>("profile_duplicate", { id, name });
 
-export interface QuickCommand {
-  /** Empty for a new command; assigned on save. */
-  id: string;
-  name: string;
-  /** Sent as typed; line breaks are Enter. */
-  text: string;
-  /** Press Enter after the text; otherwise it is left on the command line to be finished. */
-  enter: boolean;
-}
-
-export interface CommandGroup {
-  /** `DEFAULT_GROUP` for the group that always exists; empty for a new one. */
-  id: string;
-  /** Empty for the default group, whose name is shown translated. */
-  name: string;
-  commands: QuickCommand[];
-}
-
-export interface QuickCommands {
-  /** The default group first. */
-  groups: CommandGroup[];
-}
-
 export const DEFAULT_GROUP = "default";
 
 export const quickCommands = {
@@ -298,28 +123,6 @@ export const tree = {
   move: (item: TreeItem, parent: string | null, before: string | null) => invoke<void>("tree_move", { item, parent, before }),
 };
 
-/** A session in an exported file, as it would be imported. */
-export interface SessionCandidate {
-  id: string;
-  name: string;
-  protocol: Protocol;
-  host: string;
-  port: number;
-  username: string;
-  serial: SerialOptions;
-  /** Folder names, outermost first. */
-  folder: string[];
-  jumpHosts: string[];
-  /** The name of its proxy. */
-  proxy: string | null;
-  /** The command of its proxy, for a command proxy (it runs when the session connects). */
-  proxyCommand: string | null;
-  /** Name of an existing session with the same name or address; not imported again. */
-  existing: string | null;
-  /** Forwarding rules that start when it connects, as they will be saved. */
-  autoForwards: ForwardRule[];
-}
-
 export const sessionsFile = {
   export: (path: string) => invoke<void>("sessions_export", { path }),
   scan: (path: string) => invoke<SessionCandidate[]>("sessions_import_scan", { path }),
@@ -331,13 +134,6 @@ export const homeDirectory = () => invoke<string | null>("home_directory");
 /** The folder the sessions and settings are saved in; created if needed. */
 export const configDirectory = () => invoke<string>("config_directory");
 
-/** A data file that could not be read at startup and was renamed to keep it. */
-export interface SetAsideFile {
-  path: string;
-  /** `null` if renaming failed too (the next save replaces the file). */
-  movedTo: string | null;
-  error: string;
-}
 /** The data files set aside at startup; returned once. */
 export const configSetAside = () => invoke<SetAsideFile[]>("config_set_aside");
 
@@ -347,28 +143,6 @@ export const localUsername = () => invoke<string>("local_username");
 /** Replaces the profile's forwarding rules; resolves to the updated profile (with rule ids). */
 export const setProfileForwards = (profileId: string, forwards: ForwardRule[]) =>
   invoke<Profile>("profile_set_forwards", { profileId, forwards });
-
-/** A host from an OpenSSH client config, as it would be imported. */
-export interface ImportCandidate {
-  alias: string;
-  host: string;
-  port: number;
-  username: string;
-  auth: AuthMethod;
-  /** ProxyJump entries as written in the config (also the host of `ProxyCommand ssh -W %h:%p host`). */
-  jumpHosts: string[];
-  /** Any other ProxyCommand, imported as a command proxy. */
-  proxyCommand: string | null;
-  keepaliveInterval: number;
-  forwards: ForwardRule[];
-  forwardAgent: boolean;
-  /** From SetEnv. */
-  env: EnvVar[];
-  /** Name of an existing profile for the same host; such hosts are not imported again. */
-  existing: string | null;
-  /** Config options that are not imported. */
-  skipped: string[];
-}
 
 export const sshConfig = {
   /** `~/.ssh/config`, whether or not it exists. */
@@ -394,12 +168,6 @@ export const forwards = {
   /** The rules running on the session's connection, to start again on reconnecting (see `openSession`). */
   carry: (id: SessionId) => invoke<string[]>("forward_carry", { id }),
 };
-
-/** A serial port on this computer: its name (`/dev/cu.usbserial-1410`, `COM3`) and USB product. */
-export interface SerialPortInfo {
-  name: string;
-  description: string | null;
-}
 
 export const serialPorts = () => invoke<SerialPortInfo[]>("serial_ports");
 
@@ -450,7 +218,7 @@ export const sessionLog = {
 
 export const logs = {
   /** How many logs ZShell has written (and still exist), and their total size. */
-  summary: () => invoke<{ count: number; bytes: number }>("logs_summary"),
+  summary: () => invoke<LogSummary>("logs_summary"),
   /** Where new logs go; created if needed. */
   directory: () => invoke<string>("logs_directory"),
   count: (profileId: string) => invoke<number>("logs_count", { profileId }),
@@ -478,31 +246,6 @@ export const zmodem = {
 /** Short name of the default local shell, e.g. "zsh" or "pwsh"; null when the system doesn't
  *  allow local terminals (Windows in S mode). */
 export const localShellName = () => invoke<string | null>("local_shell_name");
-
-export interface FileEntry {
-  name: string;
-  path: string;
-  /** True for directories and symlinks to directories. */
-  isDir: boolean;
-  isSymlink: boolean;
-  size: number;
-  /** Seconds since the Unix epoch. */
-  modified: number | null;
-  permissions: number | null;
-}
-
-export interface Listing {
-  path: string;
-  entries: FileEntry[];
-}
-
-export interface TransferProgress {
-  transferred: number;
-  total: number;
-  filesDone: number;
-  filesTotal: number;
-  current: string;
-}
 
 function progressChannel(onProgress: (p: TransferProgress) => void) {
   const channel = new Channel<TransferProgress>();
@@ -564,7 +307,7 @@ export const sftp = {
     onProgress: (p: TransferProgress) => void,
     onChanged: () => void,
   ) => {
-    const onEvent = new Channel<{ type: "changed" }>();
+    const onEvent = new Channel<EditEvent>();
     onEvent.onmessage = onChanged;
     return invoke<string>("sftp_edit_open", { id, editId, remotePath, onProgress: progressChannel(onProgress), onEvent });
   },
@@ -583,21 +326,8 @@ export const sftp = {
     return invoke<DragResult>("sftp_drag_out", {
       id,
       transferId,
-      items: items.map(({ path, isDir }) => ({ path, isDir })),
+      items: items.map(({ path, isDir }): DragItem => ({ path, isDir })),
       onEvent: channel,
     });
   },
 };
-
-/** How a drag out ended; `x` and `y` are where it was dropped in the page, for "inside". */
-export interface DragResult {
-  outcome: "cancelled" | "inside" | "outside";
-  x: number;
-  y: number;
-}
-
-/** A download for a drag out of the window, which starts once the items are dropped. */
-export type DragOutEvent =
-  | ({ type: "progress" } & TransferProgress)
-  | { type: "done"; paths: string[] }
-  | { type: "error"; error: unknown };

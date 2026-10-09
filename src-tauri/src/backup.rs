@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::config::{write_json_atomic, Additions, Folder, Profile, Protocol, SerialOptions, Snapshot};
 use crate::error::{Error, Result};
@@ -30,7 +31,8 @@ struct SessionsFile {
 }
 
 /// A session in a file, as it would be imported.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(rename = "SessionCandidate")]
 #[serde(rename_all = "camelCase")]
 pub struct Candidate {
     pub id: String,
