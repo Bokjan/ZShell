@@ -73,6 +73,15 @@ python3 scripts/e2e/telnetd.py 2324 --binary --no-echo        # 接受 BINARY；
 
 它在标准输出里记录选项协商（`DO BINARY`、`NAWS (cols, rows)`、`TTYPE IS …`），登录账号是 `alice` / `secret`，登录后在伪终端里运行 `/bin/sh`；收到 Break 时 shell 打印 `BREAK-RECEIVED`。`--no-echo` 用来测登录提示处的本地回显：登录后 shell 的伪终端自己还会回显，所以输入显示两遍，这是服务器的问题。会话配置里填上用户名可以测自动填入；隔离的 HOME 里没有钥匙串，保存的密码只有单元测试覆盖。经跳板机的 Telnet 用临时 sshd 作跳板；要模拟跳板机断线，结束 sshd 为该连接派生的 `sshd-session` 进程（会被收养到 PID 1，按 `ps` 里的 PID 结束，不要用 `pkill -P`）。服务器进程退出时 TCP 正常关闭，ZShell 视为 `exited`，测不出 `lost`。
 
+**代理**：`scripts/e2e/proxy.py` 起一个 SOCKS5 或 HTTP CONNECT 代理（只用 Python 标准库），在标准输出里记录每个请求的目标（按客户端发来的原样，可以看出主机名是否交给了代理解析）和用户名：
+
+```bash
+python3 scripts/e2e/proxy.py socks5 1081
+python3 scripts/e2e/proxy.py http 8081 --user alice --password secret
+```
+
+ProxyCommand 用 macOS 自带的 `nc %h %p`，或一个不存在的命令看 stderr 是否显示在终端里。隔离的 HOME 里没有钥匙串，带用户名的代理每次连接都会在终端里问密码，正好测内联询问与重试。会话与代理可以直接写进 `profiles.json` 与 `proxies.json`；预先写好 `$T/home/.ssh/known_hosts`（`[localhost]:2222 <主机公钥>`）可以省去主机密钥确认。
+
 **串口**：`scripts/e2e/fakeserial.py $T/vserial --home $T/work` 创建一对伪终端，另一端运行 `/bin/sh`（像开发板的串口控制台），设备路径是指向 `/dev/ttysNNN` 的符号链接；会话的设备填 `$T/vserial`。结束脚本相当于拔出设备，再次运行（同一路径）相当于插回，用来测断线重连。伪终端没有波特率，ZShell 对它们不设速率；真实 USB 串口适配器只能在真机上测。
 
 **模拟从 Finder 启动**（没有 `LANG`、只有最小 PATH），用于测试本地终端的登录 shell 与区域设置：

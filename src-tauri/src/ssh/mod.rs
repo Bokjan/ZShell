@@ -18,14 +18,16 @@ use tokio::sync::{mpsc, watch};
 use crate::config::Profile;
 use crate::error::Error;
 use crate::forward::{host_port, RemoteRoutes};
+use crate::net::Route;
+use crate::proxy::Proxy;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
 pub use connections::{Connection, Connections, SshHandle};
 use handler::ClientHandler;
 
-/// Session backend: connects, authenticates and bridges a remote shell to the terminal.
-/// `jumps` are the profiles of the jump hosts to connect through, first hop first.
-pub async fn run(profile: Profile, jumps: Vec<Profile>, id: SessionId, mut io: TermIo, connections: Connections) {
-    let outcome = match start(&profile, &jumps, id, &mut io, &connections).await {
+/// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
+/// terminal.
+pub async fn run(profile: Profile, route: Route, id: SessionId, mut io: TermIo, connections: Connections) {
+    let outcome = match start(&profile, &route, id, &mut io, &connections).await {
         Ok((channel, disconnect)) => bridge(channel, &mut io, disconnect).await,
         Err(e) => Outcome::Failed(e.into()),
     };
@@ -80,17 +82,20 @@ pub struct Tunnel {
     pub jumps: JumpChain,
 }
 
-/// Connects through the jump hosts `jumps` (each authenticating as its own profile, with its
-/// prompts in the terminal) to `host:port`; `None` without jump hosts. Each jump host opens
-/// a direct-tcpip channel to the next hop, which becomes the transport for that hop's SSH
-/// session.
-pub async fn tunnel(jumps: &[Profile], host: &str, port: u16, io: &mut TermIo) -> Result<Option<Tunnel>> {
+/// Connects through the route's jump hosts (each authenticating as its own profile, with its
+/// prompts in the terminal) to `host:port`; `None` without jump hosts. The first one is
+/// reached through the route's proxy; each opens a direct-tcpip channel to the next hop, which
+/// becomes the transport for that hop's SSH session.
+pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Result<Option<Tunnel>> {
+    let jumps = &route.jumps;
     let mut chain = JumpChain::default();
     let mut transport = None;
     for (index, hop) in jumps.iter().enumerate() {
         let (next_host, next_port) = jumps.get(index + 1).map_or((host, port), |next| (next.host.as_str(), next.port));
+        let proxy = route.proxy.as_ref().filter(|_| index == 0);
         // The agent is only forwarded to the target, where the shell runs.
-        let mut session = connect(hop, false, transport.take(), io, RemoteRoutes::default(), watch::channel(None).0).await?;
+        let mut session =
+            connect(hop, false, transport.take(), proxy, io, RemoteRoutes::default(), watch::channel(None).0).await?;
         auth::authenticate(&mut session, hop, io).await?;
         let target = host_port(next_host, next_port);
         let channel = session
@@ -108,18 +113,19 @@ pub async fn tunnel(jumps: &[Profile], host: &str, port: u16, io: &mut TermIo) -
 /// handler.
 async fn start(
     profile: &Profile,
-    jumps: &[Profile],
+    route: &Route,
     id: SessionId,
     io: &mut TermIo,
     connections: &Connections,
 ) -> Result<(Channel<Msg>, watch::Receiver<Option<String>>)> {
-    let (transport, chain) = match tunnel(jumps, &profile.host, profile.port, io).await? {
+    let (transport, chain) = match tunnel(route, &profile.host, profile.port, io).await? {
         Some(Tunnel { stream, via, jumps }) => (Some((stream, via)), jumps),
         None => (None, JumpChain::default()),
     };
     let routes = RemoteRoutes::default();
     let (disconnect_tx, disconnect) = watch::channel(None);
-    let mut session = connect(profile, profile.forward_agent, transport, io, routes.clone(), disconnect_tx).await?;
+    let proxy = route.proxy.as_ref();
+    let mut session = connect(profile, profile.forward_agent, transport, proxy, io, routes.clone(), disconnect_tx).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io.sink());
@@ -213,21 +219,27 @@ async fn in_flight<F: Future + Unpin>(write: &mut Option<F>) -> F::Output {
     }
 }
 
-/// Connects to one hop: over TCP, or through `via` (a channel from the previous jump host,
-/// with that host's name), then performs the SSH handshake. `forward_agent`: whether the
-/// server may open agent channels.
+/// Connects to one hop: over TCP (through `proxy`, if any), or through `via` (a channel from
+/// the previous jump host, with that host's name), then performs the SSH handshake.
+/// `forward_agent`: whether the server may open agent channels.
 async fn connect(
     hop: &Profile,
     forward_agent: bool,
     via: Option<(ChannelStream<Msg>, String)>,
+    proxy: Option<&Proxy>,
     io: &mut TermIo,
     routes: RemoteRoutes,
     disconnect: watch::Sender<Option<String>>,
 ) -> Result<SshHandle> {
     let (user, host, port) = (&hop.username, &hop.host, hop.port);
     let Some((stream, jump)) = via else {
-        io.print(&format!("\x1b[2m{}\x1b[0m\n", t!("terminal.connecting", user = user, host = host, port = port)));
-        let stream = crate::net::connect(host, port).await?;
+        let connecting = match proxy {
+            Some(proxy) => t!("terminal.connectingViaProxy", user = user, host = host, port = port, proxy = proxy.name),
+            None => t!("terminal.connecting", user = user, host = host, port = port),
+        };
+        io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
+        // SSH keepalives notice a dead connection; TCP ones aren't needed.
+        let stream = crate::net::connect(host, port, user, proxy, None, io).await?;
         return handshake(hop, forward_agent, stream, io, routes, disconnect).await;
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);

@@ -11,7 +11,12 @@
     "processSignaled": "[Process terminated by signal: {signal}]",
     "connectingTo": "Connecting to {host}:{port} ...",
     "connectingToVia": "Connecting to {host}:{port} via {jump} ...",
-    "serialOpened": "Opened {device} ({settings})."
+    "serialOpened": "Opened {device} ({settings}).",
+    "connectingViaProxy": "Connecting to {user}@{host}:{port} via proxy {proxy} ...",
+    "connectingToViaProxy": "Connecting to {host}:{port} via proxy {proxy} ...",
+    "proxyPassword": "Password for {user} at proxy {proxy}: ",
+    "savedProxyPasswordRejected": "The saved proxy password was rejected.",
+    "proxyPasswordRejected": "The proxy rejected the password, please try again."
   },
   "hostKey": {
     "unknown": "The authenticity of host '{host}' can't be established.\n{algorithm} key fingerprint is {fingerprint}.\nAre you sure you want to continue connecting",
@@ -73,7 +78,8 @@
       "missingHost": "Host and port are required",
       "missingDevice": "Choose a serial device",
       "invalidSerialSettings": "Invalid serial settings: data bits must be 5 to 8 and stop bits 1 or 2",
-      "jumpHostNotSsh": "This session is a jump host for {names}, so it must stay an SSH session"
+      "jumpHostNotSsh": "This session is a jump host for {names}, so it must stay an SSH session",
+      "invalidProxy": "The proxy of this session no longer exists; choose another one"
     },
     "ssh": {
       "handshakeFailed": "SSH handshake failed",
@@ -152,6 +158,20 @@
       "notFound": "The file is no longer being edited",
       "conflict": "{name} was changed on the server after you opened it",
       "openFailed": "Cannot open {path} in the editor"
+    },
+    "proxy": {
+      "notFound": "Proxy not found",
+      "inUse": "This proxy is used by {names}; choose another proxy there first",
+      "missingAddress": "Host and port are required",
+      "missingCommand": "Enter the command to run",
+      "unreachable": "Cannot connect to proxy {proxy}",
+      "authRequired": "Proxy {proxy} requires a user name and password",
+      "authUnsupported": "Proxy {proxy} does not accept user name and password authentication",
+      "authFailed": "Proxy {proxy} rejected the user name or password",
+      "refused": "Proxy {proxy} could not connect to {target}",
+      "protocol": "Unexpected reply from proxy {proxy}",
+      "hostTooLong": "The host name is too long for a SOCKS proxy",
+      "commandFailed": "Cannot run the proxy command {command}"
     }
   },
   "zmodem": {

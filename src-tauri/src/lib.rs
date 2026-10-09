@@ -10,6 +10,7 @@ mod forward;
 mod import;
 mod logging;
 mod net;
+mod proxy;
 mod pty;
 mod quick;
 mod secrets;
@@ -197,6 +198,9 @@ pub fn run() {
             commands::profile_set_forwards,
             commands::profile_delete,
             commands::profile_duplicate,
+            commands::proxies_list,
+            commands::proxy_save,
+            commands::proxy_delete,
             commands::folders_list,
             commands::folder_save,
             commands::folder_delete,

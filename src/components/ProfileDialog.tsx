@@ -9,6 +9,7 @@ import {
   ENCODINGS,
   deleteProfile,
   errorMessage,
+  proxies as proxyApi,
   saveProfile,
   serialPorts,
   type AuthMethod,
@@ -19,12 +20,14 @@ import {
   type Profile,
   type ProfileAppearance,
   type Protocol,
+  type Proxy,
   type SerialPortInfo,
 } from "../lib/api";
 import { isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
+import { ProxyDialog } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 
 /** Values to start a new profile with: from a quick connection, or the folder it goes in. */
@@ -59,6 +62,9 @@ const FLOW_CONTROLS: FlowControl[] = ["none", "software", "hardware"];
 /** Suggestions for the terminal type; any value can be typed. */
 const TERM_TYPES = [DEFAULT_TERM_TYPE, "xterm", "vt100", "vt220", "linux"];
 
+/** The proxy choice that opens a dialog to create one. */
+const NEW_PROXY = "\u0000new";
+
 /** The color picker's starting value before a background is chosen. */
 const DEFAULT_BACKGROUND = "#5a1414";
 
@@ -91,6 +97,9 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
     profile?.auth.type === "publicKey" ? profile.auth.keyPath : "~/.ssh/id_ed25519",
   );
   const [jumpHosts, setJumpHosts] = useState<string[]>(profile?.jumpHosts ?? []);
+  const [proxy, setProxy] = useState(profile?.proxy ?? "");
+  const [proxyList, setProxyList] = useState<Proxy[]>([]);
+  const [creatingProxy, setCreatingProxy] = useState(false);
   const [keepalive, setKeepalive] = useState(String(profile?.keepaliveInterval ?? 30));
   const [autoReconnect, setAutoReconnect] = useState(profile?.autoReconnect ?? true);
   const [forwardAgent, setForwardAgent] = useState(profile?.forwardAgent ?? false);
@@ -130,6 +139,12 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
   // Only SSH sessions can be jump hosts.
   const jumpCandidates = profiles.filter((p) => p.id !== profile?.id && p.protocol === "ssh" && !jumpHosts.includes(p.id));
 
+  const refreshProxies = () => void proxyApi.list().then(setProxyList, console.error);
+  useEffect(refreshProxies, []);
+  const proxyName = (id: string | undefined) => proxyList.find((p) => p.id === id)?.name;
+  // With jump hosts, the first one's own proxy is used.
+  const firstJump = profiles.find((p) => p.id === jumpHosts[0]);
+
   const refreshPorts = () => void serialPorts().then(setPorts, () => setPorts([]));
   useEffect(() => {
     if (protocol === "serial" && ports === null) refreshPorts();
@@ -157,6 +172,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
       return next;
     });
 
+  // A proxy dialog opened from here stops Escape itself.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -239,6 +255,8 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
             flowControl,
           },
           jumpHosts,
+          // The backend drops it with jump hosts, and for serial sessions.
+          proxy: proxy && jumpHosts.length === 0 ? proxy : undefined,
           keepaliveInterval: keepaliveValid ? keepaliveInterval : (profile?.keepaliveInterval ?? 30),
           autoReconnect,
           forwardAgent,
@@ -544,6 +562,27 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
           </div>
           <p className="hint">{t(ssh ? "profile.jumpHostsHint" : "profile.jumpHostsHintTelnet")}</p>
           <label>
+            {t("profile.proxy")}
+            <select
+              value={firstJump ? (firstJump.proxy ?? "") : proxy}
+              disabled={!!firstJump}
+              onChange={(e) => (e.target.value === NEW_PROXY ? setCreatingProxy(true) : setProxy(e.target.value))}
+            >
+              <option value="">{t("profile.noProxy")}</option>
+              {proxyList.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+              <option value={NEW_PROXY}>{t("profile.newProxy")}</option>
+            </select>
+          </label>
+          <p className="hint">
+            {firstJump
+              ? t("profile.proxyViaJumpHost", { name: firstJump.name, proxy: proxyName(firstJump.proxy) ?? t("profile.noProxy") })
+              : t("profile.proxyHint")}
+          </p>
+          <label>
             {t("profile.keepalive")}
             <input value={keepalive} onChange={(e) => setKeepalive(e.target.value)} inputMode="numeric" />
           </label>
@@ -711,52 +750,62 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
   const pages: Record<Page, ReactNode> = { general, connection, terminal, appearance: appearancePage };
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="dialog profile-dialog" onSubmit={submit}>
-        <h2>{profile ? t("profile.titleEdit") : t("profile.titleNew")}</h2>
-        <div className="segmented profile-pages" role="tablist">
-          {PAGES.map((p) => (
-            <button
-              key={p}
-              type="button"
-              role="tab"
-              aria-selected={page === p}
-              className={page === p ? "on" : undefined}
-              onClick={() => setPage(p)}
-            >
-              {t(`profile.pages.${p}`)}
-            </button>
-          ))}
-        </div>
-
-        {/* All pages share one grid cell, so the dialog keeps the height of the tallest. */}
-        <div className="profile-body">
-          <div className="profile-stack">
+    <>
+      <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+        <form className="dialog profile-dialog" onSubmit={submit}>
+          <h2>{profile ? t("profile.titleEdit") : t("profile.titleNew")}</h2>
+          <div className="segmented profile-pages" role="tablist">
             {PAGES.map((p) => (
-              <div key={p} className={`profile-page${p === page ? "" : " hidden"}`} role="tabpanel" aria-hidden={p !== page}>
-                {pages[p]}
-              </div>
+              <button
+                key={p}
+                type="button"
+                role="tab"
+                aria-selected={page === p}
+                className={page === p ? "on" : undefined}
+                onClick={() => setPage(p)}
+              >
+                {t(`profile.pages.${p}`)}
+              </button>
             ))}
           </div>
-        </div>
 
-        {error && <p className="error">{error}</p>}
+          {/* All pages share one grid cell, so the dialog keeps the height of the tallest. */}
+          <div className="profile-body">
+            <div className="profile-stack">
+              {PAGES.map((p) => (
+                <div key={p} className={`profile-page${p === page ? "" : " hidden"}`} role="tabpanel" aria-hidden={p !== page}>
+                  {pages[p]}
+                </div>
+              ))}
+            </div>
+          </div>
 
-        <footer>
-          {profile && (
-            <button type="button" className="danger" onClick={remove}>
-              {confirmingDelete ? t("profile.deleteConfirm") : t("common.delete")}
+          {error && <p className="error">{error}</p>}
+
+          <footer>
+            {profile && (
+              <button type="button" className="danger" onClick={remove}>
+                {confirmingDelete ? t("profile.deleteConfirm") : t("common.delete")}
+              </button>
+            )}
+            <span className="grow" />
+            <button type="button" onClick={onClose}>
+              {t("common.cancel")}
             </button>
-          )}
-          <span className="grow" />
-          <button type="button" onClick={onClose}>
-            {t("common.cancel")}
-          </button>
-          <button type="submit" className="primary">
-            {t("common.save")}
-          </button>
-        </footer>
-      </form>
-    </div>
+            <button type="submit" className="primary">
+              {t("common.save")}
+            </button>
+          </footer>
+        </form>
+      </div>
+      {creatingProxy && (
+        <ProxyDialog
+          proxy={null}
+          onClose={() => setCreatingProxy(false)}
+          onSaved={(saved) => setProxy(saved.id)}
+          onChanged={refreshProxies}
+        />
+      )}
+    </>
   );
 }

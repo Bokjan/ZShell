@@ -2,7 +2,8 @@
 //!
 //! Import is a one-time copy: each concrete `Host` alias (no wildcards) becomes a profile
 //! with the settings `ssh` would use for it, including those inherited from `Host *`.
-//! `ProxyJump` hosts are imported too, as profiles of their own.
+//! `ProxyJump` hosts are imported too, as profiles of their own, and each `ProxyCommand` as a
+//! command proxy (one per distinct command).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
@@ -15,10 +16,10 @@ use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForward
 use crate::config::{AuthMethod, EnvVar, Profile};
 use crate::error::{Error, Result};
 use crate::forward::{ForwardKind, ForwardRule};
+use crate::proxy::{Proxy, ProxyKind};
 
 /// Options that change how `ssh` connects but are not imported, reported per host.
 const NOTABLE_UNSUPPORTED: &[&str] = &[
-    "proxycommand",
     "forwardx11",
     "remotecommand",
     "localcommand",
@@ -36,8 +37,11 @@ pub struct Candidate {
     pub port: u16,
     pub username: String,
     pub auth: AuthMethod,
-    /// `ProxyJump` entries as written: aliases or `[user@]host[:port]`.
+    /// `ProxyJump` entries as written: aliases or `[user@]host[:port]`. Also the host of a
+    /// `ProxyCommand ssh -W %h:%p host`, the older way to write it.
     pub jump_hosts: Vec<String>,
+    /// Any other `ProxyCommand`, as written.
+    pub proxy_command: Option<String>,
     pub keepalive_interval: u32,
     pub forwards: Vec<ForwardRule>,
     pub forward_agent: bool,
@@ -59,9 +63,10 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Vec<Candidate>> {
     Ok(aliases(&config).into_iter().map(|alias| candidate(&config, alias, existing)).collect())
 }
 
-/// The profiles to add for importing `selected`, with ids assigned and jump hosts resolved.
-/// Jump hosts not yet in `existing` are added as well.
-pub fn plan(path: &Path, selected: &[String], existing: &[Profile]) -> Result<Vec<Profile>> {
+/// The proxies and profiles to add for importing `selected`, with ids assigned and jump hosts
+/// and proxies resolved. Jump hosts not yet in `existing`, and proxy commands not yet in
+/// `proxies`, are added as well.
+pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[Proxy]) -> Result<(Vec<Proxy>, Vec<Profile>)> {
     let config = parse(path)?;
     let known: HashSet<String> = aliases(&config).into_iter().collect();
 
@@ -85,6 +90,7 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile]) -> Result<Ve
     }
 
     let mut profiles = Vec::new();
+    let mut new_proxies: Vec<Proxy> = Vec::new();
     // Jump hosts written as addresses, by address, to share one profile between hosts.
     let mut by_address: HashMap<(String, u16, String), String> = HashMap::new();
     for candidate in pending {
@@ -115,6 +121,25 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile]) -> Result<Ve
         profile.forward_agent = candidate.forward_agent;
         profile.env = candidate.env;
         profile.jump_hosts = jump_hosts;
+        if let Some(command) = candidate.proxy_command {
+            let same = |p: &&Proxy| p.kind == ProxyKind::Command && p.command == command;
+            profile.proxy = Some(match proxies.iter().chain(&new_proxies).find(same) {
+                Some(proxy) => proxy.id.clone(),
+                None => {
+                    let proxy = Proxy {
+                        id: new_id(),
+                        name: command.clone(),
+                        kind: ProxyKind::Command,
+                        host: String::new(),
+                        port: 0,
+                        username: String::new(),
+                        command,
+                    };
+                    new_proxies.push(proxy.clone());
+                    proxy.id
+                }
+            });
+        }
         // Normalizing fills in the default bind address, as saving from the panel does.
         profile.forwards = candidate
             .forwards
@@ -123,7 +148,7 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile]) -> Result<Ve
             .collect();
         profiles.push(profile);
     }
-    Ok(profiles)
+    Ok((new_proxies, profiles))
 }
 
 fn parse(path: &Path) -> Result<SshConfig> {
@@ -156,7 +181,7 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
         Some(path) => AuthMethod::PublicKey { key_path: path.display().to_string() },
         None => AuthMethod::Auto,
     };
-    let jump_hosts = params
+    let mut jump_hosts: Vec<String> = params
         .proxy_jump
         .clone()
         .unwrap_or_default()
@@ -173,6 +198,23 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
     if params.certificate_file.is_some() {
         skipped.push("CertificateFile".to_owned());
     }
+    // OpenSSH uses whichever of ProxyJump and ProxyCommand comes first; the parser doesn't
+    // keep the order, so ProxyJump wins.
+    let command = params.unsupported_fields.get("proxycommand").map(|args| args.join(" "));
+    let proxy_command = match command.filter(|command| !command.eq_ignore_ascii_case("none")) {
+        Some(_) if !jump_hosts.is_empty() => {
+            skipped.push("ProxyCommand".to_owned());
+            None
+        }
+        Some(command) => match stdio_forward_host(&command) {
+            Some(jump) => {
+                jump_hosts.push(jump);
+                None
+            }
+            None => Some(command),
+        },
+        None => None,
+    };
     let forward_agent = params.forward_agent == Some(true);
     let env = params.unsupported_fields.get("setenv").map(|args| set_env(args, &mut skipped)).unwrap_or_default();
     if params.unsupported_fields.contains_key("sendenv") {
@@ -196,6 +238,7 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
         username,
         auth,
         jump_hosts,
+        proxy_command,
         keepalive_interval,
         forwards,
         forward_agent,
@@ -309,6 +352,40 @@ fn parse_destination(text: &str) -> (String, String, u16) {
     }
 }
 
+/// The jump host of `ssh [-q] [-l user] [-p port] -W %h:%p host`, written as a ProxyJump
+/// entry (`[user@]host[:port]`); `None` for other commands.
+fn stdio_forward_host(command: &str) -> Option<String> {
+    let mut words = command.split_whitespace();
+    let program = words.next()?;
+    if program != "ssh" && !program.ends_with("/ssh") {
+        return None;
+    }
+    let (mut forward, mut host, mut user, mut port) = (false, None, None, None);
+    while let Some(word) = words.next() {
+        match word {
+            "-W" => forward = matches!(words.next()?, "%h:%p" | "[%h]:%p"),
+            "-q" => {}
+            "-l" => user = Some(words.next()?),
+            "-p" => port = Some(words.next()?.parse::<u16>().ok()?),
+            word if word.starts_with('-') || host.is_some() => return None,
+            word => host = Some(word),
+        }
+    }
+    let host = host.filter(|_| forward)?;
+    let (user, host) = match host.rsplit_once('@') {
+        Some((user, host)) => (Some(user), host),
+        None => (user, host),
+    };
+    let address = match port {
+        Some(port) => crate::forward::host_port(host, port),
+        None => host.to_owned(),
+    };
+    Some(match user {
+        Some(user) => format!("{user}@{address}"),
+        None => address,
+    })
+}
+
 /// `%h` (the alias) and `%%` in `HostName`.
 fn expand_host_tokens(name: &str, alias: &str) -> String {
     name.replace("%%", "\0").replace("%h", alias).replace('\0', "%")
@@ -378,6 +455,17 @@ Host legacy
     DynamicForward 127.0.0.1:1080
     RemoteForward 9000 localhost:3000
 
+Host old
+    HostName old.internal
+    ProxyCommand ssh -q -W %h:%p bastion
+
+Host both
+    ProxyJump bastion
+    ProxyCommand nc %h %p
+
+Host tunneled
+    ProxyCommand nc -X 5 %h %p
+
 Host *.corp !skip
     User bob
 
@@ -391,7 +479,7 @@ Host *
         let (_dir, path) = write_config(CONFIG);
         let candidates = scan(&path, &[]).unwrap();
         let aliases: Vec<_> = candidates.iter().map(|c| c.alias.as_str()).collect();
-        assert_eq!(aliases, ["bastion", "db", "web", "legacy"]);
+        assert_eq!(aliases, ["bastion", "db", "web", "legacy", "old", "both", "tunneled"]);
 
         let db = &candidates[1];
         assert_eq!((db.host.as_str(), db.port, db.username.as_str()), ("db.internal", 22, "alice"));
@@ -406,7 +494,12 @@ Host *
         let legacy = &candidates[3];
         assert_eq!(legacy.username, "root");
         assert!(matches!(&legacy.auth, AuthMethod::PublicKey { key_path } if key_path == "/keys/legacy"));
-        assert_eq!(legacy.skipped, ["SendEnv", "proxycommand"]);
+        assert_eq!(legacy.skipped, ["SendEnv"]);
+        assert_eq!(legacy.proxy_command.as_deref(), Some("nc -X 5 %h %p"));
+        // The older way to write ProxyJump becomes a jump host; ProxyJump wins over ProxyCommand.
+        assert_eq!((candidates[4].jump_hosts.as_slice(), candidates[4].proxy_command.as_deref()), (["bastion".to_owned()].as_slice(), None));
+        assert_eq!(candidates[5].jump_hosts, ["bastion"]);
+        assert_eq!((candidates[5].proxy_command.as_deref(), candidates[5].skipped.as_slice()), (None, ["ProxyCommand".to_owned()].as_slice()));
         assert!(legacy.forward_agent && !db.forward_agent);
         let env: Vec<_> = legacy.env.iter().map(|v| (v.name.as_str(), v.value.as_str())).collect();
         assert_eq!(env, [("LANG", "zh_CN.GBK"), ("GREETING", "hello world")]);
@@ -420,7 +513,7 @@ Host *
         let plan_ids = |profiles: &[Profile]| profiles.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
 
         // Selecting "db" pulls in its jump host.
-        let profiles = plan(&path, &["db".to_owned()], &[]).unwrap();
+        let (_, profiles) = plan(&path, &["db".to_owned()], &[], &[]).unwrap();
         assert_eq!(plan_ids(&profiles), ["db", "bastion"]);
         assert_eq!(profiles[0].jump_hosts, [profiles[1].id.clone()]);
         assert!(profiles.iter().all(|p| p.forwards.iter().all(|f| !f.id.is_empty())));
@@ -429,9 +522,24 @@ Host *
         // An existing profile for the jump host is referenced instead of duplicated.
         let mut bastion = new_profile("existing".into(), "bastion".into(), "bastion.example.com".into(), 2200, "alice".into());
         bastion.auth = AuthMethod::Agent;
-        let profiles = plan(&path, &["db".to_owned(), "web".to_owned()], &[bastion]).unwrap();
+        let (_, profiles) = plan(&path, &["db".to_owned(), "web".to_owned()], &[bastion], &[]).unwrap();
         assert_eq!(plan_ids(&profiles), ["db", "web"]);
         assert!(profiles.iter().all(|p| p.jump_hosts == ["existing"]));
+    }
+
+    #[test]
+    fn plan_shares_one_proxy_per_command() {
+        let (_dir, path) = write_config(CONFIG);
+        let (proxies, profiles) = plan(&path, &["legacy".to_owned(), "tunneled".to_owned()], &[], &[]).unwrap();
+        assert_eq!(proxies.len(), 1);
+        assert_eq!((proxies[0].kind, proxies[0].command.as_str()), (ProxyKind::Command, "nc -X 5 %h %p"));
+        assert!(profiles.iter().all(|p| p.proxy.as_ref() == Some(&proxies[0].id)));
+
+        // An existing proxy with the same command is used.
+        let existing = Proxy { id: "nc".into(), name: "netcat".into(), ..proxies[0].clone() };
+        let (proxies, profiles) = plan(&path, &["tunneled".to_owned()], &[], &[existing]).unwrap();
+        assert!(proxies.is_empty());
+        assert_eq!(profiles[0].proxy.as_deref(), Some("nc"));
     }
 
     #[test]
@@ -443,5 +551,11 @@ Host *
         assert_eq!(parse_destination("ops@jump:2222"), ("ops".into(), "jump".into(), 2222));
         assert_eq!(parse_destination("jump").1, "jump");
         assert_eq!(expand_host_tokens("%h.corp%%", "db"), "db.corp%");
+        assert_eq!(stdio_forward_host("ssh -W %h:%p jump").as_deref(), Some("jump"));
+        assert_eq!(stdio_forward_host("/usr/bin/ssh -l ops -p 2222 jump -W [%h]:%p").as_deref(), Some("ops@jump:2222"));
+        assert_eq!(stdio_forward_host("ssh -W %h:%p ops@::1 -p 2").as_deref(), Some("ops@[::1]:2"));
+        assert_eq!(stdio_forward_host("ssh -i key -W %h:%p jump"), None);
+        assert_eq!(stdio_forward_host("ssh jump nc %h %p"), None);
+        assert_eq!(stdio_forward_host("ssh -W db:22 jump"), None);
     }
 }

@@ -15,7 +15,7 @@ use tokio::time::Instant;
 
 use crate::config::Profile;
 use crate::error::Error;
-use crate::net::Stream;
+use crate::net::{Route, Stream};
 use crate::session::{Outcome, SessionEvent, SessionInput, TermIo};
 use crate::ssh::{self, JumpChain};
 use protocol::{Telnet, BREAK};
@@ -25,11 +25,11 @@ const READ_BUFFER: usize = 16 << 10;
 /// upload is paced by the connection).
 const OUTGOING_LIMIT: usize = 64 << 10;
 
-/// Session backend: connects to the profile's host (through its jump hosts, if any) and
-/// bridges the Telnet session to the terminal. `password` is the saved one, if any, looked
-/// up when the server asks for it.
-pub async fn run(profile: Profile, jumps: Vec<Profile>, password: impl FnOnce() -> Option<String> + Send, mut io: TermIo) {
-    let outcome = match connect(&profile, &jumps, &mut io).await {
+/// Session backend: connects to the profile's host (by `route`) and bridges the Telnet
+/// session to the terminal. `password` is the saved one, if any, looked up when the server
+/// asks for it.
+pub async fn run(profile: Profile, route: Route, password: impl FnOnce() -> Option<String> + Send, mut io: TermIo) {
+    let outcome = match connect(&profile, &route, &mut io).await {
         Ok((stream, jumps)) => {
             let login = AutoLogin::new(&profile.username, password);
             bridge(stream, jumps, &profile.term_type, login, &mut io).await
@@ -39,19 +39,22 @@ pub async fn run(profile: Profile, jumps: Vec<Profile>, password: impl FnOnce() 
     io.finish(outcome);
 }
 
-async fn connect(profile: &Profile, jumps: &[Profile], io: &mut TermIo) -> Result<(Box<dyn Stream>, JumpChain)> {
+async fn connect(profile: &Profile, route: &Route, io: &mut TermIo) -> Result<(Box<dyn Stream>, JumpChain)> {
     let (host, port) = (profile.host.as_str(), profile.port);
-    if let Some(tunnel) = ssh::tunnel(jumps, host, port, io).await? {
+    if let Some(tunnel) = ssh::tunnel(route, host, port, io).await? {
         let connecting = t!("terminal.connectingToVia", host = host, port = port, jump = tunnel.via);
         io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
         return Ok((Box::new(tunnel.stream), tunnel.jumps));
     }
-    io.print(&format!("\x1b[2m{}\x1b[0m\n", t!("terminal.connectingTo", host = host, port = port)));
-    let stream = crate::net::connect(host, port).await?;
-    if profile.keepalive_interval > 0 {
-        crate::net::set_keepalive(&stream, Duration::from_secs(profile.keepalive_interval.into()));
-    }
-    Ok((Box::new(stream), JumpChain::default()))
+    let proxy = route.proxy.as_ref();
+    let connecting = match proxy {
+        Some(proxy) => t!("terminal.connectingToViaProxy", host = host, port = port, proxy = proxy.name),
+        None => t!("terminal.connectingTo", host = host, port = port),
+    };
+    io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
+    let keepalive = (profile.keepalive_interval > 0).then(|| Duration::from_secs(profile.keepalive_interval.into()));
+    let stream = crate::net::connect(host, port, &profile.username, proxy, keepalive, io).await?;
+    Ok((stream, JumpChain::default()))
 }
 
 /// Passes data between the connection and the terminal until either side ends.
@@ -325,7 +328,7 @@ mod tests {
             ..Profile::new("t".into(), "127.0.0.1".into(), port, "alice".into())
         };
         let (io, _input, output, events) = TermIo::detached((80, 24));
-        run(profile, Vec::new(), || None, io).await;
+        run(profile, Route::default(), || None, io).await;
 
         let received = server.await.unwrap();
         assert!(received.windows(9).any(|w| w == [255, 250, 31, 0, 80, 0, 24, 255, 240]), "{received:?}");

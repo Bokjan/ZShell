@@ -146,6 +146,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
                   <div className="import-notes">
                     {c.existing && <span>{t("importDialog.existing", { name: c.existing })}</span>}
                     {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: c.jumpHosts.join(", ") })}</span>}
+                    {c.proxyCommand && <span>{t("importDialog.proxyCommand", { command: c.proxyCommand })}</span>}
                     {c.forwards.length > 0 && <span>{t("importDialog.forwards", { count: c.forwards.length })}</span>}
                     {c.skipped.length > 0 && (
                       <span className="warning">{t("importDialog.skipped", { options: c.skipped.join(", ") })}</span>

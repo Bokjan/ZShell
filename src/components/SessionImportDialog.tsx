@@ -87,6 +87,11 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
                     {c.folder.length > 0 && <span>{c.folder.join(" / ")}</span>}
                     {c.existing && <span>{t("importDialog.existing", { name: c.existing })}</span>}
                     {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: c.jumpHosts.join(", ") })}</span>}
+                    {c.proxyCommand ? (
+                      <span className="warning">{t("sessionImport.proxyCommand", { command: c.proxyCommand })}</span>
+                    ) : (
+                      c.proxy && <span>{t("sessionImport.proxy", { name: c.proxy })}</span>
+                    )}
                   </div>
                 </li>
               ))}

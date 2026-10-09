@@ -4,7 +4,7 @@ import { getName, getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { logs, sftp } from "../lib/api";
+import { logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
 import { basename, formatSize } from "../lib/format";
 import { isMac } from "../lib/platform";
 import {
@@ -25,6 +25,7 @@ import {
 } from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
 import { LicensesDialog } from "./LicensesDialog";
+import { ProxyDialog, proxySummary } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 
 interface Props {
@@ -73,7 +74,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
   const [licensesOpen, setLicensesOpen] = useState(false);
 
-  // While the licenses are open, Escape closes only them.
+  // While the licenses are open, Escape closes only them (a proxy dialog stops it itself).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !licensesOpen && onClose();
     window.addEventListener("keydown", onKey);
@@ -279,6 +280,8 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
 
           <FileSection settings={settings.files} onChange={setFiles} />
 
+          <ProxySection />
+
           <section>
             <h3>{t("settings.zmodem")}</h3>
             <label className="checkbox">
@@ -375,6 +378,46 @@ function FileSection({ settings, onChange }: { settings: FileSettings; onChange(
         </button>
       )}
       <p className="hint">{t("settings.editorHint")}</p>
+    </section>
+  );
+}
+
+/** The saved proxies, which sessions choose on their Connection page. */
+function ProxySection() {
+  const { t } = useTranslation();
+  const [list, setList] = useState<Proxy[]>([]);
+  // The proxy being edited; null for a new one.
+  const [editing, setEditing] = useState<Proxy | null | undefined>(undefined);
+
+  const refresh = useCallback(() => {
+    proxyApi.list().then(setList).catch(console.error);
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  return (
+    <section>
+      <h3>{t("settings.proxies")}</h3>
+      {list.length > 0 && (
+        <ul className="proxy-list">
+          {list.map((proxy) => (
+            <li key={proxy.id}>
+              <button type="button" onClick={() => setEditing(proxy)}>
+                <span className="proxy-name">{proxy.name}</span>
+                <span className="proxy-summary">{proxySummary(t, proxy)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="row">
+        <button type="button" onClick={() => setEditing(null)}>
+          {t("settings.addProxy")}
+        </button>
+      </div>
+      <p className="hint">{t("settings.proxiesHint")}</p>
+      {editing !== undefined && (
+        <ProxyDialog proxy={editing} onClose={() => setEditing(undefined)} onChanged={refresh} />
+      )}
     </section>
   );
 }

@@ -2078,6 +2078,42 @@ body.resizing .terminal-view {
   color: var(--accent);
   font-size: 12px;
 }
+.proxy-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+}
+.proxy-list li + li {
+  border-top: 1px solid var(--border);
+}
+.proxy-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.proxy-list button:hover {
+  background: var(--bg-hover);
+}
+.proxy-name {
+  color: var(--text);
+  font-size: 13px;
+}
+.proxy-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.proxy-dialog {
+  width: 420px;
+}
 .log-summary {
   align-items: center;
   color: var(--text-muted);

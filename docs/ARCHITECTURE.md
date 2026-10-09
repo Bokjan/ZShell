@@ -50,9 +50,10 @@
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
 | `telnet/` | Telnet 会话与登录提示自动填入（`mod.rs`）、协议与选项协商（`protocol.rs`） |
 | `serial/` | 串口会话与设备列表（`mod.rs`） |
-| `net.rs` | 出站 TCP 连接（SSH 第一跳与 Telnet 共用）、TCP keepalive |
+| `net.rs` | 出站连接（SSH 第一跳与 Telnet 共用，直连或经代理）、`Route`、TCP keepalive |
+| `proxy/` | 代理：配置与连接（`mod.rs`）、SOCKS5 客户端（`socks.rs`）、HTTP CONNECT（`http.rs`）、ProxyCommand（`command.rs`） |
 | `zmodem/` | rz / sz：检测与会话接管（`mod.rs`）、帧格式与 CRC（`frame.rs`）、收发字节流（`link.rs`）、接收（`receive.rs`）、发送（`send.rs`） |
-| `config.rs` / `settings.rs` / `secrets.rs` | 会话配置 `profiles.json`、应用设置 `settings.json`、钥匙串 |
+| `config.rs` / `settings.rs` / `secrets.rs` | 会话、文件夹与代理的配置（`profiles.json`、`folders.json`、`proxies.json`）、应用设置 `settings.json`、钥匙串 |
 | `encoding.rs` | 会话的字符编码：支持的编码、流式解码与编码 |
 | `import.rs` / `backup.rs` | ssh_config 导入；会话导出与导入 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
@@ -86,7 +87,7 @@
 - **shell 通道的选项**：先请求 agent 转发（`auth-agent-req@openssh.com`），再按会话的 `termType`（默认 `xterm-256color`）开 pty，逐个发 `env` 请求，最后启动 shell。`env` 请求用 `want_reply=false`，与 OpenSSH 一样不报告被服务器 `AcceptEnv` 拒绝的变量。复制标签的新 shell 用连接登记时保存的会话配置。
 - **agent 转发**：只转发给目标主机，不转发给跳板机。`ClientHandler` 只在本连接请求过转发时接受服务器开的 auth-agent 通道（russh 默认会接受）。每个通道各连一次本地 agent，与认证共用 `connect_agent`（macOS 用 `SSH_AUTH_SOCK`，Windows 先试 OpenSSH 命名管道再试 Pageant），在单独的任务里双向转发，不阻塞 russh 的连接任务；连不上本地 agent 时拒绝该通道。
 - **主机校验**：读写 `~/.ssh/known_hosts`，首次连接确认指纹，指纹变化时显式告警。
-- **ProxyJump**：会话的 `jumpHosts` 按顺序引用其他会话，每一跳用被引用会话的地址和认证，但不展开它自己的跳板机。在上一跳连接上开 `direct-tcpip` channel，以其 `ChannelStream` 作为下一跳的传输层；主机密钥按每一跳自己的 host:port 校验，各跳的提示都在同一个终端里。被引用的会话不能删除，也必须保持是 SSH 会话。建跳板的部分（`ssh::tunnel`）SSH 与 Telnet 共用，返回到目标的字节流和各跳连接（`JumpChain`，丢弃时由后往前断开）。
+- **ProxyJump**：会话的 `jumpHosts` 按顺序引用其他会话，每一跳用被引用会话的地址和认证，但不展开它自己的跳板机。在上一跳连接上开 `direct-tcpip` channel，以其 `ChannelStream` 作为下一跳的传输层；主机密钥按每一跳自己的 host:port 校验，各跳的提示都在同一个终端里。被引用的会话不能删除，也必须保持是 SSH 会话。建跳板的部分（`ssh::tunnel`）SSH 与 Telnet 共用，返回到目标的字节流和各跳连接（`JumpChain`，丢弃时由后往前断开）。第一跳经代理连接时用的是第一台跳板机自己的代理（见下文"代理"）。
 - **keepalive 与重连**：会话配置 `keepaliveInterval`（默认 30 秒，连续 3 次无响应判定断线）与 `autoReconnect`（默认开）。`lost` 时前端按 2、4、8、16、30 秒退避重连，一直重试到标签页关闭；认证错误和主机密钥被拒绝时停止。Enter 立即重连，Ctrl+C 取消，`online` 事件立即重试。重连是新会话：SFTP 面板回到原目录，自动启动的转发规则重新启动。
 
 ### Telnet 与串口
@@ -96,6 +97,14 @@
 - **Telnet**：经 `net::connect`（或 `ssh::tunnel` 的跳板机通道）得到字节流，协议层是纯状态机（`telnet/protocol.rs`，RFC 1143 的 Q 方法）：开场请求 BINARY（双向）、ECHO、SGA，提供 TTYPE 与 NAWS，其余一律拒绝；终端类型取会话的 `termType`，窗口大小在每次 resize 时上报。非二进制模式下按 NVT 发送回车（CR NUL）并去掉服务器 CR 之后的 NUL。服务器不回显时在本地回显。写入在单独的任务里进行，等待写入时仍持续读取（与 SSH 同理）。服务器关闭连接算 `exited`（与 telnet 命令一样无法区分退出与掉线），读写出错或跳板机连接断开算 `lost`；直连时用会话的保活间隔开 TCP keepalive。
 - **Telnet 登录**：保存的用户名与密码（钥匙串，与 SSH 共用同一条目）由后端在输出以 `login:` / `username:` / `password:` 结尾并停顿 300 ms 后各填一次；用户按过键、超过 30 秒或没有保存时交给用户，密码不经过前端。登录后命令照常由前端在出现提示符后发送。
 - **串口**：`serialport` 的句柄是阻塞的，与本地终端一样各用一个线程读、写；读取每隔一段时间醒来检查会话是否已关闭（Windows 上同一句柄的读写互相等待，间隔取 10 ms）。设备被拔出时读写出错，算 `lost`，前端按断线重连的节奏重试，插回后自动接上。macOS 只列出 `/dev/cu.*`（`tty.*` 打开时等待载波）；伪终端（`/dev/ttysNNN`，如 QEMU 的 `-serial pty`）没有线路速率，不设波特率。
+
+### 代理
+
+- **配置**：代理是独立保存的配置（`proxies.json`，有名称），类型为 SOCKS5、HTTP（CONNECT）或命令（ProxyCommand）；会话的 `proxy` 字段引用其 id，SSH 与 Telnet 可用。与会话一样，切换类型时其他类型的字段保留不动。被会话引用的代理不能删除（`proxy.inUse`），而不是悄悄改成直连。密码存钥匙串，条目名为 `proxy:<id>`，与会话密码（条目名为会话 id）分开；只有设了用户名的 SOCKS5 / HTTP 代理才读写钥匙串。
+- **只用于第一个连接**：`ProfileStore::route` 得出 `net::Route`（跳板机列表 + 第一个连接的代理）。代理取第一台跳板机会话自己的设置，没有跳板机时取会话的设置，与 OpenSSH 一致（ProxyJump 连跳板机时用该主机 Host 块里的 ProxyCommand）。所以会话有跳板机时保存会清掉它自己的 `proxy`，编辑界面里代理下拉框禁用并显示第一台跳板机的代理；串口会话保存时同样清掉。快速连接不经代理。
+- **接入点**：`net::connect` 是 SSH 第一跳与 Telnet 直连的唯一入口，有代理时交给 `proxy::connect`，返回 `Box<dyn Stream>`（russh 的 `connect_stream` 接受任意字节流）。TCP keepalive 设在直连或到代理服务器的 TCP 连接上（Telnet 用；SSH 用自己的 keepalive）。
+- **SOCKS5 / HTTP**：主机名交给代理解析（socks5h），代理那一侧的内网域名也能连；IP 地址按地址类型发送。HTTP 的凭据随 CONNECT 请求一起发送（Basic），响应头逐字节读到空行为止，之后的字节属于隧道（服务器可能先说话，如 SSH 的版本串）。需要密码而钥匙串里没有时在终端里内联询问；密码被拒绝时重新建立到代理的连接再问，最多 3 次（与 SSH 密码相同）。错误码区分连不上代理（`proxy.unreachable`）、要求认证、认证失败、代理拒绝转发（`proxy.refused`，附 SOCKS 回复码或 HTTP 状态行）与协议错误，和目标主机的错误分开。
+- **ProxyCommand**：替换 `%h`、`%p`、`%r`、`%%` 后启动本地进程，以其 stdin / stdout 作传输层，stderr 以暗色写进终端（`ssh` 也让它直接输出），stream 丢弃时结束进程，进程退出即连接结束。macOS 用 `$SHELL -c "exec …"` 运行（`exec` 让进程替换 shell，结束的是命令本身），PATH 取登录 shell 的（只在第一次用时启动一次 `$SHELL -l` 读取，Finder 启动的应用没有 `/opt/homebrew/bin`）；Windows 不经 `cmd`，直接启动程序（否则结束的只是 `cmd`，程序留在后台），`CREATE_NO_WINDOW` 不弹控制台窗口。命令的 stdin 被占用，不能交互式询问密码。
 
 ### 文件传输与端口转发
 
@@ -123,14 +132,14 @@
 
 ### 配置与设置
 
-- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`commands.json`（快速命令）、`logs.json`（会话日志索引）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
+- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`proxies.json`、`commands.json`（快速命令）、`logs.json`（会话日志索引）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
 - **设置**：分为 `appearance`、`terminal`、`tabs` 三组；后端校验并夹取数值，文件损坏时回退默认值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。
 - **主题**：`<html data-theme>` 选择 CSS 变量组，样式中不写死颜色；原生窗口用 `setTheme` 同步原生菜单与对话框（Windows 上还决定 WebView2 的 `prefers-color-scheme`），用 `setBackgroundColor` 同步调整大小时露出的背景；首帧背景由 `index.html` 的内联样式按系统外观给出，避免闪烁。终端配色、字体等通过 `term.options` 应用到所有已打开的终端。
 - **会话与文件夹**：会话的 `folder` 字段指向所在文件夹，文件夹存在 `folders.json`（`parent` 可嵌套）。`profiles.json` 仍是数组，旧版本照常读取。文件中的顺序即显示顺序，每个文件夹里先列子文件夹、再列会话；拖拽只有一个后端操作 `tree_move`（放进某文件夹、排在某项之前或末尾）。删除文件夹时其中的内容移到上一级，不删除会话。加载时修正指向不存在文件夹的引用和循环。文件夹折叠状态与最近连接是本机的界面状态，与侧栏宽度一样存在 localStorage。
-- **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`，含文件夹与会话，不含密码）。导入时同名、否则同地址（同协议的用户、主机、端口；串口为同一设备）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；文件夹按名称路径合并；导入的会话一律分配新 id。
+- **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`，含文件夹、会话与全部代理，不含密码；没有 `proxies` 的旧文件照常读取）。导入时同名、否则同地址（同协议的用户、主机、端口；串口为同一设备）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；导入的会话用到的代理也一并导入，同名、否则同地址（同类型的主机、端口、用户名；命令类型为同一命令）的代理视为已存在；导入列表里显示命令类型代理的命令原文，因为导入后连接时会执行它。文件夹按名称路径合并；导入的会话与代理一律分配新 id。
 - **快速连接**：标签目标 `quick`（`quick_open`）不需要已保存的会话。SSH 用"自动"认证，未写用户名时用本机用户名（同 `ssh host`）；Telnet 写了用户名时在登录提示处填入。"另存为会话"把标签目标改为新会话（协议、地址预先填好）但不重连（`TerminalView` 只在本地与远端之间切换时重建终端），下次连接起使用会话的设置。
 - **会话日志**：后端在 `SessionSink::write` 里把终端显示的全部内容（远端输出、回显、我们自己的提示，不含 ZMODEM 数据）写入文件，不经过前端；所以密码等不回显的输入不会进日志。纯文本格式用 vte 解析，维护单行的单元格与光标列，应用回车、退格、光标左右移动与行内擦除，使 shell 的行编辑和进度条得到屏幕上的最终结果；原始格式原样写入。新会话打开时由前端说明日志如何开始（`LogOpen`）：按会话的 `autoLog` 或设置中的"自动记录本地终端"、续写（重连时接着写同一个文件并插入重连标记）或不记录（该标签手动停止过）；日志在会话启动前就开始写，所以包含最早的连接提示。ZShell 写过的日志记在 `logs.json`，按天数清理（启动时、之后每 6 小时、修改设置时）、删除某会话的日志、删除全部都只针对索引中的文件，并跳过正在写的文件，日志目录中的其他文件不会被删除。默认目录为"文档/ZShellLogs"。
-- **ssh_config 导入**：一次性复制，导入后与 config 文件无关联。与已有会话同名或同地址的主机不再导入；`ForwardAgent`、`SetEnv` 一并映射，不支持的选项（ProxyCommand、SendEnv 等）在列表中标出。
+- **ssh_config 导入**：一次性复制，导入后与 config 文件无关联。与已有会话同名或同地址的主机不再导入；`ForwardAgent`、`SetEnv` 一并映射，不支持的选项（SendEnv 等）在列表中标出。`ProxyCommand` 导入为命令类型的代理，命令相同的共用一个（也复用已有的同命令代理）；`ssh [-q] [-l user] [-p port] -W %h:%p host` 这种 ProxyJump 的旧写法识别为跳板机。OpenSSH 中 ProxyJump 与 ProxyCommand 以先出现者为准，解析库不保留顺序，两者并存时取 ProxyJump，ProxyCommand 标为未导入。
 - **单会话外观**：会话的 `appearance` 可覆盖配色、背景色、字体和字号，未设置的项跟随设置。只由前端解释（`sessionScheme`），编辑后已打开的标签立即应用；快速连接与本地终端总是跟随设置。设了背景色的会话，标签左侧有一条同色相、固定中等亮度的色条，深色、浅色背景都能看清。
 - **登录后命令**：由前端发送。每个新 shell（首次连接、重连、复制标签）收到 `Connected` 后开始：远端输出停顿 300 ms，且光标前的文字像提示符（非空、不以 `:` 或 `?` 结尾，这样 `sudo -i` 能先问完密码）时，才发下一条。按 Ctrl+C 放弃剩下的命令。
 

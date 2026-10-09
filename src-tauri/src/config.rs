@@ -1,6 +1,6 @@
-//! Saved connection profiles and the folders they are organized in, persisted as JSON in the
-//! app config directory (`profiles.json`, `folders.json`). Passwords are never stored here;
-//! see [`crate::secrets`].
+//! Saved connection profiles, the folders they are organized in and the proxies they use,
+//! persisted as JSON in the app config directory (`profiles.json`, `folders.json`,
+//! `proxies.json`). Passwords are never stored here; see [`crate::secrets`].
 //!
 //! The order of each file is the order shown: a folder's subfolders and sessions appear in
 //! file order (subfolders first). `profiles.json` stays a plain array, so a profile's folder
@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
+use crate::net::Route;
+use crate::proxy::Proxy;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +42,10 @@ pub struct Profile {
     /// profiles only; SSH and Telnet sessions can use them.
     #[serde(default)]
     pub jump_hosts: Vec<String>,
+    /// The id of the proxy to connect through; SSH and Telnet. Not kept with jump hosts,
+    /// where the first jump host's own proxy is used (see [`Route`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<String>,
     /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
     /// drop the connection. Telnet uses TCP keepalives.
     #[serde(default = "default_keepalive_interval")]
@@ -210,6 +216,7 @@ impl Profile {
             auth: AuthMethod::Auto,
             serial: SerialOptions::default(),
             jump_hosts: Vec::new(),
+            proxy: None,
             keepalive_interval: default_keepalive_interval(),
             auto_reconnect: true,
             forwards: Vec::new(),
@@ -254,11 +261,16 @@ impl Profile {
                 if serial.baud_rate == 0 || !(5..=8).contains(&serial.data_bits) || !(1..=2).contains(&serial.stop_bits) {
                     return Err(Error::new("profile.invalidSerialSettings"));
                 }
-                // Jump hosts don't apply; keeping them would also keep those sessions from
-                // being deleted.
+                // Jump hosts and proxies don't apply; keeping them would also keep those
+                // from being deleted.
                 self.jump_hosts.clear();
+                self.proxy = None;
             }
             _ => {}
+        }
+        // The first jump host's proxy is used instead.
+        if !self.jump_hosts.is_empty() {
+            self.proxy = None;
         }
         if self.name.is_empty() {
             self.name = match self.protocol {
@@ -348,6 +360,7 @@ pub enum AuthMethod {
 pub struct ProfileStore {
     path: PathBuf,
     folders_path: PathBuf,
+    proxies_path: PathBuf,
     state: Mutex<State>,
 }
 
@@ -355,6 +368,7 @@ pub struct ProfileStore {
 struct State {
     profiles: Vec<Profile>,
     folders: Vec<Folder>,
+    proxies: Vec<Proxy>,
 }
 
 impl State {
@@ -376,12 +390,17 @@ impl State {
         false
     }
 
-    /// Drops references to folders that don't exist, and breaks cycles (hand-edited files).
+    /// Drops references to folders and proxies that don't exist, and breaks cycles
+    /// (hand-edited files).
     fn repair(&mut self) {
         let ids: std::collections::HashSet<String> = self.folders.iter().map(|f| f.id.clone()).collect();
+        let proxies: std::collections::HashSet<&str> = self.proxies.iter().map(|p| p.id.as_str()).collect();
         for profile in &mut self.profiles {
             if profile.folder.as_ref().is_some_and(|f| !ids.contains(f)) {
                 profile.folder = None;
+            }
+            if profile.proxy.as_ref().is_some_and(|p| !proxies.contains(p.as_str())) {
+                profile.proxy = None;
             }
         }
         for i in 0..self.folders.len() {
@@ -398,12 +417,13 @@ impl State {
 }
 
 impl ProfileStore {
-    /// `path` is `profiles.json`; the folders are kept next to it.
+    /// `path` is `profiles.json`; the folders and proxies are kept next to it.
     pub fn load(path: PathBuf) -> Result<Self> {
         let folders_path = path.with_file_name("folders.json");
-        let mut state = State { profiles: read_json(&path)?, folders: read_json(&folders_path)? };
+        let proxies_path = path.with_file_name("proxies.json");
+        let mut state = State { profiles: read_json(&path)?, folders: read_json(&folders_path)?, proxies: read_json(&proxies_path)? };
         state.repair();
-        Ok(Self { path, folders_path, state: Mutex::new(state) })
+        Ok(Self { path, folders_path, proxies_path, state: Mutex::new(state) })
     }
 
     pub fn list(&self) -> Vec<Profile> {
@@ -438,6 +458,9 @@ impl ProfileStore {
                 if !ssh || *jump == profile.id || !seen.insert(jump) {
                     return Err(Error::new("profile.invalidJumpHost"));
                 }
+            }
+            if profile.proxy.as_ref().is_some_and(|id| !state.proxies.iter().any(|p| p.id == *id)) {
+                return Err(Error::new("profile.invalidProxy"));
             }
             if profile.protocol != Protocol::Ssh && !profile.id.is_empty() {
                 let users = jump_host_users(state, &profile.id);
@@ -496,17 +519,61 @@ impl ProfileStore {
         })
     }
 
-    /// The profiles to connect through to reach `profile`.
-    pub fn jump_hosts(&self, profile: &Profile) -> Result<Vec<Profile>> {
-        profile.jump_hosts.iter().map(|id| self.get(id).map_err(|_| Error::new("profile.invalidJumpHost"))).collect()
+    /// How to reach `profile`: its jump hosts, and the proxy of the first connection.
+    pub fn route(&self, profile: &Profile) -> Result<Route> {
+        let jumps = profile
+            .jump_hosts
+            .iter()
+            .map(|id| self.get(id).map_err(|_| Error::new("profile.invalidJumpHost")))
+            .collect::<Result<Vec<_>>>()?;
+        let first = jumps.first().unwrap_or(profile);
+        let proxy = first.proxy.as_ref().map(|id| self.proxy(id).map_err(|_| Error::new("profile.invalidProxy"))).transpose()?;
+        Ok(Route { jumps, proxy })
     }
 
-    /// Adds profiles and folders that already have ids (from an import) in one write.
-    pub fn add_all(&self, folders: Vec<Folder>, profiles: Vec<Profile>) -> Result<()> {
+    /// Adds folders, proxies and profiles that already have ids (from an import) in one write.
+    pub fn add_all(&self, folders: Vec<Folder>, proxies: Vec<Proxy>, profiles: Vec<Profile>) -> Result<()> {
         self.update(|state| {
             state.folders.extend(folders);
+            state.proxies.extend(proxies);
             state.profiles.extend(profiles);
             state.repair();
+            Ok(())
+        })
+    }
+
+    pub fn proxies(&self) -> Vec<Proxy> {
+        self.state.lock().unwrap().proxies.clone()
+    }
+
+    pub fn proxy(&self, id: &str) -> Result<Proxy> {
+        self.state.lock().unwrap().proxies.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("proxy.notFound"))
+    }
+
+    /// Inserts or updates a proxy and returns it with its id filled in.
+    pub fn save_proxy(&self, mut proxy: Proxy) -> Result<Proxy> {
+        proxy.normalize()?;
+        self.update(|state| {
+            match state.proxies.iter_mut().find(|p| !proxy.id.is_empty() && p.id == proxy.id) {
+                Some(existing) => *existing = proxy.clone(),
+                None if !proxy.id.is_empty() => return Err(Error::new("proxy.notFound")),
+                None => {
+                    proxy.id = uuid::Uuid::new_v4().to_string();
+                    state.proxies.push(proxy.clone());
+                }
+            }
+            Ok(proxy)
+        })
+    }
+
+    /// Deletes a proxy that no session uses.
+    pub fn delete_proxy(&self, id: &str) -> Result<()> {
+        self.update(|state| {
+            let users: Vec<&str> = state.profiles.iter().filter(|p| p.proxy.as_deref() == Some(id)).map(|p| p.name.as_str()).collect();
+            if !users.is_empty() {
+                return Err(Error::new("proxy.inUse").param("names", users.join(", ")));
+            }
+            state.proxies.retain(|p| p.id != id);
             Ok(())
         })
     }
@@ -602,6 +669,9 @@ impl ProfileStore {
         let value = change(&mut updated)?;
         if updated.folders != state.folders {
             write_json_atomic(&self.folders_path, &updated.folders)?;
+        }
+        if updated.proxies != state.proxies {
+            write_json_atomic(&self.proxies_path, &updated.proxies)?;
         }
         write_json_atomic(&self.path, &updated.profiles)?;
         *state = updated;
@@ -753,5 +823,61 @@ mod tests {
         assert!(router.same_target(&Profile { name: "other".into(), ..router.clone() }));
         assert!(!router.same_target(&Profile { protocol: Protocol::Ssh, ..router.clone() }));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keeps_proxies_and_routes_through_them() {
+        let (store, dir) = store("proxies");
+        let socks = Proxy {
+            id: String::new(),
+            name: "corp".into(),
+            kind: crate::proxy::ProxyKind::Socks5,
+            host: "proxy.lan".into(),
+            port: 1080,
+            username: String::new(),
+            command: String::new(),
+        };
+        let socks = store.save_proxy(socks).unwrap();
+        let missing = Profile { proxy: Some("missing".into()), ..new_profile("x", None) };
+        assert_eq!(store.save(missing).unwrap_err().code(), "profile.invalidProxy");
+
+        let bastion = store.save(Profile { proxy: Some(socks.id.clone()), ..new_profile("bastion", None) }).unwrap();
+        // With jump hosts, the session's own proxy is dropped; the first jump host's is used.
+        let db = Profile { jump_hosts: vec![bastion.id.clone()], proxy: Some(socks.id.clone()), ..new_profile("db", None) };
+        let db = store.save(db).unwrap();
+        assert_eq!(db.proxy, None);
+        let route = store.route(&db).unwrap();
+        assert_eq!((route.jumps.len(), route.proxy.as_ref().map(|p| p.id.as_str())), (1, Some(socks.id.as_str())));
+        assert_eq!(store.route(&bastion).unwrap().proxy, Some(socks.clone()));
+        assert!(store.route(&new_profile("direct", None)).unwrap().proxy.is_none());
+
+        // A proxy in use cannot be deleted.
+        let error = store.delete_proxy(&socks.id).unwrap_err();
+        assert_eq!((error.code(), error.to_string().contains("bastion")), ("proxy.inUse", true));
+        store.save(Profile { proxy: None, ..bastion }).unwrap();
+        store.delete_proxy(&socks.id).unwrap();
+        assert!(store.proxies().is_empty());
+        assert_eq!(store.save_proxy(socks).unwrap_err().code(), "proxy.notFound");
+
+        // Dangling references (hand-edited files) are dropped on load.
+        let kept = store.save_proxy(Proxy { id: String::new(), kind: crate::proxy::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() }).unwrap();
+        assert_eq!(kept.name, "nc");
+        fs::write(dir.join("profiles.json"), serde_json::to_vec(&[Profile { id: "p".into(), proxy: Some("gone".into()), ..new_profile("p", None) }]).unwrap()).unwrap();
+        let reloaded = ProfileStore::load(dir.join("profiles.json")).unwrap();
+        assert_eq!(reloaded.list()[0].proxy, None);
+        assert_eq!(reloaded.proxies(), [kept]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn store_proxy() -> Proxy {
+        Proxy {
+            id: String::new(),
+            name: String::new(),
+            kind: crate::proxy::ProxyKind::Http,
+            host: String::new(),
+            port: 0,
+            username: String::new(),
+            command: String::new(),
+        }
     }
 }

@@ -1,4 +1,5 @@
-//! Profile passwords in the OS credential store (macOS Keychain / Windows Credential Manager).
+//! Session and proxy passwords in the OS credential store (macOS Keychain / Windows Credential
+//! Manager).
 
 use keyring::Entry;
 
@@ -17,4 +18,21 @@ pub fn delete_password(profile_id: &str) -> keyring::Result<()> {
         Err(keyring::Error::NoEntry) => Ok(()),
         result => result,
     }
+}
+
+/// Proxy passwords are kept apart from session passwords, which use the bare profile id.
+fn proxy_entry(proxy_id: &str) -> String {
+    format!("proxy:{proxy_id}")
+}
+
+pub fn get_proxy_password(proxy_id: &str) -> Option<String> {
+    get_password(&proxy_entry(proxy_id))
+}
+
+pub fn set_proxy_password(proxy_id: &str, password: &str) -> keyring::Result<()> {
+    set_password(&proxy_entry(proxy_id), password)
+}
+
+pub fn delete_proxy_password(proxy_id: &str) -> keyring::Result<()> {
+    delete_password(&proxy_entry(proxy_id))
 }

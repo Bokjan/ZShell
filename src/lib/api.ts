@@ -67,6 +67,8 @@ export interface Profile {
   serial?: SerialOptions;
   /** Ids of the profiles to connect through, first hop first (ProxyJump). */
   jumpHosts: string[];
+  /** The id of the proxy to connect through (SSH and Telnet); absent without one, and with jump hosts, where the first jump host's own proxy is used. */
+  proxy?: string;
   /** Seconds between keepalive messages; 0 disables them. */
   keepaliveInterval: number;
   /** Reconnect automatically when an established connection is lost. */
@@ -186,6 +188,32 @@ export interface Session {
   close(): Promise<void>;
 }
 
+export type ProxyKind = "socks5" | "http" | "command";
+
+/** A saved proxy for the first connection of a session. Fields of other kinds are kept. */
+export interface Proxy {
+  /** Empty for a new proxy; assigned on save. */
+  id: string;
+  /** Named after the address or program when saved empty. */
+  name: string;
+  kind: ProxyKind;
+  /** SOCKS5 and HTTP. */
+  host: string;
+  port: number;
+  /** SOCKS5 and HTTP; empty without authentication. The password is in the keychain. */
+  username: string;
+  /** Command proxies: run with %h, %p, %r and %% replaced (ProxyCommand). */
+  command: string;
+}
+
+export const proxies = {
+  list: () => invoke<Proxy[]>("proxies_list"),
+  /** `password`: undefined keeps the stored password, "" clears it. */
+  save: (proxy: Proxy, password?: string) => invoke<Proxy>("proxy_save", { proxy, password: password ?? null }),
+  /** Fails with `proxy.inUse` while a session uses it. */
+  delete: (id: string) => invoke<void>("proxy_delete", { id }),
+};
+
 export const listProfiles = () => invoke<Profile[]>("profiles_list");
 
 /** `password`: undefined keeps the stored password, "" clears it. */
@@ -250,6 +278,10 @@ export interface SessionCandidate {
   /** Folder names, outermost first. */
   folder: string[];
   jumpHosts: string[];
+  /** The name of its proxy. */
+  proxy: string | null;
+  /** The command of its proxy, for a command proxy (it runs when the session connects). */
+  proxyCommand: string | null;
   /** Name of an existing session with the same name or address; not imported again. */
   existing: string | null;
 }
@@ -274,8 +306,10 @@ export interface ImportCandidate {
   port: number;
   username: string;
   auth: AuthMethod;
-  /** ProxyJump entries as written in the config. */
+  /** ProxyJump entries as written in the config (also the host of `ProxyCommand ssh -W %h:%p host`). */
   jumpHosts: string[];
+  /** Any other ProxyCommand, imported as a command proxy. */
+  proxyCommand: string | null;
   keepaliveInterval: number;
   forwards: ForwardRule[];
   forwardAgent: boolean;

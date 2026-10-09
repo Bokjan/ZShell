@@ -14,6 +14,8 @@ use crate::forward::ForwardRule;
 use crate::i18n;
 use crate::import;
 use crate::logging::{LogInfo, LogOpen, LogSlot, LogSummary, Logs};
+use crate::net::Route;
+use crate::proxy::Proxy;
 use crate::pty;
 use crate::quick::{QuickCommandStore, QuickCommands};
 use crate::secrets;
@@ -80,6 +82,39 @@ pub fn profile_set_forwards(store: State<'_, ProfileStore>, profile_id: String, 
     store.set_forwards(&profile_id, forwards)
 }
 
+#[tauri::command]
+pub fn proxies_list(store: State<'_, ProfileStore>) -> Vec<Proxy> {
+    store.proxies()
+}
+
+/// `password`: `None` keeps the stored password, `Some("")` clears it. A proxy without a user
+/// name keeps none.
+#[tauri::command]
+pub fn proxy_save(store: State<'_, ProfileStore>, proxy: Proxy, password: Option<String>) -> Result<Proxy> {
+    let had_password = store.proxy(&proxy.id).is_ok_and(|previous| previous.uses_password());
+    let proxy = store.save_proxy(proxy)?;
+    match password.as_deref() {
+        // The keychain is only touched when there can be a password to remove.
+        _ if !proxy.uses_password() => {
+            if had_password {
+                secrets::delete_proxy_password(&proxy.id)?;
+            }
+        }
+        None => {}
+        Some("") => secrets::delete_proxy_password(&proxy.id)?,
+        Some(password) => secrets::set_proxy_password(&proxy.id, password)?,
+    }
+    Ok(proxy)
+}
+
+/// Deletes a proxy no session uses (`proxy.inUse` otherwise), with its password.
+#[tauri::command]
+pub fn proxy_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
+    store.delete_proxy(&id)?;
+    secrets::delete_proxy_password(&id)?;
+    Ok(())
+}
+
 /// The default OpenSSH client config path (`~/.ssh/config`), whether or not it exists.
 #[tauri::command]
 pub fn ssh_config_default_path() -> Option<PathBuf> {
@@ -91,11 +126,12 @@ pub fn ssh_config_scan(store: State<'_, ProfileStore>, path: PathBuf) -> Result<
     import::scan(&path, &store.list())
 }
 
-/// Imports the selected hosts (and the jump hosts they need); returns the new profiles.
+/// Imports the selected hosts (and the jump hosts and proxy commands they need); returns the
+/// new profiles.
 #[tauri::command]
 pub fn ssh_config_import(store: State<'_, ProfileStore>, path: PathBuf, aliases: Vec<String>) -> Result<Vec<Profile>> {
-    let profiles = import::plan(&path, &aliases, &store.list())?;
-    store.add_all(Vec::new(), profiles.clone())?;
+    let (proxies, profiles) = import::plan(&path, &aliases, &store.list(), &store.proxies())?;
+    store.add_all(Vec::new(), proxies, profiles.clone())?;
     Ok(profiles)
 }
 
@@ -133,10 +169,10 @@ pub fn profile_duplicate(store: State<'_, ProfileStore>, id: String, name: Strin
     Ok(copy)
 }
 
-/// Writes all sessions and folders (without passwords) to `path`.
+/// Writes all sessions, folders and proxies (without passwords) to `path`.
 #[tauri::command]
 pub fn sessions_export(store: State<'_, ProfileStore>, path: PathBuf) -> Result<()> {
-    backup::export(&path, store.folders(), store.list())
+    backup::export(&path, store.folders(), store.proxies(), store.list())
 }
 
 #[tauri::command]
@@ -144,11 +180,14 @@ pub fn sessions_import_scan(store: State<'_, ProfileStore>, path: PathBuf) -> Re
     backup::scan(&path, &store.list())
 }
 
-/// Imports the sessions `ids` (ids in the file) and what they need (jump hosts, folders).
+/// Imports the sessions `ids` (ids in the file) and what they need (jump hosts, proxies,
+/// folders).
 #[tauri::command]
 pub fn sessions_import(store: State<'_, ProfileStore>, path: PathBuf, ids: Vec<String>) -> Result<()> {
-    let (folders, profiles) = backup::plan(&path, &ids, &store.list(), &store.folders())?;
-    store.add_all(folders, profiles)
+    let (profiles, folders, proxies) = (store.list(), store.folders(), store.proxies());
+    let here = backup::Here { profiles: &profiles, folders: &folders, proxies: &proxies };
+    let plan = backup::plan(&path, &ids, &here)?;
+    store.add_all(plan.folders, plan.proxies, plan.profiles)
 }
 
 #[tauri::command]
@@ -174,9 +213,9 @@ pub fn profile_open(
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let profile = store.get(&profile_id)?;
-    let jumps = match profile.protocol {
-        Protocol::Serial => Vec::new(),
-        _ => store.jump_hosts(&profile)?,
+    let route = match profile.protocol {
+        Protocol::Serial => Route::default(),
+        _ => store.route(&profile)?,
     };
     let slot = LogSlot::new(LogInfo { profile: Some(profile.id.clone()), ..log_info(&profile) });
     let opened = logs.open(&slot, log.unwrap_or_default(), profile.auto_log, &settings.get().logs);
@@ -185,11 +224,11 @@ pub fn profile_open(
     let id = match profile.protocol {
         Protocol::Ssh => {
             let connections = connections.inner().clone();
-            sessions.spawn(on_output, on_event, size, slot, encoding, |id, io| ssh::run(profile, jumps, id, io, connections))
+            sessions.spawn(on_output, on_event, size, slot, encoding, |id, io| ssh::run(profile, route, id, io, connections))
         }
         Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| {
             let profile_id = profile.id.clone();
-            telnet::run(profile, jumps, move || secrets::get_password(&profile_id), io)
+            telnet::run(profile, route, move || secrets::get_password(&profile_id), io)
         }),
         Protocol::Serial => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| serial::run(profile.serial, io)),
     };
@@ -257,10 +296,10 @@ pub fn quick_open(
     let size = (cols, rows);
     let utf8 = encoding_rs::UTF_8;
     let id = match protocol {
-        Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, utf8, |_, io| telnet::run(profile, Vec::new(), || None, io)),
+        Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, utf8, |_, io| telnet::run(profile, Route::default(), || None, io)),
         _ => {
             let connections = connections.inner().clone();
-            sessions.spawn(on_output, on_event, size, slot, utf8, |id, io| ssh::run(profile, Vec::new(), id, io, connections))
+            sessions.spawn(on_output, on_event, size, slot, utf8, |id, io| ssh::run(profile, Route::default(), id, io, connections))
         }
     };
     report_log(&sessions, id, opened);

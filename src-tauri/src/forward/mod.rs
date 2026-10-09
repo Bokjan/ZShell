@@ -10,7 +10,7 @@
 mod dynamic;
 mod local;
 mod remote;
-mod socks;
+pub(crate) mod socks;
 
 use std::collections::HashMap;
 use std::fmt;

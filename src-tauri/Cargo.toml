@@ -23,7 +23,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1.53.2", features = ["sync", "macros", "net", "time", "fs", "io-util"] }
+tokio = { version = "1.53.2", features = ["sync", "macros", "net", "time", "fs", "io-util", "process"] }
 unicode-width = "0.2.2"
 russh = { version = "0.64.1", default-features = false, features = ["ring", "flate2", "rsa"] }
 keyring = "4.2.0"
