@@ -17,11 +17,15 @@
   --border: #2b2b2b;
   --input-border: #3c3c3c;
   --text: #cccccc;
-  --text-muted: #8b8b8b;
+  --text-muted: #9a9a9a;
   --accent: #3b82f6;
   --accent-soft: rgb(59 130 246 / 0.18);
+  /* Behind text in --on-accent (a primary button, a selected item): darker than --accent,
+     which is for text and marks on the background. */
+  --accent-fill: #2563eb;
   --on-accent: #ffffff;
-  --danger: #ef4444;
+  --danger: #f87171;
+  --danger-fill: #dc2626;
   --danger-soft: rgb(239 68 68 / 0.12);
   --ok: #22c55e;
   --on-ok: #0b2e17;
@@ -39,7 +43,7 @@
   --caption-close-pressed: #b3281a;
   --on-caption-close: #ffffff;
   /* Chevron for <select>, in --text-muted (SVG data URIs cannot use variables). */
-  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b8b8b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239a9a9a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   color: var(--text);
   font: calc(13px * var(--text-scale))/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -55,11 +59,13 @@
   --border: #e2e2e2;
   --input-border: #c8c8c8;
   --text: #1f1f1f;
-  --text-muted: #6b6b6b;
+  --text-muted: #5f5f5f;
   --accent: #2563eb;
   --accent-soft: rgb(37 99 235 / 0.12);
+  --accent-fill: #2563eb;
   --on-accent: #ffffff;
   --danger: #dc2626;
+  --danger-fill: #dc2626;
   --danger-soft: rgb(220 38 38 / 0.08);
   --ok: #16a34a;
   --on-ok: #ffffff;
@@ -73,7 +79,7 @@
   --shadow: rgb(0 0 0 / 0.18);
   --caption-hover: rgb(0 0 0 / 0.04);
   --caption-pressed: rgb(0 0 0 / 0.02);
-  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235f5f5f' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   color-scheme: light;
 }
@@ -93,6 +99,14 @@ button {
   font: inherit;
   color: inherit;
   cursor: pointer;
+}
+
+/* The keyboard focus on controls, the same on both platforms. Of no specificity beyond
+   :focus-visible, so a component that marks its focus its own way (a field's border, a
+   list's selected row) turns it off with `outline: none`. */
+:where(button, a, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* WebKit's default placeholder color is close to the text color in dark mode. */
@@ -303,6 +317,11 @@ main {
 }
 .sidebar-list:focus-within .tree-row.selected {
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* The selected row shows the list's focus; without one, the list itself does. */
+.sidebar-list:focus-visible:not(:has(.tree-row.selected, .tree-row.highlighted)),
+.sftp-list:focus-visible:not(:has(tr.selected)) {
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .tree-row.highlighted {
   background: var(--accent-soft);
@@ -559,7 +578,7 @@ body.dragging-row {
 }
 .compose-bar > button.primary {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 .compose-bar > button:disabled {
@@ -896,7 +915,7 @@ body.dragging-row {
   cursor: default;
 }
 .palette-item.selected {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 .palette-group {
@@ -1077,7 +1096,7 @@ body.dragging-row {
 }
 .zmodem-bar button.primary {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 
@@ -1509,7 +1528,7 @@ body.resizing .terminal-view {
   inset: auto 12px 12px;
   padding: 10px;
   border-radius: 6px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
   text-align: center;
   pointer-events: none;
@@ -1835,7 +1854,7 @@ body.resizing .terminal-view {
   cursor: default;
 }
 .context-menu-item.highlighted {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 .context-menu-item.danger:not(.highlighted) {
@@ -2028,7 +2047,6 @@ body.resizing .terminal-view {
   margin-left: 4px;
   vertical-align: -2px;
   color: var(--text-muted);
-  outline: none;
 }
 .help-tip:hover,
 .help-tip:focus-visible {
@@ -2085,7 +2103,7 @@ body.resizing .terminal-view {
   background: var(--bg-active);
 }
 .dialog footer button.primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: var(--on-accent);
 }
@@ -2093,7 +2111,7 @@ body.resizing .terminal-view {
   color: var(--danger);
 }
 .dialog footer button.danger-fill {
-  background: var(--danger);
+  background: var(--danger-fill);
   border-color: var(--danger);
 }
 .dialog .field {
@@ -2528,7 +2546,7 @@ body.resizing .terminal-view {
   background: var(--bg-hover);
 }
 .licenses-item.selected {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 .licenses-name {
@@ -2808,4 +2826,52 @@ body.resizing .terminal-view {
   white-space: pre;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Tabs clip what is drawn around them: their focus ring is drawn inside. */
+.tab:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The system asks for less motion: no transitions, and flashes are skipped. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Windows contrast themes replace the colors with a few system ones, and backgrounds are
+   dropped: states shown only by a background (the active tab, selected rows, choices that
+   are on) use the system's highlight colors instead. */
+@media (forced-colors: active) {
+  .tab.active,
+  .tree-row.selected,
+  .tree-row.highlighted,
+  .sftp-list tbody tr.selected,
+  .palette-item.selected,
+  .licenses-item.selected,
+  .context-menu-item.highlighted,
+  .segmented button.on,
+  .panel-switch button.on,
+  .settings-nav-list button.on,
+  .compose-toggle.on,
+  .search-flag.on,
+  .scheme-card.on {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+  /* Status and color marks are their color. */
+  .status-dot,
+  .tab-color,
+  .badge {
+    forced-color-adjust: none;
+  }
+  :where(button, a, summary, [tabindex]):focus-visible {
+    outline-color: Highlight;
+  }
 }
