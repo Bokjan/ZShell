@@ -24,7 +24,7 @@
     "added": "Permanently added '{host}' ({algorithm}) to the list of known hosts.",
     "saveFailed": "Could not write to known_hosts: {error}",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
-    "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of {path}.\nIf the key change is expected, remove that line and reconnect."
+    "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of {path}.\nIf the key change is expected, remove the old key in Settings › Known Hosts, or with:\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nThen connect again."
   },
   "forward": {
     "autoStartFailed": "Port forwarding {forward} could not be started: {error}"
@@ -46,6 +46,12 @@
   },
   "errors": {
     "unexpected": "Unexpected error",
+    "knownHosts": {
+      "noHome": "The home folder, where known_hosts is, could not be found",
+      "readFailed": "Could not read {path}",
+      "writeFailed": "Could not write {path}",
+      "changed": "known_hosts has changed since it was listed. Check the list again."
+    },
     "log": {
       "createFailed": "Could not write the session log {path}"
     },

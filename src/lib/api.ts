@@ -214,6 +214,32 @@ export const proxies = {
   delete: (id: string) => invoke<void>("proxy_delete", { id }),
 };
 
+/** A host key line of `~/.ssh/known_hosts`. */
+export interface KnownHost {
+  /** 1-based, counting every line of the file. */
+  line: number;
+  /** The line as written; removing the entry checks it is still there. */
+  text: string;
+  /** `cert-authority` or `revoked`. */
+  marker: string | null;
+  /** Host names or patterns; hashed ones as written (`|1|salt|hash`). */
+  hosts: string[];
+  algorithm: string;
+  /** `SHA256:…`; null when the key can't be read. */
+  fingerprint: string | null;
+  comment: string | null;
+}
+
+export const knownHosts = {
+  /** `~/.ssh/known_hosts`, whether or not it exists; null without a home folder. */
+  path: () => invoke<string | null>("known_hosts_path"),
+  list: () => invoke<KnownHost[]>("known_hosts_list"),
+  /** Lines of the entries for `host`, `host:port` or `[host]:port`, hashed ones included. */
+  find: (query: string) => invoke<number[]>("known_hosts_find", { query }),
+  /** Fails with `knownHosts.changed` if the line no longer reads `text`. */
+  remove: (entry: KnownHost) => invoke<void>("known_hosts_remove", { line: entry.line, text: entry.text }),
+};
+
 export const listProfiles = () => invoke<Profile[]>("profiles_list");
 
 /** `password`: undefined keeps the stored password, "" clears it. */

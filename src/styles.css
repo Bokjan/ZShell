@@ -2376,6 +2376,87 @@ body.resizing .terminal-view {
   user-select: text;
   -webkit-user-select: text;
 }
+/* Host keys, each with its remove button; the list scrolls inside a dialog of fixed height. */
+.known-hosts-dialog {
+  width: 680px;
+  height: calc(100vh - var(--titlebar-height) - 70px);
+  max-height: 640px;
+  overflow: hidden;
+}
+.known-hosts-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.known-hosts-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+}
+.known-hosts-item + .known-hosts-item {
+  border-top: 1px solid var(--border);
+}
+.known-hosts-item:hover {
+  background: var(--bg-hover);
+}
+.known-hosts-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.known-hosts-hosts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 13px;
+}
+.known-hosts-host {
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.known-hosts-hashed {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.known-hosts-marker {
+  padding: 0 6px;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  color: var(--warn);
+  font-size: 11px;
+}
+.known-hosts-key {
+  overflow: hidden;
+  color: var(--text-muted);
+  font: 11px Menlo, "Cascadia Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.known-hosts-item button {
+  flex-shrink: 0;
+}
+.known-hosts-empty {
+  margin: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.known-hosts-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
 .settings-dialog section {
   display: flex;
   flex-direction: column;

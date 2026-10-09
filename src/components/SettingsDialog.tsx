@@ -4,7 +4,7 @@ import { getName, getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
+import { knownHosts, logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
 import { basename, formatSize } from "../lib/format";
 import { isMac } from "../lib/platform";
 import {
@@ -24,6 +24,8 @@ import {
   type ZmodemSettings,
 } from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
+import { HelpTip } from "./HelpTip";
+import { KnownHostsDialog } from "./KnownHostsDialog";
 import { LicensesDialog } from "./LicensesDialog";
 import { ProxyDialog, proxySummary } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
@@ -282,6 +284,8 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
 
           <ProxySection />
 
+          <KnownHostsSection />
+
           <section>
             <h3>{t("settings.zmodem")}</h3>
             <label className="checkbox">
@@ -417,6 +421,54 @@ function ProxySection() {
       <p className="hint">{t("settings.proxiesHint")}</p>
       {editing !== undefined && (
         <ProxyDialog proxy={editing} onClose={() => setEditing(undefined)} onChanged={refresh} />
+      )}
+    </section>
+  );
+}
+
+/** The host keys in `~/.ssh/known_hosts`, managed in their own dialog. */
+function KnownHostsSection() {
+  const { t } = useTranslation();
+  const [path, setPath] = useState<string | null>(null);
+  const [count, setCount] = useState<number | null>(null);
+  const [managing, setManaging] = useState(false);
+
+  const refresh = useCallback(() => {
+    knownHosts.path().then(setPath).catch(console.error);
+    knownHosts.list().then((entries) => setCount(entries.length), console.error);
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  return (
+    <section>
+      <h3>{t("settings.knownHosts")}</h3>
+      {count !== null && (
+        <p className="known-hosts-summary">
+          {t("settings.knownHostsCount", { count, file: "~/.ssh/known_hosts" })}
+          {path && <HelpTip text={path} />}
+        </p>
+      )}
+      <div className="row">
+        <button type="button" onClick={() => setManaging(true)}>
+          {t("settings.knownHostsManage")}
+        </button>
+        <button
+          type="button"
+          disabled={!path || !count}
+          onClick={() => path && void revealItemInDir(path).catch(console.error)}
+        >
+          {t(isMac ? "settings.knownHostsReveal" : "settings.knownHostsRevealWindows")}
+        </button>
+      </div>
+      <p className="hint">{t("settings.knownHostsHint")}</p>
+      {managing && (
+        <KnownHostsDialog
+          onClose={() => {
+            setManaging(false);
+            refresh();
+          }}
+          onChanged={refresh}
+        />
       )}
     </section>
   );

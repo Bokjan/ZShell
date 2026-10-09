@@ -25,7 +25,7 @@ use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
 use crate::sftp::drag;
 use crate::sftp::edit::{self, EditEvent, Edits};
 use crate::sftp::{self, transfer, Listing};
-use crate::ssh::{self, Connections};
+use crate::ssh::{self, known_hosts, Connections};
 use crate::telnet;
 use crate::zmodem;
 
@@ -119,6 +119,31 @@ pub fn proxy_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
 #[tauri::command]
 pub fn ssh_config_default_path() -> Option<PathBuf> {
     import::default_path()
+}
+
+/// `~/.ssh/known_hosts`, whether or not it exists.
+#[tauri::command]
+pub fn known_hosts_path() -> Option<PathBuf> {
+    known_hosts::path()
+}
+
+/// The host keys in known_hosts; empty if there is no file.
+#[tauri::command]
+pub fn known_hosts_list() -> Result<Vec<known_hosts::Entry>> {
+    known_hosts::list()
+}
+
+/// The lines of the entries for a host (`host`, `host:port` or `[host]:port`), including
+/// hashed ones.
+#[tauri::command]
+pub fn known_hosts_find(query: String) -> Result<Vec<usize>> {
+    known_hosts::find(&query)
+}
+
+/// Removes the entry on `line`, if the line still reads `text`.
+#[tauri::command]
+pub fn known_hosts_remove(line: usize, text: String) -> Result<()> {
+    known_hosts::remove(line, &text)
 }
 
 #[tauri::command]

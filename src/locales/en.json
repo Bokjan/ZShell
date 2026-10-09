@@ -559,6 +559,13 @@
     "logSummary_other": "{count} logs, {size}",
     "logDeleteAll": "Delete All Logs",
     "logDeleteAllConfirm": "Click again to delete {count}",
+    "knownHosts": "Known Hosts",
+    "knownHostsCount_one": "{count} host key in {file}",
+    "knownHostsCount_other": "{count} host keys in {file}",
+    "knownHostsManage": "Manage…",
+    "knownHostsReveal": "Show in Finder",
+    "knownHostsRevealWindows": "Show in File Explorer",
+    "knownHostsHint": "Shared with OpenSSH. A host's key is added when you accept it on the first connection, and checked on every connection after that.",
     "about": "About",
     "aboutVersion": "Version {version}",
     "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
@@ -566,6 +573,25 @@
     "thirdPartyLicenses": "Third-Party Licenses",
     "reset": "Restore defaults",
     "done": "Done"
+  },
+  "knownHosts": {
+    "title": "Known Hosts",
+    "search": "Search hosts, key types or fingerprints",
+    "hashed": "Hashed host name",
+    "hashedTip": "Stored as a hash ({hash}). Search for the host name to find it.",
+    "unreadableKey": "Unreadable key",
+    "markers": {
+      "cert-authority": "Certificate authority",
+      "revoked": "Revoked"
+    },
+    "remove": "Remove",
+    "removeTitle": "Remove Host Key?",
+    "removeMessage": "The {algorithm} key of “{hosts}” will be removed from known_hosts. The next connection to it asks you to confirm its key again.",
+    "removeMessageHashed": "The {algorithm} key of a hashed host name will be removed from known_hosts. The next connection to it asks you to confirm its key again.",
+    "empty": "No host keys yet",
+    "noMatches": "No matching host keys",
+    "count_one": "{count} host key",
+    "count_other": "{count} host keys"
   },
   "closeConfirm": {
     "title": "Close Tab?",

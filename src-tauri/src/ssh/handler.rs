@@ -9,6 +9,7 @@ use russh::{Channel, ChannelOpenFailure};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::host_key::{HostKeyQuery, HostKeyStatus};
+use super::known_hosts;
 use crate::forward::{Incoming, RemoteRoutes};
 
 pub struct ClientHandler {
@@ -56,7 +57,9 @@ impl client::Handler for ClientHandler {
                 return Ok(true);
             }
             Ok(false) => HostKeyStatus::Unknown,
-            Err(russh::keys::Error::KeyChanged { line }) => HostKeyStatus::Changed { line },
+            Err(russh::keys::Error::KeyChanged { line }) => HostKeyStatus::Changed {
+                line: known_hosts::changed_line(&self.host, self.port, &key).unwrap_or(line),
+            },
             Err(e) => return Err(e.into()),
         };
 

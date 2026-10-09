@@ -4,6 +4,7 @@ mod auth;
 mod connections;
 mod handler;
 mod host_key;
+pub mod known_hosts;
 
 use std::future::Future;
 use std::sync::Arc;

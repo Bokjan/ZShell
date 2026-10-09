@@ -8,6 +8,7 @@ use russh::keys::known_hosts::learn_known_hosts;
 use russh::keys::{HashAlg, PublicKey};
 use tokio::sync::oneshot;
 
+use super::known_hosts;
 use crate::session::TermIo;
 
 pub enum HostKeyStatus {
@@ -29,9 +30,15 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
         HostKeyStatus::Changed { line } => {
             let banner = t!("hostKey.changedBanner");
             // The real path, as OpenSSH shows it, rather than `~` (unfamiliar on Windows).
-            let path = std::env::home_dir().unwrap_or_default().join(".ssh").join("known_hosts");
-            let details =
-                t!("hostKey.changedDetails", algorithm = algorithm, fingerprint = fingerprint, line = line, path = path.display());
+            let path = known_hosts::path().unwrap_or_default();
+            let details = t!(
+                "hostKey.changedDetails",
+                algorithm = algorithm,
+                fingerprint = fingerprint,
+                line = line,
+                path = path.display(),
+                host = known_hosts::host_pattern(host, port)
+            );
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }

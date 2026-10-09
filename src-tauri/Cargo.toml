@@ -39,6 +39,10 @@ chrono = "0.4"
 encoding_rs = "0.8"
 serialport = { version = "4.10", default-features = false }
 socket2 = { version = "0.6", features = ["all"] }
+# known_hosts: hashed host names (already in the tree through russh).
+hmac = "0.13"
+sha1 = "0.11"
+data-encoding = "2"
 
 [dev-dependencies]
 tokio = { version = "1.53.2", features = ["test-util"] }
