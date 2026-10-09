@@ -146,13 +146,9 @@ impl SessionSink {
     /// Output from the remote side (or the local shell): shown in the terminal, unless a
     /// ZMODEM transfer starts or is running.
     pub fn output(&self, bytes: Vec<u8>) {
-        let transferring = self.zmodem.is_active();
         let shown = self.zmodem.output(bytes, self);
         if !shown.is_empty() {
             self.remote(shown);
-        }
-        if !transferring && self.zmodem.is_active() {
-            self.flush_text();
         }
     }
 

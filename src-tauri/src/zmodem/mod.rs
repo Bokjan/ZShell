@@ -102,7 +102,8 @@ impl Zmodem {
         (Arc::new(Self { state: Mutex::new(State::Idle { tail: Vec::new(), held: 0 }), outgoing }), outgoing_rx)
     }
 
-    /// Takes the remote side's output; returns the part the terminal should show.
+    /// Takes the remote side's output; returns the part the terminal should show (when a
+    /// transfer starts, what came before it is shown here already).
     pub fn output(self: &Arc<Self>, bytes: Vec<u8>, sink: &SessionSink) -> Vec<u8> {
         let mut state = self.state.lock().unwrap();
         self.scan(&mut state, bytes, sink)
@@ -134,8 +135,15 @@ impl Zmodem {
         let mut link = Link::new(incoming_rx, self.outgoing.clone(), cancel_rx);
         link.charset = sink.encoding();
         link.record(shown.saturating_sub(start));
+        // What came before the transfer is shown, and the decoded text ended (a character cut
+        // off by the transfer won't be completed), before the transfer task writes anything.
+        let before = scan[shown.min(start)..start].to_vec();
+        if !before.is_empty() {
+            sink.remote(before);
+        }
+        sink.flush_text();
         tauri::async_runtime::spawn(run(self.clone(), direction, link, sink.clone()));
-        scan[shown.min(start)..start].to_vec()
+        Vec::new()
     }
 
     pub fn is_active(&self) -> bool {
