@@ -12,6 +12,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+use super::replace::{LocalTarget, RemoteTarget};
 use super::{file_name, join};
 use crate::error::Error;
 use crate::local_name::{create_unique, create_unique_file, local_file_name};
@@ -127,12 +128,15 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
     for (local, remote) in &plan.files {
         reporter.start_file(file_name(remote).to_owned());
         let mut src = tokio::fs::File::open(local).await.context(Error::new("transfer.openFailed").param("path", local.display()))?;
-        let mut dst = sftp.create(remote).await.context(Error::new("transfer.createFailed").param("path", remote))?;
-        let result = copy(&mut src, &mut dst, reporter).await;
-        // Some servers (NFS, quotas) report a failed write only when the file is closed.
-        let closed = dst.shutdown().await;
-        if let Err(e) = result.and_then(|()| Ok(closed?)) {
-            let _ = sftp.remove_file(remote).await;
+        let mut dst = RemoteTarget::create(sftp, remote).await?;
+        let result = match copy(&mut src, &mut dst.file, reporter).await {
+            Ok(()) => dst.finish(sftp).await,
+            Err(e) => {
+                dst.abandon(sftp).await;
+                Err(e)
+            }
+        };
+        if let Err(e) = result {
             return Err(with_file_context(e, Error::new("transfer.uploadFailed").param("path", local.display())));
         }
         reporter.finish_file();
@@ -243,12 +247,17 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
     for (remote, local) in &plan.files {
         reporter.start_file(file_name(remote).to_owned());
         let mut src = sftp.open(remote).await.context(Error::new("transfer.openFailed").param("path", remote))?;
-        let mut dst = tokio::fs::File::create(local).await.context(Error::new("transfer.createFailed").param("path", local.display()))?;
-        let result = copy(&mut src, &mut dst, reporter).await;
+        let mut dst = LocalTarget::create(local).await?;
+        let result = copy(&mut src, &mut dst.file, reporter).await;
         let _ = src.shutdown().await;
+        let result = match result {
+            Ok(()) => dst.finish().await,
+            Err(e) => {
+                dst.abandon().await;
+                Err(e)
+            }
+        };
         if let Err(e) = result {
-            drop(dst);
-            let _ = tokio::fs::remove_file(local).await;
             return Err(with_file_context(e, Error::new("transfer.downloadFailed").param("path", remote)));
         }
         reporter.finish_file();

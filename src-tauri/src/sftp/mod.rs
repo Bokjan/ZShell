@@ -3,6 +3,7 @@
 pub mod drag;
 pub mod edit;
 pub mod names;
+pub mod replace;
 pub mod transfer;
 
 use anyhow::Result;

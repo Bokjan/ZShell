@@ -128,7 +128,8 @@
       "createFailed": "Cannot create {path}",
       "createDirFailed": "Cannot create folder {path}",
       "uploadFailed": "Failed to upload {path}",
-      "downloadFailed": "Failed to download {path}"
+      "downloadFailed": "Failed to download {path}",
+      "replaceFailed": "Uploaded {path} but could not put it in place; the new contents are in {temporary}"
     },
     "forward": {
       "missingTarget": "Local and remote forwards need a target host and port",

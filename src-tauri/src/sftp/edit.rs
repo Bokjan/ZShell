@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use anyhow::Context;
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tauri::ipc::Channel;
@@ -16,6 +15,7 @@ use tauri::AppHandle;
 use tokio::io::AsyncWriteExt;
 
 use super::file_name;
+use super::replace::RemoteTarget;
 use crate::local_name::local_file_name;
 use crate::error::{Error, Result};
 
@@ -113,12 +113,21 @@ impl Edits {
             .await
             .map_err(|e| Error::new("transfer.readFailed").param("path", edit.local.display()).detail(e))?;
         let result: anyhow::Result<()> = async {
-            // Opened with truncation rather than replaced, so the file keeps its owner and mode.
-            let mut file = sftp.create(remote).await.context(Error::new("transfer.createFailed").param("path", remote))?;
-            file.write_all(&contents).await?;
-            file.flush().await?;
-            file.shutdown().await?;
-            Ok(())
+            // Replaced only once complete, keeping its owner and mode (see `replace`).
+            let mut target = RemoteTarget::create(sftp, remote).await?;
+            let written: anyhow::Result<()> = async {
+                target.file.write_all(&contents).await?;
+                target.file.flush().await?;
+                Ok(())
+            }
+            .await;
+            match written {
+                Ok(()) => target.finish(sftp).await,
+                Err(e) => {
+                    target.abandon(sftp).await;
+                    Err(e)
+                }
+            }
         }
         .await;
         result.map_err(|e| Error::from(e.context(Error::new("transfer.uploadFailed").param("path", edit.local.display()))))?;
