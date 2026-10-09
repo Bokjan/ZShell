@@ -378,11 +378,21 @@ export const sshConfig = {
   import: (path: string, aliases: string[]) => invoke<Profile[]>("ssh_config_import", { path, aliases }),
 };
 
-/** Rule states arrive as `forward` session events. */
+/**
+ * A saved session's rules run once, on one of its connections, whichever tab acts on them;
+ * their states arrive as `forward` session events in every tab of the session.
+ */
 export const forwards = {
-  /** Starts the rule, or restarts it with this definition if it is running. */
+  /** Starts the rule, or restarts it with this definition where it is running. */
   start: (id: SessionId, rule: ForwardRule) => invoke<void>("forward_start", { id, rule }),
+  /** Stops the rule wherever it runs. */
   stop: (id: SessionId, ruleId: string) => invoke<void>("forward_stop", { id, ruleId }),
+  /** The rules closing these sessions would stop although another tab of their session could keep them running. */
+  keepCandidates: (ids: SessionId[]) => invoke<ForwardRule[]>("forward_keep_candidates", { ids }),
+  /** Moves those rules to another tab of their session once the sessions close. */
+  keep: (ids: SessionId[]) => invoke<void>("forward_keep", { ids }),
+  /** The rules running on the session's connection, to start again on reconnecting (see `openSession`). */
+  carry: (id: SessionId) => invoke<string[]>("forward_carry", { id }),
 };
 
 /** A serial port on this computer: its name (`/dev/cu.usbserial-1410`, `COM3`) and USB product. */
@@ -408,6 +418,8 @@ export async function openSession(
   onEvent: (event: SessionEvent) => void,
   shareFrom?: SessionId,
   log: LogOpen = { mode: "auto" },
+  /** Forwarding rules to start besides the automatic ones (see `forwards.carry`). */
+  carry: string[] = [],
 ): Promise<Session> {
   const output = new Channel<ArrayBuffer>();
   output.onmessage = onOutput;
@@ -420,7 +432,7 @@ export async function openSession(
     const { protocol, username, host, port } = target;
     id = await invoke<SessionId>("quick_open", { protocol, username, host, port, ...args });
   } else if (shareFrom !== undefined) id = await invoke<SessionId>("ssh_open_shared", { source: shareFrom, ...args });
-  else id = await invoke<SessionId>("profile_open", { profileId: target.profileId, ...args });
+  else id = await invoke<SessionId>("profile_open", { profileId: target.profileId, carry, ...args });
   return {
     id,
     write: (data) => invoke("session_write", { id, data }),

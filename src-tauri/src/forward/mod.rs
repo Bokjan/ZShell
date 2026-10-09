@@ -3,9 +3,11 @@
 //!
 //! Each running rule is one task that owns its listener (or, for remote rules, its route in
 //! [`RemoteRoutes`]) and a [`JoinSet`] of the connections it carries, so stopping a rule
-//! closes everything it opened. State changes are pushed as [`SessionEvent::Forward`] to every
-//! tab with a shell on the connection; a generation number keeps a replaced or stopped task
-//! from reporting after the fact.
+//! closes everything it opened. Rules belong to a saved session, which may have several
+//! connections (tabs opened separately): state changes are pushed as [`SessionEvent::Forward`]
+//! to every tab of the session through its [`Hub`], whichever connection runs the rule (see
+//! `ssh::Connections` for how a rule runs on one connection only). A generation number keeps a
+//! replaced or stopped task from reporting after the fact.
 
 mod dynamic;
 mod local;
@@ -112,23 +114,43 @@ pub enum ForwardState {
 }
 
 struct Running {
+    rule: ForwardRule,
     /// `None` once stopped; the task is kept so a restart can wait for it to wind down.
     generation: Option<u64>,
     task: JoinHandle<()>,
 }
 
-/// The tabs that show this connection's forwards, and the latest state of each rule, so a
-/// tab that attaches later (a duplicated tab) starts with the current states.
+/// The tabs of one saved session (on any of its connections), and the latest state of each
+/// of its rules, so a tab that attaches later starts with the current states.
+#[derive(Default)]
+pub struct Hub(Mutex<Watchers>);
+
 #[derive(Default)]
 struct Watchers {
     sinks: Vec<(SessionId, SessionSink)>,
     states: HashMap<String, ForwardState>,
 }
 
+impl Hub {
+    fn report(&self, rule_id: &str, state: ForwardState) {
+        let mut watchers = self.0.lock().unwrap();
+        for (_, sink) in &watchers.sinks {
+            sink.event(SessionEvent::Forward { rule_id: rule_id.to_owned(), state: state.clone() });
+        }
+        watchers.states.insert(rule_id.to_owned(), state);
+    }
+
+    fn print(&self, text: &str) {
+        for (_, sink) in &self.0.lock().unwrap().sinks {
+            sink.print(text);
+        }
+    }
+}
+
 struct Shared {
     handle: Arc<SshHandle>,
     routes: RemoteRoutes,
-    watchers: Mutex<Watchers>,
+    hub: Arc<Hub>,
     running: Mutex<HashMap<String, Running>>,
     /// In-flight `cancel-tcpip-forward` requests of stopped remote rules, by rule id.
     cancels: Mutex<HashMap<String, JoinHandle<()>>>,
@@ -139,20 +161,25 @@ struct Shared {
 pub struct Forwards(Arc<Shared>);
 
 impl Forwards {
-    pub fn new(handle: Arc<SshHandle>, routes: RemoteRoutes) -> Self {
+    /// `hub`: the session's, shared with its other connections.
+    pub fn new(handle: Arc<SshHandle>, routes: RemoteRoutes, hub: Arc<Hub>) -> Self {
         Self(Arc::new(Shared {
             handle,
             routes,
-            watchers: Mutex::default(),
+            hub,
             running: Mutex::new(HashMap::new()),
             cancels: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(0),
         }))
     }
 
+    pub fn hub(&self) -> Arc<Hub> {
+        self.0.hub.clone()
+    }
+
     /// Reports rule states to session `id` from now on, starting with the current ones.
     pub fn attach(&self, id: SessionId, sink: SessionSink) {
-        let mut watchers = self.0.watchers.lock().unwrap();
+        let mut watchers = self.0.hub.0.lock().unwrap();
         for (rule_id, state) in &watchers.states {
             sink.event(SessionEvent::Forward { rule_id: rule_id.clone(), state: state.clone() });
         }
@@ -160,7 +187,23 @@ impl Forwards {
     }
 
     pub fn detach(&self, id: SessionId) {
-        self.0.watchers.lock().unwrap().sinks.retain(|(watcher, _)| *watcher != id);
+        self.0.hub.0.lock().unwrap().sinks.retain(|(watcher, _)| *watcher != id);
+    }
+
+    /// Whether `rule_id` runs here (or is starting): not stopped, and not ended by a failure.
+    pub fn is_running(&self, rule_id: &str) -> bool {
+        self.0.running.lock().unwrap().get(rule_id).is_some_and(|r| r.generation.is_some() && !r.task.inner().is_finished())
+    }
+
+    /// Whether `rule_id` was started here and not stopped since (it may have failed).
+    pub fn has(&self, rule_id: &str) -> bool {
+        self.0.running.lock().unwrap().get(rule_id).is_some_and(|r| r.generation.is_some())
+    }
+
+    /// The rules running here.
+    pub fn running(&self) -> Vec<ForwardRule> {
+        let running = self.0.running.lock().unwrap();
+        running.values().filter(|r| r.generation.is_some() && !r.task.inner().is_finished()).map(|r| r.rule.clone()).collect()
     }
 
     /// Starts `rule`, restarting it if it is already running. With `announce`, a failure to
@@ -176,7 +219,7 @@ impl Forwards {
         });
         self.0.report(&rule.id, ForwardState::Starting);
         let task = tauri::async_runtime::spawn(run(rule.clone(), ctx, previous, announce));
-        running.insert(rule.id, Running { generation: Some(generation), task });
+        running.insert(rule.id.clone(), Running { rule, generation: Some(generation), task });
     }
 
     pub fn stop(&self, rule_id: &str) {
@@ -188,27 +231,30 @@ impl Forwards {
         self.0.report(rule_id, ForwardState::Stopped);
     }
 
-    /// Stops every rule without reporting; used when the connection closes.
-    pub fn stop_all(&self) {
-        for (_, old) in self.0.running.lock().unwrap().drain() {
+    /// Stops every rule, as the connection closes; the session's other tabs see them stop.
+    /// Returns the rules that were running, and their tasks, which end shortly.
+    pub fn stop_all(&self) -> (Vec<ForwardRule>, Vec<JoinHandle<()>>) {
+        let mut rules = Vec::new();
+        let mut tasks = Vec::new();
+        for (rule_id, old) in self.0.running.lock().unwrap().drain() {
+            if old.generation.is_some() && !old.task.inner().is_finished() {
+                self.0.report(&rule_id, ForwardState::Stopped);
+                rules.push(old.rule);
+            }
             old.task.abort();
+            tasks.push(old.task);
         }
+        (rules, tasks)
     }
 }
 
 impl Shared {
     fn report(&self, rule_id: &str, state: ForwardState) {
-        let mut watchers = self.watchers.lock().unwrap();
-        for (_, sink) in &watchers.sinks {
-            sink.event(SessionEvent::Forward { rule_id: rule_id.to_owned(), state: state.clone() });
-        }
-        watchers.states.insert(rule_id.to_owned(), state);
+        self.hub.report(rule_id, state);
     }
 
     fn print(&self, text: &str) {
-        for (_, sink) in &self.watchers.lock().unwrap().sinks {
-            sink.print(text);
-        }
+        self.hub.print(text);
     }
 }
 

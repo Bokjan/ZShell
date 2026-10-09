@@ -26,9 +26,10 @@ pub use connections::{Connection, Connections, SshHandle};
 use handler::ClientHandler;
 
 /// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
-/// terminal.
-pub async fn run(profile: Profile, route: Route, id: SessionId, mut io: TermIo, connections: Connections) {
-    let outcome = match start(&profile, &route, id, &mut io, &connections).await {
+/// terminal. `carry`: forwarding rules to start besides the automatic ones (those running
+/// before the tab reconnected).
+pub async fn run(profile: Profile, route: Route, id: SessionId, mut io: TermIo, connections: Connections, carry: Vec<String>) {
+    let outcome = match start(&profile, &route, id, &mut io, &connections, &carry).await {
         Ok((channel, disconnect)) => bridge(channel, &mut io, disconnect).await,
         Err(e) => Outcome::Failed(e.into()),
     };
@@ -118,6 +119,7 @@ async fn start(
     id: SessionId,
     io: &mut TermIo,
     connections: &Connections,
+    carry: &[String],
 ) -> Result<(Channel<Msg>, watch::Receiver<Option<String>>)> {
     let (transport, chain) = match tunnel(route, &profile.host, profile.port, io).await? {
         Some(Tunnel { stream, via, jumps }) => (Some((stream, via)), jumps),
@@ -130,9 +132,7 @@ async fn start(
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io.sink());
-    for rule in profile.forwards.iter().filter(|rule| rule.auto_start) {
-        connection.forwards().start(rule.clone(), true);
-    }
+    connections.auto_start(&connection, carry);
     let channel = open_shell(&session, profile, io).await?;
     Ok((channel, disconnect))
 }

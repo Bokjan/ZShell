@@ -15,6 +15,7 @@ import "@xterm/xterm/css/xterm.css";
 import {
   errorCode,
   errorMessage,
+  forwards,
   openSession,
   type CommandError,
   type ForwardState,
@@ -264,6 +265,8 @@ export function TerminalView({
     let generation = 0;
     // Used for the first attempt only: reconnecting always makes a new connection.
     let shareFrom = shareFromRef.current;
+    // Forwarding rules that ran before reconnecting by hand, until the new connection is up.
+    let carry: string[] = [];
     // The login commands not yet typed into the current shell, and the wait for its prompt.
     let loginPending: string[] = [];
     let loginTimer: ReturnType<typeof setTimeout> | undefined;
@@ -335,6 +338,7 @@ export function TerminalView({
           if (stale()) return;
           if (event.type === "connected") {
             attempt = 0;
+            carry = [];
             onStatusRef.current("connected");
             loginPending = [...loginCommandsRef.current];
             awaitPrompt();
@@ -379,6 +383,7 @@ export function TerminalView({
         },
         source,
         logOpenRef.current,
+        carry,
       )
         .then((s) => {
           handle = s;
@@ -413,11 +418,20 @@ export function TerminalView({
       sessionIdRef.current = null;
       setZmodemPhase(null);
       onSessionRef.current(null);
-      void old?.close().catch(ignore);
       attempt = 0;
       resetModes(term);
       term.write("\r\n");
-      connect();
+      // Leaves the old session's callbacks behind (see `connect`), and any pending retry.
+      const current = ++generation;
+      cancelRetry();
+      void (async () => {
+        // The rules running on the old connection start again on the new one.
+        if (old) {
+          carry = await forwards.carry(old.id).catch(() => []);
+          void old.close().catch(ignore);
+        }
+        if (!disposed && current === generation) connect();
+      })();
     };
 
     // Don't wait out the delay once the network is back (e.g. after waking from sleep).

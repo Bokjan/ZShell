@@ -19,6 +19,7 @@ import type { SessionStatus } from "./components/TerminalView";
 import { Tooltips } from "./components/Tooltip";
 import {
   configSetAside,
+  forwards,
   listProfiles,
   localShellName,
   localUsername,
@@ -29,6 +30,7 @@ import {
   tree,
   writeSession,
   type Folder,
+  type ForwardRule,
   type ForwardState,
   type LogOpen,
   type Profile,
@@ -38,7 +40,7 @@ import {
   type SessionTarget,
   type SetAsideFile,
 } from "./lib/api";
-import { basename } from "./lib/format";
+import { basename, forwardMapping } from "./lib/format";
 import {
   closeTabShortcutLabel,
   hasShiftShortcutModifiers,
@@ -175,6 +177,8 @@ function App() {
   // Panes waiting for the user to confirm closing them, with why the first busy one is busy;
   // `tabs` is how many tabs are being closed, 0 for a pane.
   const [closing, setClosing] = useState<Closing | null>(null);
+  // Closing panes whose connections run port forwarding another tab of the session could take over.
+  const [keeping, setKeeping] = useState<{ panes: number[]; ids: SessionId[]; rules: ForwardRule[] } | null>(null);
   // The window waiting for the user to confirm closing it (quitting), with how many tabs are busy.
   const [closingWindow, setClosingWindow] = useState<number | null>(null);
   // Title for local terminal tabs, e.g. "zsh".
@@ -380,6 +384,13 @@ function App() {
         ? tabsRef.current.filter((t) => request.keys.includes(t.key)).flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })))
         : [findPane(tabsRef.current, request.key)].filter((found) => found !== null);
     const keys = panes.map(({ pane }) => pane.key);
+    // Asking whether to keep the forwarding also asks whether to close.
+    const ids = panes.flatMap(({ pane }) => (pane.status === "connected" && pane.sessionId != null ? [pane.sessionId] : []));
+    const rules = ids.length > 0 ? await forwards.keepCandidates(ids).catch(() => []) : [];
+    if (rules.length > 0) {
+      setKeeping({ panes: keys, ids, rules });
+      return;
+    }
     if (settingsRef.current.tabs.confirmClose) {
       const reasons = await Promise.all(panes.map(({ pane }) => busyReason(pane)));
       const index = reasons.findIndex((reason) => reason !== null);
@@ -412,6 +423,15 @@ function App() {
   };
 
   const cancelClose = useCallback(() => setClosing(null), []);
+
+  const closeKeeping = async (keep: boolean) => {
+    if (!keeping) return;
+    setKeeping(null);
+    if (keep) await forwards.keep(keeping.ids).catch(console.error);
+    closePanes(keeping.panes);
+  };
+
+  const cancelKeeping = useCallback(() => setKeeping(null), []);
 
   // Closing the window (the close button, ⌘Q, Alt+F4) quits, ending every session at once,
   // so it always asks, whatever the setting for closing tabs.
@@ -899,6 +919,23 @@ function App() {
           onConfirm={confirmCloseWindow}
           onCancel={cancelCloseWindow}
         />
+      )}
+      {keeping && (
+        <ConfirmDialog
+          title={t("closeForwards.title")}
+          message={t("closeForwards.message")}
+          confirmLabel={t("closeForwards.keep")}
+          secondaryLabel={t("closeForwards.stop")}
+          onSecondary={() => void closeKeeping(false)}
+          onConfirm={() => void closeKeeping(true)}
+          onCancel={cancelKeeping}
+        >
+          <ul className="dialog-list">
+            {keeping.rules.map((rule) => (
+              <li key={rule.id}>{forwardMapping(rule)}</li>
+            ))}
+          </ul>
+        </ConfirmDialog>
       )}
       {closing && (
         <ConfirmDialog

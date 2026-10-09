@@ -103,8 +103,17 @@ pub fn profile_save(store: State<'_, ProfileStore>, profile: Profile, password: 
 }
 
 #[tauri::command]
-pub fn profile_set_forwards(store: State<'_, ProfileStore>, profile_id: String, forwards: Vec<ForwardRule>) -> Result<Profile> {
-    store.set_forwards(&profile_id, forwards)
+pub fn profile_set_forwards(
+    store: State<'_, ProfileStore>,
+    connections: State<'_, Connections>,
+    profile_id: String,
+    forwards: Vec<ForwardRule>,
+) -> Result<Profile> {
+    let profile = store.set_forwards(&profile_id, forwards)?;
+    // A rule deleted while running (perhaps on another tab's connection) stops.
+    let ids: Vec<String> = profile.forwards.iter().map(|rule| rule.id.clone()).collect();
+    connections.retain_forwards(&profile_id, &ids);
+    Ok(profile)
 }
 
 #[tauri::command]
@@ -258,6 +267,7 @@ pub fn profile_open(
     cols: u16,
     rows: u16,
     log: Option<LogOpen>,
+    carry: Option<Vec<String>>,
     on_output: Channel,
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
@@ -273,7 +283,8 @@ pub fn profile_open(
     let id = match profile.protocol {
         Protocol::Ssh => {
             let connections = connections.inner().clone();
-            sessions.spawn(on_output, on_event, size, slot, encoding, |id, io| ssh::run(profile, route, id, io, connections))
+            let carry = carry.unwrap_or_default();
+            sessions.spawn(on_output, on_event, size, slot, encoding, |id, io| ssh::run(profile, route, id, io, connections, carry))
         }
         Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| {
             let profile_id = profile.id.clone();
@@ -348,7 +359,7 @@ pub fn quick_open(
         Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, utf8, |_, io| telnet::run(profile, Route::default(), || None, io)),
         _ => {
             let connections = connections.inner().clone();
-            sessions.spawn(on_output, on_event, size, slot, utf8, |id, io| ssh::run(profile, Route::default(), id, io, connections))
+            sessions.spawn(on_output, on_event, size, slot, utf8, |id, io| ssh::run(profile, Route::default(), id, io, connections, Vec::new()))
         }
     };
     report_log(&sessions, id, opened);
@@ -722,19 +733,38 @@ pub fn transfer_cancel(transfers: State<'_, transfer::Transfers>, transfer_id: S
     transfers.cancel(&transfer_id);
 }
 
-/// Starts (or restarts with a new definition) a forwarding rule on the session's connection.
-/// Progress is reported through the session's event channel.
+/// Starts (or restarts with a new definition) a forwarding rule of the session's saved
+/// session: where it runs (perhaps another tab's connection), else on the session's
+/// connection. Progress is reported to the saved session's tabs as session events.
 #[tauri::command]
 pub fn forward_start(connections: State<'_, Connections>, id: SessionId, rule: ForwardRule) -> Result<()> {
-    let rule = rule.normalize()?;
-    connections.get(id)?.forwards().start(rule, false);
-    Ok(())
+    connections.start_forward(id, rule.normalize()?)
 }
 
+/// Stops a forwarding rule of the session's saved session, wherever it runs.
 #[tauri::command]
 pub fn forward_stop(connections: State<'_, Connections>, id: SessionId, rule_id: String) -> Result<()> {
-    connections.get(id)?.forwards().stop(&rule_id);
-    Ok(())
+    connections.stop_forward(id, &rule_id)
+}
+
+/// The forwarding rules that closing sessions `ids` would stop, although another tab of their
+/// saved session stays connected and could keep them running.
+#[tauri::command]
+pub fn forward_keep_candidates(connections: State<'_, Connections>, ids: Vec<SessionId>) -> Vec<ForwardRule> {
+    connections.forwards_to_keep(&ids)
+}
+
+/// Keeps the forwarding rules of sessions `ids` running on another tab of their saved session
+/// once they close.
+#[tauri::command]
+pub fn forward_keep(connections: State<'_, Connections>, ids: Vec<SessionId>) {
+    connections.keep_forwards(&ids);
+}
+
+/// The forwarding rules to start again when session `id` reconnects (see `profile_open`).
+#[tauri::command]
+pub fn forward_carry(connections: State<'_, Connections>, id: SessionId) -> Vec<String> {
+    connections.forwards_to_carry(id)
 }
 
 /// Answers a ZMODEM download (`sz`): save into `dir`, or the download folder.

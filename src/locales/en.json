@@ -664,6 +664,12 @@
     "window_other": "{count} tabs are still connected or running a program. Closing the window ends them.",
     "windowConfirm": "Close All"
   },
+  "closeForwards": {
+    "title": "Keep Port Forwarding Running?",
+    "message": "This port forwarding runs on the connection being closed. Another tab of the same session is still connected and can keep it running.",
+    "keep": "Keep Running",
+    "stop": "Stop"
+  },
   "paste": {
     "title": "Paste Multiple Lines?",
     "message_one": "The text ends with a line break, so it may run as a command as soon as it is pasted.",

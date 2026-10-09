@@ -2744,6 +2744,15 @@ body.resizing .terminal-view {
   padding-left: 18px;
   overflow-wrap: anywhere;
 }
+.dialog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-family: Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
 .set-aside-list .hint {
   display: block;
   margin: 2px 0 0;

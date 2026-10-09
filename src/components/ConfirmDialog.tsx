@@ -14,11 +14,26 @@ interface Props {
   children?: ReactNode;
   /** A checkbox such as "Don't ask again"; its state is passed to `onConfirm`. */
   checkboxLabel?: string;
+  /** A second way to go ahead, beside the confirm button. */
+  secondaryLabel?: string;
+  onSecondary?(): void;
   onConfirm(checked: boolean): void;
   onCancel(): void;
 }
 
-export function ConfirmDialog({ title, message, confirmLabel, cancelLabel, danger, children, checkboxLabel, onConfirm, onCancel }: Props) {
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  cancelLabel,
+  danger,
+  children,
+  checkboxLabel,
+  secondaryLabel,
+  onSecondary,
+  onConfirm,
+  onCancel,
+}: Props) {
   const { t } = useTranslation();
   const [checked, setChecked] = useState(false);
   useEffect(() => {
@@ -50,6 +65,11 @@ export function ConfirmDialog({ title, message, confirmLabel, cancelLabel, dange
           <button type="button" onClick={onCancel}>
             {cancelLabel ?? t("common.cancel")}
           </button>
+          {secondaryLabel && (
+            <button type="button" onClick={onSecondary}>
+              {secondaryLabel}
+            </button>
+          )}
           <button type="submit" className={danger ? "primary danger-fill" : "primary"} autoFocus>
             {confirmLabel}
           </button>
