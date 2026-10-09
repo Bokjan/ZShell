@@ -80,7 +80,7 @@ async fn password(session: &mut Session, profile: &Profile, io: &mut TermIo) -> 
 
 async fn password_methods(session: &mut Session, profile: &Profile, methods: &MethodSet, io: &mut TermIo) -> Result<()> {
     let user = profile.username.as_str();
-    let mut saved = secrets::get_password(&profile.id);
+    let mut saved = secrets::password(profile.id.clone()).await;
     if !methods.contains(&MethodKind::Password) && methods.contains(&MethodKind::KeyboardInteractive) {
         return keyboard_interactive(session, user, saved, io).await;
     }

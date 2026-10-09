@@ -111,7 +111,10 @@ pub async fn connect(
     if host.chars().any(|c| c.is_whitespace() || c.is_control()) {
         bail!(Error::new("profile.invalidHost"));
     }
-    let mut saved = proxy.uses_password().then(|| secrets::get_proxy_password(&proxy.id)).flatten();
+    let mut saved = match proxy.uses_password() {
+        true => secrets::proxy_password(proxy.id.clone()).await,
+        false => None,
+    };
     let mut attempts = 0;
     loop {
         let typed = saved.is_none();

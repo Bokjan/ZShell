@@ -2,13 +2,14 @@
 #![allow(clippy::too_many_arguments)]
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::backup;
-use crate::config::{Folder, Item, Profile, ProfileStore, Protocol, SetAside, SetAsideFile};
+use crate::config::{Additions, Folder, Item, Profile, ProfileStore, Protocol, SetAside, SetAsideFile};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
@@ -36,6 +37,27 @@ pub fn set_locale(locale: String) -> &'static str {
     i18n::set_locale(&locale)
 }
 
+/// Runs a command's blocking work (files, the keychain, the system's device list) on the
+/// blocking pool. Sync commands run on the main thread, where waiting freezes the window: on a
+/// slow or network disk, or while macOS asks about each keychain entry after an update.
+///
+/// Async commands may run in any order, though. Those replacing a whole value that the
+/// frontend sends again before the last one is done (the settings, the quick commands, a
+/// session's forwarding rules) stay sync, so that the last one sent is the one kept.
+async fn blocking<T: Send + 'static>(app: AppHandle, work: impl FnOnce(&AppHandle) -> Result<T> + Send + 'static) -> Result<T> {
+    tauri::async_runtime::spawn_blocking(move || work(&app)).await?
+}
+
+/// Starts a new session's log (see [`Logs::open`]) on the blocking pool.
+async fn open_log(app: &AppHandle, slot: &Arc<LogSlot>, how: Option<LogOpen>, auto: bool) -> Result<Option<Result<PathBuf>>> {
+    let slot = slot.clone();
+    blocking(app.clone(), move |app| {
+        let settings = app.state::<SettingsStore>().get().logs;
+        Ok(app.state::<Logs>().open(&slot, how.unwrap_or_default(), auto, &settings))
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
     store.get()
@@ -43,20 +65,24 @@ pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
 
 /// Stores the settings; returns them as validated (e.g. with the font size clamped).
 #[tauri::command]
-pub fn settings_set(store: State<'_, SettingsStore>, logs: State<'_, Logs>, settings: Settings) -> Result<Settings> {
+pub fn settings_set(app: AppHandle, store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {
     let settings = store.set(settings)?;
-    // A shorter retention applies right away.
-    logs.clean_up(settings.logs.keep_days);
+    // A shorter retention applies right away; checking every log can take a while.
+    let keep_days = settings.logs.keep_days;
+    tauri::async_runtime::spawn_blocking(move || app.state::<Logs>().clean_up(keep_days));
     Ok(settings)
 }
 
 /// The folder the sessions and settings are saved in; created if needed, to be shown in the
 /// file manager.
 #[tauri::command]
-pub fn config_directory(app: AppHandle) -> Result<PathBuf> {
-    let dir = app.path().app_config_dir()?;
-    let _ = std::fs::create_dir_all(&dir);
-    Ok(dir)
+pub async fn config_directory(app: AppHandle) -> Result<PathBuf> {
+    blocking(app, |app| {
+        let dir = app.path().app_config_dir()?;
+        let _ = std::fs::create_dir_all(&dir);
+        Ok(dir)
+    })
+    .await
 }
 
 /// The data files that could not be read at startup and were set aside; reported once.
@@ -92,14 +118,17 @@ pub struct Saved<T> {
 
 /// `password`: `None` keeps the stored password, `Some("")` clears it.
 #[tauri::command]
-pub fn profile_save(store: State<'_, ProfileStore>, profile: Profile, password: Option<String>) -> Result<Saved<Profile>> {
-    let profile = store.save(profile)?;
-    let stored = match password.as_deref() {
-        None => Ok(()),
-        Some("") => secrets::delete_password(&profile.id),
-        Some(password) => secrets::set_password(&profile.id, password),
-    };
-    Ok(Saved { saved: profile, password_error: stored.err().map(Error::from) })
+pub async fn profile_save(app: AppHandle, profile: Profile, password: Option<String>) -> Result<Saved<Profile>> {
+    blocking(app, move |app| {
+        let profile = app.state::<ProfileStore>().save(profile)?;
+        let stored = match password.as_deref() {
+            None => Ok(()),
+            Some("") => secrets::delete_password(&profile.id),
+            Some(password) => secrets::set_password(&profile.id, password),
+        };
+        Ok(Saved { saved: profile, password_error: stored.err().map(Error::from) })
+    })
+    .await
 }
 
 #[tauri::command]
@@ -124,28 +153,35 @@ pub fn proxies_list(store: State<'_, ProfileStore>) -> Vec<Proxy> {
 /// `password`: `None` keeps the stored password, `Some("")` clears it. A proxy without a user
 /// name keeps none.
 #[tauri::command]
-pub fn proxy_save(store: State<'_, ProfileStore>, proxy: Proxy, password: Option<String>) -> Result<Saved<Proxy>> {
-    let had_password = store.proxy(&proxy.id).is_ok_and(|previous| previous.uses_password());
-    let proxy = store.save_proxy(proxy)?;
-    let stored = match password.as_deref() {
-        // The keychain is only touched when there can be a password to remove.
-        _ if !proxy.uses_password() => match had_password {
-            true => secrets::delete_proxy_password(&proxy.id),
-            false => Ok(()),
-        },
-        None => Ok(()),
-        Some("") => secrets::delete_proxy_password(&proxy.id),
-        Some(password) => secrets::set_proxy_password(&proxy.id, password),
-    };
-    Ok(Saved { saved: proxy, password_error: stored.err().map(Error::from) })
+pub async fn proxy_save(app: AppHandle, proxy: Proxy, password: Option<String>) -> Result<Saved<Proxy>> {
+    blocking(app, move |app| {
+        let store = app.state::<ProfileStore>();
+        let had_password = store.proxy(&proxy.id).is_ok_and(|previous| previous.uses_password());
+        let proxy = store.save_proxy(proxy)?;
+        let stored = match password.as_deref() {
+            // The keychain is only touched when there can be a password to remove.
+            _ if !proxy.uses_password() => match had_password {
+                true => secrets::delete_proxy_password(&proxy.id),
+                false => Ok(()),
+            },
+            None => Ok(()),
+            Some("") => secrets::delete_proxy_password(&proxy.id),
+            Some(password) => secrets::set_proxy_password(&proxy.id, password),
+        };
+        Ok(Saved { saved: proxy, password_error: stored.err().map(Error::from) })
+    })
+    .await
 }
 
 /// Deletes a proxy no session uses (`proxy.inUse` otherwise), with its password.
 #[tauri::command]
-pub fn proxy_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
-    store.delete_proxy(&id)?;
-    secrets::delete_proxy_password(&id)?;
-    Ok(())
+pub async fn proxy_delete(app: AppHandle, id: String) -> Result<()> {
+    blocking(app, move |app| {
+        app.state::<ProfileStore>().delete_proxy(&id)?;
+        secrets::delete_proxy_password(&id)?;
+        Ok(())
+    })
+    .await
 }
 
 /// The default OpenSSH client config path (`~/.ssh/config`), whether or not it exists.
@@ -162,35 +198,39 @@ pub fn known_hosts_path() -> Option<PathBuf> {
 
 /// The host keys in known_hosts; empty if there is no file.
 #[tauri::command]
-pub fn known_hosts_list() -> Result<Vec<known_hosts::Entry>> {
-    known_hosts::list()
+pub async fn known_hosts_list(app: AppHandle) -> Result<Vec<known_hosts::Entry>> {
+    blocking(app, |_| known_hosts::list()).await
 }
 
 /// The lines of the entries for a host (`host`, `host:port` or `[host]:port`), including
 /// hashed ones.
 #[tauri::command]
-pub fn known_hosts_find(query: String) -> Result<Vec<usize>> {
-    known_hosts::find(&query)
+pub async fn known_hosts_find(app: AppHandle, query: String) -> Result<Vec<usize>> {
+    blocking(app, move |_| known_hosts::find(&query)).await
 }
 
 /// Removes the entry on `line`, if the line still reads `text`.
 #[tauri::command]
-pub fn known_hosts_remove(line: usize, text: String) -> Result<()> {
-    known_hosts::remove(line, &text)
+pub async fn known_hosts_remove(app: AppHandle, line: usize, text: String) -> Result<()> {
+    blocking(app, move |_| known_hosts::remove(line, &text)).await
 }
 
 #[tauri::command]
-pub fn ssh_config_scan(store: State<'_, ProfileStore>, path: PathBuf) -> Result<Vec<import::Candidate>> {
-    import::scan(&path, &store.list())
+pub async fn ssh_config_scan(app: AppHandle, path: PathBuf) -> Result<Vec<import::Candidate>> {
+    blocking(app, move |app| import::scan(&path, &app.state::<ProfileStore>().list())).await
 }
 
 /// Imports the selected hosts (and the jump hosts and proxy commands they need); returns the
 /// new profiles.
 #[tauri::command]
-pub fn ssh_config_import(store: State<'_, ProfileStore>, path: PathBuf, aliases: Vec<String>) -> Result<Vec<Profile>> {
-    let (proxies, profiles) = import::plan(&path, &aliases, &store.list(), &store.proxies())?;
-    store.add_all(Vec::new(), proxies, profiles.clone())?;
-    Ok(profiles)
+pub async fn ssh_config_import(app: AppHandle, path: PathBuf, aliases: Vec<String>) -> Result<Vec<Profile>> {
+    blocking(app, move |app| {
+        app.state::<ProfileStore>().add_all(|here| {
+            let (proxies, profiles) = import::plan(&path, &aliases, here.profiles, here.proxies)?;
+            Ok(Additions { proxies, profiles, ..Additions::default() })
+        })
+    })
+    .await
 }
 
 #[tauri::command]
@@ -200,69 +240,75 @@ pub fn folders_list(store: State<'_, ProfileStore>) -> Vec<Folder> {
 
 /// Creates a folder (empty id) or renames one; returns it as saved.
 #[tauri::command]
-pub fn folder_save(store: State<'_, ProfileStore>, folder: Folder) -> Result<Folder> {
-    store.save_folder(folder)
+pub async fn folder_save(app: AppHandle, folder: Folder) -> Result<Folder> {
+    blocking(app, move |app| app.state::<ProfileStore>().save_folder(folder)).await
 }
 
 /// Deletes a folder; its sessions and subfolders move up into its parent.
 #[tauri::command]
-pub fn folder_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
-    store.delete_folder(&id)
+pub async fn folder_delete(app: AppHandle, id: String) -> Result<()> {
+    blocking(app, move |app| app.state::<ProfileStore>().delete_folder(&id)).await
 }
 
 /// Moves a session or folder into `parent` (`None`: top level), before `before` (a session or
 /// folder of the same kind) or at the end.
 #[tauri::command]
-pub fn tree_move(store: State<'_, ProfileStore>, item: Item, parent: Option<String>, before: Option<String>) -> Result<()> {
-    store.move_item(item, parent, before)
+pub async fn tree_move(app: AppHandle, item: Item, parent: Option<String>, before: Option<String>) -> Result<()> {
+    blocking(app, move |app| app.state::<ProfileStore>().move_item(item, parent, before)).await
 }
 
 /// Copies a session, with its saved password, as `name` right after it.
 #[tauri::command]
-pub fn profile_duplicate(store: State<'_, ProfileStore>, id: String, name: String) -> Result<Profile> {
-    let copy = store.duplicate(&id, &name)?;
-    if let Some(password) = secrets::get_password(&id) {
-        secrets::set_password(&copy.id, &password)?;
-    }
-    Ok(copy)
+pub async fn profile_duplicate(app: AppHandle, id: String, name: String) -> Result<Profile> {
+    blocking(app, move |app| {
+        let copy = app.state::<ProfileStore>().duplicate(&id, &name)?;
+        if let Some(password) = secrets::get_password(&id) {
+            secrets::set_password(&copy.id, &password)?;
+        }
+        Ok(copy)
+    })
+    .await
 }
 
 /// Writes all sessions, folders and proxies (without passwords) to `path`.
 #[tauri::command]
-pub fn sessions_export(store: State<'_, ProfileStore>, path: PathBuf) -> Result<()> {
-    backup::export(&path, store.folders(), store.proxies(), store.list())
+pub async fn sessions_export(app: AppHandle, path: PathBuf) -> Result<()> {
+    blocking(app, move |app| {
+        let store = app.state::<ProfileStore>();
+        backup::export(&path, store.folders(), store.proxies(), store.list())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn sessions_import_scan(store: State<'_, ProfileStore>, path: PathBuf) -> Result<Vec<backup::Candidate>> {
-    backup::scan(&path, &store.list())
+pub async fn sessions_import_scan(app: AppHandle, path: PathBuf) -> Result<Vec<backup::Candidate>> {
+    blocking(app, move |app| backup::scan(&path, &app.state::<ProfileStore>().list())).await
 }
 
 /// Imports the sessions `ids` (ids in the file) and what they need (jump hosts, proxies,
 /// folders).
 #[tauri::command]
-pub fn sessions_import(store: State<'_, ProfileStore>, path: PathBuf, ids: Vec<String>) -> Result<()> {
-    let (profiles, folders, proxies) = (store.list(), store.folders(), store.proxies());
-    let here = backup::Here { profiles: &profiles, folders: &folders, proxies: &proxies };
-    let plan = backup::plan(&path, &ids, &here)?;
-    store.add_all(plan.folders, plan.proxies, plan.profiles)
+pub async fn sessions_import(app: AppHandle, path: PathBuf, ids: Vec<String>) -> Result<()> {
+    blocking(app, move |app| app.state::<ProfileStore>().add_all(|here| backup::plan(&path, &ids, here)).map(drop)).await
 }
 
 #[tauri::command]
-pub fn profile_delete(store: State<'_, ProfileStore>, id: String) -> Result<()> {
-    store.delete(&id)?;
-    secrets::delete_password(&id)?;
-    Ok(())
+pub async fn profile_delete(app: AppHandle, id: String) -> Result<()> {
+    blocking(app, move |app| {
+        app.state::<ProfileStore>().delete(&id)?;
+        secrets::delete_password(&id)?;
+        Ok(())
+    })
+    .await
 }
 
 /// Opens a session from a saved profile, with the backend for its protocol.
 #[tauri::command]
-pub fn profile_open(
+pub async fn profile_open(
+    app: AppHandle,
     store: State<'_, ProfileStore>,
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
-    logs: State<'_, Logs>,
-    settings: State<'_, SettingsStore>,
     profile_id: String,
     cols: u16,
     rows: u16,
@@ -277,7 +323,7 @@ pub fn profile_open(
         _ => store.route(&profile)?,
     };
     let slot = LogSlot::new(LogInfo { profile: Some(profile.id.clone()), ..log_info(&profile) });
-    let opened = logs.open(&slot, log.unwrap_or_default(), profile.auto_log, &settings.get().logs);
+    let opened = open_log(&app, &slot, log, profile.auto_log).await?;
     let encoding = encoding::for_profile(&profile.encoding);
     let size = (cols, rows);
     let id = match profile.protocol {
@@ -288,7 +334,9 @@ pub fn profile_open(
         }
         Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| {
             let profile_id = profile.id.clone();
-            telnet::run(profile, route, move || secrets::get_password(&profile_id), io)
+            // Looked up in the session's task when the server asks; `block_in_place` lets the
+            // other tasks move to other threads while the keychain waits.
+            telnet::run(profile, route, move || tokio::task::block_in_place(|| secrets::get_password(&profile_id)), io)
         }),
         Protocol::Serial => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| serial::run(profile.serial, io)),
     };
@@ -322,11 +370,10 @@ fn log_event(result: Result<PathBuf>) -> SessionEvent {
 /// Opens an SSH or Telnet session to an address typed into the search box, without a saved
 /// profile. SSH without a user name uses the local one, like `ssh host`.
 #[tauri::command]
-pub fn quick_open(
+pub async fn quick_open(
+    app: AppHandle,
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
-    logs: State<'_, Logs>,
-    settings: State<'_, SettingsStore>,
     protocol: Protocol,
     username: String,
     host: String,
@@ -352,7 +399,7 @@ pub fn quick_open(
     }
     // Logged only when started by hand: there is no session to record automatically.
     let slot = LogSlot::new(log_info(&profile));
-    let opened = logs.open(&slot, log.unwrap_or_default(), false, &settings.get().logs);
+    let opened = open_log(&app, &slot, log, false).await?;
     let size = (cols, rows);
     let utf8 = encoding_rs::UTF_8;
     let id = match protocol {
@@ -382,12 +429,11 @@ pub fn local_username() -> String {
 /// without connecting or authenticating again. Fails with `session.notConnected` if that
 /// session has no connection (any more).
 #[tauri::command]
-pub fn ssh_open_shared(
+pub async fn ssh_open_shared(
+    app: AppHandle,
     store: State<'_, ProfileStore>,
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
-    logs: State<'_, Logs>,
-    settings: State<'_, SettingsStore>,
     source: SessionId,
     cols: u16,
     rows: u16,
@@ -405,7 +451,7 @@ pub fn ssh_open_shared(
     let info = sessions.sink(source)?.log().info.clone();
     let auto = info.profile.as_ref().and_then(|id| store.get(id).ok()).is_some_and(|p| p.auto_log);
     let slot = LogSlot::new(info);
-    let opened = logs.open(&slot, log.unwrap_or_default(), auto, &settings.get().logs);
+    let opened = open_log(&app, &slot, log, auto).await?;
     let encoding = encoding::for_profile(&connection.profile().encoding);
     let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding, |id, io| {
         connections.attach(id, connection.clone(), io.sink());
@@ -417,37 +463,34 @@ pub fn ssh_open_shared(
 
 /// Starts the user's default shell in a local pseudo terminal.
 #[tauri::command]
-pub fn local_open(
+pub async fn local_open(
+    app: AppHandle,
     sessions: State<'_, SessionManager>,
-    logs: State<'_, Logs>,
     settings: State<'_, SettingsStore>,
     cols: u16,
     rows: u16,
     log: Option<LogOpen>,
     on_output: Channel,
     on_event: Channel<SessionEvent>,
-) -> SessionId {
+) -> Result<SessionId> {
     let shell = pty::default_shell();
-    let settings = settings.get().logs;
     let slot = LogSlot::new(LogInfo { session: shell.name(), host: "localhost".to_owned(), user: local_username(), profile: None });
-    let opened = logs.open(&slot, log.unwrap_or_default(), settings.auto_local, &settings);
+    let opened = open_log(&app, &slot, log, settings.get().logs.auto_local).await?;
     let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding_rs::UTF_8, |_, io| pty::run(shell, io));
     report_log(&sessions, id, opened);
-    id
+    Ok(id)
 }
 
 /// Starts logging a session by hand, in a new file; returns its path.
 #[tauri::command]
-pub fn session_log_start(
-    sessions: State<'_, SessionManager>,
-    logs: State<'_, Logs>,
-    settings: State<'_, SettingsStore>,
-    id: SessionId,
-) -> Result<PathBuf> {
-    let sink = sessions.sink(id)?;
-    let path = logs.start(sink.log(), &settings.get().logs)?;
-    sink.event(log_event(Ok(path.clone())));
-    Ok(path)
+pub async fn session_log_start(app: AppHandle, id: SessionId) -> Result<PathBuf> {
+    blocking(app, move |app| {
+        let sink = app.state::<SessionManager>().sink(id)?;
+        let path = app.state::<Logs>().start(sink.log(), &app.state::<SettingsStore>().get().logs)?;
+        sink.event(log_event(Ok(path.clone())));
+        Ok(path)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -460,32 +503,39 @@ pub fn session_log_stop(sessions: State<'_, SessionManager>, logs: State<'_, Log
 
 /// How many logs ZShell has written (and still exist), and their size.
 #[tauri::command]
-pub fn logs_summary(logs: State<'_, Logs>) -> LogSummary {
-    logs.summary()
+pub async fn logs_summary(app: AppHandle) -> Result<LogSummary> {
+    blocking(app, |app| Ok(app.state::<Logs>().summary())).await
 }
 
 /// Where new logs go; created if needed, to be shown in the file manager.
 #[tauri::command]
-pub fn logs_directory(logs: State<'_, Logs>, settings: State<'_, SettingsStore>) -> PathBuf {
-    let dir = logs.directory(&settings.get().logs);
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+pub async fn logs_directory(app: AppHandle) -> Result<PathBuf> {
+    blocking(app, |app| {
+        let dir = app.state::<Logs>().directory(&app.state::<SettingsStore>().get().logs);
+        let _ = std::fs::create_dir_all(&dir);
+        Ok(dir)
+    })
+    .await
 }
 
 /// How many logs a saved session has.
 #[tauri::command]
-pub fn logs_count(logs: State<'_, Logs>, profile_id: String) -> usize {
-    logs.count(&profile_id)
+pub async fn logs_count(app: AppHandle, profile_id: String) -> Result<usize> {
+    blocking(app, move |app| Ok(app.state::<Logs>().count(&profile_id))).await
 }
 
 /// Deletes the logs of a saved session, or all logs (`profile_id` absent), except those
 /// being written; returns how many were deleted.
 #[tauri::command]
-pub fn logs_delete(logs: State<'_, Logs>, profile_id: Option<String>) -> usize {
-    match profile_id {
-        Some(id) => logs.delete_for(&id),
-        None => logs.delete_all(),
-    }
+pub async fn logs_delete(app: AppHandle, profile_id: Option<String>) -> Result<usize> {
+    blocking(app, move |app| {
+        let logs = app.state::<Logs>();
+        Ok(match profile_id {
+            Some(id) => logs.delete_for(&id),
+            None => logs.delete_all(),
+        })
+    })
+    .await
 }
 
 /// Short name of the default local shell, e.g. "zsh" or "pwsh"; none when the system doesn't
@@ -508,8 +558,8 @@ pub fn session_break(sessions: State<'_, SessionManager>, id: SessionId) -> Resu
 
 /// The serial ports on this computer.
 #[tauri::command]
-pub fn serial_ports() -> Vec<serial::PortInfo> {
-    serial::ports()
+pub async fn serial_ports(app: AppHandle) -> Result<Vec<serial::PortInfo>> {
+    blocking(app, |_| Ok(serial::ports())).await
 }
 
 #[tauri::command]
@@ -649,8 +699,8 @@ fn download_dir(app: &AppHandle, settings: &SettingsStore) -> Result<PathBuf> {
 
 /// The folder downloads go to without asking, for the settings.
 #[tauri::command]
-pub fn downloads_directory(app: AppHandle, settings: State<'_, SettingsStore>) -> Result<PathBuf> {
-    download_dir(&app, &settings)
+pub async fn downloads_directory(app: AppHandle) -> Result<PathBuf> {
+    blocking(app, |app| download_dir(app, &app.state::<SettingsStore>())).await
 }
 
 /// Downloads a remote file into a temporary folder, opens it in the editor and watches it;
@@ -773,19 +823,16 @@ pub fn forward_carry(connections: State<'_, Connections>, id: SessionId) -> Vec<
 
 /// Answers a ZMODEM download (`sz`): save into `dir`, or the download folder.
 #[tauri::command]
-pub fn zmodem_save_to(
-    app: AppHandle,
-    sessions: State<'_, SessionManager>,
-    settings: State<'_, SettingsStore>,
-    id: SessionId,
-    dir: Option<PathBuf>,
-) -> Result<()> {
-    let dir = match dir {
-        Some(dir) => dir,
-        None => download_dir(&app, &settings)?,
-    };
-    sessions.zmodem(id)?.reply(zmodem::Reply::Destination(dir));
-    Ok(())
+pub async fn zmodem_save_to(app: AppHandle, id: SessionId, dir: Option<PathBuf>) -> Result<()> {
+    blocking(app, move |app| {
+        let dir = match dir {
+            Some(dir) => dir,
+            None => download_dir(app, &app.state::<SettingsStore>())?,
+        };
+        app.state::<SessionManager>().zmodem(id)?.reply(zmodem::Reply::Destination(dir));
+        Ok(())
+    })
+    .await
 }
 
 /// Answers a ZMODEM upload (`rz`) with the files to send.

@@ -385,6 +385,21 @@ pub struct ProfileStore {
     state: Mutex<State>,
 }
 
+/// The sessions, folders and proxies an import is planned against.
+pub struct Snapshot<'a> {
+    pub profiles: &'a [Profile],
+    pub folders: &'a [Folder],
+    pub proxies: &'a [Proxy],
+}
+
+/// What an import adds.
+#[derive(Default)]
+pub struct Additions {
+    pub folders: Vec<Folder>,
+    pub proxies: Vec<Proxy>,
+    pub profiles: Vec<Profile>,
+}
+
 #[derive(Clone, Default)]
 struct State {
     profiles: Vec<Profile>,
@@ -564,14 +579,19 @@ impl ProfileStore {
         Ok(Route { jumps, proxy })
     }
 
-    /// Adds folders, proxies and profiles that already have ids (from an import) in one write.
-    pub fn add_all(&self, folders: Vec<Folder>, proxies: Vec<Proxy>, profiles: Vec<Profile>) -> Result<()> {
+    /// Adds what `plan` makes of the current sessions, folders and proxies in one write (an
+    /// import: new folders, proxies and profiles that already have ids); returns the new
+    /// profiles. Planning under the store's lock keeps two imports at once from both adding
+    /// the same thing.
+    pub fn add_all(&self, plan: impl FnOnce(&Snapshot) -> Result<Additions>) -> Result<Vec<Profile>> {
         self.update(|state| {
+            let snapshot = Snapshot { profiles: &state.profiles, folders: &state.folders, proxies: &state.proxies };
+            let Additions { folders, proxies, profiles } = plan(&snapshot)?;
             state.folders.extend(folders);
             state.proxies.extend(proxies);
-            state.profiles.extend(profiles);
+            state.profiles.extend(profiles.iter().cloned());
             state.repair();
-            Ok(())
+            Ok(profiles)
         })
     }
 

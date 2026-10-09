@@ -1,5 +1,10 @@
 //! Session and proxy passwords in the OS credential store (macOS Keychain / Windows Credential
 //! Manager).
+//!
+//! The calls block, sometimes for long: after an update the app's signature changes and macOS
+//! asks the user again for every entry. Async code uses [`password`] and [`proxy_password`],
+//! which wait on the blocking pool, so that the other sessions keep running meanwhile;
+//! commands run the rest on the blocking pool too.
 
 use keyring::Entry;
 
@@ -35,4 +40,14 @@ pub fn set_proxy_password(proxy_id: &str, password: &str) -> keyring::Result<()>
 
 pub fn delete_proxy_password(proxy_id: &str) -> keyring::Result<()> {
     delete_password(&proxy_entry(proxy_id))
+}
+
+/// [`get_password`] from async code.
+pub async fn password(profile_id: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || get_password(&profile_id)).await.ok().flatten()
+}
+
+/// [`get_proxy_password`] from async code.
+pub async fn proxy_password(proxy_id: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || get_proxy_password(&proxy_id)).await.ok().flatten()
 }

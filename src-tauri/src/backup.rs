@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{write_json_atomic, Folder, Profile, Protocol, SerialOptions};
+use crate::config::{write_json_atomic, Additions, Folder, Profile, Protocol, SerialOptions, Snapshot};
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::proxy::{Proxy, ProxyKind};
@@ -92,7 +92,7 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Vec<Candidate>> {
 /// What to add for importing the sessions `selected` (ids in the file): new folders, proxies
 /// and profiles, with new ids. Jump hosts and proxies come along unless they already exist
 /// here, in which case the existing one is used; folders are matched by name and merged.
-pub fn plan(path: &Path, selected: &[String], here: &Here) -> Result<Plan> {
+pub fn plan(path: &Path, selected: &[String], here: &Snapshot) -> Result<Additions> {
     let (profiles, folders) = (here.profiles, here.folders);
     let file = read(path)?;
     let by_id: HashMap<&str, &Profile> = file.profiles.iter().map(|p| (p.id.as_str(), p)).collect();
@@ -161,21 +161,7 @@ pub fn plan(path: &Path, selected: &[String], here: &Here) -> Result<Plan> {
             Ok(profile)
         })
         .collect::<Result<_>>()?;
-    Ok(Plan { folders: merger.added, proxies, profiles: new_profiles })
-}
-
-/// What already exists, for an import to match against.
-pub struct Here<'a> {
-    pub profiles: &'a [Profile],
-    pub folders: &'a [Folder],
-    pub proxies: &'a [Proxy],
-}
-
-/// What an import adds.
-pub struct Plan {
-    pub folders: Vec<Folder>,
-    pub proxies: Vec<Proxy>,
-    pub profiles: Vec<Profile>,
+    Ok(Additions { folders: merger.added, proxies, profiles: new_profiles })
 }
 
 fn read(path: &Path) -> Result<SessionsFile> {
@@ -293,8 +279,8 @@ mod tests {
         assert_eq!(candidates[1].folder, ["Work", "DB"]);
         assert_eq!(candidates[1].jump_hosts, ["bastion"]);
 
-        let here = Here { profiles: &here_profiles, folders: &here_folders, proxies: &[] };
-        let Plan { folders: new_folders, profiles: new_profiles, proxies } = plan(&path, &["db".into()], &here).unwrap();
+        let here = Snapshot { profiles: &here_profiles, folders: &here_folders, proxies: &[] };
+        let Additions { folders: new_folders, profiles: new_profiles, proxies } = plan(&path, &["db".into()], &here).unwrap();
         assert!(proxies.is_empty());
         // Only "DB" is new, inside the existing "Work".
         assert_eq!(new_folders.len(), 1);
@@ -337,8 +323,8 @@ mod tests {
         assert_ne!(candidates[2].id, candidates[3].id);
 
         let ids: Vec<String> = candidates.iter().map(|c| c.id.clone()).collect();
-        let here = Here { profiles: std::slice::from_ref(&telnet), folders: &[], proxies: &[] };
-        let Plan { profiles: new, .. } = plan(&path, &ids, &here).unwrap();
+        let here = Snapshot { profiles: std::slice::from_ref(&telnet), folders: &[], proxies: &[] };
+        let Additions { profiles: new, .. } = plan(&path, &ids, &here).unwrap();
         let names: Vec<&str> = new.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["router", "db", "a", "b"]);
         // The file's own router is the jump host, not the Telnet session.
@@ -385,7 +371,7 @@ mod tests {
 
         // Here the SOCKS proxy exists under another name.
         let here_proxies = vec![proxy("mine", "office", ProxyKind::Socks5, "")];
-        let here = Here { profiles: &[], folders: &[], proxies: &here_proxies };
+        let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
         let ids: Vec<String> = ["a", "b", "c", "d"].map(String::from).to_vec();
         let plan = plan(&path, &ids, &here).unwrap();
         // Only the command proxy is new; the unused one isn't imported.
