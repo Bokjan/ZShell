@@ -37,6 +37,7 @@
 
 | 方面 | 差距 | 优先级 |
 |---|---|---|
+| 凭据 | 密码逐条存在系统凭据存储里，导出不能带密码 | P1 |
 | 杂项 | 没有应用锁 | P2 |
 
 ## 里程碑
@@ -63,22 +64,42 @@
 | **M14 代理** ✅ | 出口代理（SOCKS5 / HTTP）与 ProxyCommand | |
 | **M15 分屏** ✅ | 标签页内左右 / 上下分屏 | |
 | **M16 known_hosts 管理** ✅ | 查看、搜索、删除主机密钥记录 | |
-| **M17 应用锁** | 用 Touch ID / Windows Hello 锁定应用 | P2 |
-| **M18 翻译** | 语言设置界面，首批简体中文 | — |
-| **M19 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
+| **M17 密码存储与带密码导出** | 密码加密存文件、主密钥进系统凭据存储；导出 / 导入可带密码（口令加密） | P1 |
+| **M18 应用锁** | 用 Touch ID / Windows Hello 锁定应用 | P2 |
+| **M19 翻译** | 语言设置界面，首批简体中文 | — |
+| **M20 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
 
-### M17 应用锁
+### M17 密码存储与带密码导出
+
+**为什么**：现在每个会话、每个代理的密码各是系统凭据存储里的一条（macOS 钥匙串的应用程序密码，服务 `org.boyin.zshell`、帐户为会话 id 或 `proxy:<id>`；Windows 凭据管理器的普通凭据 `<帐户>.org.boyin.zshell`）。ad-hoc 签名每个版本都不同，macOS 升级后可能逐条要求重新授权；条目分散，也不便于 M18 用生物识别保护。改为一把主密钥：凭据存储里只有一条，密码加密后存在自己的文件里。导出时再用用户输入的口令加密，换一台电脑也能带上密码。
+
+**密码存储**
+- 主密钥：32 字节随机数（`ring::rand::SystemRandom`），第一次保存密码时生成，存在系统凭据存储里一条（服务 `org.boyin.zshell`、帐户 `master-key`，值为 base64）。只有这一条，其余密码都不再进凭据存储。
+- 密码文件：配置目录下的 `secrets.json`（unix 上权限 0600，经 `write_json_atomic` 原子写入）：`{ format: "zshell-secrets", version: 1, keyId, entries: { <帐户>: { nonce, data } } }`。帐户沿用现在的命名（会话 id、`proxy:<id>`）。每条用 AES-256-GCM（`ring::aead`）单独加密，每次加密一个新的 96 位随机 nonce，附加数据（AAD）为帐户名，防止把一条的密文挪给另一条。`keyId` 是主密钥 SHA-256 的前 8 字节，用来区分"主密钥不对"（钥匙串被重置、换了电脑但拷了配置目录）与"某条损坏"。ring 已在依赖树里（russh 用它），不引入新的 crate。
+- 读不出时：主密钥不存在（`NoEntry`）或 `keyId` 不符时，所有已保存的密码视为没有，连接时照常在终端里询问，并在设置里提示"已保存的密码无法解密"，可一键清除；之后保存新密码时生成新主密钥，丢弃无法解密的条目。凭据存储暂时不可用（被拒绝、钥匙串锁定等其他错误）时不生成新密钥，保存报错，避免误删。
+- 迁移：读取时先查 `secrets.json`，没有再查旧的逐条凭据；读到旧条目就写进文件并删除旧条目。另外启动后在后台对所有会话和代理做一次同样的迁移（文件里记 `migrated`，只做一次；失败的条目留给读取时的迁移）。macOS 上旧条目的授权提示在迁移时出现一次，之后只剩主密钥一条。
+- 其余行为不变：保存会话时清空密码即删除该条，删除会话 / 代理时删除其条目，复制会话时复制密码；Telnet 登录密码与 SSH 共用会话的那一条。
+- MSIX：凭据存储不受文件系统虚拟化影响，Store 版与 GitHub 版共用主密钥；`secrets.json` 与其他配置文件一样按 M20 所述的虚拟化规则：已有的文件两版共用，Store 版新建的文件只有它自己看得到。
+- M18 应用锁之后可以把主密钥改成要求生物识别的钥匙串项，所有密码随之受保护（需开发者证书签名，见 M18）。
+
+**带密码导出 / 导入**
+- 导出对话框增加"包含保存的密码"，勾选后输入两次导出口令（不保存、无法找回，界面上说明）。文件增加可选的 `passwords` 一节：`{ kdf: { name: "pbkdf2-sha256", iterations: 600000, salt }, cipher: "aes-256-gcm", nonce, data }`，`data` 解密后是 `{ <文件中的帐户>: 密码 }`（会话 id、`proxy:<id>`，即文件里的 id）。PBKDF2-HMAC-SHA256 60 万次（OWASP 的建议值），用 ring 的 `pbkdf2`，不引入 Argon2 依赖；AAD 为 `zshell-sessions-passwords-v1`。
+- 文件仍是 `format: "zshell-sessions"`、`version: 1`：旧版本读取时忽略不认识的 `passwords`，照常导入（不带密码），不需要升格式版本。
+- 导入：文件带密码时，导入对话框多一个口令输入框（留空则不导入密码）；口令错误（GCM 校验失败）时提示并可重试（`backup.wrongPassphrase`），不影响已选的会话。导入的会话与代理分配新 id，密码按旧 id → 新 id 存入。已存在而未导入的会话、复用的已有代理不改动其密码。
+- 隐私政策随之更新：密码在加密文件里、主密钥在凭据存储里；导出文件只有选择时才含密码，且以口令加密。
+
+### M18 应用锁
 
 - 启动时、闲置一段时间后、系统锁屏或睡眠后，盖上锁定界面，用系统认证解锁：macOS 用 LocalAuthentication（Touch ID，不可用时退回登录密码），Windows 用 Windows Hello（PIN、指纹、人脸）。会话在锁定期间照常运行。
 - 系统没有可用的认证方式时不能开启。
-- 只是应用锁，不加密配置文件：密码与口令本来就只在钥匙串里；真正的加密需要把密钥放进要求生物识别的钥匙串项，macOS 上需要开发者证书签名。
+- 只是应用锁，不加密配置文件：密码在 M17 的加密文件里，主密钥在系统凭据存储里；要让密码真正受生物识别保护，需要把主密钥放进要求生物识别的钥匙串项，macOS 上需要开发者证书签名。
 - 开工前先用原型确认 ad-hoc 签名下 LocalAuthentication 可用。
 
-### M18 翻译
+### M19 翻译
 
 语言设置界面，首批简体中文；做法见 [I18N.md](I18N.md)「新增一种语言」。
 
-### M19 Microsoft Store
+### M20 Microsoft Store
 
 - 形式：MSIX，作为 full trust 桌面应用打包（`runFullTrust`，不进 AppContainer）。提交后由 Store 用微软的证书重新签名，不需要自己的代码签名证书；安装、更新、卸载由 Store 负责，应用本身没有自动更新，不用改。不选 EXE / MSI 上架：那条路要求安装包用受信任 CA 的证书签名，且 Store 不负责更新。GitHub Release 的 NSIS / MSI / 单独 exe 照旧，与 Store 版可以同时安装。
 - 打包：Tauri 不产出 MSIX。release workflow 增加一个 Store job，`tauri build --no-bundle` 之后由 `scripts/package-msix.ps1` 用 Windows SDK 的 `makeappx` 把 `zshell.exe`、图标与 `AppxManifest.xml` 打成 `.msix`，上传到 release（不签名，只用于提交 Store）。清单模板放在 `src-tauri/msix/`，版本号由 `Cargo.toml` 的 `X.Y.Z` 填成 `X.Y.Z.0`（Store 要求第四段为 0，且每次提交的版本必须更高）。
