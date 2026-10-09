@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result};
 use russh::client::{ChannelOpenHandle, Msg};
 use russh::{Channel, ChannelOpenFailure};
+use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
@@ -63,12 +64,42 @@ impl Drop for Registration {
     }
 }
 
+/// A `tcpip-forward` request whose reply hasn't arrived. If the rule stops meanwhile, the
+/// server may be listening already, and russh doesn't cancel the request when its caller
+/// goes away: the listener is cancelled once the server reports it, so that it doesn't stay
+/// without a route (refusing connections, and the rule's restarts with "address in use").
+struct Pending {
+    ctx: Ctx,
+    address: String,
+    port: u16,
+    reply: Option<JoinHandle<Result<u32, russh::Error>>>,
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        let Some(reply) = self.reply.take() else { return };
+        let (handle, address, requested) = (self.ctx.handle(), self.address.clone(), self.port);
+        let cancel = tauri::async_runtime::spawn(async move {
+            if let Ok(Ok(allocated)) = reply.await {
+                let port = if requested == 0 { allocated } else { requested.into() };
+                let _ = handle.cancel_tcpip_forward(address, port).await;
+            }
+        });
+        self.ctx.shared.cancels.lock().unwrap().insert(self.ctx.rule_id.clone(), cancel);
+    }
+}
+
 pub async fn run(rule: &ForwardRule, ctx: &Ctx) -> Result<()> {
     let handle = ctx.handle();
     let requested = host_port(&rule.bind_host, rule.bind_port);
-    let allocated = handle
-        .tcpip_forward(rule.bind_host.clone(), rule.bind_port.into())
-        .await
+    let (address, port) = (rule.bind_host.clone(), rule.bind_port);
+    let request = tauri::async_runtime::spawn(async move { handle.tcpip_forward(address, port.into()).await });
+    let mut pending = Pending { ctx: ctx.clone(), address: rule.bind_host.clone(), port, reply: Some(request) };
+    // Taken out once answered: a finished request has nothing left to cancel here.
+    let reply = pending.reply.as_mut().unwrap().await;
+    pending.reply = None;
+    let allocated = reply
+        .map_err(|e| Error::new("unexpected").detail(e))?
         .context(Error::new("forward.remoteRefused").param("address", &requested))?;
     // The server only reports the port when it picked one.
     let port = if rule.bind_port == 0 { allocated } else { rule.bind_port.into() };
