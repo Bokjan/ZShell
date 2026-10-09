@@ -2,6 +2,21 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.7.0] - 2026-10-09
+
+### Features
+
+- Settings › Terminal › Screen reader support lets VoiceOver, Narrator and NVDA read the terminal and announce new output. It is off by default, since terminals with a lot of output become slower.
+- Dialogs, menus, tabs, the session list and the file panel work with screen readers and from the keyboard: dialogs keep the focus while open and give it back when they close; arrows move among tabs, Enter shows one, F2 renames it, and Shift+F10 or the menu key opens the menu of a tab, a session or a file; column titles in the file panel sort from the keyboard.
+- Screen readers hear when a tab in the background connects or disconnects, when a file transfer finishes or fails, and when an address or path is copied.
+- The keyboard focus is always visible. With Reduce Motion, transitions and flashes are off; when the system asks for more contrast, terminal colors too close to the background are adjusted; Windows contrast themes show the active tab and selected rows in the system highlight colors.
+- Secondary and error text have more contrast, and primary buttons a darker blue.
+
+### Bug Fixes
+
+- With many tabs open, the first ones no longer fall back for good to the slower renderer: hidden tabs give up their WebGL renderer and take it back when shown.
+- A dialog from a tab in the background (an edit conflict found when a file is saved) waits until that tab is shown, and no longer blocks shortcuts meanwhile.
+
 ## [1.6.12] - 2026-10-09
 
 ### Bug Fixes
