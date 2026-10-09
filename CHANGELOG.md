@@ -2,6 +2,19 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.9] - 2026-10-09
+
+### Bug Fixes
+
+- Terminal: pasting several lines into a disconnected tab no longer starts reconnecting it (and loses the text); only Enter reconnects.
+- Tabs: panes closing at the same moment (all exiting after the compose bar sent them `exit`) can no longer bring each other back.
+- Sessions: the Delete button of the session dialog, and of the proxy dialog, no longer stays waiting for confirmation, where a single click much later deleted; any click elsewhere cancels it. So does Delete All Logs in the settings.
+- Sessions: number fields take digits only: a port typed as `0x16` was saved as 22, and `1e3` as 1000. A baud rate too large for the device settings is refused with a clear message.
+- Sessions: saving a session before the quick command groups had loaded no longer drops its group.
+- Sidebar: dropping a session on the Recent section no longer takes it out of its folder.
+- Sidebar: dropping a folder at the bottom edge of an expanded folder puts it where the line shows, inside it, instead of after the whole folder.
+- Settings: a log file name typed just before closing the settings with Esc or a click outside is kept.
+
 ## [1.6.8] - 2026-10-09
 
 ### Bug Fixes
