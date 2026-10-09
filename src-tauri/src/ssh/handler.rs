@@ -3,13 +3,12 @@
 //! forwarding, and why the connection ended.
 
 use russh::client::{self, ChannelOpenHandle, DisconnectReason, Msg, Session};
-use russh::keys::known_hosts::check_known_hosts;
 use russh::keys::{PublicKey, PublicKeyOrCertificate};
 use russh::{Channel, ChannelOpenFailure};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::host_key::{HostKeyQuery, HostKeyStatus};
-use super::known_hosts;
+use super::known_hosts::{self, Check};
 use crate::forward::{Incoming, RemoteRoutes};
 
 pub struct ClientHandler {
@@ -51,16 +50,15 @@ impl client::Handler for ClientHandler {
             return Ok(*verified == key);
         }
 
-        let status = match check_known_hosts(&self.host, self.port, &key) {
-            Ok(true) => {
+        let status = match known_hosts::check(&self.host, self.port, &key) {
+            Ok(Check::Known) => {
                 self.verified = Some(key);
                 return Ok(true);
             }
-            Ok(false) => HostKeyStatus::Unknown,
-            Err(russh::keys::Error::KeyChanged { line }) => HostKeyStatus::Changed {
-                line: known_hosts::changed_line(&self.host, self.port, &key).unwrap_or(line),
-            },
-            Err(e) => return Err(e.into()),
+            Ok(Check::Unknown) => HostKeyStatus::Unknown,
+            Ok(Check::Changed { line }) => HostKeyStatus::Changed { line },
+            Ok(Check::Revoked { .. }) => HostKeyStatus::Revoked,
+            Err(e) => return Err(std::io::Error::other(e.to_string()).into()),
         };
 
         let (reply, answer) = oneshot::channel();

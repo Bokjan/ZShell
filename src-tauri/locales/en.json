@@ -23,6 +23,8 @@
     "typeYesOrNo": "Please type 'yes' or 'no':",
     "added": "Permanently added '{host}' ({algorithm}) to the list of known hosts.",
     "saveFailed": "Could not write to known_hosts: {error}",
+    "revokedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@       WARNING: REVOKED HOST KEY DETECTED!               @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "revokedDetails": "The {algorithm} host key for {host} is marked as revoked in {path}.\nThis could mean that a stolen key is being used to impersonate this host.",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of {path}.\nIf the key change is expected, remove the old key in Settings › Known Hosts, or with:\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nThen connect again."
   },

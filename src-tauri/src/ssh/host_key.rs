@@ -8,12 +8,14 @@ use russh::keys::known_hosts::learn_known_hosts;
 use russh::keys::{HashAlg, PublicKey};
 use tokio::sync::oneshot;
 
-use super::known_hosts;
+use super::known_hosts::{self, host_pattern};
 use crate::session::TermIo;
 
 pub enum HostKeyStatus {
     Unknown,
     Changed { line: usize },
+    /// Marked `@revoked` in known_hosts.
+    Revoked,
 }
 
 pub struct HostKeyQuery {
@@ -37,8 +39,15 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
                 fingerprint = fingerprint,
                 line = line,
                 path = path.display(),
-                host = known_hosts::host_pattern(host, port)
+                host = host_pattern(host, port)
             );
+            io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
+            false
+        }
+        HostKeyStatus::Revoked => {
+            let banner = t!("hostKey.revokedBanner");
+            let path = known_hosts::path().unwrap_or_default();
+            let details = t!("hostKey.revokedDetails", algorithm = algorithm, host = host_pattern(host, port), path = path.display());
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }
