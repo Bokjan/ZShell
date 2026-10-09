@@ -678,6 +678,20 @@ body.dragging-row {
     background: var(--accent-soft);
   }
 }
+/* A pane too small to split (or a serial pane, which can't be copied) refuses the shortcut. */
+.pane-refused {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border: 2px solid var(--warn);
+  pointer-events: none;
+  animation: pane-refused 0.4s ease-out forwards;
+}
+@keyframes pane-refused {
+  to {
+    opacity: 0;
+  }
+}
 
 /* Quick command bar below the terminal; the warning color while commands go to several tabs. */
 .quick-bar {

@@ -24,7 +24,7 @@ export interface PaneHandlers {
   onFocus(key: number): void;
   /** The tab's panes were resized. */
   onLayout(tabKey: number, layout: Layout): void;
-  /** Added to the end of the pane's terminal menu. */
+  /** Added to the end of the pane's terminal menu, when it opens. */
   menuItems(pane: Pane): MenuItem[];
   logOpen(pane: Pane): LogOpen;
   /** The pane's saved session; undefined for local terminals and deleted sessions. */
@@ -41,6 +41,8 @@ interface Props {
   inScope: number[];
   /** Panes that just received text from the compose bar or a quick command; they flash. */
   flashing: number[];
+  /** A pane that couldn't be split; its border flashes, anew for each `count`. */
+  refused: { key: number; count: number } | null;
   handlers: PaneHandlers;
 }
 
@@ -56,7 +58,7 @@ const percent = (fraction: number) => `${fraction * 100}%`;
  * One tab's content: its panes, each a terminal, plus a side panel (files or port forwards)
  * on the focused pane's SSH connection.
  */
-export function TabPage({ tab, active, syncing, inScope, flashing, handlers: h }: Props) {
+export function TabPage({ tab, active, syncing, inScope, flashing, refused, handlers: h }: Props) {
   const { t } = useTranslation();
   const [panelWidth, setPanelWidth] = useState(420);
   // Keep each pane's panels mounted once opened, so their state (directory, transfers)
@@ -155,13 +157,14 @@ export function TabPage({ tab, active, syncing, inScope, flashing, handlers: h }
                 onForward={(ruleId, state) => h.onForward(pane.key, ruleId, state)}
                 onTitle={(title) => h.onTitle(pane.key, title)}
                 onInput={(data) => h.onInput(pane.key, data)}
-                menuItems={h.menuItems(pane)}
+                menuItems={() => h.menuItems(pane)}
                 logOpen={h.logOpen(pane)}
                 onLog={(path) => h.onLog(pane.key, path)}
                 appearance={profile?.appearance}
                 loginCommands={profile?.loginCommands ?? []}
               />
               {split && flashing.includes(pane.key) && <div className="pane-flash" />}
+              {refused?.key === pane.key && <div key={refused.count} className="pane-refused" />}
             </div>
           );
         })}

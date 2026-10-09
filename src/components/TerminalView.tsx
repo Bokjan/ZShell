@@ -69,8 +69,8 @@ interface Props {
   onTitle(title: string): void;
   /** What the user typed or pasted and the session received (not mouse or focus reports). */
   onInput(data: string): void;
-  /** Added to the end of the context menu (quick commands). */
-  menuItems: MenuItem[];
+  /** Added to the end of the context menu when it opens (pane actions, quick commands). */
+  menuItems(): MenuItem[];
   /** How each new session (connection) starts its log. */
   logOpen: LogOpen;
   /** The session's log started (its path) or stopped (null). */
@@ -632,7 +632,7 @@ export function TerminalView({
       "separator" as const,
       { label: t("terminal.menu.clear"), onSelect: () => term.clear() },
       { label: t("terminal.menu.reset"), onSelect: () => term.reset() },
-      ...extraMenuItems,
+      ...extraMenuItems(),
     ];
   };
 

@@ -87,6 +87,8 @@ const OPEN_ALL_CONFIRM = 5;
 const MENU_COMMANDS = 8;
 /** How long panes that received text from the compose bar flash. */
 const FLASH_MS = 700;
+/** How long a pane that can't be split flashes. */
+const REFUSED_MS = 400;
 
 /** Moves the keyboard focus back to the active terminal (after the compose bar closes). */
 const focusActiveTerminal = () =>
@@ -148,6 +150,9 @@ function App() {
   const composeRef = useRef(compose);
   composeRef.current = compose;
   const [flashing, setFlashing] = useState<number[]>([]);
+  // The pane that couldn't be split, flashing; `count` restarts the flash on each refusal.
+  const [refused, setRefused] = useState<{ key: number; count: number } | null>(null);
+  const refuseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [commands, setCommands] = useState<QuickCommands | null>(null);
   const [quickBarOpen, setQuickBarOpen] = useState(storedBarVisible);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -299,9 +304,14 @@ function App() {
    */
   const splitPane = (key: number, direction: Direction, added?: () => Pane) => {
     const found = findPane(tabsRef.current, key);
-    if (!found || (!added && found.pane.protocol === "serial")) return;
-    const rect = document.querySelector(`.pane[data-pane="${key}"]`)?.getBoundingClientRect();
-    if (rect && (direction === "row" ? rect.width < 2 * MIN_PANE_WIDTH : rect.height < 2 * MIN_PANE_HEIGHT)) return;
+    if (!found) return;
+    // Shortcuts and the session list can ask for what the menus disable: the pane flashes.
+    if ((!added && found.pane.protocol === "serial") || !roomToSplit(key, direction)) {
+      clearTimeout(refuseTimer.current);
+      setRefused((refused) => ({ key, count: (refused?.count ?? 0) + 1 }));
+      refuseTimer.current = setTimeout(() => setRefused(null), REFUSED_MS);
+      return;
+    }
     const pane = added ? added() : copyOf(found.pane);
     setTabs((tabs) =>
       tabs.map((t) =>
@@ -311,6 +321,11 @@ function App() {
       ),
     );
     setActiveKey(found.tab.key);
+  };
+  /** Whether the pane is large enough to split in two, each half at least the minimum size. */
+  const roomToSplit = (key: number, direction: Direction) => {
+    const rect = document.querySelector(`.pane[data-pane="${key}"]`)?.getBoundingClientRect();
+    return !rect || (direction === "row" ? rect.width >= 2 * MIN_PANE_WIDTH : rect.height >= 2 * MIN_PANE_HEIGHT);
   };
   const splitRef = useRef(splitPane);
   splitRef.current = splitPane;
@@ -594,11 +609,21 @@ function App() {
   const paneMenu = (pane: Pane): MenuItem[] => {
     const split = (tabs.find((tab) => tab.panes.some((p) => p.key === pane.key))?.panes.length ?? 0) > 1;
     // A serial device can only be open once.
-    const disabled = pane.protocol === "serial";
+    const serial = pane.protocol === "serial";
     return [
       "separator",
-      { label: t("tabs.splitRight"), shortcut: splitRightShortcutLabel, disabled, onSelect: () => splitPane(pane.key, "row") },
-      { label: t("tabs.splitDown"), shortcut: splitDownShortcutLabel, disabled, onSelect: () => splitPane(pane.key, "column") },
+      {
+        label: t("tabs.splitRight"),
+        shortcut: splitRightShortcutLabel,
+        disabled: serial || !roomToSplit(pane.key, "row"),
+        onSelect: () => splitPane(pane.key, "row"),
+      },
+      {
+        label: t("tabs.splitDown"),
+        shortcut: splitDownShortcutLabel,
+        disabled: serial || !roomToSplit(pane.key, "column"),
+        onSelect: () => splitPane(pane.key, "column"),
+      },
       ...(split
         ? [{ label: t("tabs.closePane"), shortcut: closeTabShortcutLabel, onSelect: () => void requestClose({ kind: "pane", key: pane.key }) }]
         : []),
@@ -742,6 +767,10 @@ function App() {
           onNew={localAllowed ? openLocalTab : undefined}
           onClose={(keys) => void requestClose({ kind: "tabs", keys })}
           onSplit={(key, direction) => withFocused(key, (pane) => splitPane(pane.key, direction))}
+          canSplit={(key, direction) => {
+            const pane = focusedOf(key);
+            return !!pane && roomToSplit(pane.key, direction);
+          }}
           onMove={moveTab}
           onRename={(key, customTitle) => updateTab(key, { customTitle })}
           onDuplicate={duplicateTab}
@@ -791,6 +820,7 @@ function App() {
               syncing={compose.open && compose.sync && tab.key === activeKey ? tab.focused : null}
               inScope={inScope.map((pane) => pane.key)}
               flashing={flashing}
+              refused={refused}
               handlers={handlers}
             />
           ))}

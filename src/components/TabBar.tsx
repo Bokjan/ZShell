@@ -42,6 +42,8 @@ interface Props {
   onDuplicate(key: number): void;
   /** Splits the tab's focused pane. */
   onSplit(key: number, direction: Direction): void;
+  /** Whether the tab's focused pane is large enough to split. */
+  canSplit(key: number, direction: Direction): boolean;
   /** Saves a quick connection tab as a session. */
   onSaveAsSession(key: number): void;
   onReconnect(key: number): void;
@@ -84,6 +86,7 @@ export function TabBar({
   onRename,
   onDuplicate,
   onSplit,
+  canSplit,
   onSaveAsSession,
   onReconnect,
   onBreak,
@@ -177,8 +180,18 @@ export function TabBar({
     if (pane.protocol !== "serial") {
       items.push(
         { label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) },
-        { label: t("tabs.splitRight"), shortcut: splitRightShortcutLabel, onSelect: () => onSplit(key, "row") },
-        { label: t("tabs.splitDown"), shortcut: splitDownShortcutLabel, onSelect: () => onSplit(key, "column") },
+        {
+          label: t("tabs.splitRight"),
+          shortcut: splitRightShortcutLabel,
+          disabled: !canSplit(key, "row"),
+          onSelect: () => onSplit(key, "row"),
+        },
+        {
+          label: t("tabs.splitDown"),
+          shortcut: splitDownShortcutLabel,
+          disabled: !canSplit(key, "column"),
+          onSelect: () => onSplit(key, "column"),
+        },
       );
     }
     items.push({ label: t("tabs.rename"), onSelect: () => setEditing(key) });
