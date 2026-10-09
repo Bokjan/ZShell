@@ -81,8 +81,15 @@ interface Props {
   loginCommands: string[];
 }
 
-/** Mouse (SGR, X10) and focus reports the terminal sends for programs; not typed input. */
-const REPORT = /^\x1b\[(?:<\d+;\d+;\d+[Mm]|M[\s\S]{3}|I|O)$/;
+/**
+ * What the terminal sends for programs rather than for the user, so not synced to other
+ * panes: mouse (SGR, X10) and focus reports, and answers to queries (device attributes,
+ * cursor position, status, modes, window size, OSC colors, DCS). Each comes as one `onData`.
+ * A cursor position report can't be told apart from Shift+F3 (`ESC[1;2R`), which is not
+ * synced either.
+ */
+const REPORT =
+  /^\x1b(?:\[(?:<\d+;\d+;\d+[Mm]|M[\s\S]{3}|I|O|[?>]?[\d;]*c|\??\d+;\d+(?:\$y|R)|\d*n|[\d;]*t)|[\]P][\s\S]*(?:\x1b\\|\x07))$/;
 
 /**
  * Turns off what a program on the closed connection may have turned on: the alternate
