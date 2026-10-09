@@ -30,7 +30,12 @@ pub fn is_timeout(e: &anyhow::Error) -> bool {
 
 /// Why reading a subpacket failed in a way the protocol recovers from (by asking for the data
 /// again with `ZRPOS`).
-pub struct Corrupt;
+pub enum Bad {
+    /// A bad CRC or escape, or too long.
+    Corrupt,
+    /// Nothing arrived for a while (a slow jump host, a key re-exchange, a Wi-Fi hiccup).
+    Timeout,
+}
 
 pub struct Link {
     incoming: mpsc::UnboundedReceiver<Vec<u8>>,
@@ -44,6 +49,8 @@ pub struct Link {
     pub last_encoding: Encoding,
     /// The remote side's character encoding, for file names.
     pub charset: &'static encoding_rs::Encoding,
+    /// How long to wait for the other side before asking again: [`TIMEOUT`], shorter in tests.
+    pub timeout: Duration,
 }
 
 impl Link {
@@ -61,6 +68,7 @@ impl Link {
             cans: 0,
             last_encoding: Encoding::Hex,
             charset: encoding_rs::UTF_8,
+            timeout: TIMEOUT,
         }
     }
 
@@ -201,36 +209,43 @@ impl Link {
         }
     }
 
-    /// Reads a data subpacket of the current frame: its data and how it ended. A bad CRC or
-    /// escape is `Err(Corrupt)` inside `Ok`, so the caller can ask for the data again.
-    pub async fn subpacket(&mut self, data: &mut Vec<u8>) -> Result<std::result::Result<u8, Corrupt>> {
+    /// Reads a data subpacket of the current frame: its data and how it ended. Damage and
+    /// timeouts are an `Err` inside `Ok`, so the caller can ask for the data again.
+    pub async fn subpacket(&mut self, data: &mut Vec<u8>) -> Result<std::result::Result<u8, Bad>> {
+        match self.read_subpacket(data).await {
+            Err(e) if is_timeout(&e) => Ok(Err(Bad::Timeout)),
+            result => result,
+        }
+    }
+
+    async fn read_subpacket(&mut self, data: &mut Vec<u8>) -> Result<std::result::Result<u8, Bad>> {
         data.clear();
         let crc32 = self.last_encoding == Encoding::Bin32;
         loop {
-            match self.escaped(TIMEOUT).await? {
+            match self.escaped(self.timeout).await? {
                 None => {}
                 Some(Escaped::Byte(byte)) => {
                     if data.len() >= MAX_SUBPACKET {
-                        return Ok(Err(Corrupt));
+                        return Ok(Err(Bad::Corrupt));
                     }
                     data.push(byte);
                 }
-                Some(Escaped::Invalid) => return Ok(Err(Corrupt)),
+                Some(Escaped::Invalid) => return Ok(Err(Bad::Corrupt)),
                 Some(Escaped::End(end)) => {
                     let mut crc = [0u8; 4];
                     let crc = &mut crc[..if crc32 { 4 } else { 2 }];
                     for byte in crc.iter_mut() {
                         loop {
-                            match self.escaped(TIMEOUT).await? {
+                            match self.escaped(self.timeout).await? {
                                 None => continue,
                                 Some(Escaped::Byte(b)) => *byte = b,
-                                _ => return Ok(Err(Corrupt)),
+                                _ => return Ok(Err(Bad::Corrupt)),
                             }
                             break;
                         }
                     }
                     let ok = frame::subpacket_crc_ok(data, end, crc, crc32);
-                    return Ok(if ok { Ok(end) } else { Err(Corrupt) });
+                    return Ok(if ok { Ok(end) } else { Err(Bad::Corrupt) });
                 }
             }
         }

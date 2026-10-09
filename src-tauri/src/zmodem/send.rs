@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, BufReader};
 
 use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, CANOVIO, ZCBIN, ZCRCE, ZCRCG, ZCRCW};
-use super::link::{is_timeout, Link, TIMEOUT};
+use super::link::{is_timeout, Link};
 use super::Report;
 use crate::error::Error;
 
@@ -187,7 +187,7 @@ enum Reply {
 /// a repeated ZRINIT) is skipped.
 async fn acknowledgement(link: &mut Link, pos: u64) -> Result<Reply> {
     loop {
-        let header = match link.header(TIMEOUT).await {
+        let header = match link.header(link.timeout).await {
             Ok(header) => header,
             Err(e) if is_timeout(&e) => return Ok(Reply::Timeout(e)),
             Err(e) => return Err(e),
@@ -225,7 +225,7 @@ async fn ask(link: &mut Link, message: &[u8], pos: u64, offer: Offer) -> Result<
         link.send(message).await?;
         link.flush().await?;
         loop {
-            let header = match link.header(TIMEOUT).await {
+            let header = match link.header(link.timeout).await {
                 Ok(header) => header,
                 Err(e) if is_timeout(&e) && retries < MAX_RETRIES => {
                     retries += 1;
@@ -253,7 +253,7 @@ async fn finish(link: &mut Link) -> Result<()> {
     let mut retries = 0;
     loop {
         link.send_header(Header::new(Kind::Fin), Encoding::Hex).await?;
-        match link.header(TIMEOUT).await {
+        match link.header(link.timeout).await {
             Ok(header) if header.kind == Kind::Fin => break,
             Ok(_) => {}
             Err(e) if is_timeout(&e) && retries < MAX_RETRIES => retries += 1,

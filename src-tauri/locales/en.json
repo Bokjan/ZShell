@@ -156,6 +156,7 @@
       "remoteCancelled": "The transfer was cancelled by the other side",
       "timeout": "The other side stopped responding",
       "protocol": "The transfer failed: unexpected data from the other side",
+      "corrupt": "The transfer failed: the data kept arriving damaged",
       "notStarted": "Not a ZMODEM transfer",
       "invalidName": "Cannot save a file named {name}",
       "notFile": "{path} is not a file; only files can be sent"

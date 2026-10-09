@@ -178,6 +178,87 @@ async fn sends_with_an_acknowledgement_per_subpacket() {
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
+/// Like `pipe`, passing each chunk through `change` (which may hold it up).
+fn pipe_through<F, Fut>(mut from: mpsc::Receiver<Vec<u8>>, to: mpsc::UnboundedSender<Vec<u8>>, mut change: F)
+where
+    F: FnMut(Vec<u8>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Vec<u8>> + Send,
+{
+    tokio::spawn(async move {
+        while let Some(chunk) = from.recv().await {
+            if to.send(change(chunk).await).is_err() {
+                break;
+            }
+        }
+    });
+}
+
+const SHORT_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(300);
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receiving_survives_a_pause_in_the_data() {
+    let src = temp_dir("pause-src");
+    let dst = temp_dir("pause-dst");
+    let files = make_files(&src);
+    let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
+    let (mut receiver, (to_receiver, from_receiver, _cancel_r)) = link();
+    sender.timeout = SHORT_TIMEOUT;
+    receiver.timeout = SHORT_TIMEOUT;
+    // Partway through the large file, nothing arrives for a while.
+    let mut forwarded = 0;
+    pipe_through(from_sender, to_receiver, move |chunk| {
+        let pause = forwarded < 100_000 && forwarded + chunk.len() >= 100_000;
+        forwarded += chunk.len();
+        async move {
+            if pause {
+                tokio::time::sleep(SHORT_TIMEOUT * 3).await;
+            }
+            chunk
+        }
+    });
+    pipe(from_receiver, to_sender);
+
+    let dst2 = dst.clone();
+    let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
+    let rinit = sender.header(TIMEOUT).await.unwrap();
+    send::send(&mut sender, rinit, &files, &mut Log::default()).await.unwrap();
+    receiving.await.unwrap().unwrap();
+    assert_same_files(&files, &dst);
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receiving_gives_up_on_data_damaged_every_time() {
+    const MARKER: &[u8] = b"DAMAGED-HERE-EVERY-TIME";
+    let src = temp_dir("damage-src");
+    let dst = temp_dir("damage-dst");
+    let path = src.join("damaged.txt");
+    let mut contents = vec![b'a'; 20_000];
+    contents[100..100 + MARKER.len()].copy_from_slice(MARKER);
+    std::fs::write(&path, contents).unwrap();
+    let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
+    let (mut receiver, (to_receiver, from_receiver, _cancel_r)) = link();
+    pipe_through(from_sender, to_receiver, |mut chunk| async move {
+        if let Some(at) = chunk.windows(MARKER.len()).position(|w| w == MARKER) {
+            chunk[at] = b'X';
+        }
+        chunk
+    });
+    pipe(from_receiver, to_sender);
+
+    let dst2 = dst.clone();
+    let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
+    let rinit = sender.header(TIMEOUT).await.unwrap();
+    let sending = tokio::spawn(async move { send::send(&mut sender, rinit, &[path], &mut Log::default()).await });
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), receiving).await.expect("still retrying");
+    let error = result.unwrap().unwrap_err();
+    assert!(format!("{error:#}").contains(&t!("errors.zmodem.corrupt")), "{error:#}");
+    sending.abort();
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_deletes_the_partial_file() {
     let src = temp_dir("cancel-src");

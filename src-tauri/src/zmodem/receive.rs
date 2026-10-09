@@ -7,13 +7,17 @@ use anyhow::{bail, Context, Result};
 use tokio::io::{AsyncWriteExt, BufWriter};
 
 use super::frame::{Encoding, Header, Kind, CANFC32, CANFDX, CANOVIO, ESCCTL, ZCRCE, ZCRCG, ZCRCQ, ZCRCW};
-use super::link::{is_timeout, Link, TIMEOUT};
+use super::link::{is_timeout, Bad, Link};
 use super::Report;
 use crate::error::Error;
 use crate::sftp::transfer::unique_path;
 
 /// Timeouts in a row before giving up.
 const MAX_RETRIES: u32 = 5;
+/// Bad subpackets (damaged, or timed out) before giving up, unless the data gets further than
+/// before in between: lrzsz allows 20 in a row, but a link that always damages the same data
+/// would then retry it for ever.
+const MAX_ERRORS: u32 = 20;
 const WRITE_BUFFER: usize = 256 * 1024;
 
 /// Full duplex, overlapped I/O and 32-bit CRCs; and please escape control characters, which
@@ -45,9 +49,12 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
     let rinit = Header::with_flags(Kind::Rinit, OUR_FLAGS);
     link.send_header(rinit, Encoding::Hex).await?;
     let mut retries = 0;
+    // Bad subpackets in the current file since the data last got past `bad_at`, the furthest
+    // position one was at.
+    let (mut errors, mut bad_at) = (0, 0);
     let mut data = Vec::with_capacity(8192);
     loop {
-        let header = match link.header(TIMEOUT).await {
+        let header = match link.header(link.timeout).await {
             Ok(header) => header,
             Err(e) if is_timeout(&e) && retries < MAX_RETRIES => {
                 retries += 1;
@@ -95,6 +102,7 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     }
                 };
                 report.start(&name, info.size);
+                (errors, bad_at) = (0, 0);
                 *current = Some(Incoming {
                     name: info.name,
                     path,
@@ -114,10 +122,23 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     continue;
                 }
                 loop {
-                    let Ok(end) = link.subpacket(&mut data).await? else {
-                        // Resume from what we have; the junk until the next header is skipped.
-                        link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?;
-                        break;
+                    let end = match link.subpacket(&mut data).await? {
+                        Ok(end) => end,
+                        Err(bad) => {
+                            if incoming.offset > bad_at {
+                                (errors, bad_at) = (0, incoming.offset);
+                            }
+                            errors += 1;
+                            if errors > MAX_ERRORS {
+                                bail!(match bad {
+                                    Bad::Corrupt => Error::new("zmodem.corrupt"),
+                                    Bad::Timeout => Error::new("zmodem.timeout"),
+                                });
+                            }
+                            // Resume from what we have; the junk until the next header is skipped.
+                            link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?;
+                            break;
+                        }
                     };
                     incoming
                         .file
