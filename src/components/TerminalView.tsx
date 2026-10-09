@@ -12,21 +12,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
-import {
-  errorCode,
-  errorMessage,
-  forwards,
-  openSession,
-  type CommandError,
-  type ForwardState,
-  type LogOpen,
-  type ProfileAppearance,
-  type Session,
-  type SessionId,
-  type SessionTarget,
-  type ZmodemPhase,
-  zmodem,
-} from "../lib/api";
+import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../lib/api";
+import type { PaneSession } from "../lib/paneSession";
 import {
   clipboardKey,
   copyShortcutLabel,
@@ -36,6 +23,7 @@ import {
   pasteShortcutLabel,
   selectAllShortcutLabel,
 } from "../lib/platform";
+import type { SessionRegistry } from "../lib/sessionRegistry";
 import { useSettings } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
@@ -44,29 +32,11 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 import { ZmodemBar } from "./ZmodemBar";
 
-export type SessionStatus = "connecting" | "connected" | "closed";
-
-/**
- * What restarts the terminal when it changes. A quick connection saved as a session keeps
- * its terminal and connection; the next connection uses the session.
- */
-const targetKey = (target: SessionTarget) => (target.kind === "local" ? "local" : "remote");
-
 interface Props {
-  target: SessionTarget;
-  /** Start by opening a shell on this session's connection (a duplicated SSH tab). */
-  shareFrom?: SessionId;
-  /** Changing it closes the current session and connects again. */
-  reconnectKey: number;
+  /** The pane whose terminal this is; its session is in `sessions`. */
+  paneKey: number;
+  sessions: SessionRegistry;
   active: boolean;
-  /** Reconnect automatically when an established SSH connection is lost. */
-  autoReconnect: boolean;
-  onStatus(status: SessionStatus): void;
-  /** The shell exited (rather than failing to start or losing the connection). */
-  onExited(status: number | null): void;
-  /** Reports the backend session id, or null once it has closed. */
-  onSession(id: number | null): void;
-  onForward(ruleId: string, state: ForwardState): void;
   /** The title set by the shell (OSC 0 / 2); empty when it clears it. */
   onTitle(title: string): void;
   /** What the user typed and the session received (not mouse or focus reports, nor pastes). */
@@ -77,14 +47,8 @@ interface Props {
   pasteTargets(): PasteTarget[];
   /** Added to the end of the context menu when it opens (pane actions, quick commands). */
   menuItems(): MenuItem[];
-  /** How each new session (connection) starts its log. */
-  logOpen: LogOpen;
-  /** The session's log started (its path) or stopped (null). */
-  onLog(path: string | null): void;
   /** The session's own colors and font, over the settings. */
   appearance?: ProfileAppearance;
-  /** Typed into each new shell, one after another as the shell shows its prompt. */
-  loginCommands: string[];
 }
 
 /** A pane that text can be pasted into, as its terminal's mode requires. */
@@ -104,48 +68,8 @@ export interface PasteTarget {
 const REPORT =
   /^\x1b(?:\[(?:<\d+;\d+;\d+[Mm]|M[\s\S]{3}|I|O|[?>]?[\d;]*c|\??\d+;\d+(?:\$y|R)|\d*n|[\d;]*t)|[\]P][\s\S]*(?:\x1b\\|\x07))$/;
 
-/**
- * Turns off what a program on the closed connection may have turned on: the alternate
- * screen, mouse reporting, then (soft reset) bracketed paste, application cursor keys, a
- * hidden cursor and so on; otherwise the next shell would get mouse reports as typed text.
- * The backend does this itself when a session ends (`SessionSink::reset_modes`); this is for
- * reconnecting while still connected. Leaving the alternate screen also restores the saved
- * cursor, so only when it is shown.
- */
-function resetModes(term: Terminal) {
-  if (term.buffer.active.type === "alternate") term.write("\x1b[?1049l");
-  term.write("\x1b[?1000l\x1b[?1006l\x1b[!p");
-}
-
-/** Seconds to wait before each automatic reconnection attempt; the last one repeats. */
-const RETRY_DELAYS = [2, 4, 8, 16, 30];
-
-/** Proxy failures that retrying cannot fix: it wants credentials we don't have or can't use. */
-const PERMANENT_PROXY_ERRORS = new Set(["proxy.authRequired", "proxy.authUnsupported", "proxy.authFailed", "proxy.unsafeName"]);
-
-/** Failures that retrying cannot fix: authentication problems (also with the proxy) and untrusted host keys. */
-const isPermanent = (error: CommandError | null) =>
-  !!error &&
-  (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected" || PERMANENT_PROXY_ERRORS.has(error.code));
-
-/** Acknowledge processed output in batches of this many bytes (see `Session.ack`). */
-const ACK_BATCH = 64 * 1024;
-
 /** Characters of a multi-line paste shown in the confirmation dialog. */
 const PASTE_PREVIEW = 4000;
-
-/** How long the output must pause before the next login command is typed. */
-const LOGIN_COMMAND_IDLE_MS = 300;
-
-/**
- * Whether the text before the cursor looks like a shell prompt: not empty, and not ending
- * like the questions that come before one (passwords and passphrases end with ":", yes/no
- * questions with "?"), so `sudo -i` gets its password before the next command.
- */
-const looksLikePrompt = (line: string) => {
-  const text = line.trimEnd();
-  return text !== "" && !/[:?]$/.test(text);
-};
 
 const ignore = () => {};
 
@@ -154,42 +78,23 @@ const copyText = (text: string) => void writeText(text).catch(console.error);
 const lineCount = (text: string) => text.replace(/(\r\n|\r|\n)$/, "").split(/\r\n|\r|\n/).length;
 
 export function TerminalView({
-  target,
-  shareFrom,
-  reconnectKey,
+  paneKey,
+  sessions,
   active,
-  autoReconnect,
-  onStatus,
-  onExited,
-  onSession,
-  onForward,
   onTitle,
   onInput,
   registerPaste,
   pasteTargets,
   menuItems: extraMenuItems,
-  logOpen,
-  onLog,
   appearance,
-  loginCommands,
 }: Props) {
   const { t } = useTranslation();
-  const tRef = useRef(t);
-  tRef.current = t;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
-  const targetRef = useRef(target);
-  targetRef.current = target;
-  const onStatusRef = useRef(onStatus);
-  onStatusRef.current = onStatus;
-  const onExitedRef = useRef(onExited);
-  onExitedRef.current = onExited;
-  const onSessionRef = useRef(onSession);
-  onSessionRef.current = onSession;
-  const onForwardRef = useRef(onForward);
-  onForwardRef.current = onForward;
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const onTitleRef = useRef(onTitle);
   onTitleRef.current = onTitle;
   const onInputRef = useRef(onInput);
@@ -198,25 +103,13 @@ export function TerminalView({
   registerPasteRef.current = registerPaste;
   const pasteTargetsRef = useRef(pasteTargets);
   pasteTargetsRef.current = pasteTargets;
-  const logOpenRef = useRef(logOpen);
-  logOpenRef.current = logOpen;
-  const onLogRef = useRef(onLog);
-  onLogRef.current = onLog;
-  const shareFromRef = useRef(shareFrom);
-  shareFromRef.current = shareFrom;
-  const loginCommandsRef = useRef(loginCommands);
-  loginCommandsRef.current = loginCommands;
-  /** Closes the current session and connects again; set while the terminal exists. */
-  const reconnectRef = useRef<() => void>(ignore);
   /** Pastes text, asking first if it would run several commands; set while the terminal exists. */
   const pasteRef = useRef<(text: string) => void>(ignore);
   /** Pastes into this pane and the panes synced with it, without asking. */
   const pasteAllRef = useRef<(text: string) => void>(ignore);
-  /** The current backend session, for answering ZMODEM transfers. */
-  const sessionIdRef = useRef<SessionId | null>(null);
+  /** The pane's session, for answering ZMODEM transfers. */
+  const sessionRef = useRef<PaneSession | null>(null);
   const onZmodemRef = useRef<(phase: ZmodemPhase) => void>(ignore);
-  const autoReconnectRef = useRef(autoReconnect);
-  autoReconnectRef.current = autoReconnect;
   // Incremented by the find shortcut; 0 means the search bar is closed.
   const [searchKey, setSearchKey] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -277,198 +170,20 @@ export function TerminalView({
     fitRef.current = fit;
     searchRef.current = search;
 
-    const dim = (text: string) => term.write(`\x1b[2m${text}\x1b[0m\r\n`);
-    let disposed = false;
-    let session: Session | undefined;
-    let closed = false;
-    // Automatic reconnection: the number of attempts so far and the pending one, if any.
-    let attempt = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    // Counts connection attempts; callbacks of an abandoned attempt (see `reconnect`) see a
-    // newer value and ignore what arrives.
-    let generation = 0;
-    // Used for the first attempt only: reconnecting always makes a new connection.
-    let shareFrom = shareFromRef.current;
-    // Forwarding rules that ran before reconnecting by hand, until the new connection is up.
-    let carry: string[] = [];
-    // The login commands not yet typed into the current shell, and the wait for its prompt.
-    let loginPending: string[] = [];
-    let loginTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const stopLoginCommands = () => {
-      loginPending = [];
-      clearTimeout(loginTimer);
-    };
-
-    // Called whenever output has been shown: types the next command once the output pauses
-    // at something that looks like a prompt.
-    const awaitPrompt = () => {
-      if (loginPending.length === 0) return;
-      clearTimeout(loginTimer);
-      loginTimer = setTimeout(() => {
-        const buffer = term.buffer.active;
-        const line = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX) ?? "";
-        if (!session || closed || !looksLikePrompt(line)) return;
-        void session.write(`${loginPending.shift()}\r`).catch(ignore);
-      }, LOGIN_COMMAND_IDLE_MS);
-    };
-
-    const cancelRetry = () => {
-      clearTimeout(retryTimer);
-      retryTimer = undefined;
-    };
-
-    const scheduleRetry = () => {
-      const delay = RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)];
-      attempt++;
-      dim(tRef.current("terminal.reconnectIn", { count: delay }));
-      retryTimer = setTimeout(() => {
-        retryTimer = undefined;
-        connect();
-      }, delay * 1000);
-    };
-
-    const connect = () => {
-      cancelRetry();
-      stopLoginCommands();
-      closed = false;
-      onStatusRef.current("connecting");
-      const local = targetRef.current.kind === "local";
-      const current = ++generation;
-      const stale = () => disposed || current !== generation;
-      const source = shareFrom;
-      shareFrom = undefined;
-      let ended = false;
-      let connected = false;
-      let handle: Session | undefined;
-      // Output bytes processed by xterm.js and not yet acknowledged.
-      let processed = 0;
-      const acknowledge = () => {
-        if (!handle || processed < ACK_BATCH) return;
-        void handle.ack(processed).catch(ignore);
-        processed = 0;
-      };
-      openSession(
-        targetRef.current,
-        { cols: term.cols, rows: term.rows },
-        (data) => {
-          if (stale()) return;
-          term.write(new Uint8Array(data), () => {
-            processed += data.byteLength;
-            acknowledge();
-            awaitPrompt();
-          });
+    const session = sessionsRef.current.attach(paneKey, {
+      port: {
+        write: (data, done) => term.write(data, done),
+        size: () => ({ cols: term.cols, rows: term.rows }),
+        lineBeforeCursor: () => {
+          const buffer = term.buffer.active;
+          return buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX) ?? "";
         },
-        (event) => {
-          if (stale()) return;
-          if (event.type === "connected") {
-            connected = true;
-            attempt = 0;
-            carry = [];
-            onStatusRef.current("connected");
-            loginPending = [...loginCommandsRef.current];
-            awaitPrompt();
-            return;
-          }
-          if (event.type === "forward") {
-            onForwardRef.current(event.ruleId, event.state);
-            return;
-          }
-          if (event.type === "zmodem") {
-            onZmodemRef.current(event.phase);
-            return;
-          }
-          if (event.type === "log") {
-            if (event.error) dim(tRef.current("terminal.logFailed", { message: event.error.message }));
-            onLogRef.current(event.path);
-            return;
-          }
-          ended = closed = true;
-          stopLoginCommands();
-          session = undefined;
-          sessionIdRef.current = null;
-          setZmodemPhase(null);
-          onSessionRef.current(null);
-          void handle?.close().catch(ignore);
-          // The duplicated tab's connection had died without its session noticing yet (a
-          // laptop waking up, say): connect as usual.
-          if (source !== undefined && !connected && event.reason === "failed") {
-            connect();
-            return;
-          }
-          onStatusRef.current("closed");
-          if (event.reason === "exited") onExitedRef.current(event.status);
-          if (local) {
-            dim(tRef.current(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
-            return;
-          }
-          // Retry lost connections, and keep retrying while the network or server is down.
-          const retry =
-            autoReconnectRef.current &&
-            (event.reason === "lost" || (event.reason === "failed" && attempt > 0)) &&
-            !isPermanent(event.error);
-          if (retry) scheduleRetry();
-          else {
-            attempt = 0;
-            dim(tRef.current("terminal.reconnectHint"));
-          }
-        },
-        source,
-        logOpenRef.current,
-        carry,
-      )
-        .then((s) => {
-          handle = s;
-          if (stale() || ended) void s.close().catch(ignore);
-          else {
-            session = s;
-            sessionIdRef.current = s.id;
-            onSessionRef.current(s.id);
-            // Output can arrive before the session id does.
-            acknowledge();
-            awaitPrompt();
-          }
-        })
-        .catch((e) => {
-          if (stale()) return;
-          // The duplicated tab's connection is gone: connect as usual.
-          if (source !== undefined && errorCode(e) === "session.notConnected") {
-            connect();
-            return;
-          }
-          closed = true;
-          attempt = 0;
-          onStatusRef.current("closed");
-          term.write(`\r\n\x1b[31m${errorMessage(e)}\x1b[0m\r\n`);
-          dim(tRef.current("terminal.retryHint"));
-        });
-    };
-
-    reconnectRef.current = () => {
-      const old = session;
-      session = undefined;
-      sessionIdRef.current = null;
-      setZmodemPhase(null);
-      onSessionRef.current(null);
-      attempt = 0;
-      resetModes(term);
-      term.write("\r\n");
-      // Leaves the old session's callbacks behind (see `connect`), and any pending retry.
-      const current = ++generation;
-      cancelRetry();
-      void (async () => {
-        // The rules running on the old connection start again on the new one.
-        if (old) {
-          carry = await forwards.carry(old.id).catch(() => []);
-          void old.close().catch(ignore);
-        }
-        if (!disposed && current === generation) connect();
-      })();
-    };
-
-    // Don't wait out the delay once the network is back (e.g. after waking from sleep).
-    const onOnline = () => retryTimer !== undefined && connect();
-    window.addEventListener("online", onOnline);
+        alternateScreen: () => term.buffer.active.type === "alternate",
+      },
+      zmodem: (phase) => onZmodemRef.current(phase),
+      session: () => setZmodemPhase(null),
+    });
+    sessionRef.current = session;
 
     // While syncing, a paste isn't passed on as typed input (wrapped for bracketed paste, or
     // not, as this terminal is): each synced pane pastes it as its own terminal requires.
@@ -485,7 +200,7 @@ export function TerminalView({
     };
     pasteRef.current = (text: string) => {
       // Nowhere to go; a line break in it would otherwise read as Enter, which reconnects.
-      if (!text || closed) return;
+      if (!text || session.isClosed) return;
       // With bracketed paste the shell inserts the lines without running them: asked unless
       // every pane it goes to does.
       const bracketed = term.modes.bracketedPasteMode && pasteTargetsRef.current().every((other) => other.bracketed());
@@ -496,7 +211,7 @@ export function TerminalView({
     registerPasteRef.current({
       bracketed: () => term.modes.bracketedPasteMode,
       paste: (text) => {
-        if (text && !closed) term.paste(text);
+        if (text && !session.isClosed) term.paste(text);
       },
     });
 
@@ -552,21 +267,9 @@ export function TerminalView({
 
     const subscriptions: IDisposable[] = [
       term.onData((data) => {
-        if (!closed) {
-          if (data.includes("\x03")) stopLoginCommands();
-          void session?.write(data);
-          if (session && !pasting && !REPORT.test(data)) onInputRef.current(data);
-          return;
-        }
-        // Enter pressed, not a line break in something else that came in (a paste).
-        if (data === "\r") connect();
-        else if (data === "\x03" && retryTimer !== undefined) {
-          cancelRetry();
-          attempt = 0;
-          dim(tRef.current("terminal.reconnectCancelled"));
-        }
+        if (session.input(data) && !pasting && !REPORT.test(data)) onInputRef.current(data);
       }),
-      term.onResize(({ cols, rows }) => void session?.resize(cols, rows)),
+      term.onResize(({ cols, rows }) => session.resize(cols, rows)),
       term.onTitleChange((title) => onTitleRef.current(title)),
     ];
     const observer = new ResizeObserver(() => fit.fit());
@@ -574,27 +277,24 @@ export function TerminalView({
     // A tick later: React's StrictMode (in development) mounts, unmounts and mounts again at
     // once, which would open a backend session (and a log file, or a serial device that is
     // then busy) for the first mount too.
-    const start = setTimeout(connect, 0);
+    const start = setTimeout(() => session.connect(), 0);
 
     return () => {
-      disposed = true;
       clearTimeout(start);
-      cancelRetry();
-      stopLoginCommands();
-      window.removeEventListener("online", onOnline);
       window.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("mousedown", onMouseDown, true);
       container.removeEventListener("contextmenu", onContextMenu);
-      reconnectRef.current = pasteRef.current = pasteAllRef.current = ignore;
+      pasteRef.current = pasteAllRef.current = ignore;
       registerPasteRef.current(null);
       observer.disconnect();
       subscriptions.forEach((s) => s.dispose());
-      void session?.close().catch(ignore);
+      sessionsRef.current.detach(paneKey, session);
+      sessionRef.current = null;
       term.dispose();
       termRef.current = fitRef.current = searchRef.current = null;
     };
-  }, [targetKey(target)]);
+  }, [paneKey]);
 
   // Apply appearance and font changes to the running terminal.
   const { theme: termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback } = options;
@@ -612,12 +312,6 @@ export function TerminalView({
     term.options.rightClickSelectsWord = rightClickSelectsWord;
     fitRef.current?.fit();
   }, [termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback, macOptionIsMeta, rightClickSelectsWord]);
-
-  // Skips the initial value: only changes ask for a new connection.
-  const initialReconnectKey = useRef(reconnectKey);
-  useEffect(() => {
-    if (reconnectKey !== initialReconnectKey.current) reconnectRef.current();
-  }, [reconnectKey]);
 
   useEffect(() => {
     if (!active) return;
@@ -650,7 +344,7 @@ export function TerminalView({
   // right away. `rz` asks for files: the picker opens right away. Either way the bar stays,
   // for choosing again (or dropping files) or cancelling, after the picker is closed.
   const chooseFiles = () => {
-    const id = sessionIdRef.current;
+    const id = sessionRef.current?.id;
     if (id == null) return;
     void openDialog({ multiple: true, title: t("zmodem.chooseFilesTitle") }).then((picked) => {
       if (picked && picked.length > 0) void zmodem.sendFiles(id, picked).catch(console.error);
@@ -659,7 +353,7 @@ export function TerminalView({
   };
 
   const saveReceived = (dir: string | null) => {
-    const id = sessionIdRef.current;
+    const id = sessionRef.current?.id;
     if (id != null) void zmodem.saveTo(id, dir).catch(console.error);
   };
 
@@ -671,12 +365,12 @@ export function TerminalView({
   };
 
   const cancelZmodem = () => {
-    const id = sessionIdRef.current;
+    const id = sessionRef.current?.id;
     if (id != null) void zmodem.cancel(id).catch(console.error);
   };
 
   onZmodemRef.current = (phase) => {
-    const id = sessionIdRef.current;
+    const id = sessionRef.current?.id;
     if (id == null) return;
     setZmodemPhase(phase === "idle" ? null : phase);
     if (phase === "chooseFiles") chooseFiles();
@@ -701,7 +395,7 @@ export function TerminalView({
       else if (payload.type === "enter" || payload.type === "over") setDragOver(inside(payload.position));
       else if (payload.type === "drop") {
         setDragOver(false);
-        const id = sessionIdRef.current;
+        const id = sessionRef.current?.id;
         if (inside(payload.position) && id != null && payload.paths.length > 0) {
           void zmodem.sendFiles(id, payload.paths).catch(console.error);
         }

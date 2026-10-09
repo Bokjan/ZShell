@@ -1,5 +1,5 @@
-import type { SessionStatus } from "../components/TerminalView";
-import type { ForwardState, Protocol, SessionId, SessionTarget } from "./api";
+import type { ForwardState, Profile, Protocol, SessionId, SessionTarget } from "./api";
+import type { SessionStatus } from "./paneSession";
 
 export type SidePanel = "files" | "forwards";
 
@@ -21,8 +21,6 @@ export interface Pane {
   sessionId: SessionId | null;
   /** For a duplicated SSH pane: the session whose connection its first shell runs on. */
   shareFrom?: SessionId;
-  /** Incremented to close the session and connect again. */
-  reconnectKey: number;
   /** Live state of the profile's forwarding rules on this pane's connection, by rule id. */
   forwards: Record<string, ForwardState>;
   /** The quick command group picked in this pane; null shows its session's. */
@@ -51,6 +49,13 @@ export interface Tab {
   customTitle: string | null;
   /** The side panel shown next to the panes, if any; it shows the focused pane's connection. */
   sidePanel: SidePanel | null;
+}
+
+/** What a pane's next session will be: a saved session's protocol may have been changed. */
+export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabProtocol {
+  if (target.kind === "local") return "local";
+  if (target.kind === "quick") return target.protocol;
+  return profiles.find((p) => p.id === target.profileId)?.protocol ?? "ssh";
 }
 
 export const focusedPane = (tab: Tab) => tab.panes.find((pane) => pane.key === tab.focused) ?? tab.panes[0];

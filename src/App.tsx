@@ -15,8 +15,9 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar, type OpenMode } from "./components/Sidebar";
 import { PANEL_SHORTCUTS, TabBar } from "./components/TabBar";
 import { MIN_PANE_HEIGHT, MIN_PANE_WIDTH, TabPage, type PaneHandlers } from "./components/TabPage";
-import type { PasteTarget, SessionStatus } from "./components/TerminalView";
+import type { PasteTarget } from "./components/TerminalView";
 import { Tooltips } from "./components/Tooltip";
+import i18n from "./i18n";
 import {
   configSetAside,
   forwards,
@@ -31,8 +32,6 @@ import {
   writeSession,
   type Folder,
   type ForwardRule,
-  type ForwardState,
-  type LogOpen,
   type Profile,
   type QuickCommand,
   type QuickCommands,
@@ -63,12 +62,13 @@ import {
   focusedPane,
   paneLabel,
   tabTitle,
+  targetProtocol,
   type Pane,
   type SidePanel,
   type Tab,
-  type TabProtocol,
 } from "./lib/panes";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
+import { createSessionRegistry } from "./lib/sessionRegistry";
 import { useSettings } from "./lib/settings";
 import { useShortcuts } from "./lib/shortcuts";
 import { activeTabOf, createTabStore, useTabStore, type PanePatch, type PaneSpec } from "./lib/tabs";
@@ -111,10 +111,6 @@ async function busyReason(pane: Pane): Promise<Busy | null> {
   const name = await sessionForeground(pane.sessionId).catch(() => null);
   return name === null ? null : { kind: "process", name };
 }
-
-/** How a pane's next session starts logging (see `Pane.logPath`). */
-const logOpen = (pane: Pane): LogOpen =>
-  pane.logPath ? { mode: "append", path: pane.logPath } : pane.logStopped ? { mode: "off" } : { mode: "auto" };
 
 function App() {
   const { t } = useTranslation();
@@ -167,6 +163,7 @@ function App() {
   const [username, setUsername] = useState("");
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
+  const [sessions] = useState(() => createSessionRegistry(store, { profiles: () => profilesRef.current, t: i18n.t }));
   const localTitleRef = useRef("");
   localTitleRef.current = shellName ?? t("tabs.localTitle");
 
@@ -205,11 +202,7 @@ function App() {
   }, []);
 
   /** What a tab's next session will be: a saved session's protocol may have been changed. */
-  const protocolOf = useCallback((target: SessionTarget): TabProtocol => {
-    if (target.kind === "local") return "local";
-    if (target.kind === "quick") return target.protocol;
-    return profilesRef.current.find((p) => p.id === target.profileId)?.protocol ?? "ssh";
-  }, []);
+  const protocolOf = useCallback((target: SessionTarget) => targetProtocol(target, profilesRef.current), []);
 
   const addTab = useCallback(
     (target: SessionTarget, title: string) => dispatch({ type: "open", pane: { target, protocol: protocolOf(target), title } }),
@@ -586,40 +579,15 @@ function App() {
     if (path) revealItemInDir(path).catch(console.error);
   };
 
-  const onStatus = (key: number, status: SessionStatus) => {
-    // Forward events can precede "connected" (auto-start runs right after authentication),
-    // so states are only reset when a connection attempt starts or ends.
-    if (status === "connected") updatePane(key, { status });
-    // A new shell sets its own title. The session's protocol may have been changed since,
-    // which closes the side panel it no longer has.
-    else if (status === "connecting") {
-      const pane = findPane(store.get().tabs, key)?.pane;
-      if (pane) dispatch({ type: "connecting", key, protocol: protocolOf(pane.target) });
-    } else updatePane(key, { status, forwards: {} });
-  };
-
-  // A local shell that exits cleanly (`exit`, Ctrl+D) closes its pane, like Terminal.app.
-  const onExited = (key: number, status: number | null) => {
-    const found = findPane(store.get().tabs, key);
-    if (found?.pane.target.kind === "local" && status === 0) closePanes([key]);
-  };
-
-  const onForward = (key: number, ruleId: string, state: ForwardState) =>
-    updatePane(key, (pane) => ({ forwards: { ...pane.forwards, [ruleId]: state } }));
-
   const onProfileChanged = (updated: Profile) =>
     setProfiles((profiles) => profiles.map((p) => (p.id === updated.id ? updated : p)));
 
   const handlers: PaneHandlers = {
-    onStatus,
-    onExited,
-    onSession: (key, sessionId) => updatePane(key, { sessionId }),
-    onForward,
+    sessions,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
     onInput,
     registerPaste,
     pasteTargets: syncedPasteTargets,
-    onLog: (key, path) => updatePane(key, { logPath: path }),
     onFocus: (key) => {
       const found = findPane(store.get().tabs, key);
       if (found && found.tab.focused !== key) updateTab(found.tab.key, { focused: key });
@@ -627,7 +595,6 @@ function App() {
     onLayout: (tabKey, layout) => updateTab(tabKey, { layout }),
     onTransfers: (key, count) => updatePane(key, { transfers: count }),
     menuItems: terminalMenu,
-    logOpen,
     profileOf,
     onProfileChanged,
   };
@@ -696,7 +663,7 @@ function App() {
           onRename={(key, customTitle) => updateTab(key, { customTitle })}
           onDuplicate={duplicateTab}
           onSaveAsSession={(key) => withFocused(key, (pane) => saveAsSession(pane.key))}
-          onReconnect={(key) => withFocused(key, (pane) => updatePane(pane.key, { reconnectKey: pane.reconnectKey + 1 }))}
+          onReconnect={(key) => withFocused(key, (pane) => sessions.reconnect(pane.key))}
           onBreak={(key) =>
             withFocused(key, (pane) => pane.sessionId != null && sendBreak(pane.sessionId).catch(console.error))
           }

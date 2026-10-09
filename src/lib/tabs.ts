@@ -56,7 +56,6 @@ const newPane = (key: number, spec: PaneSpec): Pane => ({
   remoteTitle: null,
   status: "connecting",
   sessionId: null,
-  reconnectKey: 0,
   forwards: {},
   commandGroup: null,
   logPath: null,

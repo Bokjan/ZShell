@@ -1,29 +1,27 @@
 import { Fragment, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ForwardState, LogOpen, Profile, SessionId } from "../lib/api";
+import type { Profile } from "../lib/api";
 import { DialogsHidden } from "../lib/dialogs";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../lib/drag";
 import { dividers, equalize, moveDivider, paneRects, type Divider } from "../lib/layout";
 import { focusedPane, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
+import type { SessionRegistry } from "../lib/sessionRegistry";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { SftpPanel } from "./SftpPanel";
-import { TerminalView, type PasteTarget, type SessionStatus } from "./TerminalView";
+import { TerminalView, type PasteTarget } from "./TerminalView";
 
 /** What a tab page reports about its panes, and asks for them; each by pane key. */
 export interface PaneHandlers {
-  onStatus(key: number, status: SessionStatus): void;
-  onExited(key: number, status: number | null): void;
-  onSession(key: number, id: SessionId | null): void;
-  onForward(key: number, ruleId: string, state: ForwardState): void;
+  /** The panes' sessions. */
+  sessions: SessionRegistry;
   onTitle(key: number, title: string): void;
   /** What the user typed in the pane's terminal (see `TerminalView`). */
   onInput(key: number, data: string): void;
   registerPaste(key: number, target: PasteTarget | null): void;
   /** The other panes a paste in the pane goes to as well (syncing). */
   pasteTargets(key: number): PasteTarget[];
-  onLog(key: number, path: string | null): void;
   /** The pane was clicked or got the keyboard focus. */
   onFocus(key: number): void;
   /** The tab's panes were resized. */
@@ -32,7 +30,6 @@ export interface PaneHandlers {
   onTransfers(key: number, count: number): void;
   /** Added to the end of the pane's terminal menu, when it opens. */
   menuItems(pane: Pane): MenuItem[];
-  logOpen(pane: Pane): LogOpen;
   /** The pane's saved session; undefined for local terminals and deleted sessions. */
   profileOf(pane: Pane): Profile | undefined;
   onProfileChanged(profile: Profile): void;
@@ -163,24 +160,15 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
                 onFocus={() => h.onFocus(pane.key)}
               >
                 <TerminalView
-                  target={pane.target}
-                  shareFrom={pane.shareFrom}
-                  reconnectKey={pane.reconnectKey}
+                  paneKey={pane.key}
+                  sessions={h.sessions}
                   active={active && pane.key === focused.key}
-                  autoReconnect={profile?.autoReconnect ?? true}
-                  onStatus={(status) => h.onStatus(pane.key, status)}
-                  onExited={(status) => h.onExited(pane.key, status)}
-                  onSession={(id) => h.onSession(pane.key, id)}
-                  onForward={(ruleId, state) => h.onForward(pane.key, ruleId, state)}
                   onTitle={(title) => h.onTitle(pane.key, title)}
                   onInput={(data) => h.onInput(pane.key, data)}
                   registerPaste={(target) => h.registerPaste(pane.key, target)}
                   pasteTargets={() => h.pasteTargets(pane.key)}
                   menuItems={() => h.menuItems(pane)}
-                  logOpen={h.logOpen(pane)}
-                  onLog={(path) => h.onLog(pane.key, path)}
                   appearance={profile?.appearance}
-                  loginCommands={profile?.loginCommands ?? []}
                 />
                 {split && flashing.includes(pane.key) && <div className="pane-flash" />}
                 {refused?.key === pane.key && <div key={refused.count} className="pane-refused" />}

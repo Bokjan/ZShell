@@ -17,7 +17,7 @@ describe("open", () => {
     const tab = state.tabs[1];
     expect(tab.focused).toBe(tab.panes[0].key);
     expect(tab.layout).toEqual({ kind: "pane", key: tab.panes[0].key });
-    expect(tab.panes[0]).toMatchObject({ status: "connecting", sessionId: null, reconnectKey: 0, transfers: 0 });
+    expect(tab.panes[0]).toMatchObject({ status: "connecting", sessionId: null, transfers: 0 });
   });
 
   it("never gives a tab and a pane the same key", () => {
@@ -117,9 +117,9 @@ describe("updatePane", () => {
   it("applies a function of the pane and its tab", () => {
     let state = run({ type: "open", pane: ssh("a") });
     const key = state.tabs[0].panes[0].key;
-    state = reduceTabs(state, { type: "updatePane", key, patch: (pane) => ({ reconnectKey: pane.reconnectKey + 1 }) });
-    state = reduceTabs(state, { type: "updatePane", key, patch: (pane) => ({ reconnectKey: pane.reconnectKey + 1 }) });
-    expect(state.tabs[0].panes[0].reconnectKey).toBe(2);
+    state = reduceTabs(state, { type: "updatePane", key, patch: (pane) => ({ transfers: pane.transfers + 1 }) });
+    state = reduceTabs(state, { type: "updatePane", key, patch: (pane) => ({ transfers: pane.transfers + 1 }) });
+    expect(state.tabs[0].panes[0].transfers).toBe(2);
   });
 });
 
