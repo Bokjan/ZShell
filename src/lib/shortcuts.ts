@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 
 import { isDialogOpen, type DialogHandle } from "./dialogs";
-import { isComposing } from "./platform";
 
 /** Handles a key if it is one of its shortcuts, returning whether it did. */
 export type ShortcutHandler = (e: KeyboardEvent) => boolean;
@@ -26,10 +25,12 @@ interface Registration {
 const registrations = new Set<Registration>();
 let listening = false;
 
-// Capture phase, so the terminal never sees an app shortcut. Keys belonging to an input
-// method's composition are never shortcuts.
+// Capture phase, so the terminal never sees an app shortcut. Keys typed while an input
+// method composes are never shortcuts; `isComposing` alone, not `keyCode` 229 (see
+// `isComposing` in platform.ts), which WebKit also gives ⌘, and other keys the input
+// method sees while it is on but not composing.
 function onKeyDown(e: KeyboardEvent) {
-  if (isComposing(e)) return;
+  if (e.isComposing) return;
   for (const registration of registrations) {
     if (registration.applies() && registration.handle(e)) {
       e.preventDefault();

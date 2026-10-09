@@ -396,6 +396,11 @@ export function Sidebar(props: Props) {
       role={searching ? "option" : "treeitem"}
       aria-selected={searching ? extra.includes("highlighted") : selected === key}
       aria-level={searching ? undefined : Math.max(depth, 0) + 1}
+      // Rather than the tooltip, which is also read, as a hint.
+      aria-label={t(key.startsWith("recent:") ? "sidebar.recentRowLabel" : "sidebar.rowLabel", {
+        name: profile.name,
+        address: meta ?? address(profile),
+      })}
       data-key={key.startsWith("p:") ? key : undefined}
       data-recent={key.startsWith("recent:") || undefined}
       className={`tree-row session${selected === `p:${profile.id}` ? " selected" : ""}${extra}`}
@@ -425,6 +430,7 @@ export function Sidebar(props: Props) {
         aria-selected={selected === key}
         aria-expanded={expanded}
         aria-level={depth + 1}
+        aria-label={t("sidebar.folderLabel", { name: folder.name, count })}
         data-key={key}
         className={`tree-row folder${selected === key ? " selected" : ""}${dropClass(key)}`}
         style={{ paddingLeft: 8 + depth * INDENT }}
@@ -499,8 +505,12 @@ export function Sidebar(props: Props) {
         ref={listRef}
         id={listId}
         // The tree keeps the focus and points screen readers at the selected row; while
-        // searching, the search box does, at the highlighted result.
-        role={searching ? "listbox" : "tree"}
+        // searching, the search box does, at the highlighted result. WebKit treats a tree or
+        // list with other elements than its items (and presentational ones) as a plain group:
+        // the section titles are presentational and hidden from screen readers (the rows say
+        // they are recent), and a list without items, which shows a message instead, has no
+        // role.
+        role={searching ? (results.length > 0 || quick ? "listbox" : undefined) : rows.length > 0 ? "tree" : undefined}
         aria-label={t("sidebar.listLabel")}
         aria-activedescendant={!searching && selected ? rowId(selected) : undefined}
         tabIndex={0}
@@ -538,11 +548,11 @@ export function Sidebar(props: Props) {
           <>
             {recentProfiles.length > 0 && (
               <>
-                <div className="sidebar-section" role="none">
+                <div className="sidebar-section" role="presentation" aria-hidden="true">
                   {t("sidebar.recent")}
                 </div>
                 {recentProfiles.map((profile) => profileRow(profile, `recent:${profile.id}`, -1))}
-                <div className="sidebar-section" role="none">
+                <div className="sidebar-section" role="presentation" aria-hidden="true">
                   {t("sidebar.all")}
                 </div>
               </>
