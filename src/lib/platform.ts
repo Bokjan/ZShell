@@ -55,6 +55,9 @@ export function clipboardKey(e: KeyboardEvent): "copy" | "copyIfSelected" | "pas
 
 export const copyShortcutLabel = isMac ? "⌘C" : "Ctrl+Shift+C";
 export const pasteShortcutLabel = isMac ? "⌘V" : "Ctrl+Shift+V";
+/** Every key that copies and pastes (see `clipboardKey`), for the list of shortcuts. */
+export const allCopyShortcutsLabel = isMac ? "⌘C" : "Ctrl+Shift+C, Ctrl+Insert";
+export const allPasteShortcutsLabel = isMac ? "⌘V" : "Ctrl+Shift+V, Ctrl+V, Shift+Insert";
 /** Only macOS has a select-all shortcut in the terminal (Ctrl+A belongs to the shell). */
 export const selectAllShortcutLabel = isMac ? "⌘A" : undefined;
 
@@ -75,6 +78,12 @@ export function tabShortcut(e: KeyboardEvent): TabShortcut | null {
 }
 
 export const closeTabShortcutLabel = isMac ? "⌘W" : "Ctrl+Shift+W";
+export const nextTabShortcutLabel = "Ctrl+Tab";
+export const previousTabShortcutLabel = "Ctrl+Shift+Tab";
+export const goToTabShortcutLabel = isMac ? "⌘1 – ⌘8" : "Alt+1 – Alt+8";
+export const lastTabShortcutLabel = isMac ? "⌘9" : "Alt+9";
+/** ⇧⌘W closes the window on macOS (a native menu item); Windows has no shortcut for it. */
+export const closeWindowShortcutLabel = isMac ? "⇧⌘W" : undefined;
 
 /**
  * Splitting the focused pane: right of it (`row`) or below it (`column`). ⌘D / ⇧⌘D on macOS
@@ -93,6 +102,7 @@ export function splitShortcut(e: KeyboardEvent): "row" | "column" | null {
 
 export const splitRightShortcutLabel = isMac ? "⌘D" : "Alt+Shift+=";
 export const splitDownShortcutLabel = isMac ? "⇧⌘D" : "Alt+Shift+-";
+export const paneFocusShortcutLabel = isMac ? "⌥⌘ ← ↑ → ↓" : "Ctrl+Alt+← ↑ → ↓";
 
 const ARROWS: Record<string, "left" | "right" | "up" | "down"> = {
   ArrowLeft: "left",

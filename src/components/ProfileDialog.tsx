@@ -32,6 +32,7 @@ import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
 import { ProxyDialog } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
+import { SpinInput } from "./SpinInput";
 
 /** Values to start a new profile with: from a quick connection, or the folder it goes in. */
 export type ProfileDefaults = Partial<Pick<Profile, "protocol" | "host" | "port" | "username" | "folder">>;
@@ -765,11 +766,13 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
         </label>
         <label className="port">
           {t("settings.fontSize")}
-          <input
+          <SpinInput
             value={fontSize}
-            onChange={(e) => setFontSize(e.target.value)}
+            onChange={setFontSize}
+            min={FONT_SIZE_MIN}
+            max={FONT_SIZE_MAX}
+            start={settings.terminal.fontSize}
             placeholder={String(settings.terminal.fontSize)}
-            inputMode="numeric"
           />
         </label>
       </div>

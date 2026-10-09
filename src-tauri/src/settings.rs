@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, terminal, tabs, sidebar, files, ZMODEM, session logs), persisted as `settings.json` next to
+//! App-wide preferences (appearance, text size, terminal, tabs, sidebar, files, ZMODEM, session logs), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -13,6 +13,7 @@ use crate::error::Result;
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub appearance: Appearance,
+    pub text_size: TextSize,
     pub terminal: TerminalSettings,
     pub tabs: TabSettings,
     pub sidebar: SidebarSettings,
@@ -28,6 +29,16 @@ pub enum Appearance {
     System,
     Dark,
     Light,
+}
+
+/// The size of the interface's text (not the terminal's, which has its own font size).
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextSize {
+    #[default]
+    Normal,
+    Large,
+    Larger,
 }
 
 /// The terminal font sizes allowed, here and in session profiles.
@@ -161,6 +172,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             appearance: Appearance::System,
+            text_size: TextSize::Normal,
             terminal: TerminalSettings::default(),
             tabs: TabSettings::default(),
             sidebar: SidebarSettings::default(),
@@ -257,6 +269,7 @@ mod tests {
         let settings: Settings = serde_json::from_str(r#"{"terminal":{"fontSize":200,"colorScheme":""}}"#).unwrap();
         let settings = settings.normalize();
         assert!(matches!(settings.appearance, Appearance::System));
+        assert!(matches!(settings.text_size, TextSize::Normal));
         assert_eq!(settings.terminal.font_size, 48);
         assert_eq!(settings.terminal.color_scheme, "auto");
         assert_eq!(settings.terminal.scrollback, 5000);

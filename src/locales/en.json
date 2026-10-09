@@ -5,6 +5,8 @@
     "save": "Save",
     "delete": "Delete",
     "close": "Close",
+    "increase": "Increase",
+    "decrease": "Decrease",
     "dontAskAgain": "Don't ask again"
   },
   "app": {
@@ -486,6 +488,13 @@
       "dark": "Dark",
       "light": "Light"
     },
+    "textSize": "Text size",
+    "textSizes": {
+      "normal": "Default",
+      "large": "Large",
+      "larger": "Larger"
+    },
+    "textSizeHint": "For the app's own text. The terminal's font size is set under Terminal.",
     "terminal": "Terminal",
     "colorScheme": "Color scheme",
     "schemeAuto": "Match appearance",
@@ -567,6 +576,29 @@
     "knownHostsReveal": "Show in Finder",
     "knownHostsRevealWindows": "Show in File Explorer",
     "knownHostsHint": "Shared with OpenSSH. A host's key is added when you accept it on the first connection, and checked on every connection after that.",
+    "shortcuts": "Keyboard Shortcuts",
+    "shortcutActions": {
+      "searchSessions": "Search sessions",
+      "newLocalTerminal": "New local terminal",
+      "nextTab": "Next tab",
+      "previousTab": "Previous tab",
+      "goToTab": "Go to tab 1–8",
+      "lastTab": "Go to the last tab",
+      "closeTab": "Close the tab (the focused pane of a split tab)",
+      "closeWindow": "Close the window",
+      "splitRight": "Split right",
+      "splitDown": "Split down",
+      "focusPane": "Move to the pane on a side",
+      "copy": "Copy",
+      "copySelection": "Copy while text is selected (otherwise sent to the shell)",
+      "paste": "Paste",
+      "find": "Find in the terminal",
+      "composeBar": "Show or hide the compose bar",
+      "quickCommands": "Quick command palette",
+      "filePanel": "Show or hide the file panel",
+      "forwardsPanel": "Show or hide the port forwarding panel",
+      "settings": "Settings"
+    },
     "about": "About",
     "aboutVersion": "Version {version}",
     "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
@@ -574,7 +606,6 @@
     "thirdPartyLicenses": "Third-Party Licenses",
     "search": "Search settings",
     "noMatches": "No matching settings",
-    "close": "Close",
     "reset": "Restore defaults",
     "resetConfirm": "Click again to restore"
   },

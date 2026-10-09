@@ -1,10 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { isWindows } from "./platform";
 
 export type Appearance = "system" | "dark" | "light";
+/** The size of the interface's text; the terminal has its own font size. */
+export type TextSize = "normal" | "large" | "larger";
+const TEXT_SCALES: Record<TextSize, number> = { normal: 1, large: 1.15, larger: 1.3 };
 export type CursorStyle = "block" | "bar" | "underline";
 /** What right-clicking the terminal does. */
 export type RightClick = "menu" | "paste";
@@ -74,6 +77,7 @@ export const DEFAULT_LOG_FILE_NAME = "{session}_{date}_{time}.log";
 
 export interface Settings {
   appearance: Appearance;
+  textSize: TextSize;
   terminal: TerminalSettings;
   tabs: TabSettings;
   sidebar: SidebarSettings;
@@ -84,6 +88,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   appearance: "system",
+  textSize: "normal",
   terminal: {
     colorScheme: "auto",
     fontFamily: "",
@@ -154,6 +159,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     applyTheme(theme);
     applyWindowTheme(appearance, theme);
   }, [appearance, theme]);
+
+  // Before painting, so the first frame already has the text size.
+  const textSize = settings?.textSize ?? "normal";
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALES[textSize] ?? 1));
+  }, [textSize]);
 
   // Applied immediately; the backend's validated copy replaces it once saved, unless a
   // newer change was made in the meantime.

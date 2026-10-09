@@ -6,7 +6,26 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { knownHosts, logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
 import { basename, formatSize } from "../lib/format";
-import { isFindShortcut, isMac } from "../lib/platform";
+import {
+  allCopyShortcutsLabel,
+  allPasteShortcutsLabel,
+  closeTabShortcutLabel,
+  closeWindowShortcutLabel,
+  findShortcutLabel,
+  goToTabShortcutLabel,
+  isFindShortcut,
+  isMac,
+  lastTabShortcutLabel,
+  newTabShortcutLabel,
+  nextTabShortcutLabel,
+  paneFocusShortcutLabel,
+  previousTabShortcutLabel,
+  searchShortcutLabel,
+  settingsShortcutLabel,
+  shiftShortcutLabel,
+  splitDownShortcutLabel,
+  splitRightShortcutLabel,
+} from "../lib/platform";
 import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
@@ -21,6 +40,7 @@ import {
   type SidebarSettings,
   type TabSettings,
   type TerminalSettings,
+  type TextSize,
   type ZmodemSettings,
 } from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
@@ -30,6 +50,7 @@ import { KnownHostsDialog } from "./KnownHostsDialog";
 import { LicensesDialog } from "./LicensesDialog";
 import { ProxyDialog, proxySummary } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
+import { SpinInput } from "./SpinInput";
 
 interface Props {
   /** Whether the system allows local terminals (not Windows in S mode). */
@@ -38,6 +59,7 @@ interface Props {
 }
 
 const APPEARANCES: Appearance[] = ["system", "dark", "light"];
+const TEXT_SIZES: TextSize[] = ["normal", "large", "larger"];
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
@@ -57,9 +79,37 @@ const SECTIONS = [
   "knownHosts",
   "zmodem",
   "logs",
+  "shortcuts",
   "about",
 ] as const;
 type SectionId = (typeof SECTIONS)[number];
+
+/**
+ * The app's shortcuts on this platform, each described by `settings.shortcutActions.<id>`;
+ * those without keys here (closing the window on Windows, plain Ctrl+C on macOS) are left out.
+ */
+const SHORTCUTS = [
+  { id: "searchSessions", keys: searchShortcutLabel },
+  { id: "newLocalTerminal", keys: newTabShortcutLabel, local: true },
+  { id: "nextTab", keys: nextTabShortcutLabel },
+  { id: "previousTab", keys: previousTabShortcutLabel },
+  { id: "goToTab", keys: goToTabShortcutLabel },
+  { id: "lastTab", keys: lastTabShortcutLabel },
+  { id: "closeTab", keys: closeTabShortcutLabel },
+  { id: "closeWindow", keys: closeWindowShortcutLabel },
+  { id: "splitRight", keys: splitRightShortcutLabel },
+  { id: "splitDown", keys: splitDownShortcutLabel },
+  { id: "focusPane", keys: paneFocusShortcutLabel },
+  { id: "copy", keys: allCopyShortcutsLabel },
+  { id: "copySelection", keys: isMac ? undefined : "Ctrl+C" },
+  { id: "paste", keys: allPasteShortcutsLabel },
+  { id: "find", keys: findShortcutLabel },
+  { id: "composeBar", keys: shiftShortcutLabel("I") },
+  { id: "quickCommands", keys: shiftShortcutLabel("J") },
+  { id: "filePanel", keys: shiftShortcutLabel("E") },
+  { id: "forwardsPanel", keys: shiftShortcutLabel("P") },
+  { id: "settings", keys: settingsShortcutLabel },
+] as const;
 
 /** How far below the top of the content a section's title counts as scrolled to. */
 const SECTION_REACHED = 24;
@@ -108,19 +158,34 @@ function filterSettings(content: HTMLElement, query: string): SectionId[] {
 }
 
 /** A number field that only reports values that are integers within range. */
-function NumberField({ value, min, max, onChange }: { value: number; min: number; max: number; onChange(n: number): void }) {
+function NumberField({
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange(n: number): void;
+}) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   const valid = (n: number) => Number.isInteger(n) && n >= min && n <= max;
   return (
-    <input
+    <SpinInput
       value={text}
-      inputMode="numeric"
+      min={min}
+      max={max}
+      step={step}
+      start={value}
       aria-invalid={!valid(Number(text))}
-      onChange={(e) => {
-        setText(e.target.value);
-        const n = Number(e.target.value);
-        if (e.target.value.trim() !== "" && valid(n)) onChange(n);
+      onChange={(next) => {
+        setText(next);
+        const n = Number(next);
+        if (next.trim() !== "" && valid(n)) onChange(n);
       }}
       onBlur={() => setText(String(value))}
     />
@@ -311,6 +376,25 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
                   </button>
                 ))}
               </div>
+              <Setting>
+                <div className="field">
+                  <span>{t("settings.textSize")}</span>
+                  <div className="segmented" role="radiogroup">
+                    {TEXT_SIZES.map((textSize) => (
+                      <button
+                        key={textSize}
+                        role="radio"
+                        aria-checked={settings.textSize === textSize}
+                        className={settings.textSize === textSize ? "on" : undefined}
+                        onClick={() => update({ ...settings, textSize })}
+                      >
+                        {t(`settings.textSizes.${textSize}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="hint">{t("settings.textSizeHint")}</p>
+              </Setting>
             </Section>
 
             <Section id="terminal">
@@ -388,6 +472,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
                     value={terminal.scrollback}
                     min={0}
                     max={100000}
+                    step={1000}
                     onChange={(scrollback) => setTerminal({ scrollback })}
                   />
                 </label>
@@ -511,6 +596,19 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
 
             <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
 
+            <Section id="shortcuts">
+              {SHORTCUTS.map(
+                (shortcut) =>
+                  shortcut.keys &&
+                  (localAllowed || !("local" in shortcut)) && (
+                    <div key={shortcut.id} className="shortcut">
+                      <span>{t(`settings.shortcutActions.${shortcut.id}`)}</span>
+                      <kbd>{shortcut.keys}</kbd>
+                    </div>
+                  ),
+              )}
+            </Section>
+
             <AboutSection onShowLicenses={() => setLicensesOpen(true)} />
 
             {shown.length === 0 && <p className="settings-empty">{t("settings.noMatches")}</p>}
@@ -519,8 +617,8 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
           <button
             type="button"
             className="icon-button settings-close"
-            title={t("settings.close")}
-            aria-label={t("settings.close")}
+            title={t("common.close")}
+            aria-label={t("common.close")}
             onClick={onClose}
           >
             <CloseIcon />

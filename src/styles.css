@@ -5,6 +5,10 @@
   --titlebar-height: 34px;
   /* Room for the traffic lights on macOS (see window.rs), which hide in full screen. */
   --traffic-lights-width: 0px;
+  /* The interface text size setting (1, 1.15 or 1.3), set from the settings; font sizes, the
+     heights of rows of text and the widths of dialogs and text columns are multiplied by it.
+     Icons and the title bar keep their size. */
+  --text-scale: 1;
   --bg: #1e1e1e;
   --bg-sidebar: #181818;
   --bg-elevated: #252526;
@@ -38,7 +42,7 @@
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b8b8b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   color: var(--text);
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font: calc(13px * var(--text-scale))/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color-scheme: dark;
 }
 
@@ -154,7 +158,7 @@ main {
   min-width: 0;
   margin: 0 auto 0 10px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
@@ -221,7 +225,7 @@ main {
 }
 .sidebar-settings kbd {
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   opacity: 0.8;
 }
 .sidebar-empty {
@@ -263,7 +267,7 @@ main {
 }
 .sidebar-section {
   padding: 8px 8px 2px;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -274,7 +278,7 @@ main {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: calc(26px * var(--text-scale));
   padding-right: 8px;
   border-radius: 5px;
   cursor: default;
@@ -303,7 +307,7 @@ main {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   color: var(--text-muted);
 }
 .tree-row.folder .tree-name {
@@ -311,7 +315,7 @@ main {
   font-weight: 500;
 }
 .tree-count {
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   color: var(--text-muted);
 }
 .tree-row.quick .tree-name {
@@ -423,7 +427,7 @@ body.dragging-row {
   background: var(--danger);
 }
 .tab-title-input {
-  width: 120px;
+  width: calc(120px * var(--text-scale));
   min-width: 0;
   padding: 1px 4px;
   border: 1px solid var(--accent);
@@ -534,12 +538,12 @@ body.dragging-row {
 .compose-bar > button,
 .compose-scope-button {
   flex-shrink: 0;
-  height: 28px;
+  height: calc(28px * var(--text-scale));
   padding: 0 10px;
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   white-space: nowrap;
 }
 .compose-bar > button.primary {
@@ -631,7 +635,7 @@ body.dragging-row {
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
-  font: 12px/16px Menlo, "Cascadia Mono", Consolas, monospace;
+  font: calc(12px * var(--text-scale))/calc(16px * var(--text-scale)) Menlo, "Cascadia Mono", Consolas, monospace;
   resize: none;
   outline: none;
   user-select: text;
@@ -648,7 +652,7 @@ body.dragging-row {
   border-radius: 3px;
   background: var(--bg-elevated);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   pointer-events: none;
 }
 .compose-sync {
@@ -656,7 +660,7 @@ body.dragging-row {
   flex-shrink: 0;
   align-items: center;
   gap: 5px;
-  height: 28px;
+  height: calc(28px * var(--text-scale));
   white-space: nowrap;
 }
 .compose-sync.disabled {
@@ -729,7 +733,7 @@ body.dragging-row {
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  height: 34px;
+  height: calc(34px * var(--text-scale));
   padding: 0 8px;
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border);
@@ -741,12 +745,12 @@ body.dragging-row {
 .quick-group,
 .quick-command {
   flex-shrink: 0;
-  height: 24px;
+  height: calc(24px * var(--text-scale));
   padding: 0 10px;
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   white-space: nowrap;
 }
 .quick-group {
@@ -773,7 +777,7 @@ body.dragging-row {
 .quick-targets {
   flex-shrink: 0;
   color: var(--warn);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   font-weight: 600;
   white-space: nowrap;
 }
@@ -792,7 +796,7 @@ body.dragging-row {
 }
 .quick-empty {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   white-space: nowrap;
 }
 .quick-status {
@@ -800,7 +804,7 @@ body.dragging-row {
   max-width: 40%;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -810,7 +814,7 @@ body.dragging-row {
   align-items: center;
   justify-content: center;
   width: 26px;
-  height: 24px;
+  height: calc(24px * var(--text-scale));
   padding: 0;
   border: none;
   border-radius: 4px;
@@ -830,7 +834,7 @@ body.dragging-row {
 .palette {
   display: flex;
   flex-direction: column;
-  width: 520px;
+  width: calc(520px * var(--text-scale));
   max-width: calc(100vw - 32px);
   max-height: 60vh;
   border: 1px solid var(--border);
@@ -861,7 +865,7 @@ body.dragging-row {
   border-radius: 4px;
   background: var(--warn-soft);
   color: var(--warn);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   font-weight: 600;
 }
 .palette-list {
@@ -885,13 +889,13 @@ body.dragging-row {
   color: var(--on-accent);
 }
 .palette-group {
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   opacity: 0.7;
 }
 .palette-text {
   grid-column: 1 / -1;
   overflow: hidden;
-  font: 11px/1.4 Menlo, "Cascadia Mono", Consolas, monospace;
+  font: calc(11px * var(--text-scale))/1.4 Menlo, "Cascadia Mono", Consolas, monospace;
   opacity: 0.75;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1056,7 +1060,7 @@ body.dragging-row {
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .zmodem-bar button.primary {
   border-color: var(--accent);
@@ -1082,7 +1086,7 @@ body.dragging-row {
   box-shadow: 0 6px 20px var(--shadow);
 }
 .search-bar input {
-  width: 200px;
+  width: calc(200px * var(--text-scale));
   min-width: 80px;
   flex-shrink: 1;
   padding: 3px 6px;
@@ -1104,7 +1108,7 @@ body.dragging-row {
   background: none;
   color: var(--text-muted);
   font-family: Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
 }
 .search-flag:hover {
   color: var(--text);
@@ -1120,7 +1124,7 @@ body.dragging-row {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   color: var(--text-muted);
 }
 .search-status.empty {
@@ -1184,15 +1188,15 @@ body.dragging-row {
 }
 .badge {
   min-width: 16px;
-  height: 16px;
+  height: calc(16px * var(--text-scale));
   box-sizing: border-box;
   padding: 0 4px;
   border-radius: 8px;
   background: var(--ok);
   color: var(--on-ok);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale));
   font-weight: 600;
-  line-height: 16px;
+  line-height: calc(16px * var(--text-scale));
   text-align: center;
 }
 .badge.failed {
@@ -1258,14 +1262,14 @@ body.resizing .terminal-view {
   padding: 6px 10px;
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   white-space: pre-wrap;
   cursor: pointer;
 }
 .panel-note {
   padding: 6px 10px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   border-bottom: 1px solid var(--border);
 }
 
@@ -1323,7 +1327,7 @@ body.resizing .terminal-view {
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .sftp-toolbar .icon-button svg {
   display: block;
@@ -1358,13 +1362,13 @@ body.resizing .terminal-view {
   padding: 3px 10px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .sftp-error {
   padding: 6px 10px;
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   white-space: pre-wrap;
   cursor: pointer;
 }
@@ -1416,7 +1420,7 @@ body.resizing .terminal-view {
   border-bottom: 1px solid var(--border);
   background: var(--bg-sidebar);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: normal;
   text-align: left;
   white-space: nowrap;
@@ -1449,26 +1453,26 @@ body.resizing .terminal-view {
 }
 .file-icon {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .symlink {
   font-style: italic;
 }
 .col-size {
-  width: 70px;
+  width: calc(70px * var(--text-scale));
 }
 .col-time {
   /* Wide enough for 12-hour formats like "10/07, 09:34 PM". */
-  width: 120px;
+  width: calc(120px * var(--text-scale));
 }
 .file-size {
   text-align: right;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .file-time {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .sftp-empty {
   padding: 20px;
@@ -1499,7 +1503,7 @@ body.resizing .terminal-view {
   display: flex;
   justify-content: space-between;
   padding: 6px 10px 2px;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--text-muted);
@@ -1551,7 +1555,7 @@ body.resizing .terminal-view {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   color: var(--text-muted);
 }
 .transfers li.error .transfer-detail {
@@ -1562,7 +1566,7 @@ body.resizing .terminal-view {
   background: none;
   padding: 0 2px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 
 /* Port forwarding panel */
@@ -1587,7 +1591,7 @@ body.resizing .terminal-view {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--text-muted);
@@ -1598,7 +1602,7 @@ body.resizing .terminal-view {
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .forwards-list {
   flex: 1;
@@ -1627,7 +1631,7 @@ body.resizing .terminal-view {
   padding: 1px 5px;
   box-sizing: border-box;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-align: center;
@@ -1652,7 +1656,7 @@ body.resizing .terminal-view {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: Menlo, "Cascadia Mono", Consolas, monospace;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   user-select: text;
   -webkit-user-select: text;
 }
@@ -1666,7 +1670,7 @@ body.resizing .terminal-view {
   align-items: flex-start;
   gap: 6px;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   color: var(--text-muted);
 }
 .forward-status .status-dot {
@@ -1694,11 +1698,11 @@ body.resizing .terminal-view {
   padding: 0 5px;
   border: 1px solid var(--input-border);
   border-radius: 3px;
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale));
 }
 .forward-last-error {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   color: var(--warn);
 }
 /* Transparent rather than hidden, so the buttons stay clickable and reachable by keyboard. */
@@ -1718,7 +1722,7 @@ body.resizing .terminal-view {
   padding: 1px 4px;
   border-radius: 3px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .forward-actions button:hover {
   background: var(--bg-active);
@@ -1824,7 +1828,7 @@ body.resizing .terminal-view {
 }
 .context-menu-item kbd {
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   opacity: 0.7;
 }
 .context-menu-separator {
@@ -1848,7 +1852,7 @@ body.resizing .terminal-view {
 /* Scrolls when taller than the space below the title bar (the session dialog on a small
    window). */
 .dialog {
-  width: 380px;
+  width: calc(380px * var(--text-scale));
   max-width: calc(100vw - 32px);
   /* Content height: leaves 16px above and below, beyond the padding and border. */
   max-height: calc(100vh - var(--titlebar-height) - 70px);
@@ -1864,7 +1868,7 @@ body.resizing .terminal-view {
 }
 .dialog h2 {
   margin: 0 0 4px;
-  font-size: 15px;
+  font-size: calc(15px * var(--text-scale));
   font-weight: 600;
 }
 .dialog label {
@@ -1872,7 +1876,7 @@ body.resizing .terminal-view {
   flex-direction: column;
   gap: 4px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .dialog label.checkbox {
   flex-direction: row;
@@ -1887,7 +1891,7 @@ body.resizing .terminal-view {
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   outline: none;
 }
 /* Drawn like the text inputs instead of the native pop-up button, which is shorter and
@@ -1919,7 +1923,57 @@ body.resizing .terminal-view {
   gap: 10px;
 }
 .dialog .port {
-  width: 80px;
+  width: calc(80px * var(--text-scale));
+}
+/* A number field (`SpinInput`) with its ▲ / ▼ buttons inside the right end. */
+.dialog .spin-input {
+  position: relative;
+  display: flex;
+}
+.dialog .spin-input input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 24px;
+}
+.dialog .spin-buttons {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  display: flex;
+  flex-direction: column;
+  width: 18px;
+  border-left: 1px solid var(--input-border);
+}
+.dialog .spin-input .spin-buttons button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text-muted);
+}
+.dialog .spin-input .spin-buttons button + button {
+  border-top: 1px solid var(--input-border);
+}
+.dialog .spin-input .spin-buttons button:first-child {
+  border-top-right-radius: 3px;
+}
+.dialog .spin-input .spin-buttons button:last-child {
+  border-bottom-right-radius: 3px;
+}
+.dialog .spin-input .spin-buttons button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.dialog .spin-input .spin-buttons button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 /* A text input with a small button after it (the serial device and "refresh"). */
 .dialog .input-with-button {
@@ -1933,7 +1987,7 @@ body.resizing .terminal-view {
 }
 .dialog .hint {
   margin: -4px 0 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   color: var(--text-muted);
 }
 .help-tip {
@@ -1957,7 +2011,7 @@ body.resizing .terminal-view {
   background: var(--bg-elevated);
   box-shadow: 0 4px 12px var(--shadow);
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   line-height: 1.4;
   white-space: pre-line;
   overflow-wrap: anywhere;
@@ -1976,11 +2030,11 @@ body.resizing .terminal-view {
 }
 .dialog legend {
   padding: 0 0 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   font-weight: 600;
 }
 .forward-dialog {
-  width: 420px;
+  width: calc(420px * var(--text-scale));
 }
 .dialog .error {
   margin: 0;
@@ -2014,7 +2068,7 @@ body.resizing .terminal-view {
   flex-direction: column;
   gap: 4px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .jump-list {
   margin: 0;
@@ -2030,7 +2084,7 @@ body.resizing .terminal-view {
   gap: 2px;
   padding: 3px 4px 3px 8px;
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   counter-increment: hop;
 }
 .jump-list li + li {
@@ -2049,7 +2103,7 @@ body.resizing .terminal-view {
   white-space: nowrap;
 }
 .jump-list .icon-button {
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 .jump-list .icon-button:disabled {
   opacity: 0.3;
@@ -2061,7 +2115,7 @@ body.resizing .terminal-view {
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 .dialog button.secondary:disabled {
   opacity: 0.5;
@@ -2070,7 +2124,7 @@ body.resizing .terminal-view {
   min-width: 0;
 }
 .import-dialog {
-  width: 520px;
+  width: calc(520px * var(--text-scale));
 }
 .import-select {
   display: flex;
@@ -2097,7 +2151,7 @@ body.resizing .terminal-view {
 }
 .import-list label.checkbox {
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 .import-main {
   display: flex;
@@ -2111,7 +2165,7 @@ body.resizing .terminal-view {
 }
 .import-address {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   overflow-wrap: anywhere;
 }
 .import-notes {
@@ -2120,7 +2174,7 @@ body.resizing .terminal-view {
   gap: 2px 12px;
   margin: 2px 0 0 22px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
 }
 .import-notes:empty {
   display: none;
@@ -2129,10 +2183,10 @@ body.resizing .terminal-view {
   color: var(--warn);
 }
 .command-dialog {
-  width: 460px;
+  width: calc(460px * var(--text-scale));
 }
 .profile-dialog {
-  width: 440px;
+  width: calc(440px * var(--text-scale));
   overflow: hidden;
 }
 /* Only the pages scroll; the title, the page switcher and the buttons stay. */
@@ -2199,7 +2253,7 @@ body.resizing .terminal-view {
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
-  font: 12px/1.5 Menlo, "Cascadia Mono", Consolas, monospace;
+  font: calc(12px * var(--text-scale))/1.5 Menlo, "Cascadia Mono", Consolas, monospace;
   resize: vertical;
   outline: none;
   user-select: text;
@@ -2217,14 +2271,14 @@ body.resizing .terminal-view {
   position: relative;
   flex-direction: row;
   gap: 0;
-  width: 760px;
+  width: calc(760px * var(--text-scale));
   height: calc(100vh - var(--titlebar-height) - 48px);
   max-height: 680px;
   padding: 0;
   overflow: hidden;
 }
 .settings-nav {
-  width: 184px;
+  width: calc(184px * var(--text-scale));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -2250,7 +2304,7 @@ body.resizing .terminal-view {
   border-radius: 4px;
   background: none;
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   text-align: left;
 }
 .settings-nav-list button:hover:not(:disabled) {
@@ -2286,10 +2340,26 @@ body.resizing .terminal-view {
   display: inline-flex;
   padding: 4px;
 }
+.settings-dialog section[data-section="shortcuts"] {
+  gap: 6px;
+}
+.shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: calc(12px * var(--text-scale));
+}
+.shortcut kbd {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font: inherit;
+  white-space: nowrap;
+}
 .settings-empty {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .settings-dialog .row button {
   flex-shrink: 0;
@@ -2297,7 +2367,7 @@ body.resizing .terminal-view {
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .settings-dialog .row button.danger {
   color: var(--danger);
@@ -2313,7 +2383,7 @@ body.resizing .terminal-view {
   border: none;
   background: none;
   color: var(--accent);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .proxy-list {
   margin: 0;
@@ -2341,20 +2411,20 @@ body.resizing .terminal-view {
 }
 .proxy-name {
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 .proxy-summary {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   overflow-wrap: anywhere;
 }
 .proxy-dialog {
-  width: 420px;
+  width: calc(420px * var(--text-scale));
 }
 .log-summary {
   align-items: center;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .about-app {
   display: flex;
@@ -2363,7 +2433,7 @@ body.resizing .terminal-view {
 }
 .about-app span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .settings-dialog .about-links {
   display: flex;
@@ -2378,7 +2448,7 @@ body.resizing .terminal-view {
 /* Packages on the left, the selected one's license on the right; both scroll inside a
    dialog of fixed height, which keeps its title and button in view. */
 .licenses-dialog {
-  width: 920px;
+  width: calc(920px * var(--text-scale));
   height: calc(100vh - var(--titlebar-height) - 70px);
   max-height: 760px;
   overflow: hidden;
@@ -2390,7 +2460,7 @@ body.resizing .terminal-view {
   gap: 12px;
 }
 .licenses-nav {
-  width: 280px;
+  width: calc(280px * var(--text-scale));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -2412,7 +2482,7 @@ body.resizing .terminal-view {
   padding: 6px 8px 4px;
   background: var(--bg);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: 600;
 }
 .licenses-item {
@@ -2430,13 +2500,13 @@ body.resizing .terminal-view {
 }
 .licenses-name {
   overflow: hidden;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .licenses-version,
 .licenses-license {
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   opacity: 0.7;
 }
 .licenses-license {
@@ -2447,7 +2517,7 @@ body.resizing .terminal-view {
 .licenses-empty {
   margin: 4px 8px 8px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .licenses-detail {
   flex: 1;
@@ -2461,7 +2531,7 @@ body.resizing .terminal-view {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .licenses-heading span {
   color: var(--text-muted);
@@ -2471,7 +2541,7 @@ body.resizing .terminal-view {
   border: none;
   background: none;
   color: var(--accent);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   overflow-wrap: anywhere;
   text-align: left;
 }
@@ -2484,7 +2554,7 @@ body.resizing .terminal-view {
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg);
-  font: 12px/1.4 Menlo, "Cascadia Mono", Consolas, monospace;
+  font: calc(12px * var(--text-scale))/1.4 Menlo, "Cascadia Mono", Consolas, monospace;
   /* Some license files keep each paragraph on one line. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2493,7 +2563,7 @@ body.resizing .terminal-view {
 }
 /* Host keys, each with its remove button; the list scrolls inside a dialog of fixed height. */
 .known-hosts-dialog {
-  width: 680px;
+  width: calc(680px * var(--text-scale));
   height: calc(100vh - var(--titlebar-height) - 70px);
   max-height: 640px;
   overflow: hidden;
@@ -2530,7 +2600,7 @@ body.resizing .terminal-view {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 .known-hosts-host {
   overflow-wrap: anywhere;
@@ -2546,12 +2616,12 @@ body.resizing .terminal-view {
   border: 1px solid var(--warn);
   border-radius: 8px;
   color: var(--warn);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
 }
 .known-hosts-key {
   overflow: hidden;
   color: var(--text-muted);
-  font: 11px Menlo, "Cascadia Mono", Consolas, monospace;
+  font: calc(11px * var(--text-scale)) Menlo, "Cascadia Mono", Consolas, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: text;
@@ -2563,7 +2633,7 @@ body.resizing .terminal-view {
 .known-hosts-empty {
   margin: 12px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   text-align: center;
 }
 .known-hosts-summary {
@@ -2591,7 +2661,7 @@ body.resizing .terminal-view {
 }
 .settings-dialog h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   font-weight: 600;
 }
 .segmented {
@@ -2661,7 +2731,7 @@ body.resizing .terminal-view {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .dialog input[aria-invalid="true"] {
   border-color: var(--danger);
@@ -2680,7 +2750,7 @@ body.resizing .terminal-view {
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg);
-  font: 12px/1.4 Menlo, "Cascadia Mono", Consolas, monospace;
+  font: calc(12px * var(--text-scale))/1.4 Menlo, "Cascadia Mono", Consolas, monospace;
   white-space: pre;
   user-select: text;
   -webkit-user-select: text;

@@ -134,7 +134,7 @@
 ### 配置与设置
 
 - **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`proxies.json`、`commands.json`（快速命令）、`logs.json`（会话日志索引）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。
-- **设置**：分为 `appearance`、`terminal`、`tabs` 三组；后端校验并夹取数值，文件损坏时回退默认值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。
+- **设置**：分为 `appearance`、`terminal`、`tabs` 三组；后端校验并夹取数值，文件损坏时回退默认值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。界面文字大小（`textSize`）通过 CSS 变量 `--text-scale` 缩放界面的字号、文字行的高度和对话框等的宽度，标题栏高度、图标和终端（有自己的字号）不变，以免红绿灯和 Windows 窗口按钮错位。
 - **主题**：`<html data-theme>` 选择 CSS 变量组，样式中不写死颜色；原生窗口用 `setTheme` 同步原生菜单与对话框（Windows 上还决定 WebView2 的 `prefers-color-scheme`），用 `setBackgroundColor` 同步调整大小时露出的背景；首帧背景由 `index.html` 的内联样式按系统外观给出，避免闪烁。终端配色、字体等通过 `term.options` 应用到所有已打开的终端。
 - **会话与文件夹**：会话的 `folder` 字段指向所在文件夹，文件夹存在 `folders.json`（`parent` 可嵌套）。`profiles.json` 仍是数组，旧版本照常读取。文件中的顺序即显示顺序，每个文件夹里先列子文件夹、再列会话；拖拽只有一个后端操作 `tree_move`（放进某文件夹、排在某项之前或末尾）。删除文件夹时其中的内容移到上一级，不删除会话。加载时修正指向不存在文件夹的引用和循环。文件夹折叠状态与最近连接是本机的界面状态，与侧栏宽度一样存在 localStorage。
 - **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`，含文件夹、会话与全部代理，不含密码；没有 `proxies` 的旧文件照常读取）。导入时同名、否则同地址（同协议的用户、主机、端口；串口为同一设备）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；导入的会话用到的代理也一并导入，同名、否则同地址（同类型的主机、端口、用户名；命令类型为同一命令）的代理视为已存在；导入列表里显示命令类型代理的命令原文，因为导入后连接时会执行它。文件夹按名称路径合并；导入的会话与代理一律分配新 id。
@@ -147,7 +147,7 @@
 
 ## 交互约定
 
-- **快捷键**：应用快捷键在 window 的捕获阶段拦截，终端收不到。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 等留给 shell）。剪贴板快捷键只在终端获得焦点时生效（xterm.js 的 `attachCustomKeyEventHandler`），输入框里仍是普通的复制粘贴。
+- **快捷键**：应用快捷键在 window 的捕获阶段拦截，终端收不到。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 等留给 shell）。剪贴板快捷键只在终端获得焦点时生效（xterm.js 的 `attachCustomKeyEventHandler`），输入框里仍是普通的复制粘贴。设置里的 Keyboard Shortcuts 一节列出当前平台的快捷键，按键文字取自 `lib/platform.ts` 的 `*ShortcutLabel`，改快捷键时一并更新。
 
   | 功能 | macOS | Windows |
   |---|---|---|
