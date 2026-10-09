@@ -2,6 +2,19 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.10] - 2026-10-09
+
+### Bug Fixes
+
+- Saving sessions and proxies, deleting or duplicating them, importing and exporting, and starting a session log no longer freeze the window while the keychain or the disk is slow, and a keychain prompt (as macOS shows for every saved password after an update) no longer holds up the other tabs' output, forwards and file transfers.
+- Sessions: a change that fails to save (a full disk) leaves all session files as they were, instead of saving the folders but not the sessions in them.
+- SSH: host keys are also checked against `~/.ssh/known_hosts2` and the system's `ssh_known_hosts` (in `/etc/ssh`, or `%ProgramData%\ssh` on Windows), as OpenSSH does: keys an administrator installed no longer have to be confirmed, and `@revoked` lines there apply.
+- SSH: a connection lost while authenticating with an encrypted key or the SSH agent no longer stops automatic reconnection as if the login had been refused.
+- File panel: it works again without reconnecting the tab after the server's SFTP process ends while the connection stays up.
+- ZMODEM: receiving over a link that adds stray control characters (a modem, a terminal's answerback) no longer retries forever; they are dropped as noise, as in lrzsz.
+- ZMODEM: on Windows, a character cut off by the start of a transfer is shown before the transfer's messages rather than after them.
+- Session logs: continuing a log after reconnecting only ever appends to a log ZShell started.
+
 ## [1.6.9] - 2026-10-09
 
 ### Bug Fixes
