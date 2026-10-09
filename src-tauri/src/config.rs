@@ -248,6 +248,14 @@ impl Profile {
         self.host = self.host.trim().to_owned();
         self.username = self.username.trim().to_owned();
         self.serial.device = self.serial.device.trim().to_owned();
+        if self.protocol != Protocol::Serial {
+            if self.host.chars().any(|c| c.is_whitespace() || c.is_control()) {
+                return Err(Error::new("profile.invalidHost"));
+            }
+            if self.username.chars().any(char::is_control) {
+                return Err(Error::new("profile.invalidUser"));
+            }
+        }
         match self.protocol {
             Protocol::Ssh if self.host.is_empty() || self.username.is_empty() || self.port == 0 => {
                 return Err(Error::new("profile.missingFields"))

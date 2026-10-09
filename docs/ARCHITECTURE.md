@@ -107,7 +107,7 @@
 - **只用于第一个连接**：`ProfileStore::route` 得出 `net::Route`（跳板机列表 + 第一个连接的代理）。代理取第一台跳板机会话自己的设置，没有跳板机时取会话的设置，与 OpenSSH 一致（ProxyJump 连跳板机时用该主机 Host 块里的 ProxyCommand）。所以会话有跳板机时保存会清掉它自己的 `proxy`，编辑界面里代理下拉框禁用并显示第一台跳板机的代理；串口会话保存时同样清掉。快速连接不经代理。
 - **接入点**：`net::connect` 是 SSH 第一跳与 Telnet 直连的唯一入口，有代理时交给 `proxy::connect`，返回 `Box<dyn Stream>`（russh 的 `connect_stream` 接受任意字节流）。TCP keepalive 设在直连或到代理服务器的 TCP 连接上（Telnet 用；SSH 用自己的 keepalive）。
 - **SOCKS5 / HTTP**：主机名交给代理解析（socks5h），代理那一侧的内网域名也能连；IP 地址按地址类型发送。HTTP 的凭据随 CONNECT 请求一起发送（Basic），响应头逐字节读到空行为止，之后的字节属于隧道（服务器可能先说话，如 SSH 的版本串）。需要密码而钥匙串里没有时在终端里内联询问；密码被拒绝时重新建立到代理的连接再问，最多 3 次（与 SSH 密码相同）。错误码区分连不上代理（`proxy.unreachable`）、要求认证、认证失败、代理拒绝转发（`proxy.refused`，附 SOCKS 回复码或 HTTP 状态行）与协议错误，和目标主机的错误分开。
-- **ProxyCommand**：替换 `%h`、`%p`、`%r`、`%%` 后启动本地进程，以其 stdin / stdout 作传输层，stderr 以暗色写进终端（`ssh` 也让它直接输出），stream 丢弃时结束进程，进程退出即连接结束。macOS 用 `$SHELL -c "exec …"` 运行（`exec` 让进程替换 shell，结束的是命令本身），PATH 取登录 shell 的（只在第一次用时启动一次 `$SHELL -l` 读取，Finder 启动的应用没有 `/opt/homebrew/bin`）；Windows 不经 `cmd`，直接启动程序（否则结束的只是 `cmd`，程序留在后台），`CREATE_NO_WINDOW` 不弹控制台窗口。命令的 stdin 被占用，不能交互式询问密码。
+- **ProxyCommand**：替换 `%h`、`%p`、`%r`、`%%` 后启动本地进程，以其 stdin / stdout 作传输层，stderr 以暗色写进终端（`ssh` 也让它直接输出），stream 丢弃时结束进程，进程退出即连接结束。macOS 用 `$SHELL -c "exec …"` 运行（`exec` 让进程替换 shell，结束的是命令本身），PATH 取登录 shell 的（只在第一次用时启动一次 `$SHELL -l` 读取，Finder 启动的应用没有 `/opt/homebrew/bin`）；Windows 不经 `cmd`，直接启动程序（否则结束的只是 `cmd`，程序留在后台），`CREATE_NO_WINDOW` 不弹控制台窗口。命令的 stdin 被占用，不能交互式询问密码。代入 `%h`、`%r` 的主机名与用户名不能含 shell 元字符、空白、控制字符或以 `-` 开头（同 OpenSSH 对 CVE-2023-51385 的处理），否则拒绝连接（`proxy.unsafeName`）：导入别人的会话文件不应能借此执行命令。SOCKS / HTTP 代理同样拒绝含空白或控制字符的主机名（换行会加进 HTTP 请求），保存会话时也做这项校验。
 
 ### 文件传输与端口转发
 

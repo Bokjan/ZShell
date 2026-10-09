@@ -107,6 +107,10 @@ pub async fn connect(
     if proxy.kind == ProxyKind::Command {
         return command::spawn(proxy, host, port, user, io.sink()).await;
     }
+    // Sent in the request as it is: a line break would add to the HTTP request.
+    if host.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        bail!(Error::new("profile.invalidHost"));
+    }
     let mut saved = proxy.uses_password().then(|| secrets::get_proxy_password(&proxy.id)).flatten();
     let mut attempts = 0;
     loop {

