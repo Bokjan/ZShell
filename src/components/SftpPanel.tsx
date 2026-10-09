@@ -19,6 +19,8 @@ interface Props {
   connected: boolean;
   /** Whether this panel is visible and should receive file drops. */
   active: boolean;
+  /** How many uploads and downloads are running, each time that changes. */
+  onTransfers(count: number): void;
 }
 
 interface Confirm {
@@ -68,7 +70,7 @@ function storeDownloadTo(dir: string) {
   }
 }
 
-export function SftpPanel({ sessionId, connected, active }: Props) {
+export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) {
   const { t } = useTranslation();
   const [cwd, setCwd] = useState<string | null>(null);
   const [pathInput, setPathInput] = useState("");
@@ -298,10 +300,19 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     }
   }, [sessionId, connected]);
 
-  // Closing the tab stops watching its files.
+  const running = transfers.filter((t) => t.status === "running").length;
+  const onTransfersRef = useRef(onTransfers);
+  onTransfersRef.current = onTransfers;
+  useEffect(() => onTransfersRef.current(running), [running]);
+
+  // Closing the pane stops watching its files and cancels its transfers, which would otherwise
+  // go on out of sight on a connection that other panes share.
   useEffect(
     () => () => {
-      for (const transfer of transfersRef.current) if (transfer.status === "editing") void sftp.editStop(transfer.id);
+      for (const transfer of transfersRef.current) {
+        if (transfer.status === "editing") void sftp.editStop(transfer.id);
+        else if (transfer.status === "running") void sftp.cancel(transfer.id);
+      }
     },
     [],
   );

@@ -76,7 +76,7 @@ import "./styles.css";
 const profileIdOf = (pane: Pane) => (pane.target.kind === "profile" ? pane.target.profileId : undefined);
 
 /** Why closing a pane needs confirmation: a remote session is connected, or a local program runs. */
-type Busy = { kind: "connected" } | { kind: "process"; name: string };
+type Busy = { kind: "connected" } | { kind: "process"; name: string } | { kind: "transfers"; count: number };
 
 interface Closing {
   panes: number[];
@@ -102,6 +102,7 @@ const focusActiveTerminal = () =>
   );
 
 async function busyReason(pane: Pane): Promise<Busy | null> {
+  if (pane.transfers > 0) return { kind: "transfers", count: pane.transfers };
   if (pane.status !== "connected" || pane.sessionId == null) return null;
   if (pane.target.kind !== "local") return { kind: "connected" };
   const name = await sessionForeground(pane.sessionId).catch(() => null);
@@ -122,6 +123,7 @@ const newPane = (key: number, target: SessionTarget, protocol: TabProtocol, titl
   commandGroup: null,
   logPath: null,
   logStopped: false,
+  transfers: 0,
 });
 
 const newTab = (key: number, pane: Pane): Tab => ({
@@ -742,6 +744,7 @@ function App() {
       if (found && found.tab.focused !== key) updateTab(found.tab.key, { focused: key });
     },
     onLayout: (tabKey, layout) => updateTab(tabKey, { layout }),
+    onTransfers: (key, count) => updatePane(key, { transfers: count }),
     menuItems: terminalMenu,
     logOpen,
     profileOf,
@@ -754,6 +757,7 @@ function App() {
     if (panes.length > 1) return t("closeConfirm.panes", { name });
     const what = tabs === 0 ? "pane" : "tab";
     if (busy.kind === "connected") return t(`closeConfirm.connected.${what}`, { name });
+    if (busy.kind === "transfers") return t(`closeConfirm.transfers.${what}`, { count: busy.count, name });
     return busy.name
       ? t(`closeConfirm.process.${what}`, { process: busy.name, name })
       : t(`closeConfirm.processUnknown.${what}`, { name });

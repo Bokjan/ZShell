@@ -24,6 +24,8 @@ export interface PaneHandlers {
   onFocus(key: number): void;
   /** The tab's panes were resized. */
   onLayout(tabKey: number, layout: Layout): void;
+  /** How many uploads and downloads are running in the pane's file panel. */
+  onTransfers(key: number, count: number): void;
   /** Added to the end of the pane's terminal menu, when it opens. */
   menuItems(pane: Pane): MenuItem[];
   logOpen(pane: Pane): LogOpen;
@@ -102,7 +104,12 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
       <Fragment key={pane.key}>
         {list.includes("files") && (
           <div className="side-panel-page" style={{ display: shown("files") ? undefined : "none" }}>
-            <SftpPanel sessionId={pane.sessionId} connected={connected} active={active && shown("files")} />
+            <SftpPanel
+              sessionId={pane.sessionId}
+              connected={connected}
+              active={active && shown("files")}
+              onTransfers={(count) => h.onTransfers(pane.key, count)}
+            />
           </div>
         )}
         {list.includes("forwards") && (

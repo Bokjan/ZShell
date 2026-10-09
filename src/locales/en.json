@@ -656,6 +656,12 @@
       "tab": "A program is still running in “{name}”. Closing the tab ends it.",
       "pane": "A program is still running in “{name}”. Closing the pane ends it."
     },
+    "transfers": {
+      "tab_one": "A file transfer is still running in “{name}”. Closing the tab cancels it.",
+      "tab_other": "{count} file transfers are still running in “{name}”. Closing the tab cancels them.",
+      "pane_one": "A file transfer is still running in “{name}”. Closing the pane cancels it.",
+      "pane_other": "{count} file transfers are still running in “{name}”. Closing the pane cancels them."
+    },
     "panes": "Panes of “{name}” are still connected or running a program. Closing the tab ends their sessions.",
     "many": "Some of these tabs are still connected or running a program.",
     "confirm": "Close",

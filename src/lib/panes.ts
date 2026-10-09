@@ -31,6 +31,8 @@ export interface Pane {
   logPath: string | null;
   /** Logging was stopped by hand: reconnections don't start it again. */
   logStopped: boolean;
+  /** Uploads and downloads running in the pane's file panel; closing the pane cancels them. */
+  transfers: number;
 }
 
 /** How a tab's panes are arranged: one pane, or several side by side (`row`) or stacked (`column`). */
