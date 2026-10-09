@@ -37,6 +37,7 @@ import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { useSubmitting } from "../lib/submitting";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
+import { RefreshIcon } from "./icons";
 import { Modal } from "./Modal";
 import { ProxyDialog } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
@@ -471,7 +472,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
             spellCheck={false}
           />
           <button type="button" className="icon-button" title={t("profile.refreshDevices")} onClick={refreshPorts}>
-            ⟳
+            <RefreshIcon />
           </button>
         </div>
         <datalist id="profile-serial-ports">

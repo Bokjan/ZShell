@@ -2037,6 +2037,9 @@ body.resizing .terminal-view {
   flex: 1;
   min-width: 0;
 }
+.dialog .input-with-button .icon-button svg {
+  display: block;
+}
 .dialog .hint {
   margin: -4px 0 0;
   font-size: calc(12px * var(--text-scale));

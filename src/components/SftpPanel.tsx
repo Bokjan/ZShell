@@ -13,7 +13,7 @@ import { basename, formatMode, formatSize, formatTime } from "../lib/format";
 import { isComposing, isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { EyeIcon, SearchIcon } from "./icons";
+import { EyeIcon, RefreshIcon, SearchIcon } from "./icons";
 import { Modal } from "./Modal";
 import { TransferList, type Transfer } from "./TransferList";
 
@@ -787,7 +787,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
           ↑
         </button>
         <button className="icon-button" title={t("sftp.refresh")} disabled={!cwd} onClick={refresh}>
-          ⟳
+          <RefreshIcon />
         </button>
         <form
           className="sftp-path"

@@ -35,6 +35,15 @@ export function QuickIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** A circular arrow, for reloading; drawn because the "⟳" glyph falls back to a tiny font on macOS. */
+export function RefreshIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1L13.5 5.7M13.5 2.5v3.2h-3.2" />
+    </svg>
+  );
+}
+
 /** A magnifying glass, for filtering. */
 export function SearchIcon({ size = 14 }: { size?: number }) {
   return (
