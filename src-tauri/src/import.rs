@@ -6,14 +6,12 @@
 //! command proxy (one per distinct command).
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForwardListen, SshConfig};
 
-use crate::config::{AuthMethod, EnvVar, Profile};
+use crate::config::{AuthMethod, EnvVar, Profile, Protocol};
 use crate::error::{Error, Result};
 use crate::forward::{ForwardKind, ForwardRule};
 use crate::proxy::{Proxy, ProxyKind};
@@ -59,15 +57,20 @@ pub fn default_path() -> Option<PathBuf> {
 }
 
 pub fn scan(path: &Path, existing: &[Profile]) -> Result<Vec<Candidate>> {
-    let config = parse(path)?;
-    Ok(aliases(&config).into_iter().map(|alias| candidate(&config, alias, existing)).collect())
+    let (config, has_match) = parse(path)?;
+    let mut candidates: Vec<Candidate> = aliases(&config).into_iter().map(|alias| candidate(&config, alias, existing)).collect();
+    // A `Match` block may apply to any host.
+    if has_match {
+        candidates.iter_mut().for_each(|candidate| candidate.skipped.push("Match".to_owned()));
+    }
+    Ok(candidates)
 }
 
 /// The proxies and profiles to add for importing `selected`, with ids assigned and jump hosts
 /// and proxies resolved. Jump hosts not yet in `existing`, and proxy commands not yet in
 /// `proxies`, are added as well.
 pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[Proxy]) -> Result<(Vec<Proxy>, Vec<Profile>)> {
-    let config = parse(path)?;
+    let (config, _) = parse(path)?;
     let known: HashSet<String> = aliases(&config).into_iter().collect();
 
     // Profile id for every alias involved, following ProxyJump chains.
@@ -78,12 +81,13 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
         if ids.contains_key(&alias) || !known.contains(&alias) {
             continue;
         }
-        let candidate = candidate(&config, alias.clone(), existing);
+        let mut candidate = candidate(&config, alias.clone(), existing);
         if let Some(name) = &candidate.existing {
             let profile = existing.iter().find(|p| &p.name == name).expect("existing profile");
             ids.insert(alias, profile.id.clone());
             continue;
         }
+        candidate.jump_hosts = jump_chain(&config, &candidate.jump_hosts, &known, existing, 0);
         queue.extend(candidate.jump_hosts.iter().filter(|jump| known.contains(*jump)).cloned());
         ids.insert(alias, new_id());
         pending.push(candidate);
@@ -100,7 +104,14 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
                 jump_hosts.push(id.clone());
                 continue;
             }
-            let (username, host, port) = parse_destination(jump);
+            // An alias with another user or port (`admin@bastion`, `bastion:2222`) still has the
+            // alias's address and key, as in `ssh`.
+            let (user, host, port) = split_destination(jump);
+            let alias = known.contains(&host).then(|| self::candidate(&config, host.clone(), existing));
+            let (host, port, username) = match &alias {
+                Some(alias) => (alias.host.clone(), port.unwrap_or(alias.port), user.unwrap_or_else(|| alias.username.clone())),
+                None => (host, port.unwrap_or(22), user.unwrap_or_else(local_username)),
+            };
             let key = (host.clone(), port, username.clone());
             let found = existing.iter().find(|p| (&p.host, p.port, &p.username) == (&key.0, key.1, &key.2));
             let id = match (found, by_address.get(&key)) {
@@ -109,7 +120,12 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
                 (None, None) => {
                     let id = new_id();
                     by_address.insert(key, id.clone());
-                    profiles.push(new_profile(id.clone(), jump.clone(), host, port, username));
+                    let mut profile = new_profile(id.clone(), jump.clone(), host, port, username);
+                    if let Some(alias) = alias {
+                        profile.auth = alias.auth;
+                        profile.keepalive_interval = alias.keepalive_interval;
+                    }
+                    profiles.push(profile);
                     id
                 }
             };
@@ -151,11 +167,63 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
     Ok((new_proxies, profiles))
 }
 
-fn parse(path: &Path) -> Result<SshConfig> {
-    let file = File::open(path).map_err(|e| Error::new("import.readFailed").param("path", path.display()).detail(e))?;
-    SshConfig::default()
-        .parse(&mut BufReader::new(file), ParseRule::ALLOW_UNKNOWN_FIELDS | ParseRule::ALLOW_UNSUPPORTED_FIELDS)
-        .map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))
+/// The parsed config, and whether it has `Match` blocks (which are not imported).
+fn parse(path: &Path) -> Result<(SshConfig, bool)> {
+    let mut text = String::new();
+    let has_match = preprocess(path, 0, &mut text)?;
+    let config = SshConfig::default()
+        .parse(&mut text.as_bytes(), ParseRule::ALLOW_UNKNOWN_FIELDS | ParseRule::ALLOW_UNSUPPORTED_FIELDS)
+        .map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
+    Ok((config, has_match))
+}
+
+/// How deeply `Include`s may nest, as in OpenSSH.
+const MAX_INCLUDE_DEPTH: usize = 16;
+/// Stands in for a `Match` line: a block that applies to no host and is not one to import.
+const SKIPPED_MATCH: &str = "Host *.zshell-skipped-match.invalid";
+
+/// Appends the config at `path` to `out` as ssh2-config is to read it, and returns whether it
+/// has a `Match` block. ssh2-config doesn't know `Match` and would apply the options under it
+/// to the `Host` block before (importing a host with another user or jump host), so each
+/// `Match` line becomes a `Host` line matching nothing. `Include`d files are inlined here,
+/// which is how OpenSSH reads them, so that theirs are seen too.
+fn preprocess(path: &Path, depth: usize, out: &mut String) -> Result<bool> {
+    let read_failed = |e: std::io::Error| Error::new("import.readFailed").param("path", path.display()).detail(e);
+    let text = std::fs::read_to_string(path).map_err(read_failed)?;
+    let mut has_match = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let keyword = trimmed.split(|c: char| c.is_whitespace() || c == '=').next().unwrap_or_default();
+        if keyword.eq_ignore_ascii_case("match") {
+            has_match = true;
+            out.push_str(SKIPPED_MATCH);
+        } else if keyword.eq_ignore_ascii_case("include") && depth < MAX_INCLUDE_DEPTH {
+            let args = trimmed[keyword.len()..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
+            for pattern in args.split_whitespace().map(|arg| arg.trim_matches('"')) {
+                for included in include_paths(pattern) {
+                    has_match |= preprocess(&included, depth + 1, out)?;
+                }
+            }
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    Ok(has_match)
+}
+
+/// The files an `Include` pattern names: relative to `~/.ssh` unless absolute, with `~`
+/// expanded and wildcards matched (no match is no file, as in OpenSSH).
+fn include_paths(pattern: &str) -> Vec<PathBuf> {
+    let home = std::env::home_dir().unwrap_or_default();
+    let path = match pattern.strip_prefix("~/") {
+        Some(rest) => home.join(rest),
+        None if Path::new(pattern).is_absolute() => PathBuf::from(pattern),
+        None => home.join(".ssh").join(pattern),
+    };
+    let mut paths: Vec<PathBuf> = glob::glob(&path.to_string_lossy()).map(|paths| paths.flatten().collect()).unwrap_or_default();
+    paths.sort();
+    paths
 }
 
 /// Concrete host aliases in file order: patterns without wildcards or negation.
@@ -227,8 +295,10 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
             .map(|field| field.to_string()),
     );
 
+    // Only SSH sessions: a Telnet session with the same name must not become a jump host.
     let existing = existing
         .iter()
+        .filter(|p| p.protocol == Protocol::Ssh)
         .find(|p| p.name == alias || (p.host == host && p.port == port && p.username == username))
         .map(|p| p.name.clone());
     Candidate {
@@ -340,16 +410,37 @@ fn parse_host_port(text: &str) -> Option<(String, u16)> {
     Some((host.to_owned(), port.parse().ok()?))
 }
 
-/// `[user@]host[:port]`, as used by `ProxyJump`.
-fn parse_destination(text: &str) -> (String, String, u16) {
-    let (username, address) = match text.rsplit_once('@') {
-        Some((user, address)) => (user.to_owned(), address),
-        None => (local_username(), text),
+/// `[user@]host[:port]`, as used by `ProxyJump`, with only what is written.
+fn split_destination(text: &str) -> (Option<String>, String, Option<u16>) {
+    let (user, address) = match text.rsplit_once('@') {
+        Some((user, address)) => (Some(user.to_owned()), address),
+        None => (None, text),
     };
     match parse_host_port(address) {
-        Some((host, port)) => (username, host, port),
-        None => (username, address.trim_start_matches('[').trim_end_matches(']').to_owned(), 22),
+        Some((host, port)) => (user, host, Some(port)),
+        None => (user, address.trim_start_matches('[').trim_end_matches(']').to_owned(), None),
     }
+}
+
+/// How deeply jump hosts' own `ProxyJump`s are followed (a loop in the config ends here).
+const MAX_JUMP_DEPTH: usize = 8;
+
+/// The jump hosts to list for a host with these `ProxyJump` entries. `ssh` reaches a jump
+/// host that has a `ProxyJump` of its own through those first, but ZShell doesn't follow a
+/// jump host's jump hosts, so they go before it in the list.
+fn jump_chain(config: &SshConfig, jumps: &[String], known: &HashSet<String>, existing: &[Profile], depth: usize) -> Vec<String> {
+    let mut chain: Vec<String> = Vec::new();
+    for jump in jumps {
+        let host = split_destination(jump).1;
+        if depth < MAX_JUMP_DEPTH && known.contains(&host) {
+            let own = candidate(config, host, existing).jump_hosts;
+            chain.extend(jump_chain(config, &own, known, existing, depth + 1));
+        }
+        chain.push(jump.clone());
+    }
+    let mut seen = HashSet::new();
+    chain.retain(|jump| seen.insert(jump.clone()));
+    chain
 }
 
 /// The jump host of `ssh [-q] [-l user] [-p port] -W %h:%p host`, written as a ProxyJump
@@ -474,6 +565,28 @@ Host *
     ServerAliveInterval 15
 ";
 
+    /// `Match` blocks, also in included files, are left out instead of being applied to the
+    /// `Host` block before them.
+    #[test]
+    fn leaves_out_match_blocks() {
+        let (dir, path) = write_config("");
+        let included = dir.0.join("included");
+        std::fs::write(&included, "Host db\n    User carol\nMatch exec \"true\"\n    User mallory\n").unwrap();
+        let config = format!(
+            "Host web\n    User alice\nMatch host *.corp\n    User bob\n    ProxyJump gate\nInclude {}\nHost *\n    Port 2222\n",
+            dir.0.join("incl*").display()
+        );
+        std::fs::write(&path, config).unwrap();
+        let candidates = scan(&path, &[]).unwrap();
+        let aliases: Vec<_> = candidates.iter().map(|c| c.alias.as_str()).collect();
+        assert_eq!(aliases, ["web", "db"]);
+        let (web, db) = (&candidates[0], &candidates[1]);
+        assert_eq!((web.username.as_str(), web.port), ("alice", 2222));
+        assert!(web.jump_hosts.is_empty());
+        assert_eq!((db.username.as_str(), db.port), ("carol", 2222));
+        assert!(candidates.iter().all(|c| c.skipped.contains(&"Match".to_owned())));
+    }
+
     #[test]
     fn scans_concrete_aliases_with_inherited_settings() {
         let (_dir, path) = write_config(CONFIG);
@@ -527,6 +640,29 @@ Host *
         assert!(profiles.iter().all(|p| p.jump_hosts == ["existing"]));
     }
 
+    /// A jump host written as an alias with another user or port keeps the alias's address
+    /// and key, and a jump host's own `ProxyJump` comes before it in the list.
+    #[test]
+    fn plan_follows_jump_host_aliases() {
+        let (_dir, path) = write_config(
+            "Host outer\n    HostName outer.example.com\n    User gw\n\
+             Host bastion\n    HostName bastion.example.com\n    User ops\n    IdentityFile /keys/bastion\n    ProxyJump outer\n\
+             Host app\n    ProxyJump bastion\n\
+             Host db\n    ProxyJump admin@bastion:2222\n",
+        );
+        let (_, profiles) = plan(&path, &["app".to_owned(), "db".to_owned()], &[], &[]).unwrap();
+        let by_name = |name: &str| profiles.iter().find(|p| p.name == name).unwrap();
+        let (outer, bastion) = (by_name("outer"), by_name("bastion"));
+        assert_eq!(by_name("app").jump_hosts, [outer.id.clone(), bastion.id.clone()]);
+        assert_eq!(bastion.jump_hosts, std::slice::from_ref(&outer.id));
+
+        let db = by_name("db");
+        assert_eq!(db.jump_hosts[0], outer.id);
+        let admin = profiles.iter().find(|p| p.id == db.jump_hosts[1]).unwrap();
+        assert_eq!((admin.host.as_str(), admin.port, admin.username.as_str()), ("bastion.example.com", 2222, "admin"));
+        assert!(matches!(&admin.auth, AuthMethod::PublicKey { key_path } if key_path == "/keys/bastion"));
+    }
+
     #[test]
     fn plan_shares_one_proxy_per_command() {
         let (_dir, path) = write_config(CONFIG);
@@ -548,8 +684,8 @@ Host *
         assert_eq!(parse_listen("*:8080"), Some(("0.0.0.0".into(), 8080)));
         assert_eq!(parse_host_port("[::1]:22"), Some(("::1".into(), 22)));
         assert_eq!(parse_host_port("db/5432"), Some(("db".into(), 5432)));
-        assert_eq!(parse_destination("ops@jump:2222"), ("ops".into(), "jump".into(), 2222));
-        assert_eq!(parse_destination("jump").1, "jump");
+        assert_eq!(split_destination("ops@jump:2222"), (Some("ops".into()), "jump".into(), Some(2222)));
+        assert_eq!(split_destination("jump"), (None, "jump".into(), None));
         assert_eq!(expand_host_tokens("%h.corp%%", "db"), "db.corp%");
         assert_eq!(stdio_forward_host("ssh -W %h:%p jump").as_deref(), Some("jump"));
         assert_eq!(stdio_forward_host("/usr/bin/ssh -l ops -p 2222 jump -W [%h]:%p").as_deref(), Some("ops@jump:2222"));

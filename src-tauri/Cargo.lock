@@ -6956,6 +6956,7 @@ dependencies = [
  "chrono",
  "data-encoding",
  "encoding_rs",
+ "glob",
  "hmac",
  "keyring",
  "libc",
