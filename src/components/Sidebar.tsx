@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 
+import { announce } from "../lib/announce";
 import {
   deleteProfile,
   duplicateProfile,
@@ -201,7 +202,10 @@ export function Sidebar(props: Props) {
     "separator",
     { label: t("sidebar.edit"), onSelect: () => onEdit(profile) },
     { label: t("sidebar.duplicate"), onSelect: () => duplicate(profile) },
-    { label: t("sidebar.copyAddress"), onSelect: () => void writeText(address(profile)).catch(fail) },
+    {
+      label: t("sidebar.copyAddress"),
+      onSelect: () => void writeText(address(profile)).then(() => announce(t("announce.copied")), fail),
+    },
     "separator",
     {
       label: t("sidebar.deleteLogs"),

@@ -68,6 +68,7 @@ import {
   type Tab,
 } from "./lib/panes";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
+import { announce } from "./lib/announce";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { useSettings } from "./lib/settings";
 import { useShortcuts } from "./lib/shortcuts";
@@ -163,7 +164,9 @@ function App() {
   const [username, setUsername] = useState("");
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
-  const [sessions] = useState(() => createSessionRegistry(store, { profiles: () => profilesRef.current, t: i18n.t }));
+  const [sessions] = useState(() =>
+    createSessionRegistry(store, { profiles: () => profilesRef.current, t: i18n.t, announce }),
+  );
   const localTitleRef = useRef("");
   localTitleRef.current = shellName ?? t("tabs.localTitle");
 

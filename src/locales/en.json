@@ -178,6 +178,13 @@
     "restore": "Restore Down",
     "close": "Close"
   },
+  "announce": {
+    "connected": "{name} is connected.",
+    "disconnected": "{name} is disconnected.",
+    "transferDone": "{name}: transfer finished.",
+    "transferFailed": "{name}: transfer failed. {error}",
+    "copied": "Copied to the clipboard."
+  },
   "terminal": {
     "inputLabel": "Terminal input",
     "tooMuchOutput": "Too much output to announce. Move through the terminal's lines to read it.",

@@ -5,6 +5,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
+import { announce } from "../lib/announce";
 import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { pathRange, storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
@@ -199,6 +200,20 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   }, [sessionId, connected, load]);
 
   const refresh = () => cwd && load(cwd);
+
+  // Finished and failed transfers are announced to screen readers: the list may be out of
+  // sight, or the panel closed.
+  const transferStatuses = useRef(new Map<string, Transfer["status"]>());
+  useEffect(() => {
+    for (const transfer of transfers) {
+      if (transferStatuses.current.get(transfer.id) === transfer.status) continue;
+      transferStatuses.current.set(transfer.id, transfer.status);
+      if (transfer.status === "done") announce(t("announce.transferDone", { name: transfer.label }));
+      else if (transfer.status === "error") {
+        announce(t("announce.transferFailed", { name: transfer.label, error: transfer.error ?? "" }));
+      }
+    }
+  }, [transfers, t]);
 
   const updateTransfer = (id: string, patch: Partial<Transfer>) =>
     setTransfers((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -640,7 +655,8 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
     items.push(
       {
         label: targets.length > 1 ? t("sftp.copyPaths") : t("sftp.copyPath"),
-        onSelect: () => void writeText(targets.map((e) => e.path).join("\n")).catch(fail),
+        onSelect: () =>
+          void writeText(targets.map((e) => e.path).join("\n")).then(() => announce(t("announce.copied")), fail),
       },
       "separator",
       {

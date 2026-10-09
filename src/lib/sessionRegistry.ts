@@ -1,7 +1,7 @@
 import type { LogOpen, Profile, SessionId, ZmodemPhase } from "./api";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
 import { findPane, targetProtocol, type Pane } from "./panes";
-import type { TabStore } from "./tabs";
+import { activeTabOf, type TabStore } from "./tabs";
 
 /** What a pane's terminal hears of its session, besides what goes into the tab store. */
 export interface PaneView {
@@ -25,6 +25,8 @@ interface Options {
   /** The saved sessions, for a pane's settings at each connection. */
   profiles(): Profile[];
   t: SessionConfig["t"];
+  /** Tells screen readers (see `announce`). */
+  announce(message: string): void;
 }
 
 /** How a pane's next session starts logging (see `Pane.logPath`). */
@@ -36,7 +38,7 @@ const logOpen = (pane: Pane): LogOpen =>
  * forwarding and log into the tab store; a local shell that exits cleanly (`exit`, Ctrl+D)
  * closes its pane, as in Terminal.app.
  */
-export function createSessionRegistry(store: TabStore, { profiles, t }: Options): SessionRegistry {
+export function createSessionRegistry(store: TabStore, { profiles, t, announce }: Options): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
 
   return {
@@ -51,6 +53,14 @@ export function createSessionRegistry(store: TabStore, { profiles, t }: Options)
         return target.kind === "profile" ? profiles().find((p) => p.id === target.profileId) : undefined;
       };
       const update = (patch: Partial<Pane>) => store.dispatch({ type: "updatePane", key, patch });
+      // A remote pane out of sight connecting or disconnecting; the one with the keyboard
+      // says so in its terminal.
+      const announceStatus = (status: "connected" | "closed") => {
+        const current = pane();
+        if (current.target.kind === "local" || current.status === status) return;
+        if (activeTabOf(store.get())?.focused === key) return;
+        announce(t(status === "connected" ? "announce.connected" : "announce.disconnected", { name: current.title }));
+      };
 
       const session = new PaneSession(
         view.port,
@@ -67,8 +77,10 @@ export function createSessionRegistry(store: TabStore, { profiles, t }: Options)
           status: (status) => {
             if (status === "connecting") {
               store.dispatch({ type: "connecting", key, protocol: targetProtocol(pane().target, profiles()) });
-            } else if (status === "connected") update({ status });
-            else update({ status, forwards: {} });
+            } else {
+              announceStatus(status);
+              update(status === "connected" ? { status } : { status, forwards: {} });
+            }
           },
           session: (id) => {
             update({ sessionId: id });
