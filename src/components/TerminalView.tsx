@@ -530,10 +530,14 @@ export function TerminalView({
     ];
     const observer = new ResizeObserver(() => fit.fit());
     observer.observe(container);
-    connect();
+    // A tick later: React's StrictMode (in development) mounts, unmounts and mounts again at
+    // once, which would open a backend session (and a log file, or a serial device that is
+    // then busy) for the first mount too.
+    const start = setTimeout(connect, 0);
 
     return () => {
       disposed = true;
+      clearTimeout(start);
       cancelRetry();
       stopLoginCommands();
       window.removeEventListener("online", onOnline);
