@@ -2,6 +2,14 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.3.1] - 2026-10-09
+
+### Bug Fixes
+
+- The private key field has a Choose… button. A key in the home folder is saved as `~/…`, so exported sessions keep working on other computers.
+- Where `~` appears in a session's settings, a question mark icon shows the folder it stands for (on Windows, `C:\Users\<name>`), and for the key path the full path.
+- The warning about a changed host key names the actual `known_hosts` file instead of `~/.ssh/known_hosts`.
+
 ## [1.3.0] - 2026-10-09
 
 ### Features
