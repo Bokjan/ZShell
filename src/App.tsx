@@ -135,6 +135,9 @@ const newTab = (key: number, pane: Pane): Tab => ({
 const logOpen = (pane: Pane): LogOpen =>
   pane.logPath ? { mode: "append", path: pane.logPath } : pane.logStopped ? { mode: "off" } : { mode: "auto" };
 
+/** Whether a dialog (or the command palette) is open over the tabs. */
+const isDialogOpen = () => document.querySelector(".dialog-backdrop") !== null;
+
 function App() {
   const { t } = useTranslation();
   const { settings, update } = useSettings();
@@ -519,6 +522,9 @@ function App() {
         setSettingsOpen(true);
         return;
       }
+      // The rest act on the tabs behind an open dialog, and would move the focus to a
+      // terminal, where what is typed next for the dialog would go.
+      if (isDialogOpen()) return;
       if (isNewTabShortcut(e) && localAllowed) {
         e.preventDefault();
         e.stopPropagation();
@@ -596,7 +602,7 @@ function App() {
   // From the macOS File menu's "Close" item (⌘W), which closes the window once no tabs are
   // left, as in Terminal.app.
   useEffect(() => {
-    const unlisten = listen("close-tab", closeFocused);
+    const unlisten = listen("close-tab", () => !isDialogOpen() && closeFocused());
     return () => void unlisten.then((f) => f());
   }, [closeFocused]);
 
