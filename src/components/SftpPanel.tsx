@@ -131,12 +131,19 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
     setCursor(paths.length > 0 ? paths[paths.length - 1] : null);
   };
 
+  /** Counts listings asked for: only the latest one's answer is shown. */
+  const loadSeqRef = useRef(0);
   const load = useCallback(
     async (path: string) => {
       if (sessionId == null) return;
+      const seq = ++loadSeqRef.current;
+      // A slower answer for a folder opened before, or from the connection before a
+      // reconnection, must not replace what came after it.
+      const stale = () => seq !== loadSeqRef.current || sessionRef.current.sessionId !== sessionId;
       setLoading(true);
       try {
         const listing = await sftp.list(sessionId, path);
+        if (stale()) return;
         // Refreshing keeps the selection; another folder starts afresh.
         if (listing.path !== cwdRef.current) {
           setSelection(new Set());
@@ -149,10 +156,11 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
         setEntries(listing.entries);
         setError(null);
       } catch (e) {
+        if (stale()) return;
         setPathInput(cwdRef.current ?? "");
         fail(e);
       } finally {
-        setLoading(false);
+        if (seq === loadSeqRef.current) setLoading(false);
       }
     },
     [sessionId],
