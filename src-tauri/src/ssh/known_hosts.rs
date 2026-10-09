@@ -1,5 +1,6 @@
-//! `~/.ssh/known_hosts`: checking a server's key on connection, as OpenSSH does ([`check`]),
-//! and for the settings' Known Hosts listing entries, finding hashed ones by host name (as
+//! `~/.ssh/known_hosts`: checking a server's key on connection, as OpenSSH does ([`check`],
+//! which also reads the other files OpenSSH reads by default), and for the settings' Known
+//! Hosts listing entries, finding hashed ones by host name (as
 //! `ssh-keygen -F` does) and removing them (as `ssh-keygen -R` does, keeping the previous
 //! file as `known_hosts.old`). Adding an accepted key is russh's `learn_known_hosts`.
 //!
@@ -49,6 +50,22 @@ pub fn path() -> Option<PathBuf> {
 
 fn required_path() -> Result<PathBuf> {
     path().ok_or_else(|| Error::new("knownHosts.noHome"))
+}
+
+/// The other files OpenSSH checks keys against by default: the rest of `UserKnownHostsFile`
+/// (`~/.ssh/known_hosts2`) and `GlobalKnownHostsFile` (keys an administrator installed for
+/// every user, in `/etc/ssh`, or `%ProgramData%\ssh` for Windows' OpenSSH).
+fn other_paths(user: &Path) -> Vec<PathBuf> {
+    let global = if cfg!(windows) {
+        std::env::var_os("ProgramData").map(|data| PathBuf::from(data).join("ssh"))
+    } else {
+        Some(PathBuf::from("/etc/ssh"))
+    };
+    let mut paths = vec![user.with_file_name("known_hosts2")];
+    if let Some(global) = global {
+        paths.extend([global.join("ssh_known_hosts"), global.join("ssh_known_hosts2")]);
+    }
+    paths
 }
 
 /// How a host is recorded: `host`, or `[host]:port` off port 22.
@@ -180,34 +197,49 @@ pub enum Check {
     Known,
     /// No line for the host has a key of this type.
     Unknown,
-    /// The host's key of this type is another one, on this line.
-    Changed { line: usize },
-    /// The key is marked `@revoked` on this line (for any host).
-    Revoked { line: usize },
+    /// The host's key of this type is another one, on this line of this file.
+    Changed { path: PathBuf, line: usize },
+    /// The key is marked `@revoked` on this line of this file (for any host).
+    Revoked { path: PathBuf, line: usize },
 }
 
-fn check_at(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<Check> {
+/// Checks `key` against the files in `paths`, as one list, the way OpenSSH does. The first
+/// file (the user's own) must be readable; the others are skipped if they can't be read.
+fn check_at(paths: &[PathBuf], host: &str, port: u16, key: &PublicKey) -> Result<Check> {
     let host_port = host_pattern(host, port).to_ascii_lowercase();
-    let entries = list_at(path)?;
-    let has_key = |entry: &&Entry| entry.key.as_ref() == Some(key);
+    let mut entries: Vec<(&Path, Entry)> = Vec::new();
+    for (index, path) in paths.iter().enumerate() {
+        let listed = match list_at(path) {
+            Ok(listed) => listed,
+            Err(_) if index > 0 => continue,
+            Err(e) => return Err(e),
+        };
+        entries.extend(listed.into_iter().map(|entry| (path.as_path(), entry)));
+    }
+    let has_key = |(_, entry): &&(&Path, Entry)| entry.key.as_ref() == Some(key);
     // As OpenSSH: a revoked key is refused whatever else is known, and the host's key on any
     // line is accepted whatever other keys of the type it has. CA lines are for certificates.
-    if let Some(entry) = entries.iter().filter(has_key).find(|entry| entry.marker.as_deref() == Some("revoked")) {
-        return Ok(Check::Revoked { line: entry.line });
+    if let Some((path, entry)) = entries.iter().filter(has_key).find(|(_, entry)| entry.marker.as_deref() == Some("revoked")) {
+        return Ok(Check::Revoked { path: path.to_path_buf(), line: entry.line });
     }
-    let for_host: Vec<&Entry> = entries.iter().filter(|entry| entry.marker.is_none() && entry.applies_to(&host_port)).collect();
+    let for_host: Vec<&(&Path, Entry)> =
+        entries.iter().filter(|(_, entry)| entry.marker.is_none() && entry.applies_to(&host_port)).collect();
     if for_host.iter().any(has_key) {
         return Ok(Check::Known);
     }
     let changed = for_host
         .iter()
-        .find(|entry| entry.key.as_ref().is_some_and(|recorded| recorded.algorithm() == key.algorithm()));
-    Ok(changed.map_or(Check::Unknown, |entry| Check::Changed { line: entry.line }))
+        .find(|(_, entry)| entry.key.as_ref().is_some_and(|recorded| recorded.algorithm() == key.algorithm()));
+    Ok(changed.map_or(Check::Unknown, |(path, entry)| Check::Changed { path: path.to_path_buf(), line: entry.line }))
 }
 
-/// Checks the key a server at `host:port` presented, as OpenSSH does.
+/// Checks the key a server at `host:port` presented, as OpenSSH does: against
+/// `~/.ssh/known_hosts` and the [other files](other_paths) OpenSSH reads by default.
 pub fn check(host: &str, port: u16, key: &PublicKey) -> Result<Check> {
-    check_at(&required_path()?, host, port, key)
+    let user = required_path()?;
+    let mut paths = vec![user.clone()];
+    paths.extend(other_paths(&user));
+    check_at(&paths, host, port, key)
 }
 
 fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
@@ -299,18 +331,39 @@ mod tests {
         let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
         // Another key of the type first, then the server's, hashed: known, as in OpenSSH.
         let path = temp_file(&format!("# c\n[127.0.0.1]:2222 ssh-ed25519 {OTHER}\n{HASHED} ssh-ed25519 {KEY}\n"));
-        assert_eq!(check_at(&path, "127.0.0.1", 2222, &key).unwrap(), Check::Known);
+        assert_eq!(check_at(std::slice::from_ref(&path), "127.0.0.1", 2222, &key).unwrap(), Check::Known);
         // Only another key of the type: changed, on the line counting comments.
         let path = temp_file(&format!("# c\n\n[127.0.0.1]:2222 ssh-ed25519 {OTHER}\n"));
-        assert_eq!(check_at(&path, "127.0.0.1", 2222, &key).unwrap(), Check::Changed { line: 3 });
-        assert_eq!(check_at(&path, "127.0.0.1", 22, &key).unwrap(), Check::Unknown);
+        assert_eq!(check_at(std::slice::from_ref(&path), "127.0.0.1", 2222, &key).unwrap(), Check::Changed { path: path.clone(), line: 3 });
+        assert_eq!(check_at(std::slice::from_ref(&path), "127.0.0.1", 22, &key).unwrap(), Check::Unknown);
         // A revoked key is refused even if it is also known.
         let path = temp_file(&format!("[127.0.0.1]:2222 ssh-ed25519 {KEY}\n@revoked * ssh-ed25519 {KEY}\n"));
-        assert_eq!(check_at(&path, "127.0.0.1", 2222, &key).unwrap(), Check::Revoked { line: 2 });
+        assert_eq!(check_at(std::slice::from_ref(&path), "127.0.0.1", 2222, &key).unwrap(), Check::Revoked { path: path.clone(), line: 2 });
         // CA lines are for certificates, wildcards apply, and host names ignore case.
         let path = temp_file(&format!("@cert-authority * ssh-ed25519 {KEY}\n*.LAN ssh-ed25519 {KEY}\n"));
-        assert_eq!(check_at(&path, "NAS.lan", 22, &key).unwrap(), Check::Known);
-        assert_eq!(check_at(&path, "other", 22, &key).unwrap(), Check::Unknown);
+        assert_eq!(check_at(std::slice::from_ref(&path), "NAS.lan", 22, &key).unwrap(), Check::Known);
+        assert_eq!(check_at(std::slice::from_ref(&path), "other", 22, &key).unwrap(), Check::Unknown);
+    }
+
+    #[test]
+    fn checks_the_other_files_too() {
+        let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
+        let user = temp_file(&format!("[127.0.0.1]:2222 ssh-ed25519 {OTHER}\n"));
+        let global = temp_file(&format!("[127.0.0.1]:2222 ssh-ed25519 {KEY}\n"));
+        let missing = user.with_file_name("no-such-known-hosts");
+        // Known from the system's file, as in OpenSSH, although the user's has another key.
+        let paths = [user.clone(), missing.clone(), global.clone()];
+        assert_eq!(check_at(&paths, "127.0.0.1", 2222, &key).unwrap(), Check::Known);
+        // Changed in the file that has the other key.
+        assert_eq!(check_at(&paths[..2], "127.0.0.1", 2222, &key).unwrap(), Check::Changed { path: user.clone(), line: 1 });
+        // Revoked in any file.
+        let revoked = temp_file(&format!("\n@revoked * ssh-ed25519 {KEY}\n"));
+        let paths = [global.clone(), revoked.clone()];
+        assert_eq!(check_at(&paths, "127.0.0.1", 2222, &key).unwrap(), Check::Revoked { path: revoked, line: 2 });
+        // A file of the system's that can't be read is skipped; the user's own is not.
+        let directory = std::env::temp_dir();
+        assert_eq!(check_at(&[global.clone(), directory.clone()], "127.0.0.1", 2222, &key).unwrap(), Check::Known);
+        assert!(check_at(&[directory, global], "127.0.0.1", 2222, &key).is_err());
     }
 
     #[test]
@@ -338,7 +391,7 @@ mod tests {
         let content = [comment, format!("a ssh-ed25519 {KEY}\nb ssh-ed25519 {OTHER}\n").as_bytes()].concat();
         fs::write(&path, &content).unwrap();
         let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
-        assert!(matches!(check_at(&path, "a", 22, &key).unwrap(), Check::Known));
+        assert!(matches!(check_at(std::slice::from_ref(&path), "a", 22, &key).unwrap(), Check::Known));
         let entries = list_at(&path).unwrap();
         remove_at(&path, entries[1].line, &entries[1].text).unwrap();
         assert_eq!(fs::read(&path).unwrap(), [comment, format!("a ssh-ed25519 {KEY}\n").as_bytes()].concat());

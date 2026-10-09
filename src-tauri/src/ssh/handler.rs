@@ -56,8 +56,8 @@ impl client::Handler for ClientHandler {
                 return Ok(true);
             }
             Ok(Check::Unknown) => HostKeyStatus::Unknown,
-            Ok(Check::Changed { line }) => HostKeyStatus::Changed { line },
-            Ok(Check::Revoked { .. }) => HostKeyStatus::Revoked,
+            Ok(Check::Changed { path, line }) => HostKeyStatus::Changed { path, line },
+            Ok(Check::Revoked { path, .. }) => HostKeyStatus::Revoked { path },
             Err(e) => return Err(std::io::Error::other(e.to_string()).into()),
         };
 

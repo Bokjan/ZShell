@@ -1,8 +1,11 @@
-//! Server host key verification against `~/.ssh/known_hosts` (shared with OpenSSH).
+//! Server host key verification against `~/.ssh/known_hosts` (shared with OpenSSH) and the
+//! other files OpenSSH reads.
 //!
 //! russh calls [`super::handler::ClientHandler::check_server_key`] from its own task during
 //! key exchange, so the handler cannot talk to the terminal directly. Instead it sends a
 //! [`HostKeyQuery`] to the session task, which asks the user and replies.
+
+use std::path::PathBuf;
 
 use russh::keys::known_hosts::learn_known_hosts;
 use russh::keys::{HashAlg, PublicKey};
@@ -13,9 +16,10 @@ use crate::session::TermIo;
 
 pub enum HostKeyStatus {
     Unknown,
-    Changed { line: usize },
-    /// Marked `@revoked` in known_hosts.
-    Revoked,
+    /// Another key is recorded on this line of this file.
+    Changed { path: PathBuf, line: usize },
+    /// Marked `@revoked` in this file.
+    Revoked { path: PathBuf },
 }
 
 pub struct HostKeyQuery {
@@ -28,13 +32,14 @@ pub struct HostKeyQuery {
 pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuery) -> bool {
     let algorithm = query.key.algorithm();
     let fingerprint = query.key.fingerprint(HashAlg::Sha256);
-    match query.status {
-        HostKeyStatus::Changed { line } => {
+    match &query.status {
+        HostKeyStatus::Changed { path, line } => {
             let banner = t!("hostKey.changedBanner");
             // The real path, as OpenSSH shows it, rather than `~` (unfamiliar on Windows).
-            let path = known_hosts::path().unwrap_or_default();
+            // Settings only list the user's own file.
+            let key = if known_hosts::path().as_ref() == Some(path) { "hostKey.changedDetails" } else { "hostKey.changedDetailsElsewhere" };
             let details = t!(
-                "hostKey.changedDetails",
+                key,
                 algorithm = algorithm,
                 fingerprint = fingerprint,
                 line = line,
@@ -44,9 +49,8 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }
-        HostKeyStatus::Revoked => {
+        HostKeyStatus::Revoked { path } => {
             let banner = t!("hostKey.revokedBanner");
-            let path = known_hosts::path().unwrap_or_default();
             let details = t!("hostKey.revokedDetails", algorithm = algorithm, host = host_pattern(host, port), path = path.display());
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
