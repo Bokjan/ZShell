@@ -162,6 +162,17 @@
 
 ## 交互约定
 
+### 无障碍
+
+目标是读屏用户（VoiceOver、讲述人、NVDA）能完成连接、操作终端、使用 SFTP 与主要对话框，全部功能可以只用键盘完成；不追求逐条符合 WCAG。
+
+- **终端**：设置 › 终端的"读屏支持"打开 xterm.js 的 `screenReaderMode`（与屏幕同步的行列表，新输出经 live region 播报），有性能开销，默认关。读屏念出的输入框名称与"输出过多"提示经 `Terminal.strings` 翻译。系统要求更高对比度（`prefers-contrast: more`、`forced-colors: active`）时设 `minimumContrastRatio` 为 4.5，配色里太接近背景的前景色在绘制时调整，配色本身不变；平时为 1，不改变用户选的配色。
+- **对话框**：`Modal` 是 `role="dialog"`（确认类是 `alertdialog`，`aria-describedby` 指向 `.dialog-message`）加 `aria-modal`，名称取自其中的 `h2`（没有标题的用 `label`）。打开时聚焦第一个控件（控件自己 `autoFocus` 的除外），Tab / Shift+Tab 由对话框栈在最上层对话框内循环，关闭后若焦点落空则还给打开前的元素。不给应用根元素加 `inert`：Windows 自绘的窗口按钮在根元素里，对话框打开时也要能用。右键菜单同样在关闭后归还焦点，用 `aria-activedescendant` 指向高亮项。
+- **列表**：焦点停在列表容器上，用 `aria-activedescendant` 指向当前行，方向键移动。标签栏是 `tablist`，方向键只移动焦点，Enter / 空格才切换（切换会把焦点交给终端）；会话列表是 `tree`（搜索时是 `listbox`，搜索框是 `combobox`）；文件列表是多选的 `grid`，表头是按钮以便键盘排序。WebKit 把子元素里有 treeitem / option、group、presentation 之外元素的树或列表当作普通分组，所以分节标题用 `role="presentation"`，没有项目、只显示提示文字的列表不设角色。各处的菜单都可以用 Shift+F10 或菜单键打开。键盘从 ⌘K / Ctrl+Shift+K（会话搜索）进入界面，Tab 依次经过会话列表、标签栏与工具栏。
+- **播报**：`lib/announce.ts` 是全局唯一的 `aria-live="polite"` 区域，每条消息是新加的一行（同时到来或重复的消息都会念出），播报界面上一闪而过或不在视线内的变化：焦点之外的远端窗格连上或断开（有焦点的窗格在终端里自己说）、传输完成或失败、从菜单复制了地址或路径。文字走 `t()`。
+- **样式**：控件的键盘焦点由 `:where(button, a, summary, [tabindex]):focus-visible` 统一画强调色轮廓，特异性低，自己用边框或选中行表示焦点的组件写 `outline: none` 覆盖。`prefers-reduced-motion` 时去掉过渡与闪烁动画。Windows 对比度主题（`forced-colors`）下只靠背景表示的状态（当前标签、选中行、打开的选项）改用 `Highlight` / `HighlightText`。主题颜色的文字与背景对比度至少 4.5:1；白字所在的填充色用比 `--accent` 深的 `--accent-fill`（`--danger-fill` 同理），`--accent` 留给背景上的文字与标记。
+- **验证**：macOS 上可以用 `osascript -l JavaScript` 经 System Events 读出窗口的辅助功能树（需要给 osascript 辅助功能权限），查看实际的角色与名称；读屏的实际体验仍要用 VoiceOver、讲述人、NVDA 试。
+
 - **快捷键**：应用快捷键在 window 的捕获阶段拦截（`useShortcuts`），终端收不到。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 等留给 shell）。对话框（或命令面板）打开时，除打开设置外的应用快捷键都不处理，菜单的「关闭」也不关标签，否则会切换或关闭对话框背后的标签，并把焦点移到终端。剪贴板快捷键只在终端获得焦点时生效（xterm.js 的 `attachCustomKeyEventHandler`），输入框里仍是普通的复制粘贴。设置里的 Keyboard Shortcuts 一节列出当前平台的快捷键，按键文字取自 `lib/platform.ts` 的 `*ShortcutLabel`，改快捷键时一并更新。
 
   | 功能 | macOS | Windows |
