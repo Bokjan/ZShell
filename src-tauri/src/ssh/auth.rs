@@ -191,7 +191,12 @@ async fn try_key_file(session: &mut Session, user: &str, path: &Path, io: &mut T
 async fn try_encrypted_key(session: &mut Session, user: &str, path: &Path, io: &mut TermIo) -> Result<bool> {
     // The OpenSSH format keeps the public key readable; legacy PEM keys need the passphrase first.
     let Ok(encrypted) = PrivateKey::read_openssh_file(path) else {
-        let key = load_key(&path.to_path_buf(), io).await?;
+        let key = match load_key(&path.to_path_buf(), io).await {
+            Ok(key) => key,
+            // Wrong passphrases skip the key, as for OpenSSH-format keys (and in OpenSSH).
+            Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code() == "auth.keyDecryptFailed") => return Ok(false),
+            Err(e) => return Err(e),
+        };
         let hash_alg = rsa_hash(session, key.public_key()).await?;
         let result = session
             .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg))
