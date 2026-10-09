@@ -696,17 +696,25 @@ impl ProfileStore {
 
     /// Applies `change` to a copy of the state and, if it succeeds, saves the files that
     /// changed and keeps the copy.
+    ///
+    /// Every file is written before any is put in place, so a failed write (a full disk)
+    /// leaves all of them as they were, matching the state kept. Only a rename failing
+    /// part way through can still leave them apart; loading repairs references across them.
     fn update<T>(&self, change: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
         let mut state = self.state.lock().unwrap();
         let mut updated = state.clone();
         let value = change(&mut updated)?;
+        let mut staged = Vec::new();
         if updated.folders != state.folders {
-            write_json_atomic(&self.folders_path, &updated.folders)?;
+            staged.push(stage_json(&self.folders_path, &updated.folders)?);
         }
         if updated.proxies != state.proxies {
-            write_json_atomic(&self.proxies_path, &updated.proxies)?;
+            staged.push(stage_json(&self.proxies_path, &updated.proxies)?);
         }
-        write_json_atomic(&self.path, &updated.profiles)?;
+        staged.push(stage_json(&self.path, &updated.profiles)?);
+        for file in staged {
+            file.commit()?;
+        }
         *state = updated;
         Ok(value)
     }
@@ -766,18 +774,45 @@ impl SetAside {
 /// leaves a truncated file behind. The data is flushed to disk before the rename: otherwise
 /// a power loss can leave the renamed file empty (seen on NTFS).
 pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<()> {
+    stage_json(path, value)?.commit()
+}
+
+/// A file written next to its place under a temporary name and flushed to disk (see
+/// [`write_json_atomic`]), put in place by [`Staged::commit`]. Dropped without that, the
+/// temporary file is removed.
+pub struct Staged {
+    tmp: PathBuf,
+    path: PathBuf,
+    committed: bool,
+}
+
+pub fn stage_json(path: &Path, value: &impl Serialize) -> Result<Staged> {
     use std::io::Write;
 
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_extension("json.tmp");
-    let mut file = fs::File::create(&tmp)?;
+    let staged = Staged { tmp: path.with_extension("json.tmp"), path: path.to_owned(), committed: false };
+    let mut file = fs::File::create(&staged.tmp)?;
     file.write_all(&serde_json::to_vec_pretty(value)?)?;
     file.sync_all()?;
-    drop(file);
-    fs::rename(&tmp, path)?;
-    Ok(())
+    Ok(staged)
+}
+
+impl Staged {
+    pub fn commit(mut self) -> Result<()> {
+        fs::rename(&self.tmp, &self.path)?;
+        self.committed = true;
+        Ok(())
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = fs::remove_file(&self.tmp);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -854,6 +889,30 @@ mod tests {
         let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(reloaded.list().len(), 2);
         assert!(reloaded.folders().is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A change that has to write two files writes neither if the second can't be written.
+    #[test]
+    fn a_failed_write_leaves_every_file_as_it_was() {
+        let (store, dir) = store("all-or-none");
+        let work = store.save_folder(folder("Work", None)).unwrap();
+        store.save(new_profile("a", Some(&work.id))).unwrap();
+        let folders = fs::read(dir.join("folders.json")).unwrap();
+        let profiles = fs::read(dir.join("profiles.json")).unwrap();
+
+        // Deleting the folder rewrites folders.json and then profiles.json, which can't be.
+        fs::create_dir(dir.join("profiles.json.tmp")).unwrap();
+        store.delete_folder(&work.id).unwrap_err();
+        assert_eq!(fs::read(dir.join("folders.json")).unwrap(), folders);
+        assert_eq!(fs::read(dir.join("profiles.json")).unwrap(), profiles);
+        assert!(!dir.join("folders.json.tmp").exists());
+        assert_eq!(store.folders().len(), 1);
+
+        fs::remove_dir(dir.join("profiles.json.tmp")).unwrap();
+        store.delete_folder(&work.id).unwrap();
+        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
+        assert!(reloaded.folders().is_empty() && reloaded.list()[0].folder.is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
 
