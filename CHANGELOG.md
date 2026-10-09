@@ -2,6 +2,16 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.3.0] - 2026-10-09
+
+### Bug Fixes
+
+- A program printing a lot of output over SSH or Telnet (`cat` of a large file) no longer makes ZShell's memory grow until the terminal drops output: the session waits for the terminal to catch up, as local terminals already did.
+- A ZMODEM download to a disk slower than the connection no longer fills memory.
+- The message saying how a session ended always comes after its last output.
+- A slow log folder (a network drive) no longer slows down the session being logged; if the log falls too far behind, it notes how much output is missing.
+- Listing a folder in the file panel no longer waits for a large upload or download to finish.
+
 ## [2.2.0] - 2026-10-09
 
 ### Bug Fixes
