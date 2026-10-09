@@ -148,8 +148,14 @@ async fn scan_local_dir(root: &Path, remote_root: String, plan: &mut Plan<PathBu
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             let child = join(&remote, &entry.file_name().to_string_lossy());
-            // Follow symlinks; skip anything that is neither a file nor a directory.
+            // Follow symlinks to files only, as downloads do, so a link back up the tree
+            // (`loop -> ..`, Wine's `z: -> /`) can't walk the whole disk. Skip anything that
+            // is neither a file nor a directory.
+            let Ok(file_type) = entry.file_type().await else { continue };
             let Ok(metadata) = tokio::fs::metadata(&path).await else { continue };
+            if file_type.is_symlink() && !metadata.is_file() {
+                continue;
+            }
             if metadata.is_dir() {
                 pending.push((path, child));
             } else if metadata.is_file() {
@@ -296,4 +302,30 @@ pub(crate) fn unique_path(path: PathBuf) -> PathBuf {
         .map(|n| path.with_file_name(format!("{stem} ({n}){ext}")))
         .find(|candidate| !candidate.exists())
         .unwrap()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn upload_scan_skips_directory_links() {
+        let root = std::env::temp_dir().join(format!("zshell-scan-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub/a.txt"), "abc").unwrap();
+        std::os::unix::fs::symlink("..", root.join("sub/loop")).unwrap();
+        std::os::unix::fs::symlink("a.txt", root.join("sub/link.txt")).unwrap();
+
+        let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let result = scan_local_dir(&root, "/r".into(), &mut plan, &mut reporter).await;
+        std::fs::remove_dir_all(&root).unwrap();
+        result.unwrap();
+
+        assert_eq!(plan.dirs, ["/r", "/r/sub"]);
+        let mut remote: Vec<_> = plan.files.iter().map(|(_, remote)| remote.as_str()).collect();
+        remote.sort();
+        assert_eq!(remote, ["/r/sub/a.txt", "/r/sub/link.txt"]);
+        assert_eq!(reporter.progress.total, 6);
+    }
 }
