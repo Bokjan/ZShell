@@ -24,6 +24,7 @@ import {
   type Proxy,
   type SerialPortInfo,
 } from "../lib/api";
+import { useConfirmButton } from "../lib/confirm";
 import { wholeNumber } from "../lib/format";
 import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
 import { isComposing, isWindows } from "../lib/platform";
@@ -140,7 +141,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const [ports, setPorts] = useState<SerialPortInfo[] | null>(null);
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleteButton = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
   const ssh = protocol === "ssh";
   // Automatic authentication falls back to a password, so it can keep a stored one too;
@@ -315,8 +316,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
   const remove = async () => {
     if (!profile) return;
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
+    if (!deleteButton.armed) {
+      deleteButton.setArmed(true);
       return;
     }
     try {
@@ -830,8 +831,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
           <footer>
             {profile && (
-              <button type="button" className="danger" onClick={remove}>
-                {confirmingDelete ? t("profile.deleteConfirm") : t("common.delete")}
+              <button type="button" className="danger" ref={deleteButton.ref} onClick={remove} onBlur={deleteButton.onBlur}>
+                {deleteButton.armed ? t("profile.deleteConfirm") : t("common.delete")}
               </button>
             )}
             <span className="grow" />

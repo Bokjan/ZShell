@@ -5,6 +5,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { configDirectory, knownHosts, logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
+import { useConfirmButton } from "../lib/confirm";
 import { basename, formatSize } from "../lib/format";
 import {
   allCopyShortcutsLabel,
@@ -242,7 +243,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
   const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
   const [licensesOpen, setLicensesOpen] = useState(false);
-  const [confirmingReset, setConfirmingReset] = useState(false);
+  const resetButton = useConfirmButton();
   const [query, setQuery] = useState("");
   const queryRef = useRef(query);
   queryRef.current = query;
@@ -332,23 +333,12 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
     chosen.current = false;
   };
 
-  // WebKit doesn't focus a button when it is clicked, so a click elsewhere cancels, not a blur.
-  const resetRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!confirmingReset) return;
-    const cancel = (e: PointerEvent) => {
-      if (!resetRef.current?.contains(e.target as Node)) setConfirmingReset(false);
-    };
-    window.addEventListener("pointerdown", cancel, true);
-    return () => window.removeEventListener("pointerdown", cancel, true);
-  }, [confirmingReset]);
-
   const reset = () => {
-    if (!confirmingReset) {
-      setConfirmingReset(true);
+    if (!resetButton.armed) {
+      resetButton.setArmed(true);
       return;
     }
-    setConfirmingReset(false);
+    resetButton.setArmed(false);
     update(DEFAULT_SETTINGS);
   };
 
@@ -386,8 +376,8 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
               ))}
             </ul>
             <footer>
-              <button type="button" ref={resetRef} onClick={reset} onBlur={() => setConfirmingReset(false)}>
-                {confirmingReset ? t("settings.resetConfirm") : t("settings.reset")}
+              <button type="button" ref={resetButton.ref} onClick={reset} onBlur={resetButton.onBlur}>
+                {resetButton.armed ? t("settings.resetConfirm") : t("settings.reset")}
               </button>
             </footer>
           </nav>

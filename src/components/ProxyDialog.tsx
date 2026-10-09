@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
 import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
+import { useConfirmButton } from "../lib/confirm";
 import { hostPort, wholeNumber } from "../lib/format";
 import { isComposing } from "../lib/platform";
 
@@ -41,7 +42,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [command, setCommand] = useState(proxy?.command ?? "");
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleteButton = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const server = kind !== "command";
@@ -115,8 +116,8 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
 
   const remove = async () => {
     if (!proxy) return;
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
+    if (!deleteButton.armed) {
+      deleteButton.setArmed(true);
       return;
     }
     try {
@@ -124,7 +125,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
       onChanged();
       onClose();
     } catch (err) {
-      setConfirmingDelete(false);
+      deleteButton.setArmed(false);
       setError(errorMessage(err));
     }
   };
@@ -233,8 +234,8 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
 
         <footer>
           {proxy && (
-            <button type="button" className="danger" onClick={() => void remove()} onBlur={() => setConfirmingDelete(false)}>
-              {confirmingDelete ? t("profile.deleteConfirm") : t("common.delete")}
+            <button type="button" className="danger" ref={deleteButton.ref} onClick={() => void remove()} onBlur={deleteButton.onBlur}>
+              {deleteButton.armed ? t("profile.deleteConfirm") : t("common.delete")}
             </button>
           )}
           <span className="grow" />
