@@ -427,9 +427,6 @@ export function Sidebar(props: Props) {
           <button className="icon-button" title={t("sidebar.importExport")} onClick={importMenu}>
             <ImportExportIcon />
           </button>
-          <button className="icon-button" title={t("sidebar.newFolder")} onClick={() => createFolder(currentFolder())}>
-            <FolderPlusIcon />
-          </button>
           <button className="icon-button" title={t("sidebar.newSession")} onClick={() => onNew(currentFolder())}>
             <PlusIcon />
           </button>
@@ -600,15 +597,6 @@ function ImportExportIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M5 13V3M2.5 5.5L5 3l2.5 2.5M11 3v10M8.5 10.5L11 13l2.5-2.5" />
-    </svg>
-  );
-}
-
-function FolderPlusIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M1.5 4.5v8a1 1 0 001 1h11a1 1 0 001-1v-6a1 1 0 00-1-1H8L6.5 3.5h-4a1 1 0 00-1 1z" />
-      <path d="M8 7.5v4M6 9.5h4" />
     </svg>
   );
 }
