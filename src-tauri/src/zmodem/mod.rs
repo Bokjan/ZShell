@@ -32,7 +32,8 @@ use link::Link;
 /// Outgoing chunks in flight to the backend; a sender waits beyond this (backpressure).
 const OUTGOING_CHUNKS: usize = 4;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
-/// How long the header that started a transfer may take to arrive in full.
+/// How long the header that started a transfer may take to arrive in full; output that only
+/// looked like the start of one (`cat` of a binary file) is held back this long at most.
 const START_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// What the frontend is asked for, or that a transfer is running (for its cancel button).
@@ -123,6 +124,7 @@ impl Zmodem {
         *state = State::Active(Active { incoming, cancel, reply: None });
         let mut link = Link::new(incoming_rx, self.outgoing.clone(), cancel_rx);
         link.charset = sink.encoding();
+        link.record(shown.saturating_sub(start));
         tauri::async_runtime::spawn(run(self.clone(), direction, link, sink.clone()));
         bytes[..start.saturating_sub(shown)].to_vec()
     }
@@ -224,12 +226,18 @@ async fn run(zmodem: Arc<Zmodem>, direction: Direction, mut link: Link, sink: Se
 
 async fn transfer(zmodem: &Zmodem, direction: Direction, link: &mut Link, sink: &SessionSink, report: &mut TerminalReport) -> Result<()> {
     // The header that started it, in full, and of the expected kind.
+    // If it isn't one, what was read goes to the terminal after all (see `Zmodem::finish`).
     let expected = if direction == Direction::Receive { Kind::Rqinit } else { Kind::Rinit };
-    let first = match link.header(START_TIMEOUT).await {
-        Ok(header) if header.kind == expected => header,
-        Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code() == "zmodem.cancelled") => return Err(e),
+    let first = match tokio::time::timeout(START_TIMEOUT, link.header(START_TIMEOUT)).await {
+        Ok(Ok(header)) if header.kind == expected => header,
+        Ok(Err(e)) if e.downcast_ref::<Error>().is_some_and(|e| e.code() == "zmodem.cancelled") => {
+            // Ctrl+C before anything showed it was a transfer: meant for the remote program.
+            link.send_now(&[0x03]).await;
+            bail!(Error::new("zmodem.notStarted"));
+        }
         _ => bail!(Error::new("zmodem.notStarted")),
     };
+    link.stop_recording();
     // Start on a fresh line, below what the remote printed (`rz waiting to receive.`).
     sink.write(b"\r\n".to_vec());
 

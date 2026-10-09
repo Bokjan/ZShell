@@ -527,4 +527,49 @@ mod tests {
         input.send(SessionInput::Data(b"\x1b[D\x1bOD\x1bb!\r".to_vec())).unwrap();
         assert_eq!(io.read_line(false).await.as_deref(), Some("se密cret!"));
     }
+
+    /// Collects what the terminal shows until it ends with `want` (or `wait` passes).
+    fn shown_until(output: &std::sync::mpsc::Receiver<Vec<u8>>, want: &[u8], wait: std::time::Duration) -> Vec<u8> {
+        let deadline = std::time::Instant::now() + wait;
+        let mut shown = Vec::new();
+        while !shown.ends_with(want) {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match output.recv_timeout(left) {
+                Ok(bytes) => shown.extend(bytes),
+                Err(_) => break,
+            }
+        }
+        shown
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn output_that_only_looks_like_zmodem_is_shown() {
+        let (io, _input, output, _events) = TermIo::detached((80, 24));
+        let sink = io.sink();
+        // sz's signature without a header after it (`cat` of a binary file), then more output,
+        // slowly but steadily.
+        let mut sent = b"cat a.bin\r\n**\x18B00 not a header".to_vec();
+        sink.output(sent.clone());
+        for i in 0..10 {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let more = format!(" more {i}").into_bytes();
+            sent.extend(&more);
+            sink.output(more);
+        }
+        let shown = shown_until(&output, b" more 9", std::time::Duration::from_secs(5));
+        assert_eq!(String::from_utf8_lossy(&shown), String::from_utf8_lossy(&sent));
+        assert!(!sink.zmodem.is_active());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ctrl_c_before_a_transfer_starts_reaches_the_remote_program() {
+        let (mut io, _input, output, _events) = TermIo::detached((80, 24));
+        let sink = io.sink();
+        sink.output(b"**\x18B00".to_vec());
+        assert!(sink.zmodem.is_active());
+        sink.zmodem.input(b"\x03");
+        let sent = tokio::time::timeout(std::time::Duration::from_secs(2), io.recv()).await.unwrap();
+        assert!(matches!(sent, Some(SessionInput::Data(data)) if data == b"\x03"));
+        assert_eq!(shown_until(&output, b"**\x18B00", std::time::Duration::from_secs(2)), b"**\x18B00");
+    }
 }

@@ -51,6 +51,9 @@ pub struct Link {
     pub charset: &'static encoding_rs::Encoding,
     /// How long to wait for the other side before asking again: [`TIMEOUT`], shorter in tests.
     pub timeout: Duration,
+    /// What has been read since [`Link::record`], and how many of those bytes the terminal
+    /// already showed.
+    recording: Option<(Vec<u8>, usize)>,
 }
 
 impl Link {
@@ -69,7 +72,26 @@ impl Link {
             last_encoding: Encoding::Hex,
             charset: encoding_rs::UTF_8,
             timeout: TIMEOUT,
+            recording: None,
         }
+    }
+
+    /// Keeps what is read from now on, to give it back through [`Link::take_rest`] if it turns
+    /// out not to be a transfer. The first `shown` bytes were shown in the terminal already.
+    pub fn record(&mut self, shown: usize) {
+        self.recording = Some((Vec::new(), shown));
+    }
+
+    pub fn stop_recording(&mut self) {
+        self.recording = None;
+    }
+
+    fn pop(&mut self) -> Option<u8> {
+        let byte = self.buffer.pop_front()?;
+        if let Some((recorded, _)) = &mut self.recording {
+            recorded.push(byte);
+        }
+        Some(byte)
     }
 
     /// Fails with `zmodem.cancelled` once the user cancels.
@@ -104,7 +126,7 @@ impl Link {
 
     async fn byte(&mut self, timeout: Duration) -> Result<u8> {
         loop {
-            if let Some(byte) = self.buffer.pop_front() {
+            if let Some(byte) = self.pop() {
                 if byte == CAN {
                     self.cans += 1;
                     if self.cans >= CANCEL_CANS {
@@ -159,9 +181,9 @@ impl Link {
         let header = frame::parse_hex_header(&digits);
         // CR LF follow; drop them so they aren't read as subpacket data.
         if self.peek(timeout).await? == b'\r' {
-            self.buffer.pop_front();
+            self.pop();
             if self.peek(timeout).await? & 0x7f == b'\n' {
-                self.buffer.pop_front();
+                self.pop();
             }
         }
         Ok(header)
@@ -323,10 +345,12 @@ impl Link {
     }
 
     /// Unread bytes, including those not yet taken from the channel (output that followed
-    /// the transfer and belongs to the terminal).
+    /// the transfer and belongs to the terminal), after what was recorded and not shown yet.
     pub fn take_rest(&mut self) -> Vec<u8> {
         self.fill_ready();
-        self.buffer.drain(..).collect()
+        let (mut rest, shown) = self.recording.take().unwrap_or_default();
+        rest.extend(self.buffer.drain(..));
+        rest.split_off(shown.min(rest.len()))
     }
 
     /// After a cancel, reads output until the other side has been quiet for `quiet` (at most
@@ -351,6 +375,11 @@ impl Link {
     /// Sends the abort sequence directly, even after the user has cancelled.
     pub async fn abort(&mut self) {
         self.pending.clear();
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.outgoing.send(frame::ABORT_SEQUENCE.to_vec())).await;
+        self.send_now(frame::ABORT_SEQUENCE).await;
+    }
+
+    /// Sends `bytes` directly, even after the user has cancelled.
+    pub async fn send_now(&mut self, bytes: &[u8]) {
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.outgoing.send(bytes.to_vec())).await;
     }
 }
