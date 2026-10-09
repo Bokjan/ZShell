@@ -2,6 +2,20 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.3] - 2026-10-09
+
+### Bug Fixes
+
+- After a connection drops while a program such as tmux or vim has the mouse or the alternate screen on, the reconnected shell no longer gets clicks typed in as text, and the message saying how the session ended stays visible.
+- A password pasted at a prompt after reconnecting is no longer ignored.
+- Connecting gives up after 30 seconds on a server, proxy command or proxy that stops answering, so automatic reconnection tries again instead of waiting for ever.
+- Closing a duplicated or split SSH tab closes its shell on the server, which could otherwise run into the server's session limit.
+- SSH: a wrong passphrase for a key in the older PEM format skips the key instead of ending automatic authentication.
+- SSH: a line in `~/.ssh/known_hosts` that isn't UTF-8 no longer makes every connection fail.
+- Sync input no longer sends the terminal's answers to programs' queries to the other panes.
+- Tab shortcuts no longer switch or open tabs behind an open dialog.
+- Reconnecting a serial session no longer fails with the device busy.
+
 ## [1.6.2] - 2026-10-09
 
 ### Bug Fixes
