@@ -65,6 +65,9 @@ pub struct TerminalSettings {
     pub confirm_multiline_paste: bool,
     /// macOS: the Option key sends Meta (Esc-prefixed) sequences instead of special characters.
     pub option_as_meta: bool,
+    /// Let screen readers read the terminal and announce new output (xterm.js's
+    /// `screenReaderMode`); off by default, since it slows down terminals with much output.
+    pub screen_reader: bool,
 }
 
 /// What right-clicking the terminal does.
@@ -228,6 +231,7 @@ impl Default for TerminalSettings {
             right_click: RightClick::Menu,
             confirm_multiline_paste: true,
             option_as_meta: false,
+            screen_reader: false,
         }
     }
 }

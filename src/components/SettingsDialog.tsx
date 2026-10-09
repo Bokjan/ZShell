@@ -519,6 +519,17 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
                 />
                 {t("settings.cursorBlink")}
               </label>
+              <Setting>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={terminal.screenReader}
+                    onChange={(e) => setTerminal({ screenReader: e.target.checked })}
+                  />
+                  {t("settings.screenReader")}
+                </label>
+                <p className="hint">{t("settings.screenReaderHint")}</p>
+              </Setting>
             </Section>
 
             <Section id="mouseAndClipboard">

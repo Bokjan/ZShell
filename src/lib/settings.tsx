@@ -31,6 +31,8 @@ export interface TerminalSettings {
   confirmMultilinePaste: boolean;
   /** macOS only: Option sends Meta (Esc-prefixed) sequences. */
   optionAsMeta: boolean;
+  /** Screen readers can read the terminal and hear new output. */
+  screenReader: boolean;
 }
 
 export interface TabSettings {
@@ -102,6 +104,7 @@ export const DEFAULT_SETTINGS: Settings = {
     rightClick: "menu",
     confirmMultilinePaste: true,
     optionAsMeta: false,
+    screenReader: false,
   },
   tabs: { followRemoteTitle: true, confirmClose: true },
   sidebar: { showRecent: true },
@@ -183,6 +186,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // Wait for the stored settings so terminals start with the right theme and font.
   if (!settings) return null;
   return <SettingsContext.Provider value={{ settings, theme, update }}>{children}</SettingsContext.Provider>;
+}
+
+/** Whether a media query (a system preference such as more contrast) matches, as it changes. */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const onChange = () => setMatches(list.matches);
+    onChange();
+    list.addEventListener("change", onChange);
+    return () => list.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
 }
 
 export function useSettings(): SettingsContextValue {

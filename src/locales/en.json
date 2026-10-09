@@ -171,6 +171,8 @@
     "close": "Close"
   },
   "terminal": {
+    "inputLabel": "Terminal input",
+    "tooMuchOutput": "Too much output to announce. Move through the terminal's lines to read it.",
     "reconnectHint": "Press Enter to reconnect",
     "retryHint": "Press Enter to retry",
     "restartHint": "Press Enter to start a new shell",
@@ -511,6 +513,8 @@
       "underline": "Underline"
     },
     "cursorBlink": "Blinking cursor",
+    "screenReader": "Screen reader support",
+    "screenReaderHint": "Screen readers such as VoiceOver, Narrator and NVDA can read the terminal and announce new output. Turn it on only while you use one: terminals with a lot of output become slower.",
     "scrollback": "Scrollback lines",
     "mouseAndClipboard": "Mouse and Clipboard",
     "copyOnSelect": "Copy text as soon as it is selected",

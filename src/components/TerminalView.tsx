@@ -24,7 +24,7 @@ import {
   selectAllShortcutLabel,
 } from "../lib/platform";
 import type { SessionRegistry } from "../lib/sessionRegistry";
-import { useSettings } from "../lib/settings";
+import { useMediaQuery, useSettings } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -131,8 +131,14 @@ export function TerminalView({
     () => sessionScheme(settings.terminal.colorScheme, theme, appearance),
     [settings.terminal.colorScheme, theme, appearance?.colorScheme, appearance?.background],
   );
+  // The system asks for more contrast (macOS's Increase Contrast, Windows's contrast themes):
+  // colors of the scheme too close to the background are adjusted as they are drawn.
+  const moreContrast = useMediaQuery("(prefers-contrast: more), (forced-colors: active)");
   const options = {
     theme: scheme.theme,
+    minimumContrastRatio: moreContrast ? 4.5 : 1,
+    // A tree of the screen's lines for screen readers, and announcements of new output.
+    screenReaderMode: settings.terminal.screenReader,
     fontFamily: fontStack(appearance?.fontFamily ?? settings.terminal.fontFamily),
     fontSize: appearance?.fontSize ?? settings.terminal.fontSize,
     cursorStyle: settings.terminal.cursorStyle,
@@ -151,6 +157,9 @@ export function TerminalView({
 
   useEffect(() => {
     const container = containerRef.current!;
+    // Shared by all terminals; what screen readers say for the input and for a flood of output.
+    Terminal.strings.promptLabel = t("terminal.inputLabel");
+    Terminal.strings.tooMuchOutput = t("terminal.tooMuchOutput");
     const term = new Terminal({
       allowProposedApi: true, // required by the unicode11 addon
       ...optionsRef.current,
@@ -296,7 +305,7 @@ export function TerminalView({
 
   // Apply appearance and font changes to the running terminal.
   const { theme: termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback } = options;
-  const { macOptionIsMeta, rightClickSelectsWord } = options;
+  const { macOptionIsMeta, rightClickSelectsWord, minimumContrastRatio, screenReaderMode } = options;
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
@@ -308,8 +317,21 @@ export function TerminalView({
     term.options.scrollback = scrollback;
     term.options.macOptionIsMeta = macOptionIsMeta;
     term.options.rightClickSelectsWord = rightClickSelectsWord;
+    term.options.minimumContrastRatio = minimumContrastRatio;
+    term.options.screenReaderMode = screenReaderMode;
     fitRef.current?.fit();
-  }, [termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback, macOptionIsMeta, rightClickSelectsWord]);
+  }, [
+    termTheme,
+    fontFamily,
+    fontSize,
+    cursorStyle,
+    cursorBlink,
+    scrollback,
+    macOptionIsMeta,
+    rightClickSelectsWord,
+    minimumContrastRatio,
+    screenReaderMode,
+  ]);
 
   // The web view allows only so many WebGL contexts (about 16), and drops the oldest beyond
   // that: terminals of hidden tabs release theirs (drawing with the DOM renderer meanwhile)
