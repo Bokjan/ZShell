@@ -43,8 +43,8 @@ interface Props {
   defaults?: ProfileDefaults;
   /** All profiles, to pick jump hosts from. */
   profiles: Profile[];
-  /** To pick the quick command group its tabs show first. */
-  commandGroups: CommandGroup[];
+  /** To pick the quick command group its tabs show first; null until they have loaded. */
+  commandGroups: CommandGroup[] | null;
   onClose(): void;
   onChanged(): void;
   /** Called with the saved profile (not on delete). */
@@ -117,10 +117,11 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const [env, setEnv] = useState(envText(profile?.env ?? []));
   const [loginCommands, setLoginCommands] = useState((profile?.loginCommands ?? []).join("\n"));
   const [autoLog, setAutoLog] = useState(profile?.autoLog ?? false);
-  // A group deleted since falls back to the default group, as its tabs do.
-  const [commandGroup, setCommandGroup] = useState(() =>
-    commandGroups.some((group) => group.id === profile?.commandGroup) ? profile!.commandGroup! : DEFAULT_GROUP,
-  );
+  const [commandGroup, setCommandGroup] = useState(profile?.commandGroup ?? DEFAULT_GROUP);
+  // A group deleted since counts as the default group, as its tabs do. Until the groups have
+  // loaded (or if they couldn't), the profile's stays as it is.
+  const shownGroup =
+    !commandGroups || commandGroups.some((group) => group.id === commandGroup) ? commandGroup : DEFAULT_GROUP;
   const own = profile?.appearance;
   const [colorScheme, setColorScheme] = useState(own?.colorScheme ?? "");
   const [customBackground, setCustomBackground] = useState(!!own?.background);
@@ -287,7 +288,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           loginCommands: loginCommands.split("\n"),
           appearance,
           autoLog,
-          commandGroup: commandGroup === DEFAULT_GROUP ? undefined : commandGroup,
+          commandGroup: shownGroup === DEFAULT_GROUP ? undefined : shownGroup,
           forwards: profile?.forwards ?? [],
           // Where a new profile goes; the backend keeps an existing one's folder.
           folder: profile?.folder ?? defaults?.folder,
@@ -718,8 +719,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
       <p className="hint">{t("profile.autoLogHint")}</p>
       <label>
         {t("profile.commandGroup")}
-        <select value={commandGroup} onChange={(e) => setCommandGroup(e.target.value)}>
-          {commandGroups.map((group) => (
+        <select value={shownGroup} disabled={!commandGroups} onChange={(e) => setCommandGroup(e.target.value)}>
+          {(commandGroups ?? []).map((group) => (
             <option key={group.id} value={group.id}>
               {groupName(group, t)}
             </option>

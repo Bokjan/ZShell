@@ -890,7 +890,7 @@ function App() {
           profile={editing.profile}
           defaults={editing.defaults}
           profiles={profiles}
-          commandGroups={commands?.groups ?? []}
+          commandGroups={commands?.groups ?? null}
           onClose={closeDialog}
           onChanged={reloadProfiles}
           onSaved={onProfileSaved}
