@@ -2,6 +2,19 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.5] - 2026-10-09
+
+### Bug Fixes
+
+- SFTP: downloads over slow links (below about 400 KB/s) no longer fail with "Timeout", and neither does listing a folder during a download.
+- SFTP: saving a file opened in a local editor again while it is still uploading no longer reports that it changed on the server, and can no longer leave old data at the end of the file.
+- SFTP: uploading a folder no longer follows links to folders, which could walk the whole disk (`loop -> ..`).
+- ZMODEM: sending files to a receiver that acknowledges each block no longer stops after the first one.
+- ZMODEM: receiving survives a pause of more than 10 seconds in the data, and gives up on data that arrives damaged every time instead of retrying for ever.
+- ZMODEM: output that only looks like the start of a transfer (`cat` of a binary file) is shown after at most 2 seconds instead of being dropped, and Ctrl+C meanwhile reaches the program.
+- ZMODEM: closing or reconnecting a tab while rz or sz waits for a file choice ends the transfer, which kept running (with the tab's log file) until the app quit.
+- Telnet: sending files with rz to a server that doesn't echo no longer prints the transfer's data in the terminal and the session log.
+
 ## [1.6.4] - 2026-10-09
 
 ### Bug Fixes
