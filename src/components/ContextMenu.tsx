@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
 export type MenuItem =
@@ -27,10 +27,15 @@ const MARGIN = 4;
 
 /**
  * A context menu drawn in the page, so it follows the theme on both platforms. Closes on
- * Escape, a click elsewhere, or when the window loses focus; arrow keys and Enter choose.
+ * Escape, a click elsewhere, or when the window loses focus; arrow keys, Home and End move,
+ * Enter or Space choose. The menu keeps the focus and points screen readers at the
+ * highlighted item; once closed, the focus goes back where it was unless the chosen action
+ * moved it.
  */
 export function ContextMenu({ x, y, items, onClose }: Props) {
+  const id = useId();
   const ref = useRef<HTMLDivElement>(null);
+  const [opener] = useState(() => document.activeElement);
   const [position, setPosition] = useState({ left: x, top: y });
   // Index into `items` of the highlighted entry, or -1.
   const [highlight, setHighlight] = useState(-1);
@@ -60,8 +65,12 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
       window.removeEventListener("mousedown", onMouseDown, true);
       window.removeEventListener("blur", close);
       window.removeEventListener("resize", close);
+      requestAnimationFrame(() => {
+        const lost = !document.activeElement || document.activeElement === document.body;
+        if (lost && opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+      });
     };
-  }, []);
+  }, [opener]);
 
   const choose = (index: number) => {
     const item = items[index];
@@ -70,9 +79,10 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
     item.onSelect();
   };
 
-  const move = (step: number) => {
+  /** Highlights the next item that can be chosen, `step` items on from `from`. */
+  const move = (step: number, from = highlight) => {
     const count = items.length;
-    let index = highlight;
+    let index = from;
     for (let i = 0; i < count; i++) {
       index = (index + step + count) % count;
       const item = items[index];
@@ -85,10 +95,12 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
 
   const onKeyDown = (e: KeyboardEvent) => {
     e.stopPropagation();
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape" || e.key === "Tab") onClose();
     else if (e.key === "ArrowDown") move(1);
     else if (e.key === "ArrowUp") move(-1);
-    else if (e.key === "Enter" && highlight >= 0) choose(highlight);
+    else if (e.key === "Home") move(1, -1);
+    else if (e.key === "End") move(-1, items.length);
+    else if ((e.key === "Enter" || e.key === " ") && highlight >= 0) choose(highlight);
     else return;
     e.preventDefault();
   };
@@ -99,6 +111,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
       className="context-menu"
       role="menu"
       tabIndex={-1}
+      aria-activedescendant={highlight >= 0 ? `${id}-${highlight}` : undefined}
       style={position}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
@@ -110,15 +123,21 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
         ) : (
           <div
             key={index}
-            role="menuitem"
+            id={`${id}-${index}`}
+            role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+            aria-checked={item.checked}
             aria-disabled={item.disabled}
             className={`context-menu-item${index === highlight ? " highlighted" : ""}${item.danger ? " danger" : ""}`}
             onMouseEnter={() => setHighlight(item.disabled ? -1 : index)}
             onClick={() => choose(index)}
           >
-            {item.checked !== undefined && <span className="context-menu-check">{item.checked ? "✓" : ""}</span>}
+            {item.checked !== undefined && (
+              <span className="context-menu-check" aria-hidden="true">
+                {item.checked ? "✓" : ""}
+              </span>
+            )}
             <span className="context-menu-label">{item.label}</span>
-            {item.shortcut && <kbd>{item.shortcut}</kbd>}
+            {item.shortcut && <kbd aria-hidden="true">{item.shortcut}</kbd>}
           </div>
         ),
       )}

@@ -93,7 +93,7 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
 
   return (
     <Modal dialog={dialog}>
-      <div className="dialog licenses-dialog" role="dialog" aria-label={t("licenses.title")}>
+      <div className="dialog licenses-dialog">
         <h2>{t("licenses.title")}</h2>
         {notices === null ? (
           <p className="dialog-message">{t("licenses.missing")}</p>

@@ -352,7 +352,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   return (
     <>
       <Modal dialog={dialog}>
-        <div className="dialog settings-dialog" role="dialog" aria-label={t("settings.title")}>
+        <div className="dialog settings-dialog">
           <nav className="settings-nav">
             <h2>{t("settings.title")}</h2>
             <input

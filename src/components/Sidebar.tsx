@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -106,6 +106,9 @@ export function Sidebar(props: Props) {
   const [query, setQuery] = useState("");
   // Highlighted search result (index into results, then the quick connect line).
   const [highlight, setHighlight] = useState(0);
+  const listId = useId();
+  /** A row's element id, for `aria-activedescendant`. */
+  const rowId = (key: string) => `${listId}-${key}`;
   const [selected, setSelected] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(storedCollapsed);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -217,6 +220,12 @@ export function Sidebar(props: Props) {
     { label: t("sidebar.deleteFolder"), onSelect: () => run(tree.deleteFolder(folder.id)) },
   ];
 
+  /** The list's menu, outside any row. */
+  const listMenu = (): MenuItem[] => [
+    { label: t("sidebar.newSession"), onSelect: () => onNew(undefined) },
+    { label: t("sidebar.newFolder"), onSelect: () => createFolder(undefined) },
+  ];
+
   const openMenu = (e: ReactMouseEvent, items: MenuItem[]) => {
     e.preventDefault();
     e.stopPropagation();
@@ -267,7 +276,14 @@ export function Sidebar(props: Props) {
       if (parent) setSelected(`f:${parent}`);
     } else if (e.key === "Enter" && row?.kind === "profile") onOpen(row.profile, "newTab");
     else if (e.key === "Enter" && row?.kind === "folder") setFolderCollapsed(row.folder.id, row.expanded);
-    else return;
+    else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      // The selected row's menu, below it; the list's own without one.
+      const element = listRef.current?.querySelector(`[data-key="${CSS.escape(selected ?? "")}"]`) ?? listRef.current!;
+      const rect = element.getBoundingClientRect();
+      const items =
+        row?.kind === "profile" ? profileMenu(row.profile) : row?.kind === "folder" ? folderMenu(row.folder, row.count) : listMenu();
+      setMenu({ x: rect.left + INDENT, y: rect.bottom, items });
+    } else return;
     e.preventDefault();
   };
 
@@ -372,6 +388,10 @@ export function Sidebar(props: Props) {
   const profileRow = (profile: Profile, key: string, depth: number, meta?: string, extra = "") => (
     <div
       key={key}
+      id={rowId(key)}
+      role={searching ? "option" : "treeitem"}
+      aria-selected={searching ? extra.includes("highlighted") : selected === key}
+      aria-level={searching ? undefined : Math.max(depth, 0) + 1}
       data-key={key.startsWith("p:") ? key : undefined}
       data-recent={key.startsWith("recent:") || undefined}
       className={`tree-row session${selected === `p:${profile.id}` ? " selected" : ""}${extra}`}
@@ -396,6 +416,11 @@ export function Sidebar(props: Props) {
     return (
       <div
         key={key}
+        id={rowId(key)}
+        role="treeitem"
+        aria-selected={selected === key}
+        aria-expanded={expanded}
+        aria-level={depth + 1}
         data-key={key}
         className={`tree-row folder${selected === key ? " selected" : ""}${dropClass(key)}`}
         style={{ paddingLeft: 8 + depth * INDENT }}
@@ -446,6 +471,14 @@ export function Sidebar(props: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onSearchKeyDown}
+          role="combobox"
+          aria-label={t("sidebar.searchLabel")}
+          aria-controls={listId}
+          aria-expanded={searching}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            !searching ? undefined : highlight < results.length ? rowId(`r:${results[highlight]?.id}`) : rowId("quick")
+          }
           placeholder={t("sidebar.searchPlaceholder", { shortcut: searchShortcutLabel })}
           spellCheck={false}
           autoCapitalize="off"
@@ -460,14 +493,15 @@ export function Sidebar(props: Props) {
       <div
         className={`sidebar-list${drag?.drop?.key === null ? " drop-end" : ""}`}
         ref={listRef}
+        id={listId}
+        // The tree keeps the focus and points screen readers at the selected row; while
+        // searching, the search box does, at the highlighted result.
+        role={searching ? "listbox" : "tree"}
+        aria-label={t("sidebar.listLabel")}
+        aria-activedescendant={!searching && selected ? rowId(selected) : undefined}
         tabIndex={0}
         onKeyDown={onListKeyDown}
-        onContextMenu={(e) =>
-          openMenu(e, [
-            { label: t("sidebar.newSession"), onSelect: () => onNew(undefined) },
-            { label: t("sidebar.newFolder"), onSelect: () => createFolder(undefined) },
-          ])
-        }
+        onContextMenu={(e) => openMenu(e, listMenu())}
       >
         {searching ? (
           <>
@@ -482,6 +516,9 @@ export function Sidebar(props: Props) {
             )}
             {quick && (
               <div
+                id={rowId("quick")}
+                role="option"
+                aria-selected={highlight === results.length}
                 className={`tree-row quick${highlight === results.length ? " highlighted" : ""}`}
                 onClick={() => {
                   onQuickConnect(quick);
@@ -497,9 +534,13 @@ export function Sidebar(props: Props) {
           <>
             {recentProfiles.length > 0 && (
               <>
-                <div className="sidebar-section">{t("sidebar.recent")}</div>
+                <div className="sidebar-section" role="none">
+                  {t("sidebar.recent")}
+                </div>
                 {recentProfiles.map((profile) => profileRow(profile, `recent:${profile.id}`, -1))}
-                <div className="sidebar-section">{t("sidebar.all")}</div>
+                <div className="sidebar-section" role="none">
+                  {t("sidebar.all")}
+                </div>
               </>
             )}
             {rows.map((row) =>

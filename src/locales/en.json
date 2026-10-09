@@ -15,6 +15,8 @@
     "placeholderNoLocal": "Select a session on the left to connect"
   },
   "sidebar": {
+    "listLabel": "Sessions",
+    "searchLabel": "Search sessions, or connect to an address",
     "newSession": "New session",
     "empty": "No sessions yet. Click + to add one.",
     "openHint": "Double-click to open in a new tab",
@@ -61,6 +63,12 @@
     "deleteFolder": "Delete Folder"
   },
   "tabs": {
+    "listLabel": "Tabs",
+    "status": {
+      "connecting": "Connecting",
+      "closed": "Disconnected",
+      "exited": "Exited"
+    },
     "close": "Close",
     "files": "Files",
     "filesHint": "Show/hide the SFTP file panel ({shortcut})",
@@ -325,6 +333,8 @@
     "invalidFontSize": "The font size must be an integer between {min} and {max}"
   },
   "sftp": {
+    "listLabel": "Remote files",
+    "folderKind": "Folder",
     "notConnectedYet": "Remote files are available once connected",
     "disconnected": "Disconnected",
     "parentFolder": "Parent folder",

@@ -58,6 +58,10 @@ export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabP
   return profiles.find((p) => p.id === target.profileId)?.protocol ?? "ssh";
 }
 
+/** Ids that connect a tab and its page for screen readers. */
+export const tabId = (key: number) => `tab-${key}`;
+export const tabPanelId = (key: number) => `tab-panel-${key}`;
+
 export const focusedPane = (tab: Tab) => tab.panes.find((pane) => pane.key === tab.focused) ?? tab.panes[0];
 
 /** Whether the pane is writing its log now. */

@@ -40,7 +40,7 @@ export function ConfirmDialog({
   const dialog = useDialog(onCancel);
 
   return (
-    <Modal dialog={dialog}>
+    <Modal dialog={dialog} alert>
       <form
         className="dialog"
         onSubmit={(e) => {

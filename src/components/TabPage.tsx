@@ -6,7 +6,7 @@ import { DialogsHidden } from "../lib/dialogs";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../lib/drag";
 import { dividers, equalize, moveDivider, paneRects, type Divider } from "../lib/layout";
-import { focusedPane, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
+import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { SftpPanel } from "./SftpPanel";
@@ -138,7 +138,13 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
   // Dialogs of an inactive tab (a background save's conflict) wait for it to be shown.
   return (
     <DialogsHidden.Provider value={!active}>
-      <div className={`tab-page${active ? " active" : ""}`} ref={pageRef}>
+      <div
+        className={`tab-page${active ? " active" : ""}`}
+        ref={pageRef}
+        id={tabPanelId(tab.key)}
+        role="tabpanel"
+        aria-labelledby={tabId(tab.key)}
+      >
         <div className={`pane-area${split ? " split" : ""}${syncing !== null ? " syncing" : ""}`} ref={areaRef}>
           {tab.panes.map((pane) => {
             const profile = h.profileOf(pane);

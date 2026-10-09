@@ -84,7 +84,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
 
   return (
     <Modal dialog={dialog}>
-      <div className="dialog known-hosts-dialog" role="dialog" aria-label={t("knownHosts.title")}>
+      <div className="dialog known-hosts-dialog">
         <h2>{t("knownHosts.title")}</h2>
         <input
           value={query}

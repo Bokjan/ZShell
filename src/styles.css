@@ -106,6 +106,17 @@ input::placeholder {
   height: 100%;
 }
 
+/* Read by screen readers, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 main {
   flex: 1;
   min-width: 0;
@@ -1441,6 +1452,18 @@ body.resizing .terminal-view {
 .sort-arrow {
   margin-left: 3px;
 }
+/* The column title, a button for the keyboard; looks like the header itself. */
+.sort-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
 .file-name {
   display: flex;
   align-items: center;
@@ -1854,6 +1877,10 @@ body.resizing .terminal-view {
 /* A dialog of an inactive tab (see `DialogsHidden`). */
 .dialog-backdrop[hidden] {
   display: none;
+}
+/* Focused only by script, when its dialog has no control to focus; not a control itself. */
+.dialog-backdrop:focus {
+  outline: none;
 }
 /* Scrolls when taller than the space below the title bar (the session dialog on a small
    window). */

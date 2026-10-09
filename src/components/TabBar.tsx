@@ -2,13 +2,14 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 
-import { focusedPane, isLogging, tabTitle, type SidePanel, type Tab } from "../lib/panes";
+import { focusedPane, isLogging, tabId, tabPanelId, tabTitle, type SidePanel, type Tab } from "../lib/panes";
 import type { Direction } from "../lib/layout";
 import {
   closeTabShortcutLabel,
@@ -223,6 +224,40 @@ export function TabBar({
     return items;
   };
 
+  /**
+   * Keys on a focused tab: arrows, Home and End move among the tabs, Enter or Space shows
+   * one (and its terminal takes the focus), F2 renames, Shift+F10 or the menu key opens its
+   * menu.
+   */
+  const onTabKeyDown = (e: ReactKeyboardEvent<HTMLElement>, index: number) => {
+    if (editing !== null || isComposing(e)) return;
+    const key = tabs[index].key;
+    let next: number;
+    if (e.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (e.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = tabs.length - 1;
+    else {
+      if (e.key === "Enter" || e.key === " ") onSelect(key);
+      else if (e.key === "F2") setEditing(key);
+      else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        setMenu({ key, x: rect.left, y: rect.bottom });
+      } else return;
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    document.getElementById(tabId(tabs[next].key))?.focus();
+  };
+
+  const statusLabel = (tab: Tab) => {
+    const pane = focusedPane(tab);
+    if (pane.status === "connecting") return t("tabs.status.connecting");
+    if (pane.status === "closed") return t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed");
+    return null;
+  };
+
   const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
     <button
       className={activeTab?.sidePanel === panel ? "on" : undefined}
@@ -238,16 +273,24 @@ export function TabBar({
   // The window's title bar: always shown, so "+" and room to move the window stay available.
   return (
     <nav className="tab-bar" {...DRAG_REGION}>
-      <div className="tab-strip" ref={stripRef} onWheel={onWheel}>
-        {tabs.map((tab) => {
+      <div className="tab-strip" ref={stripRef} onWheel={onWheel} role="tablist" aria-label={t("tabs.listLabel")}>
+        {tabs.map((tab, index) => {
           const pane = focusedPane(tab);
           const title = tabTitle(tab, followRemoteTitle);
           const color = colorOf(tab);
           const where = addressOf(tab);
+          const status = statusLabel(tab);
           return (
             <div
               key={tab.key}
               data-key={tab.key}
+              id={tabId(tab.key)}
+              role="tab"
+              aria-selected={tab.key === activeKey}
+              aria-controls={tabPanelId(tab.key)}
+              // The active tab is the one Tab reaches; arrows move to the others.
+              tabIndex={tab.key === activeKey ? 0 : -1}
+              onKeyDown={(e) => onTabKeyDown(e, index)}
               className={[
                 "tab",
                 tab.key === activeKey && "active",
@@ -281,8 +324,12 @@ export function TabBar({
               ) : (
                 <span className="tab-title">{title}</span>
               )}
+              {status && <span className="visually-hidden">{status}</span>}
+              {/* For the mouse: the keyboard closes tabs with the shortcut or the tab's menu. */}
               <button
                 className="tab-close"
+                tabIndex={-1}
+                aria-hidden="true"
                 title={tab.panes.length > 1 ? t("tabs.close") : `${t("tabs.close")} (${closeTabShortcutLabel})`}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {

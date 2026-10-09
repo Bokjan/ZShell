@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { dirname, join } from "@tauri-apps/api/path";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -94,6 +94,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   /** Where a ⇧ range starts, and the row the arrow keys move from. */
   const [anchor, setAnchor] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
+  const gridId = useId();
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const [chmodTarget, setChmodTarget] = useState<{ entry: FileEntry; value: string } | null>(null);
@@ -737,13 +738,24 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   }
 
   const sortHeader = (key: SortKey, label: string, className?: string) => (
-    <th className={className} onClick={() => sortBy(key)} aria-sort={view.sort === key ? (view.descending ? "descending" : "ascending") : undefined}>
-      {label}
-      {view.sort === key && <span className="sort-arrow">{view.descending ? "▾" : "▴"}</span>}
+    <th
+      className={className}
+      role="columnheader"
+      aria-sort={view.sort === key ? (view.descending ? "descending" : "ascending") : undefined}
+    >
+      <button type="button" className="sort-button" onClick={() => sortBy(key)}>
+        {label}
+        {view.sort === key && (
+          <span className="sort-arrow" aria-hidden="true">
+            {view.descending ? "▾" : "▴"}
+          </span>
+        )}
+      </button>
     </th>
   );
 
   const parent = cwd && cwd !== "/" ? parentPath(cwd) : null;
+  const cursorIndex = visible.findIndex((entry) => entry.path === cursor);
   const hiddenCount = view.showHidden ? 0 : entries.filter((entry) => entry.name.startsWith(".")).length;
 
   return (
@@ -822,9 +834,15 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
       )}
       {!connected && <div className="sftp-error">{t("sftp.disconnected")}</div>}
 
+      {/* A grid for screen readers: the list keeps the focus and points them at the cursor's row. */}
       <div
         ref={listRef}
         className={`sftp-list${loading ? " loading" : ""}`}
+        role="grid"
+        aria-label={t("sftp.listLabel")}
+        aria-multiselectable="true"
+        aria-busy={loading}
+        aria-activedescendant={cursorIndex >= 0 ? `${gridId}-${cursorIndex}` : undefined}
         tabIndex={0}
         onKeyDown={onListKeyDown}
         onMouseDownCapture={(e) => {
@@ -836,23 +854,23 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
         }}
         onContextMenu={onListContextMenu}
       >
-        <table>
+        <table role="presentation">
           <colgroup>
             <col />
             <col className="col-size" />
             <col className="col-time" />
           </colgroup>
-          <thead>
-            <tr>
+          <thead role="rowgroup">
+            <tr role="row">
               {sortHeader("name", t("sftp.columnName"))}
               {sortHeader("size", t("sftp.columnSize"), "file-size")}
               {sortHeader("modified", t("sftp.columnModified"))}
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {newFolder != null && (
-              <tr>
-                <td colSpan={3}>
+              <tr role="row">
+                <td colSpan={3} role="gridcell">
                   <form onSubmit={submitNewFolder}>
                     <input
                       autoFocus
@@ -866,9 +884,12 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
                 </td>
               </tr>
             )}
-            {visible.map((entry) => (
+            {visible.map((entry, index) => (
               <tr
                 key={entry.path}
+                id={`${gridId}-${index}`}
+                role="row"
+                aria-selected={selection.has(entry.path)}
                 data-path={entry.path}
                 data-drop-dir={entry.isDir ? entry.path : undefined}
                 className={
@@ -881,9 +902,13 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
                 onContextMenu={(e) => onRowContextMenu(e, entry)}
                 title={`${entry.name}\n${formatMode(entry.permissions, entry.isDir, entry.isSymlink)}`}
               >
-                <td>
+                <td role="gridcell">
                   <div className="file-name">
-                    <span className="file-icon">{entry.isDir ? "📁" : "📄"}</span>
+                    <span className="file-icon" aria-hidden="true">
+                      {entry.isDir ? "📁" : "📄"}
+                    </span>
+                    {/* Before the name, which is the last child (see `.file-name`). */}
+                    {entry.isDir && <span className="visually-hidden">{t("sftp.folderKind")}</span>}
                     {renaming?.path === entry.path ? (
                       <form onSubmit={submitRename}>
                         <input
@@ -904,8 +929,12 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
                     )}
                   </div>
                 </td>
-                <td className="file-size">{entry.isDir ? "" : formatSize(entry.size)}</td>
-                <td className="file-time">{formatTime(entry.modified)}</td>
+                <td className="file-size" role="gridcell">
+                  {entry.isDir ? "" : formatSize(entry.size)}
+                </td>
+                <td className="file-time" role="gridcell">
+                  {formatTime(entry.modified)}
+                </td>
               </tr>
             ))}
           </tbody>

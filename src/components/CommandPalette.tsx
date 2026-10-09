@@ -46,8 +46,8 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
   };
 
   return (
-    <Modal dialog={dialog} className="palette-backdrop">
-      <div className={`palette${targets ? " many" : ""}`} role="dialog" aria-label={t("quick.paletteTitle")}>
+    <Modal dialog={dialog} label={t("quick.paletteTitle")} className="palette-backdrop">
+      <div className={`palette${targets ? " many" : ""}`}>
         <input
           className="palette-input"
           value={query}
