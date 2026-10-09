@@ -157,6 +157,7 @@
       "timeout": "The other side stopped responding",
       "protocol": "The transfer failed: unexpected data from the other side",
       "corrupt": "The transfer failed: the data kept arriving damaged",
+      "incomplete": "{name} was not received in full: the sender went on to another file",
       "notStarted": "Not a ZMODEM transfer",
       "invalidName": "Cannot save a file named {name}",
       "notFile": "{path} is not a file; only files can be sent"

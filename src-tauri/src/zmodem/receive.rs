@@ -87,6 +87,12 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?;
                     continue;
                 }
+                // Another file before this one's ZEOF: what we have of it is incomplete.
+                if let Some(incoming) = current.take() {
+                    drop(incoming.file);
+                    let _ = tokio::fs::remove_file(&incoming.path).await;
+                    report.failed(Error::new("zmodem.incomplete").param("name", &incoming.name).into());
+                }
                 let Some(name) = safe_name(&info.name) else {
                     report.failed(Error::new("zmodem.invalidName").param("name", &info.name).into());
                     link.send_header(Header::new(Kind::Skip), Encoding::Hex).await?;

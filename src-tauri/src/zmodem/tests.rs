@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 
 use tokio::sync::{mpsc, watch};
 
-use super::frame::{Header, Kind, CANFC32, CANFDX};
+use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, ZCRCE, ZCRCW};
 use super::link::{Link, TIMEOUT};
 use super::{detect, receive, send, Direction, Report};
 
@@ -283,6 +283,50 @@ async fn cancelling_deletes_the_partial_file() {
     assert_eq!(std::fs::read_dir(&dst).unwrap().count(), 0);
     sending.abort();
     std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_left_for_another_is_deleted_and_reported() {
+    let dst = temp_dir("switch-dst");
+    let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
+    let (mut receiver, (to_receiver, from_receiver, _cancel_r)) = link();
+    pipe(from_sender, to_receiver);
+    pipe(from_receiver, to_sender);
+    let dst2 = dst.clone();
+    let receiving = tokio::spawn(async move {
+        let mut log = Log::default();
+        receive::receive(&mut receiver, &dst2, &mut log).await.map(|()| log.events)
+    });
+
+    // A sender that offers a.txt, sends part of it, then offers b.txt instead.
+    sender.header(TIMEOUT).await.unwrap();
+    for (name, data, eof) in [("a.txt", b"hello".as_slice(), false), ("b.txt", b"world".as_slice(), true)] {
+        let mut packet = frame::encode_header(&Header::new(Kind::File), Encoding::Bin32);
+        frame::encode_subpacket(&mut packet, format!("{name}\0{}\0", if eof { 5 } else { 10 }).as_bytes(), ZCRCW, true);
+        sender.send(&packet).await.unwrap();
+        sender.flush().await.unwrap();
+        assert_eq!(sender.header(TIMEOUT).await.unwrap(), Header::with_pos(Kind::Rpos, 0));
+        let mut packet = frame::encode_header(&Header::with_pos(Kind::Data, 0), Encoding::Bin32);
+        frame::encode_subpacket(&mut packet, data, ZCRCE, true);
+        if eof {
+            packet.extend(frame::encode_header(&Header::with_pos(Kind::Eof, 5), Encoding::Bin32));
+        }
+        sender.send(&packet).await.unwrap();
+        sender.flush().await.unwrap();
+    }
+    assert_eq!(sender.header(TIMEOUT).await.unwrap().kind, Kind::Rinit);
+    sender.send_header(Header::new(Kind::Fin), Encoding::Hex).await.unwrap();
+    assert_eq!(sender.header(TIMEOUT).await.unwrap().kind, Kind::Fin);
+    sender.send(b"OO").await.unwrap();
+    sender.flush().await.unwrap();
+
+    let events = receiving.await.unwrap().unwrap();
+    let incomplete = t!("errors.zmodem.incomplete", name = "a.txt");
+    assert!(events.iter().any(|e| e.contains(&*incomplete)), "{events:?}");
+    let names: Vec<_> = std::fs::read_dir(&dst).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(names, ["b.txt"]);
+    assert_eq!(std::fs::read(dst.join("b.txt")).unwrap(), b"world");
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
