@@ -247,12 +247,16 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   };
 
   // Editing in a local editor: each save is uploaded through the current connection; saves
-  // made while disconnected wait for the reconnection.
+  // made while disconnected wait for the reconnection, and saves made during an upload are
+  // uploaded once it ends (by id: whether another save came in meanwhile).
+  const editUploads = useRef(new Map<string, boolean>());
   const uploadEdit = async (id: string, force = false) => {
     const { sessionId, connected } = sessionRef.current;
     const transfer = transfersRef.current.find((t) => t.id === id);
     if (!transfer || transfer.status !== "editing") return;
     if (sessionId == null || !connected) return updateTransfer(id, { save: { state: "waiting" } });
+    if (editUploads.current.has(id)) return void editUploads.current.set(id, true);
+    editUploads.current.set(id, false);
     updateTransfer(id, { save: { state: "uploading" } });
     try {
       await sftp.editUpload(sessionId, id, force);
@@ -270,6 +274,10 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
         danger: true,
         action: () => void uploadEdit(id, true),
       });
+    } finally {
+      const again = editUploads.current.get(id);
+      editUploads.current.delete(id);
+      if (again) void uploadEditRef.current(id);
     }
   };
   const uploadEditRef = useRef(uploadEdit);

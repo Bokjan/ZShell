@@ -44,6 +44,9 @@ struct Edit {
     local: PathBuf,
     /// The remote file as last downloaded or uploaded.
     remote_stamp: Mutex<Option<Stamp>>,
+    /// Held for a whole upload: two at once would each see the other's partial write as
+    /// someone else's change, and both truncate the file.
+    uploading: tokio::sync::Mutex<()>,
     stopped: Arc<AtomicBool>,
 }
 
@@ -75,7 +78,13 @@ impl Edits {
     pub async fn start(&self, sftp: &SftpSession, edit_id: String, remote: String, local: PathBuf, events: Channel<EditEvent>) {
         let remote_stamp = remote_stamp(sftp, &remote).await;
         let stopped = Arc::new(AtomicBool::new(false));
-        let edit = Arc::new(Edit { remote, local: local.clone(), remote_stamp: Mutex::new(remote_stamp), stopped: stopped.clone() });
+        let edit = Arc::new(Edit {
+            remote,
+            local: local.clone(),
+            remote_stamp: Mutex::new(remote_stamp),
+            uploading: tokio::sync::Mutex::new(()),
+            stopped: stopped.clone(),
+        });
         if let Some(old) = self.edits.lock().unwrap().insert(edit_id, edit) {
             old.stopped.store(true, Ordering::Relaxed);
         }
@@ -94,6 +103,7 @@ impl Edits {
     /// `edit.conflict` when the remote file changed since it was downloaded or last uploaded.
     pub async fn upload(&self, sftp: &SftpSession, edit_id: &str, force: bool) -> Result<()> {
         let edit = self.get(edit_id)?;
+        let _uploading = edit.uploading.lock().await;
         let remote = &edit.remote;
         let expected = *edit.remote_stamp.lock().unwrap();
         if !force && remote_stamp(sftp, remote).await != expected {
