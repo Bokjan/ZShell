@@ -16,6 +16,7 @@ use tauri::AppHandle;
 use tokio::io::AsyncWriteExt;
 
 use super::file_name;
+use crate::local_name::local_file_name;
 use crate::error::{Error, Result};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -61,8 +62,10 @@ impl Edits {
     /// Where `remote` is downloaded to for editing, in a folder of its own so the editor
     /// shows the real file name.
     pub fn local_path(&self, edit_id: &str, remote: &str) -> Result<PathBuf> {
-        let name = file_name(remote);
-        if name.is_empty() || name.contains(['/', '\\']) || edit_id.contains(['/', '\\', '.']) {
+        let Some(name) = local_file_name(file_name(remote)) else {
+            return Err(Error::new("transfer.invalidName").param("name", remote));
+        };
+        if edit_id.contains(['/', '\\', '.']) {
             return Err(Error::new("transfer.invalidPath").param("path", remote));
         }
         Ok(self.root.join(edit_id).join(name))

@@ -32,6 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use super::{DragResult, DropDownload, Item, Outcome};
 use crate::error::{Error, Result};
+use crate::local_name::local_file_name;
 use crate::sftp::edit::remove_old;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -289,7 +290,13 @@ pub(super) fn start(
     let root = std::env::temp_dir().join("ZShell-drag");
     remove_old(&root);
     let dir = root.join(&download.transfer_id);
-    let items: Vec<_> = items.iter().map(|item| (item.path.clone(), dir.join(item.name()), item.is_dir)).collect();
+    let items = items
+        .iter()
+        .map(|item| {
+            let name = local_file_name(item.name()).ok_or_else(|| Error::new("transfer.invalidName").param("name", &item.path))?;
+            Ok((item.path.clone(), dir.join(name), item.is_dir))
+        })
+        .collect::<Result<Vec<_>>>()?;
     // Placeholders, in case the application dragged over looks at the files before the drop.
     for (_, local, is_dir) in &items {
         let _ = if *is_dir { std::fs::create_dir_all(local) } else { std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(local, b"")) };

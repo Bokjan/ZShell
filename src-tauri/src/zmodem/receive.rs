@@ -204,8 +204,10 @@ impl FileInfo {
 /// The last component of the sender's path, if it is a usable file name.
 fn safe_name(name: &str) -> Option<String> {
     let name = name.rsplit(['/', '\\']).next()?.trim();
-    let invalid = name.is_empty() || name == "." || name == ".." || name.chars().any(|c| c.is_control());
-    (!invalid).then(|| name.to_owned())
+    if name.chars().any(|c| c.is_control()) {
+        return None;
+    }
+    crate::local_name::local_file_name(name)
 }
 
 #[cfg(test)]
@@ -231,5 +233,6 @@ mod tests {
         assert_eq!(safe_name("dir/.."), None);
         assert_eq!(safe_name("dir/"), None);
         assert_eq!(safe_name("bad\x01name"), None);
+        assert_eq!(safe_name("C:evil.dll").as_deref(), if cfg!(windows) { Some("C_evil.dll") } else { Some("C:evil.dll") });
     }
 }

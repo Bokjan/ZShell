@@ -14,6 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{file_name, join};
 use crate::error::Error;
+use crate::local_name::local_file_name;
 
 const BUFFER_SIZE: usize = 256 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -168,8 +169,13 @@ pub async fn download(
     local_dir: &Path,
     reporter: &mut Reporter,
 ) -> Result<Vec<PathBuf>> {
-    let items: Vec<_> =
-        remote_paths.iter().map(|remote| (remote.clone(), unique_path(local_dir.join(file_name(remote))))).collect();
+    let items = remote_paths
+        .iter()
+        .map(|remote| {
+            let name = local_file_name(file_name(remote)).ok_or_else(|| Error::new("transfer.invalidName").param("name", remote))?;
+            Ok((remote.clone(), unique_path(local_dir.join(name))))
+        })
+        .collect::<Result<Vec<_>>>()?;
     download_to(sftp, &items, reporter).await?;
     Ok(items.into_iter().map(|(_, local)| local).collect())
 }
@@ -227,6 +233,11 @@ async fn scan_remote_dir(
                 continue;
             }
             let child = join(&remote, &name);
+            // The server chooses the names: one that is not a plain file name here (`../x`,
+            // or `a\\b` on Windows) must not lead outside the folder.
+            let Some(local_name) = local_file_name(&name) else {
+                continue;
+            };
             let mut metadata = entry.metadata();
             if metadata.file_type().is_symlink() {
                 // Follow symlinks to files only, so a link cycle can't recurse forever.
@@ -236,10 +247,10 @@ async fn scan_remote_dir(
                 }
             }
             if metadata.file_type().is_dir() {
-                pending.push((child, local.join(&name)));
+                pending.push((child, local.join(&local_name)));
             } else if metadata.file_type().is_file() {
                 reporter.progress.total += metadata.size.unwrap_or(0);
-                plan.files.push((child, local.join(&name)));
+                plan.files.push((child, local.join(&local_name)));
             }
         }
     }

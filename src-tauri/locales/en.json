@@ -119,6 +119,7 @@
     "transfer": {
       "cancelled": "Cancelled",
       "invalidPath": "Invalid local path {path}",
+      "invalidName": "Cannot save {name} under its name on this computer",
       "readFailed": "Cannot read {path}",
       "openFailed": "Cannot open {path}",
       "createFailed": "Cannot create {path}",

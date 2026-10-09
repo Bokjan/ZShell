@@ -8,6 +8,7 @@ mod encoding;
 mod error;
 mod forward;
 mod import;
+mod local_name;
 mod logging;
 mod net;
 mod proxy;
