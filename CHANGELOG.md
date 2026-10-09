@@ -2,6 +2,13 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.3.3] - 2026-10-09
+
+### Bug Fixes
+
+- Links that open in the browser (the privacy policy, and package homepages in the third-party licenses) are marked with an icon, and screen readers say so.
+- Settings › About links to ZShell's new license, which spells out the terms: the released builds are free for any use, including at work, and the source code may be read, built and modified for your own use but not redistributed.
+
 ## [2.3.2] - 2026-10-09
 
 ### Bug Fixes
