@@ -14,6 +14,8 @@ export function ImportDialog({ onClose, onImported }: Props) {
   const { t } = useTranslation();
   const [path, setPath] = useState("");
   const [candidates, setCandidates] = useState<ImportCandidate[] | null>(null);
+  // The file the candidates come from, which the path field may no longer show.
+  const [scanned, setScanned] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
     try {
       const found = await sshConfig.scan(file.trim());
       setCandidates(found);
+      setScanned(file.trim());
       // Hosts that already have a profile are not imported again.
       setSelected(new Set(found.filter((c) => !c.existing).map((c) => c.alias)));
       setError(null);
@@ -68,7 +71,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
     e.preventDefault();
     setBusy(true);
     try {
-      await sshConfig.import(path.trim(), [...selected]);
+      await sshConfig.import(scanned, [...selected]);
       onImported();
       onClose();
     } catch (err) {
