@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
 import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
-import { hostPort } from "../lib/format";
+import { hostPort, wholeNumber } from "../lib/format";
 import { isComposing } from "../lib/platform";
 
 interface Props {
@@ -66,7 +66,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const portNumber = Number(port);
+    const portNumber = wholeNumber(port);
     if (server && !host.trim()) {
       setError(t("proxy.missingHost"));
       return;

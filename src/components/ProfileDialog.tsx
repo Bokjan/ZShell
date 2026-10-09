@@ -24,6 +24,7 @@ import {
   type Proxy,
   type SerialPortInfo,
 } from "../lib/api";
+import { wholeNumber } from "../lib/format";
 import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
 import { isComposing, isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
@@ -181,7 +182,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
     colorScheme: colorScheme || undefined,
     background: customBackground ? background : undefined,
     fontFamily: fontFamily.trim() || undefined,
-    fontSize: fontSize.trim() ? Number(fontSize) : undefined,
+    fontSize: fontSize.trim() ? wholeNumber(fontSize) : undefined,
   };
   const previewScheme = sessionScheme(settings.terminal.colorScheme, theme, appearance);
 
@@ -222,18 +223,20 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
       invalid("general", t("profile.missingDevice"));
       return;
     }
-    const portNumber = protocol === "serial" ? (profile?.port ?? 22) : Number(port);
+    const portNumber = protocol === "serial" ? (profile?.port ?? 22) : wholeNumber(port);
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
       invalid("general", t("profile.invalidPort"));
       return;
     }
-    const baud = Number(baudRate);
-    if (protocol === "serial" && (!Number.isInteger(baud) || baud < 1)) {
+    const baud = wholeNumber(baudRate);
+    // The backend takes a 32-bit number.
+    const baudValid = baud >= 1 && baud <= 0xffffffff;
+    if (protocol === "serial" && !baudValid) {
       invalid("general", t("profile.invalidBaudRate"));
       return;
     }
-    const keepaliveInterval = Number(keepalive);
-    const keepaliveValid = keepalive.trim() !== "" && Number.isInteger(keepaliveInterval) && keepaliveInterval >= 0 && keepaliveInterval <= 3600;
+    const keepaliveInterval = wholeNumber(keepalive);
+    const keepaliveValid = keepaliveInterval >= 0 && keepaliveInterval <= 3600;
     if (protocol !== "serial" && !keepaliveValid) {
       invalid("connection", t("profile.invalidKeepalive"));
       return;
@@ -270,7 +273,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           auth,
           serial: {
             device,
-            baudRate: Number.isInteger(baud) && baud > 0 ? baud : DEFAULT_SERIAL.baudRate,
+            baudRate: baudValid ? baud : DEFAULT_SERIAL.baudRate,
             dataBits,
             parity,
             stopBits,

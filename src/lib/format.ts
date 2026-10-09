@@ -1,6 +1,15 @@
 import i18n from "../i18n";
 import type { ForwardRule } from "./api";
 
+/**
+ * The number typed in a field that takes whole numbers, or NaN: digits only, as `Number`
+ * would also take "0x16", "1e3" and "1.0".
+ */
+export function wholeNumber(text: string): number {
+  const trimmed = text.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+}
+
 /** Binary-prefixed size with locale-aware digits, e.g. "1.5 MB" ("1,5 MB" in German). */
 export function formatSize(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
