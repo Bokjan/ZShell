@@ -451,7 +451,8 @@ export function TerminalView({
     window.addEventListener("online", onOnline);
 
     pasteRef.current = (text: string) => {
-      if (!text) return;
+      // Nowhere to go; a line break in it would otherwise read as Enter, which reconnects.
+      if (!text || closed) return;
       // With bracketed paste the shell inserts the lines without running them.
       const confirm = settingsRef.current.terminal.confirmMultilinePaste && !term.modes.bracketedPasteMode;
       if (confirm && /[\r\n]/.test(text)) setPendingPaste(text);
@@ -516,8 +517,9 @@ export function TerminalView({
           if (session && !REPORT.test(data)) onInputRef.current(data);
           return;
         }
-        if (data.includes("\r")) connect();
-        else if (data.includes("\x03") && retryTimer !== undefined) {
+        // Enter pressed, not a line break in something else that came in (a paste).
+        if (data === "\r") connect();
+        else if (data === "\x03" && retryTimer !== undefined) {
           cancelRetry();
           attempt = 0;
           dim(tRef.current("terminal.reconnectCancelled"));
