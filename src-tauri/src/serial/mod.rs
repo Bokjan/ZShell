@@ -243,7 +243,11 @@ fn is_pseudo_terminal(device: &str) -> bool {
 /// Reads until the device fails or the line is dropped (`failed` closes).
 fn read_output(mut port: Box<dyn SerialPort>, sink: &SessionSink, failed: &mpsc::UnboundedSender<String>) {
     let mut buffer = vec![0; READ_BUFFER];
+    let flow = sink.flow();
     while !failed.is_closed() {
+        // Not read while the terminal is behind: the driver's buffer, then flow control (if
+        // the line has any), holds the device back meanwhile.
+        flow.wait_ready();
         match port.read(&mut buffer) {
             Ok(0) => {
                 let _ = failed.send(std::io::Error::from(ErrorKind::UnexpectedEof).to_string());

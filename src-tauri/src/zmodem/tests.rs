@@ -3,6 +3,7 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::process::{Command, Stdio};
 
 use tokio::sync::{mpsc, watch};
@@ -43,7 +44,7 @@ fn link() -> (Link, Ends) {
     let (incoming_tx, incoming) = mpsc::unbounded_channel();
     let (outgoing, outgoing_rx) = mpsc::channel(4);
     let (cancel, cancel_rx) = watch::channel(false);
-    (Link::new(incoming, outgoing, cancel_rx), (incoming_tx, outgoing_rx, cancel))
+    (Link::new(incoming, outgoing, cancel_rx, Arc::default()), (incoming_tx, outgoing_rx, cancel))
 }
 
 /// Forwards one link's output to another's input.

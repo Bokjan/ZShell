@@ -29,7 +29,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
         target,
         shareFrom: share,
         carry,
-        output: (text) => onOutput(new TextEncoder().encode(text).buffer as ArrayBuffer),
+        output: (text) => onOutput(new TextEncoder().encode(text)),
         event: onEvent,
         resolve: () => {
           const session = {

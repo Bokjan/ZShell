@@ -156,6 +156,12 @@ async fn open_shell(session: &SshHandle, profile: &SshProfile, io: &mut TermIo) 
 
 /// Copies between the shell channel and the terminal until either side ends.
 ///
+/// Output is not read while the terminal is too far behind ([`crate::session::Flow`]): the
+/// channel's window then stays closed and the remote program waits. That stops the whole
+/// connection (russh's connection task waits for the channel to be read), including SFTP and
+/// forwards on it and the shells of duplicated tabs, for as long as the slowest of its
+/// terminals is behind: a bounded wait, where reading on would grow memory without bound.
+///
 /// Output keeps being read while a write waits for the server's window: russh delivers output
 /// into a bounded queue from its connection task, so a full queue would stall that task, and
 /// with it the window adjustments the write is waiting for (a large paste or a ZMODEM upload
@@ -164,12 +170,15 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
     let (mut reader, writer) = channel.split();
     let writer = Arc::new(writer);
     let mut close = CloseOnDrop(Some(writer.clone()));
+    let flow = io.sink().flow();
     let mut exit_status = None;
     let mut writing = None;
     loop {
         let idle = writing.is_none();
+        let paused = flow.is_paused();
         let sent = tokio::select! {
-            msg = reader.wait() => match msg {
+            () = flow.ready(), if paused => Ok(()),
+            msg = reader.wait(), if !paused => match msg {
                 Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
                     io.output(data.to_vec());
                     Ok(())

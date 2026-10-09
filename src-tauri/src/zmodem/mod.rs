@@ -85,6 +85,9 @@ enum State {
 }
 
 struct Active {
+    /// What the remote side sends, to the transfer. Counted in the session's flow control
+    /// until the transfer takes it, so that a transfer slower than the link (a slow disk)
+    /// holds the remote side back rather than growing this queue.
     incoming: mpsc::UnboundedSender<Vec<u8>>,
     cancel: watch::Sender<bool>,
     /// Waiting for the frontend's answer.
@@ -114,6 +117,7 @@ impl Zmodem {
     fn scan(self: &Arc<Self>, state: &mut State, bytes: Vec<u8>, sink: &SessionSink) -> Vec<u8> {
         let (tail, held) = match state {
             State::Active(active) => {
+                sink.flow().sent(bytes.len());
                 let _ = active.incoming.send(bytes);
                 return Vec::new();
             }
@@ -131,10 +135,12 @@ impl Zmodem {
             return scan[shown..show_until].to_vec();
         };
         let (incoming, incoming_rx) = mpsc::unbounded_channel();
+        let flow = sink.flow();
+        flow.sent(scan.len() - start);
         let _ = incoming.send(scan[start..].to_vec());
         let (cancel, cancel_rx) = watch::channel(false);
         *state = State::Active(Active { incoming, cancel, reply: None });
-        let mut link = Link::new(incoming_rx, self.outgoing.clone(), cancel_rx);
+        let mut link = Link::new(incoming_rx, self.outgoing.clone(), cancel_rx, flow);
         link.charset = sink.encoding();
         link.record(shown.saturating_sub(start));
         // What came before the transfer is shown, and the decoded text ended (a character cut

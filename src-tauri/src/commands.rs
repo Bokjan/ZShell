@@ -360,7 +360,8 @@ pub enum SessionSpec {
     Local,
 }
 
-/// Starts a session; returns its id.
+/// Starts a session; returns its id. `channel` carries the terminal's output and the
+/// session's events: each message is a type byte (0 output, 1 event as JSON) and its content.
 #[tauri::command]
 pub async fn session_open(
     app: AppHandle,
@@ -370,13 +371,12 @@ pub async fn session_open(
     cols: u16,
     rows: u16,
     log: Option<LogOpen>,
-    on_output: Channel,
-    on_event: Channel<SessionEvent>,
+    channel: Channel,
 ) -> Result<SessionId> {
     let Launch { log_info, auto_log, encoding, backend } = launch(&app, spec)?;
     let slot = LogSlot::new(log_info);
     let opened = open_log(&app, &slot, log, auto_log).await?;
-    let id = sessions.spawn(webview.label(), on_output, on_event, (cols, rows), slot, encoding, |id, io| backend.start(id, io));
+    let id = sessions.spawn(webview.label(), channel, (cols, rows), slot, encoding, |id, io| backend.start(id, io));
     report_log(&sessions, id, opened);
     Ok(id)
 }
@@ -643,7 +643,7 @@ pub async fn sftp_upload(
     remote_dir: String,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<()> {
-    let sftp = connections.get(id)?.sftp().await?;
+    let sftp = connections.get(id)?.transfer_sftp().await?;
     let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
     let result = transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await;
     transfers.finish(&transfer_id);
@@ -664,7 +664,7 @@ pub async fn sftp_download(
     local_dir: Option<PathBuf>,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<Vec<PathBuf>> {
-    let sftp = connections.get(id)?.sftp().await?;
+    let sftp = connections.get(id)?.transfer_sftp().await?;
     let local_dir = match local_dir {
         Some(dir) => dir,
         None => download_dir(&app, &settings)?,
@@ -686,7 +686,7 @@ pub async fn sftp_download_as(
     local_path: PathBuf,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<PathBuf> {
-    let sftp = connections.get(id)?.sftp().await?;
+    let sftp = connections.get(id)?.transfer_sftp().await?;
     let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
     let result = transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter).await;
     transfers.finish(&transfer_id);
@@ -786,7 +786,7 @@ pub async fn sftp_drag_out(
     items: Vec<drag::Item>,
     on_event: Channel<drag::DragEvent>,
 ) -> Result<drag::DragResult> {
-    let sftp = connections.get(id)?.sftp().await?;
+    let sftp = connections.get(id)?.transfer_sftp().await?;
     drag::drag_out(&window, sftp, transfer_id, items, on_event).await
 }
 

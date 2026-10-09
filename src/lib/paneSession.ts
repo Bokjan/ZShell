@@ -217,7 +217,7 @@ export class PaneSession {
       this.port.size(),
       (data) => {
         if (stale()) return;
-        this.port.write(new Uint8Array(data), () => {
+        this.port.write(data, () => {
           processed += data.byteLength;
           acknowledge();
           this.awaitPrompt();

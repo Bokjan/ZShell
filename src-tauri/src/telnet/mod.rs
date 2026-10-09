@@ -83,9 +83,13 @@ async fn bridge(
     let mut outgoing = telnet.start();
     io.event(SessionEvent::Connected);
     let mut buffer = vec![0; READ_BUFFER];
+    let flow = io.sink().flow();
     loop {
+        // Not read while the terminal is behind: TCP holds the server back meanwhile.
+        let paused = flow.is_paused();
         tokio::select! {
-            read = reader.read(&mut buffer) => match read {
+            () = flow.ready(), if paused => {}
+            read = reader.read(&mut buffer), if !paused => match read {
                 // A tunnel also ends when its jump host connection does.
                 Ok(0) if jumps.is_broken() => return lost(None),
                 Ok(0) => return Outcome::Exited(None),

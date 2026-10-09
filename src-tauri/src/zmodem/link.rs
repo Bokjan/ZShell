@@ -4,6 +4,7 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
@@ -11,6 +12,7 @@ use tokio::sync::{mpsc, watch};
 
 use super::frame::{self, Encoding, Escaped, Header, CAN, ZDLE, ZPAD};
 use crate::error::Error;
+use crate::session::Flow;
 
 /// How long to wait for the other side before retrying (as lrzsz's default of 10 s).
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -39,6 +41,8 @@ pub enum Bad {
 
 pub struct Link {
     incoming: mpsc::UnboundedReceiver<Vec<u8>>,
+    /// Acknowledges what is taken from `incoming` (see `Active::incoming`).
+    flow: Arc<Flow>,
     buffer: VecDeque<u8>,
     outgoing: mpsc::Sender<Vec<u8>>,
     pending: Vec<u8>,
@@ -60,14 +64,25 @@ pub struct Link {
     pub controls_escaped: bool,
 }
 
+/// What the transfer never took no longer counts against the session's output.
+impl Drop for Link {
+    fn drop(&mut self) {
+        while let Ok(chunk) = self.incoming.try_recv() {
+            self.flow.ack(chunk.len());
+        }
+    }
+}
+
 impl Link {
     pub fn new(
         incoming: mpsc::UnboundedReceiver<Vec<u8>>,
         outgoing: mpsc::Sender<Vec<u8>>,
         cancel: watch::Receiver<bool>,
+        flow: Arc<Flow>,
     ) -> Self {
         Self {
             incoming,
+            flow,
             buffer: VecDeque::new(),
             outgoing,
             pending: Vec::new(),
@@ -110,26 +125,32 @@ impl Link {
     /// Waits for more input, for at most `timeout`.
     async fn fill(&mut self, timeout: Duration) -> Result<()> {
         self.check_cancelled()?;
-        tokio::select! {
+        let chunk = tokio::select! {
             _ = self.cancel.wait_for(|cancelled| *cancelled) => bail!(Error::new("zmodem.cancelled")),
             // The session has ended (its tab closed while a question waits for the user, say):
             // nothing will arrive, and nothing we send would go anywhere.
             () = self.outgoing.closed() => bail!(Error::new("zmodem.cancelled")),
             chunk = self.incoming.recv() => match chunk {
-                Some(chunk) => self.buffer.extend(chunk),
+                Some(chunk) => chunk,
                 // The session is closing.
                 None => bail!(Error::new("zmodem.cancelled")),
             },
             _ = tokio::time::sleep(timeout) => bail!(Error::new("zmodem.timeout")),
-        }
+        };
+        self.take(chunk);
         Ok(())
     }
 
     /// Takes everything that has arrived without waiting.
     fn fill_ready(&mut self) {
         while let Ok(chunk) = self.incoming.try_recv() {
-            self.buffer.extend(chunk);
+            self.take(chunk);
         }
+    }
+
+    fn take(&mut self, chunk: Vec<u8>) {
+        self.flow.ack(chunk.len());
+        self.buffer.extend(chunk);
     }
 
     async fn byte(&mut self, timeout: Duration) -> Result<u8> {
@@ -394,7 +415,14 @@ impl Link {
             }
             let wait = quiet.min(deadline.saturating_duration_since(tokio::time::Instant::now()));
             match tokio::time::timeout(wait, self.incoming.recv()).await {
-                Ok(Some(chunk)) if tokio::time::Instant::now() < deadline => kept.extend(chunk),
+                Ok(Some(chunk)) if tokio::time::Instant::now() < deadline => {
+                    self.flow.ack(chunk.len());
+                    kept.extend(chunk);
+                }
+                Ok(Some(chunk)) => {
+                    self.flow.ack(chunk.len());
+                    return kept;
+                }
                 _ => return kept,
             }
         }

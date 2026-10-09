@@ -91,47 +91,83 @@ const FLOW_HIGH: usize = 2 << 20;
 /// ...and resume once the frontend has caught up to this many.
 const FLOW_LOW: usize = 512 << 10;
 
-/// Output flow control: counts the bytes sent to the frontend and not yet acknowledged.
+/// Output flow control: counts the bytes sent to the frontend (or to a ZMODEM transfer) and
+/// not yet acknowledged. Every backend stops reading while the count is too high, so the
+/// output of a fast remote program (`cat` of a large file) waits on the remote side rather
+/// than piling up in memory: in Tauri's IPC queue, which has no limit, and in xterm.js, which
+/// drops writes past its own.
 #[derive(Default)]
 pub struct Flow {
     state: Mutex<FlowState>,
+    /// Wakes reader threads ([`Flow::wait_ready`])...
     resumed: Condvar,
+    /// ...and reading tasks ([`Flow::ready`]).
+    resumed_async: tokio::sync::Notify,
 }
 
 #[derive(Default)]
 struct FlowState {
     unacked: usize,
+    /// Over [`FLOW_HIGH`] since it was last at most [`FLOW_LOW`].
+    paused: bool,
     closed: bool,
 }
 
+impl FlowState {
+    fn waits(&self) -> bool {
+        self.paused && !self.closed
+    }
+}
+
 impl Flow {
-    fn sent(&self, bytes: usize) {
+    pub fn sent(&self, bytes: usize) {
         let mut state = self.state.lock().unwrap();
         state.unacked = state.unacked.saturating_add(bytes);
+        if state.unacked >= FLOW_HIGH {
+            state.paused = true;
+        }
     }
 
     pub fn ack(&self, bytes: usize) {
         let mut state = self.state.lock().unwrap();
         state.unacked = state.unacked.saturating_sub(bytes);
-        if state.unacked <= FLOW_LOW {
+        if state.paused && state.unacked <= FLOW_LOW {
+            state.paused = false;
             self.resumed.notify_all();
+            self.resumed_async.notify_waiters();
         }
     }
 
-    /// Blocks while the frontend is too far behind. For backends reading on their own
-    /// thread; returns immediately once the session is closing.
+    /// Whether a reader should wait before reading more.
+    pub fn is_paused(&self) -> bool {
+        self.state.lock().unwrap().waits()
+    }
+
+    /// Blocks while the frontend is too far behind, for backends reading on their own
+    /// thread; returns at once when the session is closing.
     pub fn wait_ready(&self) {
-        let state = self.state.lock().unwrap();
-        if state.unacked < FLOW_HIGH {
-            return;
+        let _state = self.resumed.wait_while(self.state.lock().unwrap(), |state| state.waits()).unwrap();
+    }
+
+    /// [`Flow::wait_ready`] for backends reading in their task.
+    pub async fn ready(&self) {
+        loop {
+            let resumed = self.resumed_async.notified();
+            tokio::pin!(resumed);
+            // Registered before checking, so that a resume in between is not missed.
+            resumed.as_mut().enable();
+            if !self.is_paused() {
+                return;
+            }
+            resumed.await;
         }
-        let _state = self.resumed.wait_while(state, |s| s.unacked > FLOW_LOW && !s.closed).unwrap();
     }
 
     /// Stops all waiting, for good (the session is closing).
     pub fn close(&self) {
         self.state.lock().unwrap().closed = true;
         self.resumed.notify_all();
+        self.resumed_async.notify_waiters();
     }
 }
 
@@ -169,12 +205,17 @@ impl Lifetime {
     }
 }
 
+/// The first byte of a message on a session's channel: terminal output follows...
+const OUTPUT: u8 = 0;
+/// ...or a [`SessionEvent`] as JSON. One channel for both keeps them in order: the message
+/// about how a session ended comes after its last output.
+const EVENT: u8 = 1;
+
 /// Output side of a session: terminal bytes and lifecycle events. Cloneable, so features
 /// running beside the shell (port forwarding) can report to the same tab.
 #[derive(Clone)]
 pub struct SessionSink {
-    output: Channel,
-    events: Channel<SessionEvent>,
+    channel: Channel,
     flow: Arc<Flow>,
     zmodem: Arc<Zmodem>,
     log: Arc<LogSlot>,
@@ -224,9 +265,16 @@ impl SessionSink {
     /// to the session's log.
     pub fn write(&self, bytes: Vec<u8>) {
         self.log.write(&bytes);
+        self.send_output(&bytes);
+    }
+
+    fn send_output(&self, bytes: &[u8]) {
         self.flow.sent(bytes.len());
+        let mut message = Vec::with_capacity(bytes.len() + 1);
+        message.push(OUTPUT);
+        message.extend_from_slice(bytes);
         // A send error means the frontend is gone; the session will be closed shortly.
-        let _ = self.output.send(InvokeResponseBody::Raw(bytes));
+        let _ = self.channel.send(InvokeResponseBody::Raw(message));
     }
 
     pub fn flow(&self) -> Arc<Flow> {
@@ -242,8 +290,7 @@ impl SessionSink {
     /// Not logged.
     pub fn reset_modes(&self) {
         const RESET: &[u8] = b"\x1b7\x1b[?1049l\x1b[?1000l\x1b[?1006l\x1b[!p";
-        self.flow.sent(RESET.len());
-        let _ = self.output.send(InvokeResponseBody::Raw(RESET.to_vec()));
+        self.send_output(RESET);
     }
 
     pub fn log(&self) -> &LogSlot {
@@ -256,7 +303,10 @@ impl SessionSink {
     }
 
     pub fn event(&self, event: SessionEvent) {
-        let _ = self.events.send(event);
+        let mut message = vec![EVENT];
+        if serde_json::to_writer(&mut message, &event).is_ok() {
+            let _ = self.channel.send(InvokeResponseBody::Raw(message));
+        }
     }
 }
 
@@ -295,8 +345,7 @@ pub struct TermIo {
 
 impl TermIo {
     fn new(
-        output: Channel,
-        events: Channel<SessionEvent>,
+        channel: Channel,
         size: (u16, u16),
         log: Arc<LogSlot>,
         encoding: &'static encoding_rs::Encoding,
@@ -304,7 +353,7 @@ impl TermIo {
         let (tx, rx) = mpsc::unbounded_channel();
         let (zmodem, zmodem_out) = Zmodem::new();
         let codec = Codec::new(encoding).map(Arc::new);
-        let sink = SessionSink { output, events, flow: Arc::default(), zmodem, log, codec };
+        let sink = SessionSink { channel, flow: Arc::default(), zmodem, log, codec };
         let lifetime = Lifetime::new();
         // A reader waiting for the frontend would wait for ever, and a transfer waiting for
         // the user to choose files too.
@@ -333,21 +382,19 @@ impl TermIo {
         encoding: &'static encoding_rs::Encoding,
     ) -> (Self, mpsc::UnboundedSender<SessionInput>, std::sync::mpsc::Receiver<Vec<u8>>, std::sync::mpsc::Receiver<String>) {
         let (output_tx, output_rx) = std::sync::mpsc::channel();
-        let output = Channel::new(move |body| {
-            if let InvokeResponseBody::Raw(bytes) = body {
-                let _ = output_tx.send(bytes);
-            }
-            Ok(())
-        });
         let (events_tx, events_rx) = std::sync::mpsc::channel();
-        let events = Channel::new(move |body| {
-            if let InvokeResponseBody::Json(json) = body {
-                let _ = events_tx.send(json);
+        let channel = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(message) = body {
+                match message.split_first() {
+                    Some((&OUTPUT, bytes)) => drop(output_tx.send(bytes.to_vec())),
+                    Some((&EVENT, json)) => drop(events_tx.send(String::from_utf8_lossy(json).into_owned())),
+                    _ => {}
+                }
             }
             Ok(())
         });
         let log = LogSlot::new(crate::logging::LogInfo::default());
-        let (io, input) = Self::new(output, events, size, log, encoding);
+        let (io, input) = Self::new(channel, size, log, encoding);
         (io, input, output_rx, events_rx)
     }
 
@@ -561,8 +608,7 @@ impl SessionManager {
     pub fn spawn<F, Fut>(
         &self,
         webview: &str,
-        output: Channel,
-        events: Channel<SessionEvent>,
+        channel: Channel,
         size: (u16, u16),
         log: Arc<LogSlot>,
         encoding: &'static encoding_rs::Encoding,
@@ -573,7 +619,7 @@ impl SessionManager {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let (io, input) = TermIo::new(output, events, size, log, encoding);
+        let (io, input) = TermIo::new(channel, size, log, encoding);
         let sink = io.sink();
         let lifetime = io.lifetime.clone();
         let flow = io.sink.flow();
@@ -650,6 +696,41 @@ impl SessionManager {
 mod tests {
     use super::*;
 
+    /// Reading pauses once too much is unacknowledged and resumes only once the frontend has
+    /// caught up most of the way, for threads and tasks alike.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn flow_pauses_and_resumes() {
+        let flow = Arc::new(Flow::default());
+        flow.sent(FLOW_HIGH - 1);
+        assert!(!flow.is_paused());
+        flow.sent(1);
+        assert!(flow.is_paused());
+        let waiting = tokio::spawn({
+            let flow = flow.clone();
+            async move { flow.ready().await }
+        });
+        let thread = std::thread::spawn({
+            let flow = flow.clone();
+            move || flow.wait_ready()
+        });
+        // Below the high mark, but not yet at the low one.
+        flow.ack(FLOW_HIGH - FLOW_LOW - 1);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(flow.is_paused() && !waiting.is_finished() && !thread.is_finished());
+        flow.ack(1);
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiting).await.unwrap().unwrap();
+        thread.join().unwrap();
+
+        // Closing the session wakes waiters too.
+        flow.sent(FLOW_HIGH);
+        let waiting = tokio::spawn({
+            let flow = flow.clone();
+            async move { flow.ready().await }
+        });
+        flow.close();
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiting).await.unwrap().unwrap();
+    }
+
     /// Counts how often something was released.
     fn counter() -> (Arc<std::sync::atomic::AtomicUsize>, impl Fn() -> usize) {
         let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -662,7 +743,7 @@ mod tests {
     fn hold(sessions: &SessionManager, webview: &str) -> (SessionId, impl Fn() -> usize, impl Fn() -> usize) {
         let (released, released_count) = counter();
         let (dropped, dropped_count) = counter();
-        let id = sessions.spawn(webview, Channel::new(|_| Ok(())), Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
+        let id = sessions.spawn(webview, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
             io.on_close(move || {
                 released.fetch_add(1, Ordering::SeqCst);
             });

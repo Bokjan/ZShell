@@ -41,8 +41,10 @@ pub struct Connection {
     /// Connections to the jump hosts this one runs through; disconnected once this
     /// connection is dropped.
     _jumps: JumpChain,
-    /// The SFTP session, once opened, and whether its channel has ended since.
-    sftp: tokio::sync::Mutex<Option<(Arc<SftpSession>, Arc<AtomicBool>)>>,
+    /// The SFTP session for browsing and editing, once opened...
+    sftp: SftpSlot,
+    /// ...and the one for transfers (see [`Connection::transfer_sftp`]).
+    transfer_sftp: SftpSlot,
     forwards: Forwards,
     /// Whether its forwards move to another connection of the session when it closes (the
     /// user chose so when closing its last tab).
@@ -64,11 +66,27 @@ impl Connection {
         self.disconnect.clone()
     }
 
-    /// The connection's SFTP session, opened on first use, and again if its channel ended
+    /// The connection's SFTP session for browsing (and editing), opened on first use.
+    pub async fn sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
+        self.open_sftp(&self.sftp).await
+    }
+
+    /// The SFTP session for transfers (uploads, downloads, drags out of the window), on a
+    /// channel of its own: requests on one channel are answered in order, so a folder
+    /// listed during a large transfer would wait behind the transfer's reads. The server
+    /// may refuse another channel (`MaxSessions`); transfers then share the browsing one.
+    pub async fn transfer_sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
+        match self.open_sftp(&self.transfer_sftp).await {
+            Ok(sftp) => Ok(sftp),
+            Err(_) => self.sftp().await,
+        }
+    }
+
+    /// The SFTP session kept in `slot`, opened on first use, and again if its channel ended
     /// while the connection stays (the server's `sftp-server` exited, say): otherwise every
     /// SFTP operation would fail until the tab reconnects.
-    pub async fn sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
-        let mut cached = self.sftp.lock().await;
+    async fn open_sftp(&self, slot: &SftpSlot) -> anyhow::Result<Arc<SftpSession>> {
+        let mut cached = slot.lock().await;
         if let Some((sftp, ended)) = cached.as_ref() {
             if !ended.load(Ordering::Relaxed) {
                 return Ok(sftp.clone());
@@ -89,6 +107,9 @@ impl Connection {
         Ok(sftp)
     }
 }
+
+/// An SFTP session, once opened, and whether its channel has ended since.
+type SftpSlot = tokio::sync::Mutex<Option<(Arc<SftpSession>, Arc<AtomicBool>)>>;
 
 /// An SFTP session's stream, noting when reading from it ends: russh-sftp doesn't tell.
 struct Watched {
@@ -174,7 +195,8 @@ impl Connections {
             handle,
             profile,
             _jumps: jumps,
-            sftp: tokio::sync::Mutex::new(None),
+            sftp: SftpSlot::default(),
+            transfer_sftp: SftpSlot::default(),
             forwards,
             keep_forwards: AtomicBool::new(false),
             disconnect,
@@ -220,8 +242,10 @@ impl Connections {
                     let _ = task.await;
                 }
             }
-            if let Some((sftp, _)) = connection.sftp.lock().await.take() {
-                let _ = sftp.close().await;
+            for slot in [&connection.sftp, &connection.transfer_sftp] {
+                if let Some((sftp, _)) = slot.lock().await.take() {
+                    let _ = sftp.close().await;
+                }
             }
             let _ = connection.handle.disconnect(Disconnect::ByApplication, "", "en").await;
             if handover {

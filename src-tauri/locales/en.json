@@ -45,7 +45,8 @@
   },
   "log": {
     "started": "=== {session} ({address}), log started {time} ===",
-    "resumed": "=== Reconnected {time} ==="
+    "resumed": "=== Reconnected {time} ===",
+    "dropped": "=== {bytes} bytes of output are missing here: the log could not be written fast enough ==="
   },
   "errors": {
     "unexpected": "Unexpected error",

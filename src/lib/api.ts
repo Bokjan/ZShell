@@ -187,21 +187,26 @@ export const sendBreak = (id: SessionId) => invoke<void>("session_break", { id }
 export async function openSession(
   target: SessionTarget,
   size: { cols: number; rows: number },
-  onOutput: (data: ArrayBuffer) => void,
+  onOutput: (data: Uint8Array) => void,
   onEvent: (event: SessionEvent) => void,
   shareFrom?: SessionId,
   log: LogOpen = { mode: "auto" },
   /** Forwarding rules to start besides the automatic ones (see `forwards.carry`). */
   carry: string[] = [],
 ): Promise<Session> {
-  const output = new Channel<ArrayBuffer>();
-  output.onmessage = onOutput;
-  const events = new Channel<SessionEvent>();
-  events.onmessage = onEvent;
+  // Output and events share one channel, which keeps them in order: each message is a type
+  // byte (0 output, 1 event as JSON) and its content.
+  const channel = new Channel<ArrayBuffer>();
+  const decoder = new TextDecoder();
+  channel.onmessage = (message) => {
+    const bytes = new Uint8Array(message);
+    if (bytes[0] === 0) onOutput(bytes.subarray(1));
+    else if (bytes[0] === 1) onEvent(JSON.parse(decoder.decode(bytes.subarray(1))) as SessionEvent);
+  };
   let spec: SessionSpec;
   if (target.kind === "profile") spec = shareFrom !== undefined ? { kind: "shared", source: shareFrom } : { ...target, carry };
   else spec = target;
-  const id = await invoke<SessionId>("session_open", { spec, ...size, log, onOutput: output, onEvent: events });
+  const id = await invoke<SessionId>("session_open", { spec, ...size, log, channel });
   return {
     id,
     write: (data) => invoke("session_write", { id, data }),

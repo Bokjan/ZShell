@@ -3,6 +3,10 @@
 //! control sequences are dropped, and backspaces and carriage returns are applied to the
 //! line, so a shell's line editing and progress bars come out as the screen showed them.
 //!
+//! Each log has a writer thread, given the output through a bounded queue: a slow log folder
+//! (a network drive, a sleeping disk) never holds up the session. When the queue is full,
+//! output is left out of the log, and a line in it says how much.
+//!
 //! Logs that ZShell writes are listed in `logs.json`, so cleaning up (by age, for a session,
 //! or all) only ever deletes files it created, never others in the log folder, and finds a
 //! session's logs after it was renamed.
@@ -11,7 +15,9 @@ use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use chrono::Local;
@@ -52,28 +58,60 @@ pub enum LogOpen {
 /// write) for every chunk of output.
 const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
-type SharedWriter = Arc<Mutex<Option<LogWriter>>>;
+/// Chunks of output a log's writer thread may have waiting.
+const QUEUE: usize = 256;
+
+/// How long going on with a log after a reconnection waits for the previous connection's
+/// writer to finish the file.
+const APPEND_WAIT: Duration = Duration::from_secs(5);
+
+/// What a log's writer thread is given.
+enum Chunk {
+    Output(Vec<u8>),
+    /// This many bytes of output were left out: the queue was full.
+    Dropped(usize),
+}
+
+/// The way to a log's writer thread.
+struct Queue {
+    chunks: SyncSender<Chunk>,
+    /// Bytes left out since the last chunk queued.
+    dropped: usize,
+}
 
 /// A session's log, if one is being written; shared by everything that writes to the
 /// terminal (see `SessionSink::write`).
 pub struct LogSlot {
     pub info: LogInfo,
-    writer: SharedWriter,
+    queue: Mutex<Option<Queue>>,
 }
 
 impl LogSlot {
     pub fn new(info: LogInfo) -> Arc<Self> {
-        Arc::new(Self { info, writer: SharedWriter::default() })
+        Arc::new(Self { info, queue: Mutex::new(None) })
     }
 
-    /// Logs what the terminal is about to show. A failing write (the disk is full, or gone)
-    /// stops the log rather than retrying on every chunk.
+    /// Logs what the terminal is about to show, without waiting: left out when the writer
+    /// is that far behind. A writer that failed (the disk is full, or gone) stops the log.
     pub fn write(&self, bytes: &[u8]) {
-        let mut writer = self.writer.lock().unwrap();
-        if let Some(log) = writer.as_mut() {
-            if log.write(bytes).is_err() {
-                *writer = None;
-            }
+        let mut slot = self.queue.lock().unwrap();
+        let Some(queue) = slot.as_mut() else { return };
+        let send = |chunk| match queue.chunks.try_send(chunk) {
+            Ok(()) => Some(true),
+            Err(TrySendError::Full(_)) => Some(false),
+            Err(TrySendError::Disconnected(_)) => None,
+        };
+        let sent = match queue.dropped {
+            0 => send(Chunk::Output(bytes.to_vec())),
+            dropped => match send(Chunk::Dropped(dropped)) {
+                Some(true) => send(Chunk::Output(bytes.to_vec())),
+                other => other,
+            },
+        };
+        match sent {
+            Some(true) => queue.dropped = 0,
+            Some(false) => queue.dropped += bytes.len(),
+            None => *slot = None,
         }
     }
 }
@@ -102,7 +140,7 @@ impl LogWriter {
         self.dirty = true;
         match self.flushed.elapsed() >= FLUSH_INTERVAL {
             true => self.flush(),
-            // What stays in the buffer is flushed by `Logs::flush_idle` if no more comes.
+            // What stays in the buffer is flushed when no more comes (see `LogWriter::run`).
             false => Ok(()),
         }
     }
@@ -122,6 +160,25 @@ impl LogWriter {
         }
         writeln!(self.file, "{text}")?;
         self.flush()
+    }
+}
+
+impl LogWriter {
+    /// Writes what the session gives until it stops the log (or a write fails), flushing
+    /// once output pauses for [`FLUSH_INTERVAL`].
+    fn run(mut self, chunks: std::sync::mpsc::Receiver<Chunk>) {
+        loop {
+            let written = match chunks.recv_timeout(FLUSH_INTERVAL) {
+                Ok(Chunk::Output(bytes)) => self.write(&bytes),
+                Ok(Chunk::Dropped(bytes)) => self.note(&t!("log.dropped", bytes = bytes)),
+                Err(RecvTimeoutError::Timeout) if self.dirty => self.flush(),
+                Err(RecvTimeoutError::Timeout) => Ok(()),
+                Err(RecvTimeoutError::Disconnected) => return,
+            };
+            if written.is_err() {
+                return;
+            }
+        }
     }
 }
 
@@ -280,15 +337,31 @@ impl vte::Perform for Line {
     }
 }
 
+/// The logs being written, by path.
+#[derive(Default)]
+struct ActiveLogs {
+    paths: Mutex<HashSet<PathBuf>>,
+    closed: Condvar,
+}
+
+impl ActiveLogs {
+    /// Waits until nothing writes `path` any more, for at most `timeout`.
+    fn wait_closed(&self, path: &Path, timeout: Duration) {
+        let paths = self.paths.lock().unwrap();
+        let _paths = self.closed.wait_timeout_while(paths, timeout, |paths| paths.contains(path)).unwrap();
+    }
+}
+
 /// Removes its file from the active set when the log closes.
 struct Active {
     path: PathBuf,
-    set: Arc<Mutex<HashSet<PathBuf>>>,
+    set: Arc<ActiveLogs>,
 }
 
 impl Drop for Active {
     fn drop(&mut self) {
-        self.set.lock().unwrap().remove(&self.path);
+        self.set.paths.lock().unwrap().remove(&self.path);
+        self.set.closed.notify_all();
     }
 }
 
@@ -312,15 +385,13 @@ pub struct Logs {
     index_path: PathBuf,
     default_dir: PathBuf,
     index: Mutex<Vec<Entry>>,
-    active: Arc<Mutex<HashSet<PathBuf>>>,
-    /// The writers of the sessions that have had a log, for [`Logs::flush_idle`].
-    writers: Mutex<Vec<Weak<Mutex<Option<LogWriter>>>>>,
+    active: Arc<ActiveLogs>,
 }
 
 impl Logs {
     pub fn load(index_path: PathBuf, default_dir: PathBuf, set_aside: &SetAside) -> Self {
         let index = load_json(&index_path, set_aside);
-        Self { index_path, default_dir, index: Mutex::new(index), active: Arc::default(), writers: Mutex::default() }
+        Self { index_path, default_dir, index: Mutex::new(index), active: Arc::default() }
     }
 
     pub fn directory(&self, settings: &LogSettings) -> PathBuf {
@@ -365,6 +436,8 @@ impl Logs {
         if !self.index.lock().unwrap().iter().any(|entry| entry.path == path) || !path.is_file() {
             return self.start(slot, settings);
         }
+        // The previous connection's writer may still be writing what it was given.
+        self.active.wait_closed(&path, APPEND_WAIT);
         let file = OpenOptions::new()
             .append(true)
             .open(&path)
@@ -374,37 +447,21 @@ impl Logs {
     }
 
     fn install(&self, slot: &LogSlot, path: PathBuf, file: File, settings: &LogSettings, note: &str) -> Result<()> {
-        self.active.lock().unwrap().insert(path.clone());
+        self.active.paths.lock().unwrap().insert(path.clone());
         let active = Active { path: path.clone(), set: self.active.clone() };
         let text = (settings.format == LogFormat::Text)
             .then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
         let mut writer = LogWriter { file: BufWriter::new(file), text, flushed: Instant::now(), dirty: false, _active: active };
         writer.note(note).map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
-        *slot.writer.lock().unwrap() = Some(writer);
-        let mut writers = self.writers.lock().unwrap();
-        if !writers.iter().any(|w| w.as_ptr() == Arc::as_ptr(&slot.writer)) {
-            writers.push(Arc::downgrade(&slot.writer));
-        }
+        let (chunks, queued) = sync_channel(QUEUE);
+        thread::spawn(move || writer.run(queued));
+        *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0 });
         Ok(())
     }
 
-    /// Flushes what logs were given since their last flush, if it was [`FLUSH_INTERVAL`]
-    /// ago: the output stopped before the next flush was due. Called every so often.
-    pub fn flush_idle(&self) {
-        self.writers.lock().unwrap().retain(|writer| {
-            let Some(writer) = writer.upgrade() else { return false };
-            let mut writer = writer.lock().unwrap();
-            if let Some(log) = writer.as_mut() {
-                if log.dirty && log.flushed.elapsed() >= FLUSH_INTERVAL && log.flush().is_err() {
-                    *writer = None;
-                }
-            }
-            true
-        });
-    }
-
+    /// Stops the session's log; its writer finishes what it was given.
     pub fn stop(&self, slot: &LogSlot) {
-        slot.writer.lock().unwrap().take();
+        slot.queue.lock().unwrap().take();
     }
 
     fn remember(&self, entry: Entry) {
@@ -437,7 +494,7 @@ impl Logs {
 
     /// Deletes the logs that `matches`, except those being written; returns how many.
     fn delete(&self, matches: impl Fn(&Entry) -> bool) -> usize {
-        let active = self.active.lock().unwrap().clone();
+        let active = self.active.paths.lock().unwrap().clone();
         let mut index = self.existing();
         let mut deleted = 0;
         index.retain(|entry| {
@@ -565,20 +622,40 @@ mod tests {
         let path = logs.start(&slot, &settings).unwrap();
         let header = std::fs::read(&path).unwrap();
 
-        // Not flushed on every chunk, nor before the interval has passed.
+        // Not flushed on every chunk, but once the output pauses.
         slot.write(b"one ");
         slot.write(b"two");
-        logs.flush_idle();
+        std::thread::sleep(Duration::from_millis(200));
         assert_eq!(std::fs::read(&path).unwrap(), header);
-        std::thread::sleep(FLUSH_INTERVAL);
-        logs.flush_idle();
+        std::thread::sleep(FLUSH_INTERVAL * 2);
         assert_eq!(std::fs::read(&path).unwrap(), [header.as_slice(), b"one two"].concat());
 
-        // A slot that has gone is forgotten.
+        // Its writer ends with the slot.
         drop(slot);
-        logs.flush_idle();
-        assert!(logs.writers.lock().unwrap().is_empty());
+        logs.active.wait_closed(&path, Duration::from_secs(5));
+        assert!(logs.active.paths.lock().unwrap().is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Output the writer has no room for is left out, and the log says how much.
+    #[test]
+    fn output_is_left_out_while_the_writer_is_behind() {
+        let (chunks, queued) = sync_channel(2);
+        let slot = LogSlot { info: LogInfo::default(), queue: Mutex::new(Some(Queue { chunks, dropped: 0 })) };
+        for chunk in [b"a".as_slice(), b"b", b"cc", b"ddd"] {
+            slot.write(chunk);
+        }
+        let taken = |queued: &std::sync::mpsc::Receiver<Chunk>| match queued.try_recv().unwrap() {
+            Chunk::Output(bytes) => String::from_utf8(bytes).unwrap(),
+            Chunk::Dropped(bytes) => format!("<{bytes} dropped>"),
+        };
+        assert_eq!((taken(&queued), taken(&queued)), ("a".into(), "b".into()));
+        slot.write(b"e");
+        assert_eq!((taken(&queued), taken(&queued)), ("<5 dropped>".into(), "e".into()));
+        // A writer that failed ends the log.
+        drop(queued);
+        slot.write(b"f");
+        assert!(slot.queue.lock().unwrap().is_none());
     }
 
     #[test]
@@ -602,6 +679,7 @@ mod tests {
         std::fs::write(dir.join("Logs").join("mine.txt"), "keep").unwrap();
         assert_eq!(logs.delete_for("p1"), 0);
         drop(slot);
+        logs.active.wait_closed(&path, Duration::from_secs(5));
         let content = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 4);
