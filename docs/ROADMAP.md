@@ -37,12 +37,13 @@
 
 | 方面 | 差距 | 优先级 |
 |---|---|---|
+| 认证 | 不支持多因素认证：服务器要求"密钥 + 验证码"之类的组合时连不上 | P1 |
 | 数据保护 | 会话等配置是明文，密码逐条存在系统凭据存储里，导出不能带密码 | P1 |
 | 杂项 | 没有应用锁 | P2 |
 
 ## 里程碑
 
-按计划顺序排列。翻译、上架 Store 与其他里程碑没有依赖，可以随时提前。
+按计划顺序排列。翻译、上架 Store、多因素认证与其他里程碑没有依赖，可以随时提前。
 
 | 阶段 | 内容 | 优先级 |
 |---|---|---|
@@ -68,6 +69,7 @@
 | **M18 应用锁** | 用 Touch ID / Windows Hello 锁定应用 | P2 |
 | **M19 翻译** | 语言设置界面，首批简体中文 | — |
 | **M20 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
+| **M21 多因素认证** | 按服务器返回的剩余方法继续认证（`AuthenticationMethods publickey,keyboard-interactive` 等） | P1 |
 
 ### M17 加密保险库与带密码导出
 
@@ -130,6 +132,19 @@
 - 第三方许可证声明：已完成。构建时生成一份合并的声明（Rust 依赖用 `cargo-about`，前端只收运行时依赖），随前端产物内嵌进 exe，单独 exe 与 MSIX 都带着；设置的「关于」一节显示版本号并能查看这份声明。做法见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」。
 - 提交：先在 Partner Center 手动上传每个版本的 `.msixbundle`；流程稳定后再考虑用 Store 提交 API（`msstore` CLI，需要把 Entra ID 应用的凭据配成 secret）自动提交。
 - 商店页面：描述、截图、年龄分级在 Partner Center 填写；提交时说明使用 `runFullTrust` 的理由（完整的桌面应用，需要启动本地 shell、访问 SSH agent 等）。隐私政策写明应用不收集数据、配置只保存在本机，放在仓库里，用 GitHub 链接。
+
+### M21 多因素认证
+
+**为什么**：服务器配置 `AuthenticationMethods publickey,keyboard-interactive`（Google Authenticator、Duo）或 `publickey,password` 时，第一步成功只得到 `partial_success`，还要用剩下的方法再认证一次。现在 `ssh/auth.rs` 每一步只看 `success()`，把 partial success 当作拒绝，接着试别的密钥（全被拒），之后一直用最初 `none` 探测得到的方法集合，最后报 `auth.failed`。这个错误码是永久错误，自动重连也不会重试。OpenSSH 能连上的服务器，ZShell 连不上。（来自 2026-10 代码审查 2.1.2）
+
+**设计要点**
+- 认证改写成按方法集合循环的结构：每一步的结果若是 `Failure { partial_success: true, remaining_methods }`，记下已通过的方法，用 `remaining_methods` 作为新的可选集合继续；`partial_success: false` 才算这个方法失败。已通过的方法不再重试（OpenSSH 同样会跳过）。
+- 方法顺序与 OpenSSH 默认的 `PreferredAuthentications` 一致：publickey（agent、会话指定的密钥、默认密钥文件）→ keyboard-interactive → password。现在服务器两种都提供时优先 password，与 OpenSSH 相反，在 PAM 验证码这类配置上会失败。
+- 认证方式不是"自动"时：会话指定的方法通过后若还有剩余方法，同样按上面的顺序继续，而不是直接失败；剩余方法里没有能用的，报出服务器要求的方法列表（新错误码，如 `auth.moreRequired`，带 `{methods}`）。
+- 保存的密码：现在 keyboard-interactive 只有一个不回显的提示时，会先用保存的密码回答一次。多因素时这个提示往往是验证码，填进密码会白白消耗一次尝试（Duo 等可能因此锁定帐户），所以改为只在提示文字含 "password"（不区分大小写）时才用保存的密码。
+- 提示仍在终端里内联显示，与 OpenSSH 一样；keyboard-interactive 的 `name` / `instruction` 照常显示，验证码提示不回显、不保存。
+- 自动重连：需要验证码的连接无法无人值守地重连，重连时照常在终端里提示。
+- 测试：临时 sshd 配 `AuthenticationMethods publickey,keyboard-interactive` 与 `publickey,password`，keyboard-interactive 用 PAM 或 `KbdInteractiveAuthentication` 加测试用户验证；单元测试覆盖方法集合的推进逻辑。
 
 ## 暂不排期（P2）
 
