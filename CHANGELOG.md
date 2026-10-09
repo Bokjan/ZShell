@@ -2,6 +2,18 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.4] - 2026-10-09
+
+### Bug Fixes
+
+- A proxy command no longer receives a host or user name the shell would run as a command (as from a session imported from someone else's file); such names are refused, as in OpenSSH.
+- Importing from ssh_config: `Match` blocks are no longer applied to the host before them, `Include`d files are read, a `ProxyJump` written as `user@alias` or `alias:port` uses the alias's settings, and a jump host's own jump hosts are kept. Hosts are imported from the file that was loaded, even if the path was edited afterwards.
+- Importing sessions from a file checks them as saving does (a remote forward without a bind address no longer listens on every interface of the server), lists forwarding rules that start on connecting, handles missing or repeated ids, and no longer takes a Telnet session of the same name for an SSH jump host.
+- When a session or proxy is saved but the keychain fails, saving again updates it instead of adding a second copy.
+- Windows: opening ZShell again brings the running window forward instead of starting a second instance, which could overwrite the first one's changes.
+- Spaces typed in the terminal font name are kept.
+- Enter and Escape used with an input method (to confirm or cancel a candidate) no longer submit, close a dialog or end a rename.
+
 ## [1.6.3] - 2026-10-09
 
 ### Bug Fixes
