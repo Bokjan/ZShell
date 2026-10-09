@@ -2,6 +2,14 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.6] - 2026-10-09
+
+### Bug Fixes
+
+- Port forwarding: a session's rules run once, even with several tabs of the session open. Starting, stopping, editing or deleting a rule from any tab acts where it runs, every tab shows its state, and a tab that connects later no longer fails to bind ports another tab already forwards. Closing the last tab of a connection that runs rules, while another tab of the session is connected, asks whether to keep them running there. Reconnecting a tab by hand starts the rules it was running again, including those started by hand.
+- Port forwarding: local and dynamic rules on `localhost` listen on both 127.0.0.1 and ::1, so clients connecting to 127.0.0.1 are no longer refused.
+- Port forwarding: stopping or editing a remote rule while it is still starting no longer leaves the server listening, which made the rule fail with "address in use" until reconnecting.
+
 ## [1.6.5] - 2026-10-09
 
 ### Bug Fixes
