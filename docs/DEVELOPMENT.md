@@ -133,7 +133,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 **步骤**（`scripts/release.sh`，需在 main 上且工作区干净）：
 1. `scripts/release.sh prepare X.Y.Z`：修改 `src-tauri/Cargo.toml` 中的版本号并更新 `Cargo.lock`，用 git-cliff 在 `CHANGELOG.md` 顶部加上该版本一节（`--unreleased --prepend`，之前各版本已润色的内容不变）。git-cliff 的配置在 `cliff.toml`，只收录 `feat` / `fix` / `perf` 和破坏性变更，其他类型（`docs`、`ci`、`chore`、`refactor` 等）不出现在更新日志里，因此提交类型要选准。
-2. 润色该版本一节：合并同一功能的多条、去掉内部里程碑编号，内容保持英语。只有 `refactor` / `chore` 等提交的版本，git-cliff 生成的一节可能是空的，手写一句面向用户的说明（`tag` 要求有该版本一节）。
+2. 润色该版本一节：合并同一功能的多条、去掉内部里程碑编号，内容保持英语。来自 issue 的修改在条目末尾署名（`(thanks @name, #12)`），并把此人加进 `THANKS.md`（每人一行，已有的补上 issue 编号）。只有 `refactor` / `chore` 等提交的版本，git-cliff 生成的一节可能是空的，手写一句面向用户的说明（`tag` 要求有该版本一节）。
 3. `scripts/release.sh tag`：运行 `pnpm build`、`pnpm test`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
 4. `git push origin main vX.Y.Z`。只升版本号的话到此为止。
 5. 要发布时：`scripts/release.sh publish [X.Y.Z]`（默认当前版本），用 `gh workflow run release.yml --ref vX.Y.Z` 在该 tag 上运行 release workflow。workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（避免并行 job 重复创建），然后并行打包并上传。发布说明由 `scripts/release-notes.sh` 从 `CHANGELOG.md` 取：不是每个版本都发布，所以包含上一个已发布的 release（不算草稿）之后的全部版本；只有这一个版本时就是该节原文，有多个时每个版本一节、以版本号和日期为标题，新的在前。本地运行 `scripts/release-notes.sh X.Y.Z` 可以预览。各个包：

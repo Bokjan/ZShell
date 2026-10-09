@@ -68,8 +68,12 @@ Documentation for contributors is in Chinese:
 - [docs/I18N.md](docs/I18N.md): language policy and internationalization
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): testing, conventions, CI and releases
 
+## Feedback
+
+Bug reports and feature requests are welcome as [issues](https://github.com/Bokjan/ZShell/issues). Pull requests are generally not accepted; please discuss a change in an issue first. See [CONTRIBUTING.md](CONTRIBUTING.md), and [THANKS.md](THANKS.md) for the people who have helped.
+
 ## License
 
 Copyright © 2026 Boyin Chen. All rights reserved.
 
-ZShell is free to use, but it is not open source. The source code is published for transparency and reference only; no license is granted to copy, modify or redistribute it. The released builds (from the [releases page](https://github.com/Bokjan/ZShell/releases) and the Microsoft Store) may be used free of charge, including for work.
+ZShell is free to use and its source code is public, but it is source-available rather than open source. The released builds may be used free of charge for any purpose, including at work, and you may study, build and modify the source code for your own use, but not distribute it or any build of it. See [LICENSE.md](LICENSE.md) for the terms.
