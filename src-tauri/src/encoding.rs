@@ -76,6 +76,18 @@ impl Codec {
         out.into_bytes()
     }
 
+    /// Ends the output stream: a character left incomplete becomes U+FFFD, and the next output
+    /// starts afresh. For the end of a session, and before a ZMODEM transfer, whose data
+    /// would otherwise be taken for the rest of the character.
+    pub fn flush(&self) -> Vec<u8> {
+        let mut decoder = self.decoder.lock().unwrap();
+        let mut out = String::with_capacity(decoder.max_utf8_buffer_length(0).unwrap_or(16));
+        let _ = decoder.decode_to_string(&[], &mut out, true);
+        // A decoder is done once given the last input.
+        *decoder = self.encoding.new_decoder_without_bom_handling();
+        out.into_bytes()
+    }
+
     /// Input (UTF-8, from the terminal) to the remote encoding.
     pub fn encode(&self, bytes: &[u8]) -> Vec<u8> {
         encode(self.encoding, &String::from_utf8_lossy(bytes))
@@ -102,6 +114,16 @@ mod tests {
         let mut out = codec.decode(&[0xc4, 0xe3, 0xba]);
         out.extend(codec.decode(&[0xc3, b'\n']));
         assert_eq!(String::from_utf8(out).unwrap(), "你好\n");
+    }
+
+    #[test]
+    fn flushing_ends_an_incomplete_character() {
+        let codec = Codec::new(for_profile("gbk")).unwrap();
+        assert_eq!(codec.decode(&[b'a', 0xc4]), b"a");
+        assert_eq!(String::from_utf8(codec.flush()).unwrap(), "\u{fffd}");
+        // What follows is not taken for the rest of it.
+        assert_eq!(String::from_utf8(codec.decode(&[b'*', 0xc4, 0xe3])).unwrap(), "*你");
+        assert!(codec.flush().is_empty());
     }
 
     #[test]

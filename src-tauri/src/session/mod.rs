@@ -146,9 +146,23 @@ impl SessionSink {
     /// Output from the remote side (or the local shell): shown in the terminal, unless a
     /// ZMODEM transfer starts or is running.
     pub fn output(&self, bytes: Vec<u8>) {
+        let transferring = self.zmodem.is_active();
         let shown = self.zmodem.output(bytes, self);
         if !shown.is_empty() {
             self.remote(shown);
+        }
+        if !transferring && self.zmodem.is_active() {
+            self.flush_text();
+        }
+    }
+
+    /// Ends the decoded output stream (see [`Codec::flush`]).
+    pub fn flush_text(&self) {
+        if let Some(codec) = &self.codec {
+            let rest = codec.flush();
+            if !rest.is_empty() {
+                self.write(rest);
+            }
         }
     }
 
@@ -263,6 +277,15 @@ impl TermIo {
     pub fn detached(
         size: (u16, u16),
     ) -> (Self, mpsc::UnboundedSender<SessionInput>, std::sync::mpsc::Receiver<Vec<u8>>, std::sync::mpsc::Receiver<String>) {
+        Self::detached_with(size, encoding_rs::UTF_8)
+    }
+
+    /// [`TermIo::detached`] for a session in another character encoding.
+    #[cfg(test)]
+    pub fn detached_with(
+        size: (u16, u16),
+        encoding: &'static encoding_rs::Encoding,
+    ) -> (Self, mpsc::UnboundedSender<SessionInput>, std::sync::mpsc::Receiver<Vec<u8>>, std::sync::mpsc::Receiver<String>) {
         let (output_tx, output_rx) = std::sync::mpsc::channel();
         let output = Channel::new(move |body| {
             if let InvokeResponseBody::Raw(bytes) = body {
@@ -278,7 +301,7 @@ impl TermIo {
             Ok(())
         });
         let log = LogSlot::new(crate::logging::LogInfo::default());
-        let (io, input) = Self::new(output, events, size, log, encoding_rs::UTF_8);
+        let (io, input) = Self::new(output, events, size, log, encoding);
         (io, input, output_rx, events_rx)
     }
 
@@ -297,6 +320,7 @@ impl TermIo {
 
     /// Reports how a remote session ended, in the terminal and as its `Closed` event.
     pub fn finish(&self, outcome: Outcome) {
+        self.sink.flush_text();
         self.sink.reset_modes();
         let (reason, error, status) = match outcome {
             Outcome::Exited(status) => {
@@ -578,6 +602,27 @@ mod tests {
         let shown = shown_until(&output, b" more 9", std::time::Duration::from_secs(5));
         assert_eq!(String::from_utf8_lossy(&shown), String::from_utf8_lossy(&sent));
         assert!(!sink.zmodem.is_active());
+    }
+
+    #[test]
+    fn an_incomplete_character_shows_when_the_session_ends() {
+        let (io, _input, output, _events) = TermIo::detached_with((80, 24), encoding_rs::GBK);
+        io.output(b"ok \xc4".to_vec());
+        io.finish(Outcome::Exited(Some(0)));
+        let shown = String::from_utf8(output.try_iter().flatten().collect()).unwrap();
+        assert!(shown.starts_with("ok \u{fffd}"), "{shown:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_incomplete_character_does_not_reach_past_a_transfer() {
+        let (io, _input, output, _events) = TermIo::detached_with((80, 24), encoding_rs::GBK);
+        let sink = io.sink();
+        sink.output(b"ok \xc4".to_vec());
+        sink.output(b"**\x18B00000000000000\r\x8a\x11".to_vec());
+        assert!(sink.zmodem.is_active());
+        let shown = String::from_utf8(output.try_iter().flatten().collect()).unwrap();
+        assert!(shown.starts_with("ok \u{fffd}"), "{shown:?}");
+        sink.zmodem.cancel();
     }
 
     #[tokio::test(flavor = "multi_thread")]
