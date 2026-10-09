@@ -11,7 +11,7 @@ use russh::keys::agent::AgentIdentity;
 use russh::keys::ssh_encoding::Encode;
 use russh::keys::ssh_key::private::KeypairData;
 use russh::keys::ssh_key::Signature;
-use russh::keys::{load_secret_key, HashAlg, PrivateKey, PrivateKeyWithHashAlg};
+use russh::keys::{load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg};
 use russh::{MethodKind, MethodSet, Signer};
 
 use super::handler::ClientHandler;
@@ -241,7 +241,7 @@ impl Signer for PassphraseSigner<'_> {
         };
         // Failing here would leave russh waiting for a signature forever. An invalid one
         // instead makes the server reject this key, and authentication moves on.
-        let blob = signature.unwrap_or_else(|| invalid_signature(self.key));
+        let blob = signature.unwrap_or_else(|| invalid_signature(self.key.algorithm()));
         blob.encode(&mut data).map_err(|_| SignError)?;
         Ok(data)
     }
@@ -274,9 +274,9 @@ fn sign(key: &PrivateKey, hash_alg: Option<HashAlg>, data: &[u8]) -> Result<Vec<
 }
 
 /// A well-formed signature blob that cannot verify.
-fn invalid_signature(key: &PrivateKey) -> Vec<u8> {
+fn invalid_signature(algorithm: Algorithm) -> Vec<u8> {
     let mut blob = Vec::new();
-    let _ = key.algorithm().as_str().encode(&mut blob);
+    let _ = algorithm.as_str().encode(&mut blob);
     let _ = [0u8; 0].as_slice().encode(&mut blob);
     blob
 }
@@ -303,7 +303,7 @@ async fn agent(session: &mut Session, user: &str) -> Result<()> {
         };
         let hash_alg = if key.algorithm().is_rsa() { rsa_hash } else { None };
         let result = session
-            .authenticate_publickey_with(user, key, hash_alg, &mut agent)
+            .authenticate_publickey_with(user, key, hash_alg, &mut AgentSigner(&mut agent))
             .await
             .map_err(|e| Error::new("auth.agentSignFailed").detail(format!("{e:?}")))?;
         if result.success() {
@@ -314,6 +314,29 @@ async fn agent(session: &mut Session, user: &str) -> Result<()> {
 }
 
 type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin>>;
+
+/// Signs with the agent. An agent can refuse after the server has accepted the key (the
+/// user denied a confirmation, or didn't touch a security key); failing then would leave
+/// russh waiting for a signature forever, so as with [`PassphraseSigner`], an invalid one
+/// makes the server reject the key and authentication moves on.
+struct AgentSigner<'a, S: AgentStream>(&'a mut AgentClient<S>);
+
+impl<S: AgentStream + Send + Unpin> Signer for AgentSigner<'_, S> {
+    type Error = SignError;
+
+    async fn auth_sign(&mut self, key: &AgentIdentity, hash_alg: Option<HashAlg>, data: Vec<u8>) -> Result<Vec<u8>, SignError> {
+        if let Ok(signed) = self.0.sign_request(key, hash_alg, data.clone()).await {
+            return Ok(signed);
+        }
+        let algorithm = match key {
+            AgentIdentity::PublicKey { key, .. } => key.algorithm(),
+            AgentIdentity::Certificate { certificate, .. } => certificate.algorithm(),
+        };
+        let mut data = data;
+        invalid_signature(algorithm).encode(&mut data).map_err(|_| SignError)?;
+        Ok(data)
+    }
+}
 
 /// A connection to the local agent for a forwarded agent channel.
 pub async fn agent_stream() -> Result<Box<dyn AgentStream + Send + Unpin>> {
@@ -338,5 +361,36 @@ fn expand_home(path: &str) -> PathBuf {
     match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
         Some(rest) => std::env::home_dir().map(|home| home.join(rest)).unwrap_or_else(|| path.into()),
         None => path.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use russh::keys::PublicKey;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+
+    /// An agent that refuses to sign still yields a (useless) signature, since russh waits
+    /// for one.
+    #[tokio::test]
+    async fn agent_refusal_gives_invalid_signature() {
+        let (client, mut agent_side) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            // Answers every request with SSH_AGENT_FAILURE.
+            let mut len = [0u8; 4];
+            while agent_side.read_exact(&mut len).await.is_ok() {
+                let mut request = vec![0; u32::from_be_bytes(len) as usize];
+                agent_side.read_exact(&mut request).await.unwrap();
+                agent_side.write_all(&[0, 0, 0, 1, 5]).await.unwrap();
+            }
+        });
+        let mut agent = AgentClient::connect(client);
+        let key = PublicKey::from_openssh("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIErPvl8mnDbXiALZf/lPNK6oppUWYB4bP5AYBJmvaFkh").unwrap();
+        let identity = AgentIdentity::PublicKey { key, comment: String::new() };
+        let signed = AgentSigner(&mut agent).auth_sign(&identity, None, b"data".to_vec()).await.unwrap();
+        let mut expected = b"data".to_vec();
+        invalid_signature(Algorithm::Ed25519).encode(&mut expected).unwrap();
+        assert_eq!(signed, expected);
     }
 }
