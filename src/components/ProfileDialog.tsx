@@ -87,8 +87,12 @@ function parseEnv(text: string): EnvVar[] | { invalid: string } {
   return vars;
 }
 
-export function ProfileDialog({ profile, defaults, profiles, commandGroups, onClose, onChanged, onSaved }: Props) {
+export function ProfileDialog({ profile: initial, defaults, profiles, commandGroups, onClose, onChanged, onSaved }: Props) {
   const { t } = useTranslation();
+  // The profile being edited: a new one becomes the saved one when only its password failed,
+  // so that saving again updates it instead of adding another.
+  const [profile, setProfile] = useState(initial);
+  const [saving, setSaving] = useState(false);
   const { settings, theme } = useSettings();
   const [page, setPage] = useState<Page>("general");
   const [name, setName] = useState(profile?.name ?? "");
@@ -202,6 +206,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     // Checked here rather than with `required`: the field may be on another page. Fields
     // of other protocols keep their values without being checked.
     if (ssh && (!host.trim() || !username.trim() || (authType === "publicKey" && !keyPath.trim()))) {
@@ -250,8 +255,9 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
     else if (clearPassword) passwordUpdate = "";
     else if (password) passwordUpdate = password;
 
+    setSaving(true);
     try {
-      const saved = await saveProfile(
+      const { saved, passwordError } = await saveProfile(
         // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
         {
           id: profile?.id ?? "",
@@ -290,12 +296,16 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
       );
       onChanged();
       onSaved?.(saved);
+      if (passwordError) {
+        setProfile(saved);
+        setError(t("profile.passwordNotSaved", { message: passwordError.message }));
+        setSaving(false);
+        return;
+      }
       onClose();
     } catch (err) {
-      // The profile itself may have been saved with only the password change failing (the
-      // keychain), so the list is reloaded either way.
-      onChanged();
       setError(errorMessage(err));
+      setSaving(false);
     }
   };
 
@@ -824,7 +834,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
             <button type="button" onClick={onClose}>
               {t("common.cancel")}
             </button>
-            <button type="submit" className="primary">
+            <button type="submit" className="primary" disabled={saving}>
               {t("common.save")}
             </button>
           </footer>

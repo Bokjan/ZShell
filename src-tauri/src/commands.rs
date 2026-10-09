@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
@@ -80,16 +81,25 @@ pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
     store.list()
 }
 
+/// A saved session or proxy, with the error storing its password gave, if any. It is saved
+/// either way: the dialog then goes on editing it, so that saving again doesn't add another.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Saved<T> {
+    saved: T,
+    password_error: Option<Error>,
+}
+
 /// `password`: `None` keeps the stored password, `Some("")` clears it.
 #[tauri::command]
-pub fn profile_save(store: State<'_, ProfileStore>, profile: Profile, password: Option<String>) -> Result<Profile> {
+pub fn profile_save(store: State<'_, ProfileStore>, profile: Profile, password: Option<String>) -> Result<Saved<Profile>> {
     let profile = store.save(profile)?;
-    match password.as_deref() {
-        None => {}
-        Some("") => secrets::delete_password(&profile.id)?,
-        Some(password) => secrets::set_password(&profile.id, password)?,
-    }
-    Ok(profile)
+    let stored = match password.as_deref() {
+        None => Ok(()),
+        Some("") => secrets::delete_password(&profile.id),
+        Some(password) => secrets::set_password(&profile.id, password),
+    };
+    Ok(Saved { saved: profile, password_error: stored.err().map(Error::from) })
 }
 
 #[tauri::command]
@@ -105,21 +115,20 @@ pub fn proxies_list(store: State<'_, ProfileStore>) -> Vec<Proxy> {
 /// `password`: `None` keeps the stored password, `Some("")` clears it. A proxy without a user
 /// name keeps none.
 #[tauri::command]
-pub fn proxy_save(store: State<'_, ProfileStore>, proxy: Proxy, password: Option<String>) -> Result<Proxy> {
+pub fn proxy_save(store: State<'_, ProfileStore>, proxy: Proxy, password: Option<String>) -> Result<Saved<Proxy>> {
     let had_password = store.proxy(&proxy.id).is_ok_and(|previous| previous.uses_password());
     let proxy = store.save_proxy(proxy)?;
-    match password.as_deref() {
+    let stored = match password.as_deref() {
         // The keychain is only touched when there can be a password to remove.
-        _ if !proxy.uses_password() => {
-            if had_password {
-                secrets::delete_proxy_password(&proxy.id)?;
-            }
-        }
-        None => {}
-        Some("") => secrets::delete_proxy_password(&proxy.id)?,
-        Some(password) => secrets::set_proxy_password(&proxy.id, password)?,
-    }
-    Ok(proxy)
+        _ if !proxy.uses_password() => match had_password {
+            true => secrets::delete_proxy_password(&proxy.id),
+            false => Ok(()),
+        },
+        None => Ok(()),
+        Some("") => secrets::delete_proxy_password(&proxy.id),
+        Some(password) => secrets::set_proxy_password(&proxy.id, password),
+    };
+    Ok(Saved { saved: proxy, password_error: stored.err().map(Error::from) })
 }
 
 /// Deletes a proxy no session uses (`proxy.inUse` otherwise), with its password.

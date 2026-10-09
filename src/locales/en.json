@@ -205,6 +205,7 @@
   },
   "profile": {
     "titleNew": "New Session",
+    "passwordNotSaved": "The session was saved, but the keychain could not be updated: {message}",
     "titleEdit": "Edit Session",
     "name": "Name",
     "namePlaceholder": "Defaults to user@host",
@@ -689,6 +690,7 @@
   },
   "proxy": {
     "titleNew": "New Proxy",
+    "passwordNotSaved": "The proxy was saved, but the keychain could not be updated: {message}",
     "titleEdit": "Edit Proxy",
     "name": "Name",
     "namePlaceholder": "Defaults to the address",

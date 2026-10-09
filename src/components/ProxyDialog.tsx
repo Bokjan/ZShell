@@ -28,8 +28,10 @@ export function proxySummary(t: TFunction, proxy: Proxy) {
 }
 
 /** Creates, edits or deletes a proxy. */
-export function ProxyDialog({ proxy, onClose, onSaved, onChanged }: Props) {
+export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Props) {
   const { t } = useTranslation();
+  // A new proxy becomes the saved one when only its password failed (see ProfileDialog).
+  const [proxy, setProxy] = useState(initial);
   const [name, setName] = useState(proxy?.name ?? "");
   const [kind, setKind] = useState<ProxyKind>(proxy?.kind ?? "socks5");
   const [host, setHost] = useState(proxy?.host ?? "");
@@ -83,7 +85,7 @@ export function ProxyDialog({ proxy, onClose, onSaved, onChanged }: Props) {
     else if (password) passwordUpdate = password;
     setSaving(true);
     try {
-      const saved = await proxies.save(
+      const { saved, passwordError } = await proxies.save(
         {
           id: proxy?.id ?? "",
           name,
@@ -97,10 +99,14 @@ export function ProxyDialog({ proxy, onClose, onSaved, onChanged }: Props) {
       );
       onChanged();
       onSaved?.(saved);
+      if (passwordError) {
+        setProxy(saved);
+        setError(t("proxy.passwordNotSaved", { message: passwordError.message }));
+        setSaving(false);
+        return;
+      }
       onClose();
     } catch (err) {
-      // The proxy itself may have been saved with only the password failing (the keychain).
-      onChanged();
       setError(errorMessage(err));
       setSaving(false);
     }

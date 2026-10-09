@@ -171,6 +171,12 @@ export interface CommandError {
   message: string;
 }
 
+/** A saved session or proxy. It is saved even when storing its password failed. */
+export interface Saved<T> {
+  saved: T;
+  passwordError: CommandError | null;
+}
+
 function isCommandError(e: unknown): e is CommandError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
 }
@@ -209,7 +215,7 @@ export interface Proxy {
 export const proxies = {
   list: () => invoke<Proxy[]>("proxies_list"),
   /** `password`: undefined keeps the stored password, "" clears it. */
-  save: (proxy: Proxy, password?: string) => invoke<Proxy>("proxy_save", { proxy, password: password ?? null }),
+  save: (proxy: Proxy, password?: string) => invoke<Saved<Proxy>>("proxy_save", { proxy, password: password ?? null }),
   /** Fails with `proxy.inUse` while a session uses it. */
   delete: (id: string) => invoke<void>("proxy_delete", { id }),
 };
@@ -244,7 +250,7 @@ export const listProfiles = () => invoke<Profile[]>("profiles_list");
 
 /** `password`: undefined keeps the stored password, "" clears it. */
 export const saveProfile = (profile: Profile, password?: string) =>
-  invoke<Profile>("profile_save", { profile, password: password ?? null });
+  invoke<Saved<Profile>>("profile_save", { profile, password: password ?? null });
 
 export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id });
 
