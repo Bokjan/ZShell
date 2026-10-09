@@ -20,7 +20,7 @@ use super::JumpChain;
 use crate::config::SshProfile;
 use crate::error::{Error, Result};
 use crate::forward::{ForwardRule, Forwards, Hub, RemoteRoutes};
-use crate::session::{SessionId, SessionSink};
+use crate::session::{SessionId, TermIo};
 
 pub type SshHandle = client::Handle<ClientHandler>;
 
@@ -150,8 +150,9 @@ fn session_connections(map: &Map, connection: &Arc<Connection>) -> Vec<Arc<Conne
 }
 
 impl Connections {
-    /// `routes` and `disconnect` must be the ones given to the connection's
-    /// [`ClientHandler`]; forward states are reported through `sink`.
+    /// Registers a new connection for session `id`, until the session closes. `routes` and
+    /// `disconnect` must be the ones given to the connection's [`ClientHandler`]; forward
+    /// states are reported to the session's tab.
     #[allow(clippy::too_many_arguments)]
     pub fn insert(
         &self,
@@ -161,7 +162,7 @@ impl Connections {
         jumps: JumpChain,
         routes: RemoteRoutes,
         disconnect: watch::Receiver<Option<String>>,
-        sink: SessionSink,
+        io: &TermIo,
     ) -> Arc<Connection> {
         let hub = {
             let map = self.0.lock().unwrap();
@@ -178,14 +179,17 @@ impl Connections {
             keep_forwards: AtomicBool::new(false),
             disconnect,
         });
-        self.attach(id, connection.clone(), sink);
+        self.attach(id, connection.clone(), io);
         connection
     }
 
-    /// Registers session `id` as another user of `connection` (a duplicated tab).
-    pub fn attach(&self, id: SessionId, connection: Arc<Connection>, sink: SessionSink) {
-        connection.forwards.attach(id, sink);
+    /// Registers session `id` as another user of `connection` (a duplicated tab), until the
+    /// session closes. A session closing meanwhile is unregistered right away.
+    pub fn attach(&self, id: SessionId, connection: Arc<Connection>, io: &TermIo) {
+        connection.forwards.attach(id, io.sink());
         self.0.lock().unwrap().insert(id, connection);
+        let connections = self.clone();
+        io.on_close(move || connections.close(id));
     }
 
     pub fn get(&self, id: SessionId) -> Result<Arc<Connection>> {
@@ -194,7 +198,7 @@ impl Connections {
 
     /// Unregisters session `id`; if no other session uses its connection, disconnects it in
     /// the background. Idempotent.
-    pub fn close(&self, id: SessionId) {
+    fn close(&self, id: SessionId) {
         let connection = {
             let mut connections = self.0.lock().unwrap();
             let Some(connection) = connections.remove(&id) else {

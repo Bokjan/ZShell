@@ -11,10 +11,9 @@ mod shell;
 
 use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, ChildKiller, ExitStatus, MasterPty, PtySize};
@@ -81,7 +80,7 @@ struct Pty {
     output_done: Option<oneshot::Receiver<()>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     pid: Option<u32>,
-    exited: Arc<AtomicBool>,
+    exited: Arc<Exited>,
     flow: Arc<Flow>,
     foreground: Foreground,
 }
@@ -106,7 +105,7 @@ impl Pty {
             let _ = output_done_tx.send(());
         });
 
-        let exited = Arc::new(AtomicBool::new(false));
+        let exited = Arc::new(Exited::default());
         let (input, inputs) = mpsc::channel(INPUT_QUEUE);
         let writer_exited = exited.clone();
         thread::spawn(move || write_input(writer, inputs, &writer_exited));
@@ -119,7 +118,7 @@ impl Pty {
         let exited_flag = exited.clone();
         thread::spawn(move || {
             let status = child.wait().ok();
-            exited_flag.store(true, Ordering::SeqCst);
+            exited_flag.set();
             let _ = exit_tx.send(status);
         });
 
@@ -210,11 +209,11 @@ impl Drop for Pty {
 
 /// Ends the shell if it is still running, the way closing a terminal window does.
 #[cfg(unix)]
-fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn ChildKiller + Send + Sync>, exited: &AtomicBool, pid: Option<u32>) {
-    if !exited.load(Ordering::SeqCst) {
+fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn ChildKiller + Send + Sync>, exited: &Exited, pid: Option<u32>) {
+    if !exited.get() {
         // portable-pty sends SIGHUP, which shells pass on to their jobs.
         let _ = killer.kill();
-        if !wait_for(exited, KILL_GRACE) {
+        if !exited.wait(KILL_GRACE) {
             if let Some(pid) = pid.and_then(|pid| libc::pid_t::try_from(pid).ok()) {
                 // SAFETY: plain syscall; the shell has not been reaped (`exited` is unset), so
                 // the pid still refers to it.
@@ -227,11 +226,11 @@ fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn Chil
 
 /// Ends the shell if it is still running, the way closing a terminal window does.
 #[cfg(windows)]
-fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn ChildKiller + Send + Sync>, exited: &AtomicBool, _pid: Option<u32>) {
+fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn ChildKiller + Send + Sync>, exited: &Exited, _pid: Option<u32>) {
     // Closing the pseudo console sends CTRL_CLOSE_EVENT to the processes attached to it,
     // so they can exit cleanly.
     drop(master);
-    if !exited.load(Ordering::SeqCst) && !wait_for(exited, KILL_GRACE) {
+    if !exited.wait(KILL_GRACE) {
         let _ = killer.kill();
     }
 }
@@ -301,16 +300,29 @@ fn child_process_name(parent: u32) -> Option<String> {
     }
 }
 
-/// Polls `flag` until it is set or `timeout` passes; returns whether it was set.
-fn wait_for(flag: &AtomicBool, timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
-    while !flag.load(Ordering::SeqCst) {
-        if Instant::now() >= deadline {
-            return false;
-        }
-        thread::sleep(Duration::from_millis(50));
+/// Whether the shell has exited, which the threads shutting the terminal down wait for.
+#[derive(Default)]
+struct Exited {
+    exited: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl Exited {
+    fn set(&self) {
+        *self.exited.lock().unwrap() = true;
+        self.changed.notify_all();
     }
-    true
+
+    #[cfg(unix)]
+    fn get(&self) -> bool {
+        *self.exited.lock().unwrap()
+    }
+
+    /// Waits until the shell exits or `timeout` passes; returns whether it exited.
+    fn wait(&self, timeout: Duration) -> bool {
+        let (exited, _) = self.changed.wait_timeout_while(self.exited.lock().unwrap(), timeout, |exited| !*exited).unwrap();
+        *exited
+    }
 }
 
 fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink) {
@@ -332,13 +344,13 @@ fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink) {
 /// exited: portable-pty's Unix writer sends a newline and EOF when dropped, which would
 /// submit a line typed but not entered (a program in the foreground gets SIGHUP only after
 /// the shell does). `shut_down` kills the shell within `KILL_GRACE`.
-fn write_input(mut writer: Box<dyn Write + Send>, mut inputs: mpsc::Receiver<Vec<u8>>, exited: &AtomicBool) {
+fn write_input(mut writer: Box<dyn Write + Send>, mut inputs: mpsc::Receiver<Vec<u8>>, exited: &Exited) {
     while let Some(data) = inputs.blocking_recv() {
         if writer.write_all(&data).and_then(|()| writer.flush()).is_err() {
             break;
         }
     }
-    if !wait_for(exited, KILL_GRACE * 2) {
+    if !exited.wait(KILL_GRACE * 2) {
         // The shell outlived SIGKILL (no pid to kill): leaking the handle is the lesser harm.
         std::mem::forget(writer);
     }

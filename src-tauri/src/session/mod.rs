@@ -2,8 +2,13 @@
 //!
 //! A session is a background task that owns a [`TermIo`]: it streams output bytes to the
 //! frontend through a [`tauri::ipc::Channel`], reports lifecycle [`SessionEvent`]s, and
-//! consumes [`SessionInput`] (keystrokes, resizes) from the frontend. Closing a session
-//! aborts its task.
+//! consumes [`SessionInput`] (keystrokes, resizes) from the frontend.
+//!
+//! [`SessionManager::remove`] is the only way a session closes (the tab closing, its page
+//! reloading, its window going away): it releases what the session holds, then aborts its
+//! task. What a session holds beyond its task registers its release on the session's
+//! [`Lifetime`], which also runs when the session ends by itself ([`TermIo::finish`]) or its
+//! task is dropped, whichever comes first, so nothing depends on the order of these.
 //!
 //! Port forwards report their state through the same event channel ([`SessionSink`]).
 //!
@@ -130,6 +135,40 @@ impl Flow {
     }
 }
 
+type Release = Box<dyn FnOnce() + Send>;
+
+/// What a session holds beyond its task (its SSH connection's registration, a waiting ZMODEM
+/// transfer, the flow control its reader may wait on), as the releases to run when it closes.
+#[derive(Clone)]
+pub struct Lifetime(Arc<Mutex<Option<Vec<Release>>>>);
+
+impl Lifetime {
+    fn new() -> Self {
+        Self(Arc::new(Mutex::new(Some(Vec::new()))))
+    }
+
+    /// Runs `release` when the session closes; right away if it has already. Something the
+    /// task registers just as the session closes is thereby released all the same.
+    pub fn on_close(&self, release: impl FnOnce() + Send + 'static) {
+        let mut releases = self.0.lock().unwrap();
+        match releases.as_mut() {
+            Some(releases) => releases.push(Box::new(release)),
+            None => {
+                drop(releases);
+                release();
+            }
+        }
+    }
+
+    /// Runs the releases, once.
+    fn close(&self) {
+        let releases = self.0.lock().unwrap().take();
+        for release in releases.into_iter().flatten() {
+            release();
+        }
+    }
+}
+
 /// Output side of a session: terminal bytes and lifecycle events. Cloneable, so features
 /// running beside the shell (port forwarding) can report to the same tab.
 #[derive(Clone)]
@@ -243,6 +282,7 @@ impl Foreground {
 /// The terminal side of a session, as seen by its backend task.
 pub struct TermIo {
     sink: SessionSink,
+    lifetime: Lifetime,
     foreground: Foreground,
     input: mpsc::UnboundedReceiver<SessionInput>,
     /// What a ZMODEM transfer sends to the remote side.
@@ -265,7 +305,16 @@ impl TermIo {
         let (zmodem, zmodem_out) = Zmodem::new();
         let codec = Codec::new(encoding).map(Arc::new);
         let sink = SessionSink { output, events, flow: Arc::default(), zmodem, log, codec };
-        (Self { sink, foreground: Foreground::default(), input: rx, zmodem_out, transfer_data: false, size }, tx)
+        let lifetime = Lifetime::new();
+        // A reader waiting for the frontend would wait for ever, and a transfer waiting for
+        // the user to choose files too.
+        let (flow, zmodem) = (sink.flow.clone(), sink.zmodem.clone());
+        lifetime.on_close(move || {
+            flow.close();
+            zmodem.cancel();
+        });
+        let io = Self { sink, lifetime, foreground: Foreground::default(), input: rx, zmodem_out, transfer_data: false, size };
+        (io, tx)
     }
 
     /// A session without a frontend, for backend tests: returns the input sender and the
@@ -315,8 +364,15 @@ impl TermIo {
         self.sink.event(event);
     }
 
-    /// Reports how a remote session ended, in the terminal and as its `Closed` event.
+    /// Runs `release` when the session closes (see [`Lifetime::on_close`]).
+    pub fn on_close(&self, release: impl FnOnce() + Send + 'static) {
+        self.lifetime.on_close(release);
+    }
+
+    /// Reports how a remote session ended, in the terminal and as its `Closed` event. What
+    /// the session held is released first: the tab may reconnect as soon as it hears.
     pub fn finish(&self, outcome: Outcome) {
+        self.lifetime.close();
         self.sink.flush_text();
         self.sink.reset_modes();
         let (reason, error, status) = match outcome {
@@ -442,6 +498,12 @@ impl TermIo {
     }
 }
 
+impl Drop for TermIo {
+    fn drop(&mut self) {
+        self.lifetime.close();
+    }
+}
+
 /// `data` without escape sequences, which prompts don't support (arrow keys, Alt+key). This
 /// includes the markers around a paste in bracketed paste mode, which the shell of a
 /// previous connection may have left on: the pasted text itself is kept.
@@ -473,8 +535,11 @@ fn strip_escapes(data: &[u8]) -> Vec<u8> {
 }
 
 struct SessionEntry {
+    /// The webview whose tab shows the session.
+    webview: String,
     input: mpsc::UnboundedSender<SessionInput>,
     sink: SessionSink,
+    lifetime: Lifetime,
     flow: Arc<Flow>,
     foreground: Foreground,
     zmodem: Arc<Zmodem>,
@@ -488,12 +553,14 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    /// Starts a session whose backend task is produced by `backend`, logging to `log` (which
-    /// may already be writing, so that the log starts with the session's first output).
-    /// `encoding` is the remote side's character encoding.
+    /// Starts a session whose backend task is produced by `backend`, for a tab of the webview
+    /// labelled `webview`, logging to `log` (which may already be writing, so that the log
+    /// starts with the session's first output). `encoding` is the remote side's character
+    /// encoding.
     #[allow(clippy::too_many_arguments)]
     pub fn spawn<F, Fut>(
         &self,
+        webview: &str,
         output: Channel,
         events: Channel<SessionEvent>,
         size: (u16, u16),
@@ -508,11 +575,13 @@ impl SessionManager {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (io, input) = TermIo::new(output, events, size, log, encoding);
         let sink = io.sink();
+        let lifetime = io.lifetime.clone();
         let flow = io.sink.flow();
         let foreground = io.foreground();
         let zmodem = io.sink.zmodem.clone();
         let task = tauri::async_runtime::spawn(backend(id, io));
-        self.sessions.lock().unwrap().insert(id, SessionEntry { input, sink, flow, foreground, zmodem, task });
+        let entry = SessionEntry { webview: webview.to_owned(), input, sink, lifetime, flow, foreground, zmodem, task };
+        self.sessions.lock().unwrap().insert(id, entry);
         id
     }
 
@@ -553,19 +622,113 @@ impl SessionManager {
         Ok(sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.zmodem.clone())
     }
 
+    /// Closes a session: releases what it holds, then aborts its task.
     pub fn remove(&self, id: SessionId) -> Result<()> {
         let entry = self.sessions.lock().unwrap().remove(&id).ok_or_else(|| Error::new("session.notFound"))?;
-        entry.flow.close();
+        entry.lifetime.close();
         entry.task.abort();
-        // A transfer waiting for the user to choose files would otherwise wait for ever.
-        entry.zmodem.cancel();
         Ok(())
+    }
+
+    /// Closes the sessions of a webview whose page is going away (reloading, or its window
+    /// closing): nothing would show them or close them any more.
+    pub fn remove_webview(&self, webview: &str) {
+        let ids: Vec<SessionId> =
+            self.sessions.lock().unwrap().iter().filter(|(_, entry)| entry.webview == webview).map(|(id, _)| *id).collect();
+        for id in ids {
+            let _ = self.remove(id);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.sessions.lock().unwrap().len()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Counts how often something was released.
+    fn counter() -> (Arc<std::sync::atomic::AtomicUsize>, impl Fn() -> usize) {
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let read = count.clone();
+        (count, move || read.load(Ordering::SeqCst))
+    }
+
+    /// Starts a session for `webview` whose backend holds a release and runs until aborted;
+    /// returns how often its release ran, and whether its task has been dropped.
+    fn hold(sessions: &SessionManager, webview: &str) -> (SessionId, impl Fn() -> usize, impl Fn() -> usize) {
+        let (released, released_count) = counter();
+        let (dropped, dropped_count) = counter();
+        let id = sessions.spawn(webview, Channel::new(|_| Ok(())), Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
+            io.on_close(move || {
+                released.fetch_add(1, Ordering::SeqCst);
+            });
+            struct Dropped(Arc<std::sync::atomic::AtomicUsize>);
+            impl Drop for Dropped {
+                fn drop(&mut self) {
+                    self.0.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+            let _dropped = Dropped(dropped);
+            let _io = io;
+            std::future::pending::<()>().await;
+        });
+        (id, released_count, dropped_count)
+    }
+
+    async fn eventually(done: impl Fn() -> bool) {
+        for _ in 0..100 {
+            if done() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("timed out");
+    }
+
+    /// A page that reloads (or a window that closes) takes its sessions with it, and only its.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_page_reloading_closes_its_sessions() {
+        let sessions = SessionManager::default();
+        let (_, a_released, a_dropped) = hold(&sessions, "main");
+        let (_, b_released, b_dropped) = hold(&sessions, "main");
+        let (other, other_released, _) = hold(&sessions, "other");
+        // The tasks register their releases once running.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        sessions.remove_webview("main");
+        assert_eq!(sessions.len(), 1);
+        // Released right away, before the aborted tasks are dropped.
+        assert_eq!((a_released(), b_released(), other_released()), (1, 1, 0));
+        eventually(|| a_dropped() == 1 && b_dropped() == 1).await;
+        // Dropping the task's terminal side doesn't release twice.
+        assert_eq!((a_released(), b_released()), (1, 1));
+
+        sessions.remove(other).unwrap();
+        assert_eq!((sessions.len(), other_released()), (0, 1));
+    }
+
+    /// Something registered once the session has closed (a task that connected just as its
+    /// tab closed) is released at once.
+    #[test]
+    fn a_closed_lifetime_releases_at_once() {
+        let lifetime = Lifetime::new();
+        let (released, count) = counter();
+        let early = released.clone();
+        lifetime.on_close(move || {
+            early.fetch_add(1, Ordering::SeqCst);
+        });
+        lifetime.close();
+        lifetime.close();
+        assert_eq!(count(), 1);
+        lifetime.on_close(move || {
+            released.fetch_add(1, Ordering::SeqCst);
+        });
+        assert_eq!(count(), 2);
+    }
 
     #[tokio::test]
     async fn prompts_take_pastes_and_ignore_other_escapes() {

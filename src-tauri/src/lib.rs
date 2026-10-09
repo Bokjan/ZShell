@@ -198,9 +198,17 @@ pub fn run() {
                 }
             }
         })
-        .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
-                window::update_border(window);
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => window::update_border(window),
+            // Its webview has the same label.
+            tauri::WindowEvent::Destroyed => window.state::<SessionManager>().remove_webview(window.label()),
+            _ => {}
+        })
+        // A page that loads again (reloaded, or after its web content process crashed) has
+        // none of the tabs the old one had: their sessions would run on unseen.
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                webview.state::<SessionManager>().remove_webview(webview.label());
             }
         })
         .manage(SessionManager::default())

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, Webview, WebviewWindow};
 use ts_rs::TS;
 
 use crate::backup;
@@ -364,6 +364,7 @@ pub enum SessionSpec {
 #[tauri::command]
 pub async fn session_open(
     app: AppHandle,
+    webview: Webview,
     sessions: State<'_, SessionManager>,
     spec: SessionSpec,
     cols: u16,
@@ -375,7 +376,7 @@ pub async fn session_open(
     let Launch { log_info, auto_log, encoding, backend } = launch(&app, spec)?;
     let slot = LogSlot::new(log_info);
     let opened = open_log(&app, &slot, log, auto_log).await?;
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding, |id, io| backend.start(id, io));
+    let id = sessions.spawn(webview.label(), on_output, on_event, (cols, rows), slot, encoding, |id, io| backend.start(id, io));
     report_log(&sessions, id, opened);
     Ok(id)
 }
@@ -465,10 +466,10 @@ enum Backend {
 
 impl Backend {
     /// The task of session `id`. A shared connection learns of the session before the task
-    /// runs, so that closing the session right away finds it.
+    /// runs, so that closing the session right away releases it.
     fn start(self, id: SessionId, io: TermIo) -> impl Future<Output = ()> + Send + 'static {
         if let Backend::Shared { connection, connections } = &self {
-            connections.attach(id, connection.clone(), io.sink());
+            connections.attach(id, connection.clone(), &io);
         }
         self.run(id, io)
     }
@@ -476,7 +477,7 @@ impl Backend {
     async fn run(self, id: SessionId, io: TermIo) {
         match self {
             Backend::Ssh { profile, route, connections, carry } => ssh::run(profile, route, id, io, connections, carry).await,
-            Backend::Shared { connection, connections } => ssh::run_shared(connection, id, io, connections).await,
+            Backend::Shared { connection, .. } => ssh::run_shared(connection, io).await,
             Backend::Telnet { remote, route, password_of } => {
                 // Looked up in the session's task when the server asks; `block_in_place` lets
                 // the other tasks move to other threads while the keychain waits.
@@ -589,8 +590,7 @@ pub fn session_foreground(sessions: State<'_, SessionManager>, id: SessionId) ->
 }
 
 #[tauri::command]
-pub fn session_close(sessions: State<'_, SessionManager>, connections: State<'_, Connections>, id: SessionId) -> Result<()> {
-    connections.close(id);
+pub fn session_close(sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
     sessions.remove(id)
 }
 

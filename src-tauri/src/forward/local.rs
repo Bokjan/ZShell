@@ -9,11 +9,11 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use tokio::net::{TcpListener, TcpStream};
 
-use super::{bridge, host_port, Ctx, ForwardRule, Tracker};
+use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
 use crate::error::Error;
 use crate::ssh::SshHandle;
 
-pub async fn run(rule: &ForwardRule, ctx: &Ctx) -> Result<()> {
+pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
     let listener = Listener::bind(&rule.bind_host, rule.bind_port).await?;
     let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
     loop {
@@ -26,6 +26,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx) -> Result<()> {
                 Err(e) => accept_failed(&mut tracker, e).await,
             },
             finished = tracker.next_finished() => tracker.finished(finished),
+            () = stopping.requested() => return Ok(()),
         }
     }
 }

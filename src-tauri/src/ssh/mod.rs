@@ -29,41 +29,22 @@ use handler::ClientHandler;
 /// terminal. `carry`: forwarding rules to start besides the automatic ones (those running
 /// before the tab reconnected).
 pub async fn run(profile: SshProfile, route: Route, id: SessionId, mut io: TermIo, connections: Connections, carry: Vec<String>) {
-    let registered = Registered { connections: connections.clone(), id };
     let outcome = match start(&profile, &route, id, &mut io, &connections, &carry).await {
         Ok((channel, disconnect)) => bridge(channel, &mut io, disconnect).await,
         Err(e) => Outcome::Failed(e.into()),
     };
-    drop(registered);
     io.finish(outcome);
-}
-
-/// Unregisters a session's connection when its task ends, also when the task is aborted
-/// (closing the tab). Closing the tab first unregisters the connection, then aborts the
-/// task, which may register it in between (just after authenticating); the task is aborted
-/// at its next await, dropping this.
-struct Registered {
-    connections: Connections,
-    id: SessionId,
-}
-
-impl Drop for Registered {
-    fn drop(&mut self) {
-        self.connections.close(self.id);
-    }
 }
 
 /// Session backend for a duplicated tab: a new shell on `connection`, which is already
 /// registered for this session. No prompts, no auto-started forwards: like a second
 /// OpenSSH session through a ControlMaster.
-pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo, connections: Connections) {
-    let registered = Registered { connections, id };
+pub async fn run_shared(connection: Arc<Connection>, mut io: TermIo) {
     let outcome = match open_shell(connection.handle(), connection.profile(), &mut io).await {
         Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason()).await,
         Err(e) => Outcome::Failed(e.into()),
     };
     drop(connection);
-    drop(registered);
     io.finish(outcome);
 }
 
@@ -149,7 +130,7 @@ async fn start(
     let mut session = connect(profile, profile.ssh.forward_agent, transport, proxy, io, routes.clone(), disconnect_tx).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
-    let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io.sink());
+    let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io);
     connections.auto_start(&connection, carry);
     let channel = open_shell(&session, profile, io).await?;
     Ok((channel, disconnect))

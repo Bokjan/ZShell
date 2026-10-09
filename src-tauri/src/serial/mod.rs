@@ -6,7 +6,6 @@
 //! reconnects as for a lost connection, which succeeds once the device is back.
 
 use std::io::{ErrorKind, Read};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -177,38 +176,31 @@ enum Output {
     Break,
 }
 
-/// An open serial port and its reader and writer threads, which stop when it is dropped.
+/// An open serial port and its reader and writer threads, which stop when it is dropped:
+/// the writer once its input closes, the reader (whose reads time out) once nothing receives
+/// its failures.
 struct Line {
     input: mpsc::Sender<Output>,
     /// Why the reader or writer stopped, if the device failed.
     failed: mpsc::UnboundedReceiver<String>,
-    closing: Arc<AtomicBool>,
-}
-
-impl Drop for Line {
-    fn drop(&mut self) {
-        self.closing.store(true, Ordering::SeqCst);
-    }
 }
 
 impl Line {
     fn start(port: Box<dyn SerialPort>, writer: Box<dyn SerialPort>, device: &str, io: &TermIo) -> Self {
         let hold = Hold::new(device);
-        let closing = Arc::new(AtomicBool::new(false));
         let (failed_tx, failed) = mpsc::unbounded_channel();
         let sink = io.sink();
-        let (reader_closing, reader_failed, reader_hold) = (closing.clone(), failed_tx.clone(), hold.clone());
+        let (reader_failed, reader_hold) = (failed_tx.clone(), hold.clone());
         thread::spawn(move || {
-            read_output(port, &sink, &reader_closing, &reader_failed);
+            read_output(port, &sink, &reader_failed);
             drop(reader_hold);
         });
         let (input, inputs) = mpsc::channel(INPUT_QUEUE);
-        let writer_closing = closing.clone();
         thread::spawn(move || {
-            write_input(writer, inputs, &writer_closing, &failed_tx);
+            write_input(writer, inputs, &failed_tx);
             drop(hold);
         });
-        Self { input, failed, closing }
+        Self { input, failed }
     }
 
     async fn bridge(mut self, device: &str, io: &mut TermIo) -> Outcome {
@@ -248,9 +240,10 @@ fn is_pseudo_terminal(device: &str) -> bool {
     name.strip_prefix("/dev/ttys").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn read_output(mut port: Box<dyn SerialPort>, sink: &SessionSink, closing: &AtomicBool, failed: &mpsc::UnboundedSender<String>) {
+/// Reads until the device fails or the line is dropped (`failed` closes).
+fn read_output(mut port: Box<dyn SerialPort>, sink: &SessionSink, failed: &mpsc::UnboundedSender<String>) {
     let mut buffer = vec![0; READ_BUFFER];
-    while !closing.load(Ordering::SeqCst) {
+    while !failed.is_closed() {
         match port.read(&mut buffer) {
             Ok(0) => {
                 let _ = failed.send(std::io::Error::from(ErrorKind::UnexpectedEof).to_string());
@@ -266,15 +259,10 @@ fn read_output(mut port: Box<dyn SerialPort>, sink: &SessionSink, closing: &Atom
     }
 }
 
-fn write_input(
-    mut port: Box<dyn SerialPort>,
-    mut inputs: mpsc::Receiver<Output>,
-    closing: &AtomicBool,
-    failed: &mpsc::UnboundedSender<String>,
-) {
+fn write_input(mut port: Box<dyn SerialPort>, mut inputs: mpsc::Receiver<Output>, failed: &mpsc::UnboundedSender<String>) {
     while let Some(write) = inputs.blocking_recv() {
         let result = match write {
-            Output::Data(data) => write_data(&mut *port, &data, closing),
+            Output::Data(data) => write_data(&mut *port, &data, failed),
             // Not every adapter (or pseudo terminal) can send a break; that is no reason to
             // end the session.
             Output::Break => {
@@ -292,10 +280,10 @@ fn write_input(
     }
 }
 
-/// Writes all of `data`, waiting as long as flow control holds the line, unless the session
-/// is closing.
-fn write_data(port: &mut dyn SerialPort, mut data: &[u8], closing: &AtomicBool) -> std::io::Result<()> {
-    while !data.is_empty() && !closing.load(Ordering::SeqCst) {
+/// Writes all of `data`, waiting as long as flow control holds the line, unless the line is
+/// dropped (`failed` closes).
+fn write_data(port: &mut dyn SerialPort, mut data: &[u8], failed: &mpsc::UnboundedSender<String>) -> std::io::Result<()> {
+    while !data.is_empty() && !failed.is_closed() {
         match port.write(data) {
             Ok(0) => return Err(ErrorKind::WriteZero.into()),
             Ok(n) => data = &data[n..],

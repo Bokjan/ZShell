@@ -12,14 +12,14 @@ use tokio::net::TcpStream;
 
 use super::local::{accept_failed, Listener};
 use super::socks::{self, Reply};
-use super::{bridge, host_port, Ctx, ForwardRule, Tracker};
+use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
 use crate::error::Error;
 use crate::ssh::SshHandle;
 
 /// How long a client may take to send its request after connecting.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn run(rule: &ForwardRule, ctx: &Ctx) -> Result<()> {
+pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
     let listener = Listener::bind(&rule.bind_host, rule.bind_port).await?;
     let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
     loop {
@@ -32,6 +32,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx) -> Result<()> {
                 Err(e) => accept_failed(&mut tracker, e).await,
             },
             finished = tracker.next_finished() => tracker.finished(finished),
+            () = stopping.requested() => return Ok(()),
         }
     }
 }

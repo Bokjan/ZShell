@@ -1,9 +1,11 @@
 //! Port forwarding over a session's SSH connection: local (`-L`), remote (`-R`) and dynamic
 //! SOCKS (`-D`).
 //!
-//! Each running rule is one task that owns its listener (or, for remote rules, its route in
-//! [`RemoteRoutes`]) and a [`JoinSet`] of the connections it carries, so stopping a rule
-//! closes everything it opened. Rules belong to a saved session, which may have several
+//! Each run of a rule is one task that owns everything the rule holds: its listener (for
+//! remote rules, its route in [`RemoteRoutes`] and the server's listener) and a [`JoinSet`] of
+//! the connections it carries. Stopping a rule signals the task, which releases all of it (a
+//! remote rule waits for the server to cancel its listener) and then ends: once the task has
+//! ended, the rule can start again on the same port. Dropping the signal stops it too. Rules belong to a saved session, which may have several
 //! connections (tabs opened separately): state changes are pushed as [`SessionEvent::Forward`]
 //! to every tab of the session through its [`Hub`], whichever connection runs the rule (see
 //! `ssh::Connections` for how a rule runs on one connection only). A generation number keeps a
@@ -27,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpStream;
+use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
 
 use crate::error::{Error, Result};
@@ -118,7 +121,19 @@ struct Running {
     rule: ForwardRule,
     /// `None` once stopped; the task is kept so a restart can wait for it to wind down.
     generation: Option<u64>,
+    /// Stops the task, also when dropped.
+    stop: watch::Sender<bool>,
     task: JoinHandle<()>,
+}
+
+/// A rule task's side of its stop signal.
+pub(super) struct Stopping(watch::Receiver<bool>);
+
+impl Stopping {
+    /// Completes once the rule is asked to stop (or its owner is gone).
+    async fn requested(&mut self) {
+        let _ = self.0.wait_for(|stop| *stop).await;
+    }
 }
 
 /// The tabs of one saved session (on any of its connections), and the latest state of each
@@ -153,8 +168,6 @@ struct Shared {
     routes: RemoteRoutes,
     hub: Arc<Hub>,
     running: Mutex<HashMap<String, Running>>,
-    /// In-flight `cancel-tcpip-forward` requests of stopped remote rules, by rule id.
-    cancels: Mutex<HashMap<String, JoinHandle<()>>>,
     next_generation: AtomicU64,
     /// The connection is closing (`stop_all`): nothing starts any more. Set and read under
     /// the `running` lock.
@@ -172,7 +185,6 @@ impl Forwards {
             routes,
             hub,
             running: Mutex::new(HashMap::new()),
-            cancels: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(0),
             closed: AtomicBool::new(false),
         }))
@@ -223,26 +235,26 @@ impl Forwards {
             self.0.report(&rule.id, ForwardState::Stopped);
             return;
         }
-        let previous = running.remove(&rule.id).map(|old| {
-            old.task.abort();
-            old.task
-        });
+        // Dropping it stops the previous run.
+        let previous = running.remove(&rule.id).map(|old| old.task);
         self.0.report(&rule.id, ForwardState::Starting);
-        let task = tauri::async_runtime::spawn(run(rule.clone(), ctx, previous, announce));
-        running.insert(rule.id.clone(), Running { rule, generation: Some(generation), task });
+        let (stop, stopping) = watch::channel(false);
+        let task = tauri::async_runtime::spawn(run(rule.clone(), ctx, previous, announce, Stopping(stopping)));
+        running.insert(rule.id.clone(), Running { rule, generation: Some(generation), stop, task });
     }
 
     pub fn stop(&self, rule_id: &str) {
         let mut running = self.0.running.lock().unwrap();
         if let Some(old) = running.get_mut(rule_id) {
-            old.task.abort();
+            let _ = old.stop.send(true);
             old.generation = None;
         }
         self.0.report(rule_id, ForwardState::Stopped);
     }
 
     /// Stops every rule, as the connection closes; the session's other tabs see them stop.
-    /// Returns the rules that were running, and their tasks, which end shortly.
+    /// Returns the rules that were running, and their tasks, which end once they have
+    /// released their ports and the server's listeners.
     pub fn stop_all(&self) -> (Vec<ForwardRule>, Vec<JoinHandle<()>>) {
         let mut rules = Vec::new();
         let mut tasks = Vec::new();
@@ -253,7 +265,6 @@ impl Forwards {
                 self.0.report(&rule_id, ForwardState::Stopped);
                 rules.push(old.rule);
             }
-            old.task.abort();
             tasks.push(old.task);
         }
         (rules, tasks)
@@ -293,21 +304,17 @@ impl Ctx {
     }
 }
 
-async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<()>>, announce: bool) {
-    // Let the previous instance release its port (and, for remote rules, the server's
-    // listener) before binding it again.
+async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<()>>, announce: bool, mut stopping: Stopping) {
+    // Let the previous run release its port (and, for remote rules, the server's listener)
+    // before binding it again.
     if let Some(previous) = previous {
         let _ = previous.await;
     }
-    let cancel = ctx.shared.cancels.lock().unwrap().remove(&rule.id);
-    if let Some(cancel) = cancel {
-        let _ = cancel.await;
-    }
-
+    // Ends with `Ok` once stopped.
     let result = match rule.kind {
-        ForwardKind::Local => local::run(&rule, &ctx).await,
-        ForwardKind::Remote => remote::run(&rule, &ctx).await,
-        ForwardKind::Dynamic => dynamic::run(&rule, &ctx).await,
+        ForwardKind::Local => local::run(&rule, &ctx, &mut stopping).await,
+        ForwardKind::Remote => remote::run(&rule, &ctx, &mut stopping).await,
+        ForwardKind::Dynamic => dynamic::run(&rule, &ctx, &mut stopping).await,
     };
     if let Err(e) = result {
         let error = Error::from(e);
