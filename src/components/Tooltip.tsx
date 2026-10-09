@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 /** Space kept between a tooltip and its element or the window's edges. */
 const MARGIN = 6;
 /** How long the pointer rests on an element before its tooltip shows. */
-const DELAY = 600;
+const DELAY = 300;
 
 /**
  * A tooltip for `anchor`: below it, or above when there is no room, and within the window. It
