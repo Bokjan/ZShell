@@ -310,7 +310,11 @@ export function Sidebar(props: Props) {
       const target = key.slice(2);
       if (item.kind === "folder" && isWithin(target, item.id, folders)) return null;
       if (item.kind === "profile") return { key, position: "into" };
-      return { key, position: offset < 0.25 ? "before" : offset > 0.75 ? "after" : "into" };
+      // Right below an expanded folder are its own rows: "after" it means after all of them,
+      // which a line there would not show.
+      const index = rows.findIndex((row) => row.kind === "folder" && row.folder.id === target);
+      const open = index >= 0 && (rows[index + 1]?.depth ?? 0) > rows[index].depth;
+      return { key, position: offset < 0.25 ? "before" : offset > 0.75 && !open ? "after" : "into" };
     }
     if (item.kind === "folder") return null;
     return { key, position: offset < 0.5 ? "before" : "after" };
