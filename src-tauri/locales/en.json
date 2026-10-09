@@ -108,7 +108,6 @@
       "agentConnectFailed": "Cannot connect to the SSH agent",
       "agentListFailed": "Cannot list SSH agent keys",
       "agentEmpty": "The SSH agent has no keys",
-      "agentSignFailed": "SSH agent signing failed",
       "agentAllRejected": "The server rejected all SSH agent keys"
     },
     "sftp": {

@@ -209,7 +209,7 @@ async fn try_encrypted_key(session: &mut Session, user: &str, path: &Path, io: &
     let result = session
         .authenticate_publickey_with(user, public, hash_alg, &mut signer)
         .await
-        .map_err(|_| Error::new("auth.failed"))?;
+        .map_err(SignError::lost)?;
     ensure!(!signer.cancelled, Error::new("auth.cancelled"));
     Ok(result.success())
 }
@@ -227,8 +227,16 @@ struct PassphraseSigner<'a> {
     cancelled: bool,
 }
 
+/// Signing itself never fails (see [`AgentSigner`]): this is the connection having closed.
 #[derive(Debug)]
 struct SignError;
+
+impl SignError {
+    /// Not an authentication error, which would stop reconnecting.
+    fn lost(_: SignError) -> Error {
+        Error::new("net.connectionLost")
+    }
+}
 
 impl From<russh::SendError> for SignError {
     fn from(_: russh::SendError) -> Self {
@@ -290,7 +298,7 @@ fn invalid_signature(algorithm: Algorithm) -> Vec<u8> {
 async fn try_agent(session: &mut Session, user: &str) -> Result<bool> {
     match agent(session, user).await {
         Ok(()) => Ok(true),
-        Err(e) if e.downcast_ref::<Error>().is_some() => Ok(false),
+        Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code() != "net.connectionLost") => Ok(false),
         Err(e) => Err(e),
     }
 }
@@ -310,7 +318,7 @@ async fn agent(session: &mut Session, user: &str) -> Result<()> {
         let result = session
             .authenticate_publickey_with(user, key, hash_alg, &mut AgentSigner(&mut agent))
             .await
-            .map_err(|e| Error::new("auth.agentSignFailed").detail(format!("{e:?}")))?;
+            .map_err(SignError::lost)?;
         if result.success() {
             return Ok(());
         }
