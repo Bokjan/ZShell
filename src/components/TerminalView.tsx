@@ -36,6 +36,9 @@ interface Props {
   /** The pane whose terminal this is; its session is in `sessions`. */
   paneKey: number;
   sessions: SessionRegistry;
+  /** Whether the pane's tab is shown; hidden terminals give up their WebGL renderer. */
+  visible: boolean;
+  /** Shown and focused: it has the keyboard. */
   active: boolean;
   /** The title set by the shell (OSC 0 / 2); empty when it clears it. */
   onTitle(title: string): void;
@@ -80,6 +83,7 @@ const lineCount = (text: string) => text.replace(/(\r\n|\r|\n)$/, "").split(/\r\
 export function TerminalView({
   paneKey,
   sessions,
+  visible,
   active,
   onTitle,
   onInput,
@@ -109,6 +113,7 @@ export function TerminalView({
   const pasteAllRef = useRef<(text: string) => void>(ignore);
   /** The pane's session, for answering ZMODEM transfers. */
   const sessionRef = useRef<PaneSession | null>(null);
+  const webglRef = useRef<WebglAddon | null>(null);
   const onZmodemRef = useRef<(phase: ZmodemPhase) => void>(ignore);
   // Incremented by the find shortcut; 0 means the search bar is closed.
   const [searchKey, setSearchKey] = useState(0);
@@ -158,13 +163,6 @@ export function TerminalView({
     term.unicode.activeVersion = "11";
     term.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
     term.open(container);
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      term.loadAddon(webgl);
-    } catch (e) {
-      console.warn("WebGL renderer unavailable, using DOM renderer", e);
-    }
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
@@ -312,6 +310,30 @@ export function TerminalView({
     term.options.rightClickSelectsWord = rightClickSelectsWord;
     fitRef.current?.fit();
   }, [termTheme, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback, macOptionIsMeta, rightClickSelectsWord]);
+
+  // The web view allows only so many WebGL contexts (about 16), and drops the oldest beyond
+  // that: terminals of hidden tabs release theirs (drawing with the DOM renderer meanwhile)
+  // and create one again when shown. A lost context is replaced the next time too.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || !visible) return;
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => {
+        webgl.dispose();
+        if (webglRef.current === webgl) webglRef.current = null;
+      });
+      term.loadAddon(webgl);
+      webglRef.current = webgl;
+    } catch (e) {
+      console.warn("WebGL renderer unavailable, using DOM renderer", e);
+    }
+    return () => {
+      // A disposed terminal (unmounting) has disposed its addons itself.
+      if (termRef.current) webglRef.current?.dispose();
+      webglRef.current = null;
+    };
+  }, [visible]);
 
   useEffect(() => {
     if (!active) return;

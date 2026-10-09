@@ -162,6 +162,7 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
                 <TerminalView
                   paneKey={pane.key}
                   sessions={h.sessions}
+                  visible={active}
                   active={active && pane.key === focused.key}
                   onTitle={(title) => h.onTitle(pane.key, title)}
                   onInput={(data) => h.onInput(pane.key, data)}
