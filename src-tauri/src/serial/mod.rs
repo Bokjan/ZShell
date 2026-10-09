@@ -102,28 +102,25 @@ pub async fn run(options: SerialOptions, mut io: TermIo) {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     let outcome = match open(&options) {
-        Ok(port) => {
+        Ok((port, writer)) => {
             // Before the reader starts, so that what the device already sent comes after.
             let opened = t!("terminal.serialOpened", device = &options.device, settings = options.summary());
             io.print(&format!("\x1b[2m{opened}\x1b[0m\n"));
-            match Line::start(port, &options.device, &io) {
-                Ok(line) => {
-                    io.event(SessionEvent::Connected);
-                    line.bridge(&options.device, &mut io).await
-                }
-                Err(e) => Outcome::Failed(e),
-            }
+            let line = Line::start(port, writer, &options.device, &io);
+            io.event(SessionEvent::Connected);
+            line.bridge(&options.device, &mut io).await
         }
         Err(e) => Outcome::Failed(e),
     };
     io.finish(outcome);
 }
 
-/// Opens the device with the session's line settings.
-fn open(options: &SerialOptions) -> Result<Box<dyn SerialPort>> {
+/// Opens the device with the session's line settings: the port, and a second handle to it
+/// for the writer thread.
+fn open(options: &SerialOptions) -> Result<(Box<dyn SerialPort>, Box<dyn SerialPort>)> {
     let open_failed = |e: serialport::Error| Error::new("serial.openFailed").param("device", &options.device).detail(e);
     let baud_rate = if is_pseudo_terminal(&options.device) { 0 } else { options.baud_rate };
-    serialport::new(&options.device, baud_rate)
+    let builder = serialport::new(&options.device, baud_rate)
         .data_bits(match options.data_bits {
             5 => serialport::DataBits::Five,
             6 => serialport::DataBits::Six,
@@ -144,9 +141,32 @@ fn open(options: &SerialOptions) -> Result<Box<dyn SerialPort>> {
             FlowControl::Software => serialport::FlowControl::Software,
             FlowControl::Hardware => serialport::FlowControl::Hardware,
         })
-        .timeout(READ_TIMEOUT)
-        .open()
-        .map_err(open_failed)
+        .timeout(READ_TIMEOUT);
+    #[cfg(windows)]
+    {
+        let port = builder.open_native().map_err(open_failed)?;
+        let writer = port.try_clone_native().map_err(open_failed)?;
+        not_inherited(&writer);
+        let (port, writer): (Box<dyn SerialPort>, Box<dyn SerialPort>) = (Box::new(port), Box::new(writer));
+        Ok((port, writer))
+    }
+    #[cfg(not(windows))]
+    {
+        let port = builder.open().map_err(open_failed)?;
+        let writer = port.try_clone().map_err(open_failed)?;
+        Ok((port, writer))
+    }
+}
+
+/// serialport duplicates the handle as inheritable, and `std::process::Command` lets child
+/// processes inherit every inheritable handle: a proxy command or editor started while the
+/// tab is open would keep the device busy after it closes.
+#[cfg(windows)]
+fn not_inherited(port: &serialport::COMPort) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
+    // SAFETY: the handle is the port's, open as long as `port` is.
+    unsafe { SetHandleInformation(port.as_raw_handle(), HANDLE_FLAG_INHERIT, 0) };
 }
 
 /// What the writer thread sends to the device.
@@ -170,9 +190,7 @@ impl Drop for Line {
 }
 
 impl Line {
-    fn start(port: Box<dyn SerialPort>, device: &str, io: &TermIo) -> Result<Self> {
-        let writer = port.try_clone().map_err(|e| Error::new("serial.openFailed").param("device", device).detail(e))?;
-
+    fn start(port: Box<dyn SerialPort>, writer: Box<dyn SerialPort>, device: &str, io: &TermIo) -> Self {
         let hold = Hold::new(device);
         let closing = Arc::new(AtomicBool::new(false));
         let (failed_tx, failed) = mpsc::unbounded_channel();
@@ -188,7 +206,7 @@ impl Line {
             write_input(writer, inputs, &writer_closing, &failed_tx);
             drop(hold);
         });
-        Ok(Self { input, failed, closing })
+        Self { input, failed, closing }
     }
 
     async fn bridge(mut self, device: &str, io: &mut TermIo) -> Outcome {
