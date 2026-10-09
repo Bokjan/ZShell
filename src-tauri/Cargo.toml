@@ -1,6 +1,6 @@
 [package]
 name = "zshell"
-version = "1.3.2"
+version = "1.3.3"
 description = "A cross-platform SSH client"
 edition = "2021"
 # Proprietary (see "License" in README.md); never published to crates.io.

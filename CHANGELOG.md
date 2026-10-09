@@ -2,6 +2,12 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.3.3] - 2026-10-09
+
+### Bug Fixes
+
+- Hover hints appear sooner, after 0.3 seconds.
+
 ## [1.3.2] - 2026-10-09
 
 ### Bug Fixes
