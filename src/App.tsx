@@ -312,7 +312,11 @@ function App() {
     const pane = focusedPane(tabs[index]);
     if (pane.protocol === "serial") return;
     const copy = newTab(nextKey.current++, copyOf(pane));
-    setTabs([...tabs.slice(0, index + 1), copy, ...tabs.slice(index + 1)]);
+    // From the latest tabs, which may have changed since the last render.
+    setTabs((tabs) => {
+      const at = tabs.findIndex((t) => t.key === key) + 1 || tabs.length;
+      return [...tabs.slice(0, at), copy, ...tabs.slice(at)];
+    });
     setActiveKey(copy.key);
   };
 
@@ -354,19 +358,23 @@ function App() {
    * gets the focus if the closed pane had it (see `removeFromLayout`).
    */
   const closePanes = useCallback((keys: number[]) => {
+    const close = (tabs: Tab[]) =>
+      tabs.flatMap((tab) => {
+        const closed = tab.panes.filter((p) => keys.includes(p.key));
+        if (closed.length === tab.panes.length) return [];
+        if (closed.length === 0) return [tab];
+        let { layout, focused } = tab;
+        for (const pane of closed) {
+          if (focused === pane.key) focused = heirOf(layout, pane.key) ?? focused;
+          layout = removeFromLayout(layout, pane.key)!;
+        }
+        return [{ ...tab, layout, focused, panes: tab.panes.filter((p) => !keys.includes(p.key)) }];
+      });
+    // Applied to the latest tabs: two closes before a render (two panes exiting at once) must
+    // not undo each other, nor drop the status updates queued meanwhile.
+    setTabs(close);
     const tabs = tabsRef.current;
-    const remaining = tabs.flatMap((tab) => {
-      const closed = tab.panes.filter((p) => keys.includes(p.key));
-      if (closed.length === tab.panes.length) return [];
-      if (closed.length === 0) return [tab];
-      let { layout, focused } = tab;
-      for (const pane of closed) {
-        if (focused === pane.key) focused = heirOf(layout, pane.key) ?? focused;
-        layout = removeFromLayout(layout, pane.key)!;
-      }
-      return [{ ...tab, layout, focused, panes: tab.panes.filter((p) => !keys.includes(p.key)) }];
-    });
-    setTabs(remaining);
+    const remaining = close(tabs);
     const gone = (tab: Tab) => !remaining.some((t) => t.key === tab.key);
     const active = tabs.findIndex((t) => t.key === activeKeyRef.current);
     if (active >= 0 && gone(tabs[active])) {
