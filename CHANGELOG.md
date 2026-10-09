@@ -2,6 +2,12 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.4.1] - 2026-10-09
+
+### Bug Fixes
+
+- Split Right and Split Down are disabled in the menus when a pane is too small to split, and the split shortcuts briefly outline such a pane instead of doing nothing.
+
 ## [1.4.0] - 2026-10-09
 
 ### Features
