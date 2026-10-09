@@ -137,6 +137,7 @@
 ### 配置与设置
 
 - **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`proxies.json`、`commands.json`（快速命令）、`logs.json`（会话日志索引）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。保存会话或代理时先写配置再写钥匙串，钥匙串失败不算保存失败：命令返回已保存的项和密码错误（`Saved`），对话框改为编辑这一项并提示，再次保存是更新而不是新增。
+- **单实例**：Windows 上再次打开应用会启动新进程，两个进程各自写回整份配置会互相覆盖，所以用 `tauri-plugin-single-instance` 把已有窗口提到前面后退出（插件第一个注册）。macOS 上系统本来就会激活已运行的应用，不加插件（插件在 macOS 上的锁是 `/tmp` 下与 HOME 无关的 socket，会妨碍用隔离 HOME 做端到端测试）。
 - **读不出的文件**：启动时任何一个配置文件存在但读不出（崩溃截断、手工改错、更新版本写入的新枚举值）时，改名为 `<文件名>.bad-<时间>` 保留，该部分从空开始，前端启动后列出这些文件（`config_set_aside`，只返回一次）并可在访达 / 资源管理器中显示。不让应用因此无法启动，也不让下一次保存覆盖原文件。写入时先写临时文件并 `fsync`，再改名替换。
 - **设置**：分为 `appearance`、`terminal`、`tabs` 三组；后端校验并夹取数值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。界面文字大小（`textSize`）通过 CSS 变量 `--text-scale` 缩放界面的字号、文字行的高度和对话框等的宽度，标题栏高度、图标和终端（有自己的字号）不变，以免红绿灯和 Windows 窗口按钮错位。
 - **主题**：`<html data-theme>` 选择 CSS 变量组，样式中不写死颜色；原生窗口用 `setTheme` 同步原生菜单与对话框（Windows 上还决定 WebView2 的 `prefers-color-scheme`），用 `setBackgroundColor` 同步调整大小时露出的背景；首帧背景由 `index.html` 的内联样式按系统外观给出，避免闪烁。终端配色、字体等通过 `term.options` 应用到所有已打开的终端。

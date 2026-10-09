@@ -146,6 +146,11 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     disable_press_and_hold();
     let builder = tauri::Builder::default();
+    // Opening the app again on Windows starts another process, and two would overwrite each
+    // other's saved sessions and settings: bring the running one forward instead, as macOS
+    // does by itself. Registered first, so that the second process ends before anything else.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::show_main(app)));
     // Tauri only gives macOS a default menu; other platforms keep having none.
     #[cfg(target_os = "macos")]
     let builder = builder.menu(app_menu);

@@ -25,6 +25,18 @@ pub fn create_main(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Brings the main window forward, restored if it was minimized.
+#[cfg(windows)]
+pub fn show_main(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    if let Some(window) = app.get_webview_window(MAIN) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// A double click on the title bar: on macOS what the system setting says ("Double-click a
 /// window's title bar to"), elsewhere maximize or restore.
 #[tauri::command]
