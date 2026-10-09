@@ -72,6 +72,7 @@ const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
 /** Retention choices, in days; 0 keeps logs. */
 const KEEP_DAYS = [0, 7, 30, 90, 365];
+const LICENSE_URL = "https://github.com/Bokjan/ZShell/blob/main/LICENSE.md";
 const PRIVACY_POLICY_URL = "https://github.com/Bokjan/ZShell/blob/main/PRIVACY.md";
 
 /** The sections in the order they appear, for the navigation; each is titled `settings.<id>`. */
@@ -1013,6 +1014,11 @@ function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
         )}
         <p className="hint">{t("settings.copyright")}</p>
         <div className="about-links">
+          <button type="button" className="link" onClick={() => void openUrl(LICENSE_URL).catch(console.error)}>
+            {t("settings.license")}
+            <ExternalLinkIcon />
+            <span className="visually-hidden">{t("common.opensInBrowser")}</span>
+          </button>
           <button type="button" className="link" onClick={() => void openUrl(PRIVACY_POLICY_URL).catch(console.error)}>
             {t("settings.privacyPolicy")}
             <ExternalLinkIcon />
