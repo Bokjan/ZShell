@@ -7,7 +7,7 @@ A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by X
 ## Features
 
 - **SSH sessions**: password, private key, SSH agent and keyboard-interactive (two-factor) authentication, plus an automatic mode that tries them in OpenSSH's order. Host keys are checked against `~/.ssh/known_hosts`, and saved passwords are kept in the system keychain.
-- **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, so you authenticate once. Duplicating a tab opens another shell on the same connection.
+- **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, so you authenticate once. Duplicating a tab or splitting a pane opens another shell on the same connection.
 - **Jump hosts**: connect through one or more other sessions, like OpenSSH's `ProxyJump`, for SSH and Telnet alike.
 - **Proxies**: SOCKS5 and HTTP proxies (with an optional user name and password) and proxy commands like OpenSSH's `ProxyCommand`, saved once and chosen per session.
 - **Telnet**: for network devices and older systems, with the terminal type and window size reported to the server, an optional saved user name and password typed at the login prompts, and a break from the tab's menu.
@@ -23,10 +23,11 @@ A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by X
 - **Per-session settings**: SSH agent forwarding; character encodings such as GBK, GB18030, Big5 and Shift_JIS for older servers and network devices (over SSH, Telnet or a serial line), converted in the terminal and in SFTP and ZMODEM file names; the session's own color scheme, background color (say, red for production, also marked on its tabs) and font; commands typed after login once the shell shows its prompt (`sudo -i`, `cd /srv/app`); the terminal type and environment variables sent to the server.
 - **Session logs**: record what a terminal shows to a file, automatically for chosen sessions (and optionally local terminals) or from a tab's menu, as plain text or raw, with old logs cleaned up after a number of days if you like.
 - **Quick commands**: buttons below the terminal for commands you type often, in groups of your own, also in the terminal's menu and a searchable palette. A session can choose the group its tabs show first.
-- **Send to several tabs**: a compose bar sends a command to the current tab, all tabs or selected ones, and can sync what you type in the terminal to them.
+- **Send to several terminals**: a compose bar sends a command to the current terminal, the panes of the current tab, all terminals or selected ones, and can sync what you type in the terminal to them.
 - **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program. The tab bar sits in the window's title bar on both macOS and Windows.
+- **Split panes**: split a tab right or down into panes, each its own session (a saved session can also be opened in a new pane), resize them by dragging the dividers, and move between them from the keyboard.
 
-Planned next: connecting through proxies and `ProxyCommand`, split panes, and managing known hosts. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: managing known hosts and locking the app. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -62,7 +63,9 @@ Add a session with **+** in the sidebar (choose SSH, Telnet or Serial as its pro
 | Paste | ⌘V | Ctrl+Shift+V or Ctrl+V |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab / Ctrl+Shift+Tab |
 | Go to tab 1–8 / last tab | ⌘1–8 / ⌘9 | Alt+1–8 / Alt+9 |
-| Close tab | ⌘W | Ctrl+Shift+W |
+| Close tab (the focused pane of a split tab) | ⌘W | Ctrl+Shift+W |
+| Split right / down | ⌘D / ⇧⌘D | Alt+Shift+= / Alt+Shift+- |
+| Move to the pane on a side | ⌥⌘ + arrow | Ctrl+Alt + arrow |
 | Settings | ⌘, | Ctrl+, |
 | Find in terminal | ⌘F | Ctrl+Shift+F |
 | Show/hide the compose bar | ⇧⌘I | Ctrl+Shift+I |
