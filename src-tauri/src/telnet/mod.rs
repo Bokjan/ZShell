@@ -110,6 +110,8 @@ async fn bridge(
                 }
             },
             input = io.recv(), if outgoing.len() < OUTGOING_LIMIT => match input {
+                // A ZMODEM transfer's data is neither typing to echo nor a login answer.
+                Some(SessionInput::Data(data)) if io.is_transfer_data() => outgoing.extend(telnet.encode(&data)),
                 Some(SessionInput::Data(data)) => {
                     login.typed();
                     if !telnet.remote_echoes() {

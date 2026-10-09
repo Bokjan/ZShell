@@ -231,6 +231,8 @@ pub struct TermIo {
     input: mpsc::UnboundedReceiver<SessionInput>,
     /// What a ZMODEM transfer sends to the remote side.
     zmodem_out: mpsc::Receiver<Vec<u8>>,
+    /// Whether the last input returned came from a ZMODEM transfer (see [`TermIo::is_transfer_data`]).
+    transfer_data: bool,
     /// Latest terminal size (cols, rows) reported by the frontend.
     pub size: (u16, u16),
 }
@@ -247,7 +249,7 @@ impl TermIo {
         let (zmodem, zmodem_out) = Zmodem::new();
         let codec = Codec::new(encoding).map(Arc::new);
         let sink = SessionSink { output, events, flow: Arc::default(), zmodem, log, codec };
-        (Self { sink, foreground: Foreground::default(), input: rx, zmodem_out, size }, tx)
+        (Self { sink, foreground: Foreground::default(), input: rx, zmodem_out, transfer_data: false, size }, tx)
     }
 
     /// A session without a frontend, for backend tests: returns the input sender and the
@@ -332,9 +334,13 @@ impl TermIo {
     /// UTF-8, which is also what the SSH protocol uses for passwords and answers.
     async fn next_input(&mut self, convert: bool) -> Option<SessionInput> {
         loop {
+            self.transfer_data = false;
             let input = tokio::select! {
                 biased;
-                Some(data) = self.zmodem_out.recv() => return Some(SessionInput::Data(data)),
+                Some(data) = self.zmodem_out.recv() => {
+                    self.transfer_data = true;
+                    return Some(SessionInput::Data(data));
+                }
                 input = self.input.recv() => input,
             };
             match &input {
@@ -352,6 +358,12 @@ impl TermIo {
             }
             return input;
         }
+    }
+
+    /// Whether the data [`TermIo::recv`] returned last is a ZMODEM transfer's rather than
+    /// typing, which backends that echo typing locally (Telnet) must not echo.
+    pub fn is_transfer_data(&self) -> bool {
+        self.transfer_data
     }
 
     /// Reads one line typed into the terminal, for prompts shown before the remote shell
