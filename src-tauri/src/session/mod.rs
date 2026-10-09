@@ -348,11 +348,7 @@ impl TermIo {
             let SessionInput::Data(data) = self.next_input(false).await? else {
                 continue;
             };
-            // Escape sequences (arrow keys etc.) are not supported in prompts.
-            if data.first() == Some(&0x1b) {
-                continue;
-            }
-            for c in String::from_utf8_lossy(&data).chars() {
+            for c in String::from_utf8_lossy(&strip_escapes(&data)).chars() {
                 match c {
                     '\r' | '\n' => {
                         self.print("\n");
@@ -384,6 +380,36 @@ impl TermIo {
             }
         }
     }
+}
+
+/// `data` without escape sequences, which prompts don't support (arrow keys, Alt+key). This
+/// includes the markers around a paste in bracketed paste mode, which the shell of a
+/// previous connection may have left on: the pasted text itself is kept.
+fn strip_escapes(data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len());
+    let mut bytes = data.iter().copied();
+    while let Some(byte) = bytes.next() {
+        if byte != 0x1b {
+            out.push(byte);
+            continue;
+        }
+        match bytes.next() {
+            // CSI: parameters up to a final byte.
+            Some(b'[') => {
+                for byte in bytes.by_ref() {
+                    if (0x40..=0x7e).contains(&byte) {
+                        break;
+                    }
+                }
+            }
+            // SS3 (application cursor keys): one more byte.
+            Some(b'O') => {
+                bytes.next();
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 struct SessionEntry {
@@ -472,5 +498,19 @@ impl SessionManager {
         entry.flow.close();
         entry.task.abort();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn prompts_take_pastes_and_ignore_other_escapes() {
+        let (mut io, input, _output, _events) = TermIo::detached((80, 24));
+        // A bracketed paste, then an arrow key in both cursor modes and Alt+b.
+        input.send(SessionInput::Data(b"\x1b[200~se\xe5\xaf\x86cret\x1b[201~".to_vec())).unwrap();
+        input.send(SessionInput::Data(b"\x1b[D\x1bOD\x1bb!\r".to_vec())).unwrap();
+        assert_eq!(io.read_line(false).await.as_deref(), Some("se密cret!"));
     }
 }
