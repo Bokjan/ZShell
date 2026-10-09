@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -202,6 +202,29 @@ function NumberField({
       onBlur={() => commit(text)}
       onKeyDown={(e) => {
         if (e.key === "Enter" && !e.nativeEvent.isComposing) commit(text);
+      }}
+    />
+  );
+}
+
+/**
+ * A text field applied as it is typed. The stored value comes back trimmed, which must not
+ * replace what is being typed: a space typed before the next word would disappear.
+ */
+function LiveTextField({
+  value,
+  onChange,
+  ...rest
+}: { value: string; onChange(text: string): void } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText((current) => (current.trim() === value ? current : value)), [value]);
+  return (
+    <input
+      {...rest}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(e.target.value);
       }}
     />
   );
@@ -444,9 +467,9 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
                 <div className="row">
                   <label className="grow">
                     {t("settings.fontFamily")}
-                    <input
+                    <LiveTextField
                       value={terminal.fontFamily}
-                      onChange={(e) => setTerminal({ fontFamily: e.target.value })}
+                      onChange={(fontFamily) => setTerminal({ fontFamily })}
                       placeholder={t("settings.fontFamilyPlaceholder")}
                       title={DEFAULT_FONT_STACK}
                       spellCheck={false}
