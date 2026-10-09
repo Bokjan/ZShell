@@ -56,8 +56,9 @@ Requirements: Rust (stable), Node.js and pnpm.
 
 ```bash
 pnpm install
-pnpm tauri dev      # run in development mode
-pnpm tauri build    # build release bundles
+pnpm tauri dev            # run in development mode
+pnpm licenses:generate    # third-party license notices shown in Settings > About (needs cargo-about)
+pnpm tauri build          # build release bundles
 ```
 
 Documentation for contributors is in Chinese:

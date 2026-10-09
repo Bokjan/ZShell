@@ -136,13 +136,18 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 2. 润色该版本一节：合并同一功能的多条、去掉内部里程碑编号，内容保持英语。只有 `refactor` / `chore` 等提交的版本，git-cliff 生成的一节可能是空的，手写一句面向用户的说明（`tag` 要求有该版本一节）。
 3. `scripts/release.sh tag`：运行 `pnpm build`、`pnpm test`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
 4. `git push origin main vX.Y.Z`。只升版本号的话到此为止。
-5. 要发布时：`scripts/release.sh publish [X.Y.Z]`（默认当前版本），用 `gh workflow run release.yml --ref vX.Y.Z` 在该 tag 上运行 release workflow。workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（以该节为发布说明；避免并行 job 重复创建），然后并行打包并上传：
+5. 要发布时：`scripts/release.sh publish [X.Y.Z]`（默认当前版本），用 `gh workflow run release.yml --ref vX.Y.Z` 在该 tag 上运行 release workflow。workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（避免并行 job 重复创建），然后并行打包并上传。发布说明由 `scripts/release-notes.sh` 从 `CHANGELOG.md` 取：不是每个版本都发布，所以包含上一个已发布的 release（不算草稿）之后的全部版本；只有这一个版本时就是该节原文，有多个时每个版本一节、以版本号和日期为标题，新的在前。本地运行 `scripts/release-notes.sh X.Y.Z` 可以预览。各个包：
    - macOS 通用包（`universal-apple-darwin`，`.app` 与 `.dmg`）。
    - Windows NSIS 安装包与 MSI。
    - Windows 免安装的单独 exe（`--no-bundle` + `uploadPlainBinary`，文件名 `ZShell_<版本>_x64_standalone.exe`）。需要系统有 WebView2 运行时；配置仍写在 `%APPDATA%`，不是便携模式。
    - Microsoft Store 用的 `ZShell_<版本>.msixbundle`（x64 与 ARM64，由 `scripts/package-msix.ps1` 用 Windows SDK 的 `makeappx` 打包，清单模板在 `src-tauri/msix/`，不签名）。
 6. 检查草稿后手动发布，作为正式版本发布（不勾选 pre-release）。
 7. 在 Partner Center 新建提交，上传该版本的 `.msixbundle`。Store 会重新签名并负责用户的更新。
+
+**依赖的许可证**：ZShell 不开源、免费分发，依赖的许可证必须允许闭源分发，只要求附上声明。可以接受的列在 `src-tauri/about.toml` 的 `accepted` 里（MIT、Apache-2.0、BSD、ISC、Zlib、BSL-1.0、Unicode-3.0、MPL-2.0），`pnpm licenses:generate` 对 crate 与 npm 包都按这份列表检查，不在列表里的会让生成失败（release workflow 也随之失败）。引入新依赖前先看它（及其新带来的间接依赖）的许可证：
+- GPL、LGPL、AGPL 等 copyleft 许可证不接受：GPL / AGPL 要求整个程序以同样的许可证开源；LGPL 要求用户能替换该库，Rust 静态链接做不到。只有在多许可证（`MIT OR GPL-3.0`）里能选宽松的一个时才可用。
+- MPL-2.0 是文件级 copyleft：原样使用没有问题（声明里附有主页，说明源码在哪里），但修改了 MPL 文件（`[patch]`、vendoring）就要以 MPL 公开修改后的这些文件。
+- 声明里没有的条件（如要求在界面或文档里致谢的 BSD-4-Clause、限制商用的 CC BY-NC、"Commons Clause"）一律不接受；拿不准的先问。确认能遵守后再加进 `accepted`。
 
 **第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.json`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置「关于」里的许可证对话框读取显示：左栏是可搜索的包列表（按 Rust / JavaScript 分组），右栏是选中包的许可证全文。文件里每个包记录名称、版本、声明的许可证、主页和所用许可证文本的下标，相同的文本只存一份。
 - Rust 依赖用 `cargo-about`：配置 `src-tauri/about.toml` 列出接受的许可证、四个发布目标（macOS 与 Windows 专用的 crate 都在内），不含 build / dev 依赖；脚本读取 `cargo about generate --format json` 的输出。双许可证优先用 MIT。新依赖带来未列出的许可证时生成失败，确认能遵守后再加进 `accepted`。
