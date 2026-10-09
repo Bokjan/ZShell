@@ -2,6 +2,18 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.2] - 2026-10-09
+
+### Bug Fixes
+
+- Closing a local terminal tab no longer submits a line that was typed but not entered (to the shell, or to a program such as psql).
+- Files downloaded, dragged out, opened for editing or received by ZMODEM always stay in the folder they are saved to, whatever name the server or sender gives them. On Windows, characters and names Windows doesn't allow are replaced.
+- A ZMODEM transfer with an out-of-range file date no longer crashes the app.
+- If a sessions, folders, proxies, settings or quick commands file can't be read, ZShell still starts: the file is kept under a name ending in `.bad-` and the date, and a notice lists it. Data files are also written to disk before they replace the old ones, so a power loss can't leave them empty.
+- SSH: when the agent refuses to sign (a denied confirmation or an untouched security key), authentication moves on to the next key or method instead of hanging at "connecting".
+- Plain-text session logs no longer use unbounded memory on very long lines or large cursor movements.
+- Typed numbers in Settings, such as Scrollback lines or the font size, take effect on Enter or when leaving the field, rather than on every key (typing 20000 used to cut every terminal's history to 2 lines on the way).
+
 ## [1.6.1] - 2026-10-09
 
 ### Features
