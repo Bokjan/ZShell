@@ -178,6 +178,19 @@ impl SessionSink {
         self.flow.clone()
     }
 
+    /// Turns off what a program may have left on when the session ends without it turning
+    /// them off (the connection dropped, the program was killed): the alternate screen, which
+    /// would hide our message about how the session ended, mouse reporting, and with a soft
+    /// reset bracketed paste, application cursor keys, a hidden cursor and so on. Leaving the
+    /// alternate screen restores the cursor saved on entering it; saving it first makes that
+    /// a no-op when the normal screen is shown (xterm.js keeps one saved cursor per screen).
+    /// Not logged.
+    pub fn reset_modes(&self) {
+        const RESET: &[u8] = b"\x1b7\x1b[?1049l\x1b[?1000l\x1b[?1006l\x1b[!p";
+        self.flow.sent(RESET.len());
+        let _ = self.output.send(InvokeResponseBody::Raw(RESET.to_vec()));
+    }
+
     pub fn log(&self) -> &LogSlot {
         &self.log
     }
@@ -277,6 +290,7 @@ impl TermIo {
 
     /// Reports how a remote session ended, in the terminal and as its `Closed` event.
     pub fn finish(&self, outcome: Outcome) {
+        self.sink.reset_modes();
         let (reason, error, status) = match outcome {
             Outcome::Exited(status) => {
                 let message = match status {

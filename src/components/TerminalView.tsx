@@ -84,6 +84,19 @@ interface Props {
 /** Mouse (SGR, X10) and focus reports the terminal sends for programs; not typed input. */
 const REPORT = /^\x1b\[(?:<\d+;\d+;\d+[Mm]|M[\s\S]{3}|I|O)$/;
 
+/**
+ * Turns off what a program on the closed connection may have turned on: the alternate
+ * screen, mouse reporting, then (soft reset) bracketed paste, application cursor keys, a
+ * hidden cursor and so on; otherwise the next shell would get mouse reports as typed text.
+ * The backend does this itself when a session ends (`SessionSink::reset_modes`); this is for
+ * reconnecting while still connected. Leaving the alternate screen also restores the saved
+ * cursor, so only when it is shown.
+ */
+function resetModes(term: Terminal) {
+  if (term.buffer.active.type === "alternate") term.write("\x1b[?1049l");
+  term.write("\x1b[?1000l\x1b[?1006l\x1b[!p");
+}
+
 /** Seconds to wait before each automatic reconnection attempt; the last one repeats. */
 const RETRY_DELAYS = [2, 4, 8, 16, 30];
 
@@ -395,6 +408,7 @@ export function TerminalView({
       onSessionRef.current(null);
       void old?.close().catch(ignore);
       attempt = 0;
+      resetModes(term);
       term.write("\r\n");
       connect();
     };

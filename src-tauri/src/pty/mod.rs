@@ -57,6 +57,7 @@ pub async fn run(shell: Shell, mut io: TermIo) {
         (_, Some(code)) if code != 0 => t!("terminal.processExitedWithCode", code = code),
         _ => t!("terminal.processExited"),
     };
+    io.sink().reset_modes();
     io.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
     io.event(SessionEvent::Closed { reason: CloseReason::Exited, error: None, status: code });
 }
