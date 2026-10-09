@@ -396,6 +396,10 @@ pub fn ssh_open_shared(
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
     let connection = connections.get(source)?;
+    // Ended, but its session hasn't noticed yet (it is about to report it lost).
+    if connection.handle().is_closed() {
+        return Err(Error::new("session.notConnected"));
+    }
     let connections = connections.inner().clone();
     // Named like the source's log; a log of its own, as a new tab of the session would get.
     let info = sessions.sink(source)?.log().info.clone();

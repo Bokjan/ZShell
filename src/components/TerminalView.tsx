@@ -319,6 +319,7 @@ export function TerminalView({
       const source = shareFrom;
       shareFrom = undefined;
       let ended = false;
+      let connected = false;
       let handle: Session | undefined;
       // Output bytes processed by xterm.js and not yet acknowledged.
       let processed = 0;
@@ -341,6 +342,7 @@ export function TerminalView({
         (event) => {
           if (stale()) return;
           if (event.type === "connected") {
+            connected = true;
             attempt = 0;
             carry = [];
             onStatusRef.current("connected");
@@ -368,6 +370,12 @@ export function TerminalView({
           setZmodemPhase(null);
           onSessionRef.current(null);
           void handle?.close().catch(ignore);
+          // The duplicated tab's connection had died without its session noticing yet (a
+          // laptop waking up, say): connect as usual.
+          if (source !== undefined && !connected && event.reason === "failed") {
+            connect();
+            return;
+          }
           onStatusRef.current("closed");
           if (event.reason === "exited") onExitedRef.current(event.status);
           if (local) {
