@@ -108,9 +108,13 @@ function resetModes(term: Terminal) {
 /** Seconds to wait before each automatic reconnection attempt; the last one repeats. */
 const RETRY_DELAYS = [2, 4, 8, 16, 30];
 
-/** Failures that retrying cannot fix: authentication problems and untrusted host keys. */
+/** Proxy failures that retrying cannot fix: it wants credentials we don't have or can't use. */
+const PERMANENT_PROXY_ERRORS = new Set(["proxy.authRequired", "proxy.authUnsupported", "proxy.authFailed", "proxy.unsafeName"]);
+
+/** Failures that retrying cannot fix: authentication problems (also with the proxy) and untrusted host keys. */
 const isPermanent = (error: CommandError | null) =>
-  !!error && (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected");
+  !!error &&
+  (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected" || PERMANENT_PROXY_ERRORS.has(error.code));
 
 /** Acknowledge processed output in batches of this many bytes (see `Session.ack`). */
 const ACK_BATCH = 64 * 1024;
