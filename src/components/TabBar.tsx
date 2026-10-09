@@ -8,54 +8,12 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ForwardState, Protocol, SessionId, SessionTarget } from "../lib/api";
+import { focusedPane, isLogging, tabTitle, type SidePanel, type Tab } from "../lib/panes";
 import { closeTabShortcutLabel, isWindows, newTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ComposeIcon, PlusIcon, QuickIcon } from "./icons";
-import type { SessionStatus } from "./TerminalView";
 import { WindowControls } from "./WindowControls";
-
-export type SidePanel = "files" | "forwards";
-
-/** What a tab runs: a remote session's protocol, or a local terminal. */
-export type TabProtocol = Protocol | "local";
-
-export interface Tab {
-  key: number;
-  target: SessionTarget;
-  /** Of the current (or last) session; a saved session's may change between connections. */
-  protocol: TabProtocol;
-  /** The session name: the profile's, or the local shell's. */
-  title: string;
-  /** Set by renaming the tab; shown instead of any other title. */
-  customTitle: string | null;
-  /** Set by the shell (OSC 0 / 2); shown unless turned off in the settings. */
-  remoteTitle: string | null;
-  status: SessionStatus;
-  /** The backend session, while there is one. */
-  sessionId: SessionId | null;
-  /** For a duplicated SSH tab: the session whose connection its first shell runs on. */
-  shareFrom?: SessionId;
-  /** Incremented to close the session and connect again. */
-  reconnectKey: number;
-  /** The side panel shown next to the terminal, if any (SSH tabs only). */
-  sidePanel: SidePanel | null;
-  /** Live state of the profile's forwarding rules on this tab's connection, by rule id. */
-  forwards: Record<string, ForwardState>;
-  /** The quick command group picked in this tab; null shows its session's. */
-  commandGroup: string | null;
-  /** The log this tab writes, kept across reconnections (which go on with it). */
-  logPath: string | null;
-  /** Logging was stopped by hand: reconnections don't start it again. */
-  logStopped: boolean;
-}
-
-/** Whether the tab is writing its log now. */
-export const isLogging = (tab: Tab) => tab.logPath !== null && tab.status !== "closed";
-
-export const tabTitle = (tab: Tab, followRemoteTitle: boolean) =>
-  tab.customTitle ?? ((followRemoteTitle && tab.remoteTitle) || tab.title);
 
 /** Keyboard shortcut (with ⇧⌘ / Ctrl+Shift) toggling each side panel, by `KeyboardEvent.code`. */
 export const PANEL_SHORTCUTS: Record<string, SidePanel> = { KeyE: "files", KeyP: "forwards" };
@@ -156,11 +114,12 @@ export function TabBar({
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) stripRef.current!.scrollLeft += e.deltaY;
   };
   const activeTab = tabs.find((t) => t.key === activeKey);
-  const states = Object.values(activeTab?.forwards ?? {});
+  const activePane = activeTab && focusedPane(activeTab);
+  const states = Object.values(activePane?.forwards ?? {});
   const running = states.filter((s) => s.type === "starting" || s.type === "active").length;
   const failed = states.some((s) => s.type === "failed");
   // Files and forwards work on an SSH connection.
-  const unavailable = !!activeTab && activeTab.protocol !== "ssh";
+  const unavailable = !!activePane && activePane.protocol !== "ssh";
 
   // Reorders live while dragging: the tab moves past each neighbor whose middle the pointer
   // crosses. Pressing doesn't take focus from the terminal.
@@ -199,20 +158,21 @@ export function TabBar({
 
   const menuItems = (key: number): MenuItem[] => {
     const index = tabs.findIndex((tab) => tab.key === key);
-    const tab = tabs[index];
+    // Session actions act on the focused pane.
+    const pane = focusedPane(tabs[index]);
     const items: MenuItem[] = [];
     // A serial device can only be open once.
-    if (tab.protocol !== "serial") items.push({ label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) });
+    if (pane.protocol !== "serial") items.push({ label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) });
     items.push({ label: t("tabs.rename"), onSelect: () => setEditing(key) });
-    if (tab.protocol !== "local") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
-    if (tab.protocol === "serial" || tab.protocol === "telnet") {
-      items.push({ label: t("tabs.sendBreak"), disabled: tab.status !== "connected", onSelect: () => onBreak(key) });
+    if (pane.protocol !== "local") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
+    if (pane.protocol === "serial" || pane.protocol === "telnet") {
+      items.push({ label: t("tabs.sendBreak"), disabled: pane.status !== "connected", onSelect: () => onBreak(key) });
     }
-    if (tab.target.kind === "quick") items.push({ label: t("tabs.saveAsSession"), onSelect: () => onSaveAsSession(key) });
+    if (pane.target.kind === "quick") items.push({ label: t("tabs.saveAsSession"), onSelect: () => onSaveAsSession(key) });
     items.push("separator");
-    if (isLogging(tab)) items.push({ label: t("tabs.stopLog"), onSelect: () => onLog(key, false) });
-    else items.push({ label: t("tabs.startLog"), disabled: tab.status !== "connected", onSelect: () => onLog(key, true) });
-    if (tab.logPath) items.push({ label: t("tabs.showLog"), onSelect: () => onShowLog(key) });
+    if (isLogging(pane)) items.push({ label: t("tabs.stopLog"), onSelect: () => onLog(key, false) });
+    else items.push({ label: t("tabs.startLog"), disabled: pane.status !== "connected", onSelect: () => onLog(key, true) });
+    if (pane.logPath) items.push({ label: t("tabs.showLog"), onSelect: () => onShowLog(key) });
     items.push(
       "separator",
       { label: t("tabs.close"), shortcut: closeTabShortcutLabel, onSelect: () => onClose([key]) },
@@ -247,6 +207,7 @@ export function TabBar({
     <nav className="tab-bar" {...DRAG_REGION}>
       <div className="tab-strip" ref={stripRef} onWheel={onWheel}>
         {tabs.map((tab) => {
+          const pane = focusedPane(tab);
           const title = tabTitle(tab, followRemoteTitle);
           const color = colorOf(tab);
           const where = addressOf(tab);
@@ -274,8 +235,8 @@ export function TabBar({
               title={editing === tab.key ? undefined : [title, where, t("tabs.renameHint")].filter(Boolean).join("\n")}
             >
               {color && <span className="tab-color" style={{ background: color }} />}
-              <span className={`status-dot ${tab.status}`} />
-              {isLogging(tab) && <span className="tab-log" title={t("tabs.logging", { path: tab.logPath })} />}
+              <span className={`status-dot ${pane.status}`} />
+              {isLogging(pane) && <span className="tab-log" title={t("tabs.logging", { path: pane.logPath })} />}
               {editing === tab.key ? (
                 <TitleEditor
                   initial={title}

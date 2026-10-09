@@ -2,14 +2,14 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Compose, ComposeScope, SendResult } from "../lib/compose";
-import { tabTitle, type Tab } from "./TabBar";
+import { paneLabel, type Tab } from "../lib/panes";
 
 interface Props {
   compose: Compose;
   tabs: Tab[];
   followRemoteTitle: boolean;
   onChange(compose: Compose): void;
-  /** Sends the text (as typed, with Enter) to the tabs in scope. */
+  /** Sends the text (as typed, with Enter) to the panes in scope. */
   onSend(text: string): SendResult;
   onClose(): void;
 }
@@ -109,12 +109,13 @@ export function ComposeBar({ compose, tabs, followRemoteTitle, onChange, onSend,
     onChange({ ...compose, scope: "selected", selected });
   };
 
-  const selectedCount = tabs.filter((tab) => compose.selected.includes(tab.key)).length;
+  const panes = tabs.flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })));
+  const selectedCount = panes.filter(({ pane }) => compose.selected.includes(pane.key)).length;
   const scopeLabel =
     compose.scope === "current"
       ? t("compose.scopeCurrent")
       : compose.scope === "all"
-        ? t("compose.scopeAllCount", { count: tabs.length })
+        ? t("compose.scopeAllCount", { count: panes.length })
         : t("compose.scopeSelectedCount", { count: selectedCount });
   const rows = Math.min(MAX_ROWS, text.split("\n").length);
 
@@ -141,15 +142,15 @@ export function ComposeBar({ compose, tabs, followRemoteTitle, onChange, onSend,
               </label>
             ))}
             <div className="compose-picker-tabs">
-              {tabs.map((tab) => (
-                <label key={tab.key} className="compose-picker-tab">
+              {panes.map(({ tab, pane }) => (
+                <label key={pane.key} className="compose-picker-tab">
                   <input
                     type="checkbox"
-                    checked={compose.selected.includes(tab.key)}
-                    onChange={() => toggleSelected(tab.key)}
+                    checked={compose.selected.includes(pane.key)}
+                    onChange={() => toggleSelected(pane.key)}
                   />
-                  <span className={`status-dot ${tab.status}`} />
-                  <span className="compose-picker-title">{tabTitle(tab, followRemoteTitle)}</span>
+                  <span className={`status-dot ${pane.status}`} />
+                  <span className="compose-picker-title">{paneLabel(tab, pane, followRemoteTitle)}</span>
                 </label>
               ))}
             </div>

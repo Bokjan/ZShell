@@ -13,8 +13,8 @@ import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog"
 import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
-import { SessionPane } from "./components/SessionPane";
-import { PANEL_SHORTCUTS, TabBar, tabTitle, type SidePanel, type Tab, type TabProtocol } from "./components/TabBar";
+import { PANEL_SHORTCUTS, TabBar } from "./components/TabBar";
+import { TabPage, type PaneHandlers } from "./components/TabPage";
 import type { SessionStatus } from "./components/TerminalView";
 import { Tooltips } from "./components/Tooltip";
 import {
@@ -45,14 +45,23 @@ import {
   tabShortcut,
 } from "./lib/platform";
 import { storeBarVisible, storedBarVisible, tabGroup } from "./lib/quickCommands";
-import { asTyped, CLOSED_COMPOSE, isConnected, scopeTabs, sendsToMany, type Compose, type SendResult } from "./lib/compose";
+import { asTyped, CLOSED_COMPOSE, isConnected, scopePanes, sendsToMany, type Compose, type SendResult } from "./lib/compose";
+import {
+  findPane,
+  focusedPane,
+  paneLabel,
+  type Pane,
+  type SidePanel,
+  type Tab,
+  type TabProtocol,
+} from "./lib/panes";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { useSettings } from "./lib/settings";
 import { tabMark } from "./lib/terminalSchemes";
 import { useTitleBar } from "./lib/window";
 import "./styles.css";
 
-const profileIdOf = (tab: Tab) => (tab.target.kind === "profile" ? tab.target.profileId : undefined);
+const profileIdOf = (pane: Pane) => (pane.target.kind === "profile" ? pane.target.profileId : undefined);
 
 /** Why closing a tab needs confirmation: a remote session is connected, or a local program runs. */
 type Busy = { kind: "connected" } | { kind: "process"; name: string };
@@ -61,43 +70,50 @@ type Busy = { kind: "connected" } | { kind: "process"; name: string };
 const OPEN_ALL_CONFIRM = 5;
 /** Quick commands listed in the terminal's menu; the palette has them all. */
 const MENU_COMMANDS = 8;
-/** How long tabs that received text from the compose bar flash. */
+/** How long panes that received text from the compose bar flash. */
 const FLASH_MS = 700;
 
 /** Moves the keyboard focus back to the active terminal (after the compose bar closes). */
 const focusActiveTerminal = () =>
   requestAnimationFrame(() =>
-    document.querySelector<HTMLElement>(".session-pane.active .xterm-helper-textarea")?.focus(),
+    document.querySelector<HTMLElement>(".tab-page.active .pane.focused .xterm-helper-textarea")?.focus(),
   );
 
-async function busyReason(tab: Tab): Promise<Busy | null> {
-  if (tab.status !== "connected" || tab.sessionId == null) return null;
-  if (tab.target.kind !== "local") return { kind: "connected" };
-  const name = await sessionForeground(tab.sessionId).catch(() => null);
+async function busyReason(pane: Pane): Promise<Busy | null> {
+  if (pane.status !== "connected" || pane.sessionId == null) return null;
+  if (pane.target.kind !== "local") return { kind: "connected" };
+  const name = await sessionForeground(pane.sessionId).catch(() => null);
   return name === null ? null : { kind: "process", name };
 }
 
-const newTab = (key: number, target: SessionTarget, protocol: TabProtocol, title: string, shareFrom?: SessionId): Tab => ({
+const newPane = (key: number, target: SessionTarget, protocol: TabProtocol, title: string, shareFrom?: SessionId): Pane => ({
   key,
   target,
   protocol,
   title,
-  customTitle: null,
   remoteTitle: null,
   status: "connecting",
   sessionId: null,
   shareFrom,
   reconnectKey: 0,
-  sidePanel: null,
   forwards: {},
   commandGroup: null,
   logPath: null,
   logStopped: false,
 });
 
-/** How a tab's next session starts logging (see `Tab.logPath`). */
-const logOpen = (tab: Tab): LogOpen =>
-  tab.logPath ? { mode: "append", path: tab.logPath } : tab.logStopped ? { mode: "off" } : { mode: "auto" };
+const newTab = (key: number, pane: Pane): Tab => ({
+  key,
+  layout: { kind: "pane", key: pane.key },
+  panes: [pane],
+  focused: pane.key,
+  customTitle: null,
+  sidePanel: null,
+});
+
+/** How a pane's next session starts logging (see `Pane.logPath`). */
+const logOpen = (pane: Pane): LogOpen =>
+  pane.logPath ? { mode: "append", path: pane.logPath } : pane.logStopped ? { mode: "off" } : { mode: "auto" };
 
 function App() {
   const { t } = useTranslation();
@@ -122,15 +138,15 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const latestCommands = useRef(0);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // The profile dialog: an existing profile, or a new one (null) with defaults; `tabKey` is
-  // the quick connection tab being saved as a session.
-  const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; tabKey?: number } | null>(
+  // The profile dialog: an existing profile, or a new one (null) with defaults; `paneKey` is
+  // the quick connection pane being saved as a session.
+  const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; paneKey?: number } | null>(
     null,
   );
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Tabs waiting for the user to confirm closing them, with why the first busy one is busy.
-  const [closing, setClosing] = useState<{ keys: number[]; busy: Busy; tab: Tab } | null>(null);
+  // Tabs waiting for the user to confirm closing them, with why the first busy pane is busy.
+  const [closing, setClosing] = useState<{ keys: number[]; busy: Busy; name: string } | null>(null);
   // The window waiting for the user to confirm closing it (quitting), with how many tabs are busy.
   const [closingWindow, setClosingWindow] = useState<number | null>(null);
   // Title for local terminal tabs, e.g. "zsh".
@@ -139,6 +155,7 @@ function App() {
   const [localAllowed, setLocalAllowed] = useState(true);
   // For quick connections without a user name.
   const [username, setUsername] = useState("");
+  // For tabs and panes alike.
   const nextKey = useRef(1);
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -186,18 +203,31 @@ function App() {
 
   const addTab = useCallback(
     (target: SessionTarget, title: string) => {
+      const pane = newPane(nextKey.current++, target, protocolOf(target), title);
       const key = nextKey.current++;
-      setTabs((tabs) => [...tabs, newTab(key, target, protocolOf(target), title)]);
+      setTabs((tabs) => [...tabs, newTab(key, pane)]);
       setActiveKey(key);
     },
     [protocolOf],
   );
 
-  /** "connect" switches to a tab the session already has; "newTab" always opens one. */
+  /** Shows the pane: activates its tab and focuses it there. */
+  const focusPane = useCallback((key: number) => {
+    const found = findPane(tabsRef.current, key);
+    if (!found) return;
+    setActiveKey(found.tab.key);
+    if (found.tab.focused !== key) {
+      setTabs((tabs) => tabs.map((t) => (t.key === found.tab.key ? { ...t, focused: key } : t)));
+    }
+  }, []);
+
+  /** "connect" switches to a pane the session already has; "newTab" always opens a tab. */
   const openProfile = (profile: Profile, mode: "connect" | "newTab") => {
     setRecent(addRecent(profile.id));
-    const existing = tabsRef.current.find((t) => t.target.kind === "profile" && t.target.profileId === profile.id);
-    if (mode === "connect" && existing) setActiveKey(existing.key);
+    const existing = tabsRef.current
+      .flatMap((t) => t.panes)
+      .find((p) => p.target.kind === "profile" && p.target.profileId === profile.id);
+    if (mode === "connect" && existing) focusPane(existing.key);
     else addTab({ kind: "profile", profileId: profile.id }, profile.name);
   };
 
@@ -216,15 +246,23 @@ function App() {
 
   const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab]);
 
-  // An SSH tab whose shell is up opens its copy on the same connection; anything else opens
-  // the same target anew. A serial device can only be open once.
+  /**
+   * A new pane running what `pane` runs: an SSH pane whose shell is up opens its copy on the
+   * same connection; anything else opens the same target anew.
+   */
+  const copyOf = (pane: Pane): Pane => {
+    const shareFrom = pane.protocol === "ssh" && pane.status === "connected" ? (pane.sessionId ?? undefined) : undefined;
+    return newPane(nextKey.current++, pane.target, protocolOf(pane.target), pane.title, shareFrom);
+  };
+
+  // Copies the focused pane into a new tab. A serial device can only be open once.
   const duplicateTab = (key: number) => {
     const tabs = tabsRef.current;
     const index = tabs.findIndex((t) => t.key === key);
-    if (index < 0 || tabs[index].protocol === "serial") return;
-    const tab = tabs[index];
-    const shareFrom = tab.protocol === "ssh" && tab.status === "connected" ? (tab.sessionId ?? undefined) : undefined;
-    const copy = newTab(nextKey.current++, tab.target, protocolOf(tab.target), tab.title, shareFrom);
+    if (index < 0) return;
+    const pane = focusedPane(tabs[index]);
+    if (pane.protocol === "serial") return;
+    const copy = newTab(nextKey.current++, copyOf(pane));
     setTabs([...tabs.slice(0, index + 1), copy, ...tabs.slice(index + 1)]);
     setActiveKey(copy.key);
   };
@@ -246,10 +284,12 @@ function App() {
     async (keys: number[]) => {
       const tabs = tabsRef.current.filter((t) => keys.includes(t.key));
       if (settingsRef.current.tabs.confirmClose) {
-        const reasons = await Promise.all(tabs.map(busyReason));
+        const panes = tabs.flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })));
+        const reasons = await Promise.all(panes.map(({ pane }) => busyReason(pane)));
         const index = reasons.findIndex((reason) => reason !== null);
         if (index >= 0) {
-          setClosing({ keys, busy: reasons[index]!, tab: tabs[index] });
+          const { tab, pane } = panes[index];
+          setClosing({ keys, busy: reasons[index]!, name: paneLabel(tab, pane, settingsRef.current.tabs.followRemoteTitle) });
           return;
         }
       }
@@ -271,7 +311,7 @@ function App() {
   // so it always asks, whatever the setting for closing tabs.
   useEffect(() => {
     const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
-      const reasons = await Promise.all(tabsRef.current.map(busyReason));
+      const reasons = await Promise.all(tabsRef.current.flatMap((tab) => tab.panes).map(busyReason));
       const busy = reasons.filter((reason) => reason !== null).length;
       if (busy === 0) return;
       event.preventDefault();
@@ -292,8 +332,33 @@ function App() {
       return [...rest.slice(0, index), tab, ...rest.slice(index)];
     });
 
+  /** Runs `f` on the focused pane of the tab with this key (tab menu actions). */
+  const withFocused = (key: number, f: (pane: Pane) => unknown) => {
+    const pane = focusedOf(key);
+    if (pane) f(pane);
+  };
+
   const updateTab = (key: number, patch: Partial<Tab>) =>
     setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, ...patch } : t)));
+
+  /** Changes a pane, wherever it is: `patch` may be a function of the pane and its tab. */
+  const updatePane = (key: number, patch: Partial<Pane> | ((pane: Pane, tab: Tab) => Partial<Pane>)) =>
+    setTabs((tabs) =>
+      tabs.map((tab) =>
+        tab.panes.some((p) => p.key === key)
+          ? {
+              ...tab,
+              panes: tab.panes.map((p) => (p.key === key ? { ...p, ...(typeof patch === "function" ? patch(p, tab) : patch) } : p)),
+            }
+          : tab,
+      ),
+    );
+
+  /** The focused pane of a tab, by the tab's key. */
+  const focusedOf = (key: number) => {
+    const tab = tabsRef.current.find((t) => t.key === key);
+    return tab && focusedPane(tab);
+  };
 
   // Closing the bar turns syncing off; the scope stays for the next time, shown on the bar.
   const toggleCompose = useCallback(() => {
@@ -302,36 +367,44 @@ function App() {
     if (!open) focusActiveTerminal();
   }, []);
 
-  /** Sends text as if typed to the tabs in scope (see `scopeTabs`); tabs beyond the active one flash. */
+  /** Names of panes, as listed for the compose bar and quick commands. */
+  const labelsOf = (panes: Pane[]) =>
+    panes.flatMap((pane) => {
+      const found = findPane(tabsRef.current, pane.key);
+      return found ? [paneLabel(found.tab, pane, settingsRef.current.tabs.followRemoteTitle)] : [];
+    });
+
+  /** Sends text as if typed to the panes in scope (see `scopePanes`); panes beyond the focused one flash. */
   const sendToScope = (data: string): SendResult => {
-    const targets = scopeTabs(composeRef.current, tabsRef.current, activeKeyRef.current);
+    const targets = scopePanes(composeRef.current, tabsRef.current, activeKeyRef.current);
     const sent = targets.filter(isConnected);
-    for (const tab of sent) writeSession(tab.sessionId!, data).catch(console.error);
+    for (const pane of sent) writeSession(pane.sessionId!, data).catch(console.error);
     if (sendsToMany(composeRef.current) && sent.length > 0) {
       clearTimeout(flashTimer.current);
-      setFlashing(sent.map((tab) => tab.key));
+      setFlashing(sent.map((pane) => pane.key));
       flashTimer.current = setTimeout(() => setFlashing([]), FLASH_MS);
     }
-    const titles = sent.map((tab) => tabTitle(tab, settingsRef.current.tabs.followRemoteTitle));
-    return { sent: titles, skipped: targets.length - sent.length };
+    return { sent: labelsOf(sent), skipped: targets.length - sent.length };
   };
 
-  // Syncing: what is typed in the active terminal goes to the other connected tabs in scope.
-  const onInput = (source: Tab, data: string) => {
+  // Syncing: what is typed in the focused terminal goes to the other connected panes in scope.
+  const onInput = (source: number, data: string) => {
     const compose = composeRef.current;
-    if (!compose.open || !compose.sync || source.key !== activeKeyRef.current) return;
-    for (const tab of scopeTabs(compose, tabsRef.current, activeKeyRef.current)) {
-      if (tab.key !== source.key && isConnected(tab)) writeSession(tab.sessionId!, data).catch(console.error);
+    const active = tabsRef.current.find((t) => t.key === activeKeyRef.current);
+    if (!compose.open || !compose.sync || !active || active.focused !== source) return;
+    for (const pane of scopePanes(compose, tabsRef.current, activeKeyRef.current)) {
+      if (pane.key !== source && isConnected(pane)) writeSession(pane.sessionId!, data).catch(console.error);
     }
   };
 
+  // Opens a panel only for an SSH pane; closes it whatever the pane.
   const togglePanel = useCallback((panel: SidePanel) => {
     setTabs((tabs) =>
-      tabs.map((t) =>
-        t.key === activeKeyRef.current && t.protocol === "ssh"
-          ? { ...t, sidePanel: t.sidePanel === panel ? null : panel }
-          : t,
-      ),
+      tabs.map((t) => {
+        if (t.key !== activeKeyRef.current) return t;
+        if (t.sidePanel === panel) return { ...t, sidePanel: null };
+        return focusedPane(t).protocol === "ssh" ? { ...t, sidePanel: panel } : t;
+      }),
     );
   }, []);
 
@@ -417,17 +490,19 @@ function App() {
   const runCommand = (command: QuickCommand) => sendToScope(asTyped(command.text, command.enter));
 
   const activeTab = tabs.find((tab) => tab.key === activeKey);
-  const groupOf = (tab: Tab) =>
-    commands && tabGroup(commands, tab.commandGroup, profiles.find((p) => p.id === profileIdOf(tab))?.commandGroup);
-  const activeGroup = activeTab ? groupOf(activeTab) : null;
-  // Who a quick command goes to, when that is more than the active tab.
-  const commandTargets = sendsToMany(compose)
-    ? scopeTabs(compose, tabs, activeKey).map((tab) => tabTitle(tab, settings.tabs.followRemoteTitle))
-    : null;
+  const activePane = activeTab && focusedPane(activeTab);
+  const profileOf = (pane: Pane) => profiles.find((p) => p.id === profileIdOf(pane));
+  const groupOf = (pane: Pane) => commands && tabGroup(commands, pane.commandGroup, profileOf(pane)?.commandGroup);
+  const activeGroup = activePane ? groupOf(activePane) : null;
+  const inScope = sendsToMany(compose) ? scopePanes(compose, tabs, activeKey) : [];
+  // Who a quick command goes to, when that is more than the focused pane.
+  const commandTargets = sendsToMany(compose) ? labelsOf(inScope) : null;
+  /** Tabs with any of these panes. */
+  const tabsWith = (keys: number[]) => tabs.filter((t) => t.panes.some((p) => keys.includes(p.key))).map((t) => t.key);
 
-  /** Quick commands in the terminal's menu: those of the tab's group, and the palette. */
-  const terminalMenu = (tab: Tab): MenuItem[] => {
-    const group = groupOf(tab);
+  /** Quick commands in the terminal's menu: those of the pane's group, and the palette. */
+  const terminalMenu = (pane: Pane): MenuItem[] => {
+    const group = groupOf(pane);
     if (!commands || !group || commands.groups.every((g) => g.commands.length === 0)) return [];
     return [
       "separator",
@@ -436,75 +511,98 @@ function App() {
     ];
   };
 
+  /** Starts or stops logging a pane's session. */
   const setLogging = (key: number, start: boolean) => {
-    const tab = tabsRef.current.find((t) => t.key === key);
-    if (tab?.sessionId == null) return;
+    const pane = findPane(tabsRef.current, key)?.pane;
+    if (pane?.sessionId == null) return;
     // The session reports the path (or an error) with a `log` event.
     if (start) {
-      updateTab(key, { logStopped: false });
-      sessionLog.start(tab.sessionId).catch(console.error);
+      updatePane(key, { logStopped: false });
+      sessionLog.start(pane.sessionId).catch(console.error);
     } else {
-      updateTab(key, { logStopped: true });
-      sessionLog.stop(tab.sessionId).catch(console.error);
+      updatePane(key, { logStopped: true });
+      sessionLog.stop(pane.sessionId).catch(console.error);
     }
   };
 
   const showLog = (key: number) => {
-    const path = tabsRef.current.find((t) => t.key === key)?.logPath;
+    const path = findPane(tabsRef.current, key)?.pane.logPath;
     if (path) revealItemInDir(path).catch(console.error);
   };
 
   const onStatus = (key: number, status: SessionStatus) => {
     // Forward events can precede "connected" (auto-start runs right after authentication),
     // so states are only reset when a connection attempt starts or ends.
-    if (status === "connected") updateTab(key, { status });
-    // A new shell sets its own title. The session's protocol may have been changed since.
+    if (status === "connected") updatePane(key, { status });
+    // A new shell sets its own title. The session's protocol may have been changed since,
+    // which closes the side panel it no longer has.
     else if (status === "connecting") {
       setTabs((tabs) =>
-        tabs.map((t) => {
-          if (t.key !== key) return t;
-          const protocol = protocolOf(t.target);
-          const sidePanel = protocol === "ssh" ? t.sidePanel : null;
-          return { ...t, status, forwards: {}, remoteTitle: null, protocol, sidePanel };
+        tabs.map((tab) => {
+          if (!tab.panes.some((p) => p.key === key)) return tab;
+          const panes = tab.panes.map((p) =>
+            p.key === key
+              ? { ...p, status, forwards: {}, remoteTitle: null, protocol: protocolOf(p.target) }
+              : p,
+          );
+          const sidePanel = tab.focused === key && protocolOf(focusedPane(tab).target) !== "ssh" ? null : tab.sidePanel;
+          return { ...tab, panes, sidePanel };
         }),
       );
-    }
-    else updateTab(key, { status, forwards: {} });
+    } else updatePane(key, { status, forwards: {} });
   };
 
   // A local shell that exits cleanly (`exit`, Ctrl+D) closes its tab, like Terminal.app.
-  const onExited = (tab: Tab, status: number | null) => {
-    if (tab.target.kind === "local" && status === 0) closeTabs([tab.key]);
+  const onExited = (key: number, status: number | null) => {
+    const found = findPane(tabsRef.current, key);
+    if (found?.pane.target.kind === "local" && status === 0) closeTabs([found.tab.key]);
   };
 
   const onForward = (key: number, ruleId: string, state: ForwardState) =>
-    setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, forwards: { ...t.forwards, [ruleId]: state } } : t)));
+    updatePane(key, (pane) => ({ forwards: { ...pane.forwards, [ruleId]: state } }));
 
   const onProfileChanged = (updated: Profile) =>
     setProfiles((profiles) => profiles.map((p) => (p.id === updated.id ? updated : p)));
 
-  const closeMessage = ({ keys, busy, tab }: { keys: number[]; busy: Busy; tab: Tab }) => {
+  const handlers: PaneHandlers = {
+    onStatus,
+    onExited,
+    onSession: (key, sessionId) => updatePane(key, { sessionId }),
+    onForward,
+    onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
+    onInput,
+    onLog: (key, path) => updatePane(key, { logPath: path }),
+    onFocus: (key) => {
+      const found = findPane(tabsRef.current, key);
+      if (found && found.tab.focused !== key) updateTab(found.tab.key, { focused: key });
+    },
+    menuItems: terminalMenu,
+    logOpen,
+    profileOf,
+    onProfileChanged,
+  };
+
+  const closeMessage = ({ keys, busy, name }: { keys: number[]; busy: Busy; name: string }) => {
     if (keys.length > 1) return t("closeConfirm.many");
-    const name = tabTitle(tab, settings.tabs.followRemoteTitle);
     if (busy.kind === "connected") return t("closeConfirm.connected", { name });
     return busy.name ? t("closeConfirm.process", { process: busy.name, name }) : t("closeConfirm.processUnknown", { name });
   };
 
   const closeDialog = useCallback(() => setEditing(null), []);
 
-  // A quick connection saved as a session becomes that session's tab; the connection stays.
+  // A quick connection saved as a session becomes that session's pane; the connection stays.
   const onProfileSaved = (profile: Profile) => {
-    const tabKey = editing?.tabKey;
-    if (tabKey === undefined) return;
-    updateTab(tabKey, { target: { kind: "profile", profileId: profile.id }, title: profile.name });
+    const paneKey = editing?.paneKey;
+    if (paneKey === undefined) return;
+    updatePane(paneKey, { target: { kind: "profile", profileId: profile.id }, title: profile.name });
   };
 
   const saveAsSession = (key: number) => {
-    const tab = tabsRef.current.find((t) => t.key === key);
-    if (tab?.target.kind !== "quick") return;
-    const { protocol, host, port } = tab.target;
-    const user = tab.target.username || (protocol === "ssh" ? username : "");
-    setEditing({ profile: null, defaults: { protocol, host, port, username: user }, tabKey: key });
+    const pane = findPane(tabsRef.current, key)?.pane;
+    if (pane?.target.kind !== "quick") return;
+    const { protocol, host, port } = pane.target;
+    const user = pane.target.username || (protocol === "ssh" ? username : "");
+    setEditing({ profile: null, defaults: { protocol, host, port, username: user }, paneKey: key });
   };
   const closeImport = useCallback(() => setImporting(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -536,31 +634,29 @@ function App() {
           onMove={moveTab}
           onRename={(key, customTitle) => updateTab(key, { customTitle })}
           onDuplicate={duplicateTab}
-          onSaveAsSession={saveAsSession}
-          onReconnect={(key) =>
-            setTabs((tabs) => tabs.map((t) => (t.key === key ? { ...t, reconnectKey: t.reconnectKey + 1 } : t)))
+          onSaveAsSession={(key) => withFocused(key, (pane) => saveAsSession(pane.key))}
+          onReconnect={(key) => withFocused(key, (pane) => updatePane(pane.key, { reconnectKey: pane.reconnectKey + 1 }))}
+          onBreak={(key) =>
+            withFocused(key, (pane) => pane.sessionId != null && sendBreak(pane.sessionId).catch(console.error))
           }
-          onBreak={(key) => {
-            const id = tabsRef.current.find((t) => t.key === key)?.sessionId;
-            if (id != null) sendBreak(id).catch(console.error);
-          }}
-          onLog={setLogging}
-          onShowLog={showLog}
+          onLog={(key, start) => withFocused(key, (pane) => setLogging(pane.key, start))}
+          onShowLog={(key) => withFocused(key, (pane) => showLog(pane.key))}
           onTogglePanel={togglePanel}
           composeOpen={compose.open}
           onToggleCompose={toggleCompose}
           quickBarOpen={quickBarOpen}
           onToggleQuickBar={toggleQuickBar}
-          inScope={sendsToMany(compose) ? scopeTabs(compose, tabs, activeKey).map((tab) => tab.key) : []}
+          inScope={tabsWith(inScope.map((pane) => pane.key))}
           syncing={compose.open && compose.sync}
-          flashing={flashing}
+          flashing={tabsWith(flashing)}
           addressOf={(tab) => {
-            if (tab.target.kind === "local") return undefined;
-            const profile = profiles.find((p) => p.id === profileIdOf(tab));
-            return tab.target.kind === "quick" ? address(tab.target) : profile && address(profile);
+            const pane = focusedPane(tab);
+            if (pane.target.kind === "local") return undefined;
+            const profile = profileOf(pane);
+            return pane.target.kind === "quick" ? address(pane.target) : profile && address(profile);
           }}
           colorOf={(tab) => {
-            const background = profiles.find((p) => p.id === profileIdOf(tab))?.appearance?.background;
+            const background = profileOf(focusedPane(tab))?.appearance?.background;
             return background && tabMark(background);
           }}
         />
@@ -576,31 +672,21 @@ function App() {
         )}
         <div className="terminals">
           {tabs.map((tab) => (
-            <SessionPane
+            <TabPage
               key={tab.key}
               tab={tab}
-              profile={profiles.find((p) => p.id === profileIdOf(tab))}
               active={tab.key === activeKey}
-              onStatus={(status) => onStatus(tab.key, status)}
-              onExited={(status) => onExited(tab, status)}
-              onSession={(sessionId) => updateTab(tab.key, { sessionId })}
-              onForward={(ruleId, state) => onForward(tab.key, ruleId, state)}
-              onTitle={(title) => updateTab(tab.key, { remoteTitle: title || null })}
-              onInput={(data) => onInput(tab, data)}
-              menuItems={terminalMenu(tab)}
-              logOpen={logOpen(tab)}
-              onLog={(path) => updateTab(tab.key, { logPath: path })}
-              syncing={compose.open && compose.sync && tab.key === activeKey}
-              onProfileChanged={onProfileChanged}
+              syncing={compose.open && compose.sync && tab.key === activeKey ? tab.focused : null}
+              handlers={handlers}
             />
           ))}
           {tabs.length === 0 && <div className="placeholder">{t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}</div>}
         </div>
-        {quickBarOpen && activeTab && commands && activeGroup && (
+        {quickBarOpen && activePane && commands && activeGroup && (
           <QuickCommandBar
             commands={commands}
             group={activeGroup}
-            onPickGroup={(id) => updateTab(activeTab.key, { commandGroup: id })}
+            onPickGroup={(id) => updatePane(activePane.key, { commandGroup: id })}
             onChange={saveCommands}
             onRun={runCommand}
             targets={commandTargets}
