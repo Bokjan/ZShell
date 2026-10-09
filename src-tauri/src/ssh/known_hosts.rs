@@ -360,8 +360,10 @@ mod tests {
         let revoked = temp_file(&format!("\n@revoked * ssh-ed25519 {KEY}\n"));
         let paths = [global.clone(), revoked.clone()];
         assert_eq!(check_at(&paths, "127.0.0.1", 2222, &key).unwrap(), Check::Revoked { path: revoked, line: 2 });
-        // A file of the system's that can't be read is skipped; the user's own is not.
-        let directory = std::env::temp_dir();
+        // A file of the system's that can't be read is skipped; the user's own is not. A
+        // folder can't be read as one (`temp_dir` ends with a separator on Windows, where that
+        // reads as not found).
+        let directory = global.parent().unwrap().to_path_buf();
         assert_eq!(check_at(&[global.clone(), directory.clone()], "127.0.0.1", 2222, &key).unwrap(), Check::Known);
         assert!(check_at(&[directory, global], "127.0.0.1", 2222, &key).is_err());
     }
