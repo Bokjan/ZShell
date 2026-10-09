@@ -9,7 +9,9 @@
 //   `pnpm licenses list --prod`, with the license files each package ships.
 //
 // The output lists every package with the indices of its license texts; identical texts
-// are stored once.
+// are stored once. A package whose license isn't in about.toml's `accepted` list fails the
+// generation, npm packages as well as crates, so that a new dependency's license is
+// checked before it ships.
 //
 // Without cargo-about (`cargo install --locked cargo-about --features cli`) the Rust part
 // is left out and `rustMissing` is set, which is fine for local builds; in CI (`CI` is
@@ -111,6 +113,46 @@ function rustPackages() {
   return [...crates.values()];
 }
 
+/** The licenses we can comply with: about.toml's `accepted` list, which cargo-about enforces for crates. */
+const accepted = new Set(
+  [...readFileSync(join(root, "src-tauri", "about.toml"), "utf8").match(/^accepted = \[([^\]]*)\]/m)[1].matchAll(/"([^"]+)"/g)].map(
+    (match) => match[1],
+  ),
+);
+
+/** Whether an SPDX expression ("MIT", "(MIT OR Apache-2.0) AND BSD-3-Clause") can be met with accepted licenses. */
+function isAccepted(expression) {
+  const tokens = expression.match(/\(|\)|[^\s()]+/g) ?? [];
+  let i = 0;
+  // OR binds looser than AND, as in SPDX.
+  const or = () => {
+    let ok = and();
+    while (tokens[i] === "OR") {
+      i++;
+      ok = and() || ok;
+    }
+    return ok;
+  };
+  const and = () => {
+    let ok = term();
+    while (tokens[i] === "AND") {
+      i++;
+      ok = term() && ok;
+    }
+    return ok;
+  };
+  const term = () => {
+    if (tokens[i] === "(") {
+      i++;
+      const ok = or();
+      i++;
+      return ok;
+    }
+    return accepted.has(tokens[i++]);
+  };
+  return or() && i === tokens.length;
+}
+
 /** LICENSE, LICENCE-MIT, COPYING, NOTICE and the like; not LICENSE.spdx, which is metadata. */
 const isLicenseFile = (name) => /^(licen[cs]e|copying|notice)/i.test(name) && !/\.spdx$/i.test(name);
 
@@ -135,12 +177,21 @@ function npmPackages() {
     });
 }
 
+const npm = npmPackages();
+const refused = npm.filter((pkg) => !isAccepted(pkg.license ?? ""));
+if (refused.length > 0) {
+  for (const pkg of refused) {
+    console.error(`error: ${pkg.name}@${pkg.version} has a license not in src-tauri/about.toml's accepted list: ${pkg.license}`);
+  }
+  process.exit(1);
+}
+
 const byName = (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version, undefined, { numeric: true });
 const rust = rustPackages();
 const notices = {
   rust: (rust ?? []).sort(byName),
   rustMissing: rust === null,
-  npm: npmPackages().sort(byName),
+  npm: npm.sort(byName),
   texts,
 };
 
