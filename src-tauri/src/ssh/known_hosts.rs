@@ -83,11 +83,19 @@ fn parse_line(line: usize, text: &str) -> Option<Entry> {
 
 /// The file's lines, each without its line ending; none if there is no file.
 fn read_lines(path: &Path) -> Result<Vec<String>> {
-    match fs::read_to_string(path) {
-        Ok(content) => Ok(content.lines().map(str::to_owned).collect()),
+    match fs::read(path) {
+        Ok(content) => Ok(content.split_inclusive(|&b| b == b'\n').map(line_text).collect()),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(Error::new("knownHosts.readFailed").param("path", path.display()).detail(e)),
     }
+}
+
+/// A line without its ending. Bytes that aren't UTF-8 (a comment saved in another encoding)
+/// are replaced rather than making the whole file unreadable: OpenSSH reads bytes.
+fn line_text(line: &[u8]) -> String {
+    let line = line.strip_suffix(b"\n").unwrap_or(line);
+    let line = line.strip_suffix(b"\r").unwrap_or(line);
+    String::from_utf8_lossy(line).into_owned()
 }
 
 fn list_at(path: &Path) -> Result<Vec<Entry>> {
@@ -203,15 +211,14 @@ pub fn check(host: &str, port: u16, key: &PublicKey) -> Result<Check> {
 }
 
 fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| Error::new("knownHosts.readFailed").param("path", path.display()).detail(e))?;
+    let content = fs::read(path).map_err(|e| Error::new("knownHosts.readFailed").param("path", path.display()).detail(e))?;
     // Keep each line's own ending, so the rest of the file stays byte for byte.
-    let lines: Vec<&str> = content.split_inclusive('\n').collect();
-    let current = lines.get(line.wrapping_sub(1)).map(|l| l.trim_end_matches(['\n', '\r']));
-    if current != Some(text) {
+    let lines: Vec<&[u8]> = content.split_inclusive(|&b| b == b'\n').collect();
+    let current = lines.get(line.wrapping_sub(1)).map(|l| line_text(l));
+    if current.as_deref() != Some(text) {
         return Err(Error::new("knownHosts.changed"));
     }
-    let rest: String = lines.iter().enumerate().filter(|(i, _)| *i != line - 1).map(|(_, l)| *l).collect();
+    let rest: Vec<u8> = lines.iter().enumerate().filter(|(i, _)| *i != line - 1).flat_map(|(_, l)| l.iter().copied()).collect();
     let write = || -> anyhow::Result<()> {
         // As `ssh-keygen -R` does.
         fs::write(path.with_file_name("known_hosts.old"), &content).context("known_hosts.old")?;
@@ -321,6 +328,21 @@ mod tests {
         let entries = list_at(&path).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].line, 3);
+    }
+
+    /// A comment in another encoding doesn't stop the file from being used or edited.
+    #[test]
+    fn reads_and_edits_files_that_are_not_utf8() {
+        let path = temp_file("");
+        let comment = b"# \xc4\xe3\xba\xc3 (GBK)\n".as_slice();
+        let content = [comment, format!("a ssh-ed25519 {KEY}\nb ssh-ed25519 {OTHER}\n").as_bytes()].concat();
+        fs::write(&path, &content).unwrap();
+        let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
+        assert!(matches!(check_at(&path, "a", 22, &key).unwrap(), Check::Known));
+        let entries = list_at(&path).unwrap();
+        remove_at(&path, entries[1].line, &entries[1].text).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), [comment, format!("a ssh-ed25519 {KEY}\n").as_bytes()].concat());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
