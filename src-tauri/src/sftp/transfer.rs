@@ -230,7 +230,8 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
             plan.files.push((remote.clone(), local.clone()));
         }
     }
-    reporter.progress.files_total = plan.files.len();
+    // `+=`: the items of a drag are downloaded one call at a time with the same reporter.
+    reporter.progress.files_total += plan.files.len();
 
     // The folders the items go into (for files given a path of their own), then the remote
     // folders' copies.
