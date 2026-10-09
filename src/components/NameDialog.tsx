@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { isComposing } from "../lib/platform";
+
 interface Props {
   title: string;
   label: string;
@@ -15,7 +17,7 @@ export function NameDialog({ title, label, initial, onSave, onClose }: Props) {
   const [name, setName] = useState(initial);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

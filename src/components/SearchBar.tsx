@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 
+import { isComposing } from "../lib/platform";
+
 interface Props {
   addon: SearchAddon;
   /** Highlight colors suited to the terminal's color scheme. */
@@ -73,7 +75,7 @@ export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
   }, [query, flags]);
 
   const onInputKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !isComposing(e)) {
       e.preventDefault();
       find(!e.shiftKey);
     }
@@ -81,7 +83,7 @@ export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
 
   // Escape closes the bar from any of its controls, not just the input.
   const onBarKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
+    if (e.key === "Escape" && !isComposing(e)) {
       e.preventDefault();
       onClose();
     }

@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { isComposing } from "../lib/platform";
+
 interface Props {
   title: string;
   message: string;
@@ -20,7 +22,7 @@ export function ConfirmDialog({ title, message, confirmLabel, cancelLabel, dange
   const { t } = useTranslation();
   const [checked, setChecked] = useState(false);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onCancel();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);

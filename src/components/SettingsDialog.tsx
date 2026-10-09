@@ -13,6 +13,7 @@ import {
   closeWindowShortcutLabel,
   findShortcutLabel,
   goToTabShortcutLabel,
+  isComposing,
   isFindShortcut,
   isMac,
   lastTabShortcutLabel,
@@ -201,7 +202,7 @@ function NumberField({
       }}
       onBlur={() => commit(text)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.nativeEvent.isComposing) commit(text);
+        if (e.key === "Enter" && !isComposing(e)) commit(text);
       }}
     />
   );
@@ -265,10 +266,10 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   // has the focus here.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (licensesOpen) return;
+      if (licensesOpen || isComposing(e)) return;
       if (e.key === "Escape") {
         if (e.target !== searchRef.current || !queryRef.current) onClose();
-        else if (!e.isComposing) setQuery("");
+        else setQuery("");
       } else if (isFindShortcut(e) || (!isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey)) {
         e.preventDefault();
         searchRef.current?.select();
@@ -902,7 +903,7 @@ function LogSection({
             value={fileName}
             onChange={(e) => setFileName(e.target.value)}
             onBlur={commitFileName}
-            onKeyDown={(e) => e.key === "Enter" && commitFileName()}
+            onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && commitFileName()}
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"

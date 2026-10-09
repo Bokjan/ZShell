@@ -15,7 +15,7 @@ import {
   type TreeItem,
 } from "../lib/api";
 import { dragHorizontally } from "../lib/drag";
-import { searchShortcutLabel, settingsShortcutLabel } from "../lib/platform";
+import { isComposing, searchShortcutLabel, settingsShortcutLabel } from "../lib/platform";
 import {
   RECENT_LIMIT,
   address,
@@ -277,6 +277,7 @@ export function Sidebar(props: Props) {
   }, [selected]);
 
   const onSearchKeyDown = (e: KeyboardEvent) => {
+    if (isComposing(e)) return;
     const count = results.length + (quick ? 1 : 0);
     if (e.key === "ArrowDown") setHighlight((h) => Math.min(h + 1, count - 1));
     else if (e.key === "ArrowUp") setHighlight((h) => Math.max(h - 1, 0));
@@ -573,6 +574,7 @@ function NameEditor({ initial, onDone }: { initial: string; onDone(name: string 
       onDoubleClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
+        if (isComposing(e)) return;
         if (e.key === "Enter") finish(e.currentTarget.value.trim() || null);
         else if (e.key === "Escape") finish(null);
       }}

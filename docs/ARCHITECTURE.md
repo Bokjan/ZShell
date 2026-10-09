@@ -212,7 +212,7 @@
 
 ## 平台注意事项
 
-- macOS 上 xterm.js 运行在 WKWebView 里，CJK 输入法（候选框位置、组字过程）需在真机上测试。
+- macOS 上 xterm.js 运行在 WKWebView 里，CJK 输入法（候选框位置、组字过程）需在真机上测试。输入框与对话框里处理 Enter / Esc 前先用 `lib/platform.ts` 的 `isComposing` 判断是否在组字（确认候选的 Enter、取消候选的 Esc 不应提交或关闭）；WebKit 在确认候选的 Enter 的 keydown 之前就结束了组字，只能靠 `keyCode` 229 识别。
 - macOS 默认的"按住按键显示重音字符"会让 WKWebView 里长按字母键不重复。应用启动时以注册默认值把 `ApplePressAndHoldEnabled` 设为关闭（与 Terminal.app / iTerm2 一致），用户仍可用 `defaults write org.boyin.zshell ApplePressAndHoldEnabled -bool true` 恢复。
 - 中文 / emoji 宽度依赖 unicode11 插件。远端不是 UTF-8 时在会话配置里选编码。
 - ConPTY 需要 Windows 10 1809 及以上。Windows PowerShell 5.1 调用的原生程序可能按 OEM 代码页输出导致中文乱码，暂不修改用户的 `[Console]::OutputEncoding`（已知限制）。

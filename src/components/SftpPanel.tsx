@@ -8,7 +8,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from "../lib/api";
 import { pathRange, storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";
-import { isMac } from "../lib/platform";
+import { isComposing, isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { EyeIcon, SearchIcon } from "./icons";
@@ -668,6 +668,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
   };
 
   const onFilterKeyDown = (e: KeyboardEvent) => {
+    if (isComposing(e)) return;
     if (e.key === "Escape") closeFilter();
     else if (e.key === "ArrowDown" || e.key === "Enter") {
       listRef.current?.focus();
@@ -809,7 +810,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                       value={newFolder}
                       onChange={(e) => setNewFolder(e.target.value)}
                       onBlur={() => setNewFolder(null)}
-                      onKeyDown={(e) => e.key === "Escape" && setNewFolder(null)}
+                      onKeyDown={(e) => e.key === "Escape" && !isComposing(e) && setNewFolder(null)}
                     />
                   </form>
                 </td>
@@ -895,7 +896,7 @@ export function SftpPanel({ sessionId, connected, active }: Props) {
                 autoFocus
                 value={chmodTarget.value}
                 onChange={(e) => setChmodTarget({ ...chmodTarget, value: e.target.value })}
-                onKeyDown={(e) => e.key === "Escape" && setChmodTarget(null)}
+                onKeyDown={(e) => e.key === "Escape" && !isComposing(e) && setChmodTarget(null)}
               />
             </label>
             <p className="hint">{/^[0-7]{3,4}$/.test(chmodTarget.value) && formatMode(parseInt(chmodTarget.value, 8), chmodTarget.entry.isDir, false)}</p>

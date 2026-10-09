@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { errorMessage, sessionsFile, type SessionCandidate } from "../lib/api";
 import { forwardMapping } from "../lib/format";
+import { isComposing } from "../lib/platform";
 import { address } from "../lib/sessions";
 
 interface Props {
@@ -21,7 +22,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

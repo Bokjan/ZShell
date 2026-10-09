@@ -25,7 +25,7 @@ import {
   type SerialPortInfo,
 } from "../lib/api";
 import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
-import { isWindows } from "../lib/platform";
+import { isComposing, isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
@@ -193,7 +193,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
   // A proxy dialog opened from here stops Escape itself.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

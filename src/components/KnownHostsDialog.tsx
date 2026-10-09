@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessage, knownHosts, type KnownHost } from "../lib/api";
+import { isComposing } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Props {
@@ -39,7 +40,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
   // settings it was opened from.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || isComposing(e)) return;
       e.stopImmediatePropagation();
       if (removing) setRemoving(null);
       else onClose();

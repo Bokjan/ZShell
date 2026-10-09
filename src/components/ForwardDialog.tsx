@@ -4,6 +4,7 @@ import type { TFunction } from "i18next";
 
 import { errorMessage, type ForwardKind, type ForwardRule } from "../lib/api";
 import { hostPort } from "../lib/format";
+import { isComposing } from "../lib/platform";
 
 interface Props {
   /** null creates a new rule. */
@@ -38,7 +39,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

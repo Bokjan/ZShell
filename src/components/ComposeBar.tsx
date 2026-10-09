@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import type { Compose, ComposeScope, SendResult } from "../lib/compose";
 import { paneTitle, tabTitle, type Tab } from "../lib/panes";
+import { isComposing } from "../lib/platform";
 
 interface Props {
   compose: Compose;
@@ -52,7 +53,7 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
     const onDown = (e: MouseEvent) => {
       if (!pickerRef.current?.contains(e.target as Node)) setPicking(false);
     };
-    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && setPicking(false);
+    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && !isComposing(e) && setPicking(false);
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {
@@ -80,7 +81,7 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.nativeEvent.isComposing) return;
+    if (isComposing(e)) return;
     const input = e.currentTarget;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();

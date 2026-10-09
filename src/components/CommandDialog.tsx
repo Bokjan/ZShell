@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CommandGroup, QuickCommand } from "../lib/api";
+import { isComposing } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
 
 interface Props {
@@ -23,7 +24,7 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
   const [group, setGroup] = useState(groupId);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

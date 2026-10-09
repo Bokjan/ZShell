@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { errorMessage, sshConfig, type ImportCandidate } from "../lib/api";
+import { isComposing } from "../lib/platform";
 
 interface Props {
   onClose(): void;
@@ -21,7 +22,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -96,7 +97,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
               value={path}
               onChange={(e) => setPath(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" && !isComposing(e)) {
                   e.preventDefault();
                   void load(path);
                 }

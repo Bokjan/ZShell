@@ -4,6 +4,7 @@ import type { TFunction } from "i18next";
 
 import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
 import { hostPort } from "../lib/format";
+import { isComposing } from "../lib/platform";
 
 interface Props {
   /** null creates a new proxy. */
@@ -47,7 +48,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || isComposing(e)) return;
       // Only this dialog closes, not the one it was opened from.
       e.stopImmediatePropagation();
       onClose();

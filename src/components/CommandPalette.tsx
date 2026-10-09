@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { QuickCommand, QuickCommands } from "../lib/api";
+import { isComposing } from "../lib/platform";
 import { groupName, searchCommands } from "../lib/quickCommands";
 
 interface Props {
@@ -33,7 +34,7 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.nativeEvent.isComposing) return;
+    if (isComposing(e)) return;
     if (e.key === "Escape") onClose();
     else if (e.key === "ArrowDown") setSelected(Math.min(index + 1, matches.length - 1));
     else if (e.key === "ArrowUp") setSelected(Math.max(index - 1, 0));

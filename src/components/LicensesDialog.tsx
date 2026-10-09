@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
+import { isComposing } from "../lib/platform";
+
 /** Written by `pnpm licenses:generate`; local builds may not have it. */
 const NOTICES_URL = "/third-party-licenses.json";
 
@@ -55,7 +57,7 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
   }, []);
 
   useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -82,7 +84,7 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
   }, [selected?.key]);
 
   const onSearchKey = (e: KeyboardEvent) => {
-    if (e.nativeEvent.isComposing) return;
+    if (isComposing(e)) return;
     let next: number;
     if (e.key === "ArrowDown") next = Math.min(index + 1, entries.length - 1);
     else if (e.key === "ArrowUp") next = Math.max(index - 1, 0);

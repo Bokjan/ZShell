@@ -12,6 +12,7 @@ import { focusedPane, isLogging, tabTitle, type SidePanel, type Tab } from "../l
 import type { Direction } from "../lib/layout";
 import {
   closeTabShortcutLabel,
+  isComposing,
   isWindows,
   newTabShortcutLabel,
   shiftShortcutLabel,
@@ -370,6 +371,7 @@ function TitleEditor({ initial, onDone }: { initial: string; onDone(value: strin
       onDoubleClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
+        if (isComposing(e)) return;
         if (e.key === "Enter") finish(e.currentTarget.value.trim());
         else if (e.key === "Escape") finish(null);
       }}
