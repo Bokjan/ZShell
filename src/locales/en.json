@@ -544,8 +544,13 @@
     "addProxy": "Add Proxy…",
     "proxiesHint": "Sessions choose a proxy on the Connection page of their settings. Through jump hosts, only the first jump host uses its proxy.",
     "zmodem": "File Transfer (ZMODEM)",
-    "zmodemAskLocation": "Ask where to save files received with sz",
-    "zmodemAskLocationHint": "Otherwise they are saved in the download folder.",
+    "zmodemReceive": "Files sent with sz",
+    "zmodemReceiveOptions": {
+      "ask": "Ask each time",
+      "downloads": "Save in the download folder",
+      "chooseFolder": "Choose a folder each time"
+    },
+    "zmodemReceiveHint": "Showing a file that happens to look like sz output, with cat for example, also starts a transfer: asking keeps it from saving anything you didn't want.",
     "logs": "Session Logs",
     "logDirectory": "Folder",
     "logChoose": "Choose…",
@@ -687,7 +692,10 @@
     "transferring": "ZMODEM transfer running. Ctrl+C or Cancel stops it.",
     "chooseFiles": "Choose Files…",
     "chooseFilesTitle": "Choose files to send",
-    "chooseFolderTitle": "Choose where to save the received files"
+    "chooseFolderTitle": "Choose where to save the received files",
+    "receiving": "The server wants to send files with sz.",
+    "saveToDownloads": "Save in Download Folder",
+    "chooseFolder": "Choose Folder…"
   },
   "sessionImport": {
     "title": "Import Sessions",

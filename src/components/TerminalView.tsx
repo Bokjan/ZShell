@@ -646,14 +646,27 @@ export function TerminalView({
 
   const focus = () => termRef.current?.focus();
 
-  // ZMODEM: `sz` asks where to save (the Downloads folder unless the settings say to ask),
-  // `rz` for files: the picker opens right away, and the bar stays for dropping files,
-  // choosing again or cancelling.
+  // ZMODEM: `sz` asks where to save: the bar asks (download folder, another folder or
+  // cancel) unless the settings say to use the download folder, or to open the folder picker
+  // right away. `rz` asks for files: the picker opens right away. Either way the bar stays,
+  // for choosing again (or dropping files) or cancelling, after the picker is closed.
   const chooseFiles = () => {
     const id = sessionIdRef.current;
     if (id == null) return;
     void openDialog({ multiple: true, title: t("zmodem.chooseFilesTitle") }).then((picked) => {
       if (picked && picked.length > 0) void zmodem.sendFiles(id, picked).catch(console.error);
+      focus();
+    });
+  };
+
+  const saveReceived = (dir: string | null) => {
+    const id = sessionIdRef.current;
+    if (id != null) void zmodem.saveTo(id, dir).catch(console.error);
+  };
+
+  const chooseFolder = () => {
+    void openDialog({ directory: true, title: t("zmodem.chooseFolderTitle") }).then((dir) => {
+      if (typeof dir === "string") saveReceived(dir);
       focus();
     });
   };
@@ -669,14 +682,8 @@ export function TerminalView({
     setZmodemPhase(phase === "idle" ? null : phase);
     if (phase === "chooseFiles") chooseFiles();
     else if (phase === "chooseDestination") {
-      if (!settings.zmodem.askDownloadLocation) void zmodem.saveTo(id, null).catch(console.error);
-      else {
-        void openDialog({ directory: true, title: t("zmodem.chooseFolderTitle") }).then((dir) => {
-          if (typeof dir === "string") void zmodem.saveTo(id, dir).catch(console.error);
-          else void zmodem.cancel(id).catch(console.error);
-          focus();
-        });
-      }
+      if (settings.zmodem.receive === "downloads") saveReceived(null);
+      else if (settings.zmodem.receive === "chooseFolder") chooseFolder();
     }
   };
 
@@ -748,7 +755,14 @@ export function TerminalView({
     <div className="terminal-wrap" ref={wrapRef} style={{ background: scheme.theme.background }}>
       <div className="terminal-view" ref={containerRef} />
       {zmodemPhase && (
-        <ZmodemBar phase={zmodemPhase} dragOver={dragOver} onChooseFiles={chooseFiles} onCancel={cancelZmodem} />
+        <ZmodemBar
+          phase={zmodemPhase}
+          dragOver={dragOver}
+          onChooseFiles={chooseFiles}
+          onSaveToDownloads={() => saveReceived(null)}
+          onChooseFolder={chooseFolder}
+          onCancel={cancelZmodem}
+        />
       )}
       {menu && termRef.current && (
         <ContextMenu

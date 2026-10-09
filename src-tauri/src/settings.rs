@@ -120,10 +120,42 @@ pub struct FileSettings {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", from = "StoredZmodemSettings")]
 pub struct ZmodemSettings {
-    /// Ask for a folder when `sz` sends files, instead of saving into Downloads.
-    pub ask_download_location: bool,
+    /// What happens when `sz` sends files.
+    pub receive: ZmodemReceive,
+}
+
+/// What happens when `sz` sends files. Asked by default: a file that looks like `sz` output
+/// (`cat` of one) starts a download, which shouldn't happen without the user.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ZmodemReceive {
+    #[default]
+    Ask,
+    /// Saved into the download folder.
+    Downloads,
+    /// A folder is chosen each time.
+    ChooseFolder,
+}
+
+/// [`ZmodemSettings`] as saved, also by versions before 1.6.12, which only had
+/// `askDownloadLocation` (saving into Downloads without asking unless it was set).
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct StoredZmodemSettings {
+    receive: Option<ZmodemReceive>,
+    ask_download_location: bool,
+}
+
+impl From<StoredZmodemSettings> for ZmodemSettings {
+    fn from(stored: StoredZmodemSettings) -> Self {
+        let receive = stored.receive.unwrap_or(match stored.ask_download_location {
+            true => ZmodemReceive::ChooseFolder,
+            false => ZmodemReceive::Ask,
+        });
+        Self { receive }
+    }
 }
 
 /// Session logs (see `logging.rs`).
@@ -269,5 +301,17 @@ mod tests {
         assert_eq!(settings.terminal.color_scheme, "auto");
         assert_eq!(settings.terminal.scrollback, 5000);
         assert!(settings.terminal.confirm_multiline_paste && settings.tabs.confirm_close);
+    }
+
+    #[test]
+    fn reads_the_zmodem_setting_of_earlier_versions() {
+        let receive = |json: &str| serde_json::from_str::<Settings>(json).unwrap().zmodem.receive;
+        assert_eq!(receive("{}"), ZmodemReceive::Ask);
+        // Saved without asking before; now asked, the new default.
+        assert_eq!(receive(r#"{"zmodem":{"askDownloadLocation":false}}"#), ZmodemReceive::Ask);
+        assert_eq!(receive(r#"{"zmodem":{"askDownloadLocation":true}}"#), ZmodemReceive::ChooseFolder);
+        assert_eq!(receive(r#"{"zmodem":{"receive":"downloads"}}"#), ZmodemReceive::Downloads);
+        let saved = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(saved["zmodem"], serde_json::json!({ "receive": "ask" }));
     }
 }

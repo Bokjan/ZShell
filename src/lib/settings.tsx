@@ -52,9 +52,11 @@ export interface FileSettings {
   editor: string;
 }
 
+/** What happens when `sz` sends files: asked, saved into the download folder, or a folder chosen each time. */
+export type ZmodemReceive = "ask" | "downloads" | "chooseFolder";
+
 export interface ZmodemSettings {
-  /** Ask for a folder when `sz` sends files, instead of saving into Downloads. */
-  askDownloadLocation: boolean;
+  receive: ZmodemReceive;
 }
 
 export type LogFormat = "text" | "raw";
@@ -104,7 +106,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tabs: { followRemoteTitle: true, confirmClose: true },
   sidebar: { showRecent: true },
   files: { downloadDirectory: "", editor: "" },
-  zmodem: { askDownloadLocation: false },
+  zmodem: { receive: "ask" },
   logs: { directory: "", fileName: DEFAULT_LOG_FILE_NAME, format: "text", timestamps: false, autoLocal: false, keepDays: 0 },
 };
 

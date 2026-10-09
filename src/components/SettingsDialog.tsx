@@ -43,6 +43,7 @@ import {
   type TabSettings,
   type TerminalSettings,
   type TextSize,
+  type ZmodemReceive,
   type ZmodemSettings,
 } from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
@@ -63,6 +64,7 @@ interface Props {
 const APPEARANCES: Appearance[] = ["system", "dark", "light"];
 const TEXT_SIZES: TextSize[] = ["normal", "large", "larger"];
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
+const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
 /** Retention choices, in days; 0 keeps logs. */
@@ -611,15 +613,20 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
 
             <Section id="zmodem">
               <Setting>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={settings.zmodem.askDownloadLocation}
-                    onChange={(e) => setZmodem({ askDownloadLocation: e.target.checked })}
-                  />
-                  {t("settings.zmodemAskLocation")}
+                <label>
+                  {t("settings.zmodemReceive")}
+                  <select
+                    value={settings.zmodem.receive}
+                    onChange={(e) => setZmodem({ receive: e.target.value as ZmodemReceive })}
+                  >
+                    {ZMODEM_RECEIVE.map((receive) => (
+                      <option key={receive} value={receive}>
+                        {t(`settings.zmodemReceiveOptions.${receive}`)}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <p className="hint">{t("settings.zmodemAskLocationHint")}</p>
+                <p className="hint">{t("settings.zmodemReceiveHint")}</p>
               </Setting>
             </Section>
 
