@@ -2,6 +2,23 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.7] - 2026-10-09
+
+### Bug Fixes
+
+- SFTP: downloading the same file twice in quick succession no longer gives both downloads the same name, where cancelling one deleted the other's file; on file systems that ignore case, downloading `README` and `readme` together no longer merges them. Received ZMODEM files and new log files are named the same way.
+- SFTP: dragging several files out of the window shows the right file count instead of "3 / 1".
+- SFTP: an upload that the server only reports as failed when the file is closed (NFS, disk quotas) is shown as failed instead of done.
+- SFTP: opening a folder while a slow listing of another is still loading no longer shows the slow one when it arrives.
+- SFTP: closing a pane cancels the file transfers running in it, which went on out of sight in split and duplicated tabs, and the close confirmation says so.
+- SFTP: on macOS, a drag to another application that does not ask for every file no longer leaves its transfer running for good.
+- SFTP: on Windows, dragging files onto a window that refuses them counts as cancelled instead of leaving the transfer running.
+- ZMODEM: a file the sender abandons partway for another is deleted and reported instead of being left behind.
+- ZMODEM: on serial lines with software flow control, an XON or XOFF inside a header no longer stalls the transfer for 10 seconds.
+- ZMODEM: the start of a transfer no longer shows as stray characters when it arrives in pieces, as it often does on serial lines.
+- ZMODEM: with `sz a; sz b`, the second transfer starts instead of showing as garbage.
+- Sessions in another character encoding no longer lose a character cut off at the end of the session's output, and one cut off by the start of a ZMODEM transfer is no longer joined to what follows the transfer.
+
 ## [1.6.6] - 2026-10-09
 
 ### Bug Fixes
