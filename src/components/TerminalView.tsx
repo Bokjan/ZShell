@@ -68,8 +68,12 @@ interface Props {
   onForward(ruleId: string, state: ForwardState): void;
   /** The title set by the shell (OSC 0 / 2); empty when it clears it. */
   onTitle(title: string): void;
-  /** What the user typed or pasted and the session received (not mouse or focus reports). */
+  /** What the user typed and the session received (not mouse or focus reports, nor pastes). */
   onInput(data: string): void;
+  /** Lets other panes paste into this one (while syncing), or stops (null). */
+  registerPaste(target: PasteTarget | null): void;
+  /** The other panes a paste goes to as well (syncing): each pastes it its own way. */
+  pasteTargets(): PasteTarget[];
   /** Added to the end of the context menu when it opens (pane actions, quick commands). */
   menuItems(): MenuItem[];
   /** How each new session (connection) starts its log. */
@@ -80,6 +84,13 @@ interface Props {
   appearance?: ProfileAppearance;
   /** Typed into each new shell, one after another as the shell shows its prompt. */
   loginCommands: string[];
+}
+
+/** A pane that text can be pasted into, as its terminal's mode requires. */
+export interface PasteTarget {
+  /** Whether the program in it takes bracketed pastes (inserting lines without running them). */
+  bracketed(): boolean;
+  paste(text: string): void;
 }
 
 /**
@@ -153,6 +164,8 @@ export function TerminalView({
   onForward,
   onTitle,
   onInput,
+  registerPaste,
+  pasteTargets,
   menuItems: extraMenuItems,
   logOpen,
   onLog,
@@ -180,6 +193,10 @@ export function TerminalView({
   onTitleRef.current = onTitle;
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+  const registerPasteRef = useRef(registerPaste);
+  registerPasteRef.current = registerPaste;
+  const pasteTargetsRef = useRef(pasteTargets);
+  pasteTargetsRef.current = pasteTargets;
   const logOpenRef = useRef(logOpen);
   logOpenRef.current = logOpen;
   const onLogRef = useRef(onLog);
@@ -192,6 +209,8 @@ export function TerminalView({
   const reconnectRef = useRef<() => void>(ignore);
   /** Pastes text, asking first if it would run several commands; set while the terminal exists. */
   const pasteRef = useRef<(text: string) => void>(ignore);
+  /** Pastes into this pane and the panes synced with it, without asking. */
+  const pasteAllRef = useRef<(text: string) => void>(ignore);
   /** The current backend session, for answering ZMODEM transfers. */
   const sessionIdRef = useRef<SessionId | null>(null);
   const onZmodemRef = useRef<(phase: ZmodemPhase) => void>(ignore);
@@ -450,14 +469,35 @@ export function TerminalView({
     const onOnline = () => retryTimer !== undefined && connect();
     window.addEventListener("online", onOnline);
 
+    // While syncing, a paste isn't passed on as typed input (wrapped for bracketed paste, or
+    // not, as this terminal is): each synced pane pastes it as its own terminal requires.
+    let pasting = false;
+    pasteAllRef.current = (text: string) => {
+      const others = pasteTargetsRef.current();
+      pasting = true;
+      try {
+        term.paste(text);
+      } finally {
+        pasting = false;
+      }
+      for (const other of others) other.paste(text);
+    };
     pasteRef.current = (text: string) => {
       // Nowhere to go; a line break in it would otherwise read as Enter, which reconnects.
       if (!text || closed) return;
-      // With bracketed paste the shell inserts the lines without running them.
-      const confirm = settingsRef.current.terminal.confirmMultilinePaste && !term.modes.bracketedPasteMode;
+      // With bracketed paste the shell inserts the lines without running them: asked unless
+      // every pane it goes to does.
+      const bracketed = term.modes.bracketedPasteMode && pasteTargetsRef.current().every((other) => other.bracketed());
+      const confirm = settingsRef.current.terminal.confirmMultilinePaste && !bracketed;
       if (confirm && /[\r\n]/.test(text)) setPendingPaste(text);
-      else term.paste(text);
+      else pasteAllRef.current(text);
     };
+    registerPasteRef.current({
+      bracketed: () => term.modes.bracketedPasteMode,
+      paste: (text) => {
+        if (text && !closed) term.paste(text);
+      },
+    });
 
     // Ctrl+Shift+C / Ctrl+V and friends outside macOS (see `clipboardKey`).
     term.attachCustomKeyEventHandler((e) => {
@@ -514,7 +554,7 @@ export function TerminalView({
         if (!closed) {
           if (data.includes("\x03")) stopLoginCommands();
           void session?.write(data);
-          if (session && !REPORT.test(data)) onInputRef.current(data);
+          if (session && !pasting && !REPORT.test(data)) onInputRef.current(data);
           return;
         }
         // Enter pressed, not a line break in something else that came in (a paste).
@@ -545,7 +585,8 @@ export function TerminalView({
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("mousedown", onMouseDown, true);
       container.removeEventListener("contextmenu", onContextMenu);
-      reconnectRef.current = pasteRef.current = ignore;
+      reconnectRef.current = pasteRef.current = pasteAllRef.current = ignore;
+      registerPasteRef.current(null);
       observer.disconnect();
       subscriptions.forEach((s) => s.dispose());
       void session?.close().catch(ignore);
@@ -693,7 +734,7 @@ export function TerminalView({
   const confirmPaste = (text: string, dontAskAgain: boolean) => {
     setPendingPaste(null);
     if (dontAskAgain) update({ ...settings, terminal: { ...settings.terminal, confirmMultilinePaste: false } });
-    termRef.current?.paste(text);
+    pasteAllRef.current(text);
     focus();
   };
 

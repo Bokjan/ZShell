@@ -8,7 +8,7 @@ import { dividers, equalize, moveDivider, paneRects, type Divider } from "../lib
 import { focusedPane, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { SftpPanel } from "./SftpPanel";
-import { TerminalView, type SessionStatus } from "./TerminalView";
+import { TerminalView, type PasteTarget, type SessionStatus } from "./TerminalView";
 
 /** What a tab page reports about its panes, and asks for them; each by pane key. */
 export interface PaneHandlers {
@@ -19,6 +19,9 @@ export interface PaneHandlers {
   onTitle(key: number, title: string): void;
   /** What the user typed in the pane's terminal (see `TerminalView`). */
   onInput(key: number, data: string): void;
+  registerPaste(key: number, target: PasteTarget | null): void;
+  /** The other panes a paste in the pane goes to as well (syncing). */
+  pasteTargets(key: number): PasteTarget[];
   onLog(key: number, path: string | null): void;
   /** The pane was clicked or got the keyboard focus. */
   onFocus(key: number): void;
@@ -164,6 +167,8 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
                 onForward={(ruleId, state) => h.onForward(pane.key, ruleId, state)}
                 onTitle={(title) => h.onTitle(pane.key, title)}
                 onInput={(data) => h.onInput(pane.key, data)}
+                registerPaste={(target) => h.registerPaste(pane.key, target)}
+                pasteTargets={() => h.pasteTargets(pane.key)}
                 menuItems={() => h.menuItems(pane)}
                 logOpen={h.logOpen(pane)}
                 onLog={(path) => h.onLog(pane.key, path)}

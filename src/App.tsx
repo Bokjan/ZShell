@@ -15,7 +15,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar, type OpenMode } from "./components/Sidebar";
 import { PANEL_SHORTCUTS, TabBar } from "./components/TabBar";
 import { MIN_PANE_HEIGHT, MIN_PANE_WIDTH, TabPage, type PaneHandlers } from "./components/TabPage";
-import type { SessionStatus } from "./components/TerminalView";
+import type { PasteTarget, SessionStatus } from "./components/TerminalView";
 import { Tooltips } from "./components/Tooltip";
 import {
   configSetAside,
@@ -524,14 +524,23 @@ function App() {
   };
 
   // Syncing: what is typed in the focused terminal goes to the other connected panes in scope.
-  const onInput = (source: number, data: string) => {
+  const syncedWith = (source: number): Pane[] => {
     const compose = composeRef.current;
     const active = tabsRef.current.find((t) => t.key === activeKeyRef.current);
-    if (!compose.open || !compose.sync || !active || active.focused !== source) return;
-    for (const pane of scopePanes(compose, tabsRef.current, activeKeyRef.current)) {
-      if (pane.key !== source && isConnected(pane)) writeSession(pane.sessionId!, data).catch(console.error);
-    }
+    if (!compose.open || !compose.sync || !active || active.focused !== source) return [];
+    return scopePanes(compose, tabsRef.current, activeKeyRef.current).filter((pane) => pane.key !== source && isConnected(pane));
   };
+  const onInput = (source: number, data: string) => {
+    for (const pane of syncedWith(source)) writeSession(pane.sessionId!, data).catch(console.error);
+  };
+  // Pastes go to each synced pane's terminal, which brackets them or not as its program wants.
+  const pasteTargets = useRef(new Map<number, PasteTarget>());
+  const registerPaste = (key: number, target: PasteTarget | null) => {
+    if (target) pasteTargets.current.set(key, target);
+    else pasteTargets.current.delete(key);
+  };
+  const syncedPasteTargets = (source: number) =>
+    syncedWith(source).flatMap((pane) => pasteTargets.current.get(pane.key) ?? []);
 
   // Opens a panel only for an SSH pane; closes it whatever the pane.
   const togglePanel = useCallback((panel: SidePanel) => {
@@ -746,6 +755,8 @@ function App() {
     onForward,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
     onInput,
+    registerPaste,
+    pasteTargets: syncedPasteTargets,
     onLog: (key, path) => updatePane(key, { logPath: path }),
     onFocus: (key) => {
       const found = findPane(tabsRef.current, key);
