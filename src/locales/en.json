@@ -8,6 +8,7 @@
     "dontAskAgain": "Don't ask again"
   },
   "app": {
+    "name": "ZShell",
     "placeholder": "Select a session on the left to connect, or open a local terminal",
     "placeholderNoLocal": "Select a session on the left to connect"
   },

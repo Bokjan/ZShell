@@ -31,6 +31,7 @@ import {
   type Row,
 } from "../lib/sessions";
 import { DRAG_REGION } from "../lib/window";
+import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { PlusIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -415,8 +416,13 @@ export function Sidebar(props: Props) {
 
   return (
     <aside className="sidebar" style={{ width }} ref={asideRef}>
-      {/* Its part of the window's title bar, beside the traffic lights on macOS. */}
+      {/* Its part of the window's title bar, beside the traffic lights on macOS; where there are
+          none, the app's icon and name take their place, as in a native title bar. */}
       <header className="sidebar-titlebar" {...DRAG_REGION}>
+        <span className="sidebar-brand" aria-hidden="true">
+          <img src={appIcon} alt="" />
+          <span className="sidebar-brand-name">{t("app.name")}</span>
+        </span>
         <span className="sidebar-actions">
           <button className="icon-button" title={t("sidebar.importExport")} onClick={importMenu}>
             <ImportExportIcon />

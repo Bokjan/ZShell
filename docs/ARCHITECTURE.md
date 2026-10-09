@@ -178,7 +178,7 @@
 ### 标题栏
 
 - **布局**：没有原生标题栏，窗口顶部一行（`--titlebar-height`，34px）在侧栏右边界处分为侧栏顶行与标签栏，侧栏从窗口顶部延伸到底部。标签栏始终显示，没有标签页时也有 "+" 和拖动区域。
-- **窗口**：主窗口在配置中 `create: false`，由 `window.rs` 按平台创建：macOS 用 `titleBarStyle: Overlay` 并隐藏标题，红绿灯（`trafficLightPosition`）垂直居中于顶行，侧栏顶行左侧为其留白（全屏时取消）；Windows `decorations: false`，阴影与圆角由 Tauri 的无边框阴影提供，顶边缩放由 Tauri 盖在 WebView2 上的子窗口处理。其他平台保留原生标题栏。
+- **窗口**：主窗口在配置中 `create: false`，由 `window.rs` 按平台创建：macOS 用 `titleBarStyle: Overlay` 并隐藏标题，红绿灯（`trafficLightPosition`）垂直居中于顶行，侧栏顶行左侧为其留白（全屏时取消）；没有红绿灯时（Windows、macOS 全屏）这里显示应用图标和名称，如同原生标题栏，侧栏较窄时只留图标；Windows `decorations: false`，阴影与圆角由 Tauri 的无边框阴影提供，顶边缩放由 Tauri 盖在 WebView2 上的子窗口处理。其他平台保留原生标题栏。
 - **拖动**：不用 Tauri 的 `data-tauri-drag-region`，由 `lib/window.ts` 在捕获阶段处理带 `data-window-drag` 的元素（只算直接按在元素本身上）：单击 `startDragging()`（Windows 的贴靠、拖动还原等由系统处理），双击交给后端——macOS 按系统设置"连按窗口标题栏以…"（`AppleActionOnDoubleClick`）缩放或最小化，且与原生一致在松开时执行；Windows 切换最大化；Windows 右键弹出窗口的系统菜单。标签条先于其后的拖动间隔收缩，标签再多也留有拖动区域。对话框的遮罩从标题栏下方开始，遮罩顶部那一条仍可拖动窗口。
 - **Windows 窗口按钮**：`WindowControls` 自绘，图标用系统字体 Segoe Fluent Icons / Segoe MDL2 Assets，层级高于对话框遮罩。Windows 11 的贴靠布局要求对最大化按钮位置的 `WM_NCHITTEST` 返回 `HTMAXBUTTON`，而 WebView2 的子窗口接收全部鼠标消息，所以在按钮上方放一个不绘制的原生子窗口返回它；位置由前端量出后发给后端（`window_set_maximize_button`），悬停 / 按下状态由后端发事件给前端设置样式，点击由后端发 `SC_MAXIMIZE` / `SC_RESTORE`。Windows 11 给非最大化窗口画的 1px 边框在贴靠到屏幕一部分时仍然保留，沿屏幕边缘看起来像没填满；这 1px 是 WebView 之外的窗口边框本身，去掉颜色只会露出透明，要让网页覆盖它须接管 Tao 的边框计算。所以窗口移动或改变大小时用 `IsWindowArranged`（运行时查找，较老的 Windows 10 没有）判断是否贴靠，贴靠时用 `DWMWA_BORDER_COLOR` 把边框设成标题栏的颜色（`--bg-sidebar`，随主题更新），否则恢复系统默认。
 

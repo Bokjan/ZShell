@@ -145,6 +145,36 @@ main {
   padding: 0 8px 0 var(--traffic-lights-width);
   color: var(--text-muted);
 }
+/* Clicks go through to the title bar, which moves the window. The name goes first when the
+   sidebar is narrow; it is clipped where container queries aren't supported. */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 auto 0 10px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sidebar-brand img {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+:root[data-platform="mac"]:not([data-fullscreen]) .sidebar-brand {
+  display: none;
+}
+.sidebar-titlebar {
+  container-type: inline-size;
+}
+@container (max-width: 180px) {
+  .sidebar-brand-name {
+    display: none;
+  }
+}
 .sidebar-actions {
   display: flex;
   align-items: center;
