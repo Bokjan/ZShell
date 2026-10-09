@@ -44,6 +44,10 @@ const titleBarDoubleClick = () => invoke("window_title_double_click").catch(cons
  * so after the second press is released without moving, as natively), the system menu on a
  * right click on Windows, and the window state that styles it (`data-platform`,
  * `data-fullscreen` and `data-window-inactive` on the root element).
+ *
+ * Done here rather than with Tauri's `data-tauri-drag-region`, since double-clicks and
+ * right clicks go to the backend. A press calls `startDragging()`, so Windows snapping and
+ * dragging a maximized window back to its size are the system's own.
  */
 export function useTitleBar() {
   useEffect(() => {

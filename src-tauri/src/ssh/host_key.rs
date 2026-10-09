@@ -36,7 +36,9 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
         HostKeyStatus::Changed { path, line } => {
             let banner = t!("hostKey.changedBanner");
             // The real path, as OpenSSH shows it, rather than `~` (unfamiliar on Windows).
-            // Settings only list the user's own file.
+            // Settings only list the user's own file. The `ssh-keygen -f "<path>" -R "<host>"`
+            // the message suggests has double quotes, which cmd, PowerShell and POSIX shells
+            // all take.
             let key = if known_hosts::path().as_ref() == Some(path) { "hostKey.changedDetails" } else { "hostKey.changedDetailsElsewhere" };
             let details = t!(
                 key,

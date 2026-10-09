@@ -144,16 +144,13 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 6. 检查草稿后手动发布，作为正式版本发布（不勾选 pre-release）。
 7. 在 Partner Center 新建提交，上传该版本的 `.msixbundle`。Store 会重新签名并负责用户的更新。
 
+**Microsoft Store**：以 full trust 桌面应用（`runFullTrust`，不进 AppContainer）的 MSIX 上架，由 Store 用微软的证书重新签名，不需要自己的代码签名证书，安装与更新由 Store 负责（应用本身没有自动更新）。不走 EXE / MSI 上架：那条路要求安装包用受信任 CA 的证书签名，且 Store 不负责更新。GitHub Release 的各个包照旧，可以与 Store 版同时安装。文件系统虚拟化保持 MSIX 的默认行为：应用在 `AppData` 下新建的文件写到包的私有目录（`%LOCALAPPDATA%\Packages\BoyinChen.ZShell_0mrn21pkbrd8j\LocalCache`），卸载时删除，已有的文件原地读写；所以机器上已有 GitHub 版的配置时 Store 版直接沿用，全新安装的配置只有 Store 版看得到（关闭虚拟化要用只给特定游戏的受限能力 `unvirtualizedResources`，不考虑）。清单的身份、版本号与最低系统版本见 `src-tauri/msix/AppxManifest.xml` 的注释。
+
 **依赖的许可证**：ZShell 不开源、免费分发，依赖的许可证必须允许闭源分发，只要求附上声明。可以接受的列在 `src-tauri/about.toml` 的 `accepted` 里（MIT、Apache-2.0、BSD、ISC、Zlib、BSL-1.0、Unicode-3.0、MPL-2.0），`pnpm licenses:generate` 对 crate 与 npm 包都按这份列表检查，不在列表里的会让生成失败（release workflow 也随之失败）。引入新依赖前先看它（及其新带来的间接依赖）的许可证：
 - GPL、LGPL、AGPL 等 copyleft 许可证不接受：GPL / AGPL 要求整个程序以同样的许可证开源；LGPL 要求用户能替换该库，Rust 静态链接做不到。只有在多许可证（`MIT OR GPL-3.0`）里能选宽松的一个时才可用。
 - MPL-2.0 是文件级 copyleft：原样使用没有问题（声明里附有主页，说明源码在哪里），但修改了 MPL 文件（`[patch]`、vendoring）就要以 MPL 公开修改后的这些文件。
 - 声明里没有的条件（如要求在界面或文档里致谢的 BSD-4-Clause、限制商用的 CC BY-NC、"Commons Clause"）一律不接受；拿不准的先问。确认能遵守后再加进 `accepted`。
 
-**第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.json`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置「关于」里的许可证对话框读取显示：左栏是可搜索的包列表（按 Rust / JavaScript 分组），右栏是选中包的许可证全文。文件里每个包记录名称、版本、声明的许可证、主页和所用许可证文本的下标，相同的文本只存一份。
-- Rust 依赖用 `cargo-about`：配置 `src-tauri/about.toml` 列出接受的许可证、四个发布目标（macOS 与 Windows 专用的 crate 都在内），不含 build / dev 依赖；脚本读取 `cargo about generate --format json` 的输出。双许可证优先用 MIT。新依赖带来未列出的许可证时生成失败，确认能遵守后再加进 `accepted`。
-- 有些 crate 的许可证文件名 cargo-about 认不出（windows-rs 的 `license-mit`、Tauri 插件的 `LICENSE_MIT`），在 `about.toml` 里用 `clarify` 按校验和指定；文件内容变了会生成失败，更新校验和即可。完全不带许可证文件的 crate（objc2 系列、webview2-com 等）用标准许可证文本。
-- 前端依赖取 `pnpm licenses list --prod`（运行时依赖，含间接依赖），读各包自带的 LICENSE / COPYING / NOTICE；不带文件的包（Tauri 插件的 JS 包）只写许可证标识与主页。
-- 本地需 `cargo install --locked cargo-about --features cli`（0.9 起命令行要 `cli` feature）。未安装时只生成前端部分并注明；没运行过时设置里显示"未包含"。CI 中（设置了 `CI` 环境变量）未安装则报错。release workflow 的打包 job 与 Store job 用 `taiki-e/install-action` 装预编译的 cargo-about，打包前生成。
-- 生成的文件约 420 KB（约 400 个 crate、20 个 npm 包），Tauri 默认的 `compression` 特性在构建时把前端资源用 brotli 压缩后嵌入，在 exe 里只占约 20 KB，不必另外压缩。
+**第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.json`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置「关于」里的许可证对话框读取显示。Rust 依赖用 `cargo-about`（配置 `src-tauri/about.toml`，覆盖四个发布目标，不含 build / dev 依赖），前端只收运行时依赖（`pnpm licenses list --prod`）。本地需 `cargo install --locked cargo-about --features cli`，未安装时只生成前端部分，设置里注明；CI 中未安装则报错，release workflow 打包前生成。cargo-about 认不出许可证文件的 crate 在 `about.toml` 里按校验和 `clarify`，Dependabot 升级后文件变了会生成失败，更新校验和即可。
 
 **签名**：尚未签名。macOS 只做 ad-hoc 签名（`APPLE_SIGNING_IDENTITY=-`，保证 Apple Silicon 能运行），下载后需在"隐私与安全性"中放行或去掉 quarantine；Windows 未签名，SmartScreen 会提示。以后接入证书只需给 workflow 配 secret。

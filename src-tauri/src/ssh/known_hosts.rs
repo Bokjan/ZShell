@@ -269,7 +269,8 @@ fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
 }
 
 /// Removes the entry on `line` if the line still reads `text` (otherwise the file has
-/// changed since it was listed: `knownHosts.changed`).
+/// changed since it was listed: `knownHosts.changed`). A line naming several hosts goes as
+/// a whole, with the other hosts on it.
 pub fn remove(line: usize, text: &str) -> Result<()> {
     remove_at(&required_path()?, line, text)
 }
