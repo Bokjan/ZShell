@@ -8,11 +8,11 @@
 - 优先补齐每天高频使用的操作（剪贴板、标签页、会话列表），再补 Xshell 的效率功能；不追求逐项对齐 Xshell。
 - 行为尽量与 OpenSSH 一致（认证顺序、known_hosts、ssh_config 语义），减少"在 ZShell 里能连、命令行不能连"或反过来的情况。
 
-## 现状（2026-10-09，M15 之后）
+## 现状（2026-10-09，M16 之后）
 
 ### 已具备
 
-- SSH：密码 / 私钥 / agent / keyboard-interactive / 自动认证，known_hosts，密码存钥匙串，多跳 ProxyJump，keepalive 与带退避的自动重连。
+- SSH：密码 / 私钥 / agent / keyboard-interactive / 自动认证，known_hosts（设置中可查看、搜索、删除），密码存钥匙串，多跳 ProxyJump，keepalive 与带退避的自动重连。
 - 代理：SOCKS5、HTTP CONNECT（可带用户名和密码）与 ProxyCommand，按名称保存、由会话选用，SSH 与 Telnet 都可用；经跳板机时用第一台跳板机的代理；ssh_config 的 ProxyCommand 一并导入。
 - Telnet 与串口：Telnet 选项协商（BINARY、ECHO、SGA、TTYPE、NAWS）、可经 SSH 跳板机、保存的用户名和密码在登录提示时自动填入；串口列出系统设备，可设波特率、数据位、校验、停止位、流控，拔出后插回自动重连；两者都可发送 Break。
 - 终端：搜索、配色 / 字体 / 光标 / 回滚设置、本地终端（macOS 登录 shell、Windows PowerShell）；剪贴板快捷键、右键菜单、选中即复制、右键粘贴、多行粘贴确认、macOS Option 作为 Meta。
@@ -37,7 +37,7 @@
 
 | 方面 | 差距 | 优先级 |
 |---|---|---|
-| 杂项 | 没有 known_hosts 管理界面、应用锁 | P2 |
+| 杂项 | 没有应用锁 | P2 |
 
 ## 里程碑
 
@@ -62,15 +62,10 @@
 | **M13 Telnet 与串口** ✅ | 会话类型增加 Telnet 与串口 | |
 | **M14 代理** ✅ | 出口代理（SOCKS5 / HTTP）与 ProxyCommand | |
 | **M15 分屏** ✅ | 标签页内左右 / 上下分屏 | |
-| **M16 known_hosts 管理** | 查看、搜索、删除主机密钥记录 | P2 |
+| **M16 known_hosts 管理** ✅ | 查看、搜索、删除主机密钥记录 | |
 | **M17 应用锁** | 用 Touch ID / Windows Hello 锁定应用 | P2 |
 | **M18 翻译** | 语言设置界面，首批简体中文 | — |
 | **M19 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
-
-### M16 known_hosts 管理
-
-- 设置中列出 `~/.ssh/known_hosts` 的条目（主机、算法、指纹），可搜索、删除；哈希过的主机名只显示为哈希。
-- 主机密钥变化时，终端里的提示同时给出删除旧记录的方法（OpenSSH 提示 `ssh-keygen -R`），连接仍然拒绝。
 
 ### M17 应用锁
 

@@ -14,7 +14,7 @@ Everything ZShell saves stays on your computer:
 
 - **Sessions, settings, quick commands and log settings** are saved as JSON files in the app's configuration folder: `~/Library/Application Support/org.boyin.zshell` on macOS, and `%APPDATA%\org.boyin.zshell` on Windows. Sessions include host names, user names, ports, serial device names and settings, paths to private keys, port forwarding rules and the other options you set. Proxies are saved there too, with their addresses, user names and commands.
 - **Saved passwords** (for SSH, for typing at a Telnet server's password prompt, and for proxies) are kept only in the system's credential store (the macOS Keychain or the Windows Credential Manager, under `org.boyin.zshell`), never in a file. Passphrases for private keys are not saved.
-- **Host keys** of the servers you accept are added to `~/.ssh/known_hosts`, the file OpenSSH uses. ZShell also reads `~/.ssh/config` when you import from it, and the private keys you choose for authentication.
+- **Host keys** of the servers you accept are added to `~/.ssh/known_hosts`, the file OpenSSH uses. When you remove host keys in the settings, ZShell rewrites that file and keeps its previous contents in `~/.ssh/known_hosts.old`, as `ssh-keygen -R` does. ZShell also reads `~/.ssh/config` when you import from it, and the private keys you choose for authentication.
 - **Session logs** are recorded only when you turn them on, in the folder shown in the settings (`Documents/ZShellLogs` by default).
 - **Exported sessions** are written to the file you choose, with your proxies, and never include passwords.
 - **Temporary files** are created in the system's temporary folder while you edit a remote file in a local editor or drag files out of the file panel.
@@ -26,7 +26,7 @@ The clipboard is read only when you paste, and written only when you copy.
 
 Uninstalling ZShell from a downloaded installer leaves your data in place. To remove it, delete the configuration folder above (and, on Windows, `%LOCALAPPDATA%\org.boyin.zshell`), remove the `org.boyin.zshell` entries from the Keychain or the Credential Manager, and delete any session logs and exported files you want gone. Uninstalling the Microsoft Store version removes the configuration it created.
 
-Entries added to `~/.ssh/known_hosts` are shared with OpenSSH and are not removed automatically.
+Entries added to `~/.ssh/known_hosts` are shared with OpenSSH and are not removed automatically; you can remove them in the settings under Known Hosts.
 
 ## Third parties
 

@@ -6,7 +6,7 @@ A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by X
 
 ## Features
 
-- **SSH sessions**: password, private key, SSH agent and keyboard-interactive (two-factor) authentication, plus an automatic mode that tries them in OpenSSH's order. Host keys are checked against `~/.ssh/known_hosts`, and saved passwords are kept in the system keychain.
+- **SSH sessions**: password, private key, SSH agent and keyboard-interactive (two-factor) authentication, plus an automatic mode that tries them in OpenSSH's order. Host keys are checked against `~/.ssh/known_hosts`, which you can search and clean up in the settings, and saved passwords are kept in the system keychain.
 - **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, so you authenticate once. Duplicating a tab or splitting a pane opens another shell on the same connection.
 - **Jump hosts**: connect through one or more other sessions, like OpenSSH's `ProxyJump`, for SSH and Telnet alike.
 - **Proxies**: SOCKS5 and HTTP proxies (with an optional user name and password) and proxy commands like OpenSSH's `ProxyCommand`, saved once and chosen per session.
@@ -27,7 +27,7 @@ A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by X
 - **Tabs**: drag to reorder, rename, duplicate, follow the title set by the shell, and confirmation before closing connected tabs or tabs running a program. The tab bar sits in the window's title bar on both macOS and Windows.
 - **Split panes**: split a tab right or down into panes, each its own session (a saved session can also be opened in a new pane), resize them by dragging the dividers, and move between them from the keyboard.
 
-Planned next: managing known hosts and locking the app. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: locking the app. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
