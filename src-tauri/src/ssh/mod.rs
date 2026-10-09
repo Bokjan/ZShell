@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use russh::client::{self, Msg};
-use russh::{Channel, ChannelMsg, ChannelStream, Disconnect};
+use russh::{Channel, ChannelMsg, ChannelStream, ChannelWriteHalf, Disconnect};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 
@@ -163,6 +163,8 @@ async fn open_shell(session: &SshHandle, profile: &Profile, io: &mut TermIo) -> 
 /// while the remote program prints). New input waits until the write is done.
 async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::Receiver<Option<String>>) -> Outcome {
     let (mut reader, writer) = channel.split();
+    let writer = Arc::new(writer);
+    let mut close = CloseOnDrop(Some(writer.clone()));
     let mut exit_status = None;
     let mut writing = None;
     loop {
@@ -177,7 +179,10 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
                     exit_status = Some(status);
                     Ok(())
                 }
-                Some(ChannelMsg::Close) => return Outcome::Exited(exit_status),
+                Some(ChannelMsg::Close) => {
+                    close.0 = None;
+                    return Outcome::Exited(exit_status);
+                }
                 // The connection ended without closing the channel.
                 None => break,
                 Some(_) => Ok(()),
@@ -210,6 +215,22 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
         Some(reason) => error.detail(reason),
         None => error,
     })
+}
+
+/// Closes the shell channel when the bridge ends without the server closing it: the tab was
+/// closed (the task aborted) or the terminal went away. The split halves of a channel don't
+/// close it when dropped, and on a connection shared with other tabs the shell would stay
+/// open on the server, counting against its `MaxSessions`.
+struct CloseOnDrop(Option<Arc<ChannelWriteHalf<Msg>>>);
+
+impl Drop for CloseOnDrop {
+    fn drop(&mut self) {
+        if let Some(writer) = self.0.take() {
+            tauri::async_runtime::spawn(async move {
+                let _ = writer.close().await;
+            });
+        }
+    }
 }
 
 /// Completes with the write in progress, if any; pending forever otherwise (for `select!`).

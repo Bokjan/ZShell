@@ -82,7 +82,7 @@
 ### SSH
 
 - **一个连接多路复用**：认证完成后连接登记到 `Connections`；SFTP 首次使用时在同一连接上开 subsystem channel 并缓存，端口转发也开在同一连接上。
-- **复制标签**：已连接的 SSH 标签复制或分屏时，新标签（窗格）用 `ssh_open_shared` 在源标签的连接上开一个新的 shell channel，不重新连接和认证（类似 OpenSSH 的 ControlMaster），也不重复自动启动转发。`Connections` 按会话 id 登记，多个会话可以指向同一连接，最后一个使用它的会话结束时才断开。转发状态推送给连接上所有会话的标签，后加入的标签先收到各规则的当前状态。源连接已断开时按正常流程新建连接；复制出的标签断线重连也总是新建连接。
+- **复制标签**：已连接的 SSH 标签复制或分屏时，新标签（窗格）用 `ssh_open_shared` 在源标签的连接上开一个新的 shell channel，不重新连接和认证（类似 OpenSSH 的 ControlMaster），也不重复自动启动转发。`Connections` 按会话 id 登记，多个会话可以指向同一连接，最后一个使用它的会话结束时才断开。转发状态推送给连接上所有会话的标签，后加入的标签先收到各规则的当前状态。源连接已断开时按正常流程新建连接；复制出的标签断线重连也总是新建连接。关闭标签时显式关闭它的 shell channel（russh 拆开读写的 channel 丢弃时不会关闭），否则共享连接上服务器那一侧的 shell 一直留着，占用 sshd 的 `MaxSessions`。
 - **提示都在终端里**：主机指纹确认、密码、私钥口令、keyboard-interactive 问题都通过 `TermIo::read_line` 在终端里询问，与 OpenSSH 一致，不弹窗。russh 在自己的任务里回调 `check_server_key`，handler 通过 mpsc + oneshot 把问题转交给会话任务。
 - **认证**："自动"（默认）按 OpenSSH 的顺序尝试 agent 中的密钥 → `~/.ssh/id_ed25519`、`id_ecdsa`、`id_rsa` → keyboard-interactive / 密码（可用钥匙串中的密码）。加密的私钥只在服务器接受其公钥后才询问口令（细节见 `ssh/auth.rs`）。
 - **shell 通道的选项**：先请求 agent 转发（`auth-agent-req@openssh.com`），再按会话的 `termType`（默认 `xterm-256color`）开 pty，逐个发 `env` 请求，最后启动 shell。`env` 请求用 `want_reply=false`，与 OpenSSH 一样不报告被服务器 `AcceptEnv` 拒绝的变量。复制标签的新 shell 用连接登记时保存的会话配置。
