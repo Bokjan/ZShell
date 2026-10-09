@@ -90,7 +90,8 @@
       "missingDevice": "Choose a serial device",
       "invalidSerialSettings": "Invalid serial settings: data bits must be 5 to 8 and stop bits 1 or 2",
       "jumpHostNotSsh": "This session is a jump host for {names}, so it must stay an SSH session",
-      "invalidProxy": "The proxy of this session no longer exists; choose another one"
+      "invalidProxy": "The proxy of this session no longer exists; choose another one",
+      "forwardsNeedSsh": "Only SSH sessions can forward ports"
     },
     "ssh": {
       "handshakeFailed": "SSH handshake failed",
@@ -149,6 +150,7 @@
       "readFailed": "Cannot read {path}",
       "parseFailed": "Cannot parse {path}",
       "notSessionsFile": "{path} is not a ZShell sessions file",
+      "unsupportedVersion": "{path} was exported by a version of ZShell whose files this version cannot read",
       "invalidSession": "Session {name} in the file is not valid",
       "invalidProxy": "Proxy {name} in the file is not valid"
     },

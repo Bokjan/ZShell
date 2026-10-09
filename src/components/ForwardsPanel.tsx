@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   errorMessage,
   forwards,
+  profileForwards,
   setProfileForwards,
   type ForwardRule,
   type ForwardState,
@@ -33,7 +34,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
   const [editing, setEditing] = useState<ForwardRule | null | undefined>(undefined);
   const [deleting, setDeleting] = useState<ForwardRule | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const rules = profile?.forwards ?? [];
+  const rules = profile ? profileForwards(profile) : [];
   const live = connected && sessionId != null;
 
   const fail = (e: unknown) => setError(errorMessage(e));
@@ -48,7 +49,8 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
     const updated = await setProfileForwards(profile.id, list);
     onProfileChanged(updated);
     // New rules start right away; edited ones restart with their new definition if running.
-    const saved = isNew ? updated.forwards[updated.forwards.length - 1] : updated.forwards.find((r) => r.id === rule.id);
+    const updatedRules = profileForwards(updated);
+    const saved = isNew ? updatedRules[updatedRules.length - 1] : updatedRules.find((r) => r.id === rule.id);
     if (live && saved && (isNew || isRunning(states[saved.id]))) void start(saved);
   };
 

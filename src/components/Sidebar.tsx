@@ -204,7 +204,7 @@ export function Sidebar(props: Props) {
     { label: t("sidebar.duplicate"), onSelect: () => duplicate(profile) },
     {
       label: t("sidebar.copyAddress"),
-      onSelect: () => void writeText(address(profile)).then(() => announce(t("announce.copied")), fail),
+      onSelect: () => void writeText(address(profile.connection)).then(() => announce(t("announce.copied")), fail),
     },
     "separator",
     {
@@ -399,7 +399,7 @@ export function Sidebar(props: Props) {
       // Rather than the tooltip, which is also read, as a hint.
       aria-label={t(key.startsWith("recent:") ? "sidebar.recentRowLabel" : "sidebar.rowLabel", {
         name: profile.name,
-        address: meta ?? address(profile),
+        address: meta ?? address(profile.connection),
       })}
       data-key={key.startsWith("p:") ? key : undefined}
       data-recent={key.startsWith("recent:") || undefined}
@@ -412,10 +412,10 @@ export function Sidebar(props: Props) {
         setSelected(`p:${profile.id}`);
         openMenu(e, profileMenu(profile));
       }}
-      title={`${profile.name}\n${address(profile)}\n${t("sidebar.openHint")}`}
+      title={`${profile.name}\n${address(profile.connection)}\n${t("sidebar.openHint")}`}
     >
       <span className="tree-name">{profile.name}</span>
-      <span className="tree-meta">{meta ?? address(profile)}</span>
+      <span className="tree-meta">{meta ?? address(profile.connection)}</span>
     </div>
   );
 
@@ -524,7 +524,7 @@ export function Sidebar(props: Props) {
                 profile,
                 `r:${profile.id}`,
                 -1,
-                [...folderPath(profile.folder, folders), address(profile)].join(" / "),
+                [...folderPath(profile.folder, folders), address(profile.connection)].join(" / "),
                 i === highlight ? " highlighted" : "",
               ),
             )}

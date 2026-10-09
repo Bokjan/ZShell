@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
-use crate::config::Profile;
+use crate::config::SshProfile;
 use crate::error::Error;
 use crate::forward::host_port;
 use crate::proxy::Proxy;
@@ -25,7 +25,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// OpenSSH, where `ProxyJump` connects to the jump host with that host's `ProxyCommand`.
 #[derive(Default)]
 pub struct Route {
-    pub jumps: Vec<Profile>,
+    pub jumps: Vec<SshProfile>,
     pub proxy: Option<Proxy>,
 }
 

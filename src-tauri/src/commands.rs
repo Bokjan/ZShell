@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager, State, WebviewWindow};
 use ts_rs::TS;
 
 use crate::backup;
-use crate::config::{Additions, Folder, Item, Profile, ProfileStore, Protocol, SerialOptions, SetAside, SetAsideFile};
+use crate::config::{Additions, Connection, Folder, Item, Profile, ProfileStore, Protocol, Remote, SerialOptions, SetAside, SetAsideFile, SshOptions, SshProfile};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
@@ -123,6 +123,9 @@ pub struct Saved<T> {
 pub async fn profile_save(app: AppHandle, profile: Profile, password: Option<String>) -> Result<Saved<Profile>> {
     blocking(app, move |app| {
         let profile = app.state::<ProfileStore>().save(profile)?;
+        // A session that is no longer SSH has no forwarding rules; running ones stop.
+        let rules: Vec<String> = profile.forwards().iter().map(|rule| rule.id.clone()).collect();
+        app.state::<Connections>().retain_forwards(&profile.id, &rules);
         let stored = match password.as_deref() {
             None => Ok(()),
             Some("") => secrets::delete_password(&profile.id),
@@ -142,7 +145,7 @@ pub fn profile_set_forwards(
 ) -> Result<Profile> {
     let profile = store.set_forwards(&profile_id, forwards)?;
     // A rule deleted while running (perhaps on another tab's connection) stops.
-    let ids: Vec<String> = profile.forwards.iter().map(|rule| rule.id.clone()).collect();
+    let ids: Vec<String> = profile.forwards().iter().map(|rule| rule.id.clone()).collect();
     connections.retain_forwards(&profile_id, &ids);
     Ok(profile)
 }
@@ -306,11 +309,11 @@ pub async fn profile_delete(app: AppHandle, id: String) -> Result<()> {
 
 /// How a session's log names it: by the profile, its address and user.
 fn log_info(profile: &Profile) -> LogInfo {
-    let host = match profile.protocol {
-        Protocol::Serial => profile.serial.device.clone(),
-        _ => profile.host.clone(),
+    let (host, user) = match &profile.connection {
+        Connection::Serial(serial) => (serial.device.clone(), String::new()),
+        Connection::Ssh(SshOptions { remote, .. }) | Connection::Telnet(remote) => (remote.host.clone(), remote.username.clone()),
     };
-    LogInfo { session: profile.name.clone(), host, user: profile.username.clone(), profile: None }
+    LogInfo { session: profile.name.clone(), host, user, profile: None }
 }
 
 /// Tells a new session's tab about the log it started with, or why that failed.
@@ -393,16 +396,16 @@ fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
         SessionSpec::Profile { profile_id, carry } => {
             let store = app.state::<ProfileStore>();
             let profile = store.get(&profile_id)?;
-            let route = match profile.protocol {
-                Protocol::Serial => Route::default(),
-                _ => store.route(&profile)?,
-            };
             let log_info = LogInfo { profile: Some(profile.id.clone()), ..log_info(&profile) };
             let (auto_log, encoding) = (profile.auto_log, encoding::for_profile(&profile.encoding));
-            let backend = match profile.protocol {
-                Protocol::Ssh => Backend::Ssh { profile, route, connections, carry },
-                Protocol::Telnet => Backend::Telnet { password_of: Some(profile.id.clone()), profile, route },
-                Protocol::Serial => Backend::Serial(profile.serial),
+            let Profile { id, name, encoding: label, connection, .. } = profile;
+            let backend = match connection {
+                Connection::Ssh(ssh) => {
+                    let route = store.route(&ssh.remote)?;
+                    Backend::Ssh { profile: SshProfile { id, name, encoding: label, ssh }, route, connections, carry }
+                }
+                Connection::Telnet(remote) => Backend::Telnet { route: store.route(&remote)?, remote, password_of: Some(id) },
+                Connection::Serial(serial) => Backend::Serial(serial),
             };
             Ok(Launch { log_info, auto_log, encoding, backend })
         }
@@ -413,19 +416,19 @@ fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
             };
             let host = host.trim().to_owned();
             let name = if username.is_empty() { host.clone() } else { format!("{username}@{host}") };
-            let profile = Profile { protocol, ..Profile::new(name, host, port, username) };
             match protocol {
-                Protocol::Ssh if profile.username.is_empty() => return Err(Error::new("profile.missingFields")),
+                Protocol::Ssh if username.is_empty() => return Err(Error::new("profile.missingFields")),
                 Protocol::Serial => return Err(Error::new("profile.missingDevice")),
-                _ if profile.host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
+                _ if host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
                 _ => {}
             }
-            // Logged only when started by hand: there is no session to record automatically.
-            let log_info = log_info(&profile);
+            let log_info = LogInfo { session: name.clone(), host: host.clone(), user: username.clone(), profile: None };
+            let remote = Remote::new(host, port, username);
             let backend = match protocol {
-                Protocol::Telnet => Backend::Telnet { profile, route: Route::default(), password_of: None },
-                _ => Backend::Ssh { profile, route: Route::default(), connections, carry: Vec::new() },
+                Protocol::Telnet => Backend::Telnet { remote, route: Route::default(), password_of: None },
+                _ => Backend::Ssh { profile: SshProfile::quick(name, remote), route: Route::default(), connections, carry: Vec::new() },
             };
+            // Logged only when started by hand: there is no session to record automatically.
             Ok(Launch { log_info, auto_log: false, encoding: utf8, backend })
         }
         SessionSpec::Shared { source } => {
@@ -452,10 +455,10 @@ fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
 
 /// A session's backend, with what it runs on.
 enum Backend {
-    Ssh { profile: Profile, route: Route, connections: Connections, carry: Vec<String> },
+    Ssh { profile: SshProfile, route: Route, connections: Connections, carry: Vec<String> },
     Shared { connection: Arc<ssh::Connection>, connections: Connections },
     /// `password_of`: the saved session whose password answers the login prompt.
-    Telnet { profile: Profile, route: Route, password_of: Option<String> },
+    Telnet { remote: Remote, route: Route, password_of: Option<String> },
     Serial(SerialOptions),
     Local(pty::Shell),
 }
@@ -474,11 +477,11 @@ impl Backend {
         match self {
             Backend::Ssh { profile, route, connections, carry } => ssh::run(profile, route, id, io, connections, carry).await,
             Backend::Shared { connection, connections } => ssh::run_shared(connection, id, io, connections).await,
-            Backend::Telnet { profile, route, password_of } => {
+            Backend::Telnet { remote, route, password_of } => {
                 // Looked up in the session's task when the server asks; `block_in_place` lets
                 // the other tasks move to other threads while the keychain waits.
                 let password = move || password_of.and_then(|id| tokio::task::block_in_place(|| secrets::get_password(&id)));
-                telnet::run(profile, route, password, io).await
+                telnet::run(remote, route, password, io).await
             }
             Backend::Serial(options) => serial::run(options, io).await,
             Backend::Local(shell) => pty::run(shell, io).await,

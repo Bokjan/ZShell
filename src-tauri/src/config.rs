@@ -3,8 +3,7 @@
 //! `proxies.json`). Passwords are never stored here; see [`crate::secrets`].
 //!
 //! The order of each file is the order shown: a folder's subfolders and sessions appear in
-//! file order (subfolders first). `profiles.json` stays a plain array, so a profile's folder
-//! is one more field and older versions still read the file.
+//! file order (subfolders first).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,6 +17,7 @@ use crate::forward::ForwardRule;
 use crate::net::Route;
 use crate::proxy::Proxy;
 
+/// A saved session: what it connects to (by protocol), and how its tabs behave.
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
@@ -25,80 +25,177 @@ pub struct Profile {
     #[serde(default)]
     pub id: String,
     pub name: String,
-    /// Absent in files from before Telnet and serial sessions, which are all SSH.
-    #[serde(default)]
-    pub protocol: Protocol,
-    /// SSH and Telnet; unused by serial sessions.
-    pub host: String,
-    pub port: u16,
-    /// Required for SSH; for Telnet, optional and typed at the login prompt.
-    pub username: String,
-    /// SSH only. Telnet uses the saved password, if any, at the password prompt.
-    pub auth: AuthMethod,
-    /// The device and line settings of a serial session.
-    #[serde(default, skip_serializing_if = "SerialOptions::is_default")]
-    pub serial: SerialOptions,
-    /// Profiles to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
-    /// own profile's address and authentication, but not that profile's jump hosts. SSH
-    /// profiles only; SSH and Telnet sessions can use them.
-    #[serde(default)]
-    pub jump_hosts: Vec<String>,
-    /// The id of the proxy to connect through; SSH and Telnet. Not kept with jump hosts,
-    /// where the first jump host's own proxy is used (see [`Route`]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub proxy: Option<String>,
-    /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
-    /// drop the connection. Telnet uses TCP keepalives.
-    #[serde(default = "default_keepalive_interval")]
-    pub keepalive_interval: u32,
-    /// Reconnect automatically when an established connection is lost.
-    #[serde(default = "default_true")]
-    pub auto_reconnect: bool,
-    /// Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
-    #[serde(default)]
-    pub forwards: Vec<ForwardRule>,
     /// The folder the session is in; `None` for the top level. Changed with
     /// [`ProfileStore::move_item`]; `save` keeps it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub folder: Option<String>,
+    pub connection: Connection,
+    /// Reconnect automatically when an established connection is lost, or when a serial
+    /// device is plugged in again.
+    pub auto_reconnect: bool,
+    /// The remote side's character encoding, one of [`crate::encoding::SUPPORTED`].
+    pub encoding: String,
+    /// Commands typed into each new shell, in order, each once the shell shows a prompt.
+    /// Sent by the frontend.
+    pub login_commands: Vec<String>,
     /// Record a session log from the start of each connection.
-    #[serde(default)]
     pub auto_log: bool,
     /// The quick command group its tabs show first; `None` for the default group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub command_group: Option<String>,
-    /// Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
-    #[serde(default)]
-    pub forward_agent: bool,
-    /// The remote side's character encoding, one of [`crate::encoding::SUPPORTED`].
-    #[serde(default = "default_encoding")]
-    pub encoding: String,
-    /// The terminal type the remote shell is told (`TERM`).
-    #[serde(default = "default_term_type")]
-    pub term_type: String,
-    /// Environment variables for the remote shell (OpenSSH's `SetEnv`); the server only
-    /// accepts those its `AcceptEnv` allows.
-    #[serde(default)]
-    pub env: Vec<EnvVar>,
-    /// Commands typed into each new shell, in order, each once the shell shows a prompt.
-    /// Sent by the frontend.
-    #[serde(default)]
-    pub login_commands: Vec<String>,
     /// Terminal appearance for this session; unset values follow the settings.
     #[serde(default, skip_serializing_if = "ProfileAppearance::is_empty")]
     pub appearance: ProfileAppearance,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// What a session connects to, with the settings of its protocol.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(tag = "protocol", rename_all = "camelCase")]
+pub enum Connection {
+    Ssh(SshOptions),
+    Telnet(Remote),
+    Serial(SerialOptions),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Protocol {
-    #[default]
     Ssh,
     Telnet,
     Serial,
+}
+
+/// What SSH and Telnet sessions have in common: where they connect, through what, and the
+/// terminal type the remote side is told.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Remote {
+    pub host: String,
+    pub port: u16,
+    /// Required for SSH; for Telnet, optional and typed at the login prompt.
+    pub username: String,
+    /// Sessions to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
+    /// own session's address and authentication, but not that session's jump hosts. Only
+    /// SSH sessions can be jump hosts.
+    pub jump_hosts: Vec<String>,
+    /// The id of the proxy to connect through. Not kept with jump hosts, where the first jump
+    /// host's own proxy is used (see [`Route`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub proxy: Option<String>,
+    /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
+    /// drop an SSH connection; Telnet uses TCP keepalives.
+    pub keepalive_interval: u32,
+    /// The terminal type the remote side is told (`TERM`, Telnet's terminal type option).
+    pub term_type: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SshOptions {
+    #[serde(flatten)]
+    pub remote: Remote,
+    pub auth: AuthMethod,
+    /// Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
+    pub forward_agent: bool,
+    /// Environment variables for the remote shell (OpenSSH's `SetEnv`); the server only
+    /// accepts those its `AcceptEnv` allows.
+    pub env: Vec<EnvVar>,
+    /// Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
+    pub forwards: Vec<ForwardRule>,
+}
+
+/// What the SSH backend connects with: an SSH session's options, with the session's id (for
+/// its saved password and forwarding rules; empty for a quick connection), name (of a jump
+/// host, in messages) and character encoding (of SFTP file names).
+#[derive(Clone, Debug)]
+pub struct SshProfile {
+    pub id: String,
+    pub name: String,
+    pub encoding: String,
+    pub ssh: SshOptions,
+}
+
+impl SshProfile {
+    /// A quick connection to `user@host:port`, with automatic authentication.
+    pub fn quick(name: String, remote: Remote) -> Self {
+        Self { id: String::new(), name, encoding: default_encoding(), ssh: SshOptions::new(remote) }
+    }
+}
+
+impl Remote {
+    pub fn new(host: String, port: u16, username: String) -> Self {
+        Self {
+            host,
+            port,
+            username,
+            jump_hosts: Vec::new(),
+            proxy: None,
+            keepalive_interval: default_keepalive_interval(),
+            term_type: default_term_type(),
+        }
+    }
+}
+
+impl Remote {
+    /// Checks and tidies the address; SSH also needs a user name.
+    fn normalize(&mut self, ssh: bool) -> Result<()> {
+        self.host = self.host.trim().to_owned();
+        self.username = self.username.trim().to_owned();
+        if self.host.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(Error::new("profile.invalidHost"));
+        }
+        if self.username.chars().any(char::is_control) {
+            return Err(Error::new("profile.invalidUser"));
+        }
+        if ssh && (self.host.is_empty() || self.username.is_empty() || self.port == 0) {
+            return Err(Error::new("profile.missingFields"));
+        }
+        if self.host.is_empty() || self.port == 0 {
+            return Err(Error::new("profile.missingHost"));
+        }
+        // The first jump host's proxy is used instead.
+        if !self.jump_hosts.is_empty() {
+            self.proxy = None;
+        }
+        Ok(())
+    }
+}
+
+impl SshOptions {
+    /// Automatic authentication, nothing forwarded.
+    pub fn new(remote: Remote) -> Self {
+        Self { remote, auth: AuthMethod::Auto, forward_agent: false, env: Vec::new(), forwards: Vec::new() }
+    }
+}
+
+impl Connection {
+    pub fn protocol(&self) -> Protocol {
+        match self {
+            Connection::Ssh(_) => Protocol::Ssh,
+            Connection::Telnet(_) => Protocol::Telnet,
+            Connection::Serial(_) => Protocol::Serial,
+        }
+    }
+
+    /// The address and route of an SSH or Telnet session.
+    pub fn remote(&self) -> Option<&Remote> {
+        match self {
+            Connection::Ssh(ssh) => Some(&ssh.remote),
+            Connection::Telnet(remote) => Some(remote),
+            Connection::Serial(_) => None,
+        }
+    }
+
+    pub fn remote_mut(&mut self) -> Option<&mut Remote> {
+        match self {
+            Connection::Ssh(ssh) => Some(&mut ssh.remote),
+            Connection::Telnet(remote) => Some(remote),
+            Connection::Serial(_) => None,
+        }
+    }
 }
 
 /// A serial line's settings: 115200 8N1 without flow control unless set otherwise.
@@ -130,10 +227,6 @@ impl Default for SerialOptions {
 }
 
 impl SerialOptions {
-    fn is_default(&self) -> bool {
-        *self == Self::default()
-    }
-
     /// The line settings in the usual short form, `115200 8N1`.
     pub fn summary(&self) -> String {
         let parity = match self.parity {
@@ -213,86 +306,89 @@ fn is_hex_color(color: &str) -> bool {
 
 impl Profile {
     /// A profile with the default settings, before it is saved (no id).
-    pub fn new(name: String, host: String, port: u16, username: String) -> Self {
+    pub fn new(name: String, connection: Connection) -> Self {
         Self {
             id: String::new(),
             name,
-            protocol: Protocol::Ssh,
-            host,
-            port,
-            username,
-            auth: AuthMethod::Auto,
-            serial: SerialOptions::default(),
-            jump_hosts: Vec::new(),
-            proxy: None,
-            keepalive_interval: default_keepalive_interval(),
-            auto_reconnect: true,
-            forwards: Vec::new(),
             folder: None,
+            connection,
+            auto_reconnect: true,
+            encoding: default_encoding(),
+            login_commands: Vec::new(),
             auto_log: false,
             command_group: None,
-            forward_agent: false,
-            encoding: default_encoding(),
-            term_type: default_term_type(),
-            env: Vec::new(),
-            login_commands: Vec::new(),
             appearance: ProfileAppearance::default(),
         }
+    }
+
+    pub fn protocol(&self) -> Protocol {
+        self.connection.protocol()
+    }
+
+    /// The address and route of an SSH or Telnet session.
+    pub fn remote(&self) -> Option<&Remote> {
+        self.connection.remote()
+    }
+
+    pub fn ssh(&self) -> Option<&SshOptions> {
+        match &self.connection {
+            Connection::Ssh(ssh) => Some(ssh),
+            _ => None,
+        }
+    }
+
+    /// What the SSH backend connects with; `None` for other protocols.
+    pub fn ssh_profile(&self) -> Option<SshProfile> {
+        let ssh = self.ssh()?.clone();
+        Some(SshProfile { id: self.id.clone(), name: self.name.clone(), encoding: self.encoding.clone(), ssh })
+    }
+
+    pub fn jump_hosts(&self) -> &[String] {
+        self.remote().map_or(&[], |remote| &remote.jump_hosts)
+    }
+
+    pub fn proxy(&self) -> Option<&str> {
+        self.remote().and_then(|remote| remote.proxy.as_deref())
+    }
+
+    pub fn forwards(&self) -> &[ForwardRule] {
+        self.ssh().map_or(&[], |ssh| &ssh.forwards)
     }
 
     /// Whether `other` connects to the same place: the same user, host and port (and
     /// protocol), or the same serial device.
     pub fn same_target(&self, other: &Profile) -> bool {
-        self.protocol == other.protocol
-            && match self.protocol {
-                Protocol::Serial => self.serial.device == other.serial.device,
-                _ => self.host == other.host && self.port == other.port && self.username == other.username,
-            }
+        match (&self.connection, &other.connection) {
+            (Connection::Serial(a), Connection::Serial(b)) => a.device == b.device,
+            (a, b) if a.protocol() == b.protocol() => match (a.remote(), b.remote()) {
+                (Some(a), Some(b)) => a.host == b.host && a.port == b.port && a.username == b.username,
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
     /// Checks and tidies the address, by protocol, and names an unnamed profile after it.
     fn normalize_target(&mut self) -> Result<()> {
         self.name = self.name.trim().to_owned();
-        self.host = self.host.trim().to_owned();
-        self.username = self.username.trim().to_owned();
-        self.serial.device = self.serial.device.trim().to_owned();
-        if self.protocol != Protocol::Serial {
-            if self.host.chars().any(|c| c.is_whitespace() || c.is_control()) {
-                return Err(Error::new("profile.invalidHost"));
-            }
-            if self.username.chars().any(char::is_control) {
-                return Err(Error::new("profile.invalidUser"));
-            }
-        }
-        match self.protocol {
-            Protocol::Ssh if self.host.is_empty() || self.username.is_empty() || self.port == 0 => {
-                return Err(Error::new("profile.missingFields"))
-            }
-            Protocol::Telnet if self.host.is_empty() || self.port == 0 => return Err(Error::new("profile.missingHost")),
-            Protocol::Serial => {
-                let serial = &self.serial;
+        match &mut self.connection {
+            Connection::Serial(serial) => {
+                serial.device = serial.device.trim().to_owned();
                 if serial.device.is_empty() {
                     return Err(Error::new("profile.missingDevice"));
                 }
                 if serial.baud_rate == 0 || !(5..=8).contains(&serial.data_bits) || !(1..=2).contains(&serial.stop_bits) {
                     return Err(Error::new("profile.invalidSerialSettings"));
                 }
-                // Jump hosts and proxies don't apply; keeping them would also keep those
-                // from being deleted.
-                self.jump_hosts.clear();
-                self.proxy = None;
             }
-            _ => {}
-        }
-        // The first jump host's proxy is used instead.
-        if !self.jump_hosts.is_empty() {
-            self.proxy = None;
+            Connection::Ssh(ssh) => ssh.remote.normalize(true)?,
+            Connection::Telnet(remote) => remote.normalize(false)?,
         }
         if self.name.is_empty() {
-            self.name = match self.protocol {
-                Protocol::Ssh => format!("{}@{}", self.username, self.host),
-                Protocol::Telnet => self.host.clone(),
-                Protocol::Serial => self.serial.device.trim_start_matches("/dev/").to_owned(),
+            self.name = match &self.connection {
+                Connection::Ssh(ssh) => format!("{}@{}", ssh.remote.username, ssh.remote.host),
+                Connection::Telnet(remote) => remote.host.clone(),
+                Connection::Serial(serial) => serial.device.trim_start_matches("/dev/").to_owned(),
             };
         }
         Ok(())
@@ -304,10 +400,12 @@ impl Profile {
     pub fn normalize_imported(&mut self) -> Result<()> {
         self.normalize_target()?;
         self.normalize_session_options()?;
-        self.forwards = std::mem::take(&mut self.forwards)
-            .into_iter()
-            .map(|rule| ForwardRule { id: uuid::Uuid::new_v4().to_string(), ..rule }.normalize())
-            .collect::<Result<_>>()?;
+        if let Connection::Ssh(ssh) = &mut self.connection {
+            ssh.forwards = std::mem::take(&mut ssh.forwards)
+                .into_iter()
+                .map(|rule| ForwardRule { id: uuid::Uuid::new_v4().to_string(), ..rule }.normalize())
+                .collect::<Result<_>>()?;
+        }
         Ok(())
     }
 
@@ -317,17 +415,21 @@ impl Profile {
         if crate::encoding::lookup(&self.encoding).is_none() {
             return Err(Error::new("profile.invalidEncoding").param("encoding", &self.encoding));
         }
-        self.term_type = self.term_type.trim().to_owned();
-        if self.term_type.is_empty() {
-            self.term_type = default_term_type();
+        if let Some(remote) = self.connection.remote_mut() {
+            remote.term_type = remote.term_type.trim().to_owned();
+            if remote.term_type.is_empty() {
+                remote.term_type = default_term_type();
+            }
+            if !remote.term_type.chars().all(|c| c.is_ascii_graphic()) {
+                return Err(Error::new("profile.invalidTermType"));
+            }
         }
-        if !self.term_type.chars().all(|c| c.is_ascii_graphic()) {
-            return Err(Error::new("profile.invalidTermType"));
-        }
-        for var in &mut self.env {
-            var.name = var.name.trim().to_owned();
-            if var.name.is_empty() || var.name.contains(['=', '\0']) || var.name.chars().any(char::is_whitespace) {
-                return Err(Error::new("profile.invalidEnvName").param("name", &var.name));
+        if let Connection::Ssh(ssh) = &mut self.connection {
+            for var in &mut ssh.env {
+                var.name = var.name.trim().to_owned();
+                if var.name.is_empty() || var.name.contains(['=', '\0']) || var.name.chars().any(char::is_whitespace) {
+                    return Err(Error::new("profile.invalidEnvName").param("name", &var.name));
+                }
             }
         }
         self.login_commands = std::mem::take(&mut self.login_commands)
@@ -364,10 +466,6 @@ pub enum Item {
 
 fn default_keepalive_interval() -> u32 {
     30
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_encoding() -> String {
@@ -441,21 +539,21 @@ impl State {
     fn repair(&mut self) {
         let ids: std::collections::HashSet<String> = self.folders.iter().map(|f| f.id.clone()).collect();
         let proxies: std::collections::HashSet<&str> = self.proxies.iter().map(|p| p.id.as_str()).collect();
+        // Jump hosts must be other SSH sessions that exist (a hand-edited file, an import).
+        let ssh: std::collections::HashSet<String> =
+            self.profiles.iter().filter(|p| p.protocol() == Protocol::Ssh).map(|p| p.id.clone()).collect();
         for profile in &mut self.profiles {
             if profile.folder.as_ref().is_some_and(|f| !ids.contains(f)) {
                 profile.folder = None;
             }
-            if profile.proxy.as_ref().is_some_and(|p| !proxies.contains(p.as_str())) {
-                profile.proxy = None;
-            }
-        }
-        // Jump hosts must be other SSH sessions that exist (a hand-edited file, an import).
-        let ssh: std::collections::HashSet<String> =
-            self.profiles.iter().filter(|p| p.protocol == Protocol::Ssh).map(|p| p.id.clone()).collect();
-        for profile in &mut self.profiles {
-            let mut seen = std::collections::HashSet::new();
             let id = profile.id.clone();
-            profile.jump_hosts.retain(|jump| *jump != id && ssh.contains(jump) && seen.insert(jump.clone()));
+            if let Some(remote) = profile.connection.remote_mut() {
+                if remote.proxy.as_ref().is_some_and(|p| !proxies.contains(p.as_str())) {
+                    remote.proxy = None;
+                }
+                let mut seen = std::collections::HashSet::new();
+                remote.jump_hosts.retain(|jump| *jump != id && ssh.contains(jump) && seen.insert(jump.clone()));
+            }
         }
         for i in 0..self.folders.len() {
             let parent = self.folders[i].parent.clone();
@@ -511,16 +609,16 @@ impl ProfileStore {
 
         self.update(|state| {
             let mut seen = std::collections::HashSet::new();
-            for jump in &profile.jump_hosts {
-                let ssh = state.profiles.iter().any(|p| p.id == *jump && p.protocol == Protocol::Ssh);
+            for jump in profile.jump_hosts() {
+                let ssh = state.profiles.iter().any(|p| p.id == *jump && p.protocol() == Protocol::Ssh);
                 if !ssh || *jump == profile.id || !seen.insert(jump) {
                     return Err(Error::new("profile.invalidJumpHost"));
                 }
             }
-            if profile.proxy.as_ref().is_some_and(|id| !state.proxies.iter().any(|p| p.id == *id)) {
+            if profile.proxy().is_some_and(|id| !state.proxies.iter().any(|p| p.id == id)) {
                 return Err(Error::new("profile.invalidProxy"));
             }
-            if profile.protocol != Protocol::Ssh && !profile.id.is_empty() {
+            if profile.protocol() != Protocol::Ssh && !profile.id.is_empty() {
                 let users = jump_host_users(state, &profile.id);
                 if !users.is_empty() {
                     return Err(Error::new("profile.jumpHostNotSsh").param("names", users.join(", ")));
@@ -529,13 +627,19 @@ impl ProfileStore {
             let folder_exists = profile.folder.as_ref().is_some_and(|f| state.folder_exists(f));
             match state.profiles.iter_mut().find(|p| !profile.id.is_empty() && p.id == profile.id) {
                 Some(existing) => {
-                    profile.forwards = std::mem::take(&mut existing.forwards);
+                    // Kept while the session stays SSH.
+                    let forwards = existing.forwards().to_vec();
+                    if let Connection::Ssh(ssh) = &mut profile.connection {
+                        ssh.forwards = forwards;
+                    }
                     profile.folder = existing.folder.take();
                     *existing = profile.clone();
                 }
                 None => {
                     profile.id = uuid::Uuid::new_v4().to_string();
-                    profile.forwards.clear();
+                    if let Connection::Ssh(ssh) = &mut profile.connection {
+                        ssh.forwards.clear();
+                    }
                     if !folder_exists {
                         profile.folder = None;
                     }
@@ -560,7 +664,10 @@ impl ProfileStore {
             .collect::<Result<Vec<_>>>()?;
         self.update(|state| {
             let profile = state.profiles.iter_mut().find(|p| p.id == id).ok_or_else(|| Error::new("profile.notFound"))?;
-            profile.forwards = forwards;
+            match &mut profile.connection {
+                Connection::Ssh(ssh) => ssh.forwards = forwards,
+                _ => return Err(Error::new("profile.forwardsNeedSsh")),
+            }
             Ok(profile.clone())
         })
     }
@@ -577,14 +684,14 @@ impl ProfileStore {
         })
     }
 
-    /// How to reach `profile`: its jump hosts, and the proxy of the first connection.
-    pub fn route(&self, profile: &Profile) -> Result<Route> {
-        let jumps = profile
+    /// How to reach `remote`: its jump hosts, and the proxy of the first connection.
+    pub fn route(&self, remote: &Remote) -> Result<Route> {
+        let jumps = remote
             .jump_hosts
             .iter()
-            .map(|id| self.get(id).map_err(|_| Error::new("profile.invalidJumpHost")))
+            .map(|id| self.get(id).ok().and_then(|jump| jump.ssh_profile()).ok_or_else(|| Error::new("profile.invalidJumpHost")))
             .collect::<Result<Vec<_>>>()?;
-        let first = jumps.first().unwrap_or(profile);
+        let first = jumps.first().map_or(remote, |jump| &jump.ssh.remote);
         let proxy = first.proxy.as_ref().map(|id| self.proxy(id).map_err(|_| Error::new("profile.invalidProxy"))).transpose()?;
         Ok(Route { jumps, proxy })
     }
@@ -632,7 +739,7 @@ impl ProfileStore {
     /// Deletes a proxy that no session uses.
     pub fn delete_proxy(&self, id: &str) -> Result<()> {
         self.update(|state| {
-            let users: Vec<&str> = state.profiles.iter().filter(|p| p.proxy.as_deref() == Some(id)).map(|p| p.name.as_str()).collect();
+            let users: Vec<&str> = state.profiles.iter().filter(|p| p.proxy() == Some(id)).map(|p| p.name.as_str()).collect();
             if !users.is_empty() {
                 return Err(Error::new("proxy.inUse").param("names", users.join(", ")));
             }
@@ -752,7 +859,7 @@ impl ProfileStore {
 
 /// The names of the profiles that use profile `id` as a jump host.
 fn jump_host_users<'a>(state: &'a State, id: &str) -> Vec<&'a str> {
-    state.profiles.iter().filter(|p| p.jump_hosts.iter().any(|j| j == id)).map(|p| p.name.as_str()).collect()
+    state.profiles.iter().filter(|p| p.jump_hosts().iter().any(|j| j == id)).map(|p| p.name.as_str()).collect()
 }
 
 /// A store's file as read at startup, or the default if it doesn't exist yet.
@@ -856,10 +963,14 @@ mod tests {
     }
 
     fn new_profile(name: &str, folder: Option<&str>) -> Profile {
-        Profile {
-            folder: folder.map(Into::into),
-            ..Profile::new(name.into(), format!("{name}.example.com"), 22, "alice".into())
-        }
+        let ssh = SshOptions::new(Remote::new(format!("{name}.example.com"), 22, "alice".into()));
+        Profile { folder: folder.map(Into::into), ..Profile::new(name.into(), Connection::Ssh(ssh)) }
+    }
+
+    /// `profile` with its address or route changed.
+    fn with_remote(mut profile: Profile, change: impl FnOnce(&mut Remote)) -> Profile {
+        change(profile.connection.remote_mut().unwrap());
+        profile
     }
 
     fn folder(name: &str, parent: Option<&str>) -> Folder {
@@ -964,49 +1075,85 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A session keeps the settings of its protocol under `connection`. Files from before
+    /// 2.0, with every setting at the top level, are set aside rather than read.
     #[test]
-    fn reads_profiles_from_before_protocols() {
-        let json = r#"[{"id":"p","name":"web","host":"web.example.com","port":22,"username":"alice","auth":{"type":"auto"}}]"#;
-        let profiles: Vec<Profile> = serde_json::from_str(json).unwrap();
-        assert_eq!(profiles[0].protocol, Protocol::Ssh);
-        assert_eq!(profiles[0].serial, SerialOptions::default());
-        // Default serial settings are not written for every profile.
-        let written = serde_json::to_string(&profiles).unwrap();
-        assert!(written.contains(r#""protocol":"ssh""#) && !written.contains("serial"));
+    fn keeps_protocol_settings_under_connection() {
+        let written = serde_json::to_value(new_profile("web", None)).unwrap();
+        assert_eq!(written["connection"]["protocol"], "ssh");
+        assert_eq!(written["connection"]["host"], "web.example.com");
+        assert_eq!(written["connection"]["auth"]["type"], "auto");
+        assert!(written.get("host").is_none() && written.get("protocol").is_none());
+
+        let (_, dir) = store("before-2.0");
+        fs::create_dir_all(&dir).unwrap();
+        let old = r#"[{"id":"p","name":"web","host":"web.example.com","port":22,"username":"alice","auth":{"type":"auto"}}]"#;
+        fs::write(dir.join("profiles.json"), old).unwrap();
+        let set_aside = SetAside::default();
+        assert!(ProfileStore::load(dir.join("profiles.json"), &set_aside).list().is_empty());
+        assert_eq!(set_aside.take().len(), 1);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn checks_each_protocol_s_fields() {
         let (store, dir) = store("protocols");
-        let telnet = |host: &str| Profile { protocol: Protocol::Telnet, ..Profile::new(String::new(), host.into(), 23, String::new()) };
+        let telnet = |host: &str| Profile::new(String::new(), Connection::Telnet(Remote::new(host.into(), 23, String::new())));
         let switch = store.save(telnet("switch.lan")).unwrap();
         assert_eq!(switch.name, "switch.lan");
         assert_eq!(store.save(telnet("")).unwrap_err().code(), "profile.missingHost");
 
-        let serial = |device: &str| Profile {
-            protocol: Protocol::Serial,
-            serial: SerialOptions { device: device.into(), ..SerialOptions::default() },
-            ..Profile::new(String::new(), String::new(), 22, String::new())
+        let serial = |device: &str| {
+            Profile::new(String::new(), Connection::Serial(SerialOptions { device: device.into(), ..SerialOptions::default() }))
         };
         let console = store.save(serial(" /dev/cu.usbserial-1410 ")).unwrap();
-        assert_eq!((console.name.as_str(), console.serial.device.as_str()), ("cu.usbserial-1410", "/dev/cu.usbserial-1410"));
-        assert_eq!(console.serial.summary(), "115200 8N1");
+        let Connection::Serial(line) = &console.connection else { panic!("{console:?}") };
+        assert_eq!((console.name.as_str(), line.device.as_str()), ("cu.usbserial-1410", "/dev/cu.usbserial-1410"));
+        assert_eq!(line.summary(), "115200 8N1");
         assert_eq!(store.save(serial("")).unwrap_err().code(), "profile.missingDevice");
-        let odd = Profile { serial: SerialOptions { data_bits: 9, ..console.serial.clone() }, ..console.clone() };
+        let odd = Profile { connection: Connection::Serial(SerialOptions { data_bits: 9, ..line.clone() }), ..console.clone() };
         assert_eq!(store.save(odd).unwrap_err().code(), "profile.invalidSerialSettings");
 
         // Only SSH sessions can be jump hosts, and a jump host stays SSH.
         let bastion = store.save(new_profile("bastion", None)).unwrap();
-        let via_switch = Profile { jump_hosts: vec![switch.id.clone()], ..telnet("router.lan") };
+        let via_switch = with_remote(telnet("router.lan"), |remote| remote.jump_hosts = vec![switch.id.clone()]);
         assert_eq!(store.save(via_switch).unwrap_err().code(), "profile.invalidJumpHost");
-        let router = store.save(Profile { jump_hosts: vec![bastion.id.clone()], ..telnet("router.lan") }).unwrap();
-        let bastion_telnet = Profile { protocol: Protocol::Telnet, ..bastion.clone() };
+        let router = store.save(with_remote(telnet("router.lan"), |remote| remote.jump_hosts = vec![bastion.id.clone()])).unwrap();
+        let bastion_telnet = Profile { connection: Connection::Telnet(bastion.remote().unwrap().clone()), ..bastion.clone() };
         assert_eq!(store.save(bastion_telnet).unwrap_err().code(), "profile.jumpHostNotSsh");
-        // Serial sessions drop jump hosts.
-        let serial_router = store.save(Profile { protocol: Protocol::Serial, ..serial("COM3") }).unwrap();
-        assert!(serial_router.jump_hosts.is_empty());
         assert!(router.same_target(&Profile { name: "other".into(), ..router.clone() }));
-        assert!(!router.same_target(&Profile { protocol: Protocol::Ssh, ..router.clone() }));
+        let router_ssh = Profile { connection: Connection::Ssh(SshOptions::new(router.remote().unwrap().clone())), ..router.clone() };
+        assert!(!router.same_target(&router_ssh));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Forwarding rules are edited on their own, kept when the session is saved, and go when
+    /// it stops being an SSH session.
+    #[test]
+    fn keeps_forwarding_rules_of_ssh_sessions() {
+        let (store, dir) = store("forwards");
+        let web = store.save(new_profile("web", None)).unwrap();
+        let rule = ForwardRule {
+            id: String::new(),
+            kind: crate::forward::ForwardKind::Local,
+            bind_host: String::new(),
+            bind_port: 8080,
+            target_host: "localhost".into(),
+            target_port: 80,
+            description: String::new(),
+            auto_start: false,
+        };
+        let web = store.set_forwards(&web.id, vec![rule]).unwrap();
+        assert!(!web.forwards()[0].id.is_empty());
+        // The dialog sends no rules.
+        let renamed = store.save(Profile { id: web.id.clone(), name: "renamed".into(), ..new_profile("web", None) }).unwrap();
+        assert_eq!(renamed.forwards().len(), 1);
+
+        let telnet = Profile { connection: Connection::Telnet(web.remote().unwrap().clone()), ..web.clone() };
+        assert!(store.save(telnet).unwrap().forwards().is_empty());
+        assert_eq!(store.set_forwards(&web.id, Vec::new()).unwrap_err().code(), "profile.forwardsNeedSsh");
+        let ssh_again = store.save(Profile { connection: web.connection.clone(), ..web.clone() }).unwrap();
+        assert!(ssh_again.forwards().is_empty());
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1023,23 +1170,26 @@ mod tests {
             command: String::new(),
         };
         let socks = store.save_proxy(socks).unwrap();
-        let missing = Profile { proxy: Some("missing".into()), ..new_profile("x", None) };
+        let missing = with_remote(new_profile("x", None), |remote| remote.proxy = Some("missing".into()));
         assert_eq!(store.save(missing).unwrap_err().code(), "profile.invalidProxy");
 
-        let bastion = store.save(Profile { proxy: Some(socks.id.clone()), ..new_profile("bastion", None) }).unwrap();
+        let bastion = store.save(with_remote(new_profile("bastion", None), |remote| remote.proxy = Some(socks.id.clone()))).unwrap();
         // With jump hosts, the session's own proxy is dropped; the first jump host's is used.
-        let db = Profile { jump_hosts: vec![bastion.id.clone()], proxy: Some(socks.id.clone()), ..new_profile("db", None) };
+        let db = with_remote(new_profile("db", None), |remote| {
+            remote.jump_hosts = vec![bastion.id.clone()];
+            remote.proxy = Some(socks.id.clone());
+        });
         let db = store.save(db).unwrap();
-        assert_eq!(db.proxy, None);
-        let route = store.route(&db).unwrap();
+        assert_eq!(db.proxy(), None);
+        let route = store.route(db.remote().unwrap()).unwrap();
         assert_eq!((route.jumps.len(), route.proxy.as_ref().map(|p| p.id.as_str())), (1, Some(socks.id.as_str())));
-        assert_eq!(store.route(&bastion).unwrap().proxy, Some(socks.clone()));
-        assert!(store.route(&new_profile("direct", None)).unwrap().proxy.is_none());
+        assert_eq!(store.route(bastion.remote().unwrap()).unwrap().proxy, Some(socks.clone()));
+        assert!(store.route(new_profile("direct", None).remote().unwrap()).unwrap().proxy.is_none());
 
         // A proxy in use cannot be deleted.
         let error = store.delete_proxy(&socks.id).unwrap_err();
         assert_eq!((error.code(), error.to_string().contains("bastion")), ("proxy.inUse", true));
-        store.save(Profile { proxy: None, ..bastion }).unwrap();
+        store.save(with_remote(bastion, |remote| remote.proxy = None)).unwrap();
         store.delete_proxy(&socks.id).unwrap();
         assert!(store.proxies().is_empty());
         assert_eq!(store.save_proxy(socks).unwrap_err().code(), "proxy.notFound");
@@ -1047,9 +1197,10 @@ mod tests {
         // Dangling references (hand-edited files) are dropped on load.
         let kept = store.save_proxy(Proxy { id: String::new(), kind: crate::proxy::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() }).unwrap();
         assert_eq!(kept.name, "nc");
-        fs::write(dir.join("profiles.json"), serde_json::to_vec(&[Profile { id: "p".into(), proxy: Some("gone".into()), ..new_profile("p", None) }]).unwrap()).unwrap();
+        let dangling = with_remote(Profile { id: "p".into(), ..new_profile("p", None) }, |remote| remote.proxy = Some("gone".into()));
+        fs::write(dir.join("profiles.json"), serde_json::to_vec(&[dangling]).unwrap()).unwrap();
         let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
-        assert_eq!(reloaded.list()[0].proxy, None);
+        assert_eq!(reloaded.list()[0].proxy(), None);
         assert_eq!(reloaded.proxies(), [kept]);
         fs::remove_dir_all(&dir).unwrap();
     }

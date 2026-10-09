@@ -17,7 +17,7 @@ use tokio::sync::watch;
 
 use super::handler::ClientHandler;
 use super::JumpChain;
-use crate::config::Profile;
+use crate::config::SshProfile;
 use crate::error::{Error, Result};
 use crate::forward::{ForwardRule, Forwards, Hub, RemoteRoutes};
 use crate::session::{SessionId, SessionSink};
@@ -37,7 +37,7 @@ pub struct Connection {
     handle: Arc<SshHandle>,
     /// The profile as it was when connecting; shells opened later (duplicated tabs) use its
     /// terminal options and encoding.
-    profile: Profile,
+    profile: SshProfile,
     /// Connections to the jump hosts this one runs through; disconnected once this
     /// connection is dropped.
     _jumps: JumpChain,
@@ -56,7 +56,7 @@ impl Connection {
         &self.handle
     }
 
-    pub fn profile(&self) -> &Profile {
+    pub fn profile(&self) -> &SshProfile {
         &self.profile
     }
 
@@ -157,7 +157,7 @@ impl Connections {
         &self,
         id: SessionId,
         handle: Arc<SshHandle>,
-        profile: Profile,
+        profile: SshProfile,
         jumps: JumpChain,
         routes: RemoteRoutes,
         disconnect: watch::Receiver<Option<String>>,
@@ -230,7 +230,7 @@ impl Connections {
     /// tab reconnected), unless another connection of the session runs them.
     pub fn auto_start(&self, connection: &Arc<Connection>, carry: &[String]) {
         let others = session_connections(&self.0.lock().unwrap(), connection).split_off(1);
-        for rule in connection.profile.forwards.iter().filter(|rule| rule.auto_start || carry.contains(&rule.id)) {
+        for rule in connection.profile.ssh.forwards.iter().filter(|rule| rule.auto_start || carry.contains(&rule.id)) {
             if !others.iter().any(|other| other.forwards.is_running(&rule.id)) {
                 connection.forwards.start(rule.clone(), true);
             }

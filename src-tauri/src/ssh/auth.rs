@@ -15,7 +15,7 @@ use russh::keys::{load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWit
 use russh::{MethodKind, MethodSet, Signer};
 
 use super::handler::ClientHandler;
-use crate::config::{AuthMethod, Profile};
+use crate::config::{AuthMethod, SshProfile};
 use crate::error::Error;
 use crate::secrets;
 use crate::session::TermIo;
@@ -27,9 +27,9 @@ const DEFAULT_KEYS: &[&str] = &["id_ed25519", "id_ecdsa", "id_rsa"];
 
 type Session = Handle<ClientHandler>;
 
-pub async fn authenticate(session: &mut Session, profile: &Profile, io: &mut TermIo) -> Result<()> {
-    let user = profile.username.as_str();
-    match &profile.auth {
+pub async fn authenticate(session: &mut Session, profile: &SshProfile, io: &mut TermIo) -> Result<()> {
+    let user = profile.ssh.remote.username.as_str();
+    match &profile.ssh.auth {
         AuthMethod::Auto => auto(session, profile, io).await,
         AuthMethod::Password => password(session, profile, io).await,
         AuthMethod::PublicKey { key_path } => public_key(session, user, key_path, io).await,
@@ -39,8 +39,8 @@ pub async fn authenticate(session: &mut Session, profile: &Profile, io: &mut Ter
 
 /// What OpenSSH tries by default: the agent's keys, the default key files, then
 /// keyboard-interactive or password.
-async fn auto(session: &mut Session, profile: &Profile, io: &mut TermIo) -> Result<()> {
-    let user = profile.username.as_str();
+async fn auto(session: &mut Session, profile: &SshProfile, io: &mut TermIo) -> Result<()> {
+    let user = profile.ssh.remote.username.as_str();
     let Some(methods) = offered_methods(session, user).await? else {
         return Ok(());
     };
@@ -70,16 +70,16 @@ async fn offered_methods(session: &mut Session, user: &str) -> Result<Option<Met
     })
 }
 
-async fn password(session: &mut Session, profile: &Profile, io: &mut TermIo) -> Result<()> {
+async fn password(session: &mut Session, profile: &SshProfile, io: &mut TermIo) -> Result<()> {
     // Ask the server which methods it accepts: many only allow keyboard-interactive.
-    match offered_methods(session, &profile.username).await? {
+    match offered_methods(session, &profile.ssh.remote.username).await? {
         Some(methods) => password_methods(session, profile, &methods, io).await,
         None => Ok(()),
     }
 }
 
-async fn password_methods(session: &mut Session, profile: &Profile, methods: &MethodSet, io: &mut TermIo) -> Result<()> {
-    let user = profile.username.as_str();
+async fn password_methods(session: &mut Session, profile: &SshProfile, methods: &MethodSet, io: &mut TermIo) -> Result<()> {
+    let user = profile.ssh.remote.username.as_str();
     let mut saved = secrets::password(profile.id.clone()).await;
     if !methods.contains(&MethodKind::Password) && methods.contains(&MethodKind::KeyboardInteractive) {
         return keyboard_interactive(session, user, saved, io).await;
@@ -92,7 +92,7 @@ async fn password_methods(session: &mut Session, profile: &Profile, methods: &Me
         io.print(&format!("{}\n", t!("terminal.savedPasswordRejected")));
     }
     for _ in 0..MAX_ATTEMPTS {
-        io.print(&format!("{user}@{}'s password: ", profile.host));
+        io.print(&format!("{user}@{}'s password: ", profile.ssh.remote.host));
         let password = io.read_line(false).await.context(Error::new("auth.cancelled"))?;
         if session.authenticate_password(user, password).await?.success() {
             return Ok(());

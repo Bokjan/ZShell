@@ -141,7 +141,11 @@ export const configSetAside = () => invoke<SetAsideFile[]>("config_set_aside");
 /** The user name `ssh` uses when none is given. */
 export const localUsername = () => invoke<string>("local_username");
 
-/** Replaces the profile's forwarding rules; resolves to the updated profile (with rule ids). */
+/** A session's port forwarding rules; only SSH sessions have them. */
+export const profileForwards = (profile: Profile): ForwardRule[] =>
+  profile.connection.protocol === "ssh" ? profile.connection.forwards : [];
+
+/** Replaces the SSH session's forwarding rules; resolves to the updated profile (with rule ids). */
 export const setProfileForwards = (profileId: string, forwards: ForwardRule[]) =>
   invoke<Profile>("profile_set_forwards", { profileId, forwards });
 

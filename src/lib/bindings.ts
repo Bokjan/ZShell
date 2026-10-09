@@ -38,6 +38,7 @@ export type ErrorCode =
   | "import.notSessionsFile"
   | "import.parseFailed"
   | "import.readFailed"
+  | "import.unsupportedVersion"
   | "knownHosts.changed"
   | "knownHosts.noHome"
   | "knownHosts.readFailed"
@@ -46,6 +47,7 @@ export type ErrorCode =
   | "net.connectFailed"
   | "net.connectTimeout"
   | "net.connectionLost"
+  | "profile.forwardsNeedSsh"
   | "profile.invalidEncoding"
   | "profile.invalidEnvName"
   | "profile.invalidHost"
@@ -128,6 +130,11 @@ export type CommandError = { code: ErrorCode, params: { [key in string]: string 
 message: string, };
 
 export type CommandGroup = { id: string, name: string, commands: Array<QuickCommand>, };
+
+/**
+ * What a session connects to, with the settings of its protocol.
+ */
+export type Connection = { "protocol": "ssh" } & SshOptions | { "protocol": "telnet" } & Remote | { "protocol": "serial" } & SerialOptions;
 
 export type CursorStyle = "block" | "bar" | "underline";
 
@@ -315,60 +322,33 @@ export type LogSummary = { count: number, bytes: number, };
 
 export type Parity = "none" | "odd" | "even";
 
+/**
+ * A saved session: what it connects to (by protocol), and how its tabs behave.
+ */
 export type Profile = { 
 /**
  * Empty when creating a new profile; assigned on save.
  */
 id: string, name: string, 
 /**
- * Absent in files from before Telnet and serial sessions, which are all SSH.
- */
-protocol: Protocol, 
-/**
- * SSH and Telnet; unused by serial sessions.
- */
-host: string, port: number, 
-/**
- * Required for SSH; for Telnet, optional and typed at the login prompt.
- */
-username: string, 
-/**
- * SSH only. Telnet uses the saved password, if any, at the password prompt.
- */
-auth: AuthMethod, 
-/**
- * The device and line settings of a serial session.
- */
-serial?: SerialOptions, 
-/**
- * Profiles to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
- * own profile's address and authentication, but not that profile's jump hosts. SSH
- * profiles only; SSH and Telnet sessions can use them.
- */
-jumpHosts: Array<string>, 
-/**
- * The id of the proxy to connect through; SSH and Telnet. Not kept with jump hosts,
- * where the first jump host's own proxy is used (see [`Route`]).
- */
-proxy?: string, 
-/**
- * Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
- * drop the connection. Telnet uses TCP keepalives.
- */
-keepaliveInterval: number, 
-/**
- * Reconnect automatically when an established connection is lost.
- */
-autoReconnect: boolean, 
-/**
- * Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
- */
-forwards: Array<ForwardRule>, 
-/**
  * The folder the session is in; `None` for the top level. Changed with
  * [`ProfileStore::move_item`]; `save` keeps it.
  */
-folder?: string, 
+folder?: string, connection: Connection, 
+/**
+ * Reconnect automatically when an established connection is lost, or when a serial
+ * device is plugged in again.
+ */
+autoReconnect: boolean, 
+/**
+ * The remote side's character encoding, one of [`crate::encoding::SUPPORTED`].
+ */
+encoding: string, 
+/**
+ * Commands typed into each new shell, in order, each once the shell shows a prompt.
+ * Sent by the frontend.
+ */
+loginCommands: Array<string>, 
 /**
  * Record a session log from the start of each connection.
  */
@@ -377,28 +357,6 @@ autoLog: boolean,
  * The quick command group its tabs show first; `None` for the default group.
  */
 commandGroup?: string, 
-/**
- * Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
- */
-forwardAgent: boolean, 
-/**
- * The remote side's character encoding, one of [`crate::encoding::SUPPORTED`].
- */
-encoding: string, 
-/**
- * The terminal type the remote shell is told (`TERM`).
- */
-termType: string, 
-/**
- * Environment variables for the remote shell (OpenSSH's `SetEnv`); the server only
- * accepts those its `AcceptEnv` allows.
- */
-env: Array<EnvVar>, 
-/**
- * Commands typed into each new shell, in order, each once the shell shows a prompt.
- * Sent by the frontend.
- */
-loginCommands: Array<string>, 
 /**
  * Terminal appearance for this session; unset values follow the settings.
  */
@@ -453,6 +411,36 @@ enter: boolean, };
 export type QuickCommands = { groups: Array<CommandGroup>, };
 
 /**
+ * What SSH and Telnet sessions have in common: where they connect, through what, and the
+ * terminal type the remote side is told.
+ */
+export type Remote = { host: string, port: number, 
+/**
+ * Required for SSH; for Telnet, optional and typed at the login prompt.
+ */
+username: string, 
+/**
+ * Sessions to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
+ * own session's address and authentication, but not that session's jump hosts. Only
+ * SSH sessions can be jump hosts.
+ */
+jumpHosts: Array<string>, 
+/**
+ * The id of the proxy to connect through. Not kept with jump hosts, where the first jump
+ * host's own proxy is used (see [`Route`]).
+ */
+proxy?: string, 
+/**
+ * Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
+ * drop an SSH connection; Telnet uses TCP keepalives.
+ */
+keepaliveInterval: number, 
+/**
+ * The terminal type the remote side is told (`TERM`, Telnet's terminal type option).
+ */
+termType: string, };
+
+/**
  * What right-clicking the terminal does.
  */
 export type RightClick = "menu" | "paste";
@@ -496,7 +484,11 @@ description: string | null, };
 /**
  * A session in a file, as it would be imported.
  */
-export type SessionCandidate = { id: string, name: string, protocol: Protocol, host: string, port: number, username: string, serial: SerialOptions, 
+export type SessionCandidate = { id: string, name: string, 
+/**
+ * As in the file: its jump hosts and proxy are ids in the file.
+ */
+connection: Connection, 
 /**
  * The names of the folders it is in, outermost first.
  */
@@ -545,6 +537,45 @@ export type SidebarSettings = {
  * Show the most recently opened sessions above the list.
  */
 showRecent: boolean, };
+
+export type SshOptions = { auth: AuthMethod, 
+/**
+ * Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
+ */
+forwardAgent: boolean, 
+/**
+ * Environment variables for the remote shell (OpenSSH's `SetEnv`); the server only
+ * accepts those its `AcceptEnv` allows.
+ */
+env: Array<EnvVar>, 
+/**
+ * Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
+ */
+forwards: Array<ForwardRule>, host: string, port: number, 
+/**
+ * Required for SSH; for Telnet, optional and typed at the login prompt.
+ */
+username: string, 
+/**
+ * Sessions to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
+ * own session's address and authentication, but not that session's jump hosts. Only
+ * SSH sessions can be jump hosts.
+ */
+jumpHosts: Array<string>, 
+/**
+ * The id of the proxy to connect through. Not kept with jump hosts, where the first jump
+ * host's own proxy is used (see [`Route`]).
+ */
+proxy?: string, 
+/**
+ * Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
+ * drop an SSH connection; Telnet uses TCP keepalives.
+ */
+keepaliveInterval: number, 
+/**
+ * The terminal type the remote side is told (`TERM`, Telnet's terminal type option).
+ */
+termType: string, };
 
 export type TabSettings = { 
 /**

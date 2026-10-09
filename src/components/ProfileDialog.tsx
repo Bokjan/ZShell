@@ -10,11 +10,13 @@ import {
   ENCODINGS,
   deleteProfile,
   errorMessage,
+  profileForwards,
   proxies as proxyApi,
   saveProfile,
   serialPorts,
   type AuthMethod,
   type CommandGroup,
+  type Connection,
   type EnvVar,
   type FlowControl,
   type Parity,
@@ -22,6 +24,7 @@ import {
   type ProfileAppearance,
   type Protocol,
   type Proxy,
+  type Remote,
   type SerialPortInfo,
 } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
@@ -40,7 +43,13 @@ import { SchemePreview, schemeLabel } from "./SchemePreview";
 import { SpinInput } from "./SpinInput";
 
 /** Values to start a new profile with: from a quick connection, or the folder it goes in. */
-export type ProfileDefaults = Partial<Pick<Profile, "protocol" | "host" | "port" | "username" | "folder">>;
+export interface ProfileDefaults {
+  protocol?: Protocol;
+  host?: string;
+  port?: number;
+  username?: string;
+  folder?: string;
+}
 
 interface Props {
   /** null creates a new profile. */
@@ -77,6 +86,9 @@ const NEW_PROXY = "\u0000new";
 /** The color picker's starting value before a background is chosen. */
 const DEFAULT_BACKGROUND = "#5a1414";
 
+/** The proxy of an SSH or Telnet session. */
+const proxyOf = (profile: Profile) => (profile.connection.protocol === "serial" ? undefined : profile.connection.proxy);
+
 const envText = (env: EnvVar[]) => env.map((v) => `${v.name}=${v.value}`).join("\n");
 
 /** `NAME=value` lines (blank ones skipped); the first line without `=` instead. */
@@ -101,26 +113,28 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const saving = useSubmitting();
   const { settings, theme } = useSettings();
   const [page, setPage] = useState<Page>("general");
+  // The saved settings of the profile's protocol; those of the others start empty.
+  const current = profile?.connection;
+  const savedRemote = current && current.protocol !== "serial" ? current : undefined;
+  const savedSsh = current?.protocol === "ssh" ? current : undefined;
   const [name, setName] = useState(profile?.name ?? "");
-  const [protocol, setProtocol] = useState<Protocol>(profile?.protocol ?? defaults?.protocol ?? "ssh");
-  const [host, setHost] = useState(profile?.host ?? defaults?.host ?? "");
-  const [port, setPort] = useState(String(profile?.port ?? defaults?.port ?? 22));
-  const [username, setUsername] = useState(profile?.username ?? defaults?.username ?? "");
-  const [authType, setAuthType] = useState<AuthType>(profile?.auth.type ?? "auto");
-  const [keyPath, setKeyPath] = useState(
-    profile?.auth.type === "publicKey" ? profile.auth.keyPath : "~/.ssh/id_ed25519",
-  );
-  const [jumpHosts, setJumpHosts] = useState<string[]>(profile?.jumpHosts ?? []);
-  const [proxy, setProxy] = useState(profile?.proxy ?? "");
+  const [protocol, setProtocol] = useState<Protocol>(current?.protocol ?? defaults?.protocol ?? "ssh");
+  const [host, setHost] = useState(savedRemote?.host ?? defaults?.host ?? "");
+  const [port, setPort] = useState(String(savedRemote?.port ?? defaults?.port ?? 22));
+  const [username, setUsername] = useState(savedRemote?.username ?? defaults?.username ?? "");
+  const [authType, setAuthType] = useState<AuthType>(savedSsh?.auth.type ?? "auto");
+  const [keyPath, setKeyPath] = useState(savedSsh?.auth.type === "publicKey" ? savedSsh.auth.keyPath : "~/.ssh/id_ed25519");
+  const [jumpHosts, setJumpHosts] = useState<string[]>(savedRemote?.jumpHosts ?? []);
+  const [proxy, setProxy] = useState(savedRemote?.proxy ?? "");
   const [proxyList, setProxyList] = useState<Proxy[]>([]);
   const [creatingProxy, setCreatingProxy] = useState(false);
   const home = useHomeDirectory();
-  const [keepalive, setKeepalive] = useState(String(profile?.keepaliveInterval ?? 30));
+  const [keepalive, setKeepalive] = useState(String(savedRemote?.keepaliveInterval ?? 30));
   const [autoReconnect, setAutoReconnect] = useState(profile?.autoReconnect ?? true);
-  const [forwardAgent, setForwardAgent] = useState(profile?.forwardAgent ?? false);
+  const [forwardAgent, setForwardAgent] = useState(savedSsh?.forwardAgent ?? false);
   const [encoding, setEncoding] = useState(profile?.encoding ?? "utf-8");
-  const [termType, setTermType] = useState(profile?.termType ?? DEFAULT_TERM_TYPE);
-  const [env, setEnv] = useState(envText(profile?.env ?? []));
+  const [termType, setTermType] = useState(savedRemote?.termType ?? DEFAULT_TERM_TYPE);
+  const [env, setEnv] = useState(envText(savedSsh?.env ?? []));
   const [loginCommands, setLoginCommands] = useState((profile?.loginCommands ?? []).join("\n"));
   const [autoLog, setAutoLog] = useState(profile?.autoLog ?? false);
   const [commandGroup, setCommandGroup] = useState(profile?.commandGroup ?? DEFAULT_GROUP);
@@ -134,7 +148,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const [background, setBackground] = useState(own?.background ?? DEFAULT_BACKGROUND);
   const [fontFamily, setFontFamily] = useState(own?.fontFamily ?? "");
   const [fontSize, setFontSize] = useState(own?.fontSize ? String(own.fontSize) : "");
-  const serial = profile?.serial ?? DEFAULT_SERIAL;
+  const serial = current?.protocol === "serial" ? current : DEFAULT_SERIAL;
   const [device, setDevice] = useState(serial.device);
   const [baudRate, setBaudRate] = useState(String(serial.baudRate));
   const [dataBits, setDataBits] = useState(serial.dataBits);
@@ -153,7 +167,9 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const usesPassword = protocol === "telnet" || (ssh && (authType === "password" || authType === "auto"));
   const profileName = (id: string) => profiles.find((p) => p.id === id)?.name ?? id;
   // Only SSH sessions can be jump hosts.
-  const jumpCandidates = profiles.filter((p) => p.id !== profile?.id && p.protocol === "ssh" && !jumpHosts.includes(p.id));
+  const jumpCandidates = profiles.filter(
+    (p) => p.id !== profile?.id && p.connection.protocol === "ssh" && !jumpHosts.includes(p.id),
+  );
 
   const refreshProxies = () => void proxyApi.list().then(setProxyList, console.error);
   useEffect(refreshProxies, []);
@@ -209,7 +225,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     // Checked here rather than with `required`: the field may be on another page. Fields
-    // of other protocols keep their values without being checked.
+    // of other protocols are neither checked nor saved.
     if (ssh && (!host.trim() || !username.trim() || (authType === "publicKey" && !keyPath.trim()))) {
       invalid("general", t("profile.missingFields"));
       return;
@@ -222,21 +238,19 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
       invalid("general", t("profile.missingDevice"));
       return;
     }
-    const portNumber = protocol === "serial" ? (profile?.port ?? 22) : wholeNumber(port);
-    if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+    const portNumber = wholeNumber(port);
+    if (protocol !== "serial" && (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535)) {
       invalid("general", t("profile.invalidPort"));
       return;
     }
     const baud = wholeNumber(baudRate);
     // The backend takes a 32-bit number.
-    const baudValid = baud >= 1 && baud <= 0xffffffff;
-    if (protocol === "serial" && !baudValid) {
+    if (protocol === "serial" && !(baud >= 1 && baud <= 0xffffffff)) {
       invalid("general", t("profile.invalidBaudRate"));
       return;
     }
     const keepaliveInterval = wholeNumber(keepalive);
-    const keepaliveValid = keepaliveInterval >= 0 && keepaliveInterval <= 3600;
-    if (protocol !== "serial" && !keepaliveValid) {
+    if (protocol !== "serial" && !(keepaliveInterval >= 0 && keepaliveInterval <= 3600)) {
       invalid("connection", t("profile.invalidKeepalive"));
       return;
     }
@@ -252,6 +266,25 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
     }
     const auth: AuthMethod =
       authType === "publicKey" ? { type: "publicKey", keyPath: keyPath.trim() } : { type: authType };
+    const remote: Remote = {
+      host,
+      port: portNumber,
+      username,
+      jumpHosts,
+      // The backend drops it with jump hosts.
+      proxy: proxy && jumpHosts.length === 0 ? proxy : undefined,
+      keepaliveInterval,
+      termType,
+    };
+    let connection: Connection;
+    if (protocol === "serial") connection = { protocol, device, baudRate: baud, dataBits, parity, stopBits, flowControl };
+    else if (protocol === "telnet") connection = { protocol, ...remote };
+    else {
+      const sshEnv = Array.isArray(envVars) ? envVars : [];
+      // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
+      const forwards = profile ? profileForwards(profile) : [];
+      connection = { protocol, ...remote, auth, forwardAgent, env: sshEnv, forwards };
+    }
     // Only password and automatic auth keep a stored password; switching away clears it.
     let passwordUpdate: string | undefined;
     if (!usesPassword) passwordUpdate = profile ? "" : undefined;
@@ -261,37 +294,16 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
     await saving.submit(async () => {
       try {
         const { saved, passwordError } = await saveProfile(
-          // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
           {
             id: profile?.id ?? "",
             name,
-            protocol,
-            host,
-            port: portNumber,
-            username,
-            auth,
-            serial: {
-              device,
-              baudRate: baudValid ? baud : DEFAULT_SERIAL.baudRate,
-              dataBits,
-              parity,
-              stopBits,
-              flowControl,
-            },
-            jumpHosts,
-            // The backend drops it with jump hosts, and for serial sessions.
-            proxy: proxy && jumpHosts.length === 0 ? proxy : undefined,
-            keepaliveInterval: keepaliveValid ? keepaliveInterval : (profile?.keepaliveInterval ?? 30),
+            connection,
             autoReconnect,
-            forwardAgent,
             encoding,
-            termType,
-            env: Array.isArray(envVars) ? envVars : (profile?.env ?? []),
             loginCommands: loginCommands.split("\n"),
             appearance,
             autoLog,
             commandGroup: shownGroup === DEFAULT_GROUP ? undefined : shownGroup,
-            forwards: profile?.forwards ?? [],
             // Where a new profile goes; the backend keeps an existing one's folder.
             folder: profile?.folder ?? defaults?.folder,
           },
@@ -608,7 +620,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           <label>
             {t("profile.proxy")}
             <select
-              value={firstJump ? (firstJump.proxy ?? "") : proxy}
+              value={firstJump ? (proxyOf(firstJump) ?? "") : proxy}
               disabled={!!firstJump}
               onChange={(e) => (e.target.value === NEW_PROXY ? setCreatingProxy(true) : setProxy(e.target.value))}
             >
@@ -623,7 +635,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           </label>
           <p className="hint">
             {firstJump
-              ? t("profile.proxyViaJumpHost", { name: firstJump.name, proxy: proxyName(firstJump.proxy) ?? t("profile.noProxy") })
+              ? t("profile.proxyViaJumpHost", { name: firstJump.name, proxy: proxyName(proxyOf(firstJump)) ?? t("profile.noProxy") })
               : t("profile.proxyHint")}
           </p>
           <label>

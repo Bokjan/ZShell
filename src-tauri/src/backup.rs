@@ -8,13 +8,15 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{write_json_atomic, Additions, Folder, Profile, Protocol, SerialOptions, Snapshot};
+use crate::config::{write_json_atomic, Additions, Connection, Folder, Profile, Snapshot};
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::proxy::{Proxy, ProxyKind};
 
 const FORMAT: &str = "zshell-sessions";
-const VERSION: u32 = 1;
+/// 2 since sessions keep the settings of their protocol under `connection` (ZShell 2.0); files
+/// of version 1 are not read.
+const VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +32,12 @@ struct SessionsFile {
     proxies: Vec<Proxy>,
 }
 
+#[derive(Deserialize)]
+struct Header {
+    format: String,
+    version: u32,
+}
+
 /// A session in a file, as it would be imported.
 #[derive(Debug, Serialize, TS)]
 #[ts(rename = "SessionCandidate")]
@@ -37,11 +45,8 @@ struct SessionsFile {
 pub struct Candidate {
     pub id: String,
     pub name: String,
-    pub protocol: Protocol,
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub serial: SerialOptions,
+    /// As in the file: its jump hosts and proxy are ids in the file.
+    pub connection: Connection,
     /// The names of the folders it is in, outermost first.
     pub folder: Vec<String>,
     /// The names of its jump hosts.
@@ -71,21 +76,17 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Vec<Candidate>> {
         .profiles
         .iter()
         .map(|p| {
-            let proxy = p.proxy.as_ref().and_then(|id| file.proxies.iter().find(|proxy| proxy.id == *id));
+            let proxy = p.proxy().and_then(|id| file.proxies.iter().find(|proxy| proxy.id == id));
             Candidate {
                 id: p.id.clone(),
                 name: p.name.clone(),
-                protocol: p.protocol,
-                host: p.host.clone(),
-                port: p.port,
-                username: p.username.clone(),
-                serial: p.serial.clone(),
+                connection: p.connection.clone(),
                 folder: folder_path(&file.folders, p.folder.as_deref()),
-                jump_hosts: p.jump_hosts.iter().filter_map(|j| names.get(j.as_str()).map(|n| n.to_string())).collect(),
+                jump_hosts: p.jump_hosts().iter().filter_map(|j| names.get(j.as_str()).map(|n| n.to_string())).collect(),
                 proxy: proxy.map(|proxy| proxy.name.clone()),
                 proxy_command: proxy.filter(|proxy| proxy.kind == ProxyKind::Command).map(|proxy| proxy.command.clone()),
                 existing: duplicate_of(p, existing).map(|e| e.name.clone()),
-                auto_forwards: p.forwards.iter().filter(|f| f.auto_start).filter_map(|f| f.clone().normalize().ok()).collect(),
+                auto_forwards: p.forwards().iter().filter(|f| f.auto_start).filter_map(|f| f.clone().normalize().ok()).collect(),
             }
         })
         .collect())
@@ -115,7 +116,7 @@ pub fn plan(path: &Path, selected: &[String], here: &Snapshot) -> Result<Additio
             None => {
                 ids.insert(id.clone(), uuid::Uuid::new_v4().to_string());
                 imported.insert(id);
-                queue.extend(profile.jump_hosts.iter().cloned());
+                queue.extend(profile.jump_hosts().iter().cloned());
             }
         }
     }
@@ -124,7 +125,7 @@ pub fn plan(path: &Path, selected: &[String], here: &Snapshot) -> Result<Additio
     let mut proxy_ids: HashMap<&str, String> = HashMap::new();
     let mut proxies = Vec::new();
     for profile in file.profiles.iter().filter(|p| imported.contains(&p.id)) {
-        let Some(proxy) = profile.proxy.as_ref().and_then(|id| file.proxies.iter().find(|proxy| proxy.id == *id)) else {
+        let Some(proxy) = profile.proxy().and_then(|id| file.proxies.iter().find(|proxy| proxy.id == id)) else {
             continue;
         };
         if proxy_ids.contains_key(proxy.id.as_str()) {
@@ -150,13 +151,11 @@ pub fn plan(path: &Path, selected: &[String], here: &Snapshot) -> Result<Additio
         .iter()
         .filter(|p| imported.contains(&p.id))
         .map(|p| {
-            let mut profile = Profile {
-                id: ids[&p.id].clone(),
-                jump_hosts: p.jump_hosts.iter().filter_map(|j| ids.get(j).cloned()).collect(),
-                proxy: p.proxy.as_deref().and_then(|id| proxy_ids.get(id).cloned()),
-                folder: p.folder.as_deref().and_then(|f| merger.resolve(f)),
-                ..p.clone()
-            };
+            let mut profile = Profile { id: ids[&p.id].clone(), folder: p.folder.as_deref().and_then(|f| merger.resolve(f)), ..p.clone() };
+            if let Some(remote) = profile.connection.remote_mut() {
+                remote.jump_hosts = remote.jump_hosts.iter().filter_map(|j| ids.get(j).cloned()).collect();
+                remote.proxy = remote.proxy.as_deref().and_then(|id| proxy_ids.get(id).cloned());
+            }
             // As saving does: an empty bind address becomes localhost rather than every
             // interface of the server, for one.
             profile.normalize_imported().map_err(|e| Error::new("import.invalidSession").param("name", &p.name).detail(e))?;
@@ -168,12 +167,16 @@ pub fn plan(path: &Path, selected: &[String], here: &Snapshot) -> Result<Additio
 
 fn read(path: &Path) -> Result<SessionsFile> {
     let bytes = std::fs::read(path).map_err(|e| Error::new("import.readFailed").param("path", path.display()).detail(e))?;
-    let file: SessionsFile =
-        serde_json::from_slice(&bytes).map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
-    if file.format != FORMAT {
+    let parse_failed = |e| Error::new("import.parseFailed").param("path", path.display()).detail(e);
+    // The format and version first: a file of another version doesn't parse as this one.
+    let header: Header = serde_json::from_slice(&bytes).map_err(parse_failed)?;
+    if header.format != FORMAT {
         return Err(Error::new("import.notSessionsFile").param("path", path.display()));
     }
-    let mut file = file;
+    if header.version != VERSION {
+        return Err(Error::new("import.unsupportedVersion").param("path", path.display()));
+    }
+    let mut file: SessionsFile = serde_json::from_slice(&bytes).map_err(parse_failed)?;
     // A hand-written file may leave ids out or repeat them; references go to the first.
     unique_ids(file.profiles.iter_mut().map(|p| &mut p.id));
     unique_ids(file.proxies.iter_mut().map(|p| &mut p.id));
@@ -200,7 +203,7 @@ fn unique_ids<'a>(ids: impl Iterator<Item = &'a mut String>) {
 fn duplicate_of<'a>(profile: &Profile, existing: &'a [Profile]) -> Option<&'a Profile> {
     existing
         .iter()
-        .find(|e| e.name == profile.name && e.protocol == profile.protocol)
+        .find(|e| e.name == profile.name && e.protocol() == profile.protocol())
         .or_else(|| existing.iter().find(|e| e.same_target(profile)))
 }
 
@@ -248,14 +251,16 @@ impl FolderMerger<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Remote, SshOptions};
 
     fn profile(id: &str, name: &str, host: &str, folder: Option<&str>, jumps: &[&str]) -> Profile {
-        Profile {
-            id: id.into(),
-            jump_hosts: jumps.iter().map(|j| j.to_string()).collect(),
-            folder: folder.map(Into::into),
-            ..Profile::new(name.into(), host.into(), 22, "alice".into())
-        }
+        let remote = Remote { jump_hosts: jumps.iter().map(|j| j.to_string()).collect(), ..Remote::new(host.into(), 22, "alice".into()) };
+        Profile { id: id.into(), folder: folder.map(Into::into), ..Profile::new(name.into(), Connection::Ssh(SshOptions::new(remote))) }
+    }
+
+    fn with_proxy(mut profile: Profile, proxy: &str) -> Profile {
+        profile.connection.remote_mut().unwrap().proxy = Some(proxy.into());
+        profile
     }
 
     fn folder(id: &str, name: &str, parent: Option<&str>) -> Folder {
@@ -290,7 +295,7 @@ mod tests {
         // db comes with new ids, through the existing bastion.
         assert_eq!(new_profiles.len(), 1);
         assert_ne!(new_profiles[0].id, "db");
-        assert_eq!(new_profiles[0].jump_hosts, ["b2"]);
+        assert_eq!(new_profiles[0].jump_hosts(), ["b2"]);
         assert_eq!(new_profiles[0].folder.as_deref(), Some(new_folders[0].id.as_str()));
         std::fs::remove_file(&path).unwrap();
     }
@@ -312,13 +317,18 @@ mod tests {
         };
         let profiles = vec![
             profile("router", "router", "router.lan", None, &[]),
-            Profile { forwards: vec![forward], ..profile("db", "db", "db.internal", None, &["router"]) },
+            {
+                let mut db = profile("db", "db", "db.internal", None, &["router"]);
+                let Connection::Ssh(ssh) = &mut db.connection else { unreachable!() };
+                ssh.forwards = vec![forward];
+                db
+            },
             profile("", "a", "a.internal", None, &[]),
             profile("", "b", "b.internal", None, &[]),
         ];
         export(&path, Vec::new(), Vec::new(), profiles).unwrap();
 
-        let telnet = Profile { protocol: Protocol::Telnet, ..profile("t", "router", "10.0.0.1", None, &[]) };
+        let telnet = Profile { connection: Connection::Telnet(Remote::new("10.0.0.1".into(), 23, String::new())), ..profile("t", "router", "", None, &[]) };
         let candidates = scan(&path, std::slice::from_ref(&telnet)).unwrap();
         assert_eq!(candidates[0].existing, None);
         assert_eq!(candidates[1].auto_forwards[0].bind_host, "localhost");
@@ -330,10 +340,10 @@ mod tests {
         let names: Vec<&str> = new.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["router", "db", "a", "b"]);
         // The file's own router is the jump host, not the Telnet session.
-        assert_eq!(new[1].jump_hosts, std::slice::from_ref(&new[0].id));
+        assert_eq!(new[1].jump_hosts(), std::slice::from_ref(&new[0].id));
         // As when saved: not every interface of the server.
-        assert_eq!(new[1].forwards[0].bind_host, "localhost");
-        assert!(!new[1].forwards[0].id.is_empty());
+        assert_eq!(new[1].forwards()[0].bind_host, "localhost");
+        assert!(!new[1].forwards()[0].id.is_empty());
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -358,10 +368,10 @@ mod tests {
             proxy("x3", "unused", ProxyKind::Http, ""),
         ];
         let profiles = vec![
-            Profile { proxy: Some("x1".into()), ..profile("a", "a", "a.internal", None, &[]) },
-            Profile { proxy: Some("x2".into()), ..profile("b", "b", "b.internal", None, &[]) },
-            Profile { proxy: Some("missing".into()), ..profile("c", "c", "c.internal", None, &[]) },
-            Profile { proxy: Some("x1".into()), ..profile("d", "d", "d.internal", None, &[]) },
+            with_proxy(profile("a", "a", "a.internal", None, &[]), "x1"),
+            with_proxy(profile("b", "b", "b.internal", None, &[]), "x2"),
+            with_proxy(profile("c", "c", "c.internal", None, &[]), "missing"),
+            with_proxy(profile("d", "d", "d.internal", None, &[]), "x1"),
         ];
         export(&path, Vec::new(), proxies, profiles).unwrap();
 
@@ -380,8 +390,8 @@ mod tests {
         assert_eq!(plan.proxies.len(), 1);
         assert_eq!(plan.proxies[0].name, "cf");
         assert_ne!(plan.proxies[0].id, "x2");
-        let used: Vec<_> = plan.profiles.iter().map(|p| p.proxy.clone()).collect();
-        assert_eq!(used, [Some("mine".into()), Some(plan.proxies[0].id.clone()), None, Some("mine".into())]);
+        let used: Vec<_> = plan.profiles.iter().map(|p| p.proxy()).collect();
+        assert_eq!(used, [Some("mine"), Some(plan.proxies[0].id.as_str()), None, Some("mine")]);
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -391,6 +401,10 @@ mod tests {
         std::fs::write(&path, r#"{"format":"something","version":1}"#).unwrap();
         let error = scan(&path, &[]).unwrap_err();
         assert_eq!(error.code(), "import.notSessionsFile");
+        // Exported before 2.0, with every setting of a session at its top level.
+        let old = r#"{"format":"zshell-sessions","version":1,"profiles":[{"id":"p","name":"web","host":"web.example.com","port":22,"username":"alice","auth":{"type":"auto"}}]}"#;
+        std::fs::write(&path, old).unwrap();
+        assert_eq!(scan(&path, &[]).unwrap_err().code(), "import.unsupportedVersion");
         std::fs::remove_file(&path).unwrap();
     }
 }

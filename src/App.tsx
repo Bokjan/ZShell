@@ -684,7 +684,7 @@ function App() {
             const pane = focusedPane(tab);
             if (pane.target.kind === "local") return undefined;
             const profile = profileOf(pane);
-            return pane.target.kind === "quick" ? address(pane.target) : profile && address(profile);
+            return pane.target.kind === "quick" ? address(pane.target) : profile && address(profile.connection);
           }}
           colorOf={(tab) => {
             const background = profileOf(focusedPane(tab))?.appearance?.background;

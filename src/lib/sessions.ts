@@ -1,4 +1,4 @@
-import { DEFAULT_PORTS, type Folder, type Profile, type Protocol, type SerialOptions } from "./api";
+import { DEFAULT_PORTS, type Folder, type Profile, type SerialOptions } from "./api";
 
 /** A visible line of the session tree. */
 export type Row =
@@ -7,14 +7,10 @@ export type Row =
 
 export const rowKey = (row: Row) => (row.kind === "folder" ? `f:${row.folder.id}` : `p:${row.profile.id}`);
 
-/** What `address` needs: a profile, an import candidate or a quick connection. */
-export interface Addressable {
-  protocol?: Protocol;
-  username: string;
-  host: string;
-  port: number;
-  serial?: SerialOptions;
-}
+/** What `address` needs: the connection of a session (or an import candidate), or a quick connection. */
+export type Addressable =
+  | { protocol: "ssh" | "telnet"; username: string; host: string; port: number }
+  | ({ protocol: "serial" } & SerialOptions);
 
 /** The usual short form of serial settings, `115200 8N1`. */
 export const serialSummary = (s: SerialOptions) =>
@@ -24,12 +20,11 @@ export const serialSummary = (s: SerialOptions) =>
  * Where a session connects, as shown in the session list: SSH as `user@host` (with the port
  * if it isn't 22), Telnet as `telnet://[user@]host[:port]`, serial as `COM3 · 115200 8N1`.
  */
-export const address = (p: Addressable) => {
-  if (p.protocol === "serial") return p.serial ? `${p.serial.device} · ${serialSummary(p.serial)}` : "";
-  const protocol = p.protocol ?? "ssh";
-  const host = p.host.includes(":") ? `[${p.host}]` : p.host;
-  const where = `${p.username ? `${p.username}@` : ""}${host}${p.port !== DEFAULT_PORTS[protocol] ? `:${p.port}` : ""}`;
-  return protocol === "telnet" ? `telnet://${where}` : where;
+export const address = (c: Addressable) => {
+  if (c.protocol === "serial") return `${c.device} · ${serialSummary(c)}`;
+  const host = c.host.includes(":") ? `[${c.host}]` : c.host;
+  const where = `${c.username ? `${c.username}@` : ""}${host}${c.port !== DEFAULT_PORTS[c.protocol] ? `:${c.port}` : ""}`;
+  return c.protocol === "telnet" ? `telnet://${where}` : where;
 };
 
 /**
@@ -87,7 +82,8 @@ export function search(query: string, folders: Folder[], profiles: Profile[]): P
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const ordered = treeRows(folders, profiles, new Set()).flatMap((row) => (row.kind === "profile" ? [row.profile] : []));
   return ordered.filter((p) => {
-    const text = `${p.name} ${address(p)} ${p.username} ${p.host}`.toLowerCase();
+    const c = p.connection;
+    const text = `${p.name} ${address(c)} ${c.protocol === "serial" ? "" : `${c.username} ${c.host}`}`.toLowerCase();
     return words.every((word) => text.includes(word));
   });
 }

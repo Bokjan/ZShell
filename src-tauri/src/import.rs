@@ -12,7 +12,7 @@ use serde::Serialize;
 use ts_rs::TS;
 use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForwardListen, SshConfig};
 
-use crate::config::{AuthMethod, EnvVar, Profile, Protocol};
+use crate::config::{AuthMethod, Connection, EnvVar, Profile, Remote, SshOptions};
 use crate::error::{Error, Result};
 use crate::forward::{ForwardKind, ForwardRule};
 use crate::proxy::{Proxy, ProxyKind};
@@ -115,33 +115,35 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
                 None => (host, port.unwrap_or(22), user.unwrap_or_else(local_username)),
             };
             let key = (host.clone(), port, username.clone());
-            let found = existing.iter().find(|p| (&p.host, p.port, &p.username) == (&key.0, key.1, &key.2));
+            let found = existing
+                .iter()
+                .find(|p| p.ssh().is_some_and(|ssh| (&ssh.remote.host, ssh.remote.port, &ssh.remote.username) == (&key.0, key.1, &key.2)));
             let id = match (found, by_address.get(&key)) {
                 (Some(profile), _) => profile.id.clone(),
                 (None, Some(id)) => id.clone(),
                 (None, None) => {
                     let id = new_id();
                     by_address.insert(key, id.clone());
-                    let mut profile = new_profile(id.clone(), jump.clone(), host, port, username);
+                    let mut ssh = SshOptions::new(Remote::new(host, port, username));
                     if let Some(alias) = alias {
-                        profile.auth = alias.auth;
-                        profile.keepalive_interval = alias.keepalive_interval;
+                        ssh.auth = alias.auth;
+                        ssh.remote.keepalive_interval = alias.keepalive_interval;
                     }
-                    profiles.push(profile);
+                    profiles.push(new_profile(id.clone(), jump.clone(), ssh));
                     id
                 }
             };
             jump_hosts.push(id);
         }
-        let mut profile = new_profile(ids[&candidate.alias].clone(), candidate.alias, candidate.host, candidate.port, candidate.username);
-        profile.auth = candidate.auth;
-        profile.keepalive_interval = candidate.keepalive_interval;
-        profile.forward_agent = candidate.forward_agent;
-        profile.env = candidate.env;
-        profile.jump_hosts = jump_hosts;
+        let remote = Remote {
+            jump_hosts,
+            keepalive_interval: candidate.keepalive_interval,
+            ..Remote::new(candidate.host, candidate.port, candidate.username)
+        };
+        let mut ssh = SshOptions { auth: candidate.auth, forward_agent: candidate.forward_agent, env: candidate.env, ..SshOptions::new(remote) };
         if let Some(command) = candidate.proxy_command {
             let same = |p: &&Proxy| p.kind == ProxyKind::Command && p.command == command;
-            profile.proxy = Some(match proxies.iter().chain(&new_proxies).find(same) {
+            ssh.remote.proxy = Some(match proxies.iter().chain(&new_proxies).find(same) {
                 Some(proxy) => proxy.id.clone(),
                 None => {
                     let proxy = Proxy {
@@ -159,12 +161,12 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
             });
         }
         // Normalizing fills in the default bind address, as saving from the panel does.
-        profile.forwards = candidate
+        ssh.forwards = candidate
             .forwards
             .into_iter()
             .filter_map(|rule| ForwardRule { id: new_id(), ..rule }.normalize().ok())
             .collect();
-        profiles.push(profile);
+        profiles.push(new_profile(ids[&candidate.alias].clone(), candidate.alias, ssh));
     }
     Ok((new_proxies, profiles))
 }
@@ -310,9 +312,9 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
     // Only SSH sessions: a Telnet session with the same name must not become a jump host.
     let existing = existing
         .iter()
-        .filter(|p| p.protocol == Protocol::Ssh)
-        .find(|p| p.name == alias || (p.host == host && p.port == port && p.username == username))
-        .map(|p| p.name.clone());
+        .filter_map(|p| Some((p, &p.ssh()?.remote)))
+        .find(|(p, remote)| p.name == alias || (remote.host == host && remote.port == port && remote.username == username))
+        .map(|(p, _)| p.name.clone());
     Candidate {
         alias,
         host,
@@ -502,8 +504,8 @@ fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-fn new_profile(id: String, name: String, host: String, port: u16, username: String) -> Profile {
-    Profile { id, ..Profile::new(name, host, port, username) }
+fn new_profile(id: String, name: String, ssh: SshOptions) -> Profile {
+    Profile { id, ..Profile::new(name, Connection::Ssh(ssh)) }
 }
 
 #[cfg(test)]
@@ -653,16 +655,16 @@ Host *
         // Selecting "db" pulls in its jump host.
         let (_, profiles) = plan(&path, &["db".to_owned()], &[], &[]).unwrap();
         assert_eq!(plan_ids(&profiles), ["db", "bastion"]);
-        assert_eq!(profiles[0].jump_hosts, [profiles[1].id.clone()]);
-        assert!(profiles.iter().all(|p| p.forwards.iter().all(|f| !f.id.is_empty())));
-        assert_eq!(profiles[0].forwards[0].bind_host, "127.0.0.1");
+        assert_eq!(profiles[0].jump_hosts(), [profiles[1].id.clone()]);
+        assert!(profiles.iter().all(|p| p.forwards().iter().all(|f| !f.id.is_empty())));
+        assert_eq!(profiles[0].forwards()[0].bind_host, "127.0.0.1");
 
         // An existing profile for the jump host is referenced instead of duplicated.
-        let mut bastion = new_profile("existing".into(), "bastion".into(), "bastion.example.com".into(), 2200, "alice".into());
-        bastion.auth = AuthMethod::Agent;
+        let ssh = SshOptions { auth: AuthMethod::Agent, ..SshOptions::new(Remote::new("bastion.example.com".into(), 2200, "alice".into())) };
+        let bastion = new_profile("existing".into(), "bastion".into(), ssh);
         let (_, profiles) = plan(&path, &["db".to_owned(), "web".to_owned()], &[bastion], &[]).unwrap();
         assert_eq!(plan_ids(&profiles), ["db", "web"]);
-        assert!(profiles.iter().all(|p| p.jump_hosts == ["existing"]));
+        assert!(profiles.iter().all(|p| p.jump_hosts() == ["existing"]));
     }
 
     /// A jump host written as an alias with another user or port keeps the alias's address
@@ -678,13 +680,13 @@ Host *
         let (_, profiles) = plan(&path, &["app".to_owned(), "db".to_owned()], &[], &[]).unwrap();
         let by_name = |name: &str| profiles.iter().find(|p| p.name == name).unwrap();
         let (outer, bastion) = (by_name("outer"), by_name("bastion"));
-        assert_eq!(by_name("app").jump_hosts, [outer.id.clone(), bastion.id.clone()]);
-        assert_eq!(bastion.jump_hosts, std::slice::from_ref(&outer.id));
+        assert_eq!(by_name("app").jump_hosts(), [outer.id.clone(), bastion.id.clone()]);
+        assert_eq!(bastion.jump_hosts(), std::slice::from_ref(&outer.id));
 
         let db = by_name("db");
-        assert_eq!(db.jump_hosts[0], outer.id);
-        let admin = profiles.iter().find(|p| p.id == db.jump_hosts[1]).unwrap();
-        assert_eq!((admin.host.as_str(), admin.port, admin.username.as_str()), ("bastion.example.com", 2222, "admin"));
+        assert_eq!(db.jump_hosts()[0], outer.id);
+        let admin = profiles.iter().find(|p| p.id == db.jump_hosts()[1]).unwrap().ssh().unwrap();
+        assert_eq!((admin.remote.host.as_str(), admin.remote.port, admin.remote.username.as_str()), ("bastion.example.com", 2222, "admin"));
         assert!(matches!(&admin.auth, AuthMethod::PublicKey { key_path } if key_path == "/keys/bastion"));
     }
 
@@ -694,13 +696,13 @@ Host *
         let (proxies, profiles) = plan(&path, &["legacy".to_owned(), "tunneled".to_owned()], &[], &[]).unwrap();
         assert_eq!(proxies.len(), 1);
         assert_eq!((proxies[0].kind, proxies[0].command.as_str()), (ProxyKind::Command, "nc -X 5 %h %p"));
-        assert!(profiles.iter().all(|p| p.proxy.as_ref() == Some(&proxies[0].id)));
+        assert!(profiles.iter().all(|p| p.proxy() == Some(proxies[0].id.as_str())));
 
         // An existing proxy with the same command is used.
         let existing = Proxy { id: "nc".into(), name: "netcat".into(), ..proxies[0].clone() };
         let (proxies, profiles) = plan(&path, &["tunneled".to_owned()], &[], &[existing]).unwrap();
         assert!(proxies.is_empty());
-        assert_eq!(profiles[0].proxy.as_deref(), Some("nc"));
+        assert_eq!(profiles[0].proxy(), Some("nc"));
     }
 
     #[test]

@@ -16,7 +16,7 @@ use russh::{Channel, ChannelMsg, ChannelStream, ChannelWriteHalf, Disconnect};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 
-use crate::config::Profile;
+use crate::config::SshProfile;
 use crate::error::Error;
 use crate::forward::{host_port, RemoteRoutes};
 use crate::net::Route;
@@ -28,7 +28,7 @@ use handler::ClientHandler;
 /// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
 /// terminal. `carry`: forwarding rules to start besides the automatic ones (those running
 /// before the tab reconnected).
-pub async fn run(profile: Profile, route: Route, id: SessionId, mut io: TermIo, connections: Connections, carry: Vec<String>) {
+pub async fn run(profile: SshProfile, route: Route, id: SessionId, mut io: TermIo, connections: Connections, carry: Vec<String>) {
     let registered = Registered { connections: connections.clone(), id };
     let outcome = match start(&profile, &route, id, &mut io, &connections, &carry).await {
         Ok((channel, disconnect)) => bridge(channel, &mut io, disconnect).await,
@@ -110,7 +110,7 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
     let mut chain = JumpChain::default();
     let mut transport = None;
     for (index, hop) in jumps.iter().enumerate() {
-        let (next_host, next_port) = jumps.get(index + 1).map_or((host, port), |next| (next.host.as_str(), next.port));
+        let (next_host, next_port) = jumps.get(index + 1).map_or((host, port), |next| (next.ssh.remote.host.as_str(), next.ssh.remote.port));
         let proxy = route.proxy.as_ref().filter(|_| index == 0);
         // The agent is only forwarded to the target, where the shell runs.
         let mut session =
@@ -131,21 +131,22 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
 /// Also returns the receiver for the reason the connection ends, reported by the client
 /// handler.
 async fn start(
-    profile: &Profile,
+    profile: &SshProfile,
     route: &Route,
     id: SessionId,
     io: &mut TermIo,
     connections: &Connections,
     carry: &[String],
 ) -> Result<(Channel<Msg>, watch::Receiver<Option<String>>)> {
-    let (transport, chain) = match tunnel(route, &profile.host, profile.port, io).await? {
+    let remote = &profile.ssh.remote;
+    let (transport, chain) = match tunnel(route, &remote.host, remote.port, io).await? {
         Some(Tunnel { stream, via, jumps }) => (Some((stream, via)), jumps),
         None => (None, JumpChain::default()),
     };
     let routes = RemoteRoutes::default();
     let (disconnect_tx, disconnect) = watch::channel(None);
     let proxy = route.proxy.as_ref();
-    let mut session = connect(profile, profile.forward_agent, transport, proxy, io, routes.clone(), disconnect_tx).await?;
+    let mut session = connect(profile, profile.ssh.forward_agent, transport, proxy, io, routes.clone(), disconnect_tx).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io.sink());
@@ -157,14 +158,14 @@ async fn start(
 /// Starts an interactive shell in a new channel on an authenticated connection, with the
 /// profile's terminal type, environment and agent forwarding. Like OpenSSH, rejected
 /// environment variables are not reported (the server's `AcceptEnv` decides).
-async fn open_shell(session: &SshHandle, profile: &Profile, io: &mut TermIo) -> Result<Channel<Msg>> {
+async fn open_shell(session: &SshHandle, profile: &SshProfile, io: &mut TermIo) -> Result<Channel<Msg>> {
     let channel = session.channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
-    if profile.forward_agent {
+    if profile.ssh.forward_agent {
         channel.agent_forward(false).await?;
     }
     let (cols, rows) = io.size;
-    channel.request_pty(false, &profile.term_type, cols.into(), rows.into(), 0, 0, &[]).await?;
-    for var in &profile.env {
+    channel.request_pty(false, &profile.ssh.remote.term_type, cols.into(), rows.into(), 0, 0, &[]).await?;
+    for var in &profile.ssh.env {
         channel.set_env(false, var.name.clone(), var.value.clone()).await?;
     }
     channel.request_shell(false).await?;
@@ -262,7 +263,7 @@ async fn in_flight<F: Future + Unpin>(write: &mut Option<F>) -> F::Output {
 /// the previous jump host, with that host's name), then performs the SSH handshake.
 /// `forward_agent`: whether the server may open agent channels.
 async fn connect(
-    hop: &Profile,
+    hop: &SshProfile,
     forward_agent: bool,
     via: Option<(ChannelStream<Msg>, String)>,
     proxy: Option<&Proxy>,
@@ -270,7 +271,8 @@ async fn connect(
     routes: RemoteRoutes,
     disconnect: watch::Sender<Option<String>>,
 ) -> Result<SshHandle> {
-    let (user, host, port) = (&hop.username, &hop.host, hop.port);
+    let remote = &hop.ssh.remote;
+    let (user, host, port) = (&remote.username, &remote.host, remote.port);
     let Some((stream, jump)) = via else {
         let connecting = match proxy {
             Some(proxy) => t!("terminal.connectingViaProxy", user = user, host = host, port = port, proxy = proxy.name),
@@ -293,7 +295,7 @@ async fn connect(
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
 async fn handshake<S>(
-    hop: &Profile,
+    hop: &SshProfile,
     forward_agent: bool,
     stream: S,
     io: &mut TermIo,
@@ -303,13 +305,14 @@ async fn handshake<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let remote = &hop.ssh.remote;
     let config = Arc::new(client::Config {
-        keepalive_interval: (hop.keepalive_interval > 0).then(|| Duration::from_secs(hop.keepalive_interval.into())),
+        keepalive_interval: (remote.keepalive_interval > 0).then(|| Duration::from_secs(remote.keepalive_interval.into())),
         keepalive_max: 3,
         ..Default::default()
     });
     let (queries_tx, mut queries) = mpsc::channel(1);
-    let handler = ClientHandler::new(hop.host.clone(), hop.port, forward_agent, queries_tx, routes, disconnect);
+    let handler = ClientHandler::new(remote.host.clone(), remote.port, forward_agent, queries_tx, routes, disconnect);
 
     // Drive the handshake while answering host key questions from the handler.
     let handshake = client::connect_stream(config, stream, handler);
@@ -325,12 +328,12 @@ where
                 });
             }
             Some(query) = queries.recv() => {
-                let accepted = host_key::confirm(io, &hop.host, hop.port, &query).await;
+                let accepted = host_key::confirm(io, &remote.host, remote.port, &query).await;
                 let _ = query.reply.send(accepted);
                 deadline.as_mut().reset(tokio::time::Instant::now() + HANDSHAKE_TIMEOUT);
             }
             () = &mut deadline => {
-                return Err(Error::new("ssh.handshakeTimeout").param("target", host_port(&hop.host, hop.port)).into());
+                return Err(Error::new("ssh.handshakeTimeout").param("target", host_port(&remote.host, remote.port)).into());
             }
         }
     }
@@ -339,12 +342,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Remote;
 
     /// A server that accepts the connection but never speaks SSH.
     #[tokio::test(start_paused = true)]
     async fn handshake_gives_up_on_a_silent_server() {
         let (stream, _server) = tokio::io::duplex(1024);
-        let profile = Profile::new("t".into(), "example.com".into(), 22, "alice".into());
+        let profile = SshProfile::quick("t".into(), Remote::new("example.com".into(), 22, "alice".into()));
         let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
         let result = handshake(&profile, false, stream, &mut io, RemoteRoutes::default(), watch::channel(None).0).await;
         let error = Error::from(result.err().unwrap());

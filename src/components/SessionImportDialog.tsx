@@ -79,7 +79,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
                     <input type="checkbox" checked={selected.has(c.id)} disabled={!!c.existing} onChange={() => toggle(c.id)} />
                     <span className="import-main">
                       <span className="import-alias">{c.name}</span>
-                      <span className="import-address">{address(c)}</span>
+                      <span className="import-address">{address(c.connection)}</span>
                     </span>
                   </label>
                   <div className="import-notes">

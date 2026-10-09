@@ -55,7 +55,7 @@ export interface Tab {
 export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabProtocol {
   if (target.kind === "local") return "local";
   if (target.kind === "quick") return target.protocol;
-  return profiles.find((p) => p.id === target.profileId)?.protocol ?? "ssh";
+  return profiles.find((p) => p.id === target.profileId)?.connection.protocol ?? "ssh";
 }
 
 /** Ids that connect a tab and its page for screen readers. */
