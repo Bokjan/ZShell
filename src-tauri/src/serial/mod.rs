@@ -7,9 +7,9 @@
 
 use std::io::{ErrorKind, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serialport::{SerialPort, SerialPortType};
@@ -32,6 +32,37 @@ const READ_BUFFER: usize = 4096;
 /// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
 /// is paced by the line).
 const INPUT_QUEUE: usize = 16;
+/// How long opening a device waits for a closed session of ours to let go of it.
+const RELEASE_WAIT: Duration = Duration::from_secs(1);
+
+/// The devices our sessions' threads still hold, once per session. A closed session's
+/// threads let go of the port within `READ_TIMEOUT`, and only one handle can have a port
+/// open (exclusive on macOS, always on Windows), so reconnecting, which opens the device
+/// again at once, would otherwise find it busy.
+static HELD: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// A session's hold on its device, shared by its reader and writer threads.
+struct Hold(String);
+
+impl Hold {
+    fn new(device: &str) -> Arc<Self> {
+        HELD.lock().unwrap().push(device.to_owned());
+        Arc::new(Self(device.to_owned()))
+    }
+
+    fn is_held(device: &str) -> bool {
+        HELD.lock().unwrap().iter().any(|held| held == device)
+    }
+}
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        let mut held = HELD.lock().unwrap();
+        if let Some(i) = held.iter().position(|device| *device == self.0) {
+            held.swap_remove(i);
+        }
+    }
+}
 
 /// A serial port found on this computer.
 #[derive(Serialize)]
@@ -66,6 +97,10 @@ pub fn ports() -> Vec<PortInfo> {
 /// Session backend: opens the device and bridges it to the terminal until the device goes
 /// away or the tab closes.
 pub async fn run(options: SerialOptions, mut io: TermIo) {
+    let since = Instant::now();
+    while Hold::is_held(&options.device) && since.elapsed() < RELEASE_WAIT {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let outcome = match open(&options) {
         Ok(port) => {
             // Before the reader starts, so that what the device already sent comes after.
@@ -138,14 +173,21 @@ impl Line {
     fn start(port: Box<dyn SerialPort>, device: &str, io: &TermIo) -> Result<Self> {
         let writer = port.try_clone().map_err(|e| Error::new("serial.openFailed").param("device", device).detail(e))?;
 
+        let hold = Hold::new(device);
         let closing = Arc::new(AtomicBool::new(false));
         let (failed_tx, failed) = mpsc::unbounded_channel();
         let sink = io.sink();
-        let (reader_closing, reader_failed) = (closing.clone(), failed_tx.clone());
-        thread::spawn(move || read_output(port, &sink, &reader_closing, &reader_failed));
+        let (reader_closing, reader_failed, reader_hold) = (closing.clone(), failed_tx.clone(), hold.clone());
+        thread::spawn(move || {
+            read_output(port, &sink, &reader_closing, &reader_failed);
+            drop(reader_hold);
+        });
         let (input, inputs) = mpsc::channel(INPUT_QUEUE);
         let writer_closing = closing.clone();
-        thread::spawn(move || write_input(writer, inputs, &writer_closing, &failed_tx));
+        thread::spawn(move || {
+            write_input(writer, inputs, &writer_closing, &failed_tx);
+            drop(hold);
+        });
         Ok(Self { input, failed, closing })
     }
 
@@ -293,6 +335,24 @@ mod tests {
         let events: Vec<String> = events.try_iter().collect();
         assert!(events[0].contains(r#""type":"connected""#), "{events:?}");
         assert!(events.last().unwrap().contains(r#""reason":"lost""#), "{events:?}");
+    }
+
+    /// Reconnecting closes the session and opens the device again at once, while the old
+    /// session's threads may still hold the port, which only one can open at a time.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reopens_a_device_just_closed() {
+        let (_device, path) = fake_device();
+        let options = SerialOptions { device: path, ..SerialOptions::default() };
+        let (io, _input, _output, _events) = TermIo::detached((80, 24));
+        let first = tokio::spawn(run(options.clone(), io));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        first.abort();
+        let (io, _input, _output, events) = TermIo::detached((80, 24));
+        let second = tokio::spawn(run(options, io));
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let events: Vec<String> = events.try_iter().collect();
+        assert!(events.first().is_some_and(|e| e.contains(r#""type":"connected""#)), "{events:?}");
+        second.abort();
     }
 
     #[tokio::test(flavor = "multi_thread")]
