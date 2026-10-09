@@ -2,6 +2,13 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.3.2] - 2026-10-09
+
+### Bug Fixes
+
+- Hover hints now show on macOS: on tabs, sessions, toolbar buttons and everywhere else that has one. The system web view on macOS never showed them.
+- The question mark icons in session settings show their explanation right away, also when focused with the keyboard.
+
 ## [1.3.1] - 2026-10-09
 
 ### Bug Fixes
