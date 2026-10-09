@@ -9,7 +9,15 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { focusedPane, isLogging, tabTitle, type SidePanel, type Tab } from "../lib/panes";
-import { closeTabShortcutLabel, isWindows, newTabShortcutLabel, shiftShortcutLabel } from "../lib/platform";
+import type { Direction } from "../lib/layout";
+import {
+  closeTabShortcutLabel,
+  isWindows,
+  newTabShortcutLabel,
+  shiftShortcutLabel,
+  splitDownShortcutLabel,
+  splitRightShortcutLabel,
+} from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ComposeIcon, PlusIcon, QuickIcon } from "./icons";
@@ -32,6 +40,8 @@ interface Props {
   /** `title` null goes back to the automatic title. */
   onRename(key: number, title: string | null): void;
   onDuplicate(key: number): void;
+  /** Splits the tab's focused pane. */
+  onSplit(key: number, direction: Direction): void;
   /** Saves a quick connection tab as a session. */
   onSaveAsSession(key: number): void;
   onReconnect(key: number): void;
@@ -73,6 +83,7 @@ export function TabBar({
   onMove,
   onRename,
   onDuplicate,
+  onSplit,
   onSaveAsSession,
   onReconnect,
   onBreak,
@@ -160,9 +171,16 @@ export function TabBar({
     const index = tabs.findIndex((tab) => tab.key === key);
     // Session actions act on the focused pane.
     const pane = focusedPane(tabs[index]);
+    const split = tabs[index].panes.length > 1;
     const items: MenuItem[] = [];
     // A serial device can only be open once.
-    if (pane.protocol !== "serial") items.push({ label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) });
+    if (pane.protocol !== "serial") {
+      items.push(
+        { label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) },
+        { label: t("tabs.splitRight"), shortcut: splitRightShortcutLabel, onSelect: () => onSplit(key, "row") },
+        { label: t("tabs.splitDown"), shortcut: splitDownShortcutLabel, onSelect: () => onSplit(key, "column") },
+      );
+    }
     items.push({ label: t("tabs.rename"), onSelect: () => setEditing(key) });
     if (pane.protocol !== "local") items.push({ label: t("tabs.reconnect"), onSelect: () => onReconnect(key) });
     if (pane.protocol === "serial" || pane.protocol === "telnet") {
@@ -175,7 +193,8 @@ export function TabBar({
     if (pane.logPath) items.push({ label: t("tabs.showLog"), onSelect: () => onShowLog(key) });
     items.push(
       "separator",
-      { label: t("tabs.close"), shortcut: closeTabShortcutLabel, onSelect: () => onClose([key]) },
+      // ⌘W closes the focused pane of a split tab.
+      { label: t("tabs.close"), shortcut: split ? undefined : closeTabShortcutLabel, onSelect: () => onClose([key]) },
       {
         label: t("tabs.closeOthers"),
         disabled: tabs.length < 2,
@@ -193,7 +212,7 @@ export function TabBar({
   const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
     <button
       className={activeTab?.sidePanel === panel ? "on" : undefined}
-      disabled={!activeTab || unavailable}
+      disabled={!activeTab || (unavailable && activeTab.sidePanel !== panel)}
       onClick={() => onTogglePanel(panel)}
       title={unavailable ? t("tabs.panelUnavailable") : hint}
     >
@@ -250,7 +269,7 @@ export function TabBar({
               )}
               <button
                 className="tab-close"
-                title={`${t("tabs.close")} (${closeTabShortcutLabel})`}
+                title={tab.panes.length > 1 ? t("tabs.close") : `${t("tabs.close")} (${closeTabShortcutLabel})`}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();

@@ -36,7 +36,7 @@
     "window": "Window",
     "help": "Help",
     "settings": "Settings…",
-    "closeTab": "Close Tab",
+    "closeTab": "Close",
     "closeWindow": "Close Window",
     "quit": "Quit {name}"
   },

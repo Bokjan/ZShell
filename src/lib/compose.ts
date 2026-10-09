@@ -1,7 +1,10 @@
 import { focusedPane, type Pane, type Tab } from "./panes";
 
-/** Where the compose bar (and quick commands, while it is open) sends to. */
-export type ComposeScope = "current" | "all" | "selected";
+/**
+ * Where the compose bar (and quick commands, while it is open) sends to: the focused pane,
+ * the panes of the active tab, all panes, or the selected ones.
+ */
+export type ComposeScope = "current" | "tab" | "all" | "selected";
 
 export interface Compose {
   open: boolean;
@@ -30,6 +33,7 @@ export const CLOSED_COMPOSE: Compose = { open: false, scope: "current", selected
 export function scopePanes(compose: Compose, tabs: Tab[], activeKey: number | null): Pane[] {
   const active = tabs.find((tab) => tab.key === activeKey);
   if (!compose.open || compose.scope === "current") return active ? [focusedPane(active)] : [];
+  if (compose.scope === "tab") return active?.panes ?? [];
   const panes = tabs.flatMap((tab) => tab.panes);
   if (compose.scope === "all") return panes;
   return panes.filter((pane) => compose.selected.includes(pane.key));

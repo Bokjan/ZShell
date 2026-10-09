@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 
 import type { ForwardState, LogOpen, Profile, SessionId } from "../lib/api";
 import type { MenuItem } from "./ContextMenu";
-import { dragHorizontally } from "../lib/drag";
-import { focusedPane, type Pane, type SidePanel, type Tab } from "../lib/panes";
+import { dragHorizontally, dragSplitter } from "../lib/drag";
+import { dividers, equalize, moveDivider, paneRects, type Divider } from "../lib/layout";
+import { focusedPane, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { SftpPanel } from "./SftpPanel";
 import { TerminalView, type SessionStatus } from "./TerminalView";
@@ -21,6 +22,8 @@ export interface PaneHandlers {
   onLog(key: number, path: string | null): void;
   /** The pane was clicked or got the keyboard focus. */
   onFocus(key: number): void;
+  /** The tab's panes were resized. */
+  onLayout(tabKey: number, layout: Layout): void;
   /** Added to the end of the pane's terminal menu. */
   menuItems(pane: Pane): MenuItem[];
   logOpen(pane: Pane): LogOpen;
@@ -34,23 +37,37 @@ interface Props {
   active: boolean;
   /** The pane whose input is sent to other panes too (the compose bar's sync); marked. */
   syncing: number | null;
+  /** Panes that the compose bar sends to besides (or instead of) the focused one; marked when split. */
+  inScope: number[];
+  /** Panes that just received text from the compose bar or a quick command; they flash. */
+  flashing: number[];
   handlers: PaneHandlers;
 }
 
 const MIN_PANEL = 280;
 const MIN_TERMINAL = 240;
+/** Dragging a divider keeps the panes next to it at least this large, in pixels. */
+export const MIN_PANE_WIDTH = 120;
+export const MIN_PANE_HEIGHT = 60;
+
+const percent = (fraction: number) => `${fraction * 100}%`;
 
 /**
  * One tab's content: its panes, each a terminal, plus a side panel (files or port forwards)
  * on the focused pane's SSH connection.
  */
-export function TabPage({ tab, active, syncing, handlers: h }: Props) {
+export function TabPage({ tab, active, syncing, inScope, flashing, handlers: h }: Props) {
   const { t } = useTranslation();
   const [panelWidth, setPanelWidth] = useState(420);
   // Keep each pane's panels mounted once opened, so their state (directory, transfers)
   // survives switching panels and panes.
   const [mounted, setMounted] = useState<Record<number, SidePanel[]>>({});
   const pageRef = useRef<HTMLDivElement>(null);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  const split = tab.panes.length > 1;
+  const rects = paneRects(tab.layout);
   const focused = focusedPane(tab);
   const panelHere = tab.sidePanel !== null && focused.protocol === "ssh";
   if (panelHere && !mounted[focused.key]?.includes(tab.sidePanel!)) {
@@ -60,6 +77,18 @@ export function TabPage({ tab, active, syncing, handlers: h }: Props) {
   const startResize = (e: ReactMouseEvent) => {
     const rect = pageRef.current!.getBoundingClientRect();
     dragHorizontally(e, (x) => setPanelWidth(Math.max(MIN_PANEL, Math.min(rect.right - x, rect.width - MIN_TERMINAL))));
+  };
+
+  const startDivider = (e: ReactMouseEvent, divider: Divider) => {
+    const area = areaRef.current!.getBoundingClientRect();
+    const row = divider.direction === "row";
+    // The split's extent on screen along its direction.
+    const start = row ? area.left + divider.rect.x * area.width : area.top + divider.rect.y * area.height;
+    const length = row ? divider.rect.w * area.width : divider.rect.h * area.height;
+    const min = (row ? MIN_PANE_WIDTH : MIN_PANE_HEIGHT) / length;
+    dragSplitter(e, row ? "x" : "y", (position) =>
+      h.onLayout(tab.key, moveDivider(tabRef.current.layout, divider, (position - start) / length, min)),
+    );
   };
 
   const panels = (pane: Pane) => {
@@ -94,13 +123,23 @@ export function TabPage({ tab, active, syncing, handlers: h }: Props) {
 
   return (
     <div className={`tab-page${active ? " active" : ""}`} ref={pageRef}>
-      <div className="pane-area">
+      <div className={`pane-area${split ? " split" : ""}${syncing !== null ? " syncing" : ""}`} ref={areaRef}>
         {tab.panes.map((pane) => {
           const profile = h.profileOf(pane);
+          const rect = rects.get(pane.key) ?? { x: 0, y: 0, w: 1, h: 1 };
           return (
             <div
               key={pane.key}
-              className={`pane${pane.key === focused.key ? " focused" : ""}${syncing === pane.key ? " syncing" : ""}`}
+              data-pane={pane.key}
+              className={[
+                "pane",
+                pane.key === focused.key && "focused",
+                syncing === pane.key && "syncing",
+                inScope.includes(pane.key) && "in-scope",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              style={{ left: percent(rect.x), top: percent(rect.y), width: percent(rect.w), height: percent(rect.h) }}
               onMouseDownCapture={() => h.onFocus(pane.key)}
               onFocus={() => h.onFocus(pane.key)}
             >
@@ -122,7 +161,24 @@ export function TabPage({ tab, active, syncing, handlers: h }: Props) {
                 appearance={profile?.appearance}
                 loginCommands={profile?.loginCommands ?? []}
               />
+              {split && flashing.includes(pane.key) && <div className="pane-flash" />}
             </div>
+          );
+        })}
+        {dividers(tab.layout).map((divider) => {
+          const { rect, at } = divider;
+          const row = divider.direction === "row";
+          const style = row
+            ? { left: percent(rect.x + at * rect.w), top: percent(rect.y), height: percent(rect.h) }
+            : { top: percent(rect.y + at * rect.h), left: percent(rect.x), width: percent(rect.w) };
+          return (
+            <div
+              key={`${divider.path.join(".")}:${divider.index}`}
+              className={`pane-divider ${divider.direction}`}
+              style={style}
+              onMouseDown={(e) => startDivider(e, divider)}
+              onDoubleClick={() => h.onLayout(tab.key, equalize(tabRef.current.layout, divider.path))}
+            />
           );
         })}
       </div>

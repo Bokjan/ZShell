@@ -579,6 +579,10 @@ body.dragging-row {
 .compose-picker-tab {
   padding-left: 32px;
 }
+/* A pane of a split tab, below the tab. */
+.compose-picker-tab.compose-picker-pane {
+  padding-left: 52px;
+}
 .compose-picker-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -632,15 +636,47 @@ body.dragging-row {
   color: var(--warn);
   font-weight: 600;
 }
-/* The terminal whose input is synced to other tabs; a layer above the terminal's canvas,
-   which would cover an outline. */
+/* The focused pane of a split tab, and the terminal whose input is synced to other panes:
+   a layer above the terminal's canvas, which would cover an outline. */
+.pane-area.split .pane.focused::after,
 .pane.syncing::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 5;
-  border: 2px solid var(--warn);
+  border: 1px solid var(--accent);
   pointer-events: none;
+}
+.pane-area .pane.syncing::after,
+.pane-area.split .pane.syncing::after {
+  border: 2px solid var(--warn);
+}
+/* Panes of a split tab that the compose bar sends to, like tabs (see `.tab.in-scope`). */
+.pane-area.split .pane.in-scope:not(.syncing)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.pane-area.split.syncing .pane.in-scope:not(.syncing)::before {
+  background: var(--warn);
+}
+.pane-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  animation: pane-flash 0.7s ease-out forwards;
+}
+@keyframes pane-flash {
+  from {
+    background: var(--accent-soft);
+  }
 }
 
 /* Quick command bar below the terminal; the warning color while commands go to several tabs. */
@@ -891,8 +927,43 @@ body.dragging-row {
 }
 .pane {
   position: absolute;
-  inset: 0;
   display: flex;
+}
+/* Between panes: a 1px line, with a wider area to grab. */
+.pane-divider {
+  position: absolute;
+  z-index: 6;
+}
+.pane-divider.row {
+  width: 7px;
+  margin-left: -3px;
+  cursor: col-resize;
+}
+.pane-divider.column {
+  height: 7px;
+  margin-top: -3px;
+  cursor: row-resize;
+}
+.pane-divider::before {
+  content: "";
+  position: absolute;
+  background: var(--border);
+  transition: background 0.15s 0.1s;
+}
+.pane-divider.row::before {
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+}
+.pane-divider.column::before {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 1px;
+}
+.pane-divider:hover::before {
+  background: var(--accent);
 }
 .terminal-wrap {
   position: relative;
@@ -1119,6 +1190,9 @@ body.dragging-row {
 }
 body.resizing {
   cursor: col-resize;
+}
+body.resizing.rows {
+  cursor: row-resize;
 }
 body.resizing .terminal-view {
   pointer-events: none;

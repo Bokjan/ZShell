@@ -36,8 +36,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { SessionImportDialog } from "./SessionImportDialog";
 
-/** How a session is opened: switch to a tab it already has, or always a new tab. */
-export type OpenMode = "connect" | "newTab";
+/**
+ * How a session is opened: switch to a pane it already has, always in a new tab, or in a
+ * new pane right of or below the focused one.
+ */
+export type OpenMode = "connect" | "newTab" | "splitRight" | "splitDown";
 
 interface Props {
   profiles: Profile[];
@@ -189,6 +192,8 @@ export function Sidebar(props: Props) {
   const profileMenu = (profile: Profile): MenuItem[] => [
     { label: t("sidebar.connect"), onSelect: () => onOpen(profile, "connect") },
     { label: t("sidebar.connectNewTab"), onSelect: () => onOpen(profile, "newTab") },
+    { label: t("sidebar.connectSplitRight"), onSelect: () => onOpen(profile, "splitRight") },
+    { label: t("sidebar.connectSplitDown"), onSelect: () => onOpen(profile, "splitDown") },
     "separator",
     { label: t("sidebar.edit"), onSelect: () => onEdit(profile) },
     { label: t("sidebar.duplicate"), onSelect: () => duplicate(profile) },

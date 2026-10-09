@@ -75,3 +75,38 @@ export function tabShortcut(e: KeyboardEvent): TabShortcut | null {
 }
 
 export const closeTabShortcutLabel = isMac ? "⌘W" : "Ctrl+Shift+W";
+
+/**
+ * Splitting the focused pane: right of it (`row`) or below it (`column`). ⌘D / ⇧⌘D on macOS
+ * as in iTerm2; Alt+Shift+= / Alt+Shift+- elsewhere as in Windows Terminal.
+ */
+export function splitShortcut(e: KeyboardEvent): "row" | "column" | null {
+  if (isMac) {
+    if (e.code !== "KeyD" || !e.metaKey || e.ctrlKey || e.altKey) return null;
+    return e.shiftKey ? "column" : "row";
+  }
+  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return null;
+  if (e.code === "Equal" || e.code === "NumpadAdd") return "row";
+  if (e.code === "Minus" || e.code === "NumpadSubtract") return "column";
+  return null;
+}
+
+export const splitRightShortcutLabel = isMac ? "⌘D" : "Alt+Shift+=";
+export const splitDownShortcutLabel = isMac ? "⇧⌘D" : "Alt+Shift+-";
+
+const ARROWS: Record<string, "left" | "right" | "up" | "down"> = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
+
+/**
+ * Moving the focus to the pane on a side: ⌥⌘ + arrow on macOS as in iTerm2; Ctrl+Alt + arrow
+ * elsewhere, since shells read Alt + arrow (moving by words).
+ */
+export function paneFocusShortcut(e: KeyboardEvent): "left" | "right" | "up" | "down" | null {
+  const side = ARROWS[e.code];
+  if (!side || e.shiftKey || !e.altKey) return null;
+  return (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) ? side : null;
+}

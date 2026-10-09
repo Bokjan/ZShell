@@ -12,9 +12,9 @@ import { ImportDialog } from "./components/ImportDialog";
 import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog";
 import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type OpenMode } from "./components/Sidebar";
 import { PANEL_SHORTCUTS, TabBar } from "./components/TabBar";
-import { TabPage, type PaneHandlers } from "./components/TabPage";
+import { MIN_PANE_HEIGHT, MIN_PANE_WIDTH, TabPage, type PaneHandlers } from "./components/TabPage";
 import type { SessionStatus } from "./components/TerminalView";
 import { Tooltips } from "./components/Tooltip";
 import {
@@ -37,19 +37,26 @@ import {
   type SessionTarget,
 } from "./lib/api";
 import {
+  closeTabShortcutLabel,
   hasShiftShortcutModifiers,
   isNewTabShortcut,
   isSearchShortcut,
   isSettingsShortcut,
+  paneFocusShortcut,
   shiftShortcutLabel,
+  splitDownShortcutLabel,
+  splitRightShortcutLabel,
+  splitShortcut,
   tabShortcut,
 } from "./lib/platform";
+import { heirOf, neighbor, removeFromLayout, splitLayout, type Direction } from "./lib/layout";
 import { storeBarVisible, storedBarVisible, tabGroup } from "./lib/quickCommands";
 import { asTyped, CLOSED_COMPOSE, isConnected, scopePanes, sendsToMany, type Compose, type SendResult } from "./lib/compose";
 import {
   findPane,
   focusedPane,
   paneLabel,
+  tabTitle,
   type Pane,
   type SidePanel,
   type Tab,
@@ -63,8 +70,16 @@ import "./styles.css";
 
 const profileIdOf = (pane: Pane) => (pane.target.kind === "profile" ? pane.target.profileId : undefined);
 
-/** Why closing a tab needs confirmation: a remote session is connected, or a local program runs. */
+/** Why closing a pane needs confirmation: a remote session is connected, or a local program runs. */
 type Busy = { kind: "connected" } | { kind: "process"; name: string };
+
+interface Closing {
+  panes: number[];
+  tabs: number;
+  busy: Busy;
+  /** Of the busy pane. */
+  name: string;
+}
 
 /** Opening more sessions than this at once (a folder) asks first. */
 const OPEN_ALL_CONFIRM = 5;
@@ -145,8 +160,9 @@ function App() {
   );
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Tabs waiting for the user to confirm closing them, with why the first busy pane is busy.
-  const [closing, setClosing] = useState<{ keys: number[]; busy: Busy; name: string } | null>(null);
+  // Panes waiting for the user to confirm closing them, with why the first busy one is busy;
+  // `tabs` is how many tabs are being closed, 0 for a pane.
+  const [closing, setClosing] = useState<Closing | null>(null);
   // The window waiting for the user to confirm closing it (quitting), with how many tabs are busy.
   const [closingWindow, setClosingWindow] = useState<number | null>(null);
   // Title for local terminal tabs, e.g. "zsh".
@@ -221,14 +237,23 @@ function App() {
     }
   }, []);
 
-  /** "connect" switches to a pane the session already has; "newTab" always opens a tab. */
-  const openProfile = (profile: Profile, mode: "connect" | "newTab") => {
+  /**
+   * "connect" switches to a pane the session already has; "newTab" always opens a tab;
+   * "splitRight" and "splitDown" split the focused pane (or open a tab if there is none).
+   */
+  const openProfile = (profile: Profile, mode: OpenMode) => {
     setRecent(addRecent(profile.id));
+    const target: SessionTarget = { kind: "profile", profileId: profile.id };
     const existing = tabsRef.current
       .flatMap((t) => t.panes)
       .find((p) => p.target.kind === "profile" && p.target.profileId === profile.id);
+    const active = tabsRef.current.find((t) => t.key === activeKeyRef.current);
     if (mode === "connect" && existing) focusPane(existing.key);
-    else addTab({ kind: "profile", profileId: profile.id }, profile.name);
+    else if ((mode === "splitRight" || mode === "splitDown") && active) {
+      splitPane(active.focused, mode === "splitRight" ? "row" : "column", () =>
+        newPane(nextKey.current++, target, protocolOf(target), profile.name),
+      );
+    } else addTab(target, profile.name);
   };
 
   const openAll = (folder: Folder) => {
@@ -267,41 +292,94 @@ function App() {
     setActiveKey(copy.key);
   };
 
-  const closeTabs = useCallback((keys: number[]) => {
+  /**
+   * Splits a pane, opening `added` (by default a copy of the pane) right of it (`row`) or
+   * below it (`column`), and focuses it. Not for a pane too small to split, nor to copy a
+   * serial pane (a device can only be open once).
+   */
+  const splitPane = (key: number, direction: Direction, added?: () => Pane) => {
+    const found = findPane(tabsRef.current, key);
+    if (!found || (!added && found.pane.protocol === "serial")) return;
+    const rect = document.querySelector(`.pane[data-pane="${key}"]`)?.getBoundingClientRect();
+    if (rect && (direction === "row" ? rect.width < 2 * MIN_PANE_WIDTH : rect.height < 2 * MIN_PANE_HEIGHT)) return;
+    const pane = added ? added() : copyOf(found.pane);
+    setTabs((tabs) =>
+      tabs.map((t) =>
+        t.key === found.tab.key
+          ? { ...t, panes: [...t.panes, pane], layout: splitLayout(t.layout, key, direction, pane.key), focused: pane.key }
+          : t,
+      ),
+    );
+    setActiveKey(found.tab.key);
+  };
+  const splitRef = useRef(splitPane);
+  splitRef.current = splitPane;
+
+  /**
+   * Closes the panes, and the tabs left without any. A pane's space goes to a neighbor, which
+   * gets the focus if the closed pane had it (see `removeFromLayout`).
+   */
+  const closePanes = useCallback((keys: number[]) => {
     const tabs = tabsRef.current;
-    const remaining = tabs.filter((t) => !keys.includes(t.key));
+    const remaining = tabs.flatMap((tab) => {
+      const closed = tab.panes.filter((p) => keys.includes(p.key));
+      if (closed.length === tab.panes.length) return [];
+      if (closed.length === 0) return [tab];
+      let { layout, focused } = tab;
+      for (const pane of closed) {
+        if (focused === pane.key) focused = heirOf(layout, pane.key) ?? focused;
+        layout = removeFromLayout(layout, pane.key)!;
+      }
+      return [{ ...tab, layout, focused, panes: tab.panes.filter((p) => !keys.includes(p.key)) }];
+    });
     setTabs(remaining);
+    const gone = (tab: Tab) => !remaining.some((t) => t.key === tab.key);
     const active = tabs.findIndex((t) => t.key === activeKeyRef.current);
-    if (active >= 0 && keys.includes(tabs[active].key)) {
+    if (active >= 0 && gone(tabs[active])) {
       // The next remaining tab to the right, else the nearest one to the left.
-      const next = tabs.slice(active).find((t) => !keys.includes(t.key)) ?? remaining[remaining.length - 1];
+      const next = tabs.slice(active).find((t) => !gone(t)) ?? remaining[remaining.length - 1];
       setActiveKey(next?.key ?? null);
     }
   }, []);
 
-  /** Closes the tabs, first asking if any is connected or running a program (see the settings). */
-  const requestClose = useCallback(
-    async (keys: number[]) => {
-      const tabs = tabsRef.current.filter((t) => keys.includes(t.key));
-      if (settingsRef.current.tabs.confirmClose) {
-        const panes = tabs.flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })));
-        const reasons = await Promise.all(panes.map(({ pane }) => busyReason(pane)));
-        const index = reasons.findIndex((reason) => reason !== null);
-        if (index >= 0) {
-          const { tab, pane } = panes[index];
-          setClosing({ keys, busy: reasons[index]!, name: paneLabel(tab, pane, settingsRef.current.tabs.followRemoteTitle) });
-          return;
-        }
+  /**
+   * Closes tabs (`kind: "tabs"`) or a pane, first asking if any pane is connected or running
+   * a program (see the settings).
+   */
+  const requestClose = useCallback(async (request: { kind: "tabs"; keys: number[] } | { kind: "pane"; key: number }) => {
+    const panes =
+      request.kind === "tabs"
+        ? tabsRef.current.filter((t) => request.keys.includes(t.key)).flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })))
+        : [findPane(tabsRef.current, request.key)].filter((found) => found !== null);
+    const keys = panes.map(({ pane }) => pane.key);
+    if (settingsRef.current.tabs.confirmClose) {
+      const reasons = await Promise.all(panes.map(({ pane }) => busyReason(pane)));
+      const index = reasons.findIndex((reason) => reason !== null);
+      if (index >= 0) {
+        const { tab, pane } = panes[index];
+        const follow = settingsRef.current.tabs.followRemoteTitle;
+        // A split tab is named as a whole (see `closeMessage`).
+        const name = request.kind === "tabs" && tab.panes.length > 1 ? tabTitle(tab, follow) : paneLabel(tab, pane, follow);
+        const tabs = request.kind === "tabs" ? request.keys.length : 0;
+        setClosing({ panes: keys, tabs, busy: reasons[index]!, name });
+        return;
       }
-      closeTabs(keys);
-    },
-    [closeTabs],
-  );
+    }
+    closePanes(keys);
+  }, [closePanes]);
+
+  /** ⌘W / Ctrl+Shift+W: the focused pane of a split tab, otherwise the tab (the window if there is none). */
+  const closeFocused = useCallback(() => {
+    const tab = tabsRef.current.find((t) => t.key === activeKeyRef.current);
+    if (!tab) void getCurrentWindow().close();
+    else if (tab.panes.length > 1) void requestClose({ kind: "pane", key: tab.focused });
+    else void requestClose({ kind: "tabs", keys: [tab.key] });
+  }, [requestClose]);
 
   const confirmClose = (dontAskAgain: boolean) => {
     if (!closing) return;
     if (dontAskAgain) update({ ...settings, tabs: { ...settings.tabs, confirmClose: false } });
-    closeTabs(closing.keys);
+    closePanes(closing.panes);
     setClosing(null);
   };
 
@@ -436,7 +514,7 @@ function App() {
         const index = tabs.findIndex((t) => t.key === activeKeyRef.current);
         if (tabs.length === 0) return;
         if (tabKey.type === "close") {
-          if (index >= 0) void requestClose([tabs[index].key]);
+          closeFocused();
           return;
         }
         let next: number;
@@ -445,6 +523,20 @@ function App() {
         // ⌘9 / Alt+9 is always the last tab, as in browsers.
         else next = tabKey.index === 8 ? tabs.length - 1 : tabKey.index;
         if (next < tabs.length) setActiveKey(tabs[next].key);
+        return;
+      }
+      const split = splitShortcut(e);
+      const side = paneFocusShortcut(e);
+      if ((split || side) && activeKeyRef.current !== null) {
+        e.preventDefault();
+        e.stopPropagation();
+        const tab = tabsRef.current.find((t) => t.key === activeKeyRef.current);
+        if (!tab) return;
+        if (split) splitRef.current(tab.focused, split);
+        else {
+          const next = neighbor(tab.layout, tab.focused, side!);
+          if (next !== null) focusPane(next);
+        }
         return;
       }
       if (e.code === "KeyJ" && hasShiftShortcutModifiers(e)) {
@@ -468,7 +560,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [togglePanel, requestClose, openLocalTab, toggleCompose, localAllowed]);
+  }, [togglePanel, closeFocused, focusPane, openLocalTab, toggleCompose, localAllowed]);
 
   // From the macOS app menu's "Settings…" item (⌘,).
   useEffect(() => {
@@ -476,16 +568,12 @@ function App() {
     return () => void unlisten.then((f) => f());
   }, []);
 
-  // From the macOS File menu's "Close Tab" item (⌘W), which closes the window once no tabs
-  // are left, as in Terminal.app.
+  // From the macOS File menu's "Close" item (⌘W), which closes the window once no tabs are
+  // left, as in Terminal.app.
   useEffect(() => {
-    const unlisten = listen("close-tab", () => {
-      const active = activeKeyRef.current;
-      if (active !== null) void requestClose([active]);
-      else void getCurrentWindow().close();
-    });
+    const unlisten = listen("close-tab", closeFocused);
     return () => void unlisten.then((f) => f());
-  }, [requestClose]);
+  }, [closeFocused]);
 
   const runCommand = (command: QuickCommand) => sendToScope(asTyped(command.text, command.enter));
 
@@ -500,8 +588,24 @@ function App() {
   /** Tabs with any of these panes. */
   const tabsWith = (keys: number[]) => tabs.filter((t) => t.panes.some((p) => keys.includes(p.key))).map((t) => t.key);
 
-  /** Quick commands in the terminal's menu: those of the pane's group, and the palette. */
-  const terminalMenu = (pane: Pane): MenuItem[] => {
+  /** Splitting and closing the pane, then quick commands: those of the pane's group, and the palette. */
+  const terminalMenu = (pane: Pane): MenuItem[] => [...paneMenu(pane), ...commandMenu(pane)];
+
+  const paneMenu = (pane: Pane): MenuItem[] => {
+    const split = (tabs.find((tab) => tab.panes.some((p) => p.key === pane.key))?.panes.length ?? 0) > 1;
+    // A serial device can only be open once.
+    const disabled = pane.protocol === "serial";
+    return [
+      "separator",
+      { label: t("tabs.splitRight"), shortcut: splitRightShortcutLabel, disabled, onSelect: () => splitPane(pane.key, "row") },
+      { label: t("tabs.splitDown"), shortcut: splitDownShortcutLabel, disabled, onSelect: () => splitPane(pane.key, "column") },
+      ...(split
+        ? [{ label: t("tabs.closePane"), shortcut: closeTabShortcutLabel, onSelect: () => void requestClose({ kind: "pane", key: pane.key }) }]
+        : []),
+    ];
+  };
+
+  const commandMenu = (pane: Pane): MenuItem[] => {
     const group = groupOf(pane);
     if (!commands || !group || commands.groups.every((g) => g.commands.length === 0)) return [];
     return [
@@ -552,10 +656,10 @@ function App() {
     } else updatePane(key, { status, forwards: {} });
   };
 
-  // A local shell that exits cleanly (`exit`, Ctrl+D) closes its tab, like Terminal.app.
+  // A local shell that exits cleanly (`exit`, Ctrl+D) closes its pane, like Terminal.app.
   const onExited = (key: number, status: number | null) => {
     const found = findPane(tabsRef.current, key);
-    if (found?.pane.target.kind === "local" && status === 0) closeTabs([found.tab.key]);
+    if (found?.pane.target.kind === "local" && status === 0) closePanes([key]);
   };
 
   const onForward = (key: number, ruleId: string, state: ForwardState) =>
@@ -576,16 +680,22 @@ function App() {
       const found = findPane(tabsRef.current, key);
       if (found && found.tab.focused !== key) updateTab(found.tab.key, { focused: key });
     },
+    onLayout: (tabKey, layout) => updateTab(tabKey, { layout }),
     menuItems: terminalMenu,
     logOpen,
     profileOf,
     onProfileChanged,
   };
 
-  const closeMessage = ({ keys, busy, name }: { keys: number[]; busy: Busy; name: string }) => {
-    if (keys.length > 1) return t("closeConfirm.many");
-    if (busy.kind === "connected") return t("closeConfirm.connected", { name });
-    return busy.name ? t("closeConfirm.process", { process: busy.name, name }) : t("closeConfirm.processUnknown", { name });
+  const closeMessage = ({ panes, tabs, busy, name }: Closing) => {
+    if (panes.length > 1 && tabs > 1) return t("closeConfirm.many");
+    // A tab's panes are named; a lone pane or tab ends just its session.
+    if (panes.length > 1) return t("closeConfirm.panes", { name });
+    const what = tabs === 0 ? "pane" : "tab";
+    if (busy.kind === "connected") return t(`closeConfirm.connected.${what}`, { name });
+    return busy.name
+      ? t(`closeConfirm.process.${what}`, { process: busy.name, name })
+      : t(`closeConfirm.processUnknown.${what}`, { name });
   };
 
   const closeDialog = useCallback(() => setEditing(null), []);
@@ -630,7 +740,8 @@ function App() {
           followRemoteTitle={settings.tabs.followRemoteTitle}
           onSelect={setActiveKey}
           onNew={localAllowed ? openLocalTab : undefined}
-          onClose={(keys) => void requestClose(keys)}
+          onClose={(keys) => void requestClose({ kind: "tabs", keys })}
+          onSplit={(key, direction) => withFocused(key, (pane) => splitPane(pane.key, direction))}
           onMove={moveTab}
           onRename={(key, customTitle) => updateTab(key, { customTitle })}
           onDuplicate={duplicateTab}
@@ -664,6 +775,7 @@ function App() {
           <ComposeBar
             compose={compose}
             tabs={tabs}
+            activeKey={activeKey}
             followRemoteTitle={settings.tabs.followRemoteTitle}
             onChange={setCompose}
             onSend={(text) => sendToScope(asTyped(text, true))}
@@ -677,6 +789,8 @@ function App() {
               tab={tab}
               active={tab.key === activeKey}
               syncing={compose.open && compose.sync && tab.key === activeKey ? tab.focused : null}
+              inScope={inScope.map((pane) => pane.key)}
+              flashing={flashing}
               handlers={handlers}
             />
           ))}
@@ -742,7 +856,13 @@ function App() {
       )}
       {closing && (
         <ConfirmDialog
-          title={closing.keys.length > 1 ? t("closeConfirm.titleMany", { count: closing.keys.length }) : t("closeConfirm.title")}
+          title={
+            closing.tabs === 0
+              ? t("closeConfirm.paneTitle")
+              : closing.tabs > 1
+                ? t("closeConfirm.titleMany", { count: closing.tabs })
+                : t("closeConfirm.title")
+          }
           message={closeMessage(closing)}
           confirmLabel={t("closeConfirm.confirm")}
           danger

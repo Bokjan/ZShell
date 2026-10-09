@@ -40,8 +40,9 @@ const CLOSE_WINDOW_MENU_ID: &str = "close-window";
 const QUIT_MENU_ID: &str = "quit";
 
 /// The macOS menu: Tauri's default one, with "Settings…" (⌘,) in the app menu, where Mac
-/// users expect it, and a File menu with "Close Tab" (⌘W) and "Close Window" (⇧⌘W), as in
-/// Terminal.app; the predefined "Close Window" item would take ⌘W.
+/// users expect it, and a File menu with "Close" (⌘W: the focused pane of a split tab, else
+/// the tab) and "Close Window" (⇧⌘W), as in iTerm2; the predefined "Close Window" item would
+/// take ⌘W.
 /// These shortcuts have to be menu items: macOS handles them before the web view sees them.
 /// "Quit" closes the window rather than exiting directly, so the frontend can ask first when
 /// tabs are connected. Elsewhere the frontend handles Ctrl+, and Ctrl+Shift+W itself.
