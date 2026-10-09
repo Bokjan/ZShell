@@ -140,14 +140,14 @@ pub async fn connect(
             return Ok(Box::new(stream));
         };
         let rejected = e.downcast_ref::<Error>().is_some_and(|e| e.code() == "proxy.authFailed");
+        if typed {
+            attempts += 1;
+        }
         if !rejected || attempts == MAX_ATTEMPTS {
             return Err(e);
         }
         let message = if typed { t!("terminal.proxyPasswordRejected") } else { t!("terminal.savedProxyPasswordRejected") };
         io.print(&format!("{message}\n"));
-        if typed {
-            attempts += 1;
-        }
     }
 }
 
