@@ -4,7 +4,7 @@ import { getName, getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { knownHosts, logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
+import { configDirectory, knownHosts, logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
 import { basename, formatSize } from "../lib/format";
 import {
   allCopyShortcutsLabel,
@@ -931,14 +931,16 @@ function LogSection({
   );
 }
 
-/** The app's name and version, the privacy policy and the third-party licenses. */
+/** The app's name and version, where its data is, the privacy policy and the third-party licenses. */
 function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
   const { t } = useTranslation();
   const [app, setApp] = useState<{ name: string; version: string } | null>(null);
+  const [directory, setDirectory] = useState("");
   useEffect(() => {
     Promise.all([getName(), getVersion()])
       .then(([name, version]) => setApp({ name, version }))
       .catch(console.error);
+    configDirectory().then(setDirectory).catch(console.error);
   }, []);
 
   return (
@@ -959,6 +961,18 @@ function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
             {t("settings.thirdPartyLicenses")}
           </button>
         </div>
+      </Setting>
+      <Setting>
+        <div className="field">
+          <span>{t("settings.dataFolder")}</span>
+          <div className="row">
+            <input className="grow" value={directory} readOnly title={directory} />
+            <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
+              {t("settings.logShow")}
+            </button>
+          </div>
+        </div>
+        <p className="hint">{t(isMac ? "settings.dataFolderHint" : "settings.dataFolderHintWindows")}</p>
       </Setting>
     </Section>
   );

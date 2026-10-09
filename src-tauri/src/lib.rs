@@ -192,6 +192,7 @@ pub fn run() {
             commands::set_locale,
             commands::settings_get,
             commands::settings_set,
+            commands::config_directory,
             commands::quick_commands_get,
             commands::quick_commands_set,
             commands::profiles_list,

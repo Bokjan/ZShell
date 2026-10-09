@@ -320,6 +320,8 @@ export const sessionsFile = {
 
 /** The user's home folder, which `~` stands for in key paths. */
 export const homeDirectory = () => invoke<string | null>("home_directory");
+/** The folder the sessions and settings are saved in; created if needed. */
+export const configDirectory = () => invoke<string>("config_directory");
 
 /** The user name `ssh` uses when none is given. */
 export const localUsername = () => invoke<string>("local_username");

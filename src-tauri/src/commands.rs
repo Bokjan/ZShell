@@ -49,6 +49,15 @@ pub fn settings_set(store: State<'_, SettingsStore>, logs: State<'_, Logs>, sett
     Ok(settings)
 }
 
+/// The folder the sessions and settings are saved in; created if needed, to be shown in the
+/// file manager.
+#[tauri::command]
+pub fn config_directory(app: AppHandle) -> Result<PathBuf> {
+    let dir = app.path().app_config_dir()?;
+    let _ = std::fs::create_dir_all(&dir);
+    Ok(dir)
+}
+
 #[tauri::command]
 pub fn quick_commands_get(store: State<'_, QuickCommandStore>) -> QuickCommands {
     store.get()
