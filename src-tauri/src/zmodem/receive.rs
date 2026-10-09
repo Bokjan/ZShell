@@ -196,7 +196,8 @@ impl FileInfo {
             .next()
             .and_then(|s| u64::from_str_radix(s, 8).ok())
             .filter(|&secs| secs > 0)
-            .map(|secs| SystemTime::UNIX_EPOCH + Duration::from_secs(secs));
+            // Checked: the sender chooses the value, and adding past `SystemTime`'s range panics.
+            .and_then(|secs| SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs)));
         Self { name, size, modified }
     }
 }
@@ -224,6 +225,9 @@ mod tests {
         assert_eq!((bare.name.as_str(), bare.size, bare.modified), ("a.txt", None, None));
         let gbk = FileInfo::parse(b"\xc4\xe3\xba\xc3.txt\x00\x00", crate::encoding::for_profile("gbk"));
         assert_eq!(gbk.name, "你好.txt");
+        // Out of `SystemTime`'s range: no modification time rather than a panic.
+        let huge = FileInfo::parse(b"a.txt\x001 1777777777777777777777\x00", encoding_rs::UTF_8);
+        assert_eq!((huge.size, huge.modified), (Some(1), None));
     }
 
     #[test]
