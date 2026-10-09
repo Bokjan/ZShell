@@ -294,10 +294,12 @@ export function Sidebar(props: Props) {
   };
 
   // Drag and drop: rows move before or after rows of their kind, sessions and folders into
-  // folders, and anything to the end of the top level below the last row.
+  // folders, and anything to the end of the top level below the last row. Not onto the
+  // Recent section, which only lists sessions.
   const dropAt = (item: TreeItem, x: number, y: number): Drop | null => {
     const element = document.elementFromPoint(x, y);
     if (!listRef.current?.contains(element)) return null;
+    if (element?.closest("[data-recent], .sidebar-section")) return null;
     const rowElement = element?.closest<HTMLElement>("[data-key]");
     if (!rowElement) return { key: null };
     const key = rowElement.dataset.key!;
@@ -367,6 +369,7 @@ export function Sidebar(props: Props) {
     <div
       key={key}
       data-key={key.startsWith("p:") ? key : undefined}
+      data-recent={key.startsWith("recent:") || undefined}
       className={`tree-row session${selected === `p:${profile.id}` ? " selected" : ""}${extra}`}
       style={{ paddingLeft: 8 + depth * INDENT + 16 }}
       onMouseDown={(e) => key.startsWith("p:") && startDrag(e, { kind: "profile", id: profile.id })}
