@@ -2496,6 +2496,11 @@ body.resizing .terminal-view {
 .settings-dialog .about-links button.link {
   margin-top: 0;
 }
+/* After the text of a link that opens in the browser. */
+.external-link-icon {
+  margin-left: 4px;
+  vertical-align: -1px;
+}
 .settings-dialog button.link:hover {
   text-decoration: underline;
 }

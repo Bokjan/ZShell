@@ -50,7 +50,7 @@ import {
 import { useShortcuts } from "../lib/shortcuts";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
-import { CloseIcon } from "./icons";
+import { CloseIcon, ExternalLinkIcon } from "./icons";
 import { KnownHostsDialog } from "./KnownHostsDialog";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
@@ -1015,6 +1015,8 @@ function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
         <div className="about-links">
           <button type="button" className="link" onClick={() => void openUrl(PRIVACY_POLICY_URL).catch(console.error)}>
             {t("settings.privacyPolicy")}
+            <ExternalLinkIcon />
+            <span className="visually-hidden">{t("common.opensInBrowser")}</span>
           </button>
           <button type="button" className="link" onClick={onShowLicenses}>
             {t("settings.thirdPartyLicenses")}

@@ -65,6 +65,15 @@ export function EyeIcon({ size = 14, crossed = false }: { size?: number; crossed
   );
 }
 
+/** An arrow out of a box, after links that open in the browser, so that it doesn't come as a surprise. */
+export function ExternalLinkIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg className="external-link-icon" width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12.5 9.5v3a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3M9.5 2.5h4v4M13.5 2.5L7.5 8.5" />
+    </svg>
+  );
+}
+
 /** A question mark in a circle, for help shown on hover. */
 export function HelpIcon({ size = 12 }: { size?: number }) {
   return (

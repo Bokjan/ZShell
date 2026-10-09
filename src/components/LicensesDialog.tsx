@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { useDialog } from "../lib/dialogs";
 import { isComposing } from "../lib/platform";
+import { ExternalLinkIcon } from "./icons";
 import { Modal } from "./Modal";
 
 /** Written by `pnpm licenses:generate`; local builds may not have it. */
@@ -156,6 +157,8 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
                         onClick={() => void openUrl(selected.pkg.url!).catch(console.error)}
                       >
                         {selected.pkg.url}
+                        <ExternalLinkIcon />
+                        <span className="visually-hidden">{t("common.opensInBrowser")}</span>
                       </button>
                     )}
                   </div>
