@@ -8,15 +8,15 @@ use anyhow::{Context, Result};
 use russh::ChannelOpenFailure;
 use tokio::net::TcpStream;
 
-use super::local::{accept_failed, listen};
+use super::local::{accept_failed, Listener};
 use super::socks::{self, Reply};
 use super::{bridge, host_port, Ctx, ForwardRule, Tracker};
 use crate::error::Error;
 use crate::ssh::SshHandle;
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx) -> Result<()> {
-    let listener = listen(&rule.bind_host, rule.bind_port).await?;
-    let mut tracker = Tracker::new(ctx, listener.local_addr()?.to_string());
+    let listener = Listener::bind(&rule.bind_host, rule.bind_port).await?;
+    let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
