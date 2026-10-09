@@ -1,12 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
 import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
+import { useDialog } from "../lib/dialogs";
 import { hostPort, wholeNumber } from "../lib/format";
-import { isComposing } from "../lib/platform";
 import { useSubmitting } from "../lib/submitting";
+import { Modal } from "./Modal";
 
 interface Props {
   /** null creates a new proxy. */
@@ -49,16 +50,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
   const saving = useSubmitting();
   const server = kind !== "command";
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || isComposing(e)) return;
-      // Only this dialog closes, not the one it was opened from.
-      e.stopImmediatePropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   // The port follows the kind unless it was changed from a usual one.
   const changeKind = (next: ProxyKind) => {
@@ -134,7 +126,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
   };
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <form className="dialog proxy-dialog" onSubmit={submit}>
         <h2>{proxy ? t("proxy.titleEdit") : t("proxy.titleNew")}</h2>
 
@@ -257,6 +249,6 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }

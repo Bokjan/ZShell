@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
+import { useDialog } from "../lib/dialogs";
 import { isComposing } from "../lib/platform";
+import { Modal } from "./Modal";
 
 /** Written by `pnpm licenses:generate`; local builds may not have it. */
 const NOTICES_URL = "/third-party-licenses.json";
@@ -56,11 +58,7 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
     };
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   const entries = useMemo(() => {
     if (!notices) return [];
@@ -94,7 +92,7 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
   };
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <div className="dialog licenses-dialog" role="dialog" aria-label={t("licenses.title")}>
         <h2>{t("licenses.title")}</h2>
         {notices === null ? (
@@ -176,6 +174,6 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
           </button>
         </footer>
       </div>
-    </div>
+    </Modal>
   );
 }

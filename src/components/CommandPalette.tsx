@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { QuickCommand, QuickCommands } from "../lib/api";
+import { useDialog } from "../lib/dialogs";
 import { isComposing } from "../lib/platform";
 import { groupName, searchCommands } from "../lib/quickCommands";
+import { Modal } from "./Modal";
 
 interface Props {
   commands: QuickCommands;
@@ -23,6 +25,7 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
   const listRef = useRef<HTMLDivElement>(null);
   const matches = searchCommands(commands, query, firstGroup, t);
   const index = Math.min(selected, matches.length - 1);
+  const dialog = useDialog(onClose);
 
   useEffect(() => {
     listRef.current?.querySelector(".palette-item.selected")?.scrollIntoView({ block: "nearest" });
@@ -35,8 +38,7 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (isComposing(e)) return;
-    if (e.key === "Escape") onClose();
-    else if (e.key === "ArrowDown") setSelected(Math.min(index + 1, matches.length - 1));
+    if (e.key === "ArrowDown") setSelected(Math.min(index + 1, matches.length - 1));
     else if (e.key === "ArrowUp") setSelected(Math.max(index - 1, 0));
     else if (e.key === "Enter" && matches[index]) run(matches[index].command);
     else return;
@@ -44,7 +46,7 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
   };
 
   return (
-    <div className="dialog-backdrop palette-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog} className="palette-backdrop">
       <div className={`palette${targets ? " many" : ""}`} role="dialog" aria-label={t("quick.paletteTitle")}>
         <input
           className="palette-input"
@@ -79,6 +81,6 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
           ))}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

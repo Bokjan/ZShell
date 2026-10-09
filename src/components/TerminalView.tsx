@@ -27,6 +27,7 @@ import {
   type ZmodemPhase,
   zmodem,
 } from "../lib/api";
+import { isDialogOpen } from "../lib/dialogs";
 import {
   clipboardKey,
   copyShortcutLabel,
@@ -627,7 +628,7 @@ export function TerminalView({
     // Capture phase, so the shortcut never reaches the terminal. A dialog (settings) above the
     // terminal has the shortcut to itself.
     const onKey = (e: KeyboardEvent) => {
-      if (!isFindShortcut(e) || document.querySelector(".dialog-backdrop")) return;
+      if (!isFindShortcut(e) || isDialogOpen()) return;
       e.preventDefault();
       e.stopPropagation();
       setSearchKey((key) => key + 1);

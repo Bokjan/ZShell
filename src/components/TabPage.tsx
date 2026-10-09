@@ -2,6 +2,7 @@ import { Fragment, useRef, useState, type MouseEvent as ReactMouseEvent } from "
 import { useTranslation } from "react-i18next";
 
 import type { ForwardState, LogOpen, Profile, SessionId } from "../lib/api";
+import { DialogsHidden } from "../lib/dialogs";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../lib/drag";
 import { dividers, equalize, moveDivider, paneRects, type Divider } from "../lib/layout";
@@ -107,24 +108,28 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
       <Fragment key={pane.key}>
         {list.includes("files") && (
           <div className="side-panel-page" style={{ display: shown("files") ? undefined : "none" }}>
-            <SftpPanel
-              sessionId={pane.sessionId}
-              connected={connected}
-              active={active && shown("files")}
-              onTransfers={(count) => h.onTransfers(pane.key, count)}
-            />
+            <DialogsHidden.Provider value={!active || !shown("files")}>
+              <SftpPanel
+                sessionId={pane.sessionId}
+                connected={connected}
+                active={active && shown("files")}
+                onTransfers={(count) => h.onTransfers(pane.key, count)}
+              />
+            </DialogsHidden.Provider>
           </div>
         )}
         {list.includes("forwards") && (
           <div className="side-panel-page" style={{ display: shown("forwards") ? undefined : "none" }}>
-            <ForwardsPanel
-              sessionId={pane.sessionId}
-              connected={connected}
-              profile={profile}
-              quick={pane.target.kind === "quick"}
-              states={pane.forwards}
-              onProfileChanged={h.onProfileChanged}
-            />
+            <DialogsHidden.Provider value={!active || !shown("forwards")}>
+              <ForwardsPanel
+                sessionId={pane.sessionId}
+                connected={connected}
+                profile={profile}
+                quick={pane.target.kind === "quick"}
+                states={pane.forwards}
+                onProfileChanged={h.onProfileChanged}
+              />
+            </DialogsHidden.Provider>
           </div>
         )}
       </Fragment>
@@ -133,77 +138,80 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
 
   const anyMounted = tab.panes.some((pane) => (mounted[pane.key] ?? []).length > 0);
 
+  // Dialogs of an inactive tab (a background save's conflict) wait for it to be shown.
   return (
-    <div className={`tab-page${active ? " active" : ""}`} ref={pageRef}>
-      <div className={`pane-area${split ? " split" : ""}${syncing !== null ? " syncing" : ""}`} ref={areaRef}>
-        {tab.panes.map((pane) => {
-          const profile = h.profileOf(pane);
-          const rect = rects.get(pane.key) ?? { x: 0, y: 0, w: 1, h: 1 };
-          return (
-            <div
-              key={pane.key}
-              data-pane={pane.key}
-              className={[
-                "pane",
-                pane.key === focused.key && "focused",
-                syncing === pane.key && "syncing",
-                inScope.includes(pane.key) && "in-scope",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              style={{ left: percent(rect.x), top: percent(rect.y), width: percent(rect.w), height: percent(rect.h) }}
-              onMouseDownCapture={() => h.onFocus(pane.key)}
-              onFocus={() => h.onFocus(pane.key)}
-            >
-              <TerminalView
-                target={pane.target}
-                shareFrom={pane.shareFrom}
-                reconnectKey={pane.reconnectKey}
-                active={active && pane.key === focused.key}
-                autoReconnect={profile?.autoReconnect ?? true}
-                onStatus={(status) => h.onStatus(pane.key, status)}
-                onExited={(status) => h.onExited(pane.key, status)}
-                onSession={(id) => h.onSession(pane.key, id)}
-                onForward={(ruleId, state) => h.onForward(pane.key, ruleId, state)}
-                onTitle={(title) => h.onTitle(pane.key, title)}
-                onInput={(data) => h.onInput(pane.key, data)}
-                registerPaste={(target) => h.registerPaste(pane.key, target)}
-                pasteTargets={() => h.pasteTargets(pane.key)}
-                menuItems={() => h.menuItems(pane)}
-                logOpen={h.logOpen(pane)}
-                onLog={(path) => h.onLog(pane.key, path)}
-                appearance={profile?.appearance}
-                loginCommands={profile?.loginCommands ?? []}
+    <DialogsHidden.Provider value={!active}>
+      <div className={`tab-page${active ? " active" : ""}`} ref={pageRef}>
+        <div className={`pane-area${split ? " split" : ""}${syncing !== null ? " syncing" : ""}`} ref={areaRef}>
+          {tab.panes.map((pane) => {
+            const profile = h.profileOf(pane);
+            const rect = rects.get(pane.key) ?? { x: 0, y: 0, w: 1, h: 1 };
+            return (
+              <div
+                key={pane.key}
+                data-pane={pane.key}
+                className={[
+                  "pane",
+                  pane.key === focused.key && "focused",
+                  syncing === pane.key && "syncing",
+                  inScope.includes(pane.key) && "in-scope",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                style={{ left: percent(rect.x), top: percent(rect.y), width: percent(rect.w), height: percent(rect.h) }}
+                onMouseDownCapture={() => h.onFocus(pane.key)}
+                onFocus={() => h.onFocus(pane.key)}
+              >
+                <TerminalView
+                  target={pane.target}
+                  shareFrom={pane.shareFrom}
+                  reconnectKey={pane.reconnectKey}
+                  active={active && pane.key === focused.key}
+                  autoReconnect={profile?.autoReconnect ?? true}
+                  onStatus={(status) => h.onStatus(pane.key, status)}
+                  onExited={(status) => h.onExited(pane.key, status)}
+                  onSession={(id) => h.onSession(pane.key, id)}
+                  onForward={(ruleId, state) => h.onForward(pane.key, ruleId, state)}
+                  onTitle={(title) => h.onTitle(pane.key, title)}
+                  onInput={(data) => h.onInput(pane.key, data)}
+                  registerPaste={(target) => h.registerPaste(pane.key, target)}
+                  pasteTargets={() => h.pasteTargets(pane.key)}
+                  menuItems={() => h.menuItems(pane)}
+                  logOpen={h.logOpen(pane)}
+                  onLog={(path) => h.onLog(pane.key, path)}
+                  appearance={profile?.appearance}
+                  loginCommands={profile?.loginCommands ?? []}
+                />
+                {split && flashing.includes(pane.key) && <div className="pane-flash" />}
+                {refused?.key === pane.key && <div key={refused.count} className="pane-refused" />}
+              </div>
+            );
+          })}
+          {dividers(tab.layout).map((divider) => {
+            const { rect, at } = divider;
+            const row = divider.direction === "row";
+            const style = row
+              ? { left: percent(rect.x + at * rect.w), top: percent(rect.y), height: percent(rect.h) }
+              : { top: percent(rect.y + at * rect.h), left: percent(rect.x), width: percent(rect.w) };
+            return (
+              <div
+                key={`${divider.path.join(".")}:${divider.index}`}
+                className={`pane-divider ${divider.direction}`}
+                style={style}
+                onMouseDown={(e) => startDivider(e, divider)}
+                onDoubleClick={() => h.onLayout(tab.key, equalize(tabRef.current.layout, divider.path))}
               />
-              {split && flashing.includes(pane.key) && <div className="pane-flash" />}
-              {refused?.key === pane.key && <div key={refused.count} className="pane-refused" />}
-            </div>
-          );
-        })}
-        {dividers(tab.layout).map((divider) => {
-          const { rect, at } = divider;
-          const row = divider.direction === "row";
-          const style = row
-            ? { left: percent(rect.x + at * rect.w), top: percent(rect.y), height: percent(rect.h) }
-            : { top: percent(rect.y + at * rect.h), left: percent(rect.x), width: percent(rect.w) };
-          return (
-            <div
-              key={`${divider.path.join(".")}:${divider.index}`}
-              className={`pane-divider ${divider.direction}`}
-              style={style}
-              onMouseDown={(e) => startDivider(e, divider)}
-              onDoubleClick={() => h.onLayout(tab.key, equalize(tabRef.current.layout, divider.path))}
-            />
-          );
-        })}
-      </div>
-      {(anyMounted || tab.sidePanel) && (
-        <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>
-          <div className="splitter" onMouseDown={startResize} />
-          {tab.panes.map(panels)}
-          {tab.sidePanel && !panelHere && <div className="side-panel-empty">{t("tabs.panelUnavailable")}</div>}
+            );
+          })}
         </div>
-      )}
-    </div>
+        {(anyMounted || tab.sidePanel) && (
+          <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>
+            <div className="splitter" onMouseDown={startResize} />
+            {tab.panes.map(panels)}
+            {tab.sidePanel && !panelHere && <div className="side-panel-empty">{t("tabs.panelUnavailable")}</div>}
+          </div>
+        )}
+      </div>
+    </DialogsHidden.Provider>
   );
 }

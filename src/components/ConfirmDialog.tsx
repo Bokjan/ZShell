@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { isComposing } from "../lib/platform";
+import { useDialog } from "../lib/dialogs";
+import { Modal } from "./Modal";
 
 interface Props {
   title: string;
@@ -36,14 +37,10 @@ export function ConfirmDialog({
 }: Props) {
   const { t } = useTranslation();
   const [checked, setChecked] = useState(false);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onCancel();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  const dialog = useDialog(onCancel);
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+    <Modal dialog={dialog}>
       <form
         className="dialog"
         onSubmit={(e) => {
@@ -75,6 +72,6 @@ export function ConfirmDialog({
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }

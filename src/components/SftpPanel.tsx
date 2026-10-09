@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { dirname, join } from "@tauri-apps/api/path";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -6,12 +6,14 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from "../lib/api";
+import { useDialog } from "../lib/dialogs";
 import { pathRange, storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";
 import { isComposing, isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { EyeIcon, SearchIcon } from "./icons";
+import { Modal } from "./Modal";
 import { TransferList, type Transfer } from "./TransferList";
 
 interface Props {
@@ -70,6 +72,12 @@ function storeDownloadTo(dir: string) {
   } catch {
     // The dialog then opens in its default place.
   }
+}
+
+/** The permissions dialog's backdrop, which makes it a dialog (see `useDialog`). */
+function ChmodDialog({ onClose, children }: { onClose(): void; children: ReactNode }) {
+  const dialog = useDialog(onClose);
+  return <Modal dialog={dialog}>{children}</Modal>;
 }
 
 export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) {
@@ -929,7 +937,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {chmodTarget && (
-        <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setChmodTarget(null)}>
+        <ChmodDialog onClose={() => setChmodTarget(null)}>
           <form className="dialog" onSubmit={submitChmod}>
             <h2>{t("sftp.chmodTitle")}</h2>
             <label>
@@ -938,7 +946,6 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
                 autoFocus
                 value={chmodTarget.value}
                 onChange={(e) => setChmodTarget({ ...chmodTarget, value: e.target.value })}
-                onKeyDown={(e) => e.key === "Escape" && !isComposing(e) && setChmodTarget(null)}
               />
             </label>
             <p className="hint">{/^[0-7]{3,4}$/.test(chmodTarget.value) && formatMode(parseInt(chmodTarget.value, 8), chmodTarget.entry.isDir, false)}</p>
@@ -952,7 +959,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
               </button>
             </footer>
           </form>
-        </div>
+        </ChmodDialog>
       )}
       {confirm && (
         <ConfirmDialog

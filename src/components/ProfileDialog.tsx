@@ -25,14 +25,16 @@ import {
   type SerialPortInfo,
 } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
+import { useDialog } from "../lib/dialogs";
 import { wholeNumber } from "../lib/format";
 import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
-import { isComposing, isWindows } from "../lib/platform";
+import { isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { useSubmitting } from "../lib/submitting";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
+import { Modal } from "./Modal";
 import { ProxyDialog } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 import { SpinInput } from "./SpinInput";
@@ -196,12 +198,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
       return next;
     });
 
-  // A proxy dialog opened from here stops Escape itself.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   /** Shows a problem with a field, on the page the field is on. */
   const invalid = (on: Page, message: string) => {
@@ -800,7 +797,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
   return (
     <>
-      <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <Modal dialog={dialog}>
         <form className="dialog profile-dialog" onSubmit={submit}>
           <h2>{profile ? t("profile.titleEdit") : t("profile.titleNew")}</h2>
           <div className="segmented profile-pages" role="tablist">
@@ -853,7 +850,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
             </button>
           </footer>
         </form>
-      </div>
+      </Modal>
       {creatingProxy && (
         <ProxyDialog
           proxy={null}

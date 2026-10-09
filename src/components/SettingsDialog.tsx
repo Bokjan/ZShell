@@ -6,6 +6,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { configDirectory, knownHosts, logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
+import { useDialog } from "../lib/dialogs";
 import { basename, formatSize } from "../lib/format";
 import {
   allCopyShortcutsLabel,
@@ -51,6 +52,7 @@ import { HelpTip } from "./HelpTip";
 import { CloseIcon } from "./icons";
 import { KnownHostsDialog } from "./KnownHostsDialog";
 import { LicensesDialog } from "./LicensesDialog";
+import { Modal } from "./Modal";
 import { ProxyDialog, proxySummary } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 import { SpinInput } from "./SpinInput";
@@ -149,8 +151,7 @@ function filterSettings(content: HTMLElement, query: string): SectionId[] {
     const title = heading?.textContent?.toLowerCase() ?? "";
     let any = false;
     for (const item of Array.from(section.children)) {
-      // Dialogs opened from a section (a proxy, the known hosts) are rendered inside it.
-      if (item === heading || !(item instanceof HTMLElement) || item.classList.contains("dialog-backdrop")) continue;
+      if (item === heading || !(item instanceof HTMLElement)) continue;
       const text = item.textContent?.toLowerCase() ?? "";
       item.hidden = !words.every((word) => title.includes(word) || text.includes(word));
       any ||= !item.hidden;
@@ -264,23 +265,26 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   // Focus starts in the content, so the keyboard scrolls it and never reaches a terminal.
   useEffect(() => contentRef.current?.focus({ preventScroll: true }), []);
 
-  // While the licenses are open, Escape closes only them (a proxy dialog stops it itself).
-  // In the search box, it clears the search first. Ctrl+F also finds outside macOS: no shell
-  // has the focus here.
+  // In the search box, Escape clears the search first.
+  const dialog = useDialog(onClose, {
+    onEscape: (e) => {
+      if (e.target !== searchRef.current || !queryRef.current) onClose();
+      else setQuery("");
+    },
+  });
+
+  // Ctrl+F also finds outside macOS: no shell has the focus here.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (licensesOpen || isComposing(e)) return;
-      if (e.key === "Escape") {
-        if (e.target !== searchRef.current || !queryRef.current) onClose();
-        else setQuery("");
-      } else if (isFindShortcut(e) || (!isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey)) {
+      if (!dialog.isTop() || isComposing(e)) return;
+      if (isFindShortcut(e) || (!isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey)) {
         e.preventDefault();
         searchRef.current?.select();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, licensesOpen]);
+  }, [dialog]);
 
   const updateActive = useCallback(() => {
     const content = contentRef.current;
@@ -348,7 +352,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
 
   return (
     <>
-      <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <Modal dialog={dialog}>
         <div className="dialog settings-dialog" role="dialog" aria-label={t("settings.title")}>
           <nav className="settings-nav">
             <h2>{t("settings.title")}</h2>
@@ -660,7 +664,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
             <CloseIcon />
           </button>
         </div>
-      </div>
+      </Modal>
       {licensesOpen && <LicensesDialog onClose={() => setLicensesOpen(false)} />}
     </>
   );

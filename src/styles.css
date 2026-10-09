@@ -1851,6 +1851,10 @@ body.resizing .terminal-view {
   background: var(--backdrop);
   z-index: 10;
 }
+/* A dialog of an inactive tab (see `DialogsHidden`). */
+.dialog-backdrop[hidden] {
+  display: none;
+}
 /* Scrolls when taller than the space below the title bar (the session dialog on a small
    window). */
 .dialog {

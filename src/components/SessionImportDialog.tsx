@@ -2,9 +2,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessage, sessionsFile, type SessionCandidate } from "../lib/api";
+import { useDialog } from "../lib/dialogs";
 import { forwardMapping } from "../lib/format";
-import { isComposing } from "../lib/platform";
 import { address } from "../lib/sessions";
+import { Modal } from "./Modal";
 
 interface Props {
   /** The exported sessions file. */
@@ -21,11 +22,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   useEffect(() => {
     sessionsFile.scan(path).then(
@@ -60,7 +57,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
   const importable = candidates?.filter((c) => !c.existing) ?? [];
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <form className="dialog import-dialog" onSubmit={submit}>
         <h2>{t("sessionImport.title")}</h2>
         <p className="hint import-path">{path}</p>
@@ -119,6 +116,6 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }

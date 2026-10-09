@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CommandGroup, QuickCommand } from "../lib/api";
-import { isComposing } from "../lib/platform";
+import { useDialog } from "../lib/dialogs";
 import { groupName } from "../lib/quickCommands";
+import { Modal } from "./Modal";
 
 interface Props {
   /** Null creates a command. */
@@ -23,11 +24,7 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
   const [enter, setEnter] = useState(command?.enter ?? true);
   const [group, setGroup] = useState(groupId);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -37,7 +34,7 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
   };
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <form className="dialog command-dialog" onSubmit={submit}>
         <h2>{command ? t("quick.editTitle") : t("quick.newTitle")}</h2>
         <label>
@@ -82,6 +79,6 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }

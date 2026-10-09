@@ -40,6 +40,7 @@ import {
   type SessionTarget,
   type SetAsideFile,
 } from "./lib/api";
+import { isDialogOpen } from "./lib/dialogs";
 import { basename, forwardMapping } from "./lib/format";
 import {
   closeTabShortcutLabel,
@@ -138,9 +139,6 @@ const newTab = (key: number, pane: Pane): Tab => ({
 /** How a pane's next session starts logging (see `Pane.logPath`). */
 const logOpen = (pane: Pane): LogOpen =>
   pane.logPath ? { mode: "append", path: pane.logPath } : pane.logStopped ? { mode: "off" } : { mode: "auto" };
-
-/** Whether a dialog (or the command palette) is open over the tabs. */
-const isDialogOpen = () => document.querySelector(".dialog-backdrop") !== null;
 
 function App() {
   const { t } = useTranslation();

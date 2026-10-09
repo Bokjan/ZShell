@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessage, knownHosts, type KnownHost } from "../lib/api";
-import { isComposing } from "../lib/platform";
+import { useDialog } from "../lib/dialogs";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { Modal } from "./Modal";
 
 interface Props {
   onClose(): void;
@@ -36,18 +37,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
   }, []);
   useEffect(reload, [reload]);
 
-  // Escape cancels the removal being confirmed, else closes this dialog only, not the
-  // settings it was opened from.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || isComposing(e)) return;
-      e.stopImmediatePropagation();
-      if (removing) setRemoving(null);
-      else onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose, removing]);
+  const dialog = useDialog(onClose);
 
   useEffect(() => {
     if (!entries?.some((entry) => entry.hosts.some(isHashed)) || !query.trim()) return;
@@ -93,7 +83,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
   };
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <div className="dialog known-hosts-dialog" role="dialog" aria-label={t("knownHosts.title")}>
         <h2>{t("knownHosts.title")}</h2>
         <input
@@ -161,6 +151,6 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
           onCancel={() => setRemoving(null)}
         />
       )}
-    </div>
+    </Modal>
   );
 }

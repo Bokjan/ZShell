@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { isComposing } from "../lib/platform";
+import { useDialog } from "../lib/dialogs";
+import { Modal } from "./Modal";
 
 interface Props {
   title: string;
@@ -16,11 +17,7 @@ export function NameDialog({ title, label, initial, onSave, onClose }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(initial);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -30,7 +27,7 @@ export function NameDialog({ title, label, initial, onSave, onClose }: Props) {
   };
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <form className="dialog" onSubmit={submit}>
         <h2>{title}</h2>
         <label>
@@ -47,6 +44,6 @@ export function NameDialog({ title, label, initial, onSave, onClose }: Props) {
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }

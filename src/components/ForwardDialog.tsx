@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
 import { errorMessage, type ForwardKind, type ForwardRule } from "../lib/api";
+import { useDialog } from "../lib/dialogs";
 import { hostPort } from "../lib/format";
-import { isComposing } from "../lib/platform";
+import { Modal } from "./Modal";
 
 interface Props {
   /** null creates a new rule. */
@@ -38,11 +39,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   const changeKind = (next: ForwardKind) => {
     // Follow the default bind address unless the user changed it.
@@ -94,7 +91,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
   });
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <form className="dialog forward-dialog" onSubmit={submit}>
         <h2>{rule ? t("forwards.dialog.titleEdit") : t("forwards.dialog.titleNew")}</h2>
 
@@ -189,6 +186,6 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }

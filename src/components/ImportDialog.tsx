@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { errorMessage, sshConfig, type ImportCandidate } from "../lib/api";
+import { useDialog } from "../lib/dialogs";
 import { isComposing } from "../lib/platform";
+import { Modal } from "./Modal";
 
 interface Props {
   onClose(): void;
@@ -21,11 +23,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isComposing(e) && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   const load = async (file: string) => {
     if (!file.trim()) return;
@@ -84,7 +82,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
   const importable = candidates?.filter((c) => !c.existing) ?? [];
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal dialog={dialog}>
       <form className="dialog import-dialog" onSubmit={submit}>
         <h2>{t("importDialog.title")}</h2>
 
@@ -176,6 +174,6 @@ export function ImportDialog({ onClose, onImported }: Props) {
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }
