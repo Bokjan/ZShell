@@ -43,7 +43,7 @@
 
 ## 里程碑
 
-按计划顺序排列。翻译、上架 Store、多因素认证与其他里程碑没有依赖，可以随时提前。
+按计划顺序排列。翻译、上架 Store、多因素认证与其他里程碑没有依赖，可以随时提前。M22–M26 来自 2026-10 代码审查的设计层面观察，属于内部结构调整，用户可见的变化很少；其中 M24 是 M17 的前置。
 
 | 阶段 | 内容 | 优先级 |
 |---|---|---|
@@ -70,6 +70,11 @@
 | **M19 翻译** | 语言设置界面，首批简体中文 | — |
 | **M20 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
 | **M21 多因素认证** | 按服务器返回的剩余方法继续认证（`AuthenticationMethods publickey,keyboard-interactive` 等） | P1 |
+| **M22 会话生命周期** | 会话的全部资源由 guard 持有，`SessionManager::remove` 是唯一的清理入口；页面重载或窗口销毁时关闭所属会话；转发规则由单一所有者持有 | P2 |
+| **M23 输出背压** | 所有后端的输出都有上限：`Flow` 覆盖 SSH / Telnet / 串口，ZMODEM 接收有界，日志写入移出会话线程并可轮转 | P2 |
+| **M24 前端结构** | 对话框栈、集中的快捷键分发、`App.tsx` 拆出状态与会话注册；M17 之前完成 | P2 |
+| **M25 前后端类型生成** | 从 Rust 生成 TypeScript 类型与错误码联合类型；打开会话的命令合并 | P2 |
+| **M26 主机证书与 SFTP 分流** | `@cert-authority` 与主机证书；批量传输使用单独的 SFTP channel | P2 |
 
 ### M17 加密保险库与带密码导出
 
@@ -145,6 +150,60 @@
 - 提示仍在终端里内联显示，与 OpenSSH 一样；keyboard-interactive 的 `name` / `instruction` 照常显示，验证码提示不回显、不保存。
 - 自动重连：需要验证码的连接无法无人值守地重连，重连时照常在终端里提示。
 - 测试：临时 sshd 配 `AuthenticationMethods publickey,keyboard-interactive` 与 `publickey,password`，keyboard-interactive 用 PAM 或 `KbdInteractiveAuthentication` 加测试用户验证；单元测试覆盖方法集合的推进逻辑。
+
+### M22 会话生命周期
+
+**为什么**：关闭会话现在依赖调用顺序：`session_close` 先关连接注册、再 `abort()` 任务，加上分散的 Drop 实现和阻塞线程轮询的标志位。审查中的 1.1（关闭本地终端执行已输入的命令）、2.1.1（复制标签的 channel 不关闭）、2.3.4（ZMODEM 任务泄漏）、2.7.1（串口重连设备忙）和连接注册的竞争都出在这里，每次都是单独补一处。另外后端不知道会话属于哪个 webview，页面重载或崩溃后，所有会话都成了孤儿：PTY 的读线程卡在 `Flow` 上，SSH 输出堆在 Tauri 的 IPC 队列里。
+
+**设计要点**
+- `SessionManager::remove` 是关闭会话的唯一入口；`session_close`、标签关闭、窗口销毁都走它。
+- 会话持有的每样资源都是 guard：连接注册（v1.6.8 已改）、shell channel（`CloseOnDrop`，v1.6.3）、ZMODEM 传输、日志槽位、PTY / 串口线程。任务被 abort 就等于全部释放，不再依赖先后顺序；阻塞线程用 channel 关闭代替轮询标志。
+- `SessionEntry` 记下所属 webview 的 label。webview 开始加载新页面（`on_page_load` 的 Started）或窗口销毁时，关闭该 webview 的全部会话；开发时的热重载同样适用。
+- 转发规则现在的状态分散在 `running`、`cancels`、`RemoteRoutes` 三张表里，正确性依赖 `Registration::drop` 的时机。改为每条规则一个所有者对象：从发出请求一直持有到取消，`-R` 的服务器端监听、路由表条目、状态事件都挂在它上面，丢弃即撤销。
+- 验收：现有的泄漏测试（1.1、2.1.1、2.3.4、2.7.1）全部保留并通过；新增"重载页面后后端会话数归零"的测试；临时 sshd（`MaxSessions`）下反复打开、复制、关闭标签不泄漏 channel。
+
+### M23 输出背压
+
+**为什么**：流控只覆盖 PTY。SSH、Telnet、串口的输出推进 Tauri 的 `Channel`，Tauri 把 1 KiB 以上的数据块放在没有上限的 `ChannelDataIpcQueue` 里等 JS 取走；局域网上 `cat` 一个 1 GB 的文件，内存随积压增长，xterm.js 积压约 50 MB 后丢弃写入，输出就丢了。ZMODEM 的 `incoming` 无界，磁盘比链路慢时内存无限增长。日志在会话线程上同步写入，日志目录慢会拖住会话，单个文件也没有大小上限。
+
+**设计要点**
+- `Flow` 改用 `tokio::sync::Notify`（现在是 PTY 专用的阻塞实现），所有后端共用：前端按已写入 xterm 的字节确认，未确认的超过上限时后端暂停读取。
+- 各后端暂停读取的代价：Telnet、串口没有代价（TCP、驱动自然反压）；SSH 暂停 shell channel 的读取会让 russh 的整条连接停下（SFTP、转发同时等待），但有上限，比无限增长好。分屏和复制标签共享连接时，按最慢的窗格暂停，界面上不额外提示。
+- ZMODEM 的 `incoming` 改为有界 channel，接收方写盘慢时反压到链路。
+- 日志写入移到单独的写入任务，会话线程只把数据块放进有界队列；队列满时丢弃并在日志里记一行说明，不拖住会话。单个日志文件加大小上限（设置项，默认不限制），超过后按 `-1`、`-2` 轮转。
+- 两个 channel（JSON 事件与原始输出）之间的顺序：状态事件改为也经同一条输出 channel 按顺序送达，使"连接已关闭"提示总在最后一段输出之后。
+- 验收：本地 sshd 上 `cat` 1 GB 文件，应用内存保持平稳、输出不丢；慢速 U 盘上 ZMODEM 接收大文件内存平稳。
+
+### M24 前端结构
+
+**为什么**：每个对话框各自处理 Esc（window 监听、捕获与冒泡阶段混用、`stopImmediatePropagation`、`licensesOpen` 之类的标志），快捷键分散在 `App.tsx` 与 `TerminalView` 两处、对打开的对话框规则不同，`App.tsx` 约 900 行持有全部标签与窗格状态。M17 要加入"保险库已锁定"这类全局状态和解锁界面，在现在的结构上加会很难维护，所以排在 M17 之前。
+
+**设计要点**
+- 对话框栈：`useDialog()` 注册到一个栈，只有最上层的对话框响应 Esc 与点击背景，统一判断输入法组字；去掉各对话框里的 window 监听和标志位。
+- ProxyDialog 与 KnownHostsDialog 改用 portal 渲染到 body，设置的搜索不再依赖 DOM 结构跳过它们，`.settings-dialog` 的后代样式也不再作用到它们。
+- 快捷键分发器：一个捕获阶段的监听，按"对话框栈非空 / 输入法组字 / 焦点在终端"统一判断，`App.tsx` 与 `TerminalView` 只注册处理函数。
+- 状态：标签、窗格、会话的状态移进一个 reducer（或轻量 store），操作都是纯函数、可单元测试；会话注册模块负责打开、复用连接、重连与关闭，组件只订阅。
+- WebGL：非活动标签的窗格释放 WebGL 上下文（浏览器约允许 16 个），切回时重新创建；避免标签多时最早的那些静默退回 DOM 渲染器。
+- 不改变任何交互；验收以现有的界面测试清单逐项回归。
+
+### M25 前后端类型生成
+
+**为什么**：`src/lib/api.ts` 手写镜像 Rust 的类型，错误码在两端都是普通字符串，改一边忘了另一边只能在运行时发现。打开会话的四个命令（`profile_open`、`quick_open`、`ssh_open_shared`、`local_open`）各自重复了日志槽位与启动任务的代码。
+
+**设计要点**
+- 用 specta（与 Tauri 2 集成，可同时生成命令的调用函数）或 ts-rs 从 Rust 生成 TypeScript 类型，生成的文件提交到仓库；CI 检查生成结果与提交的一致。开工前先用原型比较两者对 serde 属性（`rename_all`、`tag`、`default`）的支持。
+- 从 `src-tauri/locales/en.json` 的 `errors.*` 生成错误码的联合类型，前端按错误码分支的地方由 `tsc` 检查。
+- 四个打开命令合并成 `open_session(spec)`，`spec` 是带标签的枚举（保存的会话、快速连接、共享连接、本地终端），日志槽位与任务启动只写一次。
+- `Profile` 按协议拆成共同字段加各自的部分，仍保持 `profiles.json` 格式向后兼容（反序列化时兼容旧的扁平结构）。
+
+### M26 主机证书与 SFTP 分流
+
+**为什么**：主机证书现在被当作普通公钥，`@cert-authority` 不生效，用证书管理主机的环境每台机器首次连接都要确认。目录列表、编辑与批量传输共用一个 SFTP channel，大文件传输时浏览目录要排队（加剧了审查中的 2.2.1）。
+
+**设计要点**
+- 主机证书：协商时接受 `*-cert-v01@openssh.com` 主机密钥算法；校验证书签名、有效期、principals（包含连接的主机名）与签发者，签发者对照 known_hosts 中 `@cert-authority` 行的主机模式。证书不通过时按 OpenSSH 的行为回退到普通主机密钥校验或报错。先确认 russh 是否支持证书形式的主机密钥，不支持则评估上游补丁。
+- SFTP 分流：批量传输（上传、下载、拖出）在第一次需要时单独打开一个 SFTP channel，浏览与编辑继续用原来的；服务器的 `MaxSessions` 不够时回退到共用一个。
+- 验收：临时 sshd 配主机证书与 `@cert-authority`；限速代理下大文件传输时列目录不等待。
 
 ## 暂不排期（P2）
 
