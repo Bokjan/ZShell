@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-10-09
+Last updated: 2026-10-10
 
 ZShell is an SSH, Telnet and serial terminal that runs entirely on your computer. It does not collect, transmit or share any personal data: there is no telemetry, analytics, crash reporting, advertising, user account or update check, and the developer receives nothing from your use of the app.
 
@@ -15,7 +15,7 @@ Everything ZShell saves stays on your computer:
 - **Sessions, settings, quick commands and log settings** are saved as JSON files in the app's configuration folder: `~/Library/Application Support/org.boyin.zshell` on macOS, and `%APPDATA%\org.boyin.zshell` on Windows. Sessions include host names, user names, ports, serial device names and settings, paths to private keys, port forwarding rules and the other options you set. Proxies are saved there too, with their addresses, user names and commands. If one of these files can't be read when ZShell starts, it is kept in the same folder under a name ending in `.bad-` and the date, and ZShell tells you about it.
 - **Saved passwords** (for SSH, for typing at a Telnet server's password prompt, and for proxies) are kept only in the system's credential store, never in a file: in the macOS Keychain as items with the service `org.boyin.zshell`, and in the Windows Credential Manager as generic credentials whose names end in `.org.boyin.zshell`. Passphrases for private keys are not saved.
 - **Host keys** of the servers you accept are added to `~/.ssh/known_hosts`, the file OpenSSH uses. When you remove host keys in the settings, ZShell rewrites that file and keeps its previous contents in `~/.ssh/known_hosts.old`, as `ssh-keygen -R` does. To check a server's key, ZShell also reads the other host key files OpenSSH reads (`~/.ssh/known_hosts2`, and `ssh_known_hosts` and `ssh_known_hosts2` in `/etc/ssh`, or `%ProgramData%\ssh` on Windows) but never writes to them. ZShell also reads `~/.ssh/config` when you import from it, and the private keys you choose for authentication.
-- **Session logs** are recorded only when you turn them on, in the folder shown in the settings (`Documents/ZShellLogs` by default).
+- **Session logs** are recorded only when you turn them on, in the folder shown in the settings (`Documents/ZShellLogs` by default), which is created when the first log is written.
 - **Exported sessions** are written to the file you choose, with your proxies, and never include passwords.
 - **Temporary files** are created in the system's temporary folder while you edit a remote file in a local editor or drag files out of the file panel.
 - **Interface state**, such as panel widths and the last download folder, is kept in the app's web view storage.

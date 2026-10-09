@@ -225,8 +225,8 @@ export const sessionLog = {
 export const logs = {
   /** How many logs ZShell has written (and still exist), and their total size. */
   summary: () => invoke<LogSummary>("logs_summary"),
-  /** Where new logs go; created if needed. */
-  directory: () => invoke<string>("logs_directory"),
+  /** Where new logs go; created only with `create`, which showing the folder needs. */
+  directory: (create = false) => invoke<string>("logs_directory", { create }),
   count: (profileId: string) => invoke<number>("logs_count", { profileId }),
   /** Deletes a session's logs, or all of them; those being written are kept. Returns how many were deleted. */
   delete: (profileId?: string) => invoke<number>("logs_delete", { profileId }),

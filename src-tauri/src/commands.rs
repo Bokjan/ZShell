@@ -516,12 +516,15 @@ pub async fn logs_summary(app: AppHandle) -> Result<LogSummary> {
     blocking(app, |app| Ok(app.state::<Logs>().summary())).await
 }
 
-/// Where new logs go; created if needed, to be shown in the file manager.
+/// Where new logs go. Created only when `create` is set, to be shown in the file manager:
+/// opening the settings leaves no empty folder behind for someone who never records a log.
 #[tauri::command]
-pub async fn logs_directory(app: AppHandle) -> Result<PathBuf> {
-    blocking(app, |app| {
+pub async fn logs_directory(app: AppHandle, create: bool) -> Result<PathBuf> {
+    blocking(app, move |app| {
         let dir = app.state::<Logs>().directory(&app.state::<SettingsStore>().get().logs);
-        let _ = std::fs::create_dir_all(&dir);
+        if create {
+            let _ = std::fs::create_dir_all(&dir);
+        }
         Ok(dir)
     })
     .await

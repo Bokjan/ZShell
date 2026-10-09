@@ -900,7 +900,11 @@ function LogSection({
             <button type="button" onClick={() => void choose()}>
               {t("settings.logChoose")}
             </button>
-            <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
+            <button
+              type="button"
+              onClick={() => logs.directory(true).then(revealItemInDir).catch(console.error)}
+              disabled={!directory}
+            >
               {t("settings.logShow")}
             </button>
           </div>
