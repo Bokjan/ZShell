@@ -2,6 +2,16 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.1] - 2026-10-09
+
+### Features
+
+- Settings › About shows the folder where sessions and settings are saved, with a button that opens it in Finder or File Explorer.
+
+### Bug Fixes
+
+- Tooltips appear after 0.2 s, each with the same delay, instead of at once when moving from one to the next.
+
 ## [1.6.0] - 2026-10-09
 
 ### Features
