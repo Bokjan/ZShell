@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, watch};
 
 use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, ZCRCE, ZCRCW};
 use super::link::{Link, TIMEOUT};
-use super::{detect, receive, send, Direction, Report};
+use super::{detect, partial_header, receive, send, Direction, Report};
 
 #[derive(Default)]
 struct Log {
@@ -108,6 +108,17 @@ fn detects_transfers_in_output() {
     let output = b"rz waiting to receive.**\x18B0100000023be50\r\x8a\x11";
     assert_eq!(detect(output).map(|(i, d)| (i, d == Direction::Send)), Some((22, true)));
     assert!(detect(b"ls -l\r\nfile *.txt").is_none());
+}
+
+#[test]
+fn holds_back_what_may_start_a_header() {
+    assert_eq!(partial_header(b"rz\r**\x18B0"), 5);
+    assert_eq!(partial_header(b"rz\r*\x18B"), 3);
+    assert_eq!(partial_header(b"x*\x18"), 2);
+    // Ordinary output, even ending in `*`, shows at once.
+    for output in [b"ls *".as_slice(), b"**", b"rating: *****", b"*\x18B00 and more", b"\x18B"] {
+        assert_eq!(partial_header(output), 0, "{output:?}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

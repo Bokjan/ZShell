@@ -576,6 +576,20 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn a_header_split_across_reads_does_not_show() {
+        let (io, _input, output, events) = TermIo::detached((80, 24));
+        let sink = io.sink();
+        for chunk in [b"rz\r**\x18".as_slice(), b"B", b"0", b"0000000000000\r\x8a\x11"] {
+            sink.output(chunk.to_vec());
+        }
+        let asked = events.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        assert!(asked.contains("chooseDestination"), "{asked}");
+        let shown: Vec<u8> = output.try_iter().flatten().collect();
+        assert_eq!(String::from_utf8_lossy(&shown), "rz\r\r\n");
+        sink.zmodem.cancel();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn ctrl_c_before_a_transfer_starts_reaches_the_remote_program() {
         let (mut io, _input, output, _events) = TermIo::detached((80, 24));
         let sink = io.sink();

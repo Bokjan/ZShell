@@ -75,9 +75,10 @@ enum Direction {
 }
 
 enum State {
-    /// Watching the output; `tail` is the end of what was already shown, in case a header
-    /// starts there and continues in the next chunk.
-    Idle { tail: Vec<u8> },
+    /// Watching the output. `tail` is the end of what was scanned, in case a header starts
+    /// there and continues in the next chunk; its last `held` bytes look like the start of a
+    /// header and are not shown yet.
+    Idle { tail: Vec<u8>, held: usize },
     Active(Active),
 }
 
@@ -98,25 +99,29 @@ impl Zmodem {
     /// Also returns the receiving end of what transfers send, for the session's input.
     pub fn new() -> (Arc<Self>, mpsc::Receiver<Vec<u8>>) {
         let (outgoing, outgoing_rx) = mpsc::channel(OUTGOING_CHUNKS);
-        (Arc::new(Self { state: Mutex::new(State::Idle { tail: Vec::new() }), outgoing }), outgoing_rx)
+        (Arc::new(Self { state: Mutex::new(State::Idle { tail: Vec::new(), held: 0 }), outgoing }), outgoing_rx)
     }
 
     /// Takes the remote side's output; returns the part the terminal should show.
     pub fn output(self: &Arc<Self>, bytes: Vec<u8>, sink: &SessionSink) -> Vec<u8> {
         let mut state = self.state.lock().unwrap();
-        let tail = match &mut *state {
+        let (tail, held) = match &mut *state {
             State::Active(active) => {
                 let _ = active.incoming.send(bytes);
                 return Vec::new();
             }
-            State::Idle { tail } => tail,
+            State::Idle { tail, held } => (tail, held),
         };
-        let shown = tail.len();
+        // How much of `scan` the terminal has shown.
+        let shown = tail.len() - *held;
         let mut scan = std::mem::take(tail);
         scan.extend_from_slice(&bytes);
         let Some((start, direction)) = detect(&scan) else {
-            *tail = scan[scan.len().saturating_sub(frame::ZRQINIT_SIGNATURE.len() - 1)..].to_vec();
-            return bytes;
+            let hold = partial_header(&scan);
+            let show_until = (scan.len() - hold).max(shown);
+            *held = scan.len() - show_until;
+            *tail = scan[scan.len().saturating_sub((frame::ZRQINIT_SIGNATURE.len() - 1).max(*held))..].to_vec();
+            return scan[shown..show_until].to_vec();
         };
         let (incoming, incoming_rx) = mpsc::unbounded_channel();
         let _ = incoming.send(scan[start..].to_vec());
@@ -126,7 +131,7 @@ impl Zmodem {
         link.charset = sink.encoding();
         link.record(shown.saturating_sub(start));
         tauri::async_runtime::spawn(run(self.clone(), direction, link, sink.clone()));
-        bytes[..start.saturating_sub(shown)].to_vec()
+        scan[shown.min(start)..start].to_vec()
     }
 
     pub fn is_active(&self) -> bool {
@@ -169,7 +174,7 @@ impl Zmodem {
     fn finish(&self, link: &mut Link, sink: &SessionSink) {
         let mut state = self.state.lock().unwrap();
         let rest = link.take_rest();
-        *state = State::Idle { tail: Vec::new() };
+        *state = State::Idle { tail: Vec::new(), held: 0 };
         if !rest.is_empty() {
             sink.remote(rest);
         }
@@ -191,6 +196,21 @@ fn detect(output: &[u8]) -> Option<(usize, Direction)> {
     })?;
     let start = if start > 0 && output[start - 1] == ZPAD { start - 1 } else { start };
     Some((start, direction))
+}
+
+/// How many bytes at the end of `output` may be the start of a header (`*`, ZDLE, `B`, `0`),
+/// to hold back until the next chunk shows whether they are: on a serial line a header often
+/// arrives in pieces, and none of it should show. Only once a ZDLE is among them, which
+/// ordinary output doesn't end with, so a prompt ending in `*` is not held back.
+fn partial_header(output: &[u8]) -> usize {
+    let signature = frame::ZRQINIT_SIGNATURE;
+    let Some(n) = (2..signature.len()).rev().find(|&n| output.ends_with(&signature[..n])) else { return 0 };
+    // The second ZPAD that lrzsz sends.
+    if output.len() > n && output[output.len() - n - 1] == ZPAD {
+        n + 1
+    } else {
+        n
+    }
 }
 
 /// The transfer task.
