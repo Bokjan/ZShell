@@ -107,6 +107,9 @@ impl Link {
         self.check_cancelled()?;
         tokio::select! {
             _ = self.cancel.wait_for(|cancelled| *cancelled) => bail!(Error::new("zmodem.cancelled")),
+            // The session has ended (its tab closed while a question waits for the user, say):
+            // nothing will arrive, and nothing we send would go anywhere.
+            () = self.outgoing.closed() => bail!(Error::new("zmodem.cancelled")),
             chunk = self.incoming.recv() => match chunk {
                 Some(chunk) => self.buffer.extend(chunk),
                 // The session is closing.

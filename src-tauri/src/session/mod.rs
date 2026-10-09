@@ -511,6 +511,8 @@ impl SessionManager {
         let entry = self.sessions.lock().unwrap().remove(&id).ok_or_else(|| Error::new("session.notFound"))?;
         entry.flow.close();
         entry.task.abort();
+        // A transfer waiting for the user to choose files would otherwise wait for ever.
+        entry.zmodem.cancel();
         Ok(())
     }
 }
@@ -571,5 +573,20 @@ mod tests {
         let sent = tokio::time::timeout(std::time::Duration::from_secs(2), io.recv()).await.unwrap();
         assert!(matches!(sent, Some(SessionInput::Data(data)) if data == b"\x03"));
         assert_eq!(shown_until(&output, b"**\x18B00", std::time::Duration::from_secs(2)), b"**\x18B00");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn closing_the_session_ends_a_transfer_waiting_for_the_user() {
+        let (io, _input, _output, events) = TermIo::detached((80, 24));
+        let sink = io.sink();
+        sink.output(b"rz waiting to receive.**\x18B0100000023be50\r\x8a\x11".to_vec());
+        let asked = events.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        assert!(asked.contains("chooseFiles"), "{asked}");
+        drop(io);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while sink.zmodem.is_active() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(!sink.zmodem.is_active());
     }
 }
