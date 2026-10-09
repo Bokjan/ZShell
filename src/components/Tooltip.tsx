@@ -5,8 +5,6 @@ import { createPortal } from "react-dom";
 const MARGIN = 6;
 /** How long the pointer rests on an element before its tooltip shows. */
 const DELAY = 150;
-/** For this long after a tooltip was shown, moving onto another element shows its tooltip at once. */
-const WARM = 500;
 
 /**
  * A tooltip for `anchor`: below it, or above when there is no room, and within the window. It
@@ -47,13 +45,9 @@ export function Tooltips() {
     let current: Element | null = null;
     let saved = "";
     let timer: number | undefined;
-    let visible = false;
-    // Until when another tooltip shows without the delay, as native tooltips do.
-    let warmUntil = 0;
 
     const hide = () => {
       window.clearTimeout(timer);
-      visible = false;
       if (current && !current.hasAttribute("title")) current.setAttribute("title", saved);
       current = null;
       setShown(null);
@@ -61,19 +55,13 @@ export function Tooltips() {
     const onOver = (e: MouseEvent) => {
       const anchor = e.target instanceof Element ? e.target.closest("[title]") : null;
       if (anchor === current) return;
-      if (visible) warmUntil = Date.now() + WARM;
       hide();
       const text = anchor?.getAttribute("title");
       if (!anchor || !text) return;
       current = anchor;
       saved = text;
       anchor.removeAttribute("title");
-      const show = () => {
-        visible = true;
-        setShown({ anchor, text });
-      };
-      if (Date.now() < warmUntil) show();
-      else timer = window.setTimeout(show, DELAY);
+      timer = window.setTimeout(() => setShown({ anchor, text }), DELAY);
     };
     // Leaving the window.
     const onOut = (e: MouseEvent) => {
