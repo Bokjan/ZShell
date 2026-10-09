@@ -356,6 +356,51 @@ async fn a_file_left_for_another_is_deleted_and_reported() {
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_transfer_right_after_another_is_detected() {
+    use crate::session::{SessionInput, TermIo};
+    let src = temp_dir("again-src");
+    let dst = temp_dir("again-dst");
+    let files = make_files(&src);
+    let (mut io, _input, _output, events) = TermIo::detached((80, 24));
+    let sink = io.sink();
+    // `sz a; sz b`: our sender plays the remote side, and the second sz's ZRQINIT arrives
+    // with the end of the first transfer.
+    let (mut sender, (to_sender, mut from_sender, _cancel)) = link();
+    tokio::spawn(async move {
+        while let Some(input) = io.recv().await {
+            if let SessionInput::Data(data) = input {
+                let _ = to_sender.send(data);
+            }
+        }
+    });
+    let remote = sink.clone();
+    tokio::spawn(async move {
+        while let Some(mut chunk) = from_sender.recv().await {
+            if chunk.ends_with(b"OO") {
+                chunk.extend_from_slice(b"**\x18B00000000000000\r\x8a\x11");
+            }
+            remote.output(chunk);
+        }
+    });
+    let wait_for = |phase: &str| loop {
+        let event = events.recv_timeout(std::time::Duration::from_secs(5)).expect(phase);
+        if event.contains(phase) {
+            break;
+        }
+    };
+
+    sink.output(b"**\x18B00000000000000\r\x8a\x11".to_vec());
+    wait_for("chooseDestination");
+    sink.zmodem().reply(super::Reply::Destination(dst.clone()));
+    let rinit = sender.header(TIMEOUT).await.unwrap();
+    send::send(&mut sender, rinit, &files[..1], &mut Log::default()).await.unwrap();
+    wait_for("chooseDestination");
+    sink.zmodem().cancel();
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
 /// An lrzsz program (`lsz` / `lrz`, as Homebrew and most distributions install them), if any.
 fn lrzsz(name: &str) -> Option<PathBuf> {
     let dirs = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default();

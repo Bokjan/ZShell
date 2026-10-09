@@ -105,7 +105,11 @@ impl Zmodem {
     /// Takes the remote side's output; returns the part the terminal should show.
     pub fn output(self: &Arc<Self>, bytes: Vec<u8>, sink: &SessionSink) -> Vec<u8> {
         let mut state = self.state.lock().unwrap();
-        let (tail, held) = match &mut *state {
+        self.scan(&mut state, bytes, sink)
+    }
+
+    fn scan(self: &Arc<Self>, state: &mut State, bytes: Vec<u8>, sink: &SessionSink) -> Vec<u8> {
+        let (tail, held) = match state {
             State::Active(active) => {
                 let _ = active.incoming.send(bytes);
                 return Vec::new();
@@ -171,12 +175,16 @@ impl Zmodem {
 
     /// Back to watching the output. What arrived after the transfer goes to the terminal;
     /// taken under the lock, so no output can slip into the finished transfer meanwhile.
-    fn finish(&self, link: &mut Link, sink: &SessionSink) {
+    /// After a transfer it is watched as well, as the next one may follow at once (`sz a;
+    /// sz b`); output that only looked like a transfer is shown as it is (`detect` false), or
+    /// it would be taken for one again.
+    fn finish(self: &Arc<Self>, link: &mut Link, sink: &SessionSink, detect: bool) {
         let mut state = self.state.lock().unwrap();
         let rest = link.take_rest();
         *state = State::Idle { tail: Vec::new(), held: 0 };
-        if !rest.is_empty() {
-            sink.remote(rest);
+        let shown = if detect { self.scan(&mut state, rest, sink) } else { rest };
+        if !shown.is_empty() {
+            sink.remote(shown);
         }
     }
 }
@@ -216,12 +224,14 @@ fn partial_header(output: &[u8]) -> usize {
 /// The transfer task.
 async fn run(zmodem: Arc<Zmodem>, direction: Direction, mut link: Link, sink: SessionSink) {
     let mut report = TerminalReport::new(sink.clone(), direction);
+    let mut started = true;
     match transfer(&zmodem, direction, &mut link, &sink, &mut report).await {
         Ok(()) => {}
         Err(e) => {
             let code = e.downcast_ref::<Error>().map(Error::code);
             if code == Some("zmodem.notStarted") {
                 // Output that only looked like a transfer (e.g. `cat` of a binary file).
+                started = false;
             } else {
                 if code != Some("zmodem.remoteCancelled") {
                     link.abort().await;
@@ -241,7 +251,7 @@ async fn run(zmodem: Arc<Zmodem>, direction: Direction, mut link: Link, sink: Se
         }
     }
     sink.event(SessionEvent::Zmodem { phase: Phase::Idle });
-    zmodem.finish(&mut link, &sink);
+    zmodem.finish(&mut link, &sink, started);
 }
 
 async fn transfer(zmodem: &Zmodem, direction: Direction, link: &mut Link, sink: &SessionSink, report: &mut TerminalReport) -> Result<()> {

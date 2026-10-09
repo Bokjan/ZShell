@@ -160,6 +160,11 @@ impl SessionSink {
         }
     }
 
+    #[cfg(test)]
+    pub fn zmodem(&self) -> &Arc<Zmodem> {
+        &self.zmodem
+    }
+
     /// The remote side's character encoding (for file names in ZMODEM transfers).
     pub fn encoding(&self) -> &'static encoding_rs::Encoding {
         self.codec.as_ref().map_or(encoding_rs::UTF_8, |codec| codec.encoding())
