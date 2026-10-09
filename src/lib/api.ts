@@ -23,6 +23,7 @@ import type {
   SerialPortInfo,
   SessionCandidate,
   SessionEvent,
+  SessionSpec,
   SetAsideFile,
   TransferProgress,
   TreeItem,
@@ -193,14 +194,10 @@ export async function openSession(
   output.onmessage = onOutput;
   const events = new Channel<SessionEvent>();
   events.onmessage = onEvent;
-  const args = { ...size, log, onOutput: output, onEvent: events };
-  let id: SessionId;
-  if (target.kind === "local") id = await invoke<SessionId>("local_open", args);
-  else if (target.kind === "quick") {
-    const { protocol, username, host, port } = target;
-    id = await invoke<SessionId>("quick_open", { protocol, username, host, port, ...args });
-  } else if (shareFrom !== undefined) id = await invoke<SessionId>("ssh_open_shared", { source: shareFrom, ...args });
-  else id = await invoke<SessionId>("profile_open", { profileId: target.profileId, carry, ...args });
+  let spec: SessionSpec;
+  if (target.kind === "profile") spec = shareFrom !== undefined ? { kind: "shared", source: shareFrom } : { ...target, carry };
+  else spec = target;
+  const id = await invoke<SessionId>("session_open", { spec, ...size, log, onOutput: output, onEvent: events });
   return {
     id,
     write: (data) => invoke("session_write", { id, data }),

@@ -527,6 +527,11 @@ autoForwards: Array<ForwardRule>, };
 
 export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, };
 
+/**
+ * What a new session runs.
+ */
+export type SessionSpec = { "kind": "profile", profileId: string, carry: Array<string>, } | { "kind": "quick", protocol: Protocol, username: string, host: string, port: number, } | { "kind": "shared", source: number, } | { "kind": "local" };
+
 export type SetAsideFile = { path: string, 
 /**
  * Where the file was moved; `None` if moving it failed too.

@@ -66,6 +66,7 @@ mod tests {
         let visitor = &mut collect;
         visitor.visit::<error::Error>();
         visitor.visit::<commands::Saved<config::Profile>>();
+        visitor.visit::<commands::SessionSpec>();
         visitor.visit::<config::Folder>();
         visitor.visit::<config::Item>();
         visitor.visit::<config::SetAsideFile>();

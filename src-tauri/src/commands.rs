@@ -1,16 +1,17 @@
 // Commands take injected state plus IPC arguments, so long parameter lists are expected.
 #![allow(clippy::too_many_arguments)]
 
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::Serialize;
-use ts_rs::TS;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
+use ts_rs::TS;
 
 use crate::backup;
-use crate::config::{Additions, Folder, Item, Profile, ProfileStore, Protocol, SetAside, SetAsideFile};
+use crate::config::{Additions, Folder, Item, Profile, ProfileStore, Protocol, SerialOptions, SetAside, SetAsideFile};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
@@ -24,7 +25,7 @@ use crate::quick::{QuickCommandStore, QuickCommands};
 use crate::secrets;
 use crate::serial;
 use crate::settings::{Settings, SettingsStore};
-use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager};
+use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager, TermIo};
 use crate::sftp::drag;
 use crate::sftp::edit::{self, EditEvent, Edits};
 use crate::sftp::{self, transfer, Listing};
@@ -303,48 +304,6 @@ pub async fn profile_delete(app: AppHandle, id: String) -> Result<()> {
     .await
 }
 
-/// Opens a session from a saved profile, with the backend for its protocol.
-#[tauri::command]
-pub async fn profile_open(
-    app: AppHandle,
-    store: State<'_, ProfileStore>,
-    sessions: State<'_, SessionManager>,
-    connections: State<'_, Connections>,
-    profile_id: String,
-    cols: u16,
-    rows: u16,
-    log: Option<LogOpen>,
-    carry: Option<Vec<String>>,
-    on_output: Channel,
-    on_event: Channel<SessionEvent>,
-) -> Result<SessionId> {
-    let profile = store.get(&profile_id)?;
-    let route = match profile.protocol {
-        Protocol::Serial => Route::default(),
-        _ => store.route(&profile)?,
-    };
-    let slot = LogSlot::new(LogInfo { profile: Some(profile.id.clone()), ..log_info(&profile) });
-    let opened = open_log(&app, &slot, log, profile.auto_log).await?;
-    let encoding = encoding::for_profile(&profile.encoding);
-    let size = (cols, rows);
-    let id = match profile.protocol {
-        Protocol::Ssh => {
-            let connections = connections.inner().clone();
-            let carry = carry.unwrap_or_default();
-            sessions.spawn(on_output, on_event, size, slot, encoding, |id, io| ssh::run(profile, route, id, io, connections, carry))
-        }
-        Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| {
-            let profile_id = profile.id.clone();
-            // Looked up in the session's task when the server asks; `block_in_place` lets the
-            // other tasks move to other threads while the keychain waits.
-            telnet::run(profile, route, move || tokio::task::block_in_place(|| secrets::get_password(&profile_id)), io)
-        }),
-        Protocol::Serial => sessions.spawn(on_output, on_event, size, slot, encoding, |_, io| serial::run(profile.serial, io)),
-    };
-    report_log(&sessions, id, opened);
-    Ok(id)
-}
-
 /// How a session's log names it: by the profile, its address and user.
 fn log_info(profile: &Profile) -> LogInfo {
     let host = match profile.protocol {
@@ -368,52 +327,6 @@ fn log_event(result: Result<PathBuf>) -> SessionEvent {
     }
 }
 
-/// Opens an SSH or Telnet session to an address typed into the search box, without a saved
-/// profile. SSH without a user name uses the local one, like `ssh host`.
-#[tauri::command]
-pub async fn quick_open(
-    app: AppHandle,
-    sessions: State<'_, SessionManager>,
-    connections: State<'_, Connections>,
-    protocol: Protocol,
-    username: String,
-    host: String,
-    port: u16,
-    cols: u16,
-    rows: u16,
-    log: Option<LogOpen>,
-    on_output: Channel,
-    on_event: Channel<SessionEvent>,
-) -> Result<SessionId> {
-    let username = match username.trim() {
-        "" if protocol == Protocol::Ssh => local_username(),
-        name => name.to_owned(),
-    };
-    let host = host.trim().to_owned();
-    let name = if username.is_empty() { host.clone() } else { format!("{username}@{host}") };
-    let profile = Profile { protocol, ..Profile::new(name, host, port, username) };
-    match protocol {
-        Protocol::Ssh if profile.username.is_empty() => return Err(Error::new("profile.missingFields")),
-        Protocol::Serial => return Err(Error::new("profile.missingDevice")),
-        _ if profile.host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
-        _ => {}
-    }
-    // Logged only when started by hand: there is no session to record automatically.
-    let slot = LogSlot::new(log_info(&profile));
-    let opened = open_log(&app, &slot, log, false).await?;
-    let size = (cols, rows);
-    let utf8 = encoding_rs::UTF_8;
-    let id = match protocol {
-        Protocol::Telnet => sessions.spawn(on_output, on_event, size, slot, utf8, |_, io| telnet::run(profile, Route::default(), || None, io)),
-        _ => {
-            let connections = connections.inner().clone();
-            sessions.spawn(on_output, on_event, size, slot, utf8, |id, io| ssh::run(profile, Route::default(), id, io, connections, Vec::new()))
-        }
-    };
-    report_log(&sessions, id, opened);
-    Ok(id)
-}
-
 /// The user's home folder, which `~` stands for in key paths (and in `~/.ssh`).
 #[tauri::command]
 pub fn home_directory() -> Option<PathBuf> {
@@ -426,60 +339,151 @@ pub fn local_username() -> String {
     std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default()
 }
 
-/// Opens another shell on the SSH connection of session `source` (duplicating its tab),
-/// without connecting or authenticating again. Fails with `session.notConnected` if that
-/// session has no connection (any more).
+/// What a new session runs.
+#[derive(Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SessionSpec {
+    /// A saved session, with the backend for its protocol. `carry`: forwarding rules to start
+    /// besides the automatic ones (those running before the tab reconnected).
+    Profile { profile_id: String, carry: Vec<String> },
+    /// An SSH or Telnet connection typed into the search box, without a saved session. SSH
+    /// without a user name uses the local one, like `ssh host`.
+    Quick { protocol: Protocol, username: String, host: String, port: u16 },
+    /// Another shell on the SSH connection of session `source` (duplicating its tab), without
+    /// connecting or authenticating again. Fails with `session.notConnected` if that session
+    /// has no connection (any more).
+    Shared { source: SessionId },
+    /// The user's default shell in a local pseudo terminal.
+    Local,
+}
+
+/// Starts a session; returns its id.
 #[tauri::command]
-pub async fn ssh_open_shared(
+pub async fn session_open(
     app: AppHandle,
-    store: State<'_, ProfileStore>,
     sessions: State<'_, SessionManager>,
-    connections: State<'_, Connections>,
-    source: SessionId,
+    spec: SessionSpec,
     cols: u16,
     rows: u16,
     log: Option<LogOpen>,
     on_output: Channel,
     on_event: Channel<SessionEvent>,
 ) -> Result<SessionId> {
-    let connection = connections.get(source)?;
-    // Ended, but its session hasn't noticed yet (it is about to report it lost).
-    if connection.handle().is_closed() {
-        return Err(Error::new("session.notConnected"));
-    }
-    let connections = connections.inner().clone();
-    // Named like the source's log; a log of its own, as a new tab of the session would get.
-    let info = sessions.sink(source)?.log().info.clone();
-    let auto = info.profile.as_ref().and_then(|id| store.get(id).ok()).is_some_and(|p| p.auto_log);
-    let slot = LogSlot::new(info);
-    let opened = open_log(&app, &slot, log, auto).await?;
-    let encoding = encoding::for_profile(&connection.profile().encoding);
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding, |id, io| {
-        connections.attach(id, connection.clone(), io.sink());
-        ssh::run_shared(connection, id, io, connections)
-    });
+    let Launch { log_info, auto_log, encoding, backend } = launch(&app, spec)?;
+    let slot = LogSlot::new(log_info);
+    let opened = open_log(&app, &slot, log, auto_log).await?;
+    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding, |id, io| backend.start(id, io));
     report_log(&sessions, id, opened);
     Ok(id)
 }
 
-/// Starts the user's default shell in a local pseudo terminal.
-#[tauri::command]
-pub async fn local_open(
-    app: AppHandle,
-    sessions: State<'_, SessionManager>,
-    settings: State<'_, SettingsStore>,
-    cols: u16,
-    rows: u16,
-    log: Option<LogOpen>,
-    on_output: Channel,
-    on_event: Channel<SessionEvent>,
-) -> Result<SessionId> {
-    let shell = pty::default_shell();
-    let slot = LogSlot::new(LogInfo { session: shell.name(), host: "localhost".to_owned(), user: local_username(), profile: None });
-    let opened = open_log(&app, &slot, log, settings.get().logs.auto_local).await?;
-    let id = sessions.spawn(on_output, on_event, (cols, rows), slot, encoding_rs::UTF_8, |_, io| pty::run(shell, io));
-    report_log(&sessions, id, opened);
-    Ok(id)
+/// A session about to start: how its log is named and whether it starts logged, the remote
+/// side's character encoding, and its backend.
+struct Launch {
+    log_info: LogInfo,
+    auto_log: bool,
+    encoding: &'static encoding_rs::Encoding,
+    backend: Backend,
+}
+
+fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
+    let connections = app.state::<Connections>().inner().clone();
+    let utf8 = encoding_rs::UTF_8;
+    match spec {
+        SessionSpec::Profile { profile_id, carry } => {
+            let store = app.state::<ProfileStore>();
+            let profile = store.get(&profile_id)?;
+            let route = match profile.protocol {
+                Protocol::Serial => Route::default(),
+                _ => store.route(&profile)?,
+            };
+            let log_info = LogInfo { profile: Some(profile.id.clone()), ..log_info(&profile) };
+            let (auto_log, encoding) = (profile.auto_log, encoding::for_profile(&profile.encoding));
+            let backend = match profile.protocol {
+                Protocol::Ssh => Backend::Ssh { profile, route, connections, carry },
+                Protocol::Telnet => Backend::Telnet { password_of: Some(profile.id.clone()), profile, route },
+                Protocol::Serial => Backend::Serial(profile.serial),
+            };
+            Ok(Launch { log_info, auto_log, encoding, backend })
+        }
+        SessionSpec::Quick { protocol, username, host, port } => {
+            let username = match username.trim() {
+                "" if protocol == Protocol::Ssh => local_username(),
+                name => name.to_owned(),
+            };
+            let host = host.trim().to_owned();
+            let name = if username.is_empty() { host.clone() } else { format!("{username}@{host}") };
+            let profile = Profile { protocol, ..Profile::new(name, host, port, username) };
+            match protocol {
+                Protocol::Ssh if profile.username.is_empty() => return Err(Error::new("profile.missingFields")),
+                Protocol::Serial => return Err(Error::new("profile.missingDevice")),
+                _ if profile.host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
+                _ => {}
+            }
+            // Logged only when started by hand: there is no session to record automatically.
+            let log_info = log_info(&profile);
+            let backend = match protocol {
+                Protocol::Telnet => Backend::Telnet { profile, route: Route::default(), password_of: None },
+                _ => Backend::Ssh { profile, route: Route::default(), connections, carry: Vec::new() },
+            };
+            Ok(Launch { log_info, auto_log: false, encoding: utf8, backend })
+        }
+        SessionSpec::Shared { source } => {
+            let connection = connections.get(source)?;
+            // Ended, but its session hasn't noticed yet (it is about to report it lost).
+            if connection.handle().is_closed() {
+                return Err(Error::new("session.notConnected"));
+            }
+            // Named like the source's log; a log of its own, as a new tab of the session would get.
+            let log_info = app.state::<SessionManager>().sink(source)?.log().info.clone();
+            let store = app.state::<ProfileStore>();
+            let auto_log = log_info.profile.as_ref().and_then(|id| store.get(id).ok()).is_some_and(|p| p.auto_log);
+            let encoding = encoding::for_profile(&connection.profile().encoding);
+            Ok(Launch { log_info, auto_log, encoding, backend: Backend::Shared { connection, connections } })
+        }
+        SessionSpec::Local => {
+            let shell = pty::default_shell();
+            let log_info = LogInfo { session: shell.name(), host: "localhost".to_owned(), user: local_username(), profile: None };
+            let auto_log = app.state::<SettingsStore>().get().logs.auto_local;
+            Ok(Launch { log_info, auto_log, encoding: utf8, backend: Backend::Local(shell) })
+        }
+    }
+}
+
+/// A session's backend, with what it runs on.
+enum Backend {
+    Ssh { profile: Profile, route: Route, connections: Connections, carry: Vec<String> },
+    Shared { connection: Arc<ssh::Connection>, connections: Connections },
+    /// `password_of`: the saved session whose password answers the login prompt.
+    Telnet { profile: Profile, route: Route, password_of: Option<String> },
+    Serial(SerialOptions),
+    Local(pty::Shell),
+}
+
+impl Backend {
+    /// The task of session `id`. A shared connection learns of the session before the task
+    /// runs, so that closing the session right away finds it.
+    fn start(self, id: SessionId, io: TermIo) -> impl Future<Output = ()> + Send + 'static {
+        if let Backend::Shared { connection, connections } = &self {
+            connections.attach(id, connection.clone(), io.sink());
+        }
+        self.run(id, io)
+    }
+
+    async fn run(self, id: SessionId, io: TermIo) {
+        match self {
+            Backend::Ssh { profile, route, connections, carry } => ssh::run(profile, route, id, io, connections, carry).await,
+            Backend::Shared { connection, connections } => ssh::run_shared(connection, id, io, connections).await,
+            Backend::Telnet { profile, route, password_of } => {
+                // Looked up in the session's task when the server asks; `block_in_place` lets
+                // the other tasks move to other threads while the keychain waits.
+                let password = move || password_of.and_then(|id| tokio::task::block_in_place(|| secrets::get_password(&id)));
+                telnet::run(profile, route, password, io).await
+            }
+            Backend::Serial(options) => serial::run(options, io).await,
+            Backend::Local(shell) => pty::run(shell, io).await,
+        }
+    }
 }
 
 /// Starts logging a session by hand, in a new file; returns its path.
@@ -816,7 +820,7 @@ pub fn forward_keep(connections: State<'_, Connections>, ids: Vec<SessionId>) {
     connections.keep_forwards(&ids);
 }
 
-/// The forwarding rules to start again when session `id` reconnects (see `profile_open`).
+/// The forwarding rules to start again when session `id` reconnects (see [`SessionSpec::Profile`]).
 #[tauri::command]
 pub fn forward_carry(connections: State<'_, Connections>, id: SessionId) -> Vec<String> {
     connections.forwards_to_carry(id)
