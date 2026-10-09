@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use russh::{client, Disconnect};
-use russh_sftp::client::SftpSession;
+use russh_sftp::client::{Config as SftpConfig, SftpSession};
 use tokio::sync::{watch, OnceCell};
 
 use super::handler::ClientHandler;
@@ -19,6 +19,15 @@ use crate::forward::{Forwards, RemoteRoutes};
 use crate::session::{SessionId, SessionSink};
 
 pub type SshHandle = client::Handle<ClientHandler>;
+
+/// How long an SFTP request may wait for its reply. Generous, since on a slow link a request
+/// waits behind the reads queued before it: russh-sftp's default of 10 s failed downloads
+/// below about 400 KB/s. A lost connection doesn't wait for it: once the keepalives (or TCP)
+/// end the connection, the channel closes and the waiting requests fail.
+const SFTP_REQUEST_TIMEOUT_SECS: u64 = 120;
+/// Reads kept in flight per file. The SSH channel window (2 MiB) already limits what is on
+/// the way, so more only makes later requests (listing a folder) queue longer.
+const SFTP_CONCURRENT_READS: usize = 8;
 
 pub struct Connection {
     handle: Arc<SshHandle>,
@@ -58,7 +67,12 @@ impl Connection {
                 let channel = self.handle.channel_open_session().await?;
                 channel.request_subsystem(true, "sftp").await?;
                 let stream = crate::sftp::names::convert(channel.into_stream(), crate::encoding::for_profile(&self.profile.encoding));
-                let sftp = SftpSession::new(stream).await.context(Error::new("sftp.unsupported"))?;
+                let config = SftpConfig {
+                    request_timeout_secs: SFTP_REQUEST_TIMEOUT_SECS,
+                    max_concurrent_reads: SFTP_CONCURRENT_READS,
+                    ..Default::default()
+                };
+                let sftp = SftpSession::new_with_config(stream, config).await.context(Error::new("sftp.unsupported"))?;
                 Ok(Arc::new(sftp))
             })
             .await
