@@ -114,6 +114,13 @@ impl Drop for LogWriter {
     }
 }
 
+/// Columns kept for the line being edited. Output is not to be trusted with memory (a long
+/// minified file, or cursor movements of up to 65535 columns each): text going past this
+/// is passed on (see [`Line::spill`]) and the cursor stays within it.
+const MAX_COLUMNS: usize = 4096;
+/// Bytes kept on one column, for characters of no width (combining marks).
+const MAX_CELL_LEN: usize = 32;
+
 /// The line being shown, as plain text, with the cursor's column: carriage returns,
 /// backspaces and the cursor movements and erasures a shell uses to edit its command line
 /// are applied, so a line comes out as the screen showed it. Complete lines go to `out`.
@@ -123,28 +130,53 @@ struct Line {
     /// width (combining marks) join the one before.
     cells: Vec<String>,
     cursor: usize,
+    /// Part of the line has already gone to `out`.
+    spilled: bool,
     timestamps: bool,
     out: Vec<u8>,
 }
 
 impl Line {
     fn end(&mut self) {
-        if self.timestamps {
-            self.out.extend(Local::now().format("[%Y-%m-%d %H:%M:%S] ").to_string().as_bytes());
-        }
+        self.start_out();
         self.out.extend(self.cells.concat().trim_end().as_bytes());
         self.out.push(b'\n');
         self.cells.clear();
         self.cursor = 0;
+        self.spilled = false;
+    }
+
+    /// Passes on what the line has so far, without ending it, to go on at column 0: for a
+    /// line longer than `MAX_COLUMNS`, whose start is past editing. Trailing blanks are
+    /// dropped, as at the end of a line: cursor movements alone (a few bytes each) would
+    /// otherwise turn into whole lines of spaces in the file.
+    fn spill(&mut self) {
+        self.start_out();
+        self.out.extend(self.cells.concat().trim_end().as_bytes());
+        self.cells.clear();
+        self.cursor = 0;
+        self.spilled = true;
+    }
+
+    fn start_out(&mut self) {
+        if self.timestamps && !self.spilled {
+            self.out.extend(Local::now().format("[%Y-%m-%d %H:%M:%S] ").to_string().as_bytes());
+        }
     }
 
     /// Ends a line left unfinished (at a note, or when the log closes).
     fn finish(&mut self) {
-        if !self.cells.concat().trim().is_empty() {
+        if self.spilled || !self.cells.concat().trim().is_empty() {
             self.end();
         }
         self.cells.clear();
         self.cursor = 0;
+    }
+
+    /// Moves the cursor to column `to`, within `MAX_COLUMNS`, padding the line to reach it.
+    fn move_to(&mut self, to: usize) {
+        self.cursor = to.min(MAX_COLUMNS);
+        self.pad(self.cursor);
     }
 
     /// Makes the line reach column `to`, with spaces.
@@ -160,10 +192,15 @@ impl vte::Perform for Line {
         match c.width().unwrap_or(0) {
             0 => {
                 if let Some(cell) = self.cursor.checked_sub(1).and_then(|i| self.cells.get_mut(i)) {
-                    cell.push(c);
+                    if cell.len() + c.len_utf8() <= MAX_CELL_LEN {
+                        cell.push(c);
+                    }
                 }
             }
             width => {
+                if self.cursor + width > MAX_COLUMNS {
+                    self.spill();
+                }
                 self.pad(self.cursor + width);
                 self.cells[self.cursor] = c.to_string();
                 if width == 2 {
@@ -179,10 +216,7 @@ impl vte::Perform for Line {
             b'\n' => self.end(),
             b'\r' => self.cursor = 0,
             0x08 => self.cursor = self.cursor.saturating_sub(1),
-            b'\t' => {
-                self.cursor = (self.cursor / 8 + 1) * 8;
-                self.pad(self.cursor);
-            }
+            b'\t' => self.move_to((self.cursor / 8 + 1) * 8),
             _ => {}
         }
     }
@@ -192,15 +226,9 @@ impl vte::Perform for Line {
         let count = first.max(1);
         match action {
             // Cursor forward, back, to a column.
-            'C' => {
-                self.cursor += count;
-                self.pad(self.cursor);
-            }
+            'C' => self.move_to(self.cursor + count),
             'D' => self.cursor = self.cursor.saturating_sub(count),
-            'G' => {
-                self.cursor = count - 1;
-                self.pad(self.cursor);
-            }
+            'G' => self.move_to(count - 1),
             // Erase to the end of the line, from its start, or all of it.
             'K' => match first {
                 0 => self.cells.truncate(self.cursor),
@@ -214,13 +242,17 @@ impl vte::Perform for Line {
                     self.cells.drain(self.cursor..end);
                 }
             }
+            // What is pushed past the last column is lost, as on a screen.
             '@' => {
                 self.pad(self.cursor);
+                let count = count.min(MAX_COLUMNS - self.cursor);
                 self.cells.splice(self.cursor..self.cursor, std::iter::repeat_n(" ".to_owned(), count));
+                self.cells.truncate(MAX_COLUMNS);
             }
             'X' => {
-                self.pad(self.cursor + count);
-                self.cells[self.cursor..self.cursor + count].iter_mut().for_each(|cell| *cell = " ".to_owned());
+                let end = (self.cursor + count).min(MAX_COLUMNS);
+                self.pad(end);
+                self.cells[self.cursor..end].iter_mut().for_each(|cell| *cell = " ".to_owned());
             }
             _ => {}
         }
@@ -448,6 +480,23 @@ mod tests {
             b"$ ",
         ]);
         assert_eq!(log, "user@host:~$ ls -l\n100%\nred done\n% echo logged\n中文 !k\n$\n");
+    }
+
+    #[test]
+    fn long_lines_and_far_cursor_moves_stay_bounded() {
+        let long = "a".repeat(3 * MAX_COLUMNS + 10);
+        assert_eq!(text(&[long.as_bytes(), b"\r\nnext\r\n"]), format!("{long}\nnext\n"));
+
+        let mut parser = vte::Parser::new();
+        let mut line = Line::default();
+        for _ in 0..1000 {
+            parser.advance(&mut line, b"\x1b[65535C\x1b[65535@x\x1b[65535X\t");
+        }
+        assert!(line.cells.len() <= MAX_COLUMNS && line.cursor <= MAX_COLUMNS);
+        parser.advance(&mut line, b"e");
+        parser.advance(&mut line, "\u{301}".repeat(10_000).as_bytes());
+        assert!(line.cells.iter().all(|cell| cell.len() <= MAX_CELL_LEN));
+        assert!(line.out.len() < 100 * MAX_COLUMNS, "{}", line.out.len());
     }
 
     #[test]
