@@ -26,7 +26,7 @@ mod zmodem;
 
 use tauri::{Emitter, Manager};
 
-use config::ProfileStore;
+use config::{ProfileStore, SetAside};
 use logging::Logs;
 use quick::QuickCommandStore;
 use session::SessionManager;
@@ -155,11 +155,13 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
-            app.manage(ProfileStore::load(config_dir.join("profiles.json"))?);
-            app.manage(SettingsStore::load(config_dir.join("settings.json")));
-            app.manage(QuickCommandStore::load(config_dir.join("commands.json")));
+            let set_aside = SetAside::default();
+            app.manage(ProfileStore::load(config_dir.join("profiles.json"), &set_aside));
+            app.manage(SettingsStore::load(config_dir.join("settings.json"), &set_aside));
+            app.manage(QuickCommandStore::load(config_dir.join("commands.json"), &set_aside));
             let documents = app.path().document_dir().unwrap_or_else(|_| config_dir.clone());
-            app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs")));
+            app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs"), &set_aside));
+            app.manage(set_aside);
             clean_up_logs(app.handle().clone());
             app.manage(Edits::new(app.path().temp_dir()?.join("ZShell-edit")));
             window::create_main(app)?;
@@ -194,6 +196,7 @@ pub fn run() {
             commands::settings_get,
             commands::settings_set,
             commands::config_directory,
+            commands::config_set_aside,
             commands::quick_commands_get,
             commands::quick_commands_set,
             commands::profiles_list,

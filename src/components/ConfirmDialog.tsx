@@ -5,6 +5,8 @@ interface Props {
   title: string;
   message: string;
   confirmLabel: string;
+  /** Defaults to "Cancel". */
+  cancelLabel?: string;
   danger?: boolean;
   /** Shown below the message, e.g. a preview of what is about to happen. */
   children?: ReactNode;
@@ -14,7 +16,7 @@ interface Props {
   onCancel(): void;
 }
 
-export function ConfirmDialog({ title, message, confirmLabel, danger, children, checkboxLabel, onConfirm, onCancel }: Props) {
+export function ConfirmDialog({ title, message, confirmLabel, cancelLabel, danger, children, checkboxLabel, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [checked, setChecked] = useState(false);
   useEffect(() => {
@@ -44,7 +46,7 @@ export function ConfirmDialog({ title, message, confirmLabel, danger, children, 
         <footer>
           <span className="grow" />
           <button type="button" onClick={onCancel}>
-            {t("common.cancel")}
+            {cancelLabel ?? t("common.cancel")}
           </button>
           <button type="submit" className={danger ? "primary danger-fill" : "primary"} autoFocus>
             {confirmLabel}

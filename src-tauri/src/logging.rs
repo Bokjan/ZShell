@@ -18,7 +18,7 @@ use chrono::Local;
 use unicode_width::UnicodeWidthChar;
 use serde::{Deserialize, Serialize};
 
-use crate::config::write_json_atomic;
+use crate::config::{load_json, write_json_atomic, SetAside};
 use crate::error::{Error, Result};
 use crate::settings::{LogFormat, LogSettings};
 use crate::sftp::transfer::unique_path;
@@ -263,8 +263,8 @@ pub struct Logs {
 }
 
 impl Logs {
-    pub fn load(index_path: PathBuf, default_dir: PathBuf) -> Self {
-        let index = std::fs::read(&index_path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
+    pub fn load(index_path: PathBuf, default_dir: PathBuf, set_aside: &SetAside) -> Self {
+        let index = load_json(&index_path, set_aside);
         Self { index_path, default_dir, index: Mutex::new(index), active: Arc::default() }
     }
 
@@ -462,7 +462,7 @@ mod tests {
     fn writes_appends_and_deletes_only_its_own_logs() {
         let dir = std::env::temp_dir().join(format!("zshell-logs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let logs = Logs::load(dir.join("logs.json"), dir.join("Logs"));
+        let logs = Logs::load(dir.join("logs.json"), dir.join("Logs"), &SetAside::default());
         let settings = LogSettings::default();
         let info = LogInfo { session: "web".into(), host: "h".into(), user: "u".into(), profile: Some("p1".into()) };
 

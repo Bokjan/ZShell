@@ -6,7 +6,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::write_json_atomic;
+use crate::config::{load_json, write_json_atomic, SetAside};
 use crate::error::Result;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -235,14 +235,9 @@ pub struct SettingsStore {
 }
 
 impl SettingsStore {
-    /// Missing or unreadable files fall back to the defaults, so a bad edit never blocks
-    /// the app from starting.
-    pub fn load(path: PathBuf) -> Self {
-        let settings = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
-            .unwrap_or_default()
-            .normalize();
+    /// Missing or unreadable files fall back to the defaults (see [`load_json`]).
+    pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
+        let settings = load_json::<Settings>(&path, set_aside).normalize();
         Self { path, settings: Mutex::new(settings) }
     }
 

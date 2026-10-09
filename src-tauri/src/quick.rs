@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::write_json_atomic;
+use crate::config::{load_json, write_json_atomic, SetAside};
 use crate::error::Result;
 
 /// The group that always exists, first, for commands not put in a group of their own. Its
@@ -90,13 +90,10 @@ pub struct QuickCommandStore {
 }
 
 impl QuickCommandStore {
-    /// A missing or unreadable file starts with just the empty default group.
-    pub fn load(path: PathBuf) -> Self {
-        let commands = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<QuickCommands>(&bytes).ok())
-            .unwrap_or_default()
-            .normalize();
+    /// A missing or unreadable file (see [`load_json`]) starts with just the empty default
+    /// group.
+    pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
+        let commands = load_json::<QuickCommands>(&path, set_aside).normalize();
         Self { path, commands: Mutex::new(commands) }
     }
 

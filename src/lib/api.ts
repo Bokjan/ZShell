@@ -323,6 +323,16 @@ export const homeDirectory = () => invoke<string | null>("home_directory");
 /** The folder the sessions and settings are saved in; created if needed. */
 export const configDirectory = () => invoke<string>("config_directory");
 
+/** A data file that could not be read at startup and was renamed to keep it. */
+export interface SetAsideFile {
+  path: string;
+  /** `null` if renaming failed too (the next save replaces the file). */
+  movedTo: string | null;
+  error: string;
+}
+/** The data files set aside at startup; returned once. */
+export const configSetAside = () => invoke<SetAsideFile[]>("config_set_aside");
+
 /** The user name `ssh` uses when none is given. */
 export const localUsername = () => invoke<string>("local_username");
 

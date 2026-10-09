@@ -2736,6 +2736,18 @@ body.resizing .terminal-view {
 .dialog input[aria-invalid="true"] {
   border-color: var(--danger);
 }
+.set-aside-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+.set-aside-list .hint {
+  display: block;
+  margin: 2px 0 0;
+}
 .dialog-message {
   margin: 0;
   white-space: pre-wrap;

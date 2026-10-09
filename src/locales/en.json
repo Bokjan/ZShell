@@ -631,6 +631,13 @@
     "count_one": "{count} host key",
     "count_other": "{count} host keys"
   },
+  "setAside": {
+    "title": "Some data could not be read",
+    "message": "ZShell could not read these files and started without what they contain. Each file was renamed so that you can repair or restore it.",
+    "moved": "{name}, renamed to {movedTo}",
+    "notMoved": "{name}, which could not be renamed and will be replaced the next time this data is saved",
+    "show": "Show Files"
+  },
   "closeConfirm": {
     "title": "Close Tab?",
     "titleMany_one": "Close {count} Tab?",

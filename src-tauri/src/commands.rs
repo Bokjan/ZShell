@@ -7,7 +7,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::backup;
-use crate::config::{Folder, Item, Profile, ProfileStore, Protocol};
+use crate::config::{Folder, Item, Profile, ProfileStore, Protocol, SetAside, SetAsideFile};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
@@ -56,6 +56,12 @@ pub fn config_directory(app: AppHandle) -> Result<PathBuf> {
     let dir = app.path().app_config_dir()?;
     let _ = std::fs::create_dir_all(&dir);
     Ok(dir)
+}
+
+/// The data files that could not be read at startup and were set aside; reported once.
+#[tauri::command]
+pub fn config_set_aside(set_aside: State<'_, SetAside>) -> Vec<SetAsideFile> {
+    set_aside.take()
 }
 
 #[tauri::command]

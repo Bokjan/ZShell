@@ -18,6 +18,7 @@ import { MIN_PANE_HEIGHT, MIN_PANE_WIDTH, TabPage, type PaneHandlers } from "./c
 import type { SessionStatus } from "./components/TerminalView";
 import { Tooltips } from "./components/Tooltip";
 import {
+  configSetAside,
   listProfiles,
   localShellName,
   localUsername,
@@ -35,7 +36,9 @@ import {
   type QuickCommands,
   type SessionId,
   type SessionTarget,
+  type SetAsideFile,
 } from "./lib/api";
+import { basename } from "./lib/format";
 import {
   closeTabShortcutLabel,
   hasShiftShortcutModifiers,
@@ -144,6 +147,7 @@ function App() {
   const [searchFocusKey, setSearchFocusKey] = useState(0);
   // A folder's sessions waiting for confirmation to open them all.
   const [openingAll, setOpeningAll] = useState<{ folder: Folder; profiles: Profile[] } | null>(null);
+  const [setAside, setSetAside] = useState<SetAsideFile[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeKey, setActiveKey] = useState<number | null>(null);
   const [compose, setCompose] = useState<Compose>(CLOSED_COMPOSE);
@@ -194,6 +198,12 @@ function App() {
   useEffect(reloadProfiles, [reloadProfiles]);
   useEffect(() => {
     quickCommands.get().then(setCommands).catch(console.error);
+  }, []);
+  // Returned only once, so a second call (StrictMode) must not clear the first's result.
+  useEffect(() => {
+    configSetAside()
+      .then((files) => files.length > 0 && setSetAside(files))
+      .catch(console.error);
   }, []);
 
   // Applied immediately; the stored copy (with ids for new commands) replaces it unless a
@@ -900,6 +910,30 @@ function App() {
           onConfirm={confirmClose}
           onCancel={cancelClose}
         />
+      )}
+      {setAside.length > 0 && (
+        <ConfirmDialog
+          title={t("setAside.title")}
+          message={t("setAside.message")}
+          confirmLabel={t("setAside.show")}
+          cancelLabel={t("common.close")}
+          onConfirm={() => {
+            revealItemInDir(setAside[0].movedTo ?? setAside[0].path).catch(console.error);
+            setSetAside([]);
+          }}
+          onCancel={() => setSetAside([])}
+        >
+          <ul className="set-aside-list">
+            {setAside.map((file) => (
+              <li key={file.path}>
+                {file.movedTo
+                  ? t("setAside.moved", { name: basename(file.path), movedTo: basename(file.movedTo) })
+                  : t("setAside.notMoved", { name: basename(file.path) })}
+                <span className="hint">{file.error}</span>
+              </li>
+            ))}
+          </ul>
+        </ConfirmDialog>
       )}
       <Tooltips />
     </div>

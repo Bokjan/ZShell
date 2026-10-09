@@ -418,12 +418,16 @@ impl State {
 
 impl ProfileStore {
     /// `path` is `profiles.json`; the folders and proxies are kept next to it.
-    pub fn load(path: PathBuf) -> Result<Self> {
+    pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
         let folders_path = path.with_file_name("folders.json");
         let proxies_path = path.with_file_name("proxies.json");
-        let mut state = State { profiles: read_json(&path)?, folders: read_json(&folders_path)?, proxies: read_json(&proxies_path)? };
+        let mut state = State {
+            profiles: load_json(&path, set_aside),
+            folders: load_json(&folders_path, set_aside),
+            proxies: load_json(&proxies_path, set_aside),
+        };
         state.repair();
-        Ok(Self { path, folders_path, proxies_path, state: Mutex::new(state) })
+        Self { path, folders_path, proxies_path, state: Mutex::new(state) }
     }
 
     pub fn list(&self) -> Vec<Profile> {
@@ -684,23 +688,65 @@ fn jump_host_users<'a>(state: &'a State, id: &str) -> Vec<&'a str> {
     state.profiles.iter().filter(|p| p.jump_hosts.iter().any(|j| j == id)).map(|p| p.name.as_str()).collect()
 }
 
-/// A JSON file's contents, or the default if it doesn't exist yet.
-fn read_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> Result<T> {
-    match fs::read(path) {
-        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
+/// A store's file as read at startup, or the default if it doesn't exist yet.
+///
+/// A file that exists but can't be read as `T` (cut short by a crash, edited by hand, or
+/// written by a newer version) is moved aside to `<name>.bad-<time>` and the store starts
+/// from the default: otherwise the app would fail to start, or the next save would replace
+/// the file. `set_aside` collects these files for the frontend to report.
+pub fn load_json<T: serde::de::DeserializeOwned + Default>(path: &Path, set_aside: &SetAside) -> T {
+    let result = match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(anyhow::Error::from),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return T::default(),
         Err(e) => Err(e.into()),
+    };
+    result.unwrap_or_else(|e| {
+        set_aside.add(path, &e);
+        T::default()
+    })
+}
+
+/// Files that could not be read at startup (see [`load_json`]).
+#[derive(Default)]
+pub struct SetAside(Mutex<Vec<SetAsideFile>>);
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAsideFile {
+    pub path: PathBuf,
+    /// Where the file was moved; `None` if moving it failed too.
+    pub moved_to: Option<PathBuf>,
+    pub error: String,
+}
+
+impl SetAside {
+    fn add(&self, path: &Path, error: &anyhow::Error) {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        let moved = path.with_file_name(format!("{name}.bad-{}", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+        let moved_to = fs::rename(path, &moved).ok().map(|()| moved);
+        self.0.lock().unwrap().push(SetAsideFile { path: path.to_owned(), moved_to, error: format!("{error:#}") });
+    }
+
+    /// The files set aside, once: the frontend reports them when it starts.
+    pub fn take(&self) -> Vec<SetAsideFile> {
+        std::mem::take(&mut *self.0.lock().unwrap())
     }
 }
 
 /// Writes `value` as pretty JSON, via a temporary file and a rename so that a crash never
-/// leaves a truncated file behind.
+/// leaves a truncated file behind. The data is flushed to disk before the rename: otherwise
+/// a power loss can leave the renamed file empty (seen on NTFS).
 pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<()> {
+    use std::io::Write;
+
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
     let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_vec_pretty(value)?)?;
+    let mut file = fs::File::create(&tmp)?;
+    file.write_all(&serde_json::to_vec_pretty(value)?)?;
+    file.sync_all()?;
+    drop(file);
     fs::rename(&tmp, path)?;
     Ok(())
 }
@@ -712,7 +758,7 @@ mod tests {
     fn store(name: &str) -> (ProfileStore, PathBuf) {
         let dir = std::env::temp_dir().join(format!("zshell-store-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        (ProfileStore::load(dir.join("profiles.json")).unwrap(), dir)
+        (ProfileStore::load(dir.join("profiles.json"), &SetAside::default()), dir)
     }
 
     fn new_profile(name: &str, folder: Option<&str>) -> Profile {
@@ -724,6 +770,27 @@ mod tests {
 
     fn folder(name: &str, parent: Option<&str>) -> Folder {
         Folder { id: String::new(), name: name.into(), parent: parent.map(Into::into) }
+    }
+
+    /// An unreadable file is moved aside instead of stopping the app or being overwritten.
+    #[test]
+    fn sets_aside_unreadable_files() {
+        let (_, dir) = store("set-aside");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("profiles.json"), b"").unwrap();
+        fs::write(dir.join("proxies.json"), br#"[{"id": "x", "type": "fromTheFuture"}]"#).unwrap();
+        let set_aside = SetAside::default();
+        let store = ProfileStore::load(dir.join("profiles.json"), &set_aside);
+        assert!(store.list().is_empty());
+        let files = set_aside.take();
+        assert_eq!(files.len(), 2, "{files:?}");
+        for file in &files {
+            assert!(!file.path.exists() && file.moved_to.as_ref().is_some_and(|p| p.exists()), "{file:?}");
+        }
+        assert!(set_aside.take().is_empty());
+        store.save(new_profile("a", None)).unwrap();
+        assert_eq!(fs::read(files[0].moved_to.as_ref().unwrap()).unwrap(), b"");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -755,7 +822,7 @@ mod tests {
         assert!(store.list().iter().all(|p| p.folder.is_none()));
 
         // Everything is on disk.
-        let reloaded = ProfileStore::load(dir.join("profiles.json")).unwrap();
+        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(reloaded.list().len(), 2);
         assert!(reloaded.folders().is_empty());
         fs::remove_dir_all(&dir).unwrap();
@@ -773,7 +840,7 @@ mod tests {
             parent: Some("x".into()),
         }];
         fs::write(dir.join("folders.json"), serde_json::to_vec(&loops).unwrap()).unwrap();
-        let store = ProfileStore::load(dir.join("profiles.json")).unwrap();
+        let store = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(store.list()[0].folder, None);
         assert!(store.folders().iter().any(|f| f.parent.is_none()));
         fs::remove_dir_all(&dir).unwrap();
@@ -863,7 +930,7 @@ mod tests {
         let kept = store.save_proxy(Proxy { id: String::new(), kind: crate::proxy::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() }).unwrap();
         assert_eq!(kept.name, "nc");
         fs::write(dir.join("profiles.json"), serde_json::to_vec(&[Profile { id: "p".into(), proxy: Some("gone".into()), ..new_profile("p", None) }]).unwrap()).unwrap();
-        let reloaded = ProfileStore::load(dir.join("profiles.json")).unwrap();
+        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(reloaded.list()[0].proxy, None);
         assert_eq!(reloaded.proxies(), [kept]);
         fs::remove_dir_all(&dir).unwrap();
