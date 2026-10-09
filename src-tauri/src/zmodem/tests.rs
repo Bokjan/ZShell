@@ -286,6 +286,21 @@ async fn cancelling_deletes_the_partial_file() {
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
+#[tokio::test]
+async fn binary_headers_skip_flow_control() {
+    let (mut link, (to_link, _from_link, _cancel)) = link();
+    let header = Header::with_pos(Kind::Rpos, 0x1234);
+    for encoding in [Encoding::Bin16, Encoding::Bin32] {
+        // XON and XOFF (also with the parity bit) in the header's data and CRC.
+        let mut bytes = frame::encode_header(&header, encoding);
+        for (at, byte) in [(4, 0x11), (7, 0x93), (bytes.len() - 1, 0x13)] {
+            bytes.insert(at, byte);
+        }
+        to_link.send(bytes).unwrap();
+        assert_eq!(link.header(SHORT_TIMEOUT).await.unwrap(), header);
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_left_for_another_is_deleted_and_reported() {
     let dst = temp_dir("switch-dst");

@@ -195,20 +195,29 @@ impl Link {
     async fn bin_header(&mut self, encoding: Encoding, timeout: Duration) -> Result<Option<Header>> {
         let mut raw = [0u8; 5];
         for byte in &mut raw {
-            match self.escaped(timeout).await? {
-                Some(Escaped::Byte(b)) => *byte = b,
-                _ => return Ok(None),
-            }
+            let Some(b) = self.header_byte(timeout).await? else { return Ok(None) };
+            *byte = b;
         }
         let mut crc = [0u8; 4];
         let crc = &mut crc[..if encoding == Encoding::Bin32 { 4 } else { 2 }];
         for byte in crc.iter_mut() {
-            match self.escaped(timeout).await? {
-                Some(Escaped::Byte(b)) => *byte = b,
-                _ => return Ok(None),
-            }
+            let Some(b) = self.header_byte(timeout).await? else { return Ok(None) };
+            *byte = b;
         }
         Ok(frame::parse_bin_header(raw, crc, encoding))
+    }
+
+    /// One byte of a binary header, skipping flow control characters (as subpackets and
+    /// lrzsz do: a serial line with software flow control inserts them anywhere); `None` for
+    /// anything but a data byte.
+    async fn header_byte(&mut self, timeout: Duration) -> Result<Option<u8>> {
+        loop {
+            match self.escaped(timeout).await? {
+                None => continue,
+                Some(Escaped::Byte(b)) => return Ok(Some(b)),
+                Some(_) => return Ok(None),
+            }
+        }
     }
 
     async fn peek(&mut self, timeout: Duration) -> Result<u8> {
