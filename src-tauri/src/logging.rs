@@ -11,8 +11,8 @@ use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant, SystemTime};
 
 use chrono::Local;
 use unicode_width::UnicodeWidthChar;
@@ -46,16 +46,23 @@ pub enum LogOpen {
     Off,
 }
 
+/// How long written output may wait in the buffer before it reaches the file: a log is
+/// readable while it is written (`tail -f`), without a flush (a system call, and a disk
+/// write) for every chunk of output.
+const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
+
+type SharedWriter = Arc<Mutex<Option<LogWriter>>>;
+
 /// A session's log, if one is being written; shared by everything that writes to the
 /// terminal (see `SessionSink::write`).
 pub struct LogSlot {
     pub info: LogInfo,
-    writer: Mutex<Option<LogWriter>>,
+    writer: SharedWriter,
 }
 
 impl LogSlot {
     pub fn new(info: LogInfo) -> Arc<Self> {
-        Arc::new(Self { info, writer: Mutex::new(None) })
+        Arc::new(Self { info, writer: SharedWriter::default() })
     }
 
     /// Logs what the terminal is about to show. A failing write (the disk is full, or gone)
@@ -74,6 +81,9 @@ struct LogWriter {
     file: BufWriter<File>,
     /// Plain text conversion; `None` for raw logs.
     text: Option<(vte::Parser, Line)>,
+    /// When the file was last flushed, and whether something was written since.
+    flushed: Instant,
+    dirty: bool,
     /// Keeps the file out of cleanups while it is written.
     _active: Active,
 }
@@ -88,7 +98,17 @@ impl LogWriter {
             }
             None => self.file.write_all(bytes)?,
         }
-        // Readable while it is written (`tail -f`).
+        self.dirty = true;
+        match self.flushed.elapsed() >= FLUSH_INTERVAL {
+            true => self.flush(),
+            // What stays in the buffer is flushed by `Logs::flush_idle` if no more comes.
+            false => Ok(()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.flushed = Instant::now();
+        self.dirty = false;
         self.file.flush()
     }
 
@@ -100,7 +120,7 @@ impl LogWriter {
             line.out.clear();
         }
         writeln!(self.file, "{text}")?;
-        self.file.flush()
+        self.flush()
     }
 }
 
@@ -292,12 +312,14 @@ pub struct Logs {
     default_dir: PathBuf,
     index: Mutex<Vec<Entry>>,
     active: Arc<Mutex<HashSet<PathBuf>>>,
+    /// The writers of the sessions that have had a log, for [`Logs::flush_idle`].
+    writers: Mutex<Vec<Weak<Mutex<Option<LogWriter>>>>>,
 }
 
 impl Logs {
     pub fn load(index_path: PathBuf, default_dir: PathBuf, set_aside: &SetAside) -> Self {
         let index = load_json(&index_path, set_aside);
-        Self { index_path, default_dir, index: Mutex::new(index), active: Arc::default() }
+        Self { index_path, default_dir, index: Mutex::new(index), active: Arc::default(), writers: Mutex::default() }
     }
 
     pub fn directory(&self, settings: &LogSettings) -> PathBuf {
@@ -355,10 +377,29 @@ impl Logs {
         let active = Active { path: path.clone(), set: self.active.clone() };
         let text = (settings.format == LogFormat::Text)
             .then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
-        let mut writer = LogWriter { file: BufWriter::new(file), text, _active: active };
+        let mut writer = LogWriter { file: BufWriter::new(file), text, flushed: Instant::now(), dirty: false, _active: active };
         writer.note(note).map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
         *slot.writer.lock().unwrap() = Some(writer);
+        let mut writers = self.writers.lock().unwrap();
+        if !writers.iter().any(|w| w.as_ptr() == Arc::as_ptr(&slot.writer)) {
+            writers.push(Arc::downgrade(&slot.writer));
+        }
         Ok(())
+    }
+
+    /// Flushes what logs were given since their last flush, if it was [`FLUSH_INTERVAL`]
+    /// ago: the output stopped before the next flush was due. Called every so often.
+    pub fn flush_idle(&self) {
+        self.writers.lock().unwrap().retain(|writer| {
+            let Some(writer) = writer.upgrade() else { return false };
+            let mut writer = writer.lock().unwrap();
+            if let Some(log) = writer.as_mut() {
+                if log.dirty && log.flushed.elapsed() >= FLUSH_INTERVAL && log.flush().is_err() {
+                    *writer = None;
+                }
+            }
+            true
+        });
     }
 
     pub fn stop(&self, slot: &LogSlot) {
@@ -514,6 +555,32 @@ mod tests {
     }
 
     #[test]
+    fn output_reaches_the_file_within_the_flush_interval() {
+        let dir = std::env::temp_dir().join(format!("zshell-logs-flush-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let logs = Logs::load(dir.join("logs.json"), dir.join("Logs"), &SetAside::default());
+        let settings = LogSettings { format: LogFormat::Raw, ..LogSettings::default() };
+        let slot = LogSlot::new(LogInfo::default());
+        let path = logs.start(&slot, &settings).unwrap();
+        let header = std::fs::read(&path).unwrap();
+
+        // Not flushed on every chunk, nor before the interval has passed.
+        slot.write(b"one ");
+        slot.write(b"two");
+        logs.flush_idle();
+        assert_eq!(std::fs::read(&path).unwrap(), header);
+        std::thread::sleep(FLUSH_INTERVAL);
+        logs.flush_idle();
+        assert_eq!(std::fs::read(&path).unwrap(), [header.as_slice(), b"one two"].concat());
+
+        // A slot that has gone is forgotten.
+        drop(slot);
+        logs.flush_idle();
+        assert!(logs.writers.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn writes_appends_and_deletes_only_its_own_logs() {
         let dir = std::env::temp_dir().join(format!("zshell-logs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -529,15 +596,15 @@ mod tests {
         let slot = LogSlot::new(info);
         logs.open(&slot, LogOpen::Append { path: path.clone() }, false, &settings).unwrap().unwrap();
         slot.write(b"again\r\n");
-        let content = std::fs::read_to_string(&path).unwrap();
-        let lines: Vec<&str> = content.lines().collect();
-        assert_eq!(lines.len(), 4);
-        assert_eq!((lines[1], lines[3]), ("hello", "again"));
 
         // Not deleted while written; another file in the folder is never touched.
         std::fs::write(dir.join("Logs").join("mine.txt"), "keep").unwrap();
         assert_eq!(logs.delete_for("p1"), 0);
         drop(slot);
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 4);
+        assert_eq!((lines[1], lines[3]), ("hello", "again"));
 
         // Going on with a file that isn't one of the logs starts a new log instead.
         let other = LogSlot::new(LogInfo { profile: None, ..LogInfo::default() });

@@ -140,6 +140,14 @@ fn clean_up_logs(app: tauri::AppHandle) {
     });
 }
 
+/// Writes out the end of logs whose output paused (see `Logs::flush_idle`).
+fn flush_logs(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        app.state::<Logs>().flush_idle();
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before AppKit reads it.
@@ -168,6 +176,7 @@ pub fn run() {
             app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs"), &set_aside));
             app.manage(set_aside);
             clean_up_logs(app.handle().clone());
+            flush_logs(app.handle().clone());
             app.manage(Edits::new(app.path().temp_dir()?.join("ZShell-edit")));
             window::create_main(app)?;
             Ok(())
