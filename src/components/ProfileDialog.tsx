@@ -30,6 +30,7 @@ import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../l
 import { isComposing, isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
+import { useSubmitting } from "../lib/submitting";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
 import { ProxyDialog } from "./ProxyDialog";
@@ -94,7 +95,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   // The profile being edited: a new one becomes the saved one when only its password failed,
   // so that saving again updates it instead of adding another.
   const [profile, setProfile] = useState(initial);
-  const [saving, setSaving] = useState(false);
+  // Saving and deleting, one at a time.
+  const saving = useSubmitting();
   const { settings, theme } = useSettings();
   const [page, setPage] = useState<Page>("general");
   const [name, setName] = useState(profile?.name ?? "");
@@ -209,7 +211,6 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (saving) return;
     // Checked here rather than with `required`: the field may be on another page. Fields
     // of other protocols keep their values without being checked.
     if (ssh && (!host.trim() || !username.trim() || (authType === "publicKey" && !keyPath.trim()))) {
@@ -260,58 +261,57 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
     else if (clearPassword) passwordUpdate = "";
     else if (password) passwordUpdate = password;
 
-    setSaving(true);
-    try {
-      const { saved, passwordError } = await saveProfile(
-        // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
-        {
-          id: profile?.id ?? "",
-          name,
-          protocol,
-          host,
-          port: portNumber,
-          username,
-          auth,
-          serial: {
-            device,
-            baudRate: baudValid ? baud : DEFAULT_SERIAL.baudRate,
-            dataBits,
-            parity,
-            stopBits,
-            flowControl,
+    await saving.submit(async () => {
+      try {
+        const { saved, passwordError } = await saveProfile(
+          // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
+          {
+            id: profile?.id ?? "",
+            name,
+            protocol,
+            host,
+            port: portNumber,
+            username,
+            auth,
+            serial: {
+              device,
+              baudRate: baudValid ? baud : DEFAULT_SERIAL.baudRate,
+              dataBits,
+              parity,
+              stopBits,
+              flowControl,
+            },
+            jumpHosts,
+            // The backend drops it with jump hosts, and for serial sessions.
+            proxy: proxy && jumpHosts.length === 0 ? proxy : undefined,
+            keepaliveInterval: keepaliveValid ? keepaliveInterval : (profile?.keepaliveInterval ?? 30),
+            autoReconnect,
+            forwardAgent,
+            encoding,
+            termType,
+            env: Array.isArray(envVars) ? envVars : (profile?.env ?? []),
+            loginCommands: loginCommands.split("\n"),
+            appearance,
+            autoLog,
+            commandGroup: shownGroup === DEFAULT_GROUP ? undefined : shownGroup,
+            forwards: profile?.forwards ?? [],
+            // Where a new profile goes; the backend keeps an existing one's folder.
+            folder: profile?.folder ?? defaults?.folder,
           },
-          jumpHosts,
-          // The backend drops it with jump hosts, and for serial sessions.
-          proxy: proxy && jumpHosts.length === 0 ? proxy : undefined,
-          keepaliveInterval: keepaliveValid ? keepaliveInterval : (profile?.keepaliveInterval ?? 30),
-          autoReconnect,
-          forwardAgent,
-          encoding,
-          termType,
-          env: Array.isArray(envVars) ? envVars : (profile?.env ?? []),
-          loginCommands: loginCommands.split("\n"),
-          appearance,
-          autoLog,
-          commandGroup: shownGroup === DEFAULT_GROUP ? undefined : shownGroup,
-          forwards: profile?.forwards ?? [],
-          // Where a new profile goes; the backend keeps an existing one's folder.
-          folder: profile?.folder ?? defaults?.folder,
-        },
-        passwordUpdate,
-      );
-      onChanged();
-      onSaved?.(saved);
-      if (passwordError) {
-        setProfile(saved);
-        setError(t("profile.passwordNotSaved", { message: passwordError.message }));
-        setSaving(false);
-        return;
+          passwordUpdate,
+        );
+        onChanged();
+        onSaved?.(saved);
+        if (passwordError) {
+          setProfile(saved);
+          setError(t("profile.passwordNotSaved", { message: passwordError.message }));
+          return;
+        }
+        onClose();
+      } catch (err) {
+        setError(errorMessage(err));
       }
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-      setSaving(false);
-    }
+    });
   };
 
   const remove = async () => {
@@ -320,13 +320,15 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
       deleteButton.setArmed(true);
       return;
     }
-    try {
-      await deleteProfile(profile.id);
-      onChanged();
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-    }
+    await saving.submit(async () => {
+      try {
+        await deleteProfile(profile.id);
+        onChanged();
+        onClose();
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    });
   };
 
   const namePlaceholder = { ssh: "profile.namePlaceholder", telnet: "profile.namePlaceholderTelnet", serial: "profile.namePlaceholderSerial" } as const;
@@ -831,7 +833,14 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
           <footer>
             {profile && (
-              <button type="button" className="danger" ref={deleteButton.ref} onClick={remove} onBlur={deleteButton.onBlur}>
+              <button
+                type="button"
+                className="danger"
+                ref={deleteButton.ref}
+                onClick={remove}
+                onBlur={deleteButton.onBlur}
+                disabled={saving.busy}
+              >
                 {deleteButton.armed ? t("profile.deleteConfirm") : t("common.delete")}
               </button>
             )}
@@ -839,7 +848,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
             <button type="button" onClick={onClose}>
               {t("common.cancel")}
             </button>
-            <button type="submit" className="primary" disabled={saving}>
+            <button type="submit" className="primary" disabled={saving.busy}>
               {t("common.save")}
             </button>
           </footer>

@@ -6,6 +6,7 @@ import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
 import { hostPort, wholeNumber } from "../lib/format";
 import { isComposing } from "../lib/platform";
+import { useSubmitting } from "../lib/submitting";
 
 interface Props {
   /** null creates a new proxy. */
@@ -44,7 +45,8 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
   const [command, setCommand] = useState(proxy?.command ?? "");
   const deleteButton = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  // Saving and deleting, one at a time.
+  const saving = useSubmitting();
   const server = kind !== "command";
 
   useEffect(() => {
@@ -85,33 +87,32 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
     if (!server || !username.trim()) passwordUpdate = undefined;
     else if (clearPassword) passwordUpdate = "";
     else if (password) passwordUpdate = password;
-    setSaving(true);
-    try {
-      const { saved, passwordError } = await proxies.save(
-        {
-          id: proxy?.id ?? "",
-          name,
-          kind,
-          host,
-          port: Number.isInteger(portNumber) && portNumber > 0 && portNumber <= 65535 ? portNumber : (proxy?.port ?? 0),
-          username,
-          command,
-        },
-        passwordUpdate,
-      );
-      onChanged();
-      onSaved?.(saved);
-      if (passwordError) {
-        setProxy(saved);
-        setError(t("proxy.passwordNotSaved", { message: passwordError.message }));
-        setSaving(false);
-        return;
+    await saving.submit(async () => {
+      try {
+        const { saved, passwordError } = await proxies.save(
+          {
+            id: proxy?.id ?? "",
+            name,
+            kind,
+            host,
+            port: Number.isInteger(portNumber) && portNumber > 0 && portNumber <= 65535 ? portNumber : (proxy?.port ?? 0),
+            username,
+            command,
+          },
+          passwordUpdate,
+        );
+        onChanged();
+        onSaved?.(saved);
+        if (passwordError) {
+          setProxy(saved);
+          setError(t("proxy.passwordNotSaved", { message: passwordError.message }));
+          return;
+        }
+        onClose();
+      } catch (err) {
+        setError(errorMessage(err));
       }
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-      setSaving(false);
-    }
+    });
   };
 
   const remove = async () => {
@@ -120,14 +121,16 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
       deleteButton.setArmed(true);
       return;
     }
-    try {
-      await proxies.delete(proxy.id);
-      onChanged();
-      onClose();
-    } catch (err) {
-      deleteButton.setArmed(false);
-      setError(errorMessage(err));
-    }
+    await saving.submit(async () => {
+      try {
+        await proxies.delete(proxy.id);
+        onChanged();
+        onClose();
+      } catch (err) {
+        deleteButton.setArmed(false);
+        setError(errorMessage(err));
+      }
+    });
   };
 
   return (
@@ -234,7 +237,14 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
 
         <footer>
           {proxy && (
-            <button type="button" className="danger" ref={deleteButton.ref} onClick={() => void remove()} onBlur={deleteButton.onBlur}>
+            <button
+              type="button"
+              className="danger"
+              ref={deleteButton.ref}
+              onClick={() => void remove()}
+              onBlur={deleteButton.onBlur}
+              disabled={saving.busy}
+            >
               {deleteButton.armed ? t("profile.deleteConfirm") : t("common.delete")}
             </button>
           )}
@@ -242,7 +252,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
           <button type="button" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button type="submit" className="primary" disabled={saving}>
+          <button type="submit" className="primary" disabled={saving.busy}>
             {t("common.save")}
           </button>
         </footer>
