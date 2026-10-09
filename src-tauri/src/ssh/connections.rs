@@ -4,13 +4,16 @@
 //! using it closes.
 
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{Context as TaskContext, Poll};
 
 use anyhow::Context;
 use russh::{client, Disconnect};
 use russh_sftp::client::{Config as SftpConfig, SftpSession};
-use tokio::sync::{watch, OnceCell};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::watch;
 
 use super::handler::ClientHandler;
 use super::JumpChain;
@@ -38,7 +41,8 @@ pub struct Connection {
     /// Connections to the jump hosts this one runs through; disconnected once this
     /// connection is dropped.
     _jumps: JumpChain,
-    sftp: OnceCell<Arc<SftpSession>>,
+    /// The SFTP session, once opened, and whether its channel has ended since.
+    sftp: tokio::sync::Mutex<Option<(Arc<SftpSession>, Arc<AtomicBool>)>>,
     forwards: Forwards,
     /// Whether its forwards move to another connection of the session when it closes (the
     /// user chose so when closing its last tab).
@@ -60,23 +64,61 @@ impl Connection {
         self.disconnect.clone()
     }
 
-    /// The connection's SFTP session, opened on first use.
+    /// The connection's SFTP session, opened on first use, and again if its channel ended
+    /// while the connection stays (the server's `sftp-server` exited, say): otherwise every
+    /// SFTP operation would fail until the tab reconnects.
     pub async fn sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
-        self.sftp
-            .get_or_try_init(|| async {
-                let channel = self.handle.channel_open_session().await?;
-                channel.request_subsystem(true, "sftp").await?;
-                let stream = crate::sftp::names::convert(channel.into_stream(), crate::encoding::for_profile(&self.profile.encoding));
-                let config = SftpConfig {
-                    request_timeout_secs: SFTP_REQUEST_TIMEOUT_SECS,
-                    max_concurrent_reads: SFTP_CONCURRENT_READS,
-                    ..Default::default()
-                };
-                let sftp = SftpSession::new_with_config(stream, config).await.context(Error::new("sftp.unsupported"))?;
-                Ok(Arc::new(sftp))
-            })
-            .await
-            .cloned()
+        let mut cached = self.sftp.lock().await;
+        if let Some((sftp, ended)) = cached.as_ref() {
+            if !ended.load(Ordering::Relaxed) {
+                return Ok(sftp.clone());
+            }
+        }
+        let channel = self.handle.channel_open_session().await?;
+        channel.request_subsystem(true, "sftp").await?;
+        let ended = Arc::new(AtomicBool::new(false));
+        let stream = crate::sftp::names::convert(channel.into_stream(), crate::encoding::for_profile(&self.profile.encoding));
+        let stream = Watched { inner: stream, ended: ended.clone() };
+        let config = SftpConfig {
+            request_timeout_secs: SFTP_REQUEST_TIMEOUT_SECS,
+            max_concurrent_reads: SFTP_CONCURRENT_READS,
+            ..Default::default()
+        };
+        let sftp = Arc::new(SftpSession::new_with_config(stream, config).await.context(Error::new("sftp.unsupported"))?);
+        *cached = Some((sftp.clone(), ended));
+        Ok(sftp)
+    }
+}
+
+/// An SFTP session's stream, noting when reading from it ends: russh-sftp doesn't tell.
+struct Watched {
+    inner: Box<dyn crate::sftp::names::Stream>,
+    ended: Arc<AtomicBool>,
+}
+
+impl AsyncRead for Watched {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
+        let eof = matches!(result, Poll::Ready(Ok(()))) && buf.filled().len() == before && buf.remaining() > 0;
+        if eof || matches!(result, Poll::Ready(Err(_))) {
+            self.ended.store(true, Ordering::Relaxed);
+        }
+        result
+    }
+}
+
+impl AsyncWrite for Watched {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 
@@ -131,7 +173,7 @@ impl Connections {
             handle,
             profile,
             _jumps: jumps,
-            sftp: OnceCell::new(),
+            sftp: tokio::sync::Mutex::new(None),
             forwards,
             keep_forwards: AtomicBool::new(false),
             disconnect,
@@ -174,7 +216,7 @@ impl Connections {
                     let _ = task.await;
                 }
             }
-            if let Some(sftp) = connection.sftp.get() {
+            if let Some((sftp, _)) = connection.sftp.lock().await.take() {
                 let _ = sftp.close().await;
             }
             let _ = connection.handle.disconnect(Disconnect::ByApplication, "", "en").await;
