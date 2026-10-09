@@ -239,6 +239,16 @@ fn aliases(config: &SshConfig) -> Vec<String> {
         .collect()
 }
 
+/// `path` with the home folder written as `~/`, as key paths are stored, so that the session
+/// still works under another user name or on another computer. ssh2-config expands the `~`
+/// of `IdentityFile ~/.ssh/key`.
+fn home_relative(path: &Path, home: Option<&Path>) -> String {
+    match home.and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if !rest.as_os_str().is_empty() => format!("~/{}", rest.to_string_lossy().replace('\\', "/")),
+        _ => path.display().to_string(),
+    }
+}
+
 fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candidate {
     let params = config.query(&alias);
     let host = params.host_name.as_deref().map(|name| expand_host_tokens(name, &alias)).unwrap_or_else(|| alias.clone());
@@ -246,7 +256,7 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
     let username = params.user.clone().unwrap_or_else(local_username);
     let identity_files = params.identity_file.clone().unwrap_or_default();
     let auth = match identity_files.first() {
-        Some(path) => AuthMethod::PublicKey { key_path: path.display().to_string() },
+        Some(path) => AuthMethod::PublicKey { key_path: home_relative(path, std::env::home_dir().as_deref()) },
         None => AuthMethod::Auto,
     };
     let mut jump_hosts: Vec<String> = params
@@ -585,6 +595,19 @@ Host *
         assert!(web.jump_hosts.is_empty());
         assert_eq!((db.username.as_str(), db.port), ("carol", 2222));
         assert!(candidates.iter().all(|c| c.skipped.contains(&"Match".to_owned())));
+    }
+
+    #[test]
+    fn stores_keys_under_the_home_folder_with_a_tilde() {
+        let home = Path::new("/home/bob");
+        assert_eq!(home_relative(Path::new("/home/bob/.ssh/corp"), Some(home)), "~/.ssh/corp");
+        assert_eq!(home_relative(Path::new("/home/bobby/.ssh/corp"), Some(home)), "/home/bobby/.ssh/corp");
+        assert_eq!(home_relative(Path::new("/keys/corp"), Some(home)), "/keys/corp");
+        assert_eq!(home_relative(Path::new("/keys/corp"), None), "/keys/corp");
+
+        let (_dir, path) = write_config("Host corp\n    IdentityFile ~/.ssh/corp\n");
+        let candidates = scan(&path, &[]).unwrap();
+        assert!(matches!(&candidates[0].auth, AuthMethod::PublicKey { key_path } if key_path == "~/.ssh/corp"), "{:?}", candidates[0].auth);
     }
 
     #[test]
