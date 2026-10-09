@@ -530,9 +530,10 @@ export function TerminalView({
       fitRef.current?.fit();
       termRef.current?.focus();
     });
-    // Capture phase, so the shortcut never reaches the terminal.
+    // Capture phase, so the shortcut never reaches the terminal. A dialog (settings) above the
+    // terminal has the shortcut to itself.
     const onKey = (e: KeyboardEvent) => {
-      if (!isFindShortcut(e)) return;
+      if (!isFindShortcut(e) || document.querySelector(".dialog-backdrop")) return;
       e.preventDefault();
       e.stopPropagation();
       setSearchKey((key) => key + 1);

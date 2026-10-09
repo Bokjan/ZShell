@@ -571,8 +571,11 @@
     "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "privacyPolicy": "Privacy Policy",
     "thirdPartyLicenses": "Third-Party Licenses",
+    "search": "Search settings",
+    "noMatches": "No matching settings",
+    "close": "Close",
     "reset": "Restore defaults",
-    "done": "Done"
+    "resetConfirm": "Click again to restore"
   },
   "knownHosts": {
     "title": "Known Hosts",

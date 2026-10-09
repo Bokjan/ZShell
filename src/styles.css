@@ -2181,10 +2181,85 @@ body.resizing .terminal-view {
 
 /* Settings */
 
+/* The navigation on the left, the settings scrolling on the right in a dialog of fixed
+   height, so that the navigation doesn't move as sections are found and filtered. */
 .settings-dialog {
-  width: 560px;
-  max-height: calc(100vh - var(--titlebar-height) - 48px);
+  position: relative;
+  flex-direction: row;
+  gap: 0;
+  width: 760px;
+  height: calc(100vh - var(--titlebar-height) - 48px);
+  max-height: 680px;
+  padding: 0;
+  overflow: hidden;
+}
+.settings-nav {
+  width: 184px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 12px 14px;
+  border-right: 1px solid var(--border);
+}
+.settings-nav h2 {
+  margin-left: 4px;
+}
+.settings-nav-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
   overflow-y: auto;
+  list-style: none;
+}
+.settings-nav-list button {
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+.settings-nav-list button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.settings-nav-list button.on {
+  background: var(--bg-active);
+}
+.settings-nav-list button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.settings-nav footer {
+  margin-top: 0;
+}
+/* `position` makes it the sections' offset parent, which the navigation scrolls by. Room is
+   left on the right for the close button. */
+.settings-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 44px 24px 24px;
+  overflow-y: auto;
+  outline: none;
+}
+.settings-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  padding: 4px;
+}
+.settings-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 .settings-dialog .row button {
   flex-shrink: 0;
@@ -2259,6 +2334,16 @@ body.resizing .terminal-view {
 .about-app span {
   color: var(--text-muted);
   font-size: 12px;
+}
+.settings-dialog .about-links {
+  display: flex;
+  gap: 16px;
+}
+.settings-dialog .about-links button.link {
+  margin-top: 0;
+}
+.settings-dialog button.link:hover {
+  text-decoration: underline;
 }
 /* Packages on the left, the selected one's license on the right; both scroll inside a
    dialog of fixed height, which keeps its title and button in view. */
@@ -2462,9 +2547,17 @@ body.resizing .terminal-view {
   flex-direction: column;
   gap: 10px;
 }
-.settings-dialog section + section {
+/* The first section shown while searching has no line above it. */
+.settings-dialog section:not([hidden]) ~ section {
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+/* Groups elements for search only (see `filterSettings`), without changing the layout. */
+.settings-dialog .setting {
+  display: contents;
+}
+.settings-dialog [hidden] {
+  display: none !important;
 }
 .settings-dialog h3 {
   margin: 0;

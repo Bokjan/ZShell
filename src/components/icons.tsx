@@ -7,6 +7,15 @@ export function PlusIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** An ×, for closing; drawn for the same reason as `PlusIcon`. */
+export function CloseIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </svg>
+  );
+}
+
 /** A line of text with a send arrow, for the compose bar. */
 export function ComposeIcon({ size = 14 }: { size?: number }) {
   return (

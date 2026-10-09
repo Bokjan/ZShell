@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -6,7 +6,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { knownHosts, logs, proxies as proxyApi, sftp, type Proxy } from "../lib/api";
 import { basename, formatSize } from "../lib/format";
-import { isMac } from "../lib/platform";
+import { isFindShortcut, isMac } from "../lib/platform";
 import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
@@ -25,6 +25,7 @@ import {
 } from "../lib/settings";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
+import { CloseIcon } from "./icons";
 import { KnownHostsDialog } from "./KnownHostsDialog";
 import { LicensesDialog } from "./LicensesDialog";
 import { ProxyDialog, proxySummary } from "./ProxyDialog";
@@ -43,6 +44,68 @@ const LOG_FORMATS: LogFormat[] = ["text", "raw"];
 /** Retention choices, in days; 0 keeps logs. */
 const KEEP_DAYS = [0, 7, 30, 90, 365];
 const PRIVACY_POLICY_URL = "https://github.com/Bokjan/ZShell/blob/main/PRIVACY.md";
+
+/** The sections in the order they appear, for the navigation; each is titled `settings.<id>`. */
+const SECTIONS = [
+  "appearance",
+  "terminal",
+  "mouseAndClipboard",
+  "tabs",
+  "sidebar",
+  "files",
+  "proxies",
+  "knownHosts",
+  "zmodem",
+  "logs",
+  "about",
+] as const;
+type SectionId = (typeof SECTIONS)[number];
+
+/** How far below the top of the content a section's title counts as scrolled to. */
+const SECTION_REACHED = 24;
+
+/** A section of the settings, which the navigation scrolls to. */
+function Section({ id, children }: { id: SectionId; children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <section data-section={id}>
+      <h3>{t(`settings.${id}`)}</h3>
+      {children}
+    </section>
+  );
+}
+
+/** Elements that search shows or hides together, such as a checkbox and its hint. */
+function Setting({ children }: { children: ReactNode }) {
+  return <div className="setting">{children}</div>;
+}
+
+/**
+ * Hides the settings (a section's children, see `Setting`) that don't match every word of
+ * `query`, each word found in the setting's text (label, hint, choices) or its section's
+ * title, and the sections left without any. Returns the sections still shown. It reads the
+ * rendered text, so that it covers every setting in any language without a list to keep in
+ * sync.
+ */
+function filterSettings(content: HTMLElement, query: string): SectionId[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown: SectionId[] = [];
+  for (const section of Array.from(content.querySelectorAll<HTMLElement>("section[data-section]"))) {
+    const heading = section.querySelector("h3");
+    const title = heading?.textContent?.toLowerCase() ?? "";
+    let any = false;
+    for (const item of Array.from(section.children)) {
+      // Dialogs opened from a section (a proxy, the known hosts) are rendered inside it.
+      if (item === heading || !(item instanceof HTMLElement) || item.classList.contains("dialog-backdrop")) continue;
+      const text = item.textContent?.toLowerCase() ?? "";
+      item.hidden = !words.every((word) => title.includes(word) || text.includes(word));
+      any ||= !item.hidden;
+    }
+    section.hidden = !any;
+    if (any) shown.push(section.dataset.section as SectionId);
+  }
+  return shown;
+}
 
 /** A number field that only reports values that are integers within range. */
 function NumberField({ value, min, max, onChange }: { value: number; min: number; max: number; onChange(n: number): void }) {
@@ -75,13 +138,115 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
   const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
   const [licensesOpen, setLicensesOpen] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [query, setQuery] = useState("");
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  // The sections with settings matching the search: all of them without one.
+  const [shown, setShown] = useState<readonly SectionId[]>(SECTIONS);
+  // The section scrolled to, highlighted in the navigation; none when the search finds nothing.
+  const [active, setActive] = useState<SectionId | null>(SECTIONS[0]);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Set when a section is chosen in the navigation: it stays highlighted while the content
+  // scrolls to it, and when it is too near the end to reach the top, until the user scrolls.
+  const chosen = useRef(false);
+  // Where the content was scrolled to before searching; clearing the search goes back there.
+  const scrollBeforeSearch = useRef(0);
+
+  // Focus starts in the content, so the keyboard scrolls it and never reaches a terminal.
+  useEffect(() => contentRef.current?.focus({ preventScroll: true }), []);
 
   // While the licenses are open, Escape closes only them (a proxy dialog stops it itself).
+  // In the search box, it clears the search first. Ctrl+F also finds outside macOS: no shell
+  // has the focus here.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !licensesOpen && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (licensesOpen) return;
+      if (e.key === "Escape") {
+        if (e.target !== searchRef.current || !queryRef.current) onClose();
+        else if (!e.isComposing) setQuery("");
+      } else if (isFindShortcut(e) || (!isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey)) {
+        e.preventDefault();
+        searchRef.current?.select();
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, licensesOpen]);
+
+  const updateActive = useCallback(() => {
+    const content = contentRef.current;
+    if (!content || chosen.current) return;
+    const sections = Array.from(content.querySelectorAll<HTMLElement>("section[data-section]:not([hidden])"));
+    if (sections.length === 0) {
+      setActive(null);
+      return;
+    }
+    const top = content.scrollTop + parseFloat(getComputedStyle(content).paddingTop) + SECTION_REACHED;
+    let reached = sections[0];
+    for (const section of sections) if (section.offsetTop <= top) reached = section;
+    // At the end, the last section counts as reached even when it is too short to reach the top.
+    if (content.scrollTop + content.clientHeight >= content.scrollHeight - 1) reached = sections[sections.length - 1];
+    setActive(reached.dataset.section as SectionId);
+  }, []);
+
+  const applySearch = useCallback(() => {
+    const next = filterSettings(contentRef.current!, queryRef.current);
+    setShown((prev) => (prev.join() === next.join() ? prev : next));
+  }, []);
+
+  // Settings that appear later (the proxies once loaded, a "use the default" link) are filtered too.
+  useEffect(() => {
+    const observer = new MutationObserver(applySearch);
+    observer.observe(contentRef.current!, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [applySearch]);
+
+  useLayoutEffect(() => {
+    applySearch();
+    const content = contentRef.current!;
+    content.scrollTop = query ? 0 : scrollBeforeSearch.current;
+    chosen.current = false;
+    updateActive();
+  }, [query, applySearch, updateActive]);
+
+  const search = (next: string) => {
+    if (!query) scrollBeforeSearch.current = contentRef.current!.scrollTop;
+    setQuery(next);
+  };
+
+  const jump = (id: SectionId) => {
+    const content = contentRef.current!;
+    const section = content.querySelector<HTMLElement>(`section[data-section="${id}"]`);
+    if (!section) return;
+    chosen.current = true;
+    setActive(id);
+    content.scrollTo({ top: section.offsetTop - parseFloat(getComputedStyle(content).paddingTop), behavior: "smooth" });
+  };
+  const release = () => {
+    chosen.current = false;
+  };
+
+  // WebKit doesn't focus a button when it is clicked, so a click elsewhere cancels, not a blur.
+  const resetRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!confirmingReset) return;
+    const cancel = (e: PointerEvent) => {
+      if (!resetRef.current?.contains(e.target as Node)) setConfirmingReset(false);
+    };
+    window.addEventListener("pointerdown", cancel, true);
+    return () => window.removeEventListener("pointerdown", cancel, true);
+  }, [confirmingReset]);
+
+  const reset = () => {
+    if (!confirmingReset) {
+      setConfirmingReset(true);
+      return;
+    }
+    setConfirmingReset(false);
+    update(DEFAULT_SETTINGS);
+  };
 
   const schemeName = (scheme: TerminalScheme) => schemeLabel(scheme, t);
 
@@ -89,229 +254,277 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
     <>
       <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
         <div className="dialog settings-dialog" role="dialog" aria-label={t("settings.title")}>
-          <h2>{t("settings.title")}</h2>
-
-          <section>
-            <h3>{t("settings.appearance")}</h3>
-            <div className="segmented" role="radiogroup">
-              {APPEARANCES.map((appearance) => (
-                <button
-                  key={appearance}
-                  role="radio"
-                  aria-checked={settings.appearance === appearance}
-                  className={settings.appearance === appearance ? "on" : undefined}
-                  onClick={() => update({ ...settings, appearance })}
-                >
-                  {t(`settings.appearances.${appearance}`)}
-                </button>
+          <nav className="settings-nav">
+            <h2>{t("settings.title")}</h2>
+            <input
+              ref={searchRef}
+              value={query}
+              placeholder={t("settings.search")}
+              aria-label={t("settings.search")}
+              onChange={(e) => search(e.target.value)}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+            />
+            <ul className="settings-nav-list">
+              {SECTIONS.map((id) => (
+                <li key={id}>
+                  <button
+                    type="button"
+                    className={id === active ? "on" : undefined}
+                    aria-current={id === active ? "true" : undefined}
+                    disabled={!shown.includes(id)}
+                    onClick={() => jump(id)}
+                  >
+                    {t(`settings.${id}`)}
+                  </button>
+                </li>
               ))}
-            </div>
-          </section>
+            </ul>
+            <footer>
+              <button type="button" ref={resetRef} onClick={reset} onBlur={() => setConfirmingReset(false)}>
+                {confirmingReset ? t("settings.resetConfirm") : t("settings.reset")}
+              </button>
+            </footer>
+          </nav>
 
-          <section>
-            <h3>{t("settings.terminal")}</h3>
-            <div className="field">
-              <span>{t("settings.colorScheme")}</span>
-              <div className="scheme-grid" role="radiogroup">
-                <button
-                  role="radio"
-                  aria-checked={terminal.colorScheme === "auto"}
-                  className={`scheme-card${terminal.colorScheme === "auto" ? " on" : ""}`}
-                  onClick={() => setTerminal({ colorScheme: "auto" })}
-                >
-                  <SchemePreview scheme={resolveScheme("auto", theme)} />
-                  <span className="scheme-name">{t("settings.schemeAuto")}</span>
-                </button>
-                {TERMINAL_SCHEMES.map((scheme) => (
-                  <button
-                    key={scheme.id}
-                    role="radio"
-                    aria-checked={terminal.colorScheme === scheme.id}
-                    className={`scheme-card${terminal.colorScheme === scheme.id ? " on" : ""}`}
-                    onClick={() => setTerminal({ colorScheme: scheme.id })}
-                  >
-                    <SchemePreview scheme={scheme} />
-                    <span className="scheme-name">{schemeName(scheme)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="row">
-              <label className="grow">
-                {t("settings.fontFamily")}
-                <input
-                  value={terminal.fontFamily}
-                  onChange={(e) => setTerminal({ fontFamily: e.target.value })}
-                  placeholder={t("settings.fontFamilyPlaceholder")}
-                  title={DEFAULT_FONT_STACK}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                />
-              </label>
-              <label className="port">
-                {t("settings.fontSize")}
-                <NumberField
-                  value={terminal.fontSize}
-                  min={FONT_SIZE_MIN}
-                  max={FONT_SIZE_MAX}
-                  onChange={(fontSize) => setTerminal({ fontSize })}
-                />
-              </label>
-            </div>
-            <p className="hint">{t("settings.fontHint")}</p>
-
-            <div className="row">
-              <label className="grow">
-                {t("settings.cursorStyle")}
-                <select
-                  value={terminal.cursorStyle}
-                  onChange={(e) => setTerminal({ cursorStyle: e.target.value as CursorStyle })}
-                >
-                  {CURSOR_STYLES.map((style) => (
-                    <option key={style} value={style}>
-                      {t(`settings.cursorStyles.${style}`)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grow">
-                {t("settings.scrollback")}
-                <NumberField
-                  value={terminal.scrollback}
-                  min={0}
-                  max={100000}
-                  onChange={(scrollback) => setTerminal({ scrollback })}
-                />
-              </label>
-            </div>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={terminal.cursorBlink}
-                onChange={(e) => setTerminal({ cursorBlink: e.target.checked })}
-              />
-              {t("settings.cursorBlink")}
-            </label>
-          </section>
-
-          <section>
-            <h3>{t("settings.mouseAndClipboard")}</h3>
-            <div className="field">
-              <span>{t("settings.rightClick")}</span>
+          <div
+            className="settings-content"
+            ref={contentRef}
+            tabIndex={-1}
+            onScroll={updateActive}
+            onWheel={release}
+            onPointerDown={release}
+            onKeyDown={release}
+          >
+            <Section id="appearance">
               <div className="segmented" role="radiogroup">
-                {RIGHT_CLICKS.map((rightClick) => (
+                {APPEARANCES.map((appearance) => (
                   <button
-                    key={rightClick}
+                    key={appearance}
                     role="radio"
-                    aria-checked={terminal.rightClick === rightClick}
-                    className={terminal.rightClick === rightClick ? "on" : undefined}
-                    onClick={() => setTerminal({ rightClick })}
+                    aria-checked={settings.appearance === appearance}
+                    className={settings.appearance === appearance ? "on" : undefined}
+                    onClick={() => update({ ...settings, appearance })}
                   >
-                    {t(`settings.rightClicks.${rightClick}`)}
+                    {t(`settings.appearances.${appearance}`)}
                   </button>
                 ))}
               </div>
-            </div>
-            <p className="hint">{t("settings.rightClickHint")}</p>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={terminal.copyOnSelect}
-                onChange={(e) => setTerminal({ copyOnSelect: e.target.checked })}
-              />
-              {t("settings.copyOnSelect")}
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={terminal.confirmMultilinePaste}
-                onChange={(e) => setTerminal({ confirmMultilinePaste: e.target.checked })}
-              />
-              {t("settings.confirmMultilinePaste")}
-            </label>
-            <p className="hint">{t("settings.confirmMultilinePasteHint")}</p>
-            {isMac && (
-              <>
+            </Section>
+
+            <Section id="terminal">
+              <div className="field">
+                <span>{t("settings.colorScheme")}</span>
+                <div className="scheme-grid" role="radiogroup">
+                  <button
+                    role="radio"
+                    aria-checked={terminal.colorScheme === "auto"}
+                    className={`scheme-card${terminal.colorScheme === "auto" ? " on" : ""}`}
+                    onClick={() => setTerminal({ colorScheme: "auto" })}
+                  >
+                    <SchemePreview scheme={resolveScheme("auto", theme)} />
+                    <span className="scheme-name">{t("settings.schemeAuto")}</span>
+                  </button>
+                  {TERMINAL_SCHEMES.map((scheme) => (
+                    <button
+                      key={scheme.id}
+                      role="radio"
+                      aria-checked={terminal.colorScheme === scheme.id}
+                      className={`scheme-card${terminal.colorScheme === scheme.id ? " on" : ""}`}
+                      onClick={() => setTerminal({ colorScheme: scheme.id })}
+                    >
+                      <SchemePreview scheme={scheme} />
+                      <span className="scheme-name">{schemeName(scheme)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Setting>
+                <div className="row">
+                  <label className="grow">
+                    {t("settings.fontFamily")}
+                    <input
+                      value={terminal.fontFamily}
+                      onChange={(e) => setTerminal({ fontFamily: e.target.value })}
+                      placeholder={t("settings.fontFamilyPlaceholder")}
+                      title={DEFAULT_FONT_STACK}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                    />
+                  </label>
+                  <label className="port">
+                    {t("settings.fontSize")}
+                    <NumberField
+                      value={terminal.fontSize}
+                      min={FONT_SIZE_MIN}
+                      max={FONT_SIZE_MAX}
+                      onChange={(fontSize) => setTerminal({ fontSize })}
+                    />
+                  </label>
+                </div>
+                <p className="hint">{t("settings.fontHint")}</p>
+              </Setting>
+
+              <div className="row">
+                <label className="grow">
+                  {t("settings.cursorStyle")}
+                  <select
+                    value={terminal.cursorStyle}
+                    onChange={(e) => setTerminal({ cursorStyle: e.target.value as CursorStyle })}
+                  >
+                    {CURSOR_STYLES.map((style) => (
+                      <option key={style} value={style}>
+                        {t(`settings.cursorStyles.${style}`)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grow">
+                  {t("settings.scrollback")}
+                  <NumberField
+                    value={terminal.scrollback}
+                    min={0}
+                    max={100000}
+                    onChange={(scrollback) => setTerminal({ scrollback })}
+                  />
+                </label>
+              </div>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={terminal.cursorBlink}
+                  onChange={(e) => setTerminal({ cursorBlink: e.target.checked })}
+                />
+                {t("settings.cursorBlink")}
+              </label>
+            </Section>
+
+            <Section id="mouseAndClipboard">
+              <Setting>
+                <div className="field">
+                  <span>{t("settings.rightClick")}</span>
+                  <div className="segmented" role="radiogroup">
+                    {RIGHT_CLICKS.map((rightClick) => (
+                      <button
+                        key={rightClick}
+                        role="radio"
+                        aria-checked={terminal.rightClick === rightClick}
+                        className={terminal.rightClick === rightClick ? "on" : undefined}
+                        onClick={() => setTerminal({ rightClick })}
+                      >
+                        {t(`settings.rightClicks.${rightClick}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="hint">{t("settings.rightClickHint")}</p>
+              </Setting>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={terminal.copyOnSelect}
+                  onChange={(e) => setTerminal({ copyOnSelect: e.target.checked })}
+                />
+                {t("settings.copyOnSelect")}
+              </label>
+              <Setting>
                 <label className="checkbox">
                   <input
                     type="checkbox"
-                    checked={terminal.optionAsMeta}
-                    onChange={(e) => setTerminal({ optionAsMeta: e.target.checked })}
+                    checked={terminal.confirmMultilinePaste}
+                    onChange={(e) => setTerminal({ confirmMultilinePaste: e.target.checked })}
                   />
-                  {t("settings.optionAsMeta")}
+                  {t("settings.confirmMultilinePaste")}
                 </label>
-                <p className="hint">{t("settings.optionAsMetaHint")}</p>
-              </>
-            )}
-          </section>
+                <p className="hint">{t("settings.confirmMultilinePasteHint")}</p>
+              </Setting>
+              {isMac && (
+                <Setting>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={terminal.optionAsMeta}
+                      onChange={(e) => setTerminal({ optionAsMeta: e.target.checked })}
+                    />
+                    {t("settings.optionAsMeta")}
+                  </label>
+                  <p className="hint">{t("settings.optionAsMetaHint")}</p>
+                </Setting>
+              )}
+            </Section>
 
-          <section>
-            <h3>{t("settings.tabs")}</h3>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={settings.tabs.followRemoteTitle}
-                onChange={(e) => setTabs({ followRemoteTitle: e.target.checked })}
-              />
-              {t("settings.followRemoteTitle")}
-            </label>
-            <p className="hint">{t("settings.followRemoteTitleHint")}</p>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={settings.tabs.confirmClose}
-                onChange={(e) => setTabs({ confirmClose: e.target.checked })}
-              />
-              {t("settings.confirmClose")}
-            </label>
-          </section>
+            <Section id="tabs">
+              <Setting>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.tabs.followRemoteTitle}
+                    onChange={(e) => setTabs({ followRemoteTitle: e.target.checked })}
+                  />
+                  {t("settings.followRemoteTitle")}
+                </label>
+                <p className="hint">{t("settings.followRemoteTitleHint")}</p>
+              </Setting>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={settings.tabs.confirmClose}
+                  onChange={(e) => setTabs({ confirmClose: e.target.checked })}
+                />
+                {t("settings.confirmClose")}
+              </label>
+            </Section>
 
-          <section>
-            <h3>{t("settings.sidebar")}</h3>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={settings.sidebar.showRecent}
-                onChange={(e) => setSidebar({ showRecent: e.target.checked })}
-              />
-              {t("settings.showRecent")}
-            </label>
-          </section>
+            <Section id="sidebar">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={settings.sidebar.showRecent}
+                  onChange={(e) => setSidebar({ showRecent: e.target.checked })}
+                />
+                {t("settings.showRecent")}
+              </label>
+            </Section>
 
-          <FileSection settings={settings.files} onChange={setFiles} />
+            <FileSection settings={settings.files} onChange={setFiles} />
 
-          <ProxySection />
+            <ProxySection />
 
-          <KnownHostsSection />
+            <KnownHostsSection />
 
-          <section>
-            <h3>{t("settings.zmodem")}</h3>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={settings.zmodem.askDownloadLocation}
-                onChange={(e) => setZmodem({ askDownloadLocation: e.target.checked })}
-              />
-              {t("settings.zmodemAskLocation")}
-            </label>
-            <p className="hint">{t("settings.zmodemAskLocationHint")}</p>
-          </section>
+            <Section id="zmodem">
+              <Setting>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.zmodem.askDownloadLocation}
+                    onChange={(e) => setZmodem({ askDownloadLocation: e.target.checked })}
+                  />
+                  {t("settings.zmodemAskLocation")}
+                </label>
+                <p className="hint">{t("settings.zmodemAskLocationHint")}</p>
+              </Setting>
+            </Section>
 
-          <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
+            <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
 
-          <AboutSection onShowLicenses={() => setLicensesOpen(true)} />
+            <AboutSection onShowLicenses={() => setLicensesOpen(true)} />
 
-          <footer>
-            <button type="button" onClick={() => update(DEFAULT_SETTINGS)}>
-              {t("settings.reset")}
-            </button>
-            <span className="grow" />
-            <button type="button" className="primary" onClick={onClose} autoFocus>
-              {t("settings.done")}
-            </button>
-          </footer>
+            {shown.length === 0 && <p className="settings-empty">{t("settings.noMatches")}</p>}
+          </div>
+
+          <button
+            type="button"
+            className="icon-button settings-close"
+            title={t("settings.close")}
+            aria-label={t("settings.close")}
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
         </div>
       </div>
       {licensesOpen && <LicensesDialog onClose={() => setLicensesOpen(false)} />}
@@ -342,47 +555,50 @@ function FileSection({ settings, onChange }: { settings: FileSettings; onChange(
   };
 
   return (
-    <section>
-      <h3>{t("settings.files")}</h3>
-      <div className="field">
-        <span>{t("settings.downloadDirectory")}</span>
-        <div className="row">
-          <input className="grow" value={directory} readOnly title={directory} />
-          <button type="button" onClick={() => void chooseDirectory()}>
-            {t("settings.logChoose")}
-          </button>
-          <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
-            {t("settings.logShow")}
-          </button>
+    <Section id="files">
+      <Setting>
+        <div className="field">
+          <span>{t("settings.downloadDirectory")}</span>
+          <div className="row">
+            <input className="grow" value={directory} readOnly title={directory} />
+            <button type="button" onClick={() => void chooseDirectory()}>
+              {t("settings.logChoose")}
+            </button>
+            <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
+              {t("settings.logShow")}
+            </button>
+          </div>
         </div>
-      </div>
-      {settings.downloadDirectory && (
-        <button type="button" className="link" onClick={() => onChange({ downloadDirectory: "" })}>
-          {t("settings.downloadDirectoryDefault")}
-        </button>
-      )}
-      <p className="hint">{t("settings.downloadDirectoryHint")}</p>
-      <div className="field">
-        <span>{t("settings.editor")}</span>
-        <div className="row">
-          <input
-            className="grow"
-            value={settings.editor ? basename(settings.editor).replace(/\.(app|exe)$/i, "") : t("settings.editorDefault")}
-            readOnly
-            title={settings.editor}
-          />
-          <button type="button" onClick={() => void chooseEditor()}>
-            {t("settings.logChoose")}
+        {settings.downloadDirectory && (
+          <button type="button" className="link" onClick={() => onChange({ downloadDirectory: "" })}>
+            {t("settings.downloadDirectoryDefault")}
           </button>
+        )}
+        <p className="hint">{t("settings.downloadDirectoryHint")}</p>
+      </Setting>
+      <Setting>
+        <div className="field">
+          <span>{t("settings.editor")}</span>
+          <div className="row">
+            <input
+              className="grow"
+              value={settings.editor ? basename(settings.editor).replace(/\.(app|exe)$/i, "") : t("settings.editorDefault")}
+              readOnly
+              title={settings.editor}
+            />
+            <button type="button" onClick={() => void chooseEditor()}>
+              {t("settings.logChoose")}
+            </button>
+          </div>
         </div>
-      </div>
-      {settings.editor && (
-        <button type="button" className="link" onClick={() => onChange({ editor: "" })}>
-          {t("settings.editorUseDefault")}
-        </button>
-      )}
-      <p className="hint">{t("settings.editorHint")}</p>
-    </section>
+        {settings.editor && (
+          <button type="button" className="link" onClick={() => onChange({ editor: "" })}>
+            {t("settings.editorUseDefault")}
+          </button>
+        )}
+        <p className="hint">{t("settings.editorHint")}</p>
+      </Setting>
+    </Section>
   );
 }
 
@@ -399,30 +615,31 @@ function ProxySection() {
   useEffect(refresh, [refresh]);
 
   return (
-    <section>
-      <h3>{t("settings.proxies")}</h3>
-      {list.length > 0 && (
-        <ul className="proxy-list">
-          {list.map((proxy) => (
-            <li key={proxy.id}>
-              <button type="button" onClick={() => setEditing(proxy)}>
-                <span className="proxy-name">{proxy.name}</span>
-                <span className="proxy-summary">{proxySummary(t, proxy)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="row">
-        <button type="button" onClick={() => setEditing(null)}>
-          {t("settings.addProxy")}
-        </button>
-      </div>
-      <p className="hint">{t("settings.proxiesHint")}</p>
+    <Section id="proxies">
+      <Setting>
+        {list.length > 0 && (
+          <ul className="proxy-list">
+            {list.map((proxy) => (
+              <li key={proxy.id}>
+                <button type="button" onClick={() => setEditing(proxy)}>
+                  <span className="proxy-name">{proxy.name}</span>
+                  <span className="proxy-summary">{proxySummary(t, proxy)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="row">
+          <button type="button" onClick={() => setEditing(null)}>
+            {t("settings.addProxy")}
+          </button>
+        </div>
+        <p className="hint">{t("settings.proxiesHint")}</p>
+      </Setting>
       {editing !== undefined && (
         <ProxyDialog proxy={editing} onClose={() => setEditing(undefined)} onChanged={refresh} />
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -440,27 +657,28 @@ function KnownHostsSection() {
   useEffect(refresh, [refresh]);
 
   return (
-    <section>
-      <h3>{t("settings.knownHosts")}</h3>
-      {count !== null && (
-        <p className="known-hosts-summary">
-          {t("settings.knownHostsCount", { count, file: "~/.ssh/known_hosts" })}
-          {path && <HelpTip text={path} />}
-        </p>
-      )}
-      <div className="row">
-        <button type="button" onClick={() => setManaging(true)}>
-          {t("settings.knownHostsManage")}
-        </button>
-        <button
-          type="button"
-          disabled={!path || !count}
-          onClick={() => path && void revealItemInDir(path).catch(console.error)}
-        >
-          {t(isMac ? "settings.knownHostsReveal" : "settings.knownHostsRevealWindows")}
-        </button>
-      </div>
-      <p className="hint">{t("settings.knownHostsHint")}</p>
+    <Section id="knownHosts">
+      <Setting>
+        {count !== null && (
+          <p className="known-hosts-summary">
+            {t("settings.knownHostsCount", { count, file: "~/.ssh/known_hosts" })}
+            {path && <HelpTip text={path} />}
+          </p>
+        )}
+        <div className="row">
+          <button type="button" onClick={() => setManaging(true)}>
+            {t("settings.knownHostsManage")}
+          </button>
+          <button
+            type="button"
+            disabled={!path || !count}
+            onClick={() => path && void revealItemInDir(path).catch(console.error)}
+          >
+            {t(isMac ? "settings.knownHostsReveal" : "settings.knownHostsRevealWindows")}
+          </button>
+        </div>
+        <p className="hint">{t("settings.knownHostsHint")}</p>
+      </Setting>
       {managing && (
         <KnownHostsDialog
           onClose={() => {
@@ -470,7 +688,7 @@ function KnownHostsSection() {
           onChanged={refresh}
         />
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -521,38 +739,41 @@ function LogSection({
   };
 
   return (
-    <section>
-      <h3>{t("settings.logs")}</h3>
-      <div className="field">
-        <span>{t("settings.logDirectory")}</span>
-        <div className="row">
-          <input className="grow" value={directory} readOnly title={directory} />
-          <button type="button" onClick={() => void choose()}>
-            {t("settings.logChoose")}
-          </button>
-          <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
-            {t("settings.logShow")}
-          </button>
+    <Section id="logs">
+      <Setting>
+        <div className="field">
+          <span>{t("settings.logDirectory")}</span>
+          <div className="row">
+            <input className="grow" value={directory} readOnly title={directory} />
+            <button type="button" onClick={() => void choose()}>
+              {t("settings.logChoose")}
+            </button>
+            <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
+              {t("settings.logShow")}
+            </button>
+          </div>
         </div>
-      </div>
-      {settings.directory && (
-        <button type="button" className="link" onClick={() => onChange({ directory: "" })}>
-          {t("settings.logDefaultDirectory")}
-        </button>
-      )}
-      <label>
-        {t("settings.logFileName")}
-        <input
-          value={fileName}
-          onChange={(e) => setFileName(e.target.value)}
-          onBlur={commitFileName}
-          onKeyDown={(e) => e.key === "Enter" && commitFileName()}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-        />
-      </label>
-      <p className="hint">{t("settings.logFileNameHint")}</p>
+        {settings.directory && (
+          <button type="button" className="link" onClick={() => onChange({ directory: "" })}>
+            {t("settings.logDefaultDirectory")}
+          </button>
+        )}
+      </Setting>
+      <Setting>
+        <label>
+          {t("settings.logFileName")}
+          <input
+            value={fileName}
+            onChange={(e) => setFileName(e.target.value)}
+            onBlur={commitFileName}
+            onKeyDown={(e) => e.key === "Enter" && commitFileName()}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
+        </label>
+        <p className="hint">{t("settings.logFileNameHint")}</p>
+      </Setting>
       <div className="row">
         <label className="grow">
           {t("settings.logFormat")}
@@ -585,13 +806,15 @@ function LogSection({
         />
         {t("settings.logTimestamps")}
       </label>
-      {localAllowed && (
-        <label className="checkbox">
-          <input type="checkbox" checked={settings.autoLocal} onChange={(e) => onChange({ autoLocal: e.target.checked })} />
-          {t("settings.logAutoLocal")}
-        </label>
-      )}
-      <p className="hint">{t("settings.logAutoHint")}</p>
+      <Setting>
+        {localAllowed && (
+          <label className="checkbox">
+            <input type="checkbox" checked={settings.autoLocal} onChange={(e) => onChange({ autoLocal: e.target.checked })} />
+            {t("settings.logAutoLocal")}
+          </label>
+        )}
+        <p className="hint">{t("settings.logAutoHint")}</p>
+      </Setting>
       <div className="row log-summary">
         <span className="grow">
           {summary && t("settings.logSummary", { count: summary.count, size: formatSize(summary.bytes) })}
@@ -606,7 +829,7 @@ function LogSection({
           {confirmingDelete ? t("settings.logDeleteAllConfirm", { count: summary?.count ?? 0 }) : t("settings.logDeleteAll")}
         </button>
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -621,23 +844,24 @@ function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
   }, []);
 
   return (
-    <section>
-      <h3>{t("settings.about")}</h3>
-      {app && (
-        <div className="about-app">
-          <strong>{app.name}</strong>
-          <span>{t("settings.aboutVersion", { version: app.version })}</span>
+    <Section id="about">
+      <Setting>
+        {app && (
+          <div className="about-app">
+            <strong>{app.name}</strong>
+            <span>{t("settings.aboutVersion", { version: app.version })}</span>
+          </div>
+        )}
+        <p className="hint">{t("settings.copyright")}</p>
+        <div className="about-links">
+          <button type="button" className="link" onClick={() => void openUrl(PRIVACY_POLICY_URL).catch(console.error)}>
+            {t("settings.privacyPolicy")}
+          </button>
+          <button type="button" className="link" onClick={onShowLicenses}>
+            {t("settings.thirdPartyLicenses")}
+          </button>
         </div>
-      )}
-      <p className="hint">{t("settings.copyright")}</p>
-      <div className="row">
-        <button type="button" onClick={() => void openUrl(PRIVACY_POLICY_URL).catch(console.error)}>
-          {t("settings.privacyPolicy")}
-        </button>
-        <button type="button" onClick={onShowLicenses}>
-          {t("settings.thirdPartyLicenses")}
-        </button>
-      </div>
-    </section>
+      </Setting>
+    </Section>
   );
 }
