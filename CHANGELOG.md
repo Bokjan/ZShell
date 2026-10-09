@@ -2,6 +2,19 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.8] - 2026-10-09
+
+### Bug Fixes
+
+- Proxies: a rejected proxy password can be typed three times, as for SSH, not four.
+- Proxies: automatic reconnection stops when the proxy asks for credentials, rejects them or cannot use them, instead of retrying every 30 seconds for ever.
+- SSH: closing a tab just as it finishes connecting no longer leaves the connection, and its automatically started forwards, open until the app quits.
+- SSH: duplicating or splitting a tab whose connection died without being noticed yet (after the computer slept, say) connects anew instead of showing an error.
+- Port forwarding: starting a rule from one tab while its connection is closing in another no longer leaves its port bound.
+- Port forwarding: dynamic (SOCKS) forwards close connections that send no request within 30 seconds, such as port scans.
+- Serial: on Windows, a proxy command or editor started while a serial tab is open no longer keeps the port busy after the tab closes.
+- Importing from ssh_config: keys under the home folder are stored as `~/...` paths, so the sessions keep working when exported to another computer or user name.
+
 ## [1.6.7] - 2026-10-09
 
 ### Bug Fixes
