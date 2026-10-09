@@ -2,6 +2,19 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.11] - 2026-10-09
+
+### Bug Fixes
+
+- Compose bar: a paste while syncing input reaches each pane the way its own terminal needs: panes whose program doesn't take bracketed pastes no longer receive the markers as text, and a multi-line paste asks first unless every pane inserts lines without running them.
+- File panel: a conflict found while saving an edited file no longer replaces a delete or replace question already on screen; questions are asked one after another.
+- Sessions: clicking Delete again in the session or proxy dialog while it is deleting no longer reports that the session was not found; saving and deleting go one at a time.
+- Local terminal: a program that isn't reading its input (with a large paste waiting) no longer keeps the terminal from following window resizes.
+
+### Performance
+
+- Session logs are written to disk at most once a second rather than for every piece of output, and what is left is written within a second once the output pauses, so `tail -f` still follows them.
+
 ## [1.6.10] - 2026-10-09
 
 ### Bug Fixes
