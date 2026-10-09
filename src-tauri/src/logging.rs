@@ -334,9 +334,15 @@ impl Logs {
     }
 
     /// Goes on with `path` after a reconnection, marking where the new connection starts.
+    ///
+    /// The path comes from the frontend, which was given it when the log started; one that
+    /// isn't a log ZShell wrote (or that was deleted since) starts a new log rather than
+    /// writing to whatever file it names.
     fn append(&self, slot: &LogSlot, path: PathBuf, settings: &LogSettings) -> Result<PathBuf> {
+        if !self.index.lock().unwrap().iter().any(|entry| entry.path == path) || !path.is_file() {
+            return self.start(slot, settings);
+        }
         let file = OpenOptions::new()
-            .create(true)
             .append(true)
             .open(&path)
             .map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
@@ -532,6 +538,15 @@ mod tests {
         std::fs::write(dir.join("Logs").join("mine.txt"), "keep").unwrap();
         assert_eq!(logs.delete_for("p1"), 0);
         drop(slot);
+
+        // Going on with a file that isn't one of the logs starts a new log instead.
+        let other = LogSlot::new(LogInfo { profile: None, ..LogInfo::default() });
+        let mine = dir.join("Logs").join("mine.txt");
+        let started = logs.open(&other, LogOpen::Append { path: mine.clone() }, false, &settings).unwrap().unwrap();
+        assert_ne!(started, mine);
+        assert_eq!(std::fs::read_to_string(&mine).unwrap(), "keep");
+        drop(other);
+        std::fs::remove_file(started).unwrap();
         assert_eq!(logs.count("p1"), 1);
         assert_eq!(logs.delete_for("p1"), 1);
         assert!(!path.exists() && dir.join("Logs").join("mine.txt").exists());
