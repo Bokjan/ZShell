@@ -1037,6 +1037,8 @@ body.dragging-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Its own width: placed at left: 50%, it would otherwise shrink to half the terminal's. */
+  width: max-content;
   max-width: calc(100% - 36px);
   padding: 6px 8px 6px 12px;
   border: 1px solid var(--border);
