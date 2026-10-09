@@ -24,3 +24,6 @@ public/third-party-licenses.json
 *.njsproj
 *.sln
 *.sw?
+
+# Local notes, not committed.
+docs_local
