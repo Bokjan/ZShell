@@ -2,6 +2,13 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.0.0] - 2026-10-09
+
+### Breaking Changes
+
+- Sessions are saved in a new format, and ZShell 2.0 does not read the sessions of earlier versions: at the first start, the old `profiles.json` is renamed to `profiles.json.bad-<time>` and the session list starts empty. Folders, proxies, quick commands, settings and logs are kept; passwords saved for the old sessions stay in the keychain unused. Files exported by earlier versions cannot be imported either: recreate the sessions, or import them from `~/.ssh/config`.
+- A session whose protocol is changed keeps only the settings of the new protocol: its port forwarding rules are removed when it stops being an SSH session, and running ones stop.
+
 ## [1.7.0] - 2026-10-09
 
 ### Features
