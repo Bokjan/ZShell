@@ -10,7 +10,7 @@ use super::frame::{Encoding, Header, Kind, CANFC32, CANFDX, CANOVIO, ESCCTL, ZCR
 use super::link::{is_timeout, Bad, Link};
 use super::Report;
 use crate::error::Error;
-use crate::sftp::transfer::unique_path;
+use crate::local_name::create_unique_file;
 
 /// Timeouts in a row before giving up.
 const MAX_RETRIES: u32 = 5;
@@ -92,10 +92,10 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     link.send_header(Header::new(Kind::Skip), Encoding::Hex).await?;
                     continue;
                 };
-                let path = unique_path(dir.join(&name));
-                let file = match tokio::fs::File::create(&path).await {
-                    Ok(file) => file,
+                let (path, file) = match create_unique_file(&dir.join(&name)) {
+                    Ok((path, file)) => (path, tokio::fs::File::from_std(file)),
                     Err(e) => {
+                        let path = dir.join(&name);
                         report.failed(anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path.display())));
                         link.send_header(Header::new(Kind::Skip), Encoding::Hex).await?;
                         continue;

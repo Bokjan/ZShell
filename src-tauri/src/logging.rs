@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{load_json, write_json_atomic, SetAside};
 use crate::error::{Error, Result};
+use crate::local_name::create_unique_file;
 use crate::settings::{LogFormat, LogSettings};
-use crate::sftp::transfer::unique_path;
 
 /// What a session's log is named after.
 #[derive(Clone, Debug, Default)]
@@ -321,9 +321,9 @@ impl Logs {
     /// Starts a new log file, named after the session, the template and the time.
     pub fn start(&self, slot: &LogSlot, settings: &LogSettings) -> Result<PathBuf> {
         let dir = self.directory(settings);
-        let path = unique_path(dir.join(file_name(&settings.file_name, &slot.info)));
-        let file = std::fs::create_dir_all(&dir)
-            .and_then(|_| File::create_new(&path))
+        let path = dir.join(file_name(&settings.file_name, &slot.info));
+        let (path, file) = std::fs::create_dir_all(&dir)
+            .and_then(|_| create_unique_file(&path))
             .map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
         let info = &slot.info;
         let address = if info.user.is_empty() { info.host.clone() } else { format!("{}@{}", info.user, info.host) };

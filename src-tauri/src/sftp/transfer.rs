@@ -14,7 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{file_name, join};
 use crate::error::Error;
-use crate::local_name::local_file_name;
+use crate::local_name::{create_unique, create_unique_file, local_file_name};
 
 const BUFFER_SIZE: usize = 256 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -175,15 +175,47 @@ pub async fn download(
     local_dir: &Path,
     reporter: &mut Reporter,
 ) -> Result<Vec<PathBuf>> {
-    let items = remote_paths
-        .iter()
-        .map(|remote| {
-            let name = local_file_name(file_name(remote)).ok_or_else(|| Error::new("transfer.invalidName").param("name", remote))?;
-            Ok((remote.clone(), unique_path(local_dir.join(name))))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    download_to(sftp, &items, reporter).await?;
+    let mut items = Vec::with_capacity(remote_paths.len());
+    let mut result = Ok(());
+    for remote in remote_paths {
+        match claim(sftp, remote, local_dir).await {
+            Ok(local) => items.push((remote.clone(), local)),
+            Err(e) => {
+                result = Err(e);
+                break;
+            }
+        }
+    }
+    if result.is_ok() {
+        result = download_to(sftp, &items, reporter).await;
+    }
+    if let Err(e) = result {
+        // Give back the names of the items that never arrived; an empty file or folder that
+        // did is taken with them.
+        for (_, local) in &items {
+            let _ = match std::fs::symlink_metadata(local) {
+                Ok(metadata) if metadata.is_dir() => std::fs::remove_dir(local),
+                Ok(metadata) if metadata.len() == 0 => std::fs::remove_file(local),
+                _ => Ok(()),
+            };
+        }
+        return Err(e);
+    }
     Ok(items.into_iter().map(|(_, local)| local).collect())
+}
+
+/// Takes a free local name for the remote item, creating an empty file or folder there.
+async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<PathBuf> {
+    let name = local_file_name(file_name(remote)).ok_or_else(|| Error::new("transfer.invalidName").param("name", remote))?;
+    let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
+    let path = local_dir.join(name);
+    let created = if metadata.file_type().is_dir() {
+        create_unique(&path, |path| std::fs::create_dir(path))
+    } else {
+        create_unique_file(&path).map(|(path, _)| (path, ()))
+    };
+    let (path, ()) = created.context(Error::new("transfer.createFailed").param("path", path.display()))?;
+    Ok(path)
 }
 
 /// Downloads each remote file or directory to the given local path, replacing files there.
@@ -289,19 +321,6 @@ fn with_file_context(e: anyhow::Error, context: Error) -> anyhow::Error {
     } else {
         e.context(context)
     }
-}
-
-/// `name.ext` → `name (1).ext`, `name (2).ext`, … until the path is free.
-pub(crate) fn unique_path(path: PathBuf) -> PathBuf {
-    if !path.exists() {
-        return path;
-    }
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
-    (1..)
-        .map(|n| path.with_file_name(format!("{stem} ({n}){ext}")))
-        .find(|candidate| !candidate.exists())
-        .unwrap()
 }
 
 #[cfg(all(test, unix))]
