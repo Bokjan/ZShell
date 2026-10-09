@@ -2,6 +2,12 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.3.1] - 2026-10-09
+
+### Bug Fixes
+
+- On macOS, the refresh buttons in the file panel and next to the serial device are no longer drawn tiny.
+
 ## [2.3.0] - 2026-10-09
 
 ### Bug Fixes
