@@ -310,6 +310,8 @@ export interface SessionCandidate {
   proxyCommand: string | null;
   /** Name of an existing session with the same name or address; not imported again. */
   existing: string | null;
+  /** Forwarding rules that start when it connects, as they will be saved. */
+  autoForwards: ForwardRule[];
 }
 
 export const sessionsFile = {

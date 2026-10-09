@@ -147,7 +147,9 @@
     "import": {
       "readFailed": "Cannot read {path}",
       "parseFailed": "Cannot parse {path}",
-      "notSessionsFile": "{path} is not a ZShell sessions file"
+      "notSessionsFile": "{path} is not a ZShell sessions file",
+      "invalidSession": "Session {name} in the file is not valid",
+      "invalidProxy": "Proxy {name} in the file is not valid"
     },
     "zmodem": {
       "cancelled": "Transfer cancelled",

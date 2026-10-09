@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessage, sessionsFile, type SessionCandidate } from "../lib/api";
+import { forwardMapping } from "../lib/format";
 import { address } from "../lib/sessions";
 
 interface Props {
@@ -92,6 +93,11 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
                     ) : (
                       c.proxy && <span>{t("sessionImport.proxy", { name: c.proxy })}</span>
                     )}
+                    {c.autoForwards.map((rule, index) => (
+                      <span key={index} className="warning">
+                        {t("sessionImport.autoForward", { rule: forwardMapping(rule), kind: t(`forwards.kind.${rule.kind}`) })}
+                      </span>
+                    ))}
                   </div>
                 </li>
               ))}

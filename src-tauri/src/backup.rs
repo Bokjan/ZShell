@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{write_json_atomic, Folder, Profile, Protocol, SerialOptions};
 use crate::error::{Error, Result};
+use crate::forward::ForwardRule;
 use crate::proxy::{Proxy, ProxyKind};
 
 const FORMAT: &str = "zshell-sessions";
@@ -51,6 +52,9 @@ pub struct Candidate {
     /// The name of an existing session with the same name or address; such sessions are not
     /// imported again.
     pub existing: Option<String>,
+    /// Forwarding rules that start when it connects, as they will be saved: importing them
+    /// means listening on those ports.
+    pub auto_forwards: Vec<ForwardRule>,
 }
 
 pub fn export(path: &Path, folders: Vec<Folder>, proxies: Vec<Proxy>, profiles: Vec<Profile>) -> Result<()> {
@@ -79,6 +83,7 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Vec<Candidate>> {
                 proxy: proxy.map(|proxy| proxy.name.clone()),
                 proxy_command: proxy.filter(|proxy| proxy.kind == ProxyKind::Command).map(|proxy| proxy.command.clone()),
                 existing: duplicate_of(p, existing).map(|e| e.name.clone()),
+                auto_forwards: p.forwards.iter().filter(|f| f.auto_start).filter_map(|f| f.clone().normalize().ok()).collect(),
             }
         })
         .collect())
@@ -127,8 +132,10 @@ pub fn plan(path: &Path, selected: &[String], here: &Here) -> Result<Plan> {
         let id = match existing {
             Some(existing) => existing.id.clone(),
             None => {
-                let id = uuid::Uuid::new_v4().to_string();
-                proxies.push(Proxy { id: id.clone(), ..proxy.clone() });
+                let mut proxy = Proxy { id: uuid::Uuid::new_v4().to_string(), ..proxy.clone() };
+                proxy.normalize().map_err(|e| Error::new("import.invalidProxy").param("name", &proxy.name).detail(e))?;
+                let id = proxy.id.clone();
+                proxies.push(proxy);
                 id
             }
         };
@@ -140,14 +147,20 @@ pub fn plan(path: &Path, selected: &[String], here: &Here) -> Result<Plan> {
         .profiles
         .iter()
         .filter(|p| imported.contains(&p.id))
-        .map(|p| Profile {
-            id: ids[&p.id].clone(),
-            jump_hosts: p.jump_hosts.iter().filter_map(|j| ids.get(j).cloned()).collect(),
-            proxy: p.proxy.as_deref().and_then(|id| proxy_ids.get(id).cloned()),
-            folder: p.folder.as_deref().and_then(|f| merger.resolve(f)),
-            ..p.clone()
+        .map(|p| {
+            let mut profile = Profile {
+                id: ids[&p.id].clone(),
+                jump_hosts: p.jump_hosts.iter().filter_map(|j| ids.get(j).cloned()).collect(),
+                proxy: p.proxy.as_deref().and_then(|id| proxy_ids.get(id).cloned()),
+                folder: p.folder.as_deref().and_then(|f| merger.resolve(f)),
+                ..p.clone()
+            };
+            // As saving does: an empty bind address becomes localhost rather than every
+            // interface of the server, for one.
+            profile.normalize_imported().map_err(|e| Error::new("import.invalidSession").param("name", &p.name).detail(e))?;
+            Ok(profile)
         })
-        .collect();
+        .collect::<Result<_>>()?;
     Ok(Plan { folders: merger.added, proxies, profiles: new_profiles })
 }
 
@@ -172,13 +185,35 @@ fn read(path: &Path) -> Result<SessionsFile> {
     if file.format != FORMAT {
         return Err(Error::new("import.notSessionsFile").param("path", path.display()));
     }
+    let mut file = file;
+    // A hand-written file may leave ids out or repeat them; references go to the first.
+    unique_ids(file.profiles.iter_mut().map(|p| &mut p.id));
+    unique_ids(file.proxies.iter_mut().map(|p| &mut p.id));
+    unique_ids(file.folders.iter_mut().map(|f| &mut f.id));
     Ok(file)
 }
 
+/// Gives an id of its own to each empty one and each one used before. Made from the position,
+/// so that reading the file again (to import what was picked from it) gives the same ids.
+fn unique_ids<'a>(ids: impl Iterator<Item = &'a mut String>) {
+    let ids: Vec<&mut String> = ids.collect();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (index, id) in ids.into_iter().enumerate() {
+        if id.is_empty() || seen.contains(id.as_str()) {
+            *id = (0..).map(|n| format!("#{index}.{n}")).find(|candidate| !seen.contains(candidate)).unwrap();
+        }
+        seen.insert(id.clone());
+    }
+}
+
 /// An existing session with the same name, else one that connects to the same place (see
-/// [`Profile::same_target`]).
+/// [`Profile::same_target`]). The name only counts for the same protocol: a Telnet session that happens to share its
+/// name must not stand in for an SSH one (and become a jump host).
 fn duplicate_of<'a>(profile: &Profile, existing: &'a [Profile]) -> Option<&'a Profile> {
-    existing.iter().find(|e| e.name == profile.name).or_else(|| existing.iter().find(|e| e.same_target(profile)))
+    existing
+        .iter()
+        .find(|e| e.name == profile.name && e.protocol == profile.protocol)
+        .or_else(|| existing.iter().find(|e| e.same_target(profile)))
 }
 
 /// The names of `folder` and the folders around it, outermost first.
@@ -269,6 +304,48 @@ mod tests {
         assert_ne!(new_profiles[0].id, "db");
         assert_eq!(new_profiles[0].jump_hosts, ["b2"]);
         assert_eq!(new_profiles[0].folder.as_deref(), Some(new_folders[0].id.as_str()));
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// What a hand-edited or someone else's file can hold: missing and repeated ids, a name
+    /// shared with a Telnet session here, forwarding rules that saving would tidy.
+    #[test]
+    fn imports_untidy_files_safely() {
+        let path = std::env::temp_dir().join(format!("zshell-sessions-untidy-{}.json", std::process::id()));
+        let forward = ForwardRule {
+            id: String::new(),
+            kind: crate::forward::ForwardKind::Remote,
+            bind_host: String::new(),
+            bind_port: 9000,
+            target_host: "localhost".into(),
+            target_port: 3000,
+            description: String::new(),
+            auto_start: true,
+        };
+        let profiles = vec![
+            profile("router", "router", "router.lan", None, &[]),
+            Profile { forwards: vec![forward], ..profile("db", "db", "db.internal", None, &["router"]) },
+            profile("", "a", "a.internal", None, &[]),
+            profile("", "b", "b.internal", None, &[]),
+        ];
+        export(&path, Vec::new(), Vec::new(), profiles).unwrap();
+
+        let telnet = Profile { protocol: Protocol::Telnet, ..profile("t", "router", "10.0.0.1", None, &[]) };
+        let candidates = scan(&path, std::slice::from_ref(&telnet)).unwrap();
+        assert_eq!(candidates[0].existing, None);
+        assert_eq!(candidates[1].auto_forwards[0].bind_host, "localhost");
+        assert_ne!(candidates[2].id, candidates[3].id);
+
+        let ids: Vec<String> = candidates.iter().map(|c| c.id.clone()).collect();
+        let here = Here { profiles: std::slice::from_ref(&telnet), folders: &[], proxies: &[] };
+        let Plan { profiles: new, .. } = plan(&path, &ids, &here).unwrap();
+        let names: Vec<&str> = new.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["router", "db", "a", "b"]);
+        // The file's own router is the jump host, not the Telnet session.
+        assert_eq!(new[1].jump_hosts, std::slice::from_ref(&new[0].id));
+        // As when saved: not every interface of the server.
+        assert_eq!(new[1].forwards[0].bind_host, "localhost");
+        assert!(!new[1].forwards[0].id.is_empty());
         std::fs::remove_file(&path).unwrap();
     }
 

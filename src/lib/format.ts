@@ -1,4 +1,5 @@
 import i18n from "../i18n";
+import type { ForwardRule } from "./api";
 
 /** Binary-prefixed size with locale-aware digits, e.g. "1.5 MB" ("1,5 MB" in German). */
 export function formatSize(bytes: number): string {
@@ -41,4 +42,10 @@ export function basename(path: string): string {
 export function hostPort(host: string, port: number): string {
   const h = host.includes(":") ? `[${host}]` : host;
   return `${h}:${port === 0 ? "*" : port}`;
+}
+
+/** What a forwarding rule maps: `bind → target`, or the bind address of a dynamic rule. */
+export function forwardMapping(rule: ForwardRule): string {
+  const bind = hostPort(rule.bindHost, rule.bindPort);
+  return rule.kind === "dynamic" ? bind : `${bind} → ${hostPort(rule.targetHost, rule.targetPort)}`;
 }

@@ -10,7 +10,7 @@ import {
   type Profile,
   type SessionId,
 } from "../lib/api";
-import { hostPort } from "../lib/format";
+import { forwardMapping as mapping } from "../lib/format";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ForwardDialog, explainRule } from "./ForwardDialog";
 
@@ -26,11 +26,6 @@ interface Props {
 }
 
 const isRunning = (state: ForwardState | undefined) => state?.type === "starting" || state?.type === "active";
-
-const mapping = (rule: ForwardRule) => {
-  const bind = hostPort(rule.bindHost, rule.bindPort);
-  return rule.kind === "dynamic" ? bind : `${bind} → ${hostPort(rule.targetHost, rule.targetPort)}`;
-};
 
 export function ForwardsPanel({ sessionId, connected, profile, quick, states, onProfileChanged }: Props) {
   const { t } = useTranslation();

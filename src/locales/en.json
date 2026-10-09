@@ -682,6 +682,7 @@
     "hint": "Jump hosts and proxies are imported along with the sessions that use them, or matched to existing ones. Folders are merged by name. Passwords are not part of the file.",
     "proxy": "Proxy: {name}",
     "proxyCommand": "Runs a command to connect: {command}",
+    "autoForward": "Forwards {rule} ({kind}) as soon as it connects",
     "empty": "The file has no sessions.",
     "import_one": "Import {count} Session",
     "import_other": "Import {count} Sessions"

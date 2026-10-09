@@ -290,6 +290,19 @@ impl Profile {
         Ok(())
     }
 
+    /// Checks and tidies a session from an import file as saving does, with its forwarding
+    /// rules (which get ids of their own): the file may have been edited, or written by
+    /// someone else.
+    pub fn normalize_imported(&mut self) -> Result<()> {
+        self.normalize_target()?;
+        self.normalize_session_options()?;
+        self.forwards = std::mem::take(&mut self.forwards)
+            .into_iter()
+            .map(|rule| ForwardRule { id: uuid::Uuid::new_v4().to_string(), ..rule }.normalize())
+            .collect::<Result<_>>()?;
+        Ok(())
+    }
+
     /// Checks and tidies what the user edits beyond the address (encoding, terminal type,
     /// environment, login commands, appearance).
     fn normalize_session_options(&mut self) -> Result<()> {
@@ -410,6 +423,14 @@ impl State {
             if profile.proxy.as_ref().is_some_and(|p| !proxies.contains(p.as_str())) {
                 profile.proxy = None;
             }
+        }
+        // Jump hosts must be other SSH sessions that exist (a hand-edited file, an import).
+        let ssh: std::collections::HashSet<String> =
+            self.profiles.iter().filter(|p| p.protocol == Protocol::Ssh).map(|p| p.id.clone()).collect();
+        for profile in &mut self.profiles {
+            let mut seen = std::collections::HashSet::new();
+            let id = profile.id.clone();
+            profile.jump_hosts.retain(|jump| *jump != id && ssh.contains(jump) && seen.insert(jump.clone()));
         }
         for i in 0..self.folders.len() {
             let parent = self.folders[i].parent.clone();
