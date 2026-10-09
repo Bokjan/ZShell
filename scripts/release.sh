@@ -68,6 +68,7 @@ tag() {
 $unexpected"
 
   pnpm build
+  pnpm test
   (cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test)
 
   git add "$manifest" src-tauri/Cargo.lock "$changelog"

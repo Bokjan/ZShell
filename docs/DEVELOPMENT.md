@@ -11,6 +11,7 @@
 pnpm install
 pnpm tauri dev                          # 开发模式运行
 pnpm build                              # 前端类型检查（tsc）并构建
+pnpm test                               # 前端单元测试（vitest，测试文件与被测模块放在一起：*.test.ts）
 pnpm tauri build --debug --bundles app  # 打包 debug 版 .app，用于端到端测试
 pnpm tauri build                        # 打包 release 版
 ```
@@ -110,7 +111,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 ## CI
 
-- `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `cargo clippy --all-targets -D warnings` 和 `cargo test`，保证 Windows 专用代码能通过编译。
+- `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `pnpm build`、`pnpm test`、`cargo clippy --all-targets -D warnings` 和 `cargo test`，保证 Windows 专用代码能通过编译。
 - `.github/workflows/release.yml`：只能手动运行。在版本 tag 上运行时创建草稿 release（见下文「发布」）；在分支上运行时只打包，产物作为 workflow artifacts。勾选 "Microsoft Store only" 时只打 Store 包，省去 macOS 与其他 Windows 包。
 - `.github/dependabot.yml`：每周检查 npm、Cargo 和 GitHub Actions 的依赖更新。各生态的 minor / patch 更新合并为一个 PR，Tauri（及 xterm.js、russh）的相关包各自成组；major 更新单独成 PR。提交前缀为 `chore(deps)` / `ci`，不进更新日志。Dependabot 的 PR 会触发 Windows CI。
 
@@ -127,7 +128,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 **步骤**（`scripts/release.sh`，需在 main 上且工作区干净）：
 1. `scripts/release.sh prepare X.Y.Z`：修改 `src-tauri/Cargo.toml` 中的版本号并更新 `Cargo.lock`，用 git-cliff 在 `CHANGELOG.md` 顶部加上该版本一节（`--unreleased --prepend`，之前各版本已润色的内容不变）。git-cliff 的配置在 `cliff.toml`，只收录 `feat` / `fix` / `perf` 和破坏性变更，其他类型（`docs`、`ci`、`chore`、`refactor` 等）不出现在更新日志里，因此提交类型要选准。
 2. 润色该版本一节：合并同一功能的多条、去掉内部里程碑编号，内容保持英语。只有 `refactor` / `chore` 等提交的版本，git-cliff 生成的一节可能是空的，手写一句面向用户的说明（`tag` 要求有该版本一节）。
-3. `scripts/release.sh tag`：运行 `pnpm build`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
+3. `scripts/release.sh tag`：运行 `pnpm build`、`pnpm test`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
 4. `git push origin main vX.Y.Z`。只升版本号的话到此为止。
 5. 要发布时：`scripts/release.sh publish [X.Y.Z]`（默认当前版本），用 `gh workflow run release.yml --ref vX.Y.Z` 在该 tag 上运行 release workflow。workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（以该节为发布说明；避免并行 job 重复创建），然后并行打包并上传：
    - macOS 通用包（`universal-apple-darwin`，`.app` 与 `.dmg`）。

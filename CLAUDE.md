@@ -23,11 +23,12 @@ When a feature lands: mark its milestone ✅ in ROADMAP.md, move cross-module de
 
 ```bash
 pnpm build                                  # tsc + vite build
+pnpm test                                   # frontend unit tests (vitest, *.test.ts next to the module)
 cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
 pnpm tauri dev                              # run the app
 ```
 
-Run the first two before committing; the Windows CI job runs the same clippy and tests. Windows-only code (ConPTY, the OpenSSH agent pipe, Pageant) cannot be compiled on macOS, so CI is the only check for it.
+Run the first three before committing; the Windows CI job runs the same build, clippy and tests. Windows-only code (ConPTY, the OpenSSH agent pipe, Pageant) cannot be compiled on macOS, so CI is the only check for it.
 
 ## Testing
 
