@@ -54,6 +54,10 @@ pub struct Link {
     /// What has been read since [`Link::record`], and how many of those bytes the terminal
     /// already showed.
     recording: Option<(Vec<u8>, usize)>,
+    /// The other side escapes every control character (the receiver asked for it with
+    /// `ESCCTL`), so unescaped ones are line noise and dropped, as lrzsz does. Kept as data,
+    /// a link that adds bytes (a terminal's answerback, a modem) would fail every CRC.
+    pub controls_escaped: bool,
 }
 
 impl Link {
@@ -73,6 +77,7 @@ impl Link {
             charset: encoding_rs::UTF_8,
             timeout: TIMEOUT,
             recording: None,
+            controls_escaped: false,
         }
     }
 
@@ -179,7 +184,12 @@ impl Link {
     async fn hex_header(&mut self, timeout: Duration) -> Result<Option<Header>> {
         let mut digits = [0u8; 14];
         for digit in &mut digits {
-            *digit = self.byte(timeout).await?;
+            *digit = loop {
+                let byte = self.byte(timeout).await?;
+                if !self.is_noise(byte) {
+                    break byte;
+                }
+            };
         }
         let header = frame::parse_hex_header(&digits);
         // CR LF follow; drop them so they aren't read as subpacket data.
@@ -229,18 +239,24 @@ impl Link {
         }
     }
 
-    /// Reads one byte of escaped data; `None` for flow control characters.
+    /// Reads one byte of escaped data; `None` for flow control characters and noise.
     async fn escaped(&mut self, timeout: Duration) -> Result<Option<Escaped>> {
         let byte = self.byte(timeout).await?;
         if byte != ZDLE {
-            return Ok(if frame::is_flow_control(byte) { None } else { Some(Escaped::Byte(byte)) });
+            return Ok(if self.is_noise(byte) { None } else { Some(Escaped::Byte(byte)) });
         }
         loop {
             let byte = self.byte(timeout).await?;
-            if !frame::is_flow_control(byte) {
+            if !self.is_noise(byte) {
                 return Ok(Some(frame::unescape(byte)));
             }
         }
+    }
+
+    /// Whether an unescaped byte (not ZDLE) is not part of the stream: flow control, and with
+    /// [`Link::controls_escaped`], any control character (also with the parity bit).
+    fn is_noise(&self, byte: u8) -> bool {
+        frame::is_flow_control(byte) || (self.controls_escaped && byte & 0x60 == 0)
     }
 
     /// Reads a data subpacket of the current frame: its data and how it ended. Damage and

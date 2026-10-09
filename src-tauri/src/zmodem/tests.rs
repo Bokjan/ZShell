@@ -240,6 +240,33 @@ async fn receiving_survives_a_pause_in_the_data() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn receiving_drops_control_characters_the_sender_did_not_escape() {
+    let src = temp_dir("noise-src");
+    let dst = temp_dir("noise-dst");
+    let files = make_files(&src);
+    let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
+    let (mut receiver, (to_receiver, from_receiver, _cancel_r)) = link();
+    // The link adds control characters (we asked for all of them to be escaped) into the
+    // headers and data.
+    pipe_through(from_sender, to_receiver, |mut chunk| async move {
+        for (at, byte) in [(chunk.len() / 2, 0x00), (chunk.len() / 3, 0x85), (chunk.len(), 0x07)] {
+            chunk.insert(at, byte);
+        }
+        chunk
+    });
+    pipe(from_receiver, to_sender);
+
+    let dst2 = dst.clone();
+    let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
+    let rinit = sender.header(TIMEOUT).await.unwrap();
+    send::send(&mut sender, rinit, &files, &mut Log::default()).await.unwrap();
+    receiving.await.unwrap().unwrap();
+    assert_same_files(&files, &dst);
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn receiving_gives_up_on_data_damaged_every_time() {
     const MARKER: &[u8] = b"DAMAGED-HERE-EVERY-TIME";
     let src = temp_dir("damage-src");

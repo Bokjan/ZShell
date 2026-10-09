@@ -47,6 +47,7 @@ pub async fn receive(link: &mut Link, dir: &Path, report: &mut impl Report) -> R
 
 async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mut Option<Incoming>) -> Result<()> {
     let rinit = Header::with_flags(Kind::Rinit, OUR_FLAGS);
+    link.controls_escaped = OUR_FLAGS & ESCCTL != 0;
     link.send_header(rinit, Encoding::Hex).await?;
     let mut retries = 0;
     // Bad subpackets in the current file since the data last got past `bad_at`, the furthest
