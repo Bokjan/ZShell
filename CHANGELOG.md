@@ -2,6 +2,12 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.2.0] - 2026-10-09
+
+### Bug Fixes
+
+- When the window's page reloads or its window closes, its sessions end instead of running on unseen in the background.
+
 ## [2.1.0] - 2026-10-09
 
 ### Features
