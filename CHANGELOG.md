@@ -2,6 +2,14 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.12] - 2026-10-09
+
+### Bug Fixes
+
+- ZMODEM: files sent with `sz` are no longer saved without asking, since showing a file that happens to look like `sz` output (with `cat`) also starts a transfer. A bar over the terminal offers to save them in the download folder or another folder, or to cancel. The settings can save into the download folder without asking, or open the folder picker right away; "Ask where to save files received with sz" becomes the latter.
+- ZMODEM: the bar over the terminal no longer cuts its message short.
+- File panel: cancelling an upload over an existing file, or an upload or download failing part way, no longer destroys the file being replaced. Uploads, uploads of edited files and Download to… now write such a file under a temporary name beside it and replace it only once complete, keeping its permissions. Symbolic links, files owned by someone else and folders that don't allow new files are still written in place.
+
 ## [1.6.11] - 2026-10-09
 
 ### Bug Fixes
