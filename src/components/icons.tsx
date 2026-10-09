@@ -46,3 +46,14 @@ export function EyeIcon({ size = 14, crossed = false }: { size?: number; crossed
     </svg>
   );
 }
+
+/** A question mark in a circle, for help shown on hover. */
+export function HelpIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="M6.2 6.3a1.9 1.9 0 0 1 3.7.4c0 1.3-1.9 1.6-1.9 2.8" />
+      <circle cx="8" cy="11.6" r="0.3" fill="currentColor" />
+    </svg>
+  );
+}

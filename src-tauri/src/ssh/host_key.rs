@@ -28,7 +28,10 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
     match query.status {
         HostKeyStatus::Changed { line } => {
             let banner = t!("hostKey.changedBanner");
-            let details = t!("hostKey.changedDetails", algorithm = algorithm, fingerprint = fingerprint, line = line);
+            // The real path, as OpenSSH shows it, rather than `~` (unfamiliar on Windows).
+            let path = std::env::home_dir().unwrap_or_default().join(".ssh").join("known_hosts");
+            let details =
+                t!("hostKey.changedDetails", algorithm = algorithm, fingerprint = fingerprint, line = line, path = path.display());
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }

@@ -306,6 +306,12 @@ pub fn quick_open(
     Ok(id)
 }
 
+/// The user's home folder, which `~` stands for in key paths (and in `~/.ssh`).
+#[tauri::command]
+pub fn home_directory() -> Option<PathBuf> {
+    std::env::home_dir()
+}
+
 /// The user name `ssh` uses when none is given.
 #[tauri::command]
 pub fn local_username() -> String {

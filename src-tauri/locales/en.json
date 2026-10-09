@@ -24,7 +24,7 @@
     "added": "Permanently added '{host}' ({algorithm}) to the list of known hosts.",
     "saveFailed": "Could not write to known_hosts: {error}",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
-    "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of ~/.ssh/known_hosts.\nIf the key change is expected, remove that line and reconnect."
+    "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of {path}.\nIf the key change is expected, remove that line and reconnect."
   },
   "forward": {
     "autoStartFailed": "Port forwarding {forward} could not be started: {error}"

@@ -292,6 +292,9 @@ export const sessionsFile = {
   import: (path: string, ids: string[]) => invoke<void>("sessions_import", { path, ids }),
 };
 
+/** The user's home folder, which `~` stands for in key paths. */
+export const homeDirectory = () => invoke<string | null>("home_directory");
+
 /** The user name `ssh` uses when none is given. */
 export const localUsername = () => invoke<string>("local_username");
 

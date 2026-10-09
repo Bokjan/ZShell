@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import {
   DEFAULT_GROUP,
@@ -23,10 +24,12 @@ import {
   type Proxy,
   type SerialPortInfo,
 } from "../lib/api";
+import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
 import { isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
+import { HelpTip } from "./HelpTip";
 import { ProxyDialog } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 
@@ -100,6 +103,7 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
   const [proxy, setProxy] = useState(profile?.proxy ?? "");
   const [proxyList, setProxyList] = useState<Proxy[]>([]);
   const [creatingProxy, setCreatingProxy] = useState(false);
+  const home = useHomeDirectory();
   const [keepalive, setKeepalive] = useState(String(profile?.keepaliveInterval ?? 30));
   const [autoReconnect, setAutoReconnect] = useState(profile?.autoReconnect ?? true);
   const [forwardAgent, setForwardAgent] = useState(profile?.forwardAgent ?? false);
@@ -144,6 +148,16 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
   const proxyName = (id: string | undefined) => proxyList.find((p) => p.id === id)?.name;
   // With jump hosts, the first one's own proxy is used.
   const firstJump = profiles.find((p) => p.id === jumpHosts[0]);
+
+  // Starts in the folder of the current key, or in ~/.ssh; keys in the home folder are kept as
+  // `~/…`, which works on other computers too (exported sessions).
+  const chooseKey = async () => {
+    const current = keyPath.trim();
+    let start: string | undefined = current || "~/.ssh";
+    if (startsWithHome(start)) start = home ? expandHome(start, home) : undefined;
+    const picked = await openDialog({ title: t("profile.chooseKey"), defaultPath: start }).catch(() => null);
+    if (typeof picked === "string") setKeyPath(home ? contractHome(picked, home) : picked);
+  };
 
   const refreshPorts = () => void serialPorts().then(setPorts, () => setPorts([]));
   useEffect(() => {
@@ -376,13 +390,28 @@ export function ProfileDialog({ profile, defaults, profiles, commandGroups, onCl
         </select>
       </label>
 
-      {authType === "auto" && <p className="hint">{t("profile.autoHint")}</p>}
+      {authType === "auto" && (
+        <p className="hint">
+          {t("profile.autoHint")}
+          {home && <HelpTip text={t("profile.homeTip", { home })} />}
+        </p>
+      )}
       {usesPassword && passwordField}
       {authType === "publicKey" && (
         <>
           <label>
-            {t("profile.keyPath")}
-            <input value={keyPath} onChange={(e) => setKeyPath(e.target.value)} spellCheck={false} />
+            <span>
+              {t("profile.keyPath")}
+              {home && startsWithHome(keyPath.trim()) && (
+                <HelpTip text={t("profile.keyPathTip", { path: expandHome(keyPath.trim(), home) })} />
+              )}
+            </span>
+            <div className="input-with-button">
+              <input value={keyPath} onChange={(e) => setKeyPath(e.target.value)} spellCheck={false} />
+              <button type="button" className="secondary" onClick={() => void chooseKey()}>
+                {t("profile.chooseKeyButton")}
+              </button>
+            </div>
           </label>
           <p className="hint">{t("profile.keyHint")}</p>
         </>

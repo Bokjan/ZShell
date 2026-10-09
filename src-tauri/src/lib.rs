@@ -210,6 +210,7 @@ pub fn run() {
             commands::sessions_import,
             commands::quick_open,
             commands::local_username,
+            commands::home_directory,
             commands::ssh_config_default_path,
             commands::ssh_config_scan,
             commands::ssh_config_import,
