@@ -17,7 +17,7 @@ pub(crate) mod socks;
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -155,6 +155,9 @@ struct Shared {
     /// In-flight `cancel-tcpip-forward` requests of stopped remote rules, by rule id.
     cancels: Mutex<HashMap<String, JoinHandle<()>>>,
     next_generation: AtomicU64,
+    /// The connection is closing (`stop_all`): nothing starts any more. Set and read under
+    /// the `running` lock.
+    closed: AtomicBool,
 }
 
 /// The forwards running on one SSH connection.
@@ -170,6 +173,7 @@ impl Forwards {
             running: Mutex::new(HashMap::new()),
             cancels: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(0),
+            closed: AtomicBool::new(false),
         }))
     }
 
@@ -213,6 +217,11 @@ impl Forwards {
         let ctx = Ctx { shared: self.0.clone(), rule_id: rule.id.clone(), generation };
         // Hold the lock until the new task is registered, so its first report is not dropped.
         let mut running = self.0.running.lock().unwrap();
+        // Asked for on a connection that is closing meanwhile (from another tab).
+        if self.0.closed.load(Ordering::Relaxed) {
+            self.0.report(&rule.id, ForwardState::Stopped);
+            return;
+        }
         let previous = running.remove(&rule.id).map(|old| {
             old.task.abort();
             old.task
@@ -236,7 +245,9 @@ impl Forwards {
     pub fn stop_all(&self) -> (Vec<ForwardRule>, Vec<JoinHandle<()>>) {
         let mut rules = Vec::new();
         let mut tasks = Vec::new();
-        for (rule_id, old) in self.0.running.lock().unwrap().drain() {
+        let mut running = self.0.running.lock().unwrap();
+        self.0.closed.store(true, Ordering::Relaxed);
+        for (rule_id, old) in running.drain() {
             if old.generation.is_some() && !old.task.inner().is_finished() {
                 self.0.report(&rule_id, ForwardState::Stopped);
                 rules.push(old.rule);
