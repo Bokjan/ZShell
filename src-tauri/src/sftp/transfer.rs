@@ -129,8 +129,9 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
         let mut src = tokio::fs::File::open(local).await.context(Error::new("transfer.openFailed").param("path", local.display()))?;
         let mut dst = sftp.create(remote).await.context(Error::new("transfer.createFailed").param("path", remote))?;
         let result = copy(&mut src, &mut dst, reporter).await;
-        let _ = dst.shutdown().await;
-        if let Err(e) = result {
+        // Some servers (NFS, quotas) report a failed write only when the file is closed.
+        let closed = dst.shutdown().await;
+        if let Err(e) = result.and_then(|()| Ok(closed?)) {
             let _ = sftp.remove_file(remote).await;
             return Err(with_file_context(e, Error::new("transfer.uploadFailed").param("path", local.display())));
         }
