@@ -29,6 +29,8 @@ interface Confirm {
   confirmLabel: string;
   danger?: boolean;
   action(): void;
+  /** A later question with the same key replaces this one, if it is still waiting. */
+  key?: string;
 }
 
 interface Menu {
@@ -87,7 +89,19 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const [chmodTarget, setChmodTarget] = useState<{ entry: FileEntry; value: string } | null>(null);
-  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  // Shown one at a time: an edit conflict found by a background save waits behind a delete
+  // or replace the user is answering, rather than taking its place.
+  const [confirms, setConfirms] = useState<(Confirm & { id: number })[]>([]);
+  const confirm = confirms[0] ?? null;
+  const confirmIds = useRef(0);
+  const ask = (question: Confirm) => {
+    const asked = { ...question, id: ++confirmIds.current };
+    setConfirms((queue) => {
+      const at = question.key == null ? -1 : queue.findIndex((q, i) => i > 0 && q.key === question.key);
+      return at < 0 ? [...queue, asked] : queue.map((q, i) => (i === at ? asked : q));
+    });
+  };
+  const answered = () => setConfirms((queue) => queue.slice(1));
   const [menu, setMenu] = useState<Menu | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   /** Files from another application are over the panel. */
@@ -214,7 +228,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
     const existing = new Set(names);
     const conflicts = localPaths.map(basename).filter((name) => existing.has(name));
     if (conflicts.length === 0) return void start();
-    setConfirm({
+    ask({
       title: t("sftp.replaceTitle"),
       message: t("sftp.replaceMessage", { names: conflicts.join("\n") }),
       confirmLabel: t("sftp.replace"),
@@ -277,12 +291,13 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
       if (errorCode(e) !== "edit.conflict") return updateTransfer(id, { save: { state: "failed", error: errorMessage(e) } });
       // Until the user decides.
       updateTransfer(id, { save: { state: "skipped" } });
-      setConfirm({
+      ask({
         title: t("sftp.editConflictTitle"),
         message: t("sftp.editConflictMessage", { name: transfer.label }),
         confirmLabel: t("sftp.editConflictReplace"),
         danger: true,
         action: () => void uploadEdit(id, true),
+        key: `edit:${id}`,
       });
     } finally {
       const again = editUploads.current.get(id);
@@ -520,7 +535,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   const askRemove = (targets: FileEntry[]) => {
     if (targets.length === 0) return;
     const [first] = targets;
-    setConfirm({
+    ask({
       title: t("sftp.deleteTitle"),
       message:
         targets.length > 1
@@ -941,15 +956,16 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
       )}
       {confirm && (
         <ConfirmDialog
+          key={confirm.id}
           title={confirm.title}
           message={confirm.message}
           confirmLabel={confirm.confirmLabel}
           danger={confirm.danger}
           onConfirm={() => {
-            setConfirm(null);
+            answered();
             confirm.action();
           }}
-          onCancel={() => setConfirm(null)}
+          onCancel={answered}
         />
       )}
     </div>
