@@ -832,7 +832,7 @@ function LogSection({
   const { t } = useTranslation();
   const [directory, setDirectory] = useState("");
   const [summary, setSummary] = useState<{ count: number; bytes: number } | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleteButton = useConfirmButton();
   const [fileName, setFileName] = useState(settings.fileName);
   useEffect(() => setFileName(settings.fileName), [settings.fileName]);
 
@@ -851,11 +851,11 @@ function LogSection({
   };
 
   const deleteAll = () => {
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
+    if (!deleteButton.armed) {
+      deleteButton.setArmed(true);
       return;
     }
-    setConfirmingDelete(false);
+    deleteButton.setArmed(false);
     logs.delete().then(refresh, console.error);
   };
 
@@ -954,10 +954,11 @@ function LogSection({
           type="button"
           className="danger"
           disabled={!summary || summary.count === 0}
+          ref={deleteButton.ref}
           onClick={deleteAll}
-          onBlur={() => setConfirmingDelete(false)}
+          onBlur={deleteButton.onBlur}
         >
-          {confirmingDelete ? t("settings.logDeleteAllConfirm", { count: summary?.count ?? 0 }) : t("settings.logDeleteAll")}
+          {deleteButton.armed ? t("settings.logDeleteAllConfirm", { count: summary?.count ?? 0 }) : t("settings.logDeleteAll")}
         </button>
       </div>
     </Section>
