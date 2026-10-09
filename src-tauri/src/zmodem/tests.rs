@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 
 use tokio::sync::{mpsc, watch};
 
-use super::frame::Kind;
+use super::frame::{Header, Kind, CANFC32, CANFDX};
 use super::link::{Link, TIMEOUT};
 use super::{detect, receive, send, Direction, Report};
 
@@ -150,6 +150,34 @@ async fn our_sender_and_receiver_agree() {
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
+/// A receiver that wants each subpacket acknowledged (no CANOVIO, as with a limited buffer).
+fn acknowledging(rinit: Header) -> Header {
+    assert_eq!(rinit.kind, Kind::Rinit);
+    Header::with_flags(Kind::Rinit, CANFDX | CANFC32)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sends_with_an_acknowledgement_per_subpacket() {
+    let src = temp_dir("ack-src");
+    let dst = temp_dir("ack-dst");
+    let files = make_files(&src);
+    let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
+    let (mut receiver, (to_receiver, from_receiver, _cancel_r)) = link();
+    pipe(from_sender, to_receiver);
+    pipe(from_receiver, to_sender);
+
+    let dst2 = dst.clone();
+    let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
+    let rinit = acknowledging(sender.header(TIMEOUT).await.unwrap());
+    let mut log = Log::default();
+    send::send(&mut sender, rinit, &files, &mut log).await.unwrap();
+    receiving.await.unwrap().unwrap();
+    assert_same_files(&files, &dst);
+    assert_eq!(log.events.iter().filter(|e| e.starts_with("sent ")).count(), files.len(), "{:?}", log.events);
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_deletes_the_partial_file() {
     let src = temp_dir("cancel-src");
@@ -255,6 +283,15 @@ async fn sends_to_lrz() {
     assert!(child.wait().unwrap().success());
     assert_same_files(&files, &dst);
     assert_eq!(log.events.iter().filter(|e| e.starts_with("sent ")).count(), files.len(), "{:?}", log.events);
+
+    // Acknowledging each subpacket, into a fresh folder.
+    let dst_ack = temp_dir("lrz-ack-dst");
+    let (mut link, mut child, _cancel) = spawn_with_link(&lrz, &[], &dst_ack);
+    let rinit = acknowledging(link.header(TIMEOUT).await.unwrap());
+    send::send(&mut link, rinit, &files, &mut Log::default()).await.unwrap();
+    assert!(child.wait().unwrap().success());
+    assert_same_files(&files, &dst_ack);
+    std::fs::remove_dir_all(&dst_ack).unwrap();
 
     // lrz refuses files that exist (without -y / -E).
     let (mut link, mut child, _cancel) = spawn_with_link(&lrz, &[], &dst);

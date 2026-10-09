@@ -99,8 +99,15 @@ async fn send_file(
 
     let mut block = vec![0u8; BLOCK];
     let mut packet = Vec::with_capacity(BLOCK * 2 + 16);
+    // Whether the reader has to move to `pos`: at the start (the receiver may resume a file it
+    // has part of) and when the receiver asks for other data.
+    let mut reposition = true;
+    let mut retries = 0;
     'frame: loop {
-        reader.seek(SeekFrom::Start(pos)).await.with_context(read_error)?;
+        if reposition {
+            reader.seek(SeekFrom::Start(pos)).await.with_context(read_error)?;
+            reposition = false;
+        }
         link.send(&frame::encode_header(&Header::with_pos(Kind::Data, pos), encoding)).await?;
         loop {
             let n = read_block(&mut reader, &mut block).await.with_context(read_error)?;
@@ -113,22 +120,41 @@ async fn send_file(
             pos += n as u64;
             report.progress(pos);
             let reply = if streaming {
-                link.header_if_any().await?
+                match link.header_if_any().await? {
+                    Some(header) => Reply::Header(header),
+                    None => continue,
+                }
             } else {
                 link.flush().await?;
-                Some(link.header(TIMEOUT).await?)
+                acknowledgement(link, pos).await?
             };
-            match reply.map(|h| h.kind) {
-                Some(Kind::Rpos) => {
-                    pos = unwrap_pos(reply.unwrap().pos(), pos);
+            match reply {
+                // ZCRCW ended the frame: the next subpacket needs a ZDATA header of its own.
+                Reply::Header(header) if header.kind == Kind::Ack => {
+                    retries = 0;
                     continue 'frame;
                 }
-                Some(Kind::Skip) => {
+                Reply::Header(header) if header.kind == Kind::Rpos => {
+                    pos = unwrap_pos(header.pos(), pos);
+                    reposition = true;
+                    continue 'frame;
+                }
+                Reply::Header(header) if header.kind == Kind::Skip => {
                     report.skipped(&file.name);
                     return Ok(());
                 }
-                Some(Kind::Can | Kind::Abort) => bail!(Error::new("zmodem.remoteCancelled")),
-                _ => {}
+                Reply::Header(header) if matches!(header.kind, Kind::Can | Kind::Abort) => bail!(Error::new("zmodem.remoteCancelled")),
+                Reply::Header(_) => {}
+                // No acknowledgement: send the subpacket again, as lrzsz does.
+                Reply::Timeout(e) => {
+                    retries += 1;
+                    if retries > MAX_RETRIES {
+                        return Err(e);
+                    }
+                    pos -= n as u64;
+                    reposition = true;
+                    continue 'frame;
+                }
             }
         }
         // End the frame, then the file; the receiver answers ZRINIT once it has everything.
@@ -137,7 +163,10 @@ async fn send_file(
         packet.extend(frame::encode_header(&Header::with_pos(Kind::Eof, pos), encoding));
         match ask(link, &packet, pos, Offer::Eof).await? {
             Answer::Done => break,
-            Answer::Pos(resume) => pos = resume,
+            Answer::Pos(resume) => {
+                pos = resume;
+                reposition = true;
+            }
             Answer::Skip => {
                 report.skipped(&file.name);
                 return Ok(());
@@ -146,6 +175,29 @@ async fn send_file(
     }
     report.sent(&file.name, file.size);
     Ok(())
+}
+
+enum Reply {
+    Header(Header),
+    Timeout(anyhow::Error),
+}
+
+/// Waits for the receiver's answer to a ZCRCW subpacket that ended at `pos`: its ZACK, or a
+/// header asking for something else. Anything else (a late ZACK for a subpacket sent again,
+/// a repeated ZRINIT) is skipped.
+async fn acknowledgement(link: &mut Link, pos: u64) -> Result<Reply> {
+    loop {
+        let header = match link.header(TIMEOUT).await {
+            Ok(header) => header,
+            Err(e) if is_timeout(&e) => return Ok(Reply::Timeout(e)),
+            Err(e) => return Err(e),
+        };
+        match header.kind {
+            Kind::Ack if u64::from(header.pos()) == pos & 0xffff_ffff => return Ok(Reply::Header(header)),
+            Kind::Rpos | Kind::Skip | Kind::Can | Kind::Abort => return Ok(Reply::Header(header)),
+            _ => {}
+        }
+    }
 }
 
 /// What `ask` is waiting for an answer to.
