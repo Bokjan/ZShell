@@ -7,7 +7,8 @@ const REPEAT_INTERVAL = 60;
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "min" | "max" | "step"> & {
   value: string;
-  onChange(text: string): void;
+  /** `stepped` when the change came from ▲ / ▼ or the arrow keys rather than typing. */
+  onChange(text: string, stepped: boolean): void;
   min: number;
   max: number;
   step?: number;
@@ -36,7 +37,7 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
   const stepBy = (steps: number) => {
     const next = Math.min(max, Math.max(min, current() + steps * step));
     latest.current = String(next);
-    onChange(latest.current);
+    onChange(latest.current, true);
     return steps > 0 ? next < max : next > min;
   };
 
@@ -65,7 +66,7 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
   const n = current();
   return (
     <span className="spin-input">
-      <input {...rest} value={value} inputMode="numeric" onChange={(e) => onChange(e.target.value)} onKeyDown={keyDown} />
+      <input {...rest} value={value} inputMode="numeric" onChange={(e) => onChange(e.target.value, false)} onKeyDown={keyDown} />
       <span className="spin-buttons">
         <button
           type="button"

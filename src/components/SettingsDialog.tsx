@@ -157,7 +157,12 @@ function filterSettings(content: HTMLElement, query: string): SectionId[] {
   return shown;
 }
 
-/** A number field that only reports values that are integers within range. */
+/**
+ * A number field that only reports values that are integers within range. Typed values take
+ * effect when the field loses the focus, on Enter or when the dialog closes, not on each
+ * key: on the way to 20000, scrollback would be cut to 2 lines (dropping every terminal's
+ * history) and the font set to size 1. Stepping takes effect at once.
+ */
 function NumberField({
   value,
   min,
@@ -174,6 +179,14 @@ function NumberField({
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   const valid = (n: number) => Number.isInteger(n) && n >= min && n <= max;
+  const commit = (next: string) => {
+    const n = Number(next);
+    if (next.trim() !== "" && valid(n) && n !== value) onChange(n);
+    else setText(String(value));
+  };
+  const commitLatest = useRef(() => {});
+  commitLatest.current = () => commit(text);
+  useEffect(() => () => commitLatest.current(), []);
   return (
     <SpinInput
       value={text}
@@ -182,12 +195,14 @@ function NumberField({
       step={step}
       start={value}
       aria-invalid={!valid(Number(text))}
-      onChange={(next) => {
+      onChange={(next, stepped) => {
         setText(next);
-        const n = Number(next);
-        if (next.trim() !== "" && valid(n)) onChange(n);
+        if (stepped) commit(next);
       }}
-      onBlur={() => setText(String(value))}
+      onBlur={() => commit(text)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) commit(text);
+      }}
     />
   );
 }
