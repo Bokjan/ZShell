@@ -60,6 +60,8 @@ struct Shared {
     /// Released over another window: the next request for the files is the drop's.
     dropped: AtomicBool,
     fetch: Mutex<Fetch>,
+    /// The drop target started taking the files asynchronously (`StartOperation`).
+    started: AtomicBool,
 }
 
 impl Shared {
@@ -232,6 +234,7 @@ impl IDataObjectAsyncCapability_Impl for DataObject_Impl {
 
     fn StartOperation(&self, _context: Ref<IBindCtx>) -> windows::core::Result<()> {
         self.in_operation.store(true, Ordering::Relaxed);
+        self.shared.started.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -310,6 +313,7 @@ pub(super) fn start(
         release: Mutex::new(None),
         dropped: AtomicBool::new(false),
         fetch: Mutex::new(Fetch::Idle),
+        started: AtomicBool::new(false),
     });
     window
         .run_on_main_thread(move || {
@@ -320,8 +324,14 @@ pub(super) fn start(
             let mut effect = DROPEFFECT_NONE;
             let hr = unsafe { DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect) };
             let release = *shared.release.lock().unwrap();
+            // A window that refuses the drop still ends it with DRAGDROP_S_DROP, but with no
+            // effect, and never asks for the files (synchronously, in the drop, or by starting
+            // an asynchronous operation).
+            let refused = effect == DROPEFFECT_NONE
+                && *shared.fetch.lock().unwrap() == Fetch::Idle
+                && !shared.started.load(Ordering::Relaxed);
             let result = match release {
-                Some(Release { inside, x, y }) if hr == DRAGDROP_S_DROP => {
+                Some(Release { inside, x, y }) if hr == DRAGDROP_S_DROP && (inside || !refused) => {
                     DragResult { outcome: if inside { Outcome::Inside } else { Outcome::Outside }, x, y }
                 }
                 _ => DragResult::cancelled(),
