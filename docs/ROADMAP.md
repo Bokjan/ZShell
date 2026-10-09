@@ -8,11 +8,11 @@
 - 优先补齐每天高频使用的操作（剪贴板、标签页、会话列表），再补 Xshell 的效率功能；不追求逐项对齐 Xshell。
 - 行为尽量与 OpenSSH 一致（认证顺序、known_hosts、ssh_config 语义），减少"在 ZShell 里能连、命令行不能连"或反过来的情况。
 
-## 现状（2026-10-09，M19 之后）
+## 现状（2026-10-09，M20 之后）
 
 ### 已具备
 
-- SSH：密码 / 私钥 / agent / keyboard-interactive / 自动认证，known_hosts（设置中可查看、搜索、删除），密码存钥匙串，多跳 ProxyJump，keepalive 与带退避的自动重连。
+- SSH：密码 / 私钥 / agent / keyboard-interactive / 自动认证，多因素认证（如密钥加验证码），known_hosts（设置中可查看、搜索、删除），密码存钥匙串，多跳 ProxyJump，keepalive 与带退避的自动重连。
 - 代理：SOCKS5、HTTP CONNECT（可带用户名和密码）与 ProxyCommand，按名称保存、由会话选用，SSH 与 Telnet 都可用；经跳板机时用第一台跳板机的代理；ssh_config 的 ProxyCommand 一并导入。
 - Telnet 与串口：Telnet 选项协商（BINARY、ECHO、SGA、TTYPE、NAWS）、可经 SSH 跳板机、保存的用户名和密码在登录提示时自动填入；串口列出系统设备，可设波特率、数据位、校验、停止位、流控，拔出后插回自动重连；两者都可发送 Break。
 - 终端：搜索、配色 / 字体 / 光标 / 回滚设置、本地终端（macOS 登录 shell、Windows PowerShell）；剪贴板快捷键、右键菜单、选中即复制、右键粘贴、多行粘贴确认、macOS Option 作为 Meta。
@@ -38,13 +38,12 @@
 
 | 方面 | 差距 | 优先级 |
 |---|---|---|
-| 认证 | 不支持多因素认证：服务器要求"密钥 + 验证码"之类的组合时连不上 | P1 |
 | 数据保护 | 会话等配置是明文，密码逐条存在系统凭据存储里，导出不能带密码 | P1 |
 | 杂项 | 没有应用锁 | P2 |
 
 ## 里程碑
 
-按计划顺序排列。翻译、上架 Store、多因素认证与其他里程碑没有依赖，可以随时提前。M17、M19、M21、M22 来自 2026-10 代码审查的设计层面观察，属于内部结构调整，用户可见的变化很少。
+按计划顺序排列。翻译、上架 Store 与其他里程碑没有依赖，可以随时提前。M17、M19、M21、M22 来自 2026-10 代码审查的设计层面观察，属于内部结构调整，用户可见的变化很少。
 
 | 阶段 | 内容 | 优先级 |
 |---|---|---|
@@ -69,26 +68,13 @@
 | **M17 前端结构** ✅ | 对话框栈、集中的快捷键分发、`App.tsx` 拆出状态与会话注册 | |
 | **M18 无障碍** ✅ | 终端读屏模式；对话框语义与焦点管理；标签栏、会话列表、文件列表的角色与键盘操作；状态播报；焦点可见、减少动态效果、对比度 | |
 | **M19 前后端类型与配置结构** ✅ | 从 Rust 生成 TypeScript 类型与错误码联合类型；打开会话的命令合并；`Profile` 按协议拆分（破坏性变更，2.0.0） | |
-| **M20 多因素认证** | 按服务器返回的剩余方法继续认证（`AuthenticationMethods publickey,keyboard-interactive` 等） | P1 |
+| **M20 多因素认证** ✅ | 按服务器返回的剩余方法继续认证（`AuthenticationMethods publickey,keyboard-interactive` 等） | |
 | **M21 会话生命周期** | 会话的全部资源由 guard 持有，`SessionManager::remove` 是唯一的清理入口；页面重载或窗口销毁时关闭所属会话；转发规则由单一所有者持有 | P2 |
 | **M22 大流量与背压** | 所有后端的输出都有上限：`Flow` 覆盖 SSH / Telnet / 串口，ZMODEM 接收有界，日志写入移出会话线程；批量传输使用单独的 SFTP channel | P2 |
 | **M23 加密保险库与带密码导出** | 会话与密码可选加密（主密码 / 系统凭据存储 / 不加密），首次引导；导出 / 导入可带密码（口令加密） | P1 |
 | **M24 应用锁** | 用 Touch ID / Windows Hello 锁定应用 | P2 |
 | **M25 翻译** | 语言设置界面，首批简体中文 | — |
 | **M26 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
-
-### M20 多因素认证
-
-**为什么**：服务器配置 `AuthenticationMethods publickey,keyboard-interactive`（Google Authenticator、Duo）或 `publickey,password` 时，第一步成功只得到 `partial_success`，还要用剩下的方法再认证一次。现在 `ssh/auth.rs` 每一步只看 `success()`，把 partial success 当作拒绝，接着试别的密钥（全被拒），之后一直用最初 `none` 探测得到的方法集合，最后报 `auth.failed`。这个错误码是永久错误，自动重连也不会重试。OpenSSH 能连上的服务器，ZShell 连不上。（来自 2026-10 代码审查 2.1.2）
-
-**设计要点**
-- 认证改写成按方法集合循环的结构：每一步的结果若是 `Failure { partial_success: true, remaining_methods }`，记下已通过的方法，用 `remaining_methods` 作为新的可选集合继续；`partial_success: false` 才算这个方法失败。已通过的方法不再重试（OpenSSH 同样会跳过）。
-- 方法顺序与 OpenSSH 默认的 `PreferredAuthentications` 一致：publickey（agent、会话指定的密钥、默认密钥文件）→ keyboard-interactive → password。现在服务器两种都提供时优先 password，与 OpenSSH 相反，在 PAM 验证码这类配置上会失败。
-- 认证方式不是"自动"时：会话指定的方法通过后若还有剩余方法，同样按上面的顺序继续，而不是直接失败；剩余方法里没有能用的，报出服务器要求的方法列表（新错误码，如 `auth.moreRequired`，带 `{methods}`）。
-- 保存的密码：现在 keyboard-interactive 只有一个不回显的提示时，会先用保存的密码回答一次。多因素时这个提示往往是验证码，填进密码会白白消耗一次尝试（Duo 等可能因此锁定帐户），所以改为只在提示文字含 "password"（不区分大小写）时才用保存的密码。
-- 提示仍在终端里内联显示，与 OpenSSH 一样；keyboard-interactive 的 `name` / `instruction` 照常显示，验证码提示不回显、不保存。
-- 自动重连：需要验证码的连接无法无人值守地重连，重连时照常在终端里提示。
-- 测试：临时 sshd 配 `AuthenticationMethods publickey,keyboard-interactive` 与 `publickey,password`，keyboard-interactive 用 PAM 或 `KbdInteractiveAuthentication` 加测试用户验证；单元测试覆盖方法集合的推进逻辑。
 
 ### M21 会话生命周期
 
