@@ -2,6 +2,18 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [1.6.0] - 2026-10-09
+
+### Features
+
+- Settings: a navigation list beside the settings scrolls to each section, and a search box filters the settings by their names, descriptions and choices (⌘F / Ctrl+F). The dialog closes with × in the corner (changes apply immediately), and Restore Defaults asks for a second click.
+- Settings › Appearance › Text size makes the app's own text larger (Large or Larger); the terminal keeps its own font size.
+- Settings › Keyboard Shortcuts lists the app's shortcuts for your platform.
+- Number fields such as the terminal font size have ▲ / ▼ buttons, and ↑ / ↓ step the value (ten steps with Shift).
+- On Windows and in full screen on macOS, the app's icon and name fill the top-left corner of the window.
+- Tooltips appear sooner, and at once when moving from one to the next.
+- The sidebar's top row keeps only New Session and Import/Export; create folders from the context menu of the session list or of a folder.
+
 ## [1.5.1] - 2026-10-09
 
 ### Bug Fixes
