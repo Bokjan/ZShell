@@ -70,6 +70,7 @@ import {
 } from "./lib/panes";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { useSettings } from "./lib/settings";
+import { useShortcuts } from "./lib/shortcuts";
 import { tabMark } from "./lib/terminalSchemes";
 import { useTitleBar } from "./lib/window";
 import "./styles.css";
@@ -348,8 +349,6 @@ function App() {
     const rect = document.querySelector(`.pane[data-pane="${key}"]`)?.getBoundingClientRect();
     return !rect || (direction === "row" ? rect.width >= 2 * MIN_PANE_WIDTH : rect.height >= 2 * MIN_PANE_HEIGHT);
   };
-  const splitRef = useRef(splitPane);
-  splitRef.current = splitPane;
 
   /**
    * Closes the panes, and the tabs left without any. A pane's space goes to a neighbor, which
@@ -551,84 +550,67 @@ function App() {
     );
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (isSettingsShortcut(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        setSettingsOpen(true);
-        return;
+  // Settings open over a dialog too.
+  useShortcuts(
+    (e) => {
+      if (!isSettingsShortcut(e)) return false;
+      setSettingsOpen(true);
+      return true;
+    },
+    { when: "always" },
+  );
+
+  useShortcuts((e) => {
+    if (isNewTabShortcut(e) && localAllowed) {
+      openLocalTab();
+      return true;
+    }
+    if (isSearchShortcut(e)) {
+      setSearchFocusKey((key) => key + 1);
+      return true;
+    }
+    const tabKey = tabShortcut(e);
+    if (tabKey) {
+      const tabs = tabsRef.current;
+      const index = tabs.findIndex((t) => t.key === activeKeyRef.current);
+      if (tabs.length === 0) return true;
+      if (tabKey.type === "close") {
+        closeFocused();
+        return true;
       }
-      // The rest act on the tabs behind an open dialog, and would move the focus to a
-      // terminal, where what is typed next for the dialog would go.
-      if (isDialogOpen()) return;
-      if (isNewTabShortcut(e) && localAllowed) {
-        e.preventDefault();
-        e.stopPropagation();
-        openLocalTab();
-        return;
+      let next: number;
+      if (tabKey.type === "next") next = (index + 1) % tabs.length;
+      else if (tabKey.type === "previous") next = (index - 1 + tabs.length) % tabs.length;
+      // ⌘9 / Alt+9 is always the last tab, as in browsers.
+      else next = tabKey.index === 8 ? tabs.length - 1 : tabKey.index;
+      if (next < tabs.length) setActiveKey(tabs[next].key);
+      return true;
+    }
+    const split = splitShortcut(e);
+    const side = paneFocusShortcut(e);
+    if ((split || side) && activeKeyRef.current !== null) {
+      const tab = tabsRef.current.find((t) => t.key === activeKeyRef.current);
+      if (!tab) return true;
+      if (split) splitPane(tab.focused, split);
+      else {
+        const next = neighbor(tab.layout, tab.focused, side!);
+        if (next !== null) focusPane(next);
       }
-      if (isSearchShortcut(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        setSearchFocusKey((key) => key + 1);
-        return;
-      }
-      const tabKey = tabShortcut(e);
-      if (tabKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        const tabs = tabsRef.current;
-        const index = tabs.findIndex((t) => t.key === activeKeyRef.current);
-        if (tabs.length === 0) return;
-        if (tabKey.type === "close") {
-          closeFocused();
-          return;
-        }
-        let next: number;
-        if (tabKey.type === "next") next = (index + 1) % tabs.length;
-        else if (tabKey.type === "previous") next = (index - 1 + tabs.length) % tabs.length;
-        // ⌘9 / Alt+9 is always the last tab, as in browsers.
-        else next = tabKey.index === 8 ? tabs.length - 1 : tabKey.index;
-        if (next < tabs.length) setActiveKey(tabs[next].key);
-        return;
-      }
-      const split = splitShortcut(e);
-      const side = paneFocusShortcut(e);
-      if ((split || side) && activeKeyRef.current !== null) {
-        e.preventDefault();
-        e.stopPropagation();
-        const tab = tabsRef.current.find((t) => t.key === activeKeyRef.current);
-        if (!tab) return;
-        if (split) splitRef.current(tab.focused, split);
-        else {
-          const next = neighbor(tab.layout, tab.focused, side!);
-          if (next !== null) focusPane(next);
-        }
-        return;
-      }
-      if (e.code === "KeyJ" && hasShiftShortcutModifiers(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (tabsRef.current.length > 0) setPaletteOpen(true);
-        return;
-      }
-      if (e.code === "KeyI" && hasShiftShortcutModifiers(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (tabsRef.current.length > 0) toggleCompose();
-        return;
-      }
-      const panel = PANEL_SHORTCUTS[e.code];
-      if (!panel || !hasShiftShortcutModifiers(e)) return;
-      // Capture phase, so the terminal never sees the keystroke.
-      e.preventDefault();
-      e.stopPropagation();
-      togglePanel(panel);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [togglePanel, closeFocused, focusPane, openLocalTab, toggleCompose, localAllowed]);
+      return true;
+    }
+    if (e.code === "KeyJ" && hasShiftShortcutModifiers(e)) {
+      if (tabsRef.current.length > 0) setPaletteOpen(true);
+      return true;
+    }
+    if (e.code === "KeyI" && hasShiftShortcutModifiers(e)) {
+      if (tabsRef.current.length > 0) toggleCompose();
+      return true;
+    }
+    const panel = PANEL_SHORTCUTS[e.code];
+    if (!panel || !hasShiftShortcutModifiers(e)) return false;
+    togglePanel(panel);
+    return true;
+  });
 
   // From the macOS app menu's "Settings…" item (⌘,).
   useEffect(() => {

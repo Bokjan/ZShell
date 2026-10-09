@@ -27,7 +27,6 @@ import {
   type ZmodemPhase,
   zmodem,
 } from "../lib/api";
-import { isDialogOpen } from "../lib/dialogs";
 import {
   clipboardKey,
   copyShortcutLabel,
@@ -38,6 +37,7 @@ import {
   selectAllShortcutLabel,
 } from "../lib/platform";
 import { useSettings } from "../lib/settings";
+import { useShortcuts } from "../lib/shortcuts";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -625,20 +625,18 @@ export function TerminalView({
       fitRef.current?.fit();
       termRef.current?.focus();
     });
-    // Capture phase, so the shortcut never reaches the terminal. A dialog (settings) above the
-    // terminal has the shortcut to itself.
-    const onKey = (e: KeyboardEvent) => {
-      if (!isFindShortcut(e) || isDialogOpen()) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setSearchKey((key) => key + 1);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("keydown", onKey, true);
-    };
+    return () => cancelAnimationFrame(frame);
   }, [active]);
+
+  // A dialog (settings) above the terminal has the shortcut to itself.
+  useShortcuts(
+    (e) => {
+      if (!isFindShortcut(e)) return false;
+      setSearchKey((key) => key + 1);
+      return true;
+    },
+    { enabled: active },
+  );
 
   const closeSearch = () => {
     setSearchKey(0);

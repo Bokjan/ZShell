@@ -47,6 +47,7 @@ import {
   type ZmodemReceive,
   type ZmodemSettings,
 } from "../lib/settings";
+import { useShortcuts } from "../lib/shortcuts";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
 import { CloseIcon } from "./icons";
@@ -274,17 +275,15 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   });
 
   // Ctrl+F also finds outside macOS: no shell has the focus here.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!dialog.isTop() || isComposing(e)) return;
-      if (isFindShortcut(e) || (!isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey)) {
-        e.preventDefault();
-        searchRef.current?.select();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [dialog]);
+  useShortcuts(
+    (e) => {
+      const ctrlF = !isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+      if (!isFindShortcut(e) && !ctrlF) return false;
+      searchRef.current?.select();
+      return true;
+    },
+    { dialog },
+  );
 
   const updateActive = useCallback(() => {
     const content = contentRef.current;
