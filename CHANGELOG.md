@@ -2,6 +2,12 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.3.2] - 2026-10-09
+
+### Bug Fixes
+
+- The session log folder (`ZShellLogs` in Documents by default) is no longer created just by opening the settings; it is created when the first log is written.
+
 ## [2.3.1] - 2026-10-09
 
 ### Bug Fixes
