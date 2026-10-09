@@ -859,11 +859,15 @@ function LogSection({
     logs.delete().then(refresh, console.error);
   };
 
-  // The file name is saved when the field is left, so that clearing it to type another
-  // doesn't bring the default back in the middle.
+  // The file name is saved when the field is left (or the dialog closes, which may not blur
+  // it first), so that clearing it to type another doesn't bring the default back in the
+  // middle.
   const commitFileName = () => {
     if (fileName.trim() !== settings.fileName) onChange({ fileName: fileName.trim() });
   };
+  const commitLatest = useRef(commitFileName);
+  commitLatest.current = commitFileName;
+  useEffect(() => () => commitLatest.current(), []);
 
   return (
     <Section id="logs">
