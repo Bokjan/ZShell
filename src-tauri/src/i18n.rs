@@ -141,7 +141,8 @@ mod tests {
                     continue;
                 }
                 let source = std::fs::read_to_string(&path).unwrap();
-                for (marker, prefix) in [("t!(\"", ""), ("Error::new(\"", "errors.")] {
+                // `errors.error(...)`: the proxy handshakes' helper (`proxy::Errors`).
+                for (marker, prefix) in [("t!(\"", ""), ("Error::new(\"", "errors."), ("errors.error(\"", "errors.")] {
                     for (at, _) in source.match_indices(marker) {
                         // Skip `format!(` and friends: the marker must start a token.
                         let preceding = source[..at].chars().next_back();
