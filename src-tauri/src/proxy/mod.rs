@@ -122,10 +122,16 @@ pub async fn connect(
             crate::net::set_keepalive(&stream, interval);
         }
         let errors = Errors { proxy: &proxy.name, target: host_port(host, port) };
-        let handshake = match proxy.kind {
-            ProxyKind::Socks5 => socks::connect(&mut stream, host, port, credentials.as_ref(), &errors).await,
-            _ => http::connect(&mut stream, host, port, credentials.as_ref(), &errors).await,
+        let handshake = async {
+            match proxy.kind {
+                ProxyKind::Socks5 => socks::connect(&mut stream, host, port, credentials.as_ref(), &errors).await,
+                _ => http::connect(&mut stream, host, port, credentials.as_ref(), &errors).await,
+            }
         };
+        // The proxy answers once it has reached the target, which has its own time limit.
+        let handshake = tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake)
+            .await
+            .unwrap_or_else(|_| Err(errors.error("proxy.timeout").into()));
         let Err(e) = handshake else {
             return Ok(Box::new(stream));
         };
@@ -140,6 +146,9 @@ pub async fn connect(
         }
     }
 }
+
+/// How long a SOCKS or HTTP proxy may take to answer, including connecting to the target.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Makes the errors of a handshake with a proxy, which name the proxy and the target.
 pub struct Errors<'a> {

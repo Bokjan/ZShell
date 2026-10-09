@@ -91,6 +91,7 @@
 - **known_hosts 管理**：设置里的 Known Hosts 打开单独的对话框，列出每行的主机、算法、SHA256 指纹与 `@cert-authority` / `@revoked` 标记；读不出密钥的行也列出（便于删掉坏行）。哈希过的主机名只显示为哈希，搜索框里输入 `host`、`host:port` 或 `[host]:port` 时由后端按 HMAC-SHA1 找出对应的哈希条目（同 `ssh-keygen -F`）。删除按"行号 + 该行原文"进行，文件在列出之后被改过（如 ssh 又加了一行）则报 `knownHosts.changed` 并重新列出；删除前把原文件存为 `known_hosts.old`（同 `ssh-keygen -R`），新内容先写临时文件再改名替换，保留原文件的权限和其余各行的换行符。一行里有多个主机名时删除整行。
 - **ProxyJump**：会话的 `jumpHosts` 按顺序引用其他会话，每一跳用被引用会话的地址和认证，但不展开它自己的跳板机。在上一跳连接上开 `direct-tcpip` channel，以其 `ChannelStream` 作为下一跳的传输层；主机密钥按每一跳自己的 host:port 校验，各跳的提示都在同一个终端里。被引用的会话不能删除，也必须保持是 SSH 会话。建跳板的部分（`ssh::tunnel`）SSH 与 Telnet 共用，返回到目标的字节流和各跳连接（`JumpChain`，丢弃时由后往前断开）。第一跳经代理连接时用的是第一台跳板机自己的代理（见下文"代理"）。
 - **keepalive 与重连**：会话配置 `keepaliveInterval`（默认 30 秒，连续 3 次无响应判定断线）与 `autoReconnect`（默认开）。`lost` 时前端按 2、4、8、16、30 秒退避重连，一直重试到标签页关闭；认证错误和主机密钥被拒绝时停止。Enter 立即重连，Ctrl+C 取消，`online` 事件立即重试。重连是新会话：SFTP 面板回到原目录，自动启动的转发规则重新启动。
+- **连接阶段的超时**：TCP 连接 15 秒；SOCKS / HTTP 代理的握手（含代理连接目标）30 秒；SSH 的版本与密钥交换 30 秒，不计等待用户回答主机密钥的时间。认证阶段不设超时（有密码等提示，服务器有自己的 `LoginGraceTime`）。超时不算认证错误，自动重连照常重试。
 
 ### Telnet 与串口
 

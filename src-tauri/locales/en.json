@@ -91,6 +91,7 @@
     },
     "ssh": {
       "handshakeFailed": "SSH handshake failed",
+      "handshakeTimeout": "{target} accepted the connection but did not complete the SSH handshake in time",
       "hostKeyRejected": "Host key not trusted, connection aborted",
       "channelFailed": "Cannot open a session channel",
       "jumpFailed": "Jump host {jump} cannot connect to {target}"
@@ -179,6 +180,7 @@
       "authFailed": "Proxy {proxy} rejected the user name or password",
       "refused": "Proxy {proxy} could not connect to {target}",
       "protocol": "Unexpected reply from proxy {proxy}",
+      "timeout": "Proxy {proxy} did not answer in time while connecting to {target}",
       "hostTooLong": "The host name is too long for a SOCKS proxy",
       "commandFailed": "Cannot run the proxy command {command}"
     }

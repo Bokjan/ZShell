@@ -269,6 +269,12 @@ async fn connect(
     handshake(hop, forward_agent, stream, io, routes, disconnect).await
 }
 
+/// How long the SSH version and key exchange may take, not counting the time a host key
+/// question waits for the user. A port that accepts connections but never speaks SSH (or a
+/// proxy command that hangs) would otherwise leave the tab connecting for ever, and an
+/// automatic reconnection would never try again.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+
 async fn handshake<S>(
     hop: &Profile,
     forward_agent: bool,
@@ -291,6 +297,8 @@ where
     // Drive the handshake while answering host key questions from the handler.
     let handshake = client::connect_stream(config, stream, handler);
     tokio::pin!(handshake);
+    let deadline = tokio::time::sleep(HANDSHAKE_TIMEOUT);
+    tokio::pin!(deadline);
     loop {
         tokio::select! {
             result = &mut handshake => {
@@ -302,7 +310,27 @@ where
             Some(query) = queries.recv() => {
                 let accepted = host_key::confirm(io, &hop.host, hop.port, &query).await;
                 let _ = query.reply.send(accepted);
+                deadline.as_mut().reset(tokio::time::Instant::now() + HANDSHAKE_TIMEOUT);
+            }
+            () = &mut deadline => {
+                return Err(Error::new("ssh.handshakeTimeout").param("target", host_port(&hop.host, hop.port)).into());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A server that accepts the connection but never speaks SSH.
+    #[tokio::test(start_paused = true)]
+    async fn handshake_gives_up_on_a_silent_server() {
+        let (stream, _server) = tokio::io::duplex(1024);
+        let profile = Profile::new("t".into(), "example.com".into(), 22, "alice".into());
+        let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
+        let result = handshake(&profile, false, stream, &mut io, RemoteRoutes::default(), watch::channel(None).0).await;
+        let error = Error::from(result.err().unwrap());
+        assert_eq!(error.code(), "ssh.handshakeTimeout");
     }
 }
