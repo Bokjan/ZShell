@@ -3,7 +3,6 @@
 //! the completion handler, showing the file as in progress meanwhile.
 
 use std::cell::RefCell;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use block2::DynBlock;
@@ -66,9 +65,7 @@ define_class!(
                 }
                 _ => Err(Error::new("transfer.invalidPath").param("path", url_text(url))),
             };
-            if download.pending.load(Ordering::Relaxed) == 0 {
-                self.release();
-            }
+            // Not `self` from here on: the last download released it (`release`).
             match result {
                 Ok(()) => completion.call((std::ptr::null_mut(),)),
                 Err(_) => {
@@ -93,10 +90,18 @@ impl PromiseDelegate {
         self.ivars().items.get(index)
     }
 
-    fn release(&self) {
-        let this: *const Self = self;
-        PROMISES.lock().unwrap().retain(|delegate| !std::ptr::eq(Retained::as_ptr(delegate), this));
-    }
+}
+
+/// Lets go of the promise delegate of a drop that is over.
+pub(super) fn release(download: &DropDownload) {
+    let released: Vec<_> = {
+        let mut promises = PROMISES.lock().unwrap();
+        let (released, kept) =
+            promises.drain(..).partition(|delegate| std::ptr::eq(Arc::as_ptr(&delegate.ivars().download), download));
+        *promises = kept;
+        released
+    };
+    drop(released);
 }
 
 struct SourceIvars {
@@ -143,7 +148,7 @@ define_class!(
                 let _ = done.send(result);
             }
             if outcome != Outcome::Outside {
-                self.ivars().promises.release();
+                release(&self.ivars().promises.ivars().download);
             }
             let this: *const Self = self;
             SOURCES.with_borrow_mut(|sources| sources.retain(|source| !std::ptr::eq(Retained::as_ptr(source), this)));
