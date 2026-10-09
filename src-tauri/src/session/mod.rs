@@ -352,17 +352,25 @@ impl TermIo {
     /// During a ZMODEM transfer that is the transfer's data; keystrokes only cancel it.
     /// Keystrokes are converted to the session's encoding.
     pub async fn recv(&mut self) -> Option<SessionInput> {
-        self.next_input(true).await
+        self.next_input(true, true).await
+    }
+
+    /// [`TermIo::recv`] without taking more of a ZMODEM transfer's data, which waits for the
+    /// backend meanwhile: for a backend whose own queue is full, to still see resizes and
+    /// keystrokes (which may cancel the transfer).
+    pub async fn recv_typed(&mut self) -> Option<SessionInput> {
+        self.next_input(true, false).await
     }
 
     /// `convert`: whether keystrokes are converted to the session's encoding. Prompts read
     /// UTF-8, which is also what the SSH protocol uses for passwords and answers.
-    async fn next_input(&mut self, convert: bool) -> Option<SessionInput> {
+    /// `transfers`: whether to take a ZMODEM transfer's data.
+    async fn next_input(&mut self, convert: bool, transfers: bool) -> Option<SessionInput> {
         loop {
             self.transfer_data = false;
             let input = tokio::select! {
                 biased;
-                Some(data) = self.zmodem_out.recv() => {
+                Some(data) = self.zmodem_out.recv(), if transfers => {
                     self.transfer_data = true;
                     return Some(SessionInput::Data(data));
                 }
@@ -396,7 +404,7 @@ impl TermIo {
     pub async fn read_line(&mut self, echo: bool) -> Option<String> {
         let mut line = String::new();
         loop {
-            let SessionInput::Data(data) = self.next_input(false).await? else {
+            let SessionInput::Data(data) = self.next_input(false, true).await? else {
                 continue;
             };
             for c in String::from_utf8_lossy(&strip_escapes(&data)).chars() {

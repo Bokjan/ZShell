@@ -9,6 +9,7 @@
 
 mod shell;
 
+use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -34,6 +35,8 @@ const READ_BUFFER: usize = 64 << 10;
 /// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
 /// is paced by how fast the shell reads).
 const INPUT_QUEUE: usize = 16;
+/// Input bytes kept waiting in the session task once the writer's queue is full.
+const INPUT_PENDING: usize = 64 << 10;
 
 /// Session backend: runs `shell` in a pseudo terminal until it exits.
 pub async fn run(shell: Shell, mut io: TermIo) {
@@ -135,14 +138,30 @@ impl Pty {
 
     /// Passes input and resizes to the shell until it exits; returns its exit status, or
     /// `None` if the tab is closing.
+    ///
+    /// Input the writer thread has no room for yet (the shell isn't reading) waits here, so
+    /// the shell exiting and resizes are still seen. Past [`INPUT_PENDING`] bytes, a ZMODEM
+    /// upload's data is left to wait in its own bounded queue.
     async fn bridge(&mut self, io: &mut TermIo) -> Option<Option<ExitStatus>> {
+        let mut pending: VecDeque<Vec<u8>> = VecDeque::new();
+        let mut pending_bytes = 0;
         loop {
+            let writer = self.input.clone();
+            let backed_up = pending_bytes >= INPUT_PENDING;
             tokio::select! {
                 status = &mut self.exit => return Some(status.ok().flatten()),
-                input = io.recv() => match input {
+                permit = async { writer?.reserve_owned().await.ok() }, if !pending.is_empty() => {
+                    let data = pending.pop_front().unwrap_or_default();
+                    pending_bytes -= data.len();
+                    if let Some(permit) = permit {
+                        permit.send(data);
+                    }
+                }
+                input = async { if backed_up { io.recv_typed().await } else { io.recv().await } } => match input {
                     Some(SessionInput::Data(data)) => {
-                        if let Some(input) = &self.input {
-                            let _ = input.send(data).await;
+                        if self.input.is_some() {
+                            pending_bytes += data.len();
+                            pending.push_back(data);
                         }
                     }
                     Some(SessionInput::Resize { cols, rows }) => {
@@ -375,6 +394,20 @@ mod tests {
         session.await.unwrap();
         let text = text(&output);
         assert!(text.contains("30 100") && text.contains("got hello"), "{text:?}");
+    }
+
+    /// Input the shell doesn't read doesn't hold up resizes.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn resizes_while_input_is_backed_up() {
+        let (io, input, output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(run(sh("stty raw -echo; sleep 1; stty size; exit 4"), io));
+        for _ in 0..200 {
+            input.send(SessionInput::Data(vec![b'x'; 16 << 10])).unwrap();
+        }
+        input.send(SessionInput::Resize { cols: 100, rows: 30 }).unwrap();
+        tokio::time::timeout(Duration::from_secs(10), session).await.unwrap().unwrap();
+        let text = text(&output);
+        assert!(text.contains("30 100"), "{text:?}");
     }
 
     #[tokio::test(flavor = "multi_thread")]
