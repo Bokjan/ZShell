@@ -2,6 +2,14 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.1.0] - 2026-10-09
+
+### Features
+
+- Servers that require more than one authentication method, such as a key and then a verification code (`AuthenticationMethods publickey,keyboard-interactive` for Google Authenticator or Duo) or a key and then a password, can be connected to: after each step, ZShell goes on with the methods the server still requires, as `ssh` does. Verification codes are asked in the terminal; the saved password only answers password prompts.
+- Keyboard-interactive is tried before password when a server offers both, as `ssh` does.
+- When a server requires a method ZShell cannot use, the error says which methods it requires.
+
 ## [2.0.0] - 2026-10-09
 
 ### Breaking Changes
