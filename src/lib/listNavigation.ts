@@ -30,3 +30,17 @@ export function navigateList(
   e.preventDefault();
   return true;
 }
+
+/**
+ * For a row of options that is one stop for Tab (radio buttons, tabs): the option that `key`
+ * moves to from option `at` of `count`, or null for other keys. The arrow keys wrap around
+ * (↑ / ↓ too unless `horizontalOnly`), Home and End go to the ends.
+ */
+export function rovingTarget(key: string, at: number, count: number, horizontalOnly = false): number | null {
+  const last = count - 1;
+  if (key === "ArrowRight" || (key === "ArrowDown" && !horizontalOnly)) return at >= last ? 0 : at + 1;
+  if (key === "ArrowLeft" || (key === "ArrowUp" && !horizontalOnly)) return at <= 0 ? last : at - 1;
+  if (key === "Home") return 0;
+  if (key === "End") return last;
+  return null;
+}

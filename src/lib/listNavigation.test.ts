@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { clampIndex, navigateList } from "./listNavigation";
+import { clampIndex, navigateList, rovingTarget } from "./listNavigation";
 
 const key = (name: string) => ({ key: name, keyCode: 0, nativeEvent: { isComposing: false }, preventDefault: vi.fn() }) as unknown as KeyboardEvent;
 
@@ -38,5 +38,21 @@ describe("navigateList", () => {
     const other = key("a");
     expect(navigateList(other, 3, 0, move)).toBe(false);
     expect(other.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe("rovingTarget", () => {
+  it("moves with the arrow keys, wrapping around, and to the ends", () => {
+    expect(rovingTarget("ArrowRight", 0, 3)).toBe(1);
+    expect(rovingTarget("ArrowDown", 2, 3)).toBe(0);
+    expect(rovingTarget("ArrowLeft", 0, 3)).toBe(2);
+    expect(rovingTarget("ArrowUp", 1, 3)).toBe(0);
+    expect(rovingTarget("Home", 2, 3)).toBe(0);
+    expect(rovingTarget("End", 0, 3)).toBe(2);
+  });
+
+  it("leaves ↑ / ↓ and other keys alone when asked to", () => {
+    expect(rovingTarget("ArrowDown", 0, 3, true)).toBeNull();
+    expect(rovingTarget("Enter", 0, 3)).toBeNull();
   });
 });

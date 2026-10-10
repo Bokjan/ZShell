@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
@@ -30,6 +30,7 @@ import {
 import { useConfirmButton } from "../lib/confirm";
 import { useDialog } from "../lib/dialogs";
 import { wholeNumber } from "../lib/format";
+import { rovingTarget } from "../lib/listNavigation";
 import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
 import { isWindows } from "../lib/platform";
 import { groupName } from "../lib/quickCommands";
@@ -116,6 +117,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const saving = useSubmitting();
   const { settings, theme } = useSettings();
   const [page, setPage] = useState<Page>("general");
+  const pageId = useId();
+  const tabsRef = useRef<HTMLDivElement>(null);
   // The saved settings of the profile's protocol; those of the others start empty.
   const current = profile?.connection;
   const savedRemote = current && current.protocol !== "serial" ? current : undefined;
@@ -810,18 +813,30 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
   const pages: Record<Page, ReactNode> = { general, connection, terminal, appearance: appearancePage };
 
+  // The page tabs are one stop for Tab; the arrow keys (and Home / End) switch pages.
+  const onTabKeyDown = (e: KeyboardEvent) => {
+    const next = rovingTarget(e.key, PAGES.indexOf(page), PAGES.length, true);
+    if (next === null) return;
+    e.preventDefault();
+    setPage(PAGES[next]);
+    tabsRef.current?.querySelectorAll<HTMLElement>("[role=tab]")[next]?.focus();
+  };
+
   return (
     <>
       <Modal dialog={dialog}>
         <form className="dialog profile-dialog" onSubmit={submit}>
           <h2>{profile ? t("profile.titleEdit") : t("profile.titleNew")}</h2>
-          <div className="segmented profile-pages" role="tablist">
+          <div className="segmented profile-pages" role="tablist" ref={tabsRef} onKeyDown={onTabKeyDown}>
             {PAGES.map((p) => (
               <button
                 key={p}
                 type="button"
                 role="tab"
+                id={`${pageId}-tab-${p}`}
+                aria-controls={`${pageId}-${p}`}
                 aria-selected={page === p}
+                tabIndex={page === p ? 0 : -1}
                 className={page === p ? "on" : undefined}
                 onClick={() => setPage(p)}
               >
@@ -834,7 +849,14 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           <div className="profile-body">
             <div className="profile-stack">
               {PAGES.map((p) => (
-                <div key={p} className={`profile-page${p === page ? "" : " hidden"}`} role="tabpanel" aria-hidden={p !== page}>
+                <div
+                  key={p}
+                  id={`${pageId}-${p}`}
+                  className={`profile-page${p === page ? "" : " hidden"}`}
+                  role="tabpanel"
+                  aria-labelledby={`${pageId}-tab-${p}`}
+                  aria-hidden={p !== page}
+                >
                   {pages[p]}
                 </div>
               ))}

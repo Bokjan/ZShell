@@ -55,6 +55,7 @@ import { KnownHostsDialog } from "./KnownHostsDialog";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
 import { ProxyDialog, proxySummary } from "./ProxyDialog";
+import { RadioGroup } from "./RadioGroup";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 import { SpinInput } from "./SpinInput";
 
@@ -398,35 +399,23 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
             onKeyDown={release}
           >
             <Section id="appearance">
-              <div className="segmented" role="radiogroup">
-                {APPEARANCES.map((appearance) => (
-                  <button
-                    key={appearance}
-                    role="radio"
-                    aria-checked={settings.appearance === appearance}
-                    className={settings.appearance === appearance ? "on" : undefined}
-                    onClick={() => update({ ...settings, appearance })}
-                  >
-                    {t(`settings.appearances.${appearance}`)}
-                  </button>
-                ))}
-              </div>
+              <RadioGroup
+                className="segmented"
+                label={t("settings.appearance")}
+                value={settings.appearance}
+                options={APPEARANCES.map((appearance) => ({ value: appearance, content: t(`settings.appearances.${appearance}`) }))}
+                onChange={(appearance) => update({ ...settings, appearance })}
+              />
               <Setting>
                 <div className="field">
                   <span>{t("settings.textSize")}</span>
-                  <div className="segmented" role="radiogroup">
-                    {TEXT_SIZES.map((textSize) => (
-                      <button
-                        key={textSize}
-                        role="radio"
-                        aria-checked={settings.textSize === textSize}
-                        className={settings.textSize === textSize ? "on" : undefined}
-                        onClick={() => update({ ...settings, textSize })}
-                      >
-                        {t(`settings.textSizes.${textSize}`)}
-                      </button>
-                    ))}
-                  </div>
+                  <RadioGroup
+                    className="segmented"
+                    label={t("settings.textSize")}
+                    value={settings.textSize}
+                    options={TEXT_SIZES.map((textSize) => ({ value: textSize, content: t(`settings.textSizes.${textSize}`) }))}
+                    onChange={(textSize) => update({ ...settings, textSize })}
+                  />
                 </div>
                 <p className="hint">{t("settings.textSizeHint")}</p>
               </Setting>
@@ -435,29 +424,33 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
             <Section id="terminal">
               <div className="field">
                 <span>{t("settings.colorScheme")}</span>
-                <div className="scheme-grid" role="radiogroup">
-                  <button
-                    role="radio"
-                    aria-checked={terminal.colorScheme === "auto"}
-                    className={`scheme-card${terminal.colorScheme === "auto" ? " on" : ""}`}
-                    onClick={() => setTerminal({ colorScheme: "auto" })}
-                  >
-                    <SchemePreview scheme={resolveScheme("auto", theme)} />
-                    <span className="scheme-name">{t("settings.schemeAuto")}</span>
-                  </button>
-                  {TERMINAL_SCHEMES.map((scheme) => (
-                    <button
-                      key={scheme.id}
-                      role="radio"
-                      aria-checked={terminal.colorScheme === scheme.id}
-                      className={`scheme-card${terminal.colorScheme === scheme.id ? " on" : ""}`}
-                      onClick={() => setTerminal({ colorScheme: scheme.id })}
-                    >
-                      <SchemePreview scheme={scheme} />
-                      <span className="scheme-name">{schemeName(scheme)}</span>
-                    </button>
-                  ))}
-                </div>
+                <RadioGroup
+                  className="scheme-grid"
+                  optionClassName="scheme-card"
+                  label={t("settings.colorScheme")}
+                  value={terminal.colorScheme}
+                  options={[
+                    {
+                      value: "auto",
+                      content: (
+                        <>
+                          <SchemePreview scheme={resolveScheme("auto", theme)} />
+                          <span className="scheme-name">{t("settings.schemeAuto")}</span>
+                        </>
+                      ),
+                    },
+                    ...TERMINAL_SCHEMES.map((scheme) => ({
+                      value: scheme.id,
+                      content: (
+                        <>
+                          <SchemePreview scheme={scheme} />
+                          <span className="scheme-name">{schemeName(scheme)}</span>
+                        </>
+                      ),
+                    })),
+                  ]}
+                  onChange={(colorScheme) => setTerminal({ colorScheme })}
+                />
               </div>
 
               <Setting>
@@ -537,19 +530,13 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
               <Setting>
                 <div className="field">
                   <span>{t("settings.rightClick")}</span>
-                  <div className="segmented" role="radiogroup">
-                    {RIGHT_CLICKS.map((rightClick) => (
-                      <button
-                        key={rightClick}
-                        role="radio"
-                        aria-checked={terminal.rightClick === rightClick}
-                        className={terminal.rightClick === rightClick ? "on" : undefined}
-                        onClick={() => setTerminal({ rightClick })}
-                      >
-                        {t(`settings.rightClicks.${rightClick}`)}
-                      </button>
-                    ))}
-                  </div>
+                  <RadioGroup
+                    className="segmented"
+                    label={t("settings.rightClick")}
+                    value={terminal.rightClick}
+                    options={RIGHT_CLICKS.map((rightClick) => ({ value: rightClick, content: t(`settings.rightClicks.${rightClick}`) }))}
+                    onChange={(rightClick) => setTerminal({ rightClick })}
+                  />
                 </div>
                 <p className="hint">{t("settings.rightClickHint")}</p>
               </Setting>
@@ -709,7 +696,7 @@ function FileSection({ settings, onChange }: { settings: FileSettings; onChange(
         <div className="field">
           <span>{t("settings.downloadDirectory")}</span>
           <div className="row">
-            <input className="grow" value={directory} readOnly title={directory} />
+            <input className="grow" value={directory} readOnly title={directory} aria-label={t("settings.downloadDirectory")} />
             <button type="button" onClick={() => void chooseDirectory()}>
               {t("settings.logChoose")}
             </button>
@@ -734,6 +721,7 @@ function FileSection({ settings, onChange }: { settings: FileSettings; onChange(
               value={settings.editor ? basename(settings.editor).replace(/\.(app|exe)$/i, "") : t("settings.editorDefault")}
               readOnly
               title={settings.editor}
+              aria-label={t("settings.editor")}
             />
             <button type="button" onClick={() => void chooseEditor()}>
               {t("settings.logChoose")}
@@ -897,7 +885,7 @@ function LogSection({
         <div className="field">
           <span>{t("settings.logDirectory")}</span>
           <div className="row">
-            <input className="grow" value={directory} readOnly title={directory} />
+            <input className="grow" value={directory} readOnly title={directory} aria-label={t("settings.logDirectory")} />
             <button type="button" onClick={() => void choose()}>
               {t("settings.logChoose")}
             </button>
@@ -1033,7 +1021,7 @@ function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
         <div className="field">
           <span>{t("settings.dataFolder")}</span>
           <div className="row">
-            <input className="grow" value={directory} readOnly title={directory} />
+            <input className="grow" value={directory} readOnly title={directory} aria-label={t("settings.dataFolder")} />
             <button type="button" onClick={() => revealItemInDir(directory).catch(console.error)} disabled={!directory}>
               {t("settings.logShow")}
             </button>

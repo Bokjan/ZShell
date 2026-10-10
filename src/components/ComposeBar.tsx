@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Compose, ComposeScope, SendResult } from "../lib/compose";
@@ -40,6 +40,8 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
   const draft = useRef("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const scopeButtonRef = useRef<HTMLButtonElement>(null);
+  const pickerId = useId();
 
   useEffect(() => inputRef.current?.focus(), []);
 
@@ -49,13 +51,18 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
     return () => clearTimeout(timer);
   }, [status]);
 
-  // The scope picker closes on a click elsewhere or Escape.
+  // The scope picker closes on a click elsewhere or Escape, which gives the focus back to its
+  // button if it was in the picker (it would otherwise be left on nothing).
   useEffect(() => {
     if (!picking) return;
     const onDown = (e: MouseEvent) => {
       if (!pickerRef.current?.contains(e.target as Node)) setPicking(false);
     };
-    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && !isComposing(e) && setPicking(false);
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || isComposing(e)) return;
+      if (pickerRef.current?.contains(document.activeElement)) scopeButtonRef.current?.focus();
+      setPicking(false);
+    };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {
@@ -136,18 +143,22 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
     <div className={`compose-bar${compose.sync ? " syncing" : ""}`}>
       <div className="compose-scope" ref={pickerRef}>
         <button
+          ref={scopeButtonRef}
           className={`compose-scope-button${compose.scope !== "current" ? " many" : ""}`}
           title={t("compose.scopeHint")}
+          aria-haspopup="dialog"
+          aria-expanded={picking}
+          aria-controls={picking ? pickerId : undefined}
           onClick={() => setPicking(!picking)}
         >
           {scopeLabel}
           <ChevronIcon />
         </button>
         {picking && (
-          <div className="compose-picker" role="dialog">
+          <div className="compose-picker" id={pickerId} role="dialog" aria-label={t("compose.scopeHint")}>
             {(["current", "tab", "all", "selected"] as const).map((scope) => (
               <label key={scope} className="compose-picker-option">
-                <input type="radio" checked={compose.scope === scope} onChange={() => setScope(scope)} />
+                <input type="radio" name={pickerId} checked={compose.scope === scope} onChange={() => setScope(scope)} />
                 {scopeName[scope]}
               </label>
             ))}
