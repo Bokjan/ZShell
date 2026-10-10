@@ -4,7 +4,7 @@ import type { TFunction } from "i18next";
 
 import { errorMessage, type ForwardKind, type ForwardRule } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
-import { hostPort } from "../lib/format";
+import { hostPort, parsePort } from "../lib/format";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
@@ -49,17 +49,17 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
   };
 
   const dynamic = kind === "dynamic";
-  const bindPortNumber = Number(bindPort);
-  const targetPortNumber = Number(targetPort);
+  const bindPortNumber = parsePort(bindPort, { allowZero: true });
+  const targetPortNumber = parsePort(targetPort);
   const host = bindHost.trim();
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (bindPort.trim() === "" || !Number.isInteger(bindPortNumber) || bindPortNumber < 0 || bindPortNumber > 65535) {
+    if (bindPortNumber === null) {
       setError(t("forwards.dialog.invalidBindPort"));
       return;
     }
-    if (!dynamic && (!targetHost.trim() || !Number.isInteger(targetPortNumber) || targetPortNumber < 1 || targetPortNumber > 65535)) {
+    if (!dynamic && (!targetHost.trim() || targetPortNumber === null)) {
       setError(t("forwards.dialog.invalidTarget"));
       return;
     }
@@ -71,7 +71,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
         bindHost: host,
         bindPort: bindPortNumber,
         targetHost: dynamic ? "" : targetHost.trim(),
-        targetPort: dynamic ? 0 : targetPortNumber,
+        targetPort: dynamic || targetPortNumber === null ? 0 : targetPortNumber,
         description: description.trim(),
         autoStart,
       });
@@ -86,9 +86,9 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
   const preview = explainRule(t, {
     kind,
     bindHost: host,
-    bindPort: Number.isInteger(bindPortNumber) ? bindPortNumber : 0,
+    bindPort: bindPortNumber ?? 0,
     targetHost: targetHost.trim() || "…",
-    targetPort: Number.isInteger(targetPortNumber) ? targetPortNumber : 0,
+    targetPort: targetPortNumber ?? 0,
   });
 
   return (
