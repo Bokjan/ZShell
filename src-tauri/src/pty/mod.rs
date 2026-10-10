@@ -293,9 +293,14 @@ fn child_process_name(parent: u32) -> Option<String> {
         }
         let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
         let mut found = None;
+        // Windows reuses process ids and doesn't give orphans a new parent: a process whose
+        // parent was an earlier holder of the shell's id started before the shell.
+        let shell_created = created(parent);
         let mut more = Process32FirstW(snapshot, &mut entry) != 0;
         while more {
-            if entry.th32ParentProcessID == parent {
+            let is_child = entry.th32ParentProcessID == parent
+                && !matches!((shell_created, created(entry.th32ProcessID)), (Some(shell), Some(child)) if child < shell);
+            if is_child {
                 let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
                 found = Some(shell::display_name(&String::from_utf16_lossy(&entry.szExeFile[..len])));
                 break;
@@ -304,6 +309,26 @@ fn child_process_name(parent: u32) -> Option<String> {
         }
         CloseHandle(snapshot);
         found
+    }
+}
+
+/// When process `pid` started (in 100 ns units), if that can be asked.
+#[cfg(windows)]
+fn created(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    // SAFETY: plain Win32 calls with valid out-pointers; the process handle is closed once.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return None;
+        }
+        let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let (mut creation, mut exit, mut kernel, mut user) = (zero, zero, zero, zero);
+        let ok = GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) != 0;
+        CloseHandle(process);
+        ok.then(|| (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
     }
 }
 
