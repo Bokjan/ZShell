@@ -40,6 +40,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
+import { Separator } from "./Separator";
 import { SessionImportDialog } from "./SessionImportDialog";
 
 /**
@@ -158,13 +159,21 @@ export function Sidebar(props: Props) {
       return next;
     });
 
+  const clampWidth = (width: number) => Math.round(Math.max(MIN_WIDTH, Math.min(width, MAX_WIDTH, window.innerWidth - MIN_MAIN)));
+
   const startResize = (e: ReactMouseEvent) => {
     const left = asideRef.current!.getBoundingClientRect().left;
     dragHorizontally(
       e,
-      (x) => setWidth(Math.round(Math.max(MIN_WIDTH, Math.min(x - left, MAX_WIDTH, window.innerWidth - MIN_MAIN)))),
+      (x) => setWidth(clampWidth(x - left)),
       () => storeWidth(widthRef.current),
     );
+  };
+
+  const nudgeWidth = (pixels: number) => {
+    const next = clampWidth(widthRef.current + pixels);
+    setWidth(next);
+    storeWidth(next);
   };
 
   const resetWidth = () => {
@@ -577,7 +586,16 @@ export function Sidebar(props: Props) {
           <kbd>{settingsShortcutLabel}</kbd>
         </button>
       </footer>
-      <div className="sidebar-splitter" onMouseDown={startResize} onDoubleClick={resetWidth} title={t("sidebar.resizeHint")} />
+      <Separator
+        className="sidebar-splitter"
+        label={t("sidebar.resize")}
+        title={t("sidebar.resizeHint")}
+        orientation="vertical"
+        value={((width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH)) * 100}
+        onMove={nudgeWidth}
+        onReset={resetWidth}
+        onMouseDown={startResize}
+      />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {importing && <SessionImportDialog path={importing} onClose={() => setImporting(null)} onImported={onChanged} />}
       {deleting && (

@@ -1049,7 +1049,8 @@ body.dragging-row {
   top: 3px;
   height: 1px;
 }
-.pane-divider:hover::before {
+.pane-divider:hover::before,
+.pane-divider:focus-visible::before {
   background: var(--accent);
 }
 .terminal-wrap {
@@ -1274,7 +1275,9 @@ body.dragging-row {
 }
 /* A faint highlight shows that the edge can be dragged. */
 .splitter:hover,
-.sidebar-splitter:hover {
+.sidebar-splitter:hover,
+.splitter:focus-visible,
+.sidebar-splitter:focus-visible {
   background: var(--accent-soft);
 }
 body.resizing {

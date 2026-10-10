@@ -9,6 +9,7 @@ import { dividers, equalize, moveDivider, paneRects, type Divider } from "../lib
 import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { ForwardsPanel } from "./ForwardsPanel";
+import { Separator } from "./Separator";
 import { SftpPanel } from "./SftpPanel";
 import { TerminalView, type PasteTarget } from "./TerminalView";
 
@@ -84,16 +85,35 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
     dragHorizontally(e, (x) => setPanelWidth(Math.max(MIN_PANEL, Math.min(rect.right - x, rect.width - MIN_TERMINAL))));
   };
 
-  const startDivider = (e: ReactMouseEvent, divider: Divider) => {
+  /** The divider's split on screen along its direction, and the smallest size of a pane next to it (a fraction of the split). */
+  const splitExtent = (divider: Divider) => {
     const area = areaRef.current!.getBoundingClientRect();
     const row = divider.direction === "row";
-    // The split's extent on screen along its direction.
     const start = row ? area.left + divider.rect.x * area.width : area.top + divider.rect.y * area.height;
     const length = row ? divider.rect.w * area.width : divider.rect.h * area.height;
-    const min = (row ? MIN_PANE_WIDTH : MIN_PANE_HEIGHT) / length;
-    dragSplitter(e, row ? "x" : "y", (position) =>
+    return { start, length, min: (row ? MIN_PANE_WIDTH : MIN_PANE_HEIGHT) / length };
+  };
+
+  const startDivider = (e: ReactMouseEvent, divider: Divider) => {
+    const { start, length, min } = splitExtent(divider);
+    dragSplitter(e, divider.direction === "row" ? "x" : "y", (position) =>
       h.onLayout(tab.key, moveDivider(tabRef.current.layout, divider, (position - start) / length, min)),
     );
+  };
+
+  // From the keyboard: from where the divider is in the latest layout, as keys can repeat
+  // faster than the page renders.
+  const nudgeDivider = (divider: Divider, pixels: number) => {
+    const same = (d: Divider) => d.index === divider.index && d.path.join(".") === divider.path.join(".");
+    const layout = tabRef.current.layout;
+    const current = dividers(layout).find(same) ?? divider;
+    const { length, min } = splitExtent(current);
+    h.onLayout(tab.key, moveDivider(layout, current, current.at + pixels / length, min));
+  };
+
+  const nudgePanel = (pixels: number) => {
+    const page = pageRef.current!.getBoundingClientRect();
+    setPanelWidth((width) => Math.max(MIN_PANEL, Math.min(width - pixels, page.width - MIN_TERMINAL)));
   };
 
   const panels = (pane: Pane) => {
@@ -134,6 +154,8 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
   };
 
   const anyMounted = tab.panes.some((pane) => (mounted[pane.key] ?? []).length > 0);
+  // For where the side panel's edge is, as screen readers are told; read when rendering.
+  const pageWidth = pageRef.current?.clientWidth ?? 0;
 
   // Dialogs of an inactive tab (a background save's conflict) wait for it to be shown.
   return (
@@ -146,6 +168,27 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
         aria-labelledby={tabId(tab.key)}
       >
         <div className={`pane-area${split ? " split" : ""}${syncing !== null ? " syncing" : ""}`} ref={areaRef}>
+          {/* Before the panes, for Tab: a terminal keeps Tab for the shell. */}
+          {dividers(tab.layout).map((divider) => {
+            const { rect, at } = divider;
+            const row = divider.direction === "row";
+            const style = row
+              ? { left: percent(rect.x + at * rect.w), top: percent(rect.y), height: percent(rect.h) }
+              : { top: percent(rect.y + at * rect.h), left: percent(rect.x), width: percent(rect.w) };
+            return (
+              <Separator
+                key={`${divider.path.join(".")}:${divider.index}`}
+                className={`pane-divider ${divider.direction}`}
+                style={style}
+                label={t("tabs.paneDivider")}
+                orientation={row ? "vertical" : "horizontal"}
+                value={at * 100}
+                onMove={(pixels) => nudgeDivider(divider, pixels)}
+                onReset={() => h.onLayout(tab.key, equalize(tabRef.current.layout, divider.path))}
+                onMouseDown={(e) => startDivider(e, divider)}
+              />
+            );
+          })}
           {tab.panes.map((pane) => {
             const profile = h.profileOf(pane);
             const rect = rects.get(pane.key) ?? { x: 0, y: 0, w: 1, h: 1 };
@@ -182,26 +225,17 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
               </div>
             );
           })}
-          {dividers(tab.layout).map((divider) => {
-            const { rect, at } = divider;
-            const row = divider.direction === "row";
-            const style = row
-              ? { left: percent(rect.x + at * rect.w), top: percent(rect.y), height: percent(rect.h) }
-              : { top: percent(rect.y + at * rect.h), left: percent(rect.x), width: percent(rect.w) };
-            return (
-              <div
-                key={`${divider.path.join(".")}:${divider.index}`}
-                className={`pane-divider ${divider.direction}`}
-                style={style}
-                onMouseDown={(e) => startDivider(e, divider)}
-                onDoubleClick={() => h.onLayout(tab.key, equalize(tabRef.current.layout, divider.path))}
-              />
-            );
-          })}
         </div>
         {(anyMounted || tab.sidePanel) && (
           <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>
-            <div className="splitter" onMouseDown={startResize} />
+            <Separator
+              className="splitter"
+              label={t("tabs.panelDivider")}
+              orientation="vertical"
+              value={pageWidth > 0 ? ((pageWidth - panelWidth) / pageWidth) * 100 : 50}
+              onMove={nudgePanel}
+              onMouseDown={startResize}
+            />
             {tab.panes.map(panels)}
             {tab.sidePanel && !panelHere && <div className="side-panel-empty">{t("tabs.panelUnavailable")}</div>}
           </div>
