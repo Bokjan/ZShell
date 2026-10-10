@@ -151,11 +151,12 @@ pub async fn sftp_edit_open(
 ) -> Result<PathBuf> {
     let sftp = connections.get(id)?.sftp().await?;
     let local = edits.local_path(&edit_id, &remote_path)?;
+    let remote_stamp = edit::remote_stamp(&sftp, &remote_path).await;
     let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&edit_id));
     let result = transfer::download_to(&sftp, &[(remote_path.clone(), local.clone())], &mut reporter).await;
     transfers.finish(&edit_id);
     result?;
-    edits.start(&sftp, edit_id.clone(), remote_path, local.clone(), on_event).await;
+    edits.start(edit_id.clone(), remote_path, local.clone(), remote_stamp, on_event);
     if let Err(e) = open_editor(&app, &settings, local.clone()).await {
         edits.stop(&edit_id);
         return Err(e);

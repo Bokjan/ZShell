@@ -27,7 +27,7 @@ const KEEP_OLD: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// What a remote file looked like, to notice when someone else changed it.
 #[derive(Clone, Copy, PartialEq, Debug)]
-struct Stamp {
+pub struct Stamp {
     size: u64,
     modified: Option<u32>,
 }
@@ -76,8 +76,8 @@ impl Edits {
     }
 
     /// Starts watching a file downloaded to `local`, reporting saves through `events`.
-    pub async fn start(&self, sftp: &SftpSession, edit_id: String, remote: String, local: PathBuf, events: Channel<EditEvent>) {
-        let remote_stamp = remote_stamp(sftp, &remote).await;
+    /// `remote_stamp`: the remote file's, taken before downloading it (see `remote_stamp`).
+    pub fn start(&self, edit_id: String, remote: String, local: PathBuf, remote_stamp: Option<Stamp>, events: Channel<EditEvent>) {
         let stopped = Arc::new(AtomicBool::new(false));
         let edit = Arc::new(Edit {
             remote,
@@ -145,7 +145,9 @@ impl Edits {
     }
 }
 
-async fn remote_stamp(sftp: &SftpSession, remote: &str) -> Option<Stamp> {
+/// The remote file's size and modification time, which tell whether it changed since. Taken
+/// before downloading it for editing: a change made during the download then shows as one.
+pub async fn remote_stamp(sftp: &SftpSession, remote: &str) -> Option<Stamp> {
     let metadata = sftp.metadata(remote).await.ok()?;
     Some(Stamp { size: metadata.size.unwrap_or(0), modified: metadata.mtime })
 }
