@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -30,6 +30,8 @@ interface Props {
   active: boolean;
   /** How many uploads and downloads are running, each time that changes. */
   onTransfers(count: number): void;
+  /** How many questions are waiting, each time that changes. */
+  onQuestions(count: number): void;
 }
 
 interface Menu {
@@ -44,7 +46,7 @@ const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name 
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
  */
-export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) {
+export function SftpPanel({ sessionId, connected, active, onTransfers, onQuestions }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<FileView>(storedView);
   /** The name filter; null while the filter field is closed. */
@@ -66,7 +68,10 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
     setFilter(null);
   });
   const { cwd, entries, loading, error, fail, load, reload } = listing;
-  const { confirm, ask, answered } = useConfirmQueue();
+  const { confirm, count: questions, ask, answered } = useConfirmQueue();
+  const onQuestionsRef = useRef(onQuestions);
+  onQuestionsRef.current = onQuestions;
+  useEffect(() => onQuestionsRef.current(questions), [questions]);
   const transfers = useTransfers({ sessionId, connected, active, cwdRef: listing.cwdRef, entries, load, ask, fail, onTransfers });
 
   const visible = useMemo(() => visibleEntries(entries, view, filter ?? ""), [entries, view, filter]);

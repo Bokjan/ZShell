@@ -31,6 +31,11 @@ export interface Pane {
   logStopped: boolean;
   /** Uploads and downloads running in the pane's file panel; closing the pane cancels them. */
   transfers: number;
+  /**
+   * Questions waiting in the pane's file panel (an edit conflict a background save found),
+   * marked on its tab while the panel is out of sight.
+   */
+  questions: number;
 }
 
 /** How a tab's panes are arranged: one pane, or several side by side (`row`) or stacked (`column`). */

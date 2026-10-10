@@ -467,6 +467,15 @@ body.dragging-row {
   border-radius: 1px;
   background: var(--danger);
 }
+/* A question waiting in the file panel, out of sight. */
+.tab-question {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--warn);
+}
 .tab-title-input {
   width: calc(120px * var(--text-scale));
   min-width: 0;
@@ -1276,11 +1285,15 @@ body.dragging-row {
   line-height: calc(16px * var(--text-scale));
   text-align: center;
 }
-.badge.failed {
+.badge.failed,
+.badge.question {
   min-width: 8px;
   height: 8px;
   padding: 0;
   background: var(--danger);
+}
+.badge.question {
+  background: var(--warn);
 }
 
 /* Side panel + splitter */

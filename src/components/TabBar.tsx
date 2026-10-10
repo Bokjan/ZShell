@@ -254,11 +254,17 @@ export function TabBar({
     document.getElementById(tabId(tabs[next].key))?.focus();
   };
 
+  /** Whether a pane of the tab has a question waiting in its file panel, out of sight. */
+  const questionWaiting = (tab: Tab) =>
+    tab.panes.some((p) => p.questions > 0 && !(tab.key === activeKey && tab.focused === p.key && tab.sidePanel === "files"));
+
   const statusLabel = (tab: Tab) => {
     const pane = focusedPane(tab);
+    const question = questionWaiting(tab) ? t("tabs.questionWaiting") : null;
     if (pane.status === "connecting") return t("tabs.status.connecting");
-    if (pane.status === "closed") return t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed");
-    return null;
+    if (pane.status !== "closed") return question;
+    const closed = t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed");
+    return question ? `${closed}. ${question}` : closed;
   };
 
   const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
@@ -318,6 +324,7 @@ export function TabBar({
               {color && <span className="tab-color" style={{ background: color }} />}
               <span className={`status-dot ${pane.status}`} />
               {isLogging(pane) && <span className="tab-log" title={t("tabs.logging", { path: pane.logPath })} />}
+              {questionWaiting(tab) && <span className="tab-question" title={t("tabs.questionWaiting")} />}
               {editing === tab.key ? (
                 <TitleEditor
                   initial={title}
@@ -387,7 +394,14 @@ export function TabBar({
       )}
       {tabs.length > 0 && (
         <div className="panel-switch">
-          {segment("files", t("tabs.files"), t("tabs.filesHint", { shortcut: shiftShortcutLabel("E") }))}
+          {segment(
+            "files",
+            t("tabs.files"),
+            activeTab && questionWaiting(activeTab)
+              ? t("tabs.filesHintQuestion", { shortcut: shiftShortcutLabel("E") })
+              : t("tabs.filesHint", { shortcut: shiftShortcutLabel("E") }),
+            activeTab && questionWaiting(activeTab) && <span className="badge question" />,
+          )}
           {segment(
             "forwards",
             t("tabs.forwards"),

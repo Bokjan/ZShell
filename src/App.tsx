@@ -368,6 +368,7 @@ function App() {
     onLayout: (tabKey, layout) => updateTab(tabKey, { layout }),
     onAreaSize,
     onTransfers: (key, count) => updatePane(key, { transfers: count }),
+    onQuestions: (key, count) => updatePane(key, { questions: count }),
     menuItems: terminalMenu,
     profileOf,
     onProfileChanged,

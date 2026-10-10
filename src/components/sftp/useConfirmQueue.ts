@@ -25,5 +25,5 @@ export function useConfirmQueue() {
     });
   };
   const answered = () => setConfirms((queue) => queue.slice(1));
-  return { confirm: confirms[0] ?? null, ask, answered };
+  return { confirm: confirms[0] ?? null, count: confirms.length, ask, answered };
 }

@@ -61,6 +61,7 @@ const newPane = (key: number, spec: PaneSpec): Pane => ({
   logPath: null,
   logStopped: false,
   transfers: 0,
+  questions: 0,
 });
 
 const mapTab = (state: TabsState, key: number, f: (tab: Tab) => Tab): TabsState => ({
