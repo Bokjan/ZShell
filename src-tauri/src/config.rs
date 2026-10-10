@@ -5,8 +5,7 @@
 //! The order of each file is the order shown: a folder's subfolders and sessions appear in
 //! file order (subfolders first).
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +14,7 @@ use ts_rs::TS;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::net::Route;
+use crate::persist::{unique_ids, JsonFile, SetAside};
 use crate::proxy::Proxy;
 
 /// A saved session: what it connects to (by protocol), and how its tabs behave.
@@ -33,13 +33,17 @@ pub struct Profile {
     pub connection: Connection,
     /// Reconnect automatically when an established connection is lost, or when a serial
     /// device is plugged in again.
+    #[serde(default)]
     pub auto_reconnect: bool,
     /// The remote side's character encoding, one of [`crate::encoding::SUPPORTED`].
+    #[serde(default = "default_encoding")]
     pub encoding: String,
     /// Commands typed into each new shell, in order, each once the shell shows a prompt.
     /// Sent by the frontend.
+    #[serde(default)]
     pub login_commands: Vec<String>,
     /// Record a session log from the start of each connection.
+    #[serde(default)]
     pub auto_log: bool,
     /// The quick command group its tabs show first; `None` for the default group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,10 +79,12 @@ pub struct Remote {
     pub host: String,
     pub port: u16,
     /// Required for SSH; for Telnet, optional and typed at the login prompt.
+    #[serde(default)]
     pub username: String,
     /// Sessions to connect through, in order (OpenSSH's `ProxyJump a,b`). Each hop uses its
     /// own session's address and authentication, but not that session's jump hosts. Only
     /// SSH sessions can be jump hosts.
+    #[serde(default)]
     pub jump_hosts: Vec<String>,
     /// The id of the proxy to connect through. Not kept with jump hosts, where the first jump
     /// host's own proxy is used (see [`Route`]).
@@ -87,8 +93,10 @@ pub struct Remote {
     pub proxy: Option<String>,
     /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
     /// drop an SSH connection; Telnet uses TCP keepalives.
+    #[serde(default = "default_keepalive_interval")]
     pub keepalive_interval: u32,
     /// The terminal type the remote side is told (`TERM`, Telnet's terminal type option).
+    #[serde(default = "default_term_type")]
     pub term_type: String,
 }
 
@@ -97,13 +105,17 @@ pub struct Remote {
 pub struct SshOptions {
     #[serde(flatten)]
     pub remote: Remote,
+    #[serde(default)]
     pub auth: AuthMethod,
     /// Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
+    #[serde(default)]
     pub forward_agent: bool,
     /// Environment variables for the remote shell (OpenSSH's `SetEnv`); the server only
     /// accepts those its `AcceptEnv` allows.
+    #[serde(default)]
     pub env: Vec<EnvVar>,
     /// Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
+    #[serde(default)]
     pub forwards: Vec<ForwardRule>,
 }
 
@@ -476,10 +488,11 @@ pub fn default_term_type() -> String {
     "xterm-256color".to_owned()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum AuthMethod {
     /// Agent keys, default key files, then keyboard-interactive / password, like OpenSSH.
+    #[default]
     Auto,
     Password,
     PublicKey { key_path: String },
@@ -573,6 +586,9 @@ impl ProfileStore {
         let (folders_file, folders) = JsonFile::load(path.with_file_name("folders.json"), set_aside);
         let (proxies_file, proxies) = JsonFile::load(path.with_file_name("proxies.json"), set_aside);
         let mut state = State { profiles, folders, proxies };
+        unique_ids(state.profiles.iter_mut().map(|p| &mut p.id));
+        unique_ids(state.folders.iter_mut().map(|f| &mut f.id));
+        unique_ids(state.proxies.iter_mut().map(|p| &mut p.id));
         state.repair();
         Self { profiles_file, folders_file, proxies_file, state: Mutex::new(state) }
     }
@@ -859,153 +875,10 @@ fn jump_host_users<'a>(state: &'a State, id: &str) -> Vec<&'a str> {
     state.profiles.iter().filter(|p| p.jump_hosts().iter().any(|j| j == id)).map(|p| p.name.as_str()).collect()
 }
 
-/// A store's JSON file. One that couldn't be read at startup is never written over.
-pub struct JsonFile {
-    path: PathBuf,
-    found: Found,
-}
-
-/// What a store's file was like at startup.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Found {
-    /// Read, or not there yet.
-    Read,
-    /// Not readable as the store's data, and moved aside: the store starts a new file.
-    SetAside,
-    /// Not readable, or not movable: left as it is, and not written while the app runs.
-    LeftAlone,
-}
-
-/// Reading a file again after an error, for one that something else (an antivirus, a sync
-/// client) has open for a moment.
-const READ_ATTEMPTS: u32 = 3;
-const READ_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
-
-impl JsonFile {
-    /// Reads the file at `path`, or gives the default if it doesn't exist yet.
-    ///
-    /// A file that can be read but not as `T` (cut short by a crash, edited by hand, or
-    /// written by a newer version) is moved aside to `<name>.bad-<time>` and the store starts
-    /// from the default: otherwise the app would fail to start, or the next save would replace
-    /// the file. One that can't be read at all, or moved, is left where it is and never written
-    /// (a restart reads it again). `set_aside` collects these files for the frontend to report.
-    pub fn load<T: serde::de::DeserializeOwned + Default>(path: PathBuf, set_aside: &SetAside) -> (Self, T) {
-        let mut attempt = 1;
-        let bytes = loop {
-            match fs::read(&path) {
-                Ok(bytes) => break bytes,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self { path, found: Found::Read }, T::default()),
-                Err(_) if attempt < READ_ATTEMPTS => {
-                    attempt += 1;
-                    std::thread::sleep(READ_RETRY_DELAY);
-                }
-                Err(e) => {
-                    set_aside.add(&path, &e.into(), false);
-                    return (Self { path, found: Found::LeftAlone }, T::default());
-                }
-            }
-        };
-        match serde_json::from_slice(&bytes) {
-            Ok(value) => (Self { path, found: Found::Read }, value),
-            Err(e) => {
-                let found = if set_aside.add(&path, &e.into(), true) { Found::SetAside } else { Found::LeftAlone };
-                (Self { path, found }, T::default())
-            }
-        }
-    }
-
-    pub fn write(&self, value: &impl Serialize) -> Result<()> {
-        self.stage(value)?.commit()
-    }
-
-    /// Writes `value` next to the file, to be put in place by [`Staged::commit`].
-    pub fn stage(&self, value: &impl Serialize) -> Result<Staged> {
-        if self.found == Found::LeftAlone {
-            let name = self.path.file_name().unwrap_or_default().to_string_lossy();
-            return Err(Error::new("config.unreadable").param("name", name));
-        }
-        stage_json(&self.path, value)
-    }
-}
-
-/// Files that could not be read at startup (see [`JsonFile::load`]).
-#[derive(Default)]
-pub struct SetAside(Mutex<Vec<SetAsideFile>>);
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct SetAsideFile {
-    pub path: PathBuf,
-    /// Where the file was moved; `None` if it was left as it is (see [`Found::LeftAlone`]).
-    pub moved_to: Option<PathBuf>,
-    pub error: String,
-}
-
-impl SetAside {
-    /// Records a file that couldn't be read, moving it aside if `move_it`; returns whether
-    /// it was moved.
-    fn add(&self, path: &Path, error: &anyhow::Error, move_it: bool) -> bool {
-        let name = path.file_name().unwrap_or_default().to_string_lossy();
-        let moved = path.with_file_name(format!("{name}.bad-{}", chrono::Local::now().format("%Y%m%d-%H%M%S")));
-        let moved_to = move_it.then(|| fs::rename(path, &moved).ok().map(|()| moved)).flatten();
-        let was_moved = moved_to.is_some();
-        self.0.lock().unwrap().push(SetAsideFile { path: path.to_owned(), moved_to, error: format!("{error:#}") });
-        was_moved
-    }
-
-    /// The files set aside, once: the frontend reports them when it starts.
-    pub fn take(&self) -> Vec<SetAsideFile> {
-        std::mem::take(&mut *self.0.lock().unwrap())
-    }
-}
-
-/// Writes `value` as pretty JSON, via a temporary file and a rename so that a crash never
-/// leaves a truncated file behind. The data is flushed to disk before the rename: otherwise
-/// a power loss can leave the renamed file empty (seen on NTFS).
-pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<()> {
-    stage_json(path, value)?.commit()
-}
-
-/// A file written next to its place under a temporary name and flushed to disk (see
-/// [`write_json_atomic`]), put in place by [`Staged::commit`]. Dropped without that, the
-/// temporary file is removed.
-pub struct Staged {
-    tmp: PathBuf,
-    path: PathBuf,
-    committed: bool,
-}
-
-pub fn stage_json(path: &Path, value: &impl Serialize) -> Result<Staged> {
-    use std::io::Write;
-
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let staged = Staged { tmp: path.with_extension("json.tmp"), path: path.to_owned(), committed: false };
-    let mut file = fs::File::create(&staged.tmp)?;
-    file.write_all(&serde_json::to_vec_pretty(value)?)?;
-    file.sync_all()?;
-    Ok(staged)
-}
-
-impl Staged {
-    pub fn commit(mut self) -> Result<()> {
-        fs::rename(&self.tmp, &self.path)?;
-        self.committed = true;
-        Ok(())
-    }
-}
-
-impl Drop for Staged {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = fs::remove_file(&self.tmp);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     fn store(name: &str) -> (ProfileStore, PathBuf) {
@@ -1096,7 +969,7 @@ mod tests {
 
         // Deleting the folder rewrites folders.json and then profiles.json, which can't be.
         fs::create_dir(dir.join("profiles.json.tmp")).unwrap();
-        store.delete_folder(&work.id).unwrap_err();
+        assert_eq!(store.delete_folder(&work.id).unwrap_err().code(), "config.writeFailed");
         assert_eq!(fs::read(dir.join("folders.json")).unwrap(), folders);
         assert_eq!(fs::read(dir.join("profiles.json")).unwrap(), profiles);
         assert!(!dir.join("folders.json.tmp").exists());
@@ -1256,6 +1129,25 @@ mod tests {
         assert_eq!(reloaded.list()[0].proxy(), Some("gone"));
         assert_eq!(reloaded.route(reloaded.list()[0].remote().unwrap()).err().map(|e| e.code()), Some("profile.invalidProxy"));
         assert_eq!(reloaded.proxies(), [kept]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// What a hand-written file may leave out or repeat: ids (references go to the first) and
+    /// the settings that have defaults.
+    #[test]
+    fn reads_untidy_files() {
+        let (_, dir) = store("untidy");
+        fs::create_dir_all(&dir).unwrap();
+        let connection = r#"{"protocol": "telnet", "host": "router.lan", "port": 23, "username": ""}"#;
+        let profiles = format!(r#"[{{"id": "a", "name": "one", "connection": {connection}}}, {{"id": "a", "name": "two", "connection": {connection}}}, {{"name": "three", "connection": {connection}}}]"#);
+        fs::write(dir.join("profiles.json"), profiles).unwrap();
+        let set_aside = SetAside::default();
+        let store = ProfileStore::load(dir.join("profiles.json"), &set_aside);
+        assert!(set_aside.take().is_empty());
+        let list = store.list();
+        let ids: std::collections::HashSet<&str> = list.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!((list.len(), ids.len(), list[0].id.as_str()), (3, 3, "a"));
+        assert_eq!((list[1].encoding.as_str(), list[1].auto_reconnect), (crate::encoding::DEFAULT, false));
         fs::remove_dir_all(&dir).unwrap();
     }
 

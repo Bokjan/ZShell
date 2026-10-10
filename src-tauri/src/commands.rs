@@ -11,7 +11,8 @@ use tauri::{AppHandle, Manager, State, Webview, WebviewWindow};
 use ts_rs::TS;
 
 use crate::backup;
-use crate::config::{Additions, Connection, Folder, Item, Profile, ProfileStore, Protocol, Remote, SerialOptions, SetAside, SetAsideFile, SshOptions, SshProfile};
+use crate::config::{Additions, Connection, Folder, Item, Profile, ProfileStore, Protocol, Remote, SerialOptions, SshOptions, SshProfile};
+use crate::persist::{SetAside, SetAsideFile};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;

@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{JsonFile, SetAside};
+use crate::persist::{JsonFile, SetAside};
 use crate::error::Result;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -287,7 +287,7 @@ impl SettingsStore {
     pub fn set(&self, settings: Settings) -> Result<Settings> {
         let settings = settings.normalize();
         let mut current = self.settings.lock().unwrap();
-        self.file.write(&settings)?;
+        self.file.write_changed(&*current, &settings)?;
         *current = settings.clone();
         Ok(settings)
     }

@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{JsonFile, SetAside};
+use crate::persist::{JsonFile, SetAside};
 use crate::error::Result;
 
 /// The group that always exists, first, for commands not put in a group of their own. Its
@@ -106,7 +106,7 @@ impl QuickCommandStore {
     pub fn set(&self, commands: QuickCommands) -> Result<QuickCommands> {
         let commands = commands.normalize();
         let mut current = self.commands.lock().unwrap();
-        self.file.write(&commands)?;
+        self.file.write_changed(&*current, &commands)?;
         *current = commands.clone();
         Ok(commands)
     }

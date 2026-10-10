@@ -69,7 +69,7 @@ mod tests {
         visitor.visit::<commands::SessionSpec>();
         visitor.visit::<config::Folder>();
         visitor.visit::<config::Item>();
-        visitor.visit::<config::SetAsideFile>();
+        visitor.visit::<persist::SetAsideFile>();
         visitor.visit::<proxy::Proxy>();
         visitor.visit::<quick::QuickCommands>();
         visitor.visit::<settings::Settings>();

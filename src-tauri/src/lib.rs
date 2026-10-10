@@ -12,6 +12,7 @@ mod import;
 mod local_name;
 mod logging;
 mod net;
+mod persist;
 mod proxy;
 mod pty;
 mod quick;
@@ -27,8 +28,9 @@ mod zmodem;
 
 use tauri::{Emitter, Manager};
 
-use config::{ProfileStore, SetAside};
+use config::ProfileStore;
 use logging::Logs;
+use persist::SetAside;
 use quick::QuickCommandStore;
 use session::SessionManager;
 use settings::SettingsStore;

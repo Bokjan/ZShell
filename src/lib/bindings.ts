@@ -16,6 +16,7 @@ export type ErrorCode =
   | "auth.notOffered"
   | "auth.passwordFailed"
   | "config.unreadable"
+  | "config.writeFailed"
   | "credentialStore"
   | "edit.conflict"
   | "edit.notFound"

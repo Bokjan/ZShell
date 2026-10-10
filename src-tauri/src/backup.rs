@@ -8,9 +8,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{write_json_atomic, Additions, Connection, Folder, Profile, Snapshot};
+use crate::config::{Additions, Connection, Folder, Profile, Snapshot};
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
+use crate::persist::{unique_ids, write_json_atomic};
 use crate::proxy::{Proxy, ProxyKind};
 
 const FORMAT: &str = "zshell-sessions";
@@ -218,19 +219,6 @@ fn read(path: &Path) -> Result<(SessionsFile, String)> {
     unique_ids(file.proxies.iter_mut().map(|p| &mut p.id));
     unique_ids(file.folders.iter_mut().map(|f| &mut f.id));
     Ok((file, digest))
-}
-
-/// Gives an id of its own to each empty one and each one used before. Made from the position,
-/// so that reading the file again (to import what was picked from it) gives the same ids.
-fn unique_ids<'a>(ids: impl Iterator<Item = &'a mut String>) {
-    let ids: Vec<&mut String> = ids.collect();
-    let mut seen: HashSet<String> = HashSet::new();
-    for (index, id) in ids.into_iter().enumerate() {
-        if id.is_empty() || seen.contains(id.as_str()) {
-            *id = (0..).map(|n| format!("#{index}.{n}")).find(|candidate| !seen.contains(candidate)).unwrap();
-        }
-        seen.insert(id.clone());
-    }
 }
 
 /// An existing session with the same name, else one that connects to the same place (see

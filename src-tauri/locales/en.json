@@ -80,6 +80,7 @@
       "disconnected": "{device} was disconnected"
     },
     "config": {
+      "writeFailed": "Cannot save {path}",
       "unreadable": "Changes can't be saved: {name} could not be read when ZShell started, and is left as it is so that nothing in it is lost. Restart ZShell to read it again."
     },
     "profile": {

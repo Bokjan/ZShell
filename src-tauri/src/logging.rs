@@ -25,7 +25,7 @@ use unicode_width::UnicodeWidthChar;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{JsonFile, SetAside};
+use crate::persist::{JsonFile, SetAside};
 use crate::error::{Error, Result};
 use crate::local_name::create_unique_file;
 use crate::settings::{LogFormat, LogSettings};
