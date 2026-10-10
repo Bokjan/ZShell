@@ -426,6 +426,18 @@ async fn binary_headers_skip_flow_control() {
     }
 }
 
+/// After a send is cancelled, the receiver's late headers don't reach the terminal (as
+/// `**B09...` text, or taken for a new transfer), but the shell prompt does.
+#[tokio::test]
+async fn draining_after_a_send_keeps_only_the_prompt() {
+    let (mut link, (to_link, _from_link, _cancel)) = link();
+    to_link.send(frame::encode_header(&Header::with_pos(Kind::Rpos, 1024), Encoding::Hex)).unwrap();
+    to_link.send(frame::encode_header(&Header::with_flags(Kind::Rinit, 0), Encoding::Hex)).unwrap();
+    to_link.send(b"$ ".to_vec()).unwrap();
+    let shown = link.drain(std::time::Duration::from_millis(50), std::time::Duration::from_secs(1)).await;
+    assert_eq!(shown, b"$ ");
+}
+
 /// While sending, the start of a header that never completes (a corrupted ZRPOS on a noisy
 /// line) is passed over, as lrzsz waits for the receiver to ask again.
 #[tokio::test]

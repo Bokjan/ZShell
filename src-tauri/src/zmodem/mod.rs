@@ -252,11 +252,9 @@ async fn run(zmodem: Arc<Zmodem>, direction: Direction, mut link: Link, sink: Se
                 if code != Some("zmodem.remoteCancelled") {
                     link.abort().await;
                 }
-                // The data still in flight is not for the terminal.
-                let after = match direction {
-                    Direction::Receive => link.drain(Duration::from_millis(300), Duration::from_secs(3)).await,
-                    Direction::Send => Vec::new(),
-                };
+                // The data still in flight is not for the terminal, nor are the headers a
+                // receiver sent meanwhile (asking for data again, or for a new transfer).
+                let after = link.drain(Duration::from_millis(300), Duration::from_secs(3)).await;
                 report.error(e);
                 // Typically the shell prompt, once the remote program has exited.
                 let after: Vec<u8> = after.into_iter().skip_while(|&b| b == 0x08).collect();

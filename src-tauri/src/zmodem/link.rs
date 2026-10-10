@@ -414,8 +414,14 @@ impl Link {
     /// After a cancel, reads output until the other side has been quiet for `quiet` (at most
     /// `limit`) and returns what followed the last CAN: the data still in flight is not for
     /// the terminal, but the shell prompt after the program exits is. (Escaped ZMODEM data is
-    /// full of ZDLEs, which are CANs; the program's own cancel ends with CANs too.)
+    /// full of ZDLEs, which are CANs; the program's own cancel ends with CANs too. A receiver
+    /// sends hex headers, each with one ZDLE: the rest of the last one is dropped as well.)
     pub async fn drain(&mut self, quiet: Duration, limit: Duration) -> Vec<u8> {
+        let kept = self.drain_after_cans(quiet, limit).await;
+        without_header_tail(&kept).to_vec()
+    }
+
+    async fn drain_after_cans(&mut self, quiet: Duration, limit: Duration) -> Vec<u8> {
         let mut kept: Vec<u8> = self.buffer.drain(..).collect();
         let deadline = tokio::time::Instant::now() + limit;
         loop {
@@ -447,4 +453,21 @@ impl Link {
     pub async fn send_now(&mut self, bytes: &[u8]) {
         let _ = tokio::time::timeout(Duration::from_secs(2), self.outgoing.send(bytes.to_vec())).await;
     }
+}
+
+/// `output` without the rest of a hex header it starts with, after the header's ZDLE: `B`,
+/// the kind and position in hex digits and the CRC, then CR, LF and XON.
+fn without_header_tail(output: &[u8]) -> &[u8] {
+    const DIGITS: usize = 14;
+    let is_tail = output.first() == Some(&b'B') && output.get(1..=DIGITS).is_some_and(|d| d.iter().all(u8::is_ascii_hexdigit));
+    if !is_tail {
+        return output;
+    }
+    let mut rest = &output[1 + DIGITS..];
+    for ending in [&b"\r"[..], &[b'\n', b'\n' | 0x80], &[0x11]] {
+        if rest.first().is_some_and(|b| ending.contains(b)) {
+            rest = &rest[1..];
+        }
+    }
+    rest
 }
