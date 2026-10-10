@@ -152,8 +152,9 @@ main {
   color: var(--text);
 }
 /* Icons are SVGs (icons.tsx), not glyphs, which sit differently in each platform's fonts. Alone
-   in a button, one is centered in it; after a label (a menu's chevron), on the text's middle. */
-button > svg:only-child {
+   in a button, one is centered in it; after a label (a menu's chevron), on the text's middle.
+   (`:only-child` doesn't count the label's text, so a chevron is excluded by its class.) */
+button > svg:only-child:not(.inline-icon) {
   display: block;
 }
 .inline-icon {
@@ -1118,6 +1119,9 @@ body.dragging-row {
   right: 18px;
   z-index: 3;
   display: flex;
+  /* In a narrow pane, the buttons go on a second row rather than out of sight. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 2px;
   max-width: calc(100% - 36px);

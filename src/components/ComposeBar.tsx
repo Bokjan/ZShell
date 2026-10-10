@@ -232,8 +232,10 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
         className={`compose-sync${compose.scope === "current" ? " disabled" : ""}`}
         title={compose.scope === "current" ? t("compose.syncNeedsScope") : t("compose.syncHint")}
       >
+        {/* Named by its text: WebKit would take the label's tooltip instead. */}
         <input
           type="checkbox"
+          aria-label={t("compose.sync")}
           checked={compose.sync}
           disabled={compose.scope === "current"}
           onChange={(e) => onChange({ ...compose, sync: e.target.checked })}
