@@ -13,7 +13,7 @@ import { basename, formatMode, formatSize, formatTime } from "../lib/format";
 import { isComposing, isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { ErrorBanner } from "./ErrorMessage";
+import { ErrorBanner, ErrorText } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
 import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, RefreshIcon, SearchIcon } from "./icons";
 import { Modal } from "./Modal";
@@ -100,7 +100,8 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   const gridId = useId();
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const [newFolder, setNewFolder] = useState<string | null>(null);
-  const [chmodTarget, setChmodTarget] = useState<{ entry: FileEntry; value: string } | null>(null);
+  /** `invalid` once OK was pressed with a value that isn't a mode, until it is changed. */
+  const [chmodTarget, setChmodTarget] = useState<{ entry: FileEntry; value: string; invalid?: boolean } | null>(null);
   // Shown one at a time: an edit conflict found by a background save waits behind a delete
   // or replace the user is answering, rather than taking its place.
   const [confirms, setConfirms] = useState<(Confirm & { id: number })[]>([]);
@@ -545,7 +546,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
     e.preventDefault();
     if (!chmodTarget || sessionId == null || !cwd) return;
     if (!/^[0-7]{3,4}$/.test(chmodTarget.value)) {
-      setError(t("sftp.chmodInvalid"));
+      setChmodTarget({ ...chmodTarget, invalid: true });
       return;
     }
     const { entry, value } = chmodTarget;
@@ -930,7 +931,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
                           onChange={(e) => setRenaming({ path: entry.path, value: e.target.value })}
                           onBlur={() => setRenaming(null)}
                           onKeyDown={(e) => {
-                            if (e.key !== "Escape") return;
+                            if (e.key !== "Escape" || isComposing(e)) return;
                             setRenaming(null);
                             listRef.current?.focus();
                           }}
@@ -987,10 +988,15 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
               <input
                 autoFocus
                 value={chmodTarget.value}
-                onChange={(e) => setChmodTarget({ ...chmodTarget, value: e.target.value })}
+                aria-invalid={chmodTarget.invalid}
+                onChange={(e) => setChmodTarget({ ...chmodTarget, value: e.target.value, invalid: false })}
               />
             </label>
-            <p className="hint">{/^[0-7]{3,4}$/.test(chmodTarget.value) && formatMode(parseInt(chmodTarget.value, 8), chmodTarget.entry.isDir, false)}</p>
+            {chmodTarget.invalid ? (
+              <ErrorText>{t("sftp.chmodInvalid")}</ErrorText>
+            ) : (
+              <p className="hint">{/^[0-7]{3,4}$/.test(chmodTarget.value) && formatMode(parseInt(chmodTarget.value, 8), chmodTarget.entry.isDir, false)}</p>
+            )}
             <footer>
               <span className="grow" />
               <button type="button" onClick={() => setChmodTarget(null)}>
