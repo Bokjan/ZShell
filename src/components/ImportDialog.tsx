@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -26,22 +26,28 @@ export function ImportDialog({ onClose, onImported }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const dialog = useDialog(onClose);
+  // The latest scan: an earlier one finishing later (the default file, read as the dialog
+  // opened, after a file chosen meanwhile) is dropped.
+  const loads = useRef(0);
 
   const load = async (file: string) => {
     if (!file.trim()) return;
+    const current = ++loads.current;
     setBusy(true);
     try {
       const found = await sshConfig.scan(file.trim());
+      if (current !== loads.current) return;
       setCandidates(found);
       setScanned(file.trim());
       // Hosts that already have a profile are not imported again.
       setSelected(new Set(found.filter((c) => !c.existing).map((c) => c.alias)));
       setError(null);
     } catch (e) {
+      if (current !== loads.current) return;
       setCandidates(null);
       setError(errorMessage(e));
     } finally {
-      setBusy(false);
+      if (current === loads.current) setBusy(false);
     }
   };
 
@@ -92,7 +98,8 @@ export function ImportDialog({ onClose, onImported }: Props) {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isComposing(e)) {
                   e.preventDefault();
-                  void load(path);
+                  // As the Load button: not while importing.
+                  if (!busy) void load(path);
                 }
               }}
               spellCheck={false}
