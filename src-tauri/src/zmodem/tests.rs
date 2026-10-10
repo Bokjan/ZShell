@@ -426,6 +426,20 @@ async fn binary_headers_skip_flow_control() {
     }
 }
 
+/// While sending, the start of a header that never completes (a corrupted ZRPOS on a noisy
+/// line) is passed over, as lrzsz waits for the receiver to ask again.
+#[tokio::test]
+async fn a_broken_header_while_sending_is_passed_over() {
+    let (mut link, (to_link, _from_link, _cancel)) = link();
+    let header = Header::with_pos(Kind::Rpos, 7);
+    let mut broken = frame::encode_header(&header, Encoding::Hex);
+    broken.truncate(6);
+    to_link.send(broken).unwrap();
+    assert_eq!(link.header_if_any().await.unwrap(), None);
+    to_link.send(frame::encode_header(&header, Encoding::Hex)).unwrap();
+    assert_eq!(link.header_if_any().await.unwrap(), Some(header));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_left_for_another_is_deleted_and_reported() {
     let dst = temp_dir("switch-dst");

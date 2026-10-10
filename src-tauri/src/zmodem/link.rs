@@ -18,8 +18,12 @@ use crate::session::Flow;
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 /// Five CANs in a row cancel a transfer.
 const CANCEL_CANS: u8 = 5;
-/// Bytes of non-header data tolerated while waiting for a header.
-const GARBAGE_LIMIT: usize = 1 << 20;
+/// Bytes of non-header data tolerated while waiting for a header. After asking a sender
+/// that streams without a window (sz) to go back, everything already in flight arrives
+/// first: up to the session's flow control credit (2 MiB), the SSH channel's window (2 MiB
+/// here, more with other servers) and what the network holds. Well above that, so that a
+/// recoverable error stays recoverable.
+const GARBAGE_LIMIT: usize = 16 << 20;
 /// The largest data subpacket accepted (lrzsz sends up to 8 KiB).
 const MAX_SUBPACKET: usize = 8192;
 /// Outgoing data is buffered up to this size before it is handed to the connection.
@@ -333,8 +337,13 @@ impl Link {
         if self.buffer.is_empty() {
             return Ok(None);
         }
-        // The rest of the header is on its way.
-        Ok(Some(self.header(Duration::from_secs(2)).await?))
+        // The rest of the header is on its way, unless the start was noise (a corrupted
+        // header on a noisy serial line): the receiver then asks again, as lrzsz expects.
+        match self.header(Duration::from_secs(2)).await {
+            Ok(header) => Ok(Some(header)),
+            Err(e) if is_timeout(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Queues bytes to send; they go out once enough has collected, or at `flush`.
