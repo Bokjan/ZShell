@@ -487,9 +487,9 @@ pub enum AuthMethod {
 }
 
 pub struct ProfileStore {
-    path: PathBuf,
-    folders_path: PathBuf,
-    proxies_path: PathBuf,
+    profiles_file: JsonFile,
+    folders_file: JsonFile,
+    proxies_file: JsonFile,
     state: Mutex<State>,
 }
 
@@ -534,23 +534,21 @@ impl State {
         false
     }
 
-    /// Drops references to folders and proxies that don't exist, and breaks cycles
-    /// (hand-edited files).
+    /// Drops jump hosts that aren't other SSH sessions and breaks folder cycles (hand-edited
+    /// files, an import).
+    ///
+    /// References to folders and proxies that don't exist are kept: the file they are in may
+    /// have been set aside (see [`JsonFile::load`]), and they work again once it is restored.
+    /// Until then a session whose folder is missing shows at the top level, and one whose proxy
+    /// is missing fails to connect, rather than connecting without it.
     fn repair(&mut self) {
         let ids: std::collections::HashSet<String> = self.folders.iter().map(|f| f.id.clone()).collect();
-        let proxies: std::collections::HashSet<&str> = self.proxies.iter().map(|p| p.id.as_str()).collect();
         // Jump hosts must be other SSH sessions that exist (a hand-edited file, an import).
         let ssh: std::collections::HashSet<String> =
             self.profiles.iter().filter(|p| p.protocol() == Protocol::Ssh).map(|p| p.id.clone()).collect();
         for profile in &mut self.profiles {
-            if profile.folder.as_ref().is_some_and(|f| !ids.contains(f)) {
-                profile.folder = None;
-            }
             let id = profile.id.clone();
             if let Some(remote) = profile.connection.remote_mut() {
-                if remote.proxy.as_ref().is_some_and(|p| !proxies.contains(p.as_str())) {
-                    remote.proxy = None;
-                }
                 let mut seen = std::collections::HashSet::new();
                 remote.jump_hosts.retain(|jump| *jump != id && ssh.contains(jump) && seen.insert(jump.clone()));
             }
@@ -571,15 +569,12 @@ impl State {
 impl ProfileStore {
     /// `path` is `profiles.json`; the folders and proxies are kept next to it.
     pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
-        let folders_path = path.with_file_name("folders.json");
-        let proxies_path = path.with_file_name("proxies.json");
-        let mut state = State {
-            profiles: load_json(&path, set_aside),
-            folders: load_json(&folders_path, set_aside),
-            proxies: load_json(&proxies_path, set_aside),
-        };
+        let (profiles_file, profiles) = JsonFile::load(path.clone(), set_aside);
+        let (folders_file, folders) = JsonFile::load(path.with_file_name("folders.json"), set_aside);
+        let (proxies_file, proxies) = JsonFile::load(path.with_file_name("proxies.json"), set_aside);
+        let mut state = State { profiles, folders, proxies };
         state.repair();
-        Self { path, folders_path, proxies_path, state: Mutex::new(state) }
+        Self { profiles_file, folders_file, proxies_file, state: Mutex::new(state) }
     }
 
     pub fn list(&self) -> Vec<Profile> {
@@ -843,12 +838,14 @@ impl ProfileStore {
         let value = change(&mut updated)?;
         let mut staged = Vec::new();
         if updated.folders != state.folders {
-            staged.push(stage_json(&self.folders_path, &updated.folders)?);
+            staged.push(self.folders_file.stage(&updated.folders)?);
         }
         if updated.proxies != state.proxies {
-            staged.push(stage_json(&self.proxies_path, &updated.proxies)?);
+            staged.push(self.proxies_file.stage(&updated.proxies)?);
         }
-        staged.push(stage_json(&self.path, &updated.profiles)?);
+        if serde_json::to_value(&updated.profiles)? != serde_json::to_value(&state.profiles)? {
+            staged.push(self.profiles_file.stage(&updated.profiles)?);
+        }
         for file in staged {
             file.commit()?;
         }
@@ -862,25 +859,76 @@ fn jump_host_users<'a>(state: &'a State, id: &str) -> Vec<&'a str> {
     state.profiles.iter().filter(|p| p.jump_hosts().iter().any(|j| j == id)).map(|p| p.name.as_str()).collect()
 }
 
-/// A store's file as read at startup, or the default if it doesn't exist yet.
-///
-/// A file that exists but can't be read as `T` (cut short by a crash, edited by hand, or
-/// written by a newer version) is moved aside to `<name>.bad-<time>` and the store starts
-/// from the default: otherwise the app would fail to start, or the next save would replace
-/// the file. `set_aside` collects these files for the frontend to report.
-pub fn load_json<T: serde::de::DeserializeOwned + Default>(path: &Path, set_aside: &SetAside) -> T {
-    let result = match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(anyhow::Error::from),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return T::default(),
-        Err(e) => Err(e.into()),
-    };
-    result.unwrap_or_else(|e| {
-        set_aside.add(path, &e);
-        T::default()
-    })
+/// A store's JSON file. One that couldn't be read at startup is never written over.
+pub struct JsonFile {
+    path: PathBuf,
+    found: Found,
 }
 
-/// Files that could not be read at startup (see [`load_json`]).
+/// What a store's file was like at startup.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Found {
+    /// Read, or not there yet.
+    Read,
+    /// Not readable as the store's data, and moved aside: the store starts a new file.
+    SetAside,
+    /// Not readable, or not movable: left as it is, and not written while the app runs.
+    LeftAlone,
+}
+
+/// Reading a file again after an error, for one that something else (an antivirus, a sync
+/// client) has open for a moment.
+const READ_ATTEMPTS: u32 = 3;
+const READ_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
+impl JsonFile {
+    /// Reads the file at `path`, or gives the default if it doesn't exist yet.
+    ///
+    /// A file that can be read but not as `T` (cut short by a crash, edited by hand, or
+    /// written by a newer version) is moved aside to `<name>.bad-<time>` and the store starts
+    /// from the default: otherwise the app would fail to start, or the next save would replace
+    /// the file. One that can't be read at all, or moved, is left where it is and never written
+    /// (a restart reads it again). `set_aside` collects these files for the frontend to report.
+    pub fn load<T: serde::de::DeserializeOwned + Default>(path: PathBuf, set_aside: &SetAside) -> (Self, T) {
+        let mut attempt = 1;
+        let bytes = loop {
+            match fs::read(&path) {
+                Ok(bytes) => break bytes,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self { path, found: Found::Read }, T::default()),
+                Err(_) if attempt < READ_ATTEMPTS => {
+                    attempt += 1;
+                    std::thread::sleep(READ_RETRY_DELAY);
+                }
+                Err(e) => {
+                    set_aside.add(&path, &e.into(), false);
+                    return (Self { path, found: Found::LeftAlone }, T::default());
+                }
+            }
+        };
+        match serde_json::from_slice(&bytes) {
+            Ok(value) => (Self { path, found: Found::Read }, value),
+            Err(e) => {
+                let found = if set_aside.add(&path, &e.into(), true) { Found::SetAside } else { Found::LeftAlone };
+                (Self { path, found }, T::default())
+            }
+        }
+    }
+
+    pub fn write(&self, value: &impl Serialize) -> Result<()> {
+        self.stage(value)?.commit()
+    }
+
+    /// Writes `value` next to the file, to be put in place by [`Staged::commit`].
+    pub fn stage(&self, value: &impl Serialize) -> Result<Staged> {
+        if self.found == Found::LeftAlone {
+            let name = self.path.file_name().unwrap_or_default().to_string_lossy();
+            return Err(Error::new("config.unreadable").param("name", name));
+        }
+        stage_json(&self.path, value)
+    }
+}
+
+/// Files that could not be read at startup (see [`JsonFile::load`]).
 #[derive(Default)]
 pub struct SetAside(Mutex<Vec<SetAsideFile>>);
 
@@ -888,17 +936,21 @@ pub struct SetAside(Mutex<Vec<SetAsideFile>>);
 #[serde(rename_all = "camelCase")]
 pub struct SetAsideFile {
     pub path: PathBuf,
-    /// Where the file was moved; `None` if moving it failed too.
+    /// Where the file was moved; `None` if it was left as it is (see [`Found::LeftAlone`]).
     pub moved_to: Option<PathBuf>,
     pub error: String,
 }
 
 impl SetAside {
-    fn add(&self, path: &Path, error: &anyhow::Error) {
+    /// Records a file that couldn't be read, moving it aside if `move_it`; returns whether
+    /// it was moved.
+    fn add(&self, path: &Path, error: &anyhow::Error, move_it: bool) -> bool {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         let moved = path.with_file_name(format!("{name}.bad-{}", chrono::Local::now().format("%Y%m%d-%H%M%S")));
-        let moved_to = fs::rename(path, &moved).ok().map(|()| moved);
+        let moved_to = move_it.then(|| fs::rename(path, &moved).ok().map(|()| moved)).flatten();
+        let was_moved = moved_to.is_some();
         self.0.lock().unwrap().push(SetAsideFile { path: path.to_owned(), moved_to, error: format!("{error:#}") });
+        was_moved
     }
 
     /// The files set aside, once: the frontend reports them when it starts.
@@ -1057,8 +1109,9 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Folder cycles are broken; a session's missing folder is kept (see `State::repair`).
     #[test]
-    fn repairs_dangling_folder_references() {
+    fn repairs_folder_cycles() {
         let (_, dir) = store("repair");
         fs::create_dir_all(&dir).unwrap();
         let profile = Profile { id: "p".into(), ..new_profile("p", Some("missing")) };
@@ -1070,7 +1123,7 @@ mod tests {
         }];
         fs::write(dir.join("folders.json"), serde_json::to_vec(&loops).unwrap()).unwrap();
         let store = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
-        assert_eq!(store.list()[0].folder, None);
+        assert_eq!(store.list()[0].folder.as_deref(), Some("missing"));
         assert!(store.folders().iter().any(|f| f.parent.is_none()));
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -1194,14 +1247,72 @@ mod tests {
         assert!(store.proxies().is_empty());
         assert_eq!(store.save_proxy(socks).unwrap_err().code(), "proxy.notFound");
 
-        // Dangling references (hand-edited files) are dropped on load.
+        // Dangling references (hand-edited files) are kept, and fail to connect.
         let kept = store.save_proxy(Proxy { id: String::new(), kind: crate::proxy::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() }).unwrap();
         assert_eq!(kept.name, "nc");
         let dangling = with_remote(Profile { id: "p".into(), ..new_profile("p", None) }, |remote| remote.proxy = Some("gone".into()));
         fs::write(dir.join("profiles.json"), serde_json::to_vec(&[dangling]).unwrap()).unwrap();
         let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
-        assert_eq!(reloaded.list()[0].proxy(), None);
+        assert_eq!(reloaded.list()[0].proxy(), Some("gone"));
+        assert_eq!(reloaded.route(reloaded.list()[0].remote().unwrap()).err().map(|e| e.code()), Some("profile.invalidProxy"));
         assert_eq!(reloaded.proxies(), [kept]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A folder or proxy file that is set aside doesn't take the sessions' references to its
+    /// folders and proxies with it: they work again once the file is restored, and a session
+    /// whose proxy is missing fails to connect rather than connecting directly.
+    #[test]
+    fn keeps_references_into_files_set_aside() {
+        let (_, dir) = store("keep-references");
+        fs::create_dir_all(&dir).unwrap();
+        let profile = with_remote(Profile { id: "p".into(), ..new_profile("p", Some("work")) }, |remote| remote.proxy = Some("corp".into()));
+        fs::write(dir.join("profiles.json"), serde_json::to_vec(&[profile]).unwrap()).unwrap();
+        fs::write(dir.join("folders.json"), b"[{").unwrap();
+        fs::write(dir.join("proxies.json"), br#"[{"id": "corp", "type": "fromTheFuture"}]"#).unwrap();
+        let set_aside = SetAside::default();
+        let store = ProfileStore::load(dir.join("profiles.json"), &set_aside);
+        assert_eq!(set_aside.take().len(), 2);
+        let p = store.get("p").unwrap();
+        assert_eq!((p.folder.as_deref(), p.proxy()), (Some("work"), Some("corp")));
+        assert_eq!(store.route(p.remote().unwrap()).err().map(|e| e.code()), Some("profile.invalidProxy"));
+
+        // Saving something else, and importing, keep them on disk too.
+        store.save(new_profile("q", None)).unwrap();
+        store.add_all(|_| Ok(Additions { profiles: vec![Profile { id: "r".into(), ..new_profile("r", None) }], ..Additions::default() })).unwrap();
+        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
+        let p = reloaded.get("p").unwrap();
+        assert_eq!((p.folder.as_deref(), p.proxy()), (Some("work"), Some("corp")));
+        assert_eq!(reloaded.list().len(), 3);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A file that exists but can't be read (open in another program) is left where it is
+    /// and never written over; the other files are saved as usual.
+    #[cfg(unix)]
+    #[test]
+    fn never_writes_over_a_file_it_could_not_read() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_, dir) = store("unreadable");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("profiles.json");
+        fs::write(&path, serde_json::to_vec(&[new_profile("a", None)]).unwrap()).unwrap();
+        let saved = fs::read(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        let set_aside = SetAside::default();
+        let store = ProfileStore::load(path.clone(), &set_aside);
+        let files = set_aside.take();
+        assert_eq!((files.len(), files[0].moved_to.is_none()), (1, true), "{files:?}");
+        assert!(store.list().is_empty());
+
+        let error = store.save(new_profile("b", None)).unwrap_err();
+        assert_eq!(error.code(), "config.unreadable");
+        assert!(error.to_string().contains("profiles.json"), "{error}");
+        store.save_folder(folder("Work", None)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), saved);
+        assert_eq!(ProfileStore::load(path, &SetAside::default()).folders().len(), 1);
         fs::remove_dir_all(&dir).unwrap();
     }
 

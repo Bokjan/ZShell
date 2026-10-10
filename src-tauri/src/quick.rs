@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{load_json, write_json_atomic, SetAside};
+use crate::config::{JsonFile, SetAside};
 use crate::error::Result;
 
 /// The group that always exists, first, for commands not put in a group of their own. Its
@@ -86,16 +86,16 @@ impl QuickCommands {
 }
 
 pub struct QuickCommandStore {
-    path: PathBuf,
+    file: JsonFile,
     commands: Mutex<QuickCommands>,
 }
 
 impl QuickCommandStore {
-    /// A missing or unreadable file (see [`load_json`]) starts with just the empty default
-    /// group.
+    /// A missing or unreadable file (see [`JsonFile::load`]) starts with just the empty
+    /// default group.
     pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
-        let commands = load_json::<QuickCommands>(&path, set_aside).normalize();
-        Self { path, commands: Mutex::new(commands) }
+        let (file, commands) = JsonFile::load::<QuickCommands>(path, set_aside);
+        Self { file, commands: Mutex::new(commands.normalize()) }
     }
 
     pub fn get(&self) -> QuickCommands {
@@ -106,7 +106,7 @@ impl QuickCommandStore {
     pub fn set(&self, commands: QuickCommands) -> Result<QuickCommands> {
         let commands = commands.normalize();
         let mut current = self.commands.lock().unwrap();
-        write_json_atomic(&self.path, &commands)?;
+        self.file.write(&commands)?;
         *current = commands.clone();
         Ok(commands)
     }

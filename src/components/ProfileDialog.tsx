@@ -132,7 +132,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const [keyPath, setKeyPath] = useState(savedSsh?.auth.type === "publicKey" ? savedSsh.auth.keyPath : "~/.ssh/id_ed25519");
   const [jumpHosts, setJumpHosts] = useState<string[]>(savedRemote?.jumpHosts ?? []);
   const [proxy, setProxy] = useState(savedRemote?.proxy ?? "");
-  const [proxyList, setProxyList] = useState<Proxy[]>([]);
+  // Null until loaded.
+  const [proxyList, setProxyList] = useState<Proxy[] | null>(null);
   const [creatingProxy, setCreatingProxy] = useState(false);
   const home = useHomeDirectory();
   const [keepalive, setKeepalive] = useState(String(savedRemote?.keepaliveInterval ?? 30));
@@ -179,9 +180,14 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
 
   const refreshProxies = () => void proxyApi.list().then(setProxyList, console.error);
   useEffect(refreshProxies, []);
-  const proxyName = (id: string | undefined) => proxyList.find((p) => p.id === id)?.name;
+  // A proxy that is missing (its file was set aside) is shown as such: the session doesn't
+  // connect until it is restored or another is chosen.
+  const isMissing = (id: string | undefined) => !!id && !!proxyList && !proxyList.some((p) => p.id === id);
+  const proxyLabel = (id: string | undefined) =>
+    !id ? t("profile.noProxy") : (proxyList?.find((p) => p.id === id)?.name ?? (proxyList ? t("profile.missingProxy") : ""));
   // With jump hosts, the first one's own proxy is used.
   const firstJump = profiles.find((p) => p.id === jumpHosts[0]);
+  const shownProxy = firstJump ? (proxyOf(firstJump) ?? "") : proxy;
 
   // Starts in the folder of the current key, or in ~/.ssh; keys in the home folder are kept as
   // `~/…`, which works on other computers too (exported sessions).
@@ -626,12 +632,13 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           <label>
             {t("profile.proxy")}
             <select
-              value={firstJump ? (proxyOf(firstJump) ?? "") : proxy}
+              value={shownProxy}
               disabled={!!firstJump}
               onChange={(e) => (e.target.value === NEW_PROXY ? setCreatingProxy(true) : setProxy(e.target.value))}
             >
               <option value="">{t("profile.noProxy")}</option>
-              {proxyList.map((p) => (
+              {isMissing(shownProxy) && <option value={shownProxy}>{t("profile.missingProxy")}</option>}
+              {proxyList?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
@@ -641,8 +648,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           </label>
           <p className="hint">
             {firstJump
-              ? t("profile.proxyViaJumpHost", { name: firstJump.name, proxy: proxyName(proxyOf(firstJump)) ?? t("profile.noProxy") })
-              : t("profile.proxyHint")}
+              ? t("profile.proxyViaJumpHost", { name: firstJump.name, proxy: proxyLabel(proxyOf(firstJump)) })
+              : t(isMissing(proxy) ? "profile.missingProxyHint" : "profile.proxyHint")}
           </p>
           <label>
             {t("profile.keepalive")}

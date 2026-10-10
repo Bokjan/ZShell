@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{load_json, write_json_atomic, SetAside};
+use crate::config::{JsonFile, SetAside};
 use crate::error::Result;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -268,15 +268,15 @@ impl Settings {
 }
 
 pub struct SettingsStore {
-    path: PathBuf,
+    file: JsonFile,
     settings: Mutex<Settings>,
 }
 
 impl SettingsStore {
-    /// Missing or unreadable files fall back to the defaults (see [`load_json`]).
+    /// Missing or unreadable files fall back to the defaults (see [`JsonFile::load`]).
     pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
-        let settings = load_json::<Settings>(&path, set_aside).normalize();
-        Self { path, settings: Mutex::new(settings) }
+        let (file, settings) = JsonFile::load::<Settings>(path, set_aside);
+        Self { file, settings: Mutex::new(settings.normalize()) }
     }
 
     pub fn get(&self) -> Settings {
@@ -287,7 +287,7 @@ impl SettingsStore {
     pub fn set(&self, settings: Settings) -> Result<Settings> {
         let settings = settings.normalize();
         let mut current = self.settings.lock().unwrap();
-        write_json_atomic(&self.path, &settings)?;
+        self.file.write(&settings)?;
         *current = settings.clone();
         Ok(settings)
     }

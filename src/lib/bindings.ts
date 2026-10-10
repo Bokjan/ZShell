@@ -15,6 +15,7 @@ export type ErrorCode =
   | "auth.moreRequired"
   | "auth.notOffered"
   | "auth.passwordFailed"
+  | "config.unreadable"
   | "credentialStore"
   | "edit.conflict"
   | "edit.notFound"
@@ -528,7 +529,7 @@ export type SessionSpec = { "kind": "profile", profileId: string, carry: Array<s
 
 export type SetAsideFile = { path: string, 
 /**
- * Where the file was moved; `None` if moving it failed too.
+ * Where the file was moved; `None` if it was left as it is (see [`Found::LeftAlone`]).
  */
 movedTo: string | null, error: string, };
 

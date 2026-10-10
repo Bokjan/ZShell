@@ -25,7 +25,7 @@ use unicode_width::UnicodeWidthChar;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{load_json, write_json_atomic, SetAside};
+use crate::config::{JsonFile, SetAside};
 use crate::error::{Error, Result};
 use crate::local_name::create_unique_file;
 use crate::settings::{LogFormat, LogSettings};
@@ -382,7 +382,7 @@ pub struct LogSummary {
 
 /// The logs ZShell has written, and the ones being written now.
 pub struct Logs {
-    index_path: PathBuf,
+    index_file: JsonFile,
     default_dir: PathBuf,
     index: Mutex<Vec<Entry>>,
     active: Arc<ActiveLogs>,
@@ -390,8 +390,8 @@ pub struct Logs {
 
 impl Logs {
     pub fn load(index_path: PathBuf, default_dir: PathBuf, set_aside: &SetAside) -> Self {
-        let index = load_json(&index_path, set_aside);
-        Self { index_path, default_dir, index: Mutex::new(index), active: Arc::default() }
+        let (index_file, index) = JsonFile::load(index_path, set_aside);
+        Self { index_file, default_dir, index: Mutex::new(index), active: Arc::default() }
     }
 
     pub fn directory(&self, settings: &LogSettings) -> PathBuf {
@@ -467,7 +467,7 @@ impl Logs {
     fn remember(&self, entry: Entry) {
         let mut index = self.index.lock().unwrap();
         index.push(entry);
-        let _ = write_json_atomic(&self.index_path, &*index);
+        let _ = self.index_file.write(&*index);
     }
 
     /// The logs that still exist, forgetting the others (deleted by hand).
@@ -476,7 +476,7 @@ impl Logs {
         let before = index.len();
         index.retain(|entry| entry.path.is_file());
         if index.len() != before {
-            let _ = write_json_atomic(&self.index_path, &*index);
+            let _ = self.index_file.write(&*index);
         }
         index
     }
@@ -504,7 +504,7 @@ impl Logs {
             deleted += 1;
             false
         });
-        let _ = write_json_atomic(&self.index_path, &*index);
+        let _ = self.index_file.write(&*index);
         deleted
     }
 

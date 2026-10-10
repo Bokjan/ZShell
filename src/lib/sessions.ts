@@ -33,13 +33,16 @@ export const address = (c: Addressable) => {
  */
 export function treeRows(folders: Folder[], profiles: Profile[], collapsed: Set<string>): Row[] {
   const rows: Row[] = [];
+  // A session whose folder is missing (its file was set aside) is at the top level.
+  const ids = new Set(folders.map((f) => f.id));
+  const folderOf = (p: Profile) => (p.folder !== undefined && ids.has(p.folder) ? p.folder : undefined);
   const visit = (parent: string | undefined, depth: number) => {
     for (const folder of folders.filter((f) => f.parent === parent)) {
       const expanded = !collapsed.has(folder.id);
       rows.push({ kind: "folder", folder, depth, expanded, count: sessionsIn(folder.id, folders, profiles).length });
       if (expanded) visit(folder.id, depth + 1);
     }
-    for (const profile of profiles.filter((p) => p.folder === parent)) rows.push({ kind: "profile", profile, depth });
+    for (const profile of profiles.filter((p) => folderOf(p) === parent)) rows.push({ kind: "profile", profile, depth });
   };
   visit(undefined, 0);
   return rows;

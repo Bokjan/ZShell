@@ -308,6 +308,8 @@
     "jumpHostsHintTelnet": "Connects through these SSH sessions in order, like ProxyJump; the last one connects to the Telnet server.",
     "proxy": "Proxy",
     "noProxy": "None",
+    "missingProxy": "Missing proxy",
+    "missingProxyHint": "The proxy this session uses is missing (its file may have been set aside), so the session doesn't connect until the file is restored or another proxy is chosen.",
     "newProxy": "New proxy…",
     "proxyHint": "Connects through this proxy. Proxies are managed in Settings.",
     "proxyViaJumpHost": "With jump hosts, the first one ({name}) is reached through its own proxy: {proxy}.",
@@ -679,9 +681,9 @@
   },
   "setAside": {
     "title": "Some data could not be read",
-    "message": "ZShell could not read these files and started without what they contain. Each file was renamed so that you can repair or restore it.",
-    "moved": "{name}, renamed to {movedTo}",
-    "notMoved": "{name}, which could not be renamed and will be replaced the next time this data is saved",
+    "message": "ZShell could not read these files and started without what they contain. Sessions keep their folders and proxies, which come back once the files are restored.",
+    "moved": "{name} was renamed to {movedTo}, so that you can repair or restore it.",
+    "notMoved": "{name} was left as it is, and changes to what it holds aren't saved until ZShell can read it. Restart ZShell to try again.",
     "show": "Show Files"
   },
   "closeConfirm": {
