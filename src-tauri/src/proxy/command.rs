@@ -115,28 +115,31 @@ async fn build(line: &str) -> Command {
     command
 }
 
-/// The PATH a login shell sets up, looked up once; `None` if that fails (the inherited PATH
-/// is used then).
+/// The PATH a login shell sets up, looked up once it works; `None` if that fails (the
+/// inherited PATH is used then). A failure is not kept: a login shell slower than the
+/// timeout right after the computer starts (nvm, conda) is asked again next time.
 #[cfg(unix)]
 async fn login_path() -> Option<String> {
-    static PATH: tokio::sync::OnceCell<Option<String>> = tokio::sync::OnceCell::const_new();
-    PATH.get_or_init(|| async {
-        const MARKER: &str = "__ZSHELL_PATH__";
-        let shell = portable_pty::CommandBuilder::new_default_prog().get_shell();
-        // Startup files may print something too; the markers find the value.
-        let output = Command::new(shell)
-            .args(["-l", "-c", &format!("printf '{MARKER}%s{MARKER}' \"$PATH\"")])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .output();
-        let output = tokio::time::timeout(std::time::Duration::from_secs(5), output).await.ok()?.ok()?;
-        let text = String::from_utf8_lossy(&output.stdout);
-        let path = text.split(MARKER).nth(1)?;
-        (!path.is_empty()).then(|| path.to_owned())
-    })
-    .await
-    .clone()
+    static PATH: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+    PATH.get_or_try_init(|| async { login_path_now().await.ok_or(()) }).await.ok().cloned()
+}
+
+/// [`login_path`], asking the login shell now.
+#[cfg(unix)]
+async fn login_path_now() -> Option<String> {
+    const MARKER: &str = "__ZSHELL_PATH__";
+    let shell = portable_pty::CommandBuilder::new_default_prog().get_shell();
+    // Startup files may print something too; the markers find the value.
+    let output = Command::new(shell)
+        .args(["-l", "-c", &format!("printf '{MARKER}%s{MARKER}' \"$PATH\"")])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    let output = tokio::time::timeout(std::time::Duration::from_secs(5), output).await.ok()?.ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let path = text.split(MARKER).nth(1)?;
+    (!path.is_empty()).then(|| path.to_owned())
 }
 
 /// The process's stdout to read from and stdin to write to.
