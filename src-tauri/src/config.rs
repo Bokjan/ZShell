@@ -811,14 +811,13 @@ impl ProfileStore {
         self.update(|state| {
             let index = state.folders.iter().position(|f| f.id == id).ok_or_else(|| Error::new("folder.notFound"))?;
             let folder = state.folders.remove(index);
-            let children: Vec<Folder> = state
-                .folders
-                .iter()
-                .filter(|f| f.parent.as_deref() == Some(id))
-                .map(|f| Folder { parent: folder.parent.clone(), ..f.clone() })
-                .collect();
-            state.folders.retain(|f| f.parent.as_deref() != Some(id));
-            let at = index.min(state.folders.len());
+            let is_child = |f: &Folder| f.parent.as_deref() == Some(id);
+            let children: Vec<Folder> =
+                state.folders.iter().filter(|f| is_child(f)).map(|f| Folder { parent: folder.parent.clone(), ..f.clone() }).collect();
+            // Where the folder was, once the children before it are taken out too.
+            let before = state.folders[..index].iter().filter(|f| is_child(f)).count();
+            state.folders.retain(|f| !is_child(f));
+            let at = index - before;
             state.folders.splice(at..at, children);
             for profile in state.profiles.iter_mut().filter(|p| p.folder.as_deref() == Some(id)) {
                 profile.folder = folder.parent.clone();
@@ -966,6 +965,20 @@ mod tests {
         assert_eq!(store.folders(), [Folder { parent: None, ..db.clone() }]);
         store.delete_folder(&db.id).unwrap();
         assert!(store.list().iter().all(|p| p.folder.is_none()));
+
+        // Subfolders take the deleted folder's place, wherever they were listed.
+        let a = store.save_folder(folder("A", None)).unwrap();
+        let x = store.save_folder(folder("X", None)).unwrap();
+        store.save_folder(folder("B", None)).unwrap();
+        let c = store.save_folder(folder("C", Some(&x.id))).unwrap();
+        store.move_item(Item::Folder { id: c.id.clone() }, Some(x.id.clone()), Some(a.id.clone())).unwrap();
+        let names = || store.folders().iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(), ["C", "A", "X", "B"]);
+        store.delete_folder(&x.id).unwrap();
+        assert_eq!(names(), ["A", "C", "B"]);
+        for folder in store.folders() {
+            store.delete_folder(&folder.id).unwrap();
+        }
 
         // Everything is on disk.
         let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
