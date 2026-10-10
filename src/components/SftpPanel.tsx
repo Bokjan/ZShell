@@ -784,7 +784,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
       aria-sort={view.sort === key ? (view.descending ? "descending" : "ascending") : undefined}
     >
       <button type="button" className="sort-button" onClick={() => sortBy(key)}>
-        {label}
+        <span className="sort-label">{label}</span>
         {view.sort === key && <ChevronIcon direction={view.descending ? "down" : "up"} size={8} />}
       </button>
     </th>

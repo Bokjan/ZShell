@@ -152,14 +152,15 @@ main {
   color: var(--text);
 }
 /* Icons are SVGs (icons.tsx), not glyphs, which sit differently in each platform's fonts. Alone
-   in a button, one is centered in it; after a label (a menu's chevron), on the text's middle.
-   (`:only-child` doesn't count the label's text, so a chevron is excluded by its class.) */
+   in a button, one is centered in it. One after a label (a menu's chevron) is centered beside
+   it by the button, which is an inline flex box. (`:only-child` doesn't count the label's
+   text, so a chevron is excluded by its class.) */
 button > svg:only-child:not(.inline-icon) {
   display: block;
 }
 .inline-icon {
+  flex-shrink: 0;
   margin-left: 4px;
-  vertical-align: middle;
 }
 
 /* Sidebar */
@@ -578,6 +579,8 @@ body.dragging-row {
 .compose-bar > button,
 .compose-scope-button {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   height: calc(28px * var(--text-scale));
   padding: 0 10px;
   border: 1px solid var(--input-border);
@@ -794,6 +797,8 @@ body.dragging-row {
   white-space: nowrap;
 }
 .quick-group {
+  display: inline-flex;
+  align-items: center;
   border-color: transparent;
   background: none;
   color: var(--text-muted);
@@ -1059,6 +1064,8 @@ body.dragging-row {
   flex: 1;
   min-width: 0;
   display: flex;
+  /* The find bar fits itself to the pane's width. */
+  container: terminal / inline-size;
 }
 .terminal-view {
   flex: 1;
@@ -1119,9 +1126,6 @@ body.dragging-row {
   right: 18px;
   z-index: 3;
   display: flex;
-  /* In a narrow pane, the buttons go on a second row rather than out of sight. */
-  flex-wrap: wrap;
-  justify-content: flex-end;
   align-items: center;
   gap: 2px;
   max-width: calc(100% - 36px);
@@ -1179,6 +1183,33 @@ body.dragging-row {
 .search-bar .icon-button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+/* A pane too narrow for one row: the field and the previous / next / close buttons above, the
+   options and the count below. */
+@container terminal (max-width: 380px) {
+  .search-bar {
+    display: grid;
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto auto;
+    row-gap: 4px;
+  }
+  .search-bar input {
+    grid-row: 1;
+    grid-column: 1 / 5;
+    width: auto;
+    min-width: 0;
+  }
+  .search-bar .icon-button {
+    grid-row: 1;
+  }
+  .search-flag {
+    grid-row: 2;
+  }
+  .search-status {
+    grid-row: 2;
+    grid-column: 4 / 8;
+    min-width: 0;
+    text-align: right;
+  }
 }
 
 .placeholder {
@@ -1499,15 +1530,20 @@ body.resizing .terminal-view {
 }
 /* The column title, a button for the keyboard; looks like the header itself. */
 .sort-button {
+  display: inline-flex;
+  align-items: center;
   padding: 0;
   border: none;
   background: none;
   color: inherit;
   font: inherit;
   max-width: 100%;
+  cursor: default;
+}
+.sort-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: default;
 }
 .file-name {
   display: flex;
