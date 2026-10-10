@@ -2,6 +2,12 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.5.2] - 2026-10-10
+
+### Bug Fixes
+
+- A session's host can be an IPv6 address written in brackets, such as `[2001:db8::1]`: it is saved without them instead of being refused. The port still goes in its own field.
+
 ## [2.5.1] - 2026-10-10
 
 The same app as 2.5.0, which was not released because its Windows packages failed to build.
