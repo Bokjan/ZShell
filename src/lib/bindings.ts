@@ -50,6 +50,7 @@ export type ErrorCode =
   | "knownHosts.readFailed"
   | "knownHosts.writeFailed"
   | "log.createFailed"
+  | "log.writeFailed"
   | "net.connectFailed"
   | "net.connectTimeout"
   | "net.connectionLost"

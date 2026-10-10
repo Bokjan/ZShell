@@ -59,7 +59,8 @@
       "changed": "known_hosts has changed since it was listed. Check the list again."
     },
     "log": {
-      "createFailed": "Could not write the session log {path}"
+      "createFailed": "Could not write the session log {path}",
+      "writeFailed": "The session log stopped: {path} could not be written"
     },
     "credentialStore": "Credential store error",
     "session": {

@@ -241,7 +241,9 @@ export class PaneSession {
             this.events.zmodem(event.phase);
             return;
           case "log":
-            if (event.error) this.dim(t("terminal.logFailed", { message: event.error.message }));
+            // A log that stopped midway says so itself; one that couldn't start, with ours.
+            if (event.error?.code === "log.writeFailed") this.dim(event.error.message);
+            else if (event.error) this.dim(t("terminal.logFailed", { message: event.error.message }));
             this.events.log(event.path);
             return;
         }

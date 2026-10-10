@@ -11,7 +11,7 @@
 //! or all) only ever deletes files it created, never others in the log folder, and finds a
 //! session's logs after it was renamed.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -77,6 +77,9 @@ struct Queue {
     chunks: SyncSender<Chunk>,
     /// Bytes left out since the last chunk queued.
     dropped: usize,
+    path: PathBuf,
+    /// Why the writer stopped, if writing failed.
+    failure: Arc<Mutex<Option<String>>>,
 }
 
 /// A session's log, if one is being written; shared by everything that writes to the
@@ -92,10 +95,11 @@ impl LogSlot {
     }
 
     /// Logs what the terminal is about to show, without waiting: left out when the writer
-    /// is that far behind. A writer that failed (the disk is full, or gone) stops the log.
-    pub fn write(&self, bytes: &[u8]) {
+    /// is that far behind. A writer that failed (the disk is full, or gone) stops the log;
+    /// the error is returned once, for the session to report.
+    pub fn write(&self, bytes: &[u8]) -> Option<Error> {
         let mut slot = self.queue.lock().unwrap();
-        let Some(queue) = slot.as_mut() else { return };
+        let queue = slot.as_mut()?;
         let send = |chunk| match queue.chunks.try_send(chunk) {
             Ok(()) => Some(true),
             Err(TrySendError::Full(_)) => Some(false),
@@ -111,8 +115,16 @@ impl LogSlot {
         match sent {
             Some(true) => queue.dropped = 0,
             Some(false) => queue.dropped += bytes.len(),
-            None => *slot = None,
+            None => {
+                let queue = slot.take()?;
+                let error = Error::new("log.writeFailed").param("path", queue.path.display());
+                return Some(match queue.failure.lock().unwrap().take() {
+                    Some(failure) => error.detail(failure),
+                    None => error,
+                });
+            }
         }
+        None
     }
 }
 
@@ -125,6 +137,8 @@ struct LogWriter {
     dirty: bool,
     /// Keeps the file out of cleanups while it is written.
     _active: Active,
+    /// Where `run` leaves why writing failed.
+    failure: Arc<Mutex<Option<String>>>,
 }
 
 impl LogWriter {
@@ -175,7 +189,8 @@ impl LogWriter {
                 Err(RecvTimeoutError::Timeout) => Ok(()),
                 Err(RecvTimeoutError::Disconnected) => return,
             };
-            if written.is_err() {
+            if let Err(e) = written {
+                *self.failure.lock().unwrap() = Some(e.to_string());
                 return;
             }
         }
@@ -337,10 +352,11 @@ impl vte::Perform for Line {
     }
 }
 
-/// The logs being written, by path.
+/// The logs being written, by path, with how many writers each has: a reconnection's writer
+/// may start before the previous connection's has finished.
 #[derive(Default)]
 struct ActiveLogs {
-    paths: Mutex<HashSet<PathBuf>>,
+    paths: Mutex<HashMap<PathBuf, usize>>,
     closed: Condvar,
 }
 
@@ -348,11 +364,21 @@ impl ActiveLogs {
     /// Waits until nothing writes `path` any more, for at most `timeout`.
     fn wait_closed(&self, path: &Path, timeout: Duration) {
         let paths = self.paths.lock().unwrap();
-        let _paths = self.closed.wait_timeout_while(paths, timeout, |paths| paths.contains(path)).unwrap();
+        let _paths = self.closed.wait_timeout_while(paths, timeout, |paths| paths.contains_key(path)).unwrap();
+    }
+
+    /// Counts a writer of `path` until the returned value is dropped.
+    fn add(self: &Arc<Self>, path: PathBuf) -> Active {
+        *self.paths.lock().unwrap().entry(path.clone()).or_default() += 1;
+        Active { path, set: self.clone() }
+    }
+
+    fn contains(&self, path: &Path) -> bool {
+        self.paths.lock().unwrap().contains_key(path)
     }
 }
 
-/// Removes its file from the active set when the log closes.
+/// A writer of a log, counted in the active set while it exists.
 struct Active {
     path: PathBuf,
     set: Arc<ActiveLogs>,
@@ -360,7 +386,14 @@ struct Active {
 
 impl Drop for Active {
     fn drop(&mut self) {
-        self.set.paths.lock().unwrap().remove(&self.path);
+        let mut paths = self.set.paths.lock().unwrap();
+        if let Some(count) = paths.get_mut(&self.path) {
+            *count -= 1;
+            if *count == 0 {
+                paths.remove(&self.path);
+            }
+        }
+        drop(paths);
         self.set.closed.notify_all();
     }
 }
@@ -422,7 +455,9 @@ impl Logs {
         let info = &slot.info;
         let address = if info.user.is_empty() { info.host.clone() } else { format!("{}@{}", info.user, info.host) };
         let header = t!("log.started", session = info.session, address = address, time = now());
-        self.install(slot, path.clone(), file, settings, &header)?;
+        // Not in the index yet, so no cleanup or deletion can see it.
+        let active = self.active.add(path.clone());
+        self.install(slot, path.clone(), file, active, settings, &header)?;
         self.remember(Entry { path: path.clone(), profile: info.profile.clone() });
         Ok(path)
     }
@@ -433,29 +468,40 @@ impl Logs {
     /// isn't a log ZShell wrote (or that was deleted since) starts a new log rather than
     /// writing to whatever file it names.
     fn append(&self, slot: &LogSlot, path: PathBuf, settings: &LogSettings) -> Result<PathBuf> {
-        if !self.index.lock().unwrap().iter().any(|entry| entry.path == path) || !path.is_file() {
+        let is_log = |index: &[Entry]| index.iter().any(|entry| entry.path == path) && path.is_file();
+        if !is_log(&self.index.lock().unwrap()) {
             return self.start(slot, settings);
         }
         // The previous connection's writer may still be writing what it was given.
         self.active.wait_closed(&path, APPEND_WAIT);
+        // Checked again, opened and counted as written under the index's lock, which
+        // deleting holds: otherwise a log deleted in between would be written again, or one
+        // about to be written deleted.
+        let index = self.index.lock().unwrap();
+        if !is_log(&index) {
+            drop(index);
+            return self.start(slot, settings);
+        }
         let file = OpenOptions::new()
             .append(true)
             .open(&path)
             .map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
-        self.install(slot, path.clone(), file, settings, &t!("log.resumed", time = now()))?;
+        let active = self.active.add(path.clone());
+        drop(index);
+        self.install(slot, path.clone(), file, active, settings, &t!("log.resumed", time = now()))?;
         Ok(path)
     }
 
-    fn install(&self, slot: &LogSlot, path: PathBuf, file: File, settings: &LogSettings, note: &str) -> Result<()> {
-        self.active.paths.lock().unwrap().insert(path.clone());
-        let active = Active { path: path.clone(), set: self.active.clone() };
+    fn install(&self, slot: &LogSlot, path: PathBuf, file: File, active: Active, settings: &LogSettings, note: &str) -> Result<()> {
         let text = (settings.format == LogFormat::Text)
             .then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
-        let mut writer = LogWriter { file: BufWriter::new(file), text, flushed: Instant::now(), dirty: false, _active: active };
+        let failure = Arc::new(Mutex::new(None));
+        let mut writer =
+            LogWriter { file: BufWriter::new(file), text, flushed: Instant::now(), dirty: false, _active: active, failure: failure.clone() };
         writer.note(note).map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
         let (chunks, queued) = sync_channel(QUEUE);
         thread::spawn(move || writer.run(queued));
-        *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0 });
+        *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0, path, failure });
         Ok(())
     }
 
@@ -494,11 +540,11 @@ impl Logs {
 
     /// Deletes the logs that `matches`, except those being written; returns how many.
     fn delete(&self, matches: impl Fn(&Entry) -> bool) -> usize {
-        let active = self.active.paths.lock().unwrap().clone();
+        // Under the index's lock, which going on with a log takes to count it (see `append`).
         let mut index = self.existing();
         let mut deleted = 0;
         index.retain(|entry| {
-            if !matches(entry) || active.contains(&entry.path) || std::fs::remove_file(&entry.path).is_err() {
+            if !matches(entry) || self.active.contains(&entry.path) || std::fs::remove_file(&entry.path).is_err() {
                 return true;
             }
             deleted += 1;
@@ -641,7 +687,9 @@ mod tests {
     #[test]
     fn output_is_left_out_while_the_writer_is_behind() {
         let (chunks, queued) = sync_channel(2);
-        let slot = LogSlot { info: LogInfo::default(), queue: Mutex::new(Some(Queue { chunks, dropped: 0 })) };
+        let failure = Arc::new(Mutex::new(None));
+        let queue = Queue { chunks, dropped: 0, path: PathBuf::from("web.log"), failure: failure.clone() };
+        let slot = LogSlot { info: LogInfo::default(), queue: Mutex::new(Some(queue)) };
         for chunk in [b"a".as_slice(), b"b", b"cc", b"ddd"] {
             slot.write(chunk);
         }
@@ -652,10 +700,44 @@ mod tests {
         assert_eq!((taken(&queued), taken(&queued)), ("a".into(), "b".into()));
         slot.write(b"e");
         assert_eq!((taken(&queued), taken(&queued)), ("<5 dropped>".into(), "e".into()));
-        // A writer that failed ends the log.
+        // A writer that failed ends the log, which says so once.
+        *failure.lock().unwrap() = Some("No space left on device".into());
         drop(queued);
-        slot.write(b"f");
+        let error = slot.write(b"f").unwrap();
+        assert_eq!(error.code(), "log.writeFailed");
+        assert!(error.to_string().contains("web.log") && error.to_string().contains("No space left"), "{error}");
         assert!(slot.queue.lock().unwrap().is_none());
+        assert!(slot.write(b"g").is_none());
+    }
+
+    /// A writer that can't write stops and leaves why.
+    #[test]
+    fn a_failing_writer_says_why() {
+        let path = std::env::temp_dir().join(format!("zshell-log-read-only-{}", std::process::id()));
+        std::fs::write(&path, b"").unwrap();
+        let failure = Arc::new(Mutex::new(None));
+        let active = Arc::new(ActiveLogs::default()).add(path.clone());
+        // Opened for reading only: writes fail.
+        let file = File::open(&path).unwrap();
+        let writer = LogWriter { file: BufWriter::new(file), text: None, flushed: Instant::now(), dirty: false, _active: active, failure: failure.clone() };
+        let (chunks, queued) = sync_channel(2);
+        chunks.send(Chunk::Output(vec![b'x'; 64 << 10])).unwrap();
+        writer.run(queued);
+        assert!(failure.lock().unwrap().is_some());
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A log is written while any of its writers is: a reconnection's may start before the
+    /// previous one's has finished.
+    #[test]
+    fn a_log_is_active_until_its_last_writer_ends() {
+        let set = Arc::new(ActiveLogs::default());
+        let path = PathBuf::from("web.log");
+        let (first, second) = (set.add(path.clone()), set.add(path.clone()));
+        drop(first);
+        assert!(set.contains(&path));
+        drop(second);
+        assert!(!set.contains(&path));
     }
 
     #[test]

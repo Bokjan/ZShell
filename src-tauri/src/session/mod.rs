@@ -270,7 +270,9 @@ impl SessionSink {
     /// Writes to the terminal directly (our own messages, or output already filtered), and
     /// to the session's log.
     pub fn write(&self, bytes: Vec<u8>) {
-        self.log.write(&bytes);
+        if let Some(error) = self.log.write(&bytes) {
+            self.event(SessionEvent::Log { path: None, error: Some(error) });
+        }
         self.send_output(&bytes);
     }
 
