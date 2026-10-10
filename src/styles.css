@@ -1345,6 +1345,7 @@ body.resizing .terminal-view {
   background: var(--danger-soft);
   color: var(--danger);
   font-size: calc(12px * var(--text-scale));
+  line-height: calc(18px * var(--text-scale));
   white-space: pre-wrap;
 }
 .panel-error > span {
@@ -1354,9 +1355,13 @@ body.resizing .terminal-view {
 .panel-error.dismissable {
   cursor: pointer;
 }
+/* As tall as the message's first line, with the icon on its middle. */
 .panel-error-dismiss {
   flex-shrink: 0;
-  padding: 2px;
+  display: flex;
+  align-items: center;
+  height: calc(18px * var(--text-scale));
+  padding: 0 2px;
   border: none;
   background: none;
   color: inherit;
@@ -1737,6 +1742,10 @@ body.resizing .terminal-view {
   align-items: flex-start;
   gap: 8px;
   padding: 7px 10px;
+  /* The height of the rule's first line (its mapping), which the kind, the buttons and the
+     switch are centered on whatever the text size, as the lines below may wrap. */
+  --rule-line: calc(18px * var(--text-scale));
+  --kind-height: calc(14px * var(--text-scale) + 2px);
 }
 .forward-rule:hover {
   background: var(--bg-hover);
@@ -1744,8 +1753,9 @@ body.resizing .terminal-view {
 .forward-kind {
   flex-shrink: 0;
   min-width: 52px;
-  margin-top: 1px;
+  margin-top: calc((var(--rule-line) - var(--kind-height)) / 2);
   padding: 1px 5px;
+  line-height: calc(14px * var(--text-scale));
   box-sizing: border-box;
   border-radius: 3px;
   font-size: calc(10px * var(--text-scale));
@@ -1772,6 +1782,7 @@ body.resizing .terminal-view {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: var(--rule-line);
   font-family: Menlo, "Cascadia Mono", Consolas, monospace;
   font-size: calc(12px * var(--text-scale));
   user-select: text;
@@ -1788,10 +1799,12 @@ body.resizing .terminal-view {
   gap: 6px;
   margin-top: 2px;
   font-size: calc(11px * var(--text-scale));
+  line-height: calc(16px * var(--text-scale));
   color: var(--text-muted);
 }
+/* On the middle of the status's first line (it may wrap). */
 .forward-status .status-dot {
-  margin-top: 4px;
+  margin-top: calc((16px * var(--text-scale) - 7px) / 2);
   background: var(--text-muted);
 }
 .forward-rule.starting .status-dot {
@@ -1816,6 +1829,9 @@ body.resizing .terminal-view {
   border: 1px solid var(--input-border);
   border-radius: 3px;
   font-size: calc(10px * var(--text-scale));
+  /* On the status's first line, as the dot. */
+  line-height: calc(14px * var(--text-scale));
+  margin-top: calc((16px * var(--text-scale) - 14px * var(--text-scale) - 2px) / 2);
 }
 .forward-last-error {
   margin-top: 2px;
@@ -1826,7 +1842,9 @@ body.resizing .terminal-view {
 .forward-actions {
   display: flex;
   flex-shrink: 0;
+  align-items: center;
   gap: 2px;
+  height: var(--rule-line);
   opacity: 0;
 }
 .forward-rule:hover .forward-actions,
@@ -1858,7 +1876,9 @@ body.resizing .terminal-view {
   flex-shrink: 0;
   width: 28px;
   height: 16px;
-  margin-top: 1px;
+}
+.forward-rule .switch {
+  margin-top: calc((var(--rule-line) - 16px) / 2);
 }
 .switch input {
   position: absolute;
@@ -2115,10 +2135,12 @@ body.resizing .terminal-view {
   font-size: calc(12px * var(--text-scale));
   color: var(--text-muted);
 }
+/* In running text, which may wrap: on the middle of the capital letters (0.35em above the
+   baseline in the system fonts) rather than a fixed offset, so at any text size. */
 .help-tip {
   display: inline-flex;
   margin-left: 4px;
-  vertical-align: -2px;
+  vertical-align: calc(0.35em - 6px);
   color: var(--text-muted);
 }
 .help-tip:hover,
@@ -2569,7 +2591,8 @@ body.resizing .terminal-view {
 /* After the text of a link that opens in the browser. */
 .external-link-icon {
   margin-left: 4px;
-  vertical-align: -1px;
+  /* As `.help-tip`. */
+  vertical-align: calc(0.35em - 5.5px);
 }
 .settings-dialog button.link:hover {
   text-decoration: underline;
