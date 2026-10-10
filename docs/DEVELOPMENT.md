@@ -117,9 +117,9 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 ## CI
 
-- `.github/workflows/windows.yml`：推送到 main 和 PR 时在 `windows-latest` 上跑 `pnpm build`、`pnpm test`、`cargo clippy --all-targets -D warnings` 和 `cargo test`，保证 Windows 专用代码能通过编译。
-- `.github/workflows/release.yml`：只能手动运行。在版本 tag 上运行时创建草稿 release（见下文「发布」）；在分支上运行时只打包，产物作为 workflow artifacts。勾选 "Microsoft Store only" 时只打 Store 包，省去 macOS 与其他 Windows 包。
-- `.github/dependabot.yml`：每周检查 npm、Cargo 和 GitHub Actions 的依赖更新。各生态的 minor / patch 更新合并为一个 PR，Tauri（及 xterm.js、russh）的相关包各自成组；major 更新单独成 PR。提交前缀为 `chore(deps)` / `ci`，不进更新日志。Dependabot 的 PR 会触发 Windows CI。
+- `.github/workflows/ci.yml`：推送到 main 和 PR 时在 `macos-latest` 与 `windows-latest` 上各跑一遍 `pnpm build`、`pnpm test`、`cargo clippy --all-targets -D warnings` 和 `cargo test`。平台专用代码（Windows 的 ConPTY、OpenSSH agent 管道、Pageant）在别的平台上编译不到，靠它检查。以后支持 Linux 时在 matrix 里加上 `ubuntu-latest`。
+- `.github/workflows/release.yml`：只能手动运行。在版本 tag 上运行时创建草稿 release（见下文「发布」）；在分支上运行时只打包，产物作为 workflow artifacts。macOS 一个 job；Windows 的所有包在一个 job 里由一次 x64 构建和一次 ARM64 交叉编译得到（安装包、免安装 exe 与 Store 包里的 x64 exe 是同一个，不重复编译）。勾选 "Microsoft Store only" 时只打 Store 包，跳过 macOS job，x64 也不打安装包。
+- `.github/dependabot.yml`：每周检查 npm、Cargo 和 GitHub Actions 的依赖更新。各生态的 minor / patch 更新合并为一个 PR，Tauri（及 xterm.js、russh）的相关包各自成组；major 更新单独成 PR。提交前缀为 `chore(deps)` / `ci`，不进更新日志。Dependabot 的 PR 会触发 CI。
 
 ## 发布
 
@@ -139,7 +139,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 5. 要发布时：`scripts/release.sh publish [X.Y.Z]`（默认当前版本），用 `gh workflow run release.yml --ref vX.Y.Z` 在该 tag 上运行 release workflow。workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，再由一个 job 统一创建草稿 release（避免并行 job 重复创建），然后并行打包并上传。发布说明由 `scripts/release-notes.sh` 从 `CHANGELOG.md` 取：不是每个版本都发布，所以包含上一个已发布的 release（不算草稿）之后的全部版本；只有这一个版本时就是该节原文，有多个时每个版本一节、以版本号和日期为标题，新的在前。本地运行 `scripts/release-notes.sh X.Y.Z` 可以预览。各个包：
    - macOS 通用包（`universal-apple-darwin`，`.app` 与 `.dmg`）。
    - Windows NSIS 安装包与 MSI。
-   - Windows 免安装的单独 exe（`--no-bundle` + `uploadPlainBinary`，文件名 `ZShell_<版本>_x64_standalone.exe`）。需要系统有 WebView2 运行时；配置仍写在 `%APPDATA%`，不是便携模式。
+   - Windows 免安装的单独 exe（打安装包那次构建出的 `zshell.exe`，改名为 `ZShell_<版本>_x64_standalone.exe`）。需要系统有 WebView2 运行时；配置仍写在 `%APPDATA%`，不是便携模式。
    - Microsoft Store 用的 `ZShell_<版本>.msixbundle`（x64 与 ARM64，由 `scripts/package-msix.ps1` 用 Windows SDK 的 `makeappx` 打包，清单模板在 `src-tauri/msix/`，不签名）。
 6. 检查草稿后手动发布，作为正式版本发布（不勾选 pre-release）。
 7. 在 Partner Center 新建提交，上传该版本的 `.msixbundle`。Store 会重新签名并负责用户的更新。

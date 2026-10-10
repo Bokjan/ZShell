@@ -28,7 +28,7 @@ cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
 pnpm tauri dev                              # run the app
 ```
 
-Run the first three before committing; the Windows CI job runs the same build, clippy and tests. Windows-only code (ConPTY, the OpenSSH agent pipe, Pageant) cannot be compiled on macOS, so CI is the only check for it.
+Run the first three before committing; CI runs the same build, clippy and tests on macOS and Windows. Windows-only code (ConPTY, the OpenSSH agent pipe, Pageant) cannot be compiled on macOS, so CI is the only check for it.
 
 Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/lib/bindings.ts` (never mirror them by hand in `api.ts`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale.
 

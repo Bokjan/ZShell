@@ -1,6 +1,7 @@
-# Windows-only code (ConPTY, OpenSSH agent pipe / Pageant) cannot be checked from macOS,
-# so at least make sure it compiles, passes clippy and runs the tests.
-name: Windows check
+# Builds and tests on every platform the app supports. Platform-only code (ConPTY, the
+# OpenSSH agent pipe / Pageant on Windows) cannot be checked from another one, so each runs
+# the frontend build, clippy and the tests.
+name: CI
 
 on:
   push:
@@ -10,7 +11,16 @@ on:
 
 jobs:
   check:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

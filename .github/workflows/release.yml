@@ -57,31 +57,12 @@ jobs:
             -f body="$(cat "$RUNNER_TEMP/notes.md")" -F draft=true --jq .id)
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
-  build:
+  macos:
     needs: create-release
     # Also runs when create-release was skipped (manual runs).
     if: ${{ !failure() && !cancelled() && !inputs.store_only }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Universal binary for Apple Silicon and Intel: .app and .dmg.
-          - name: macOS
-            os: macos-latest
-            args: --target universal-apple-darwin
-            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-          # NSIS installer (-setup.exe) and MSI.
-          - name: Windows
-            os: windows-latest
-            args: ''
-          # The bare executable, runnable without installing (needs the WebView2 runtime,
-          # which Windows 11 and up-to-date Windows 10 include).
-          - name: Windows standalone
-            os: windows-latest
-            args: --no-bundle
-            standalone: true
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    name: macOS
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -94,37 +75,42 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust-targets }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: ${{ matrix.name }}
       # Third-party license notices, which the frontend build embeds; fails without
       # cargo-about rather than leaving out the Rust crates.
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
       - run: pnpm licenses:generate
+      # Universal binary for Apple Silicon and Intel: .app and .dmg.
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Ad-hoc signature (no certificate) so that the downloaded bundle is consistently
-          # signed; Apple Silicon refuses to run unsigned code. Ignored on Windows.
+          # signed; Apple Silicon refuses to run unsigned code.
           APPLE_SIGNING_IDENTITY: '-'
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: ${{ matrix.args }}
-          uploadPlainBinary: ${{ matrix.standalone == true }}
-          # The plain binary's [name] is "binary", so the app name is spelled out.
-          releaseAssetNamePattern: ${{ matrix.standalone && 'ZShell_[version]_[arch]_standalone[ext]' || '' }}
+          args: --target universal-apple-darwin
           uploadWorkflowArtifacts: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
-  # The Microsoft Store bundle (x64 and ARM64), uploaded to Partner Center by hand.
-  store:
+  # Every Windows package from one x64 and one ARM64 build: the x64 executable is the one
+  # in the installers, the standalone executable and the Store bundle alike.
+  # - NSIS installer (-setup.exe) and MSI.
+  # - The bare executable, runnable without installing (needs the WebView2 runtime, which
+  #   Windows 11 and up-to-date Windows 10 include).
+  # - The Microsoft Store bundle (x64 and ARM64), uploaded to Partner Center by hand.
+  windows:
     needs: create-release
     if: ${{ !failure() && !cancelled() }}
-    name: Microsoft Store
+    name: Windows
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -141,25 +127,38 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: Microsoft Store
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
       - run: pnpm licenses:generate
+      - name: Build for x64
+        run: pnpm tauri build --target x86_64-pc-windows-msvc ${{ inputs.store_only && '--no-bundle' || '' }}
       # Cross-compiled on the x64 runner; ring needs clang for ARM64, which the runner
       # image includes.
-      - run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc
-      - run: pnpm tauri build --no-bundle --target aarch64-pc-windows-msvc
+      - name: Build for ARM64
+        run: pnpm tauri build --no-bundle --target aarch64-pc-windows-msvc
       - run: scripts/package-msix.ps1
-        shell: pwsh
+      - name: Collect the packages
+        env:
+          STORE_ONLY: ${{ inputs.store_only }}
+        run: |
+          $version = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "(.+)"' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+          $release = "src-tauri/target/x86_64-pc-windows-msvc/release"
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item src-tauri/target/msix/*.msixbundle dist
+          if ($env:STORE_ONLY -ne "true") {
+            Copy-Item "$release/bundle/nsis/*-setup.exe", "$release/bundle/msi/*.msi" dist
+            Copy-Item "$release/zshell.exe" "dist/ZShell_${version}_x64_standalone.exe"
+          }
+          Get-ChildItem dist | ForEach-Object Name
       - name: Upload to the release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$env:GITHUB_REF_NAME" (Get-Item src-tauri/target/msix/*.msixbundle)
-        shell: pwsh
+        run: gh release upload "$env:GITHUB_REF_NAME" (Get-ChildItem dist)
       - uses: actions/upload-artifact@v7
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
-          name: Microsoft Store
-          path: src-tauri/target/msix/*.msixbundle
+          name: Windows
+          path: dist/*
