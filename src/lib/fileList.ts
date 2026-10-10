@@ -1,4 +1,5 @@
 import type { FileEntry } from "./api";
+import { storedJson, storeJson } from "./storage";
 
 export type SortKey = "name" | "size" | "modified";
 
@@ -13,20 +14,11 @@ const DEFAULT_VIEW: FileView = { showHidden: true, sort: "name", descending: fal
 
 /** How the file panel lists files; layout state, kept per machine like the sidebar width. */
 export function storedView(): FileView {
-  try {
-    return { ...DEFAULT_VIEW, ...JSON.parse(localStorage.getItem(VIEW_KEY) ?? "{}") };
-  } catch {
-    return DEFAULT_VIEW;
-  }
+  const stored = storedJson(VIEW_KEY);
+  return typeof stored === "object" && stored !== null ? { ...DEFAULT_VIEW, ...stored } : DEFAULT_VIEW;
 }
 
-export function storeView(view: FileView) {
-  try {
-    localStorage.setItem(VIEW_KEY, JSON.stringify(view));
-  } catch {
-    // Not persisted; still applies until the app restarts.
-  }
-}
+export const storeView = (view: FileView) => storeJson(VIEW_KEY, view);
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -50,10 +42,5 @@ export function visibleEntries(entries: FileEntry[], view: FileView, filter: str
     .sort((a, b) => Number(b.isDir) - Number(a.isDir) || direction * (byKey(a, b) || byName(a, b)));
 }
 
-/** The paths from `from` to `to` (in either direction) in the listed order. */
-export function pathRange(entries: FileEntry[], from: string, to: string): string[] {
-  const a = entries.findIndex((entry) => entry.path === from);
-  const b = entries.findIndex((entry) => entry.path === to);
-  if (a < 0 || b < 0) return [to];
-  return entries.slice(Math.min(a, b), Math.max(a, b) + 1).map((entry) => entry.path);
-}
+/** A permission mode as typed (`644`, `0755`, octal), or null if it isn't one. */
+export const parseMode = (text: string): number | null => (/^[0-7]{3,4}$/.test(text.trim()) ? parseInt(text.trim(), 8) : null);
