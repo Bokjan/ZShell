@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Poll};
 
 use anyhow::Context;
-use russh::{client, Disconnect};
+use russh::{client, ChannelMsg, Disconnect};
 use russh_sftp::client::{Config as SftpConfig, SftpSession};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::watch;
@@ -92,8 +92,19 @@ impl Connection {
                 return Ok(sftp.clone());
             }
         }
-        let channel = self.handle.channel_open_session().await?;
+        let mut channel = self.handle.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
+        // A server without the subsystem answers with a failure but keeps the channel
+        // open, and russh-sftp would wait for its greeting until the request times out.
+        loop {
+            match channel.wait().await {
+                Some(ChannelMsg::Success) => break,
+                Some(ChannelMsg::Failure | ChannelMsg::Close | ChannelMsg::Eof) | None => {
+                    return Err(Error::new("sftp.unsupported").into());
+                }
+                Some(_) => {}
+            }
+        }
         let ended = Arc::new(AtomicBool::new(false));
         let stream = crate::sftp::names::convert(channel.into_stream(), crate::encoding::for_profile(&self.profile.encoding));
         let stream = Watched { inner: stream, ended: ended.clone() };
