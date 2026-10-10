@@ -201,28 +201,46 @@ fn preprocess(path: &Path, depth: usize, out: &mut String) -> Result<bool> {
     let read_failed = |e: std::io::Error| Error::new("import.readFailed").param("path", path.display()).detail(e);
     let text = std::fs::read_to_string(path).map_err(read_failed)?;
     let mut has_match = false;
+    // The block the lines are in: options after an `Include` inside it still belong to it,
+    // even if the included file starts blocks of its own (as in OpenSSH).
+    let mut block = None;
     for line in text.lines() {
-        let trimmed = line.trim_start();
-        let keyword = trimmed.split(|c: char| c.is_whitespace() || c == '=').next().unwrap_or_default();
-        if keyword.eq_ignore_ascii_case("match") {
+        let key = keyword(line);
+        if key.eq_ignore_ascii_case("match") {
             has_match = true;
             out.push_str(SKIPPED_MATCH);
-        } else if keyword.eq_ignore_ascii_case("include") {
+            block = Some(SKIPPED_MATCH);
+        } else if key.eq_ignore_ascii_case("include") {
             if depth >= MAX_INCLUDE_DEPTH {
                 return Err(Error::new("import.includeTooDeep").param("path", path.display()));
             }
-            let args = trimmed[keyword.len()..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
+            let trimmed = line.trim_start();
+            let args = trimmed[key.len()..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
+            let start = out.len();
             for pattern in args.split_whitespace().map(|arg| arg.trim_matches('"')) {
                 for included in include_paths(pattern) {
                     has_match |= preprocess(&included, depth + 1, out)?;
                 }
             }
+            let starts_blocks = out[start..].lines().any(|line| keyword(line).eq_ignore_ascii_case("host"));
+            if starts_blocks {
+                // Before any block, options apply to every host.
+                out.push_str(block.unwrap_or("Host *"));
+            }
         } else {
+            if key.eq_ignore_ascii_case("host") {
+                block = Some(line);
+            }
             out.push_str(line);
         }
         out.push('\n');
     }
     Ok(has_match)
+}
+
+/// The keyword a config line starts with.
+fn keyword(line: &str) -> &str {
+    line.trim_start().split(|c: char| c.is_whitespace() || c == '=').next().unwrap_or_default()
 }
 
 /// The files an `Include` pattern names: relative to `~/.ssh` unless absolute, with `~`
@@ -619,6 +637,19 @@ Host *
         let (_dir, path) = write_config("");
         std::fs::write(&path, format!("Host web\n    User alice\nInclude {}\n", path.display())).unwrap();
         assert_eq!(scan(&path, &[]).unwrap_err().code(), "import.includeTooDeep");
+    }
+
+    /// Options after an `Include` inside a `Host` block belong to that block, even when the
+    /// included file has blocks of its own.
+    #[test]
+    fn options_after_an_include_stay_in_their_block() {
+        let (dir, path) = write_config("");
+        let included = dir.0.join("db.conf");
+        std::fs::write(&included, "Host db\n    User bob\n").unwrap();
+        std::fs::write(&path, format!("Host web\n    Include {}\n    User alice\n", included.display())).unwrap();
+        let candidates = scan(&path, &[]).unwrap();
+        let users: Vec<_> = candidates.iter().map(|c| (c.alias.as_str(), c.username.as_str())).collect();
+        assert!(users.contains(&("web", "alice")) && users.contains(&("db", "bob")), "{users:?}");
     }
 
     /// `Include config.d/*` leaves out hidden files and folders, which can't be read as
