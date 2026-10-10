@@ -2,6 +2,16 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.4.1] - 2026-10-10
+
+### Bug Fixes
+
+- Opening the file panel on a server without SFTP (its `Subsystem sftp` turned off) says so at once instead of waiting two minutes, during which every other file operation on the tab waited too.
+- On Windows, a serial line held back by RTS/CTS or XON/XOFF flow control for more than 10 ms (pasting, uploading with ZMODEM) no longer ends the session as disconnected.
+- A session that finished opening just after the window reloaded (it waits for its log to open) no longer keeps running unseen: a local shell no longer stays behind, and an SSH connection no longer keeps its automatic forwarding rules' ports, which the reloaded window's connection then skipped.
+- Deleting a session or proxy succeeds even when the keychain refuses to remove its password (macOS asks again for each item after an update), and says that the password is still in the keychain, instead of reporting an error while the sidebar kept showing it and saving from the still-open dialog brought it back. Duplicating a session shows the copy, saying so if its password couldn't be copied, instead of failing so that trying again made another copy.
+- A terminal that becomes active while a dialog is open (the focused pane exited while the settings were open) no longer takes the keyboard focus from the dialog, where Escape and Tab went to the shell behind it; it takes the focus once the dialog closes.
+
 ## [2.4.0] - 2026-10-10
 
 ### Features
