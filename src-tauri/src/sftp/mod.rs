@@ -6,6 +6,8 @@ pub mod names;
 pub mod replace;
 pub mod transfer;
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
@@ -45,7 +47,11 @@ pub fn file_name(path: &str) -> &str {
     path.trim_end_matches('/').rsplit('/').next().unwrap_or(path)
 }
 
-pub async fn list(sftp: &SftpSession, path: &str) -> Result<Listing> {
+/// Symlinks whose targets are looked up at once when listing, rather than one round trip
+/// after another (a folder such as `/usr/lib` has hundreds).
+const SYMLINK_LOOKUPS: usize = 16;
+
+pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
     let path = sftp.canonicalize(path).await?;
     let mut entries = Vec::new();
     for entry in sftp.read_dir(&path).await? {
@@ -54,22 +60,31 @@ pub async fn list(sftp: &SftpSession, path: &str) -> Result<Listing> {
             continue;
         }
         let metadata = entry.metadata();
-        let full = join(&path, &name);
-        let is_symlink = metadata.file_type().is_symlink();
-        let is_dir = if is_symlink {
-            sftp.metadata(&full).await.is_ok_and(|m| m.file_type().is_dir())
-        } else {
-            metadata.file_type().is_dir()
-        };
         entries.push(FileEntry {
+            path: join(&path, &name),
             name,
-            path: full,
-            is_dir,
-            is_symlink,
+            is_dir: metadata.file_type().is_dir(),
+            is_symlink: metadata.file_type().is_symlink(),
             size: metadata.size.unwrap_or(0),
             modified: metadata.mtime,
             permissions: metadata.permissions,
         });
+    }
+    // A symlink is shown as a folder if it leads to one.
+    let symlinks: Vec<(usize, String)> = entries.iter().enumerate().filter(|(_, e)| e.is_symlink).map(|(i, e)| (i, e.path.clone())).collect();
+    let mut symlinks = symlinks.into_iter();
+    let mut lookups = tokio::task::JoinSet::new();
+    loop {
+        while lookups.len() < SYMLINK_LOOKUPS {
+            let Some((index, target)) = symlinks.next() else { break };
+            let sftp = sftp.clone();
+            lookups.spawn(async move { (index, sftp.metadata(&target).await.is_ok_and(|m| m.file_type().is_dir())) });
+        }
+        match lookups.join_next().await {
+            Some(Ok((index, is_dir))) => entries[index].is_dir = is_dir,
+            Some(Err(_)) => {}
+            None => break,
+        }
     }
     entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     Ok(Listing { path, entries })
