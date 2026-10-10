@@ -77,7 +77,11 @@ async fn bridge(
     };
     let (mut reader, writer) = tokio::io::split(stream);
     let (tx, rx) = mpsc::channel(1);
-    tokio::spawn(write_all(writer, rx));
+    // Stopped when the session closes: a server that no longer reads would keep a write
+    // waiting for ever, and with it the connection (the stream closes once both halves are
+    // dropped) and a proxy command's process.
+    let writing = tokio::spawn(write_all(writer, rx));
+    io.on_close(move || writing.abort());
 
     let mut telnet = Telnet::new(term_type, io.size);
     let mut outgoing = telnet.start();
@@ -340,6 +344,25 @@ mod tests {
         let events: Vec<String> = events.try_iter().collect();
         assert!(events[0].contains(r#""type":"connected""#));
         assert!(events.last().unwrap().contains(r#""reason":"exited""#), "{events:?}");
+    }
+
+    /// Closing the tab while a write waits for a server that doesn't read closes the
+    /// connection all the same.
+    #[tokio::test]
+    async fn closing_stops_a_write_the_server_never_reads() {
+        let (client, mut server) = tokio::io::duplex(64);
+        let (mut io, input, _output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(async move {
+            let outcome = bridge(Box::new(client), JumpChain::default(), "xterm", AutoLogin::new("", || None), &mut io).await;
+            io.finish(outcome);
+        });
+        input.send(SessionInput::Data(vec![b'x'; 4096])).unwrap();
+        // The paste is being written when the tab closes.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        drop(input);
+        session.await.unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(server.write_all(b"y").await.is_err());
     }
 
     #[test]

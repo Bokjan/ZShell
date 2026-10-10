@@ -175,6 +175,12 @@ type Release = Box<dyn FnOnce() + Send>;
 
 /// What a session holds beyond its task (its SSH connection's registration, a waiting ZMODEM
 /// transfer, the flow control its reader may wait on), as the releases to run when it closes.
+///
+/// A task or thread a backend starts besides its own either stops here (registered with
+/// [`TermIo::on_close`]: a Telnet connection's writer) or ends by itself once the session's
+/// side of it is dropped (a PTY's or serial port's reader and writer, whose input channel
+/// closes and whose reads time out); otherwise it could outlive the session, holding its
+/// connection open.
 #[derive(Clone)]
 pub struct Lifetime(Arc<Mutex<Option<Vec<Release>>>>);
 
