@@ -15,7 +15,7 @@ import {
   type Profile,
   type TreeItem,
 } from "../lib/api";
-import { dragHorizontally } from "../lib/drag";
+import { dragHorizontally, usePressDrag } from "../lib/drag";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, searchShortcutLabel, settingsShortcutLabel } from "../lib/platform";
@@ -33,6 +33,7 @@ import {
   type QuickTarget,
   type Row,
 } from "../lib/sessions";
+import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../lib/window";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { DisclosureIcon, ImportExportIcon, PlusIcon, SettingsIcon } from "./icons";
@@ -81,21 +82,11 @@ const DRAG_THRESHOLD = 4;
 
 /** The width saved by the last resize; layout state, so kept per machine rather than in the settings. */
 function storedWidth(): number {
-  try {
-    const width = Number(localStorage.getItem(WIDTH_KEY));
-    return width >= MIN_WIDTH && width <= MAX_WIDTH ? width : DEFAULT_WIDTH;
-  } catch {
-    return DEFAULT_WIDTH;
-  }
+  const width = Number(storedString(WIDTH_KEY));
+  return width >= MIN_WIDTH && width <= MAX_WIDTH ? width : DEFAULT_WIDTH;
 }
 
-function storeWidth(width: number) {
-  try {
-    localStorage.setItem(WIDTH_KEY, String(width));
-  } catch {
-    // Not persisted; the width still applies until the app restarts.
-  }
-}
+const storeWidth = (width: number) => storeString(WIDTH_KEY, String(width));
 
 /** Where a dragged row would land: relative to a row, or at the end of the top level. */
 type Drop = { key: string; position: "before" | "after" | "into" } | { key: null };
@@ -375,28 +366,22 @@ export function Sidebar(props: Props) {
     run(tree.move(item, target.parent ?? null, peers[at]?.id ?? null));
   };
 
+  const pressDrag = usePressDrag();
   const startDrag = (e: ReactMouseEvent, item: TreeItem) => {
     if (e.button !== 0 || renaming) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
     let current: Drop | null = null;
-    let moved = false;
-    const move = (ev: MouseEvent) => {
-      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
-      moved = true;
-      current = dropAt(item, ev.clientX, ev.clientY);
-      setDrag({ item, drop: current });
-    };
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      document.body.classList.remove("dragging-row");
-      setDrag(null);
-      if (moved && current) applyDrop(item, current);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    document.body.classList.add("dragging-row");
+    pressDrag(e, {
+      threshold: DRAG_THRESHOLD,
+      bodyClass: "dragging-row",
+      onMove: (ev) => {
+        current = dropAt(item, ev.clientX, ev.clientY);
+        setDrag({ item, drop: current });
+      },
+      onEnd: (moved) => {
+        setDrag(null);
+        if (moved && current) applyDrop(item, current);
+      },
+    });
   };
 
   const dropClass = (key: string) => {

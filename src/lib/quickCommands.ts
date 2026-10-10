@@ -1,6 +1,7 @@
 import type { TFunction } from "i18next";
 
 import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "./api";
+import { storedString, storeString } from "./storage";
 
 export const groupName = (group: CommandGroup, t: TFunction): string =>
   group.id === DEFAULT_GROUP ? t("quick.defaultGroup") : group.name;
@@ -90,18 +91,6 @@ export function deleteGroup(commands: QuickCommands, id: string): QuickCommands 
 const BAR_KEY = "zshell.quickCommandBar";
 
 /** Whether the quick command bar is shown; layout state, kept per machine like the sidebar width. */
-export function storedBarVisible() {
-  try {
-    return localStorage.getItem(BAR_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+export const storedBarVisible = () => storedString(BAR_KEY) === "1";
 
-export function storeBarVisible(visible: boolean) {
-  try {
-    localStorage.setItem(BAR_KEY, visible ? "1" : "0");
-  } catch {
-    // Not persisted; still applies until the app restarts.
-  }
-}
+export const storeBarVisible = (visible: boolean) => storeString(BAR_KEY, visible ? "1" : "0");

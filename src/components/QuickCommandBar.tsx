@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../lib/api";
 import { announce } from "../lib/announce";
+import { usePressDrag } from "../lib/drag";
 import type { SendResult } from "../lib/compose";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import {
@@ -115,39 +116,34 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
   };
 
   // Reorders live while dragging; saved on release.
+  const pressDrag = usePressDrag();
   const startDrag = (e: ReactMouseEvent, id: string) => {
     if (e.button !== 0) return;
-    const startX = e.clientX;
     let ids = group.commands.map((c) => c.id);
-    let moved = false;
     dragged.current = false;
-    const move = (ev: MouseEvent) => {
-      if (!moved) {
-        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
-        moved = true;
+    pressDrag(e, {
+      threshold: DRAG_THRESHOLD,
+      axis: "x",
+      onMove: (ev) => {
         setDragging(id);
-      }
-      const others = [...listRef.current!.querySelectorAll<HTMLElement>(".quick-command")].filter((el) => el.dataset.id !== id);
-      const index = others.filter((el) => {
-        const rect = el.getBoundingClientRect();
-        return rect.left + rect.width / 2 < ev.clientX;
-      }).length;
-      const rest = ids.filter((x) => x !== id);
-      ids = [...rest.slice(0, index), id, ...rest.slice(index)];
-      setOrder(ids);
-    };
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      if (moved) {
-        dragged.current = true;
-        onChange(moveCommand(commands, id, ids.indexOf(id)));
-      }
-      setOrder(null);
-      setDragging(null);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+        const others = [...listRef.current!.querySelectorAll<HTMLElement>(".quick-command")].filter((el) => el.dataset.id !== id);
+        const index = others.filter((el) => {
+          const rect = el.getBoundingClientRect();
+          return rect.left + rect.width / 2 < ev.clientX;
+        }).length;
+        const rest = ids.filter((x) => x !== id);
+        ids = [...rest.slice(0, index), id, ...rest.slice(index)];
+        setOrder(ids);
+      },
+      onEnd: (moved) => {
+        if (moved) {
+          dragged.current = true;
+          onChange(moveCommand(commands, id, ids.indexOf(id)));
+        }
+        setOrder(null);
+        setDragging(null);
+      },
+    });
   };
 
   // A mouse wheel scrolls the buttons sideways when they don't fit.

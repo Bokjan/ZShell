@@ -1,4 +1,5 @@
 import { DEFAULT_PORTS, type Folder, type Profile, type SerialOptions } from "./api";
+import { storedJson, storeJson } from "./storage";
 
 /** A visible line of the session tree. */
 export type Row =
@@ -127,21 +128,11 @@ export const RECENT_LIMIT = 5;
 
 // Layout and history, kept per machine like the sidebar width rather than in the settings.
 function readList(key: string): string[] {
-  try {
-    const value: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
-    return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
+  const value = storedJson(key);
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
-function writeList(key: string, list: string[]) {
-  try {
-    localStorage.setItem(key, JSON.stringify(list));
-  } catch {
-    // Not persisted; still applies until the app restarts.
-  }
-}
+const writeList = (key: string, list: string[]) => storeJson(key, list);
 
 export const storedRecent = () => readList(RECENT_KEY);
 
