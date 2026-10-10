@@ -16,6 +16,7 @@ import {
   type TreeItem,
 } from "../lib/api";
 import { dragHorizontally } from "../lib/drag";
+import { clampIndex, navigateList } from "../lib/listNavigation";
 import { isComposing, searchShortcutLabel, settingsShortcutLabel } from "../lib/platform";
 import {
   RECENT_LIMIT,
@@ -128,6 +129,9 @@ export function Sidebar(props: Props) {
   const searching = query.trim() !== "";
   const results = searching ? search(query, folders, profiles) : [];
   const quick = searching && results.length === 0 ? parseQuickConnect(query) : null;
+  // The search results, then the quick connect line.
+  const resultCount = results.length + (quick ? 1 : 0);
+  const highlighted = clampIndex(highlight, resultCount);
   const recentProfiles = recent
     .map((id) => profiles.find((p) => p.id === id))
     .filter((p): p is Profile => !!p)
@@ -299,16 +303,13 @@ export function Sidebar(props: Props) {
   }, [selected]);
 
   const onSearchKeyDown = (e: KeyboardEvent) => {
-    if (isComposing(e)) return;
-    const count = results.length + (quick ? 1 : 0);
-    if (e.key === "ArrowDown") setHighlight((h) => Math.min(h + 1, count - 1));
-    else if (e.key === "ArrowUp") setHighlight((h) => Math.max(h - 1, 0));
-    else if (e.key === "Enter") {
-      if (highlight < results.length) onOpen(results[highlight], "newTab");
+    const pick = (index: number) => {
+      if (index < results.length) onOpen(results[index], "newTab");
       else if (quick) onQuickConnect(quick);
-      else return;
       setQuery("");
-    } else if (e.key === "Escape") {
+    };
+    if (navigateList(e, resultCount, highlighted, setHighlight, pick) || isComposing(e)) return;
+    if (e.key === "Escape") {
       if (query) setQuery("");
       else searchRef.current?.blur();
     } else return;
@@ -489,7 +490,7 @@ export function Sidebar(props: Props) {
           aria-expanded={searching}
           aria-autocomplete="list"
           aria-activedescendant={
-            !searching ? undefined : highlight < results.length ? rowId(`r:${results[highlight]?.id}`) : rowId("quick")
+            highlighted < 0 ? undefined : highlighted < results.length ? rowId(`r:${results[highlighted].id}`) : rowId("quick")
           }
           placeholder={t("sidebar.searchPlaceholder", { shortcut: searchShortcutLabel })}
           spellCheck={false}
@@ -525,15 +526,15 @@ export function Sidebar(props: Props) {
                 `r:${profile.id}`,
                 -1,
                 [...folderPath(profile.folder, folders), address(profile.connection)].join(" / "),
-                i === highlight ? " highlighted" : "",
+                i === highlighted ? " highlighted" : "",
               ),
             )}
             {quick && (
               <div
                 id={rowId("quick")}
                 role="option"
-                aria-selected={highlight === results.length}
-                className={`tree-row quick${highlight === results.length ? " highlighted" : ""}`}
+                aria-selected={highlighted === results.length}
+                className={`tree-row quick${highlighted === results.length ? " highlighted" : ""}`}
                 onClick={() => {
                   onQuickConnect(quick);
                   setQuery("");

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { QuickCommand, QuickCommands } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
-import { isComposing } from "../lib/platform";
+import { clampIndex, navigateList } from "../lib/listNavigation";
 import { groupName, searchCommands } from "../lib/quickCommands";
 import { Modal } from "./Modal";
 
@@ -23,8 +23,10 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-${i}`;
   const matches = searchCommands(commands, query, firstGroup, t);
-  const index = Math.min(selected, matches.length - 1);
+  const index = clampIndex(selected, matches.length);
   const dialog = useDialog(onClose);
 
   useEffect(() => {
@@ -37,12 +39,7 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (isComposing(e)) return;
-    if (e.key === "ArrowDown") setSelected(Math.min(index + 1, matches.length - 1));
-    else if (e.key === "ArrowUp") setSelected(Math.max(index - 1, 0));
-    else if (e.key === "Enter" && matches[index]) run(matches[index].command);
-    else return;
-    e.preventDefault();
+    navigateList(e, matches.length, index, setSelected, (i) => run(matches[i].command));
   };
 
   return (
@@ -58,18 +55,34 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
             setSelected(0);
           }}
           onKeyDown={onKeyDown}
+          role="combobox"
+          aria-label={t("quick.paletteTitle")}
+          aria-controls={listId}
+          aria-expanded={matches.length > 0}
+          aria-autocomplete="list"
+          aria-activedescendant={index < 0 ? undefined : optionId(index)}
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
         />
         {targets && <div className="palette-targets">{t("quick.targets", { names: targets.join(", ") })}</div>}
-        <div className="palette-list" ref={listRef}>
+        {/* A list without items, which shows a message instead, has no role (see Sidebar). */}
+        <div
+          className="palette-list"
+          ref={listRef}
+          id={listId}
+          role={matches.length > 0 ? "listbox" : undefined}
+          aria-label={t("quick.paletteTitle")}
+        >
           {matches.length === 0 && (
             <p className="palette-empty">{query ? t("quick.noMatches") : t("quick.noCommands")}</p>
           )}
           {matches.map(({ group, command }, i) => (
             <div
               key={command.id}
+              id={optionId(i)}
+              role="option"
+              aria-selected={i === index}
               className={`palette-item${i === index ? " selected" : ""}`}
               onMouseEnter={() => setSelected(i)}
               onClick={() => run(command)}
