@@ -164,11 +164,19 @@ pub fn plan(path: &Path, selected: &[String], digest: &str, here: &Snapshot) -> 
         if proxy_ids.contains_key(proxy.id.as_str()) {
             continue;
         }
-        let existing = here.proxies.iter().find(|e| e.name == proxy.name).or_else(|| here.proxies.iter().find(|e| e.same_as(proxy)));
+        // The same name is the same proxy only if it is of the same kind: an HTTP proxy in the
+        // file must not quietly become a command proxy here.
+        let existing = here
+            .proxies
+            .iter()
+            .find(|e| e.name == proxy.name && e.kind == proxy.kind)
+            .or_else(|| here.proxies.iter().find(|e| e.same_as(proxy)));
         let id = match existing {
             Some(existing) => existing.id.clone(),
             None => {
-                let mut proxy = Proxy { id: uuid::Uuid::new_v4().to_string(), ..proxy.clone() };
+                let taken = |name: &str| here.proxies.iter().chain(&proxies).any(|p| p.name == name);
+                let name = free_name(&proxy.name, taken);
+                let mut proxy = Proxy { id: uuid::Uuid::new_v4().to_string(), name, ..proxy.clone() };
                 proxy.normalize().map_err(|e| Error::new("import.invalidProxy").param("name", &proxy.name).detail(e))?;
                 let id = proxy.id.clone();
                 proxies.push(proxy);
@@ -270,6 +278,14 @@ impl FolderMerger<'_> {
         }
         parent
     }
+}
+
+/// `name`, or `name (2)`, `name (3)`... if `taken`.
+fn free_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(name) {
+        return name.to_owned();
+    }
+    (2..).map(|n| format!("{name} ({n})")).find(|candidate| !taken(candidate)).unwrap()
 }
 
 #[cfg(test)]
@@ -409,13 +425,22 @@ mod tests {
         let here_proxies = vec![proxy("mine", "office", ProxyKind::Socks5, "")];
         let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
         let ids: Vec<String> = ["a", "b", "c", "d"].map(String::from).to_vec();
-        let plan = plan(&path, &ids, &digest, &here).unwrap();
+        let planned = plan(&path, &ids, &digest, &here).unwrap();
         // Only the command proxy is new; the unused one isn't imported.
-        assert_eq!(plan.proxies.len(), 1);
-        assert_eq!(plan.proxies[0].name, "cf");
-        assert_ne!(plan.proxies[0].id, "x2");
-        let used: Vec<_> = plan.profiles.iter().map(|p| p.proxy()).collect();
-        assert_eq!(used, [Some("mine"), Some(plan.proxies[0].id.as_str()), None, Some("mine")]);
+        assert_eq!(planned.proxies.len(), 1);
+        assert_eq!(planned.proxies[0].name, "cf");
+        assert_ne!(planned.proxies[0].id, "x2");
+        let used: Vec<_> = planned.profiles.iter().map(|p| p.proxy()).collect();
+        assert_eq!(used, [Some("mine"), Some(planned.proxies[0].id.as_str()), None, Some("mine")]);
+
+        // A proxy here with the same name but of another kind is not the same one: the file's
+        // is imported, under a name of its own.
+        let here_proxies = vec![proxy("mine", "corp", ProxyKind::Command, "nc %h %p")];
+        let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
+        let planned = plan(&path, &["a".to_owned()], &digest, &here).unwrap();
+        assert_eq!(planned.proxies.len(), 1);
+        assert_eq!((planned.proxies[0].name.as_str(), planned.proxies[0].kind), ("corp (2)", ProxyKind::Socks5));
+        assert_eq!(planned.profiles[0].proxy(), Some(planned.proxies[0].id.as_str()));
         std::fs::remove_file(&path).unwrap();
     }
 
