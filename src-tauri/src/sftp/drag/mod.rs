@@ -10,7 +10,7 @@ mod macos;
 mod win;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -90,14 +90,29 @@ pub struct DropDownload {
     reporter: tokio::sync::Mutex<Reporter>,
     cancelled: Arc<AtomicBool>,
     count: usize,
+    /// One lock for all of it: an item starting to download and the drop ending (after the
+    /// receiver went quiet) must not cross, or the item would download into a drop that has
+    /// been reported done.
+    state: Mutex<State>,
+}
+
+struct State {
     /// Items not yet downloaded (or failed).
-    pending: AtomicUsize,
-    /// Items being downloaded now, and when one was last asked for or done.
-    active: AtomicUsize,
-    last_activity: Mutex<Instant>,
-    failed: AtomicBool,
-    finished: AtomicBool,
-    paths: Mutex<Vec<PathBuf>>,
+    pending: usize,
+    /// Items being downloaded now.
+    active: usize,
+    /// When an item was last asked for or done.
+    last_activity: Instant,
+    failed: bool,
+    finished: bool,
+    /// The items downloaded.
+    paths: Vec<PathBuf>,
+}
+
+/// What ending a drop (under the lock) leaves to do (outside it).
+struct Ended {
+    /// The items to report done; `None` when the drop failed.
+    paths: Option<Vec<PathBuf>>,
 }
 
 impl DropDownload {
@@ -105,6 +120,7 @@ impl DropDownload {
         let cancelled = app.state::<Transfers>().start(&transfer_id);
         let progress = events.clone();
         let reporter = Reporter::with_sink(move |p| drop(progress.send(DragEvent::Progress(p))), cancelled.clone());
+        let state = State { pending: count, active: 0, last_activity: Instant::now(), failed: false, finished: false, paths: Vec::new() };
         Arc::new(Self {
             app: app.clone(),
             sftp,
@@ -113,12 +129,7 @@ impl DropDownload {
             reporter: tokio::sync::Mutex::new(reporter),
             cancelled,
             count,
-            pending: AtomicUsize::new(count),
-            active: AtomicUsize::new(0),
-            last_activity: Mutex::new(Instant::now()),
-            failed: AtomicBool::new(false),
-            finished: AtomicBool::new(false),
-            paths: Mutex::new(Vec::new()),
+            state: Mutex::new(state),
         })
     }
 
@@ -126,39 +137,62 @@ impl DropDownload {
     /// with the last item. After a failure, or once the drop is over, the remaining items are
     /// not downloaded.
     async fn fetch(&self, remote: &str, local: PathBuf) -> Result<()> {
-        self.active.fetch_add(1, Ordering::SeqCst);
-        *self.last_activity.lock().unwrap() = Instant::now();
-        let result = if self.failed.load(Ordering::Relaxed) || self.finished.load(Ordering::SeqCst) {
-            Err(Error::new("transfer.cancelled"))
-        } else {
+        let go = {
+            let mut state = self.state.lock().unwrap();
+            state.last_activity = Instant::now();
+            let go = !state.failed && !state.finished;
+            if go {
+                state.active += 1;
+            }
+            go
+        };
+        let result = if go {
             let mut reporter = self.reporter.lock().await;
             transfer::download_to(&self.sftp, &[(remote.to_owned(), local.clone())], &mut reporter).await.map_err(Error::from)
+        } else {
+            Err(Error::new("transfer.cancelled"))
         };
-        *self.last_activity.lock().unwrap() = Instant::now();
-        self.active.fetch_sub(1, Ordering::SeqCst);
-        match &result {
-            Ok(()) => self.paths.lock().unwrap().push(local),
-            Err(e) => {
-                if !self.failed.swap(true, Ordering::Relaxed) {
-                    let _ = self.events.send(DragEvent::Error { error: e.clone() });
+        let (report, ended) = {
+            let mut state = self.state.lock().unwrap();
+            state.last_activity = Instant::now();
+            if go {
+                state.active -= 1;
+            }
+            let mut report = false;
+            match &result {
+                Ok(()) => state.paths.push(local),
+                Err(_) => {
+                    // Once: the first failure is the drop's.
+                    report = !state.failed && !state.finished;
+                    state.failed = true;
                 }
             }
+            state.pending = state.pending.saturating_sub(1);
+            let ended = (state.pending == 0).then(|| Self::end(&mut state)).flatten();
+            (report, ended)
+        };
+        if let (true, Err(e)) = (report, &result) {
+            let _ = self.events.send(DragEvent::Error { error: e.clone() });
         }
-        if self.pending.fetch_sub(1, Ordering::Relaxed) == 1 {
-            self.finish();
+        if let Some(ended) = ended {
+            self.ended(ended);
         }
         result
     }
 
-    /// Ends the drop (once): reports it done unless it failed, and lets go of what the
-    /// platform kept for it.
-    fn finish(&self) {
-        if self.finished.swap(true, Ordering::SeqCst) {
-            return;
+    /// Ends the drop, once (`None` if it already had).
+    fn end(state: &mut State) -> Option<Ended> {
+        if std::mem::replace(&mut state.finished, true) {
+            return None;
         }
+        Some(Ended { paths: (!state.failed).then(|| std::mem::take(&mut state.paths)) })
+    }
+
+    /// What ending the drop does once the lock is let go: reports it done unless it failed,
+    /// and lets go of what the platform kept for it.
+    fn ended(&self, ended: Ended) {
         self.app.state::<Transfers>().finish(&self.transfer_id);
-        if !self.failed.load(Ordering::Relaxed) {
-            let paths = std::mem::take(&mut *self.paths.lock().unwrap());
+        if let Some(paths) = ended.paths {
             let _ = self.events.send(DragEvent::Done { paths });
         }
         #[cfg(target_os = "macos")]
@@ -173,24 +207,34 @@ impl DropDownload {
             let mut tick = tokio::time::interval(Duration::from_secs(1));
             loop {
                 tick.tick().await;
-                if self.finished.load(Ordering::SeqCst) {
-                    return;
-                }
-                if self.active.load(Ordering::SeqCst) > 0 {
-                    continue;
-                }
-                // A receiver that never asked for anything did not take the drop.
-                let idle = self.last_activity.lock().unwrap().elapsed() >= IDLE_LIMIT;
-                let untouched = self.pending.load(Ordering::SeqCst) == self.count;
-                if self.cancelled.load(Ordering::Relaxed) || (idle && untouched) {
-                    if !self.failed.swap(true, Ordering::Relaxed) {
-                        let _ = self.events.send(DragEvent::Error { error: Error::new("transfer.cancelled") });
+                let (report, ended) = {
+                    let mut state = self.state.lock().unwrap();
+                    if state.finished {
+                        return;
                     }
-                    return self.finish();
+                    if state.active > 0 {
+                        continue;
+                    }
+                    let idle = state.last_activity.elapsed() >= IDLE_LIMIT;
+                    // A receiver that never asked for anything did not take the drop.
+                    let untouched = state.pending == self.count;
+                    let cancel = self.cancelled.load(Ordering::Relaxed) || (idle && untouched);
+                    if !cancel && !idle {
+                        continue;
+                    }
+                    let report = cancel && !state.failed;
+                    if cancel {
+                        state.failed = true;
+                    }
+                    (report, Self::end(&mut state))
+                };
+                if report {
+                    let _ = self.events.send(DragEvent::Error { error: Error::new("transfer.cancelled") });
                 }
-                if idle {
-                    return self.finish();
+                if let Some(ended) = ended {
+                    self.ended(ended);
                 }
+                return;
             }
         });
     }
@@ -218,7 +262,7 @@ pub async fn drag_out(
     drop((items, done));
     let result = result.await.unwrap_or_else(|_| DragResult::cancelled());
     if result.outcome == Outcome::Outside {
-        *download.last_activity.lock().unwrap() = Instant::now();
+        download.state.lock().unwrap().last_activity = Instant::now();
         download.watch();
     } else {
         download.app.state::<Transfers>().finish(&download.transfer_id);
