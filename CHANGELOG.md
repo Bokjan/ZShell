@@ -2,6 +2,10 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.5.1] - 2026-10-10
+
+The same app as 2.5.0, which was not released because its Windows packages failed to build.
+
 ## [2.5.0] - 2026-10-10
 
 ### Features
