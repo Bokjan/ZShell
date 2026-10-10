@@ -10,6 +10,7 @@ The docs are in Chinese and are the source of truth for plans and design:
 - `docs/ARCHITECTURE.md`: overall structure and cross-module design decisions.
 - `docs/I18N.md`: language policy and how user-visible text is handled.
 - `docs/DEVELOPMENT.md`: commands, end-to-end testing, CI and releases.
+- `docs/TODO.md`: small known issues set aside for later, such as bugs waiting on an upstream release. Remove an item once it is done.
 
 When a feature lands: mark its milestone ✅ in ROADMAP.md, move cross-module design into ARCHITECTURE.md, and keep module-level details (edge cases, library pitfalls) in code comments rather than the docs.
 
