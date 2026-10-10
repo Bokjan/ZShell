@@ -125,41 +125,67 @@ mod tests {
         assert_eq!(interpolate("hello {name}, {n} {unknown} {", &args), "hello world, 3 {unknown} {");
     }
 
+    /// The sources, with their paths.
+    fn sources() -> Vec<(std::path::PathBuf, String)> {
+        let mut sources = Vec::new();
+        let mut dirs = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else {
+                    let source = std::fs::read_to_string(&path).unwrap();
+                    sources.push((path, source));
+                }
+            }
+        }
+        sources
+    }
+
     /// Every `t!("…")` key and `Error::new("…")` code used in the sources must exist in the
     /// English catalog.
     #[test]
     fn catalog_covers_all_keys_in_sources() {
         let en = &CATALOGS[FALLBACK];
         let mut missing = Vec::new();
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut dirs = vec![src];
-        while let Some(dir) = dirs.pop() {
-            for entry in std::fs::read_dir(dir).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    dirs.push(path);
-                    continue;
-                }
-                let source = std::fs::read_to_string(&path).unwrap();
-                // `errors.error(...)`: the proxy handshakes' helper (`proxy::Errors`).
-                for (marker, prefix) in [("t!(\"", ""), ("Error::new(\"", "errors."), ("errors.error(\"", "errors.")] {
-                    for (at, _) in source.match_indices(marker) {
-                        // Skip `format!(` and friends: the marker must start a token.
-                        let preceding = source[..at].chars().next_back();
-                        if preceding.is_some_and(|c| c.is_alphanumeric() || c == '_') {
-                            continue;
-                        }
-                        let rest = &source[at + marker.len()..];
-                        let name = &rest[..rest.find('"').unwrap()];
-                        let is_key = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_');
-                        let key = format!("{prefix}{name}");
-                        if is_key && !en.contains_key(&key) {
-                            missing.push(format!("{}: {key}", path.display()));
-                        }
+        for (path, source) in sources() {
+            // `errors.error(...)`: the proxy handshakes' helper (`proxy::Errors`).
+            for (marker, prefix) in [("t!(\"", ""), ("Error::new(\"", "errors."), ("errors.error(\"", "errors.")] {
+                for (at, _) in source.match_indices(marker) {
+                    // Skip `format!(` and friends: the marker must start a token.
+                    let preceding = source[..at].chars().next_back();
+                    if preceding.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                        continue;
+                    }
+                    let rest = &source[at + marker.len()..];
+                    let name = &rest[..rest.find('"').unwrap()];
+                    let is_key = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_');
+                    let key = format!("{prefix}{name}");
+                    if is_key && !en.contains_key(&key) {
+                        missing.push(format!("{}: {key}", path.display()));
                     }
                 }
             }
         }
         assert!(missing.is_empty(), "keys missing from locales/en.json:\n{}", missing.join("\n"));
+    }
+
+    /// Every key in the English catalog must be used, so that unused ones are removed. A key
+    /// counts as used when it appears as a string literal, since some are chosen before being
+    /// passed to `t!` (an error code, as such, without its `errors.` prefix).
+    #[test]
+    fn catalog_has_no_unused_keys() {
+        let sources: String = sources().into_iter().map(|(_, source)| source).collect();
+        let mut unused: Vec<_> = CATALOGS[FALLBACK]
+            .keys()
+            .filter(|key| {
+                let code = key.strip_prefix("errors.");
+                !sources.contains(&format!("\"{key}\"")) && !code.is_some_and(|code| sources.contains(&format!("\"{code}\"")))
+            })
+            .cloned()
+            .collect();
+        unused.sort();
+        assert!(unused.is_empty(), "keys in locales/en.json that no source uses:\n{}", unused.join("\n"));
     }
 }
