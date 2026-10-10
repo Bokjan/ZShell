@@ -43,6 +43,9 @@ socket2 = { version = "0.6", features = ["all"] }
 hmac = "0.13"
 sha1 = "0.11"
 data-encoding = "2"
+# Telling whether a sessions file changed between showing and importing it (already in the
+# tree through russh).
+sha2 = "0.11"
 # ssh_config `Include` (already in the tree through ssh2-config).
 glob = "0.3"
 # TypeScript types for the frontend (`src/lib/bindings.ts`, checked and written by `cargo test`).

@@ -746,6 +746,9 @@
     "proxy": "Proxy: {name}",
     "proxyCommand": "Runs a command to connect: {command}",
     "autoForward": "Forwards {rule} ({kind}) as soon as it connects",
+    "brings": "Also imports {names}, which it connects through",
+    "broughtBy": "Imported with {names}, which connects through it",
+    "bringsProxyCommand": "{name} runs a command to connect: {command}",
     "empty": "The file has no sessions.",
     "import_one": "Import {count} Session",
     "import_other": "Import {count} Sessions"

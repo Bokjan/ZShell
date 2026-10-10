@@ -36,6 +36,7 @@ export type ErrorCode =
   | "forward.socksCommand"
   | "forward.socksProtocol"
   | "forward.socksVersion"
+  | "import.fileChanged"
   | "import.invalidProxy"
   | "import.invalidSession"
   | "import.notSessionsFile"
@@ -518,7 +519,13 @@ existing: string | null,
  * Forwarding rules that start when it connects, as they will be saved: importing them
  * means listening on those ports.
  */
-autoForwards: Array<ForwardRule>, };
+autoForwards: Array<ForwardRule>, 
+/**
+ * The other sessions in the file (ids) that importing it imports too: the jump hosts it
+ * goes through, and theirs, that don't exist here. Their proxies and forwarding rules
+ * come with them; with jump hosts, the first one's proxy is the one used.
+ */
+brings: Array<string>, };
 
 export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, };
 
@@ -526,6 +533,12 @@ export type SessionEvent = { "type": "connected" } | { "type": "closed", reason:
  * What a new session runs.
  */
 export type SessionSpec = { "kind": "profile", profileId: string, carry: Array<string>, } | { "kind": "quick", protocol: Protocol, username: string, host: string, port: number, } | { "kind": "shared", source: number, } | { "kind": "local" };
+
+/**
+ * What a sessions file holds, as it would be imported, and a digest of the file: importing
+ * checks that the file is still what was shown.
+ */
+export type SessionsScan = { candidates: Array<SessionCandidate>, digest: string, };
 
 export type SetAsideFile = { path: string, 
 /**

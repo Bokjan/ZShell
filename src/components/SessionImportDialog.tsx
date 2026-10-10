@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessage, sessionsFile, type SessionCandidate } from "../lib/api";
+import { errorMessage, sessionsFile, type SessionsScan } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { forwardMapping } from "../lib/format";
 import { address } from "../lib/sessions";
@@ -18,7 +18,7 @@ interface Props {
 /** Imports sessions from a file exported by ZShell, skipping those that already exist. */
 export function SessionImportDialog({ path, onClose, onImported }: Props) {
   const { t } = useTranslation();
-  const [candidates, setCandidates] = useState<SessionCandidate[] | null>(null);
+  const [scan, setScan] = useState<SessionsScan | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +28,8 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
   useEffect(() => {
     sessionsFile.scan(path).then(
       (found) => {
-        setCandidates(found);
-        setSelected(new Set(found.filter((c) => !c.existing).map((c) => c.id)));
+        setScan(found);
+        setSelected(new Set(found.candidates.filter((c) => !c.existing).map((c) => c.id)));
       },
       (e) => setError(errorMessage(e)),
     );
@@ -46,7 +46,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
     e.preventDefault();
     setBusy(true);
     try {
-      await sessionsFile.import(path, [...selected]);
+      await sessionsFile.import(path, [...selected], scan!.digest);
       onImported();
       onClose();
     } catch (err) {
@@ -55,7 +55,17 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
     }
   };
 
+  const candidates = scan?.candidates ?? null;
   const importable = candidates?.filter((c) => !c.existing) ?? [];
+  const byId = new Map(candidates?.map((c) => [c.id, c]));
+  // The jump hosts that the picked sessions bring with them (see `brings`), and which bring
+  // each: they are imported too, so they are shown checked.
+  const broughtBy = new Map<string, string[]>();
+  for (const c of candidates ?? []) {
+    if (!selected.has(c.id)) continue;
+    for (const id of c.brings) broughtBy.set(id, [...(broughtBy.get(id) ?? []), c.name]);
+  }
+  const importing = new Set([...selected, ...broughtBy.keys()]);
 
   return (
     <Modal dialog={dialog}>
@@ -77,7 +87,12 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
               {candidates.map((c) => (
                 <li key={c.id} className={c.existing ? "existing" : undefined}>
                   <label className="checkbox">
-                    <input type="checkbox" checked={selected.has(c.id)} disabled={!!c.existing} onChange={() => toggle(c.id)} />
+                    <input
+                      type="checkbox"
+                      checked={importing.has(c.id)}
+                      disabled={!!c.existing || (broughtBy.has(c.id) && !selected.has(c.id))}
+                      onChange={() => toggle(c.id)}
+                    />
                     <span className="import-main">
                       <span className="import-alias">{c.name}</span>
                       <span className="import-address">{address(c.connection)}</span>
@@ -87,6 +102,21 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
                     {c.folder.length > 0 && <span>{c.folder.join(" / ")}</span>}
                     {c.existing && <span>{t("importDialog.existing", { name: c.existing })}</span>}
                     {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: c.jumpHosts.join(", ") })}</span>}
+                    {!selected.has(c.id) && broughtBy.has(c.id) && (
+                      <span>{t("sessionImport.broughtBy", { names: broughtBy.get(c.id)!.join(", ") })}</span>
+                    )}
+                    {c.brings.length > 0 && (
+                      <span>{t("sessionImport.brings", { names: c.brings.map((id) => byId.get(id)?.name ?? id).join(", ") })}</span>
+                    )}
+                    {/* The first jump host's proxy is the one that connects this session. */}
+                    {c.brings.map((id) => byId.get(id)).map(
+                      (b) =>
+                        b?.proxyCommand && (
+                          <span key={b.id} className="warning">
+                            {t("sessionImport.bringsProxyCommand", { name: b.name, command: b.proxyCommand })}
+                          </span>
+                        ),
+                    )}
                     {c.proxyCommand ? (
                       <span className="warning">{t("sessionImport.proxyCommand", { command: c.proxyCommand })}</span>
                     ) : (
@@ -113,7 +143,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
             {t("common.cancel")}
           </button>
           <button type="submit" className="primary" disabled={busy || selected.size === 0}>
-            {t("sessionImport.import", { count: selected.size })}
+            {t("sessionImport.import", { count: importing.size })}
           </button>
         </footer>
       </form>

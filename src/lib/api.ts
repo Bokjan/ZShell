@@ -21,8 +21,8 @@ import type {
   Saved,
   SerialOptions,
   SerialPortInfo,
-  SessionCandidate,
   SessionEvent,
+  SessionsScan,
   SessionSpec,
   SetAsideFile,
   TransferProgress,
@@ -126,8 +126,9 @@ export const tree = {
 
 export const sessionsFile = {
   export: (path: string) => invoke<void>("sessions_export", { path }),
-  scan: (path: string) => invoke<SessionCandidate[]>("sessions_import_scan", { path }),
-  import: (path: string, ids: string[]) => invoke<void>("sessions_import", { path, ids }),
+  scan: (path: string) => invoke<SessionsScan>("sessions_import_scan", { path }),
+  /** `digest` is the scan's: a file that changed since isn't imported. */
+  import: (path: string, ids: string[], digest: string) => invoke<void>("sessions_import", { path, ids, digest }),
 };
 
 /** The user's home folder, which `~` stands for in key paths. */

@@ -286,15 +286,15 @@ pub async fn sessions_export(app: AppHandle, path: PathBuf) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn sessions_import_scan(app: AppHandle, path: PathBuf) -> Result<Vec<backup::Candidate>> {
+pub async fn sessions_import_scan(app: AppHandle, path: PathBuf) -> Result<backup::Scan> {
     blocking(app, move |app| backup::scan(&path, &app.state::<ProfileStore>().list())).await
 }
 
 /// Imports the sessions `ids` (ids in the file) and what they need (jump hosts, proxies,
-/// folders).
+/// folders), if the file is still the one `sessions_import_scan` read (`digest`).
 #[tauri::command]
-pub async fn sessions_import(app: AppHandle, path: PathBuf, ids: Vec<String>) -> Result<()> {
-    blocking(app, move |app| app.state::<ProfileStore>().add_all(|here| backup::plan(&path, &ids, here)).map(drop)).await
+pub async fn sessions_import(app: AppHandle, path: PathBuf, ids: Vec<String>, digest: String) -> Result<()> {
+    blocking(app, move |app| app.state::<ProfileStore>().add_all(|here| backup::plan(&path, &ids, &digest, here)).map(drop)).await
 }
 
 #[tauri::command]

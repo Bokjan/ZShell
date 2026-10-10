@@ -76,6 +76,7 @@ mod tests {
         visitor.visit::<ssh::known_hosts::Entry>();
         visitor.visit::<import::Candidate>();
         visitor.visit::<backup::Candidate>();
+        visitor.visit::<backup::Scan>();
         visitor.visit::<logging::LogOpen>();
         visitor.visit::<logging::LogSummary>();
         visitor.visit::<session::SessionEvent>();
