@@ -143,9 +143,31 @@ impl AsyncWrite for Watched {
     }
 }
 
+/// What deciding where a session's forwarding rules run needs of a connection: a fake one in
+/// tests.
+trait Holder {
+    /// The saved session it belongs to; empty for a quick connection.
+    fn session(&self) -> &str;
+    /// The rules running on it.
+    fn running(&self) -> Vec<ForwardRule>;
+    fn is_running(&self, rule_id: &str) -> bool;
+}
+
+impl Holder for Connection {
+    fn session(&self) -> &str {
+        &self.profile.id
+    }
+    fn running(&self) -> Vec<ForwardRule> {
+        self.forwards.running()
+    }
+    fn is_running(&self, rule_id: &str) -> bool {
+        self.forwards.is_running(rule_id)
+    }
+}
+
 /// Whether two connections belong to the same saved session (quick connections have none).
-fn same_session(a: &Connection, b: &Connection) -> bool {
-    !a.profile.id.is_empty() && a.profile.id == b.profile.id
+fn same_session<C: Holder>(a: &C, b: &C) -> bool {
+    !a.session().is_empty() && a.session() == b.session()
 }
 
 /// The live connections, by the sessions (tabs) using them.
@@ -157,17 +179,71 @@ fn same_session(a: &Connection, b: &Connection) -> bool {
 #[derive(Clone, Default)]
 pub struct Connections(Arc<Mutex<HashMap<SessionId, Arc<Connection>>>>);
 
-type Map = HashMap<SessionId, Arc<Connection>>;
+type Map<C = Connection> = HashMap<SessionId, Arc<C>>;
 
 /// The distinct connections of `connection`'s session, itself first.
-fn session_connections(map: &Map, connection: &Arc<Connection>) -> Vec<Arc<Connection>> {
+fn session_connections<C: Holder>(map: &Map<C>, connection: &Arc<C>) -> Vec<Arc<C>> {
     let mut list = vec![connection.clone()];
     for other in map.values() {
-        if same_session(other, connection) && !list.iter().any(|c| Arc::ptr_eq(c, other)) {
+        if same_session(other.as_ref(), connection.as_ref()) && !list.iter().any(|c| Arc::ptr_eq(c, other)) {
             list.push(other.clone());
         }
     }
     list
+}
+
+/// Of `rules`, those a new `connection` starts: the automatic ones and those in `carry`,
+/// unless another connection of its session runs them.
+fn rules_to_start<C: Holder>(map: &Map<C>, connection: &Arc<C>, rules: &[ForwardRule], carry: &[String]) -> Vec<ForwardRule> {
+    let others = session_connections(map, connection).split_off(1);
+    rules
+        .iter()
+        .filter(|rule| rule.auto_start || carry.contains(&rule.id))
+        .filter(|rule| !others.iter().any(|other| other.is_running(&rule.id)))
+        .cloned()
+        .collect()
+}
+
+/// The rules that closing sessions `ids` would stop although another connection of their
+/// saved session stays open, which could take them over.
+fn rules_to_keep<C: Holder>(map: &Map<C>, ids: &[SessionId]) -> Vec<ForwardRule> {
+    let mut closing: Vec<Arc<C>> = Vec::new();
+    for connection in ids.iter().filter_map(|id| map.get(id)) {
+        if !closing.iter().any(|c| Arc::ptr_eq(c, connection)) {
+            closing.push(connection.clone());
+        }
+    }
+    let stays = |other: &Arc<C>| map.iter().any(|(id, c)| !ids.contains(id) && Arc::ptr_eq(c, other));
+    let mut rules = Vec::new();
+    for connection in closing {
+        // Used by a tab that stays open: it doesn't close.
+        if stays(&connection) {
+            continue;
+        }
+        if session_connections(map, &connection).iter().skip(1).any(stays) {
+            rules.extend(connection.running());
+        }
+    }
+    rules
+}
+
+/// The rules running on session `id`'s connection if it is the connection's last user, to
+/// carry over to the connection it reconnects with.
+fn rules_to_carry<C: Holder>(map: &Map<C>, id: SessionId) -> Vec<String> {
+    let Some(connection) = map.get(&id) else { return Vec::new() };
+    if map.iter().any(|(other, c)| *other != id && Arc::ptr_eq(c, connection)) {
+        return Vec::new();
+    }
+    connection.running().into_iter().map(|rule| rule.id).collect()
+}
+
+/// Where the rules of a closed connection go: another connection of its session (the first
+/// found), with those of `rules` that none of them runs.
+fn rules_to_adopt<C: Holder>(map: &Map<C>, closed: &C, rules: Vec<ForwardRule>) -> Option<(Arc<C>, Vec<ForwardRule>)> {
+    let some = map.values().find(|c| same_session(c.as_ref(), closed))?;
+    let session = session_connections(map, some);
+    let rules = rules.into_iter().filter(|rule| !session.iter().any(|c| c.is_running(&rule.id))).collect();
+    Some((session[0].clone(), rules))
 }
 
 impl Connections {
@@ -257,11 +333,9 @@ impl Connections {
     /// Starts the rules that start on connecting, and those in `carry` (running before the
     /// tab reconnected), unless another connection of the session runs them.
     pub fn auto_start(&self, connection: &Arc<Connection>, carry: &[String]) {
-        let others = session_connections(&self.0.lock().unwrap(), connection).split_off(1);
-        for rule in connection.profile.ssh.forwards.iter().filter(|rule| rule.auto_start || carry.contains(&rule.id)) {
-            if !others.iter().any(|other| other.forwards.is_running(&rule.id)) {
-                connection.forwards.start(rule.clone(), true);
-            }
+        let rules = rules_to_start(&self.0.lock().unwrap(), connection, &connection.profile.ssh.forwards, carry);
+        for rule in rules {
+            connection.forwards.start(rule, true);
         }
     }
 
@@ -306,25 +380,7 @@ impl Connections {
     /// The rules that closing sessions `ids` would stop although another connection of their
     /// saved session stays open, which could take them over.
     pub fn forwards_to_keep(&self, ids: &[SessionId]) -> Vec<ForwardRule> {
-        let map = self.0.lock().unwrap();
-        let mut closing: Vec<Arc<Connection>> = Vec::new();
-        for connection in ids.iter().filter_map(|id| map.get(id)) {
-            if !closing.iter().any(|c| Arc::ptr_eq(c, connection)) {
-                closing.push(connection.clone());
-            }
-        }
-        let mut rules = Vec::new();
-        for connection in closing {
-            let stays = |other: &Arc<Connection>| map.iter().any(|(id, c)| !ids.contains(id) && Arc::ptr_eq(c, other));
-            // Used by a tab that stays open: it doesn't close.
-            if stays(&connection) {
-                continue;
-            }
-            if session_connections(&map, &connection).iter().skip(1).any(stays) {
-                rules.extend(connection.forwards.running());
-            }
-        }
-        rules
+        rules_to_keep(&self.0.lock().unwrap(), ids)
     }
 
     /// Moves the forwards of the connections of sessions `ids` to another connection of their
@@ -339,25 +395,118 @@ impl Connections {
     /// The rules running on session `id`'s connection if it is the connection's last user, to
     /// carry over to the connection it reconnects with.
     pub fn forwards_to_carry(&self, id: SessionId) -> Vec<String> {
-        let map = self.0.lock().unwrap();
-        let Some(connection) = map.get(&id) else { return Vec::new() };
-        if map.iter().any(|(other, c)| *other != id && Arc::ptr_eq(c, connection)) {
-            return Vec::new();
-        }
-        connection.forwards.running().into_iter().map(|rule| rule.id).collect()
+        rules_to_carry(&self.0.lock().unwrap(), id)
     }
 
     /// Starts `rules` of a closed connection on another connection of its session, if any.
     fn adopt(&self, closed: &Connection, rules: Vec<ForwardRule>) {
-        let session = {
-            let map = self.0.lock().unwrap();
-            map.values().find(|c| same_session(c, closed)).map(|c| session_connections(&map, c))
-        };
-        let Some(session) = session else { return };
+        let Some((target, rules)) = rules_to_adopt(&self.0.lock().unwrap(), closed, rules) else { return };
         for rule in rules {
-            if !session.iter().any(|c| c.forwards.is_running(&rule.id)) {
-                session[0].forwards.start(rule, true);
-            }
+            target.forwards.start(rule, true);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forward::ForwardKind;
+
+    /// A connection of saved session `session` running `running`.
+    struct Fake {
+        session: &'static str,
+        running: Vec<ForwardRule>,
+    }
+
+    impl Holder for Fake {
+        fn session(&self) -> &str {
+            self.session
+        }
+        fn running(&self) -> Vec<ForwardRule> {
+            self.running.clone()
+        }
+        fn is_running(&self, rule_id: &str) -> bool {
+            self.running.iter().any(|rule| rule.id == rule_id)
+        }
+    }
+
+    fn rule(id: &str, auto_start: bool) -> ForwardRule {
+        ForwardRule {
+            id: id.into(),
+            kind: ForwardKind::Local,
+            bind_host: "localhost".into(),
+            bind_port: 8080,
+            target_host: "localhost".into(),
+            target_port: 80,
+            description: String::new(),
+            auto_start,
+        }
+    }
+
+    fn connection(session: &'static str, running: &[&str]) -> Arc<Fake> {
+        Arc::new(Fake { session, running: running.iter().map(|id| rule(id, false)).collect() })
+    }
+
+    fn ids(rules: &[ForwardRule]) -> Vec<&str> {
+        let mut ids: Vec<&str> = rules.iter().map(|rule| rule.id.as_str()).collect();
+        ids.sort();
+        ids
+    }
+
+    /// Tab 1 and its duplicate (tab 2) share a connection running r1; tab 3 is another
+    /// connection of the same session; tab 4 one of another session.
+    fn tabs() -> (Map<Fake>, Arc<Fake>, Arc<Fake>) {
+        let shared = connection("web", &["r1"]);
+        let other = connection("web", &[]);
+        let map = HashMap::from([(1, shared.clone()), (2, shared.clone()), (3, other.clone()), (4, connection("db", &["r9"]))]);
+        (map, shared, other)
+    }
+
+    #[test]
+    fn starts_a_session_s_rules_once() {
+        let (map, shared, other) = tabs();
+        let rules = [rule("r1", true), rule("r2", true), rule("r3", false), rule("r4", false)];
+        // r1 runs on the session's other connection; r4 ran before reconnecting.
+        assert_eq!(ids(&rules_to_start(&map, &other, &rules, &["r4".into()])), ["r2", "r4"]);
+        assert_eq!(ids(&rules_to_start(&map, &shared, &rules, &[])), ["r1", "r2"]);
+        // A quick connection shares rules with nothing.
+        let quick = connection("", &[]);
+        assert_eq!(ids(&rules_to_start(&HashMap::from([(5, quick.clone()), (6, connection("", &["r1"]))]), &quick, &rules, &[])), ["r1", "r2"]);
+    }
+
+    #[test]
+    fn offers_to_keep_rules_another_connection_could_take_over() {
+        let (map, _, _) = tabs();
+        // Closing one of the shared connection's tabs closes nothing.
+        assert!(rules_to_keep(&map, &[1]).is_empty());
+        // Closing both closes it, and tab 3 stays.
+        assert_eq!(ids(&rules_to_keep(&map, &[1, 2])), ["r1"]);
+        // Closing every tab of the session leaves nothing to take them over.
+        assert!(rules_to_keep(&map, &[1, 2, 3]).is_empty());
+        // Another session's tab staying open doesn't count.
+        assert!(rules_to_keep(&HashMap::from([(1, connection("web", &["r1"])), (4, connection("db", &[]))]), &[1]).is_empty());
+    }
+
+    #[test]
+    fn carries_rules_over_a_reconnection_by_the_last_user() {
+        let (mut map, _, _) = tabs();
+        // Tab 2 still uses the connection: tab 1 reconnecting takes nothing with it.
+        assert!(rules_to_carry(&map, 1).is_empty());
+        map.remove(&2);
+        assert_eq!(rules_to_carry(&map, 1), ["r1"]);
+        assert!(rules_to_carry(&map, 7).is_empty());
+    }
+
+    #[test]
+    fn hands_rules_over_to_another_connection_of_the_session() {
+        let (mut map, shared, other) = tabs();
+        map.remove(&1);
+        map.remove(&2);
+        let (target, rules) = rules_to_adopt(&map, &shared, vec![rule("r1", false)]).unwrap();
+        assert!(Arc::ptr_eq(&target, &other));
+        assert_eq!(ids(&rules), ["r1"]);
+        // None left of the session.
+        map.remove(&3);
+        assert!(rules_to_adopt(&map, &shared, vec![rule("r1", false)]).is_none());
     }
 }

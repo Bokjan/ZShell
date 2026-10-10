@@ -108,14 +108,27 @@ pub async fn connect(
     if proxy.kind == ProxyKind::Command {
         return command::spawn(proxy, host, port, user, io.sink()).await;
     }
+    let saved = match proxy.uses_password() {
+        true => secrets::proxy_password(proxy.id.clone()).await,
+        false => None,
+    };
+    connect_with(proxy, host, port, keepalive, saved, io).await
+}
+
+/// [`connect`] to a SOCKS or HTTP proxy, with its `saved` password if it has one. A password
+/// the proxy rejects is asked again, up to `MAX_ATTEMPTS` typed ones.
+async fn connect_with(
+    proxy: &Proxy,
+    host: &str,
+    port: u16,
+    keepalive: Option<Duration>,
+    mut saved: Option<String>,
+    io: &mut TermIo,
+) -> Result<Box<dyn Stream>> {
     // Sent in the request as it is: a line break would add to the HTTP request.
     if host.chars().any(|c| c.is_whitespace() || c.is_control()) {
         bail!(Error::new("profile.invalidHost"));
     }
-    let mut saved = match proxy.uses_password() {
-        true => secrets::proxy_password(proxy.id.clone()).await,
-        false => None,
-    };
     let mut attempts = 0;
     loop {
         let typed = saved.is_none();
@@ -189,6 +202,8 @@ pub struct Credentials {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     fn proxy(kind: ProxyKind) -> Proxy {
@@ -263,6 +278,67 @@ mod tests {
         let error = Error::from(error);
         assert_eq!(error.code(), "proxy.unreachable");
         assert!(error.to_string().contains(&format!("127.0.0.1:{proxy_port}")), "{error}");
+    }
+
+    /// An HTTP proxy that takes `alice:right` and rejects anything else; returns its port and
+    /// how many requests it has had.
+    async fn http_proxy() -> (u16, Arc<std::sync::atomic::AtomicUsize>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = requests.clone();
+        tokio::spawn(async move {
+            while let Ok((mut client, _)) = listener.accept().await {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let mut request = Vec::new();
+                let mut buffer = [0; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = client.read(&mut buffer).await.unwrap();
+                    request.extend(&buffer[..n]);
+                }
+                let right = format!("Proxy-Authorization: Basic {}", data_encoding::BASE64.encode(b"alice:right"));
+                let reply: &[u8] = if String::from_utf8_lossy(&request).contains(&right) {
+                    b"HTTP/1.1 200 Connection established\r\n\r\n"
+                } else {
+                    b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n"
+                };
+                client.write_all(reply).await.unwrap();
+            }
+        });
+        (port, requests)
+    }
+
+    fn typed(input: &tokio::sync::mpsc::UnboundedSender<crate::session::SessionInput>, line: &str) {
+        input.send(crate::session::SessionInput::Data(format!("{line}\r").into_bytes())).unwrap();
+    }
+
+    /// A rejected saved password is asked for in the terminal, and so is a rejected typed one,
+    /// up to three typed ones.
+    #[tokio::test]
+    async fn asks_again_for_a_rejected_password() {
+        let (port, requests) = http_proxy().await;
+        let proxy = Proxy { port, host: "127.0.0.1".into(), username: "alice".into(), ..proxy(ProxyKind::Http) };
+        let count = || requests.load(std::sync::atomic::Ordering::SeqCst);
+
+        // The saved one is out of date; the second typed one is right.
+        let (mut io, input, output, _events) = TermIo::detached((80, 24));
+        typed(&input, "wrong");
+        typed(&input, "right");
+        connect_with(&proxy, "db.internal", 22, None, Some("old".into()), &mut io).await.unwrap();
+        assert_eq!(count(), 3);
+        let shown = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
+        assert!(shown.contains(&t!("terminal.savedProxyPasswordRejected")) && shown.contains(&t!("terminal.proxyPasswordRejected")), "{shown}");
+
+        // Three typed ones that are all wrong give up.
+        let (mut io, input, _output, _events) = TermIo::detached((80, 24));
+        for _ in 0..MAX_ATTEMPTS {
+            typed(&input, "wrong");
+        }
+        let error = connect_with(&proxy, "db.internal", 22, None, None, &mut io).await.err().unwrap();
+        assert_eq!(Error::from(error).code(), "proxy.authFailed");
+        assert_eq!(count(), 3 + MAX_ATTEMPTS);
     }
 
     #[test]
