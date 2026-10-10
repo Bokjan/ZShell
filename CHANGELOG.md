@@ -2,6 +2,30 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.4.2] - 2026-10-10
+
+### Bug Fixes
+
+- Connecting to a host whose first address doesn't answer (IPv6 broken on this network, a dead server among several) now tries its next address after 15 seconds, as OpenSSH does, instead of failing.
+- A session set to use a key file asks for the key's passphrase only once the server accepts the key, so a key the server doesn't know no longer has you type the passphrase for nothing.
+- Proxy commands such as cloudflared are found again after the login shell was too slow to answer right after the computer started, without restarting ZShell.
+- Two tabs of a session connecting at the same moment (after the computer wakes) no longer both start the same forwarding rule, one of them failing with its port in use.
+- A dynamic (`-D`) forwarding rule no longer shows an error when a browser drops a connection it opened ahead of time.
+- Reconnecting a tab by hand twice in a row (the first new connection still at its password prompt) keeps the forwarding rules that were running.
+- ZMODEM: a file whose end couldn't be written (a full disk) is removed instead of being left truncated; an upload over a noisy serial line survives a garbled reply from the receiver; a download no longer fails when much data is still in flight after an error; and after an upload is cancelled, the receiver's last replies no longer show as text or ask about a new transfer.
+- Dragging files out of the file panel on macOS: dropping on the Dock or a floating panel in front of the window is no longer taken as a drop on the window.
+- Downloading a folder that holds two names the local disk takes for the same (`README` and `readme`) keeps both files, the second with a number added.
+- A file opened in an editor from the file panel that changed on the server during its download is noticed: saving asks before overwriting the change.
+- A local shell that exits while the terminal is still catching up with its output (`cat big.log; exit`) shows all of it before saying the process exited.
+- Cleaning up old session logs on a network drive that is asleep or gone no longer holds up open sessions.
+- Typing in a Telnet session that echoes locally no longer garbles a character when the server's output stopped in the middle of a GBK character.
+- Clicks on the right of a wide terminal (past column 95) reach programs that use the default mouse encoding.
+- The OpenSSH import dialog shows the hosts of the file chosen last, even if the default file took longer to read.
+- Importing from an OpenSSH config: options after an `Include` inside a `Host` block stay with that host, and a jump host already saved as an SSH session is used even when a Telnet session has the same name.
+- Importing sessions from a ZShell export no longer uses a proxy here of another kind just because it has the same name; the file's proxy is imported instead, with a number added to its name.
+- Deleting a folder puts its subfolders where it was, also those listed before it.
+- On Windows, closing a local shell no longer asks about a program running in it when the program belongs to an earlier process with the same id, and a file dragged out while the app quits no longer keeps a CPU core busy.
+
 ## [2.4.1] - 2026-10-10
 
 ### Bug Fixes
