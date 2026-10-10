@@ -182,6 +182,12 @@
 - **样式**：控件的键盘焦点由 `:where(button, a, summary, [tabindex]):focus-visible` 统一画强调色轮廓，特异性低，自己用边框或选中行表示焦点的组件写 `outline: none` 覆盖。`prefers-reduced-motion` 时去掉过渡与闪烁动画。Windows 对比度主题（`forced-colors`）下只靠背景表示的状态（当前标签、选中行、打开的选项）改用 `Highlight` / `HighlightText`。主题颜色的文字与背景对比度至少 4.5:1；白字所在的填充色用比 `--accent` 深的 `--accent-fill`（`--danger-fill` 同理），`--accent` 留给背景上的文字与标记。
 - **验证**：macOS 上可以用 `osascript -l JavaScript` 经 System Events 读出窗口的辅助功能树（需要给 osascript 辅助功能权限），查看实际的角色与名称；读屏的实际体验仍要用 VoiceOver、讲述人、NVDA 试。
 
+### 图标
+
+- **只用 SVG**：图标全部是 `components/icons.tsx` 里的 SVG 组件，不用文字字形或 emoji：×、▾、⟳、📁 这类字符在各平台字体里的形状、大小和基线都不同，过去多次因此错位。`icons.test.ts` 检查组件源码，`icons.tsx` 之外出现 `<svg>`，或代码中（注释除外）出现箭头、几何图形、×、勾号、dingbat、emoji 字符，测试即失败。例外：快捷键文字里的按键符号（⌘ ⌥ ⌃ ⇧ ⌫）、正文里的省略号，以及 Windows 窗口按钮用的 Segoe Fluent Icons 字形（系统字体，与系统自己的窗口按钮一致）。
+- **画法**：16×16 网格，`currentColor` 描边，圆头圆角，线宽默认 1.4（共用的 `Svg` 组件给出），`aria-hidden`。颜色随所在的文字，悬停、危险、禁用都只改 CSS 的 `color`。名称由所在的按钮给出：只有图标的按钮用 `IconButton`，它的 `label` 既是读屏名称，也是悬停提示。
+- **对齐**：单独放在按钮里的图标是块级元素，由按钮居中；跟在文字后面的（菜单按钮的下拉箭头、排序箭头）带 `inline-icon`，所在按钮是 `inline-flex` 垂直居中；夹在可能换行的正文里的（问号提示、外链图标）用 `vertical-align: calc(0.35em - 图标高度的一半)` 对齐大写字母的中线；行内文字可能换行的列表（转发规则、错误横幅）由 CSS 变量算出第一行的中线，图标与之对齐。图标多为固定像素，不随界面文字大小缩放；文件列表的文件夹、文件图标是 `1em`，随文字缩放。
+
 ### 快捷键、菜单与侧栏
 
 - **快捷键**：应用快捷键在 window 的捕获阶段拦截（`useShortcuts`），终端收不到。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 等留给 shell）。对话框（或命令面板）打开时，除打开设置外的应用快捷键都不处理，菜单的「关闭」也不关标签，否则会切换或关闭对话框背后的标签，并把焦点移到终端。剪贴板快捷键只在终端获得焦点时生效（xterm.js 的 `attachCustomKeyEventHandler`），输入框里仍是普通的复制粘贴。设置里的 Keyboard Shortcuts 一节列出当前平台的快捷键，按键文字取自 `lib/platform.ts` 的 `*ShortcutLabel`，改快捷键时一并更新。

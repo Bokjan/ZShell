@@ -35,7 +35,7 @@ import {
 } from "../lib/sessions";
 import { DRAG_REGION } from "../lib/window";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
-import { PlusIcon } from "./icons";
+import { DisclosureIcon, ImportExportIcon, PlusIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
@@ -461,7 +461,7 @@ export function Sidebar(props: Props) {
         }}
         title={t("sidebar.folderHint")}
       >
-        <Chevron open={expanded} />
+        <DisclosureIcon open={expanded} />
         {renaming === folder.id ? (
           <NameEditor initial={folder.name} onDone={(name) => finishRename(folder, name)} />
         ) : (
@@ -667,34 +667,5 @@ function NameEditor({ initial, onDone }: { initial: string; onDone(name: string 
       autoCapitalize="off"
       autoCorrect="off"
     />
-  );
-}
-
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg className={`chevron${open ? " open" : ""}`} width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-      <path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/** Arrows up and down, for the import and export menu. */
-function ImportExportIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 13V3M2.5 5.5L5 3l2.5 2.5M11 3v10M8.5 10.5L11 13l2.5-2.5" />
-    </svg>
-  );
-}
-
-/** Sliders, drawn as an SVG rather than a text glyph so it centers the same in every font. */
-function SettingsIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
-      <path d="M2 4h1.4M6.6 4H14M2 8h7.4M12.6 8H14M2 12h3.4M8.6 12H14" />
-      <circle cx="5" cy="4" r="1.6" />
-      <circle cx="11" cy="8" r="1.6" />
-      <circle cx="7" cy="12" r="1.6" />
-    </svg>
   );
 }

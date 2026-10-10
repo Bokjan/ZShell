@@ -1,6 +1,8 @@
 import { useEffect, useRef, type InputHTMLAttributes, type KeyboardEvent, type PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChevronIcon } from "./icons";
+
 /** How long a held ▲ / ▼ waits before repeating, and how often it repeats. */
 const REPEAT_DELAY = 400;
 const REPEAT_INTERVAL = 60;
@@ -77,9 +79,7 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
           onPointerUp={stop}
           onPointerLeave={stop}
         >
-          <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden="true">
-            <path d="M1 4l3-3 3 3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <ChevronIcon direction="up" size={11} inline={false} />
         </button>
         <button
           type="button"
@@ -90,9 +90,7 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
           onPointerUp={stop}
           onPointerLeave={stop}
         >
-          <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden="true">
-            <path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <ChevronIcon direction="down" size={11} inline={false} />
         </button>
       </span>
     </span>
