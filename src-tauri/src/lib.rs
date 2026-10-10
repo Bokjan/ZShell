@@ -138,7 +138,10 @@ fn clean_up_logs(app: tauri::AppHandle) {
         loop {
             timer.tick().await;
             let keep_days = app.state::<SettingsStore>().get().logs.keep_days;
-            app.state::<Logs>().clean_up(keep_days);
+            // Off the async threads: on a network drive that sleeps or is gone, the file
+            // system calls block, and would hold up the sessions sharing those threads.
+            let app = app.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || app.state::<Logs>().clean_up(keep_days)).await;
         }
     });
 }
