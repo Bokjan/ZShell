@@ -36,7 +36,7 @@ import {
 import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../lib/window";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
-import { DisclosureIcon, ImportExportIcon, PlusIcon, SettingsIcon } from "./icons";
+import { DisclosureIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
@@ -75,8 +75,11 @@ const MAX_WIDTH = 480;
 /** Space always left for the terminal area. */
 const MIN_MAIN = 400;
 const WIDTH_KEY = "zshell.sidebarWidth";
-/** Indentation per folder level, in pixels. */
-const INDENT = 14;
+/**
+ * Indentation per folder level, in pixels: a row's icon (a folder's disclosure triangle, a
+ * session's protocol) and the gap after it, so that the rows in a folder start below its name.
+ */
+const INDENT = 20;
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
 
@@ -402,7 +405,7 @@ export function Sidebar(props: Props) {
       id={rowId(key)}
       role={searching ? "option" : "treeitem"}
       aria-selected={searching ? extra.includes("highlighted") : selected === key}
-      aria-level={searching ? undefined : Math.max(depth, 0) + 1}
+      aria-level={searching ? undefined : depth + 1}
       // Rather than the tooltip, which is also read, as a hint.
       aria-label={t(key.startsWith("recent:") ? "sidebar.recentRowLabel" : "sidebar.rowLabel", {
         name: profile.name,
@@ -411,7 +414,7 @@ export function Sidebar(props: Props) {
       data-key={key.startsWith("p:") ? key : undefined}
       data-recent={key.startsWith("recent:") || undefined}
       className={`tree-row session${selected === `p:${profile.id}` ? " selected" : ""}${extra}`}
-      style={{ paddingLeft: 8 + depth * INDENT + 16 }}
+      style={{ paddingLeft: 8 + depth * INDENT }}
       onMouseDown={(e) => key.startsWith("p:") && startDrag(e, { kind: "profile", id: profile.id })}
       onClick={() => setSelected(`p:${profile.id}`)}
       onDoubleClick={() => onOpen(profile, "newTab")}
@@ -421,6 +424,9 @@ export function Sidebar(props: Props) {
       }}
       title={`${profile.name}\n${address(profile.connection)}\n${t("sidebar.openHint")}`}
     >
+      <span className="tree-icon">
+        <ProtocolIcon protocol={profile.connection.protocol} />
+      </span>
       <span className="tree-name">{profile.name}</span>
       <span className="tree-meta">{meta ?? address(profile.connection)}</span>
     </div>
@@ -453,7 +459,9 @@ export function Sidebar(props: Props) {
         }}
         title={t("sidebar.folderHint")}
       >
-        <DisclosureIcon open={expanded} />
+        <span className="tree-icon">
+          <DisclosureIcon open={expanded} />
+        </span>
         {renaming === folder.id ? (
           <NameEditor initial={folder.name} onDone={(name) => finishRename(folder, name)} />
         ) : (
@@ -528,7 +536,7 @@ export function Sidebar(props: Props) {
               profileRow(
                 profile,
                 `r:${profile.id}`,
-                -1,
+                0,
                 [...folderPath(profile.folder, folders), address(profile.connection)].join(" / "),
                 i === highlighted ? " highlighted" : "",
               ),
@@ -544,6 +552,9 @@ export function Sidebar(props: Props) {
                   setQuery("");
                 }}
               >
+                <span className="tree-icon">
+                  <ProtocolIcon protocol={quick.protocol} />
+                </span>
                 <span className="tree-name">{t("sidebar.quickConnect", { address: address(quick) })}</span>
               </div>
             )}
@@ -556,7 +567,7 @@ export function Sidebar(props: Props) {
                 <div className="sidebar-section" role="presentation" aria-hidden="true">
                   {t("sidebar.recent")}
                 </div>
-                {recentProfiles.map((profile) => profileRow(profile, `recent:${profile.id}`, -1))}
+                {recentProfiles.map((profile) => profileRow(profile, `recent:${profile.id}`, 0))}
                 <div className="sidebar-section" role="presentation" aria-hidden="true">
                   {t("sidebar.all")}
                 </div>

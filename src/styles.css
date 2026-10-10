@@ -359,8 +359,23 @@ button > svg:only-child:not(.inline-icon) {
   font-size: calc(11px * var(--text-scale));
   color: var(--text-muted);
 }
-.tree-row.quick .tree-name {
+.tree-row.quick {
+  padding-left: 8px;
+}
+.tree-row.quick .tree-name,
+.tree-row.quick .protocol-icon {
   color: var(--accent);
+}
+/* The column of a folder's disclosure triangle and a session's protocol icon */
+.tree-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+}
+.protocol-icon {
+  color: var(--text-muted);
 }
 .chevron {
   flex-shrink: 0;

@@ -172,6 +172,34 @@ export function DisclosureIcon({ open, size = 10 }: { open: boolean; size?: numb
   );
 }
 
+/**
+ * A session's protocol, in the session list: a terminal for SSH, and for the consoles of
+ * network devices the port they are reached on, an Ethernet jack for Telnet and a serial
+ * port's connector for serial.
+ */
+export function ProtocolIcon({ protocol, size = 14 }: { protocol: "ssh" | "telnet" | "serial"; size?: number }) {
+  return (
+    <Svg size={size} strokeWidth={1.3} className="protocol-icon">
+      {protocol === "ssh" ? (
+        <>
+          <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+          <path d="M4.5 6l2.2 2-2.2 2M8.5 10.5h3" />
+        </>
+      ) : protocol === "telnet" ? (
+        <>
+          <path d="M2 3h12v7.5h-2.5v2.5h-7v-2.5H2z" />
+          <path d="M5 5.5v1.6M7 5.5v1.6M9 5.5v1.6M11 5.5v1.6" />
+        </>
+      ) : (
+        <>
+          <path d="M1.5 5h13l-1.6 6.5H3.1z" />
+          <path d="M5 7.3h0M8 7.3h0M11 7.3h0M6.5 9.4h0M9.5 9.4h0" strokeWidth={1.6} />
+        </>
+      )}
+    </Svg>
+  );
+}
+
 /** A pencil, for editing. */
 export function PencilIcon({ size = 14 }: { size?: number }) {
   return (
