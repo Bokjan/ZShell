@@ -68,17 +68,19 @@ export function applyTheme(theme: "dark" | "light") {
   document.documentElement.dataset.theme = theme;
 }
 
-/** Matches the native window (title bar, background while resizing) to the appearance. */
+/**
+ * Matches the native window (title bar, background while resizing) to the appearance, after
+ * `applyTheme`: the colors are the theme's.
+ */
 function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
   const window = getCurrentWindow();
+  const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   // null follows the system, so the title bar keeps tracking it in "system" mode.
   window.setTheme(appearance === "system" ? null : theme).catch(console.error);
-  window.setBackgroundColor(theme === "light" ? "#ffffff" : "#1e1e1e").catch(console.error);
-  document.documentElement.style.background = theme === "light" ? "#ffffff" : "#1e1e1e";
+  window.setBackgroundColor(color("--bg")).catch(console.error);
   // Windows: the border around a snapped window, which blends in with the title bar.
   if (isWindows) {
-    const color = getComputedStyle(document.documentElement).getPropertyValue("--bg-sidebar").trim();
-    invoke("window_set_snapped_border_color", { color }).catch(console.error);
+    invoke("window_set_snapped_border_color", { color: color("--bg-sidebar") }).catch(console.error);
   }
 }
 
