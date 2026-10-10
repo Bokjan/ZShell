@@ -156,7 +156,7 @@ impl Remote {
     fn normalize(&mut self, ssh: bool) -> Result<()> {
         self.host = self.host.trim().to_owned();
         self.username = self.username.trim().to_owned();
-        if self.host.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        if !self.host.is_empty() && !crate::ssh::known_hosts::is_plain_host(&self.host) {
             return Err(Error::new("profile.invalidHost"));
         }
         if self.username.chars().any(char::is_control) {

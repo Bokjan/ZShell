@@ -2,7 +2,7 @@
 //! which also reads the other files OpenSSH reads by default), and for the settings' Known
 //! Hosts listing entries, finding hashed ones by host name (as
 //! `ssh-keygen -F` does) and removing them (as `ssh-keygen -R` does, keeping the previous
-//! file as `known_hosts.old`). Adding an accepted key is russh's `learn_known_hosts`.
+//! file as `known_hosts.old`), and adding a key the user accepted ([`learn`]).
 //!
 //! russh's own check differs from OpenSSH: it calls a key changed as soon as one line for the
 //! host has another key of the type, even if a later line has the server's key; it ignores
@@ -68,6 +68,40 @@ fn other_paths(user: &Path) -> Vec<PathBuf> {
         paths.extend([global.join("ssh_known_hosts"), global.join("ssh_known_hosts2")]);
     }
     paths
+}
+
+/// Whether `host` is a plain host name or address, which known_hosts can't read as a pattern
+/// or a list: a key recorded for `*` would be trusted for every host.
+pub fn is_plain_host(host: &str) -> bool {
+    !host.is_empty() && !host.chars().any(|c| c.is_whitespace() || c.is_control() || ",*?![]".contains(c))
+}
+
+/// Records `key` for `host:port` at the end of the user's known_hosts, as OpenSSH does when
+/// the user accepts a new key: the host name in lower case, on a line of its own.
+pub fn learn(host: &str, port: u16, key: &PublicKey) -> Result<()> {
+    learn_at(&required_path()?, host, port, key)
+}
+
+fn learn_at(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<()> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    if !is_plain_host(host) {
+        return Err(Error::new("profile.invalidHost"));
+    }
+    let key = key.to_openssh().map_err(|e| Error::new("knownHosts.writeFailed").param("path", path.display()).detail(e))?;
+    let write_failed = |e: std::io::Error| Error::new("knownHosts.writeFailed").param("path", path.display()).detail(e);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(write_failed)?;
+    }
+    let mut file = fs::OpenOptions::new().read(true).append(true).create(true).open(path).map_err(write_failed)?;
+    // A file that doesn't end with a line break gets one first; an empty one doesn't.
+    let mut last = *b"\n";
+    if file.metadata().map_err(write_failed)?.len() > 0 {
+        file.seek(SeekFrom::End(-1)).and_then(|_| file.read_exact(&mut last)).map_err(write_failed)?;
+    }
+    let separator = if last[0] == b'\n' { "" } else { "\n" };
+    let line = format!("{separator}{} {key}\n", host_pattern(&host.to_ascii_lowercase(), port));
+    file.write_all(line.as_bytes()).map_err(write_failed)
 }
 
 /// How a host is recorded: `host`, or `[host]:port` off port 22.
@@ -468,6 +502,28 @@ mod tests {
         let directory = global.parent().unwrap().to_path_buf();
         assert_eq!(check_at(&[global.clone(), directory.clone()], "127.0.0.1", 2222, &key).unwrap(), Check::Known);
         assert!(check_at(&[directory, global], "127.0.0.1", 2222, &key).is_err());
+    }
+
+    #[test]
+    fn learns_keys_as_openssh_writes_them() {
+        let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
+        let path = temp_file("");
+        learn_at(&path, "Server.LAN", 22, &key).unwrap();
+        learn_at(&path, "::1", 2222, &key).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), format!("server.lan ssh-ed25519 {KEY}\n[::1]:2222 ssh-ed25519 {KEY}\n"));
+        assert_eq!(check_at(std::slice::from_ref(&path), "server.lan", 22, &key).unwrap(), Check::Known);
+        // After a last line without a line break.
+        let path = temp_file("# mine");
+        learn_at(&path, "a", 22, &key).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), format!("# mine\na ssh-ed25519 {KEY}\n"));
+        // A host that would be read as a pattern is refused.
+        for host in ["*", "a,b", "!a", "a?", "[a]", "a b", ""] {
+            assert!(learn_at(&path, host, 22, &key).is_err(), "{host}");
+        }
+        // Where there is no folder yet.
+        let path = temp_file("").with_file_name("new").join("known_hosts");
+        learn_at(&path, "a", 22, &key).unwrap();
+        assert!(path.is_file());
     }
 
     #[test]

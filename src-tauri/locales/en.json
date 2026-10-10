@@ -86,7 +86,7 @@
     "profile": {
       "notFound": "Session profile not found",
       "missingFields": "Host, port and username are required",
-      "invalidHost": "The host cannot contain spaces or control characters",
+      "invalidHost": "The host cannot contain spaces, control characters or any of , * ? ! [ ]",
       "invalidUser": "The username cannot contain control characters",
       "invalidJumpHost": "A jump host refers to a missing session, a session that isn't SSH, or this session itself",
       "usedAsJumpHost": "This session is a jump host for {names}; remove it there first",

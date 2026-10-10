@@ -7,7 +7,6 @@
 
 use std::path::PathBuf;
 
-use russh::keys::known_hosts::learn_known_hosts;
 use russh::keys::{HashAlg, PublicKey};
 use tokio::sync::oneshot;
 
@@ -84,7 +83,7 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
                     Some(_) => io.print(&format!("{} ", t!("hostKey.typeYesOrNo"))),
                 }
             }
-            match learn_known_hosts(host, port, &query.key) {
+            match known_hosts::learn(host, port, &query.key) {
                 Ok(()) => io.print(&format!("{}\n", t!("hostKey.added", host = host, algorithm = algorithm))),
                 Err(e) => io.print(&format!("\x1b[33m{}\x1b[0m\n", t!("hostKey.saveFailed", error = e))),
             }

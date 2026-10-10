@@ -422,6 +422,7 @@ fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
                 Protocol::Ssh if username.is_empty() => return Err(Error::new("profile.missingFields")),
                 Protocol::Serial => return Err(Error::new("profile.missingDevice")),
                 _ if host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
+                _ if !crate::ssh::known_hosts::is_plain_host(&host) => return Err(Error::new("profile.invalidHost")),
                 _ => {}
             }
             let log_info = LogInfo { session: name.clone(), host: host.clone(), user: username.clone(), profile: None };
