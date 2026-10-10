@@ -1,10 +1,7 @@
-<img src="src-tauri/icons/128x128.png" width="96" alt="">
+# <img src="src-tauri/icons/128x128.png" width="36" alt=""> ZShell
 
-# ZShell
-
-[![Windows check](https://github.com/Bokjan/ZShell/actions/workflows/windows.yml/badge.svg)](https://github.com/Bokjan/ZShell/actions/workflows/windows.yml)
+[![CI](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Bokjan/ZShell)](https://github.com/Bokjan/ZShell/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Bokjan/ZShell/total)](https://github.com/Bokjan/ZShell/releases)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)
 
 A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by Xshell, built with Tauri 2, Rust and xterm.js.
