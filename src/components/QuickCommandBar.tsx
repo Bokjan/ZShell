@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type W
 import { useTranslation } from "react-i18next";
 
 import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../lib/api";
+import { announce } from "../lib/announce";
 import type { SendResult } from "../lib/compose";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import {
@@ -63,11 +64,17 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
     return () => clearTimeout(timer);
   }, [status]);
 
+  // Shown for a few seconds, and said by screen readers (the focus stays in the terminal).
+  const show = (message: string) => {
+    setStatus(message);
+    announce(message);
+  };
+
   const run = (command: QuickCommand) => {
     const { sent, skipped } = onRun(command);
-    if (sent.length === 0) setStatus(t("compose.noTargets"));
-    else if (skipped > 0) setStatus(t("quick.sentSkipped", { names: sent.join(", "), count: skipped }));
-    else if (targets) setStatus(t("quick.sentTo", { names: sent.join(", ") }));
+    if (sent.length === 0) show(t("compose.noTargets"));
+    else if (skipped > 0) show(t("quick.sentSkipped", { names: sent.join(", "), count: skipped }));
+    else if (targets) show(t("quick.sentTo", { names: sent.join(", ") }));
   };
 
   const groupMenu = (e: ReactMouseEvent<HTMLButtonElement>) => {

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { announce } from "../lib/announce";
 import type { Compose, ComposeScope, SendResult } from "../lib/compose";
 import { IconButton } from "./IconButton";
 import { ChevronIcon, CloseIcon } from "./icons";
@@ -71,6 +72,12 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
     };
   }, [picking]);
 
+  // Shown for a few seconds, and said by screen readers (it appears beside the field).
+  const show = (message: string) => {
+    setStatus(message);
+    announce(message);
+  };
+
   const send = () => {
     if (!text.trim()) return;
     const { sent, skipped } = onSend(text);
@@ -78,10 +85,11 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
     if (history.length > HISTORY_LIMIT) history.shift();
     historyIndex.current = history.length;
     setText("");
-    if (sent.length === 0) setStatus(t("compose.noTargets"));
-    else if (skipped > 0) setStatus(t("compose.sentSkipped", { count: sent.length, skipped }));
-    else setStatus(t("compose.sent", { count: sent.length }));
+    if (sent.length === 0) show(t("compose.noTargets"));
+    else if (skipped > 0) show(t("compose.sentSkipped", { count: sent.length, skipped }));
+    else show(t("compose.sent", { count: sent.length }));
   };
+
 
   const recall = (index: number) => {
     if (historyIndex.current === history.length) draft.current = text;

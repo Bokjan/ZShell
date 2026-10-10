@@ -190,7 +190,11 @@
     "disconnected": "{name} is disconnected.",
     "transferDone": "{name}: transfer finished.",
     "transferFailed": "{name}: transfer failed. {error}",
-    "copied": "Copied to the clipboard."
+    "copied": "Copied to the clipboard.",
+    "editUploadFailed": "{name}: uploading your changes failed. {error}",
+    "editConflict": "{name} was changed on the server. Open the file panel to choose whether to replace it.",
+    "splitNoRoom": "There is no room to split this terminal.",
+    "splitSerial": "A serial port can be open in only one terminal."
   },
   "terminal": {
     "inputLabel": "Terminal input",

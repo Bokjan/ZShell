@@ -129,6 +129,8 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   cwdRef.current = cwd;
   const sessionRef = useRef({ sessionId, connected });
   sessionRef.current = { sessionId, connected };
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const transfersRef = useRef(transfers);
   transfersRef.current = transfers;
   const pressRef = useRef<Press | null>(null);
@@ -316,9 +318,14 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
       const dir = cwdRef.current;
       if (transfer.remotePath && dir === parentPath(transfer.remotePath)) void load(dir);
     } catch (e) {
-      if (errorCode(e) !== "edit.conflict") return updateTransfer(id, { save: { state: "failed", error: errorMessage(e) } });
-      // Until the user decides.
+      if (errorCode(e) !== "edit.conflict") {
+        // Saved in another app: the transfer list may be out of sight, or the panel closed.
+        announce(t("announce.editUploadFailed", { name: transfer.label, error: errorMessage(e) }));
+        return updateTransfer(id, { save: { state: "failed", error: errorMessage(e) } });
+      }
+      // Until the user decides. The question waits in the panel if it isn't shown.
       updateTransfer(id, { save: { state: "skipped" } });
+      if (!activeRef.current) announce(t("announce.editConflict", { name: transfer.label }));
       ask({
         title: t("sftp.editConflictTitle"),
         message: t("sftp.editConflictMessage", { name: transfer.label }),

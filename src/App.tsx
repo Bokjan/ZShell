@@ -278,7 +278,9 @@ function App() {
     const found = findPane(store.get().tabs, key);
     if (!found) return;
     // Shortcuts and the session list can ask for what the menus disable: the pane flashes.
-    if ((!added && found.pane.protocol === "serial") || !roomToSplit(key, direction)) {
+    const serial = !added && found.pane.protocol === "serial";
+    if (serial || !roomToSplit(key, direction)) {
+      announce(t(serial ? "announce.splitSerial" : "announce.splitNoRoom"));
       clearTimeout(refuseTimer.current);
       setRefused((refused) => ({ key, count: (refused?.count ?? 0) + 1 }));
       refuseTimer.current = setTimeout(() => setRefused(null), REFUSED_MS);

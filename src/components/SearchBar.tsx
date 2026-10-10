@@ -129,7 +129,10 @@ export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
           {label}
         </IconButton>
       ))}
-      <span className={`search-status${invalid || result?.count === 0 ? " empty" : ""}`}>{status}</span>
+      {/* Read out as it changes: the focus stays in the field while the matches are counted and visited. */}
+      <span className={`search-status${invalid || result?.count === 0 ? " empty" : ""}`} role="status">
+        {status}
+      </span>
       <IconButton className="icon-button" label={t("search.previous")} disabled={!query} onClick={() => find(false)}>
         <ArrowIcon direction="up" />
       </IconButton>
