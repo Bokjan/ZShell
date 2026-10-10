@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { errorMessage, knownHosts, type KnownHost } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
 interface Props {
@@ -95,7 +96,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
           autoCapitalize="off"
           autoCorrect="off"
         />
-        {error && <p className="panel-error">{error}</p>}
+        {error && <ErrorText className="panel-error">{error}</ErrorText>}
         <div className="known-hosts-list">
           {shown.map((entry) => (
             <div key={`${entry.line}:${entry.text}`} className="known-hosts-item">

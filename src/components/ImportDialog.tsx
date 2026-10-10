@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { errorMessage, sshConfig, type ImportCandidate } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { isComposing } from "../lib/platform";
+import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
 interface Props {
@@ -162,7 +163,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
         {candidates && candidates.length === 0 && <p className="hint">{t("importDialog.empty")}</p>}
         {candidates && candidates.length > 0 && <p className="hint">{t("importDialog.hint")}</p>}
 
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorText>{error}</ErrorText>}
 
         <footer>
           <span className="grow" />

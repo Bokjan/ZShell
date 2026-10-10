@@ -36,6 +36,7 @@ import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { PlusIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { ErrorBanner } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
 import { SessionImportDialog } from "./SessionImportDialog";
 
@@ -497,9 +498,7 @@ export function Sidebar(props: Props) {
         />
       </div>
       {error && (
-        <div className="panel-error" onClick={() => setError(null)} title={t("sftp.dismissHint")}>
-          {error}
-        </div>
+        <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>
       )}
       <div
         className={`sidebar-list${drag?.drop?.key === null ? " drop-end" : ""}`}

@@ -7,6 +7,7 @@ import { useConfirmButton } from "../lib/confirm";
 import { useDialog } from "../lib/dialogs";
 import { hostPort, wholeNumber } from "../lib/format";
 import { useSubmitting } from "../lib/submitting";
+import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
 interface Props {
@@ -225,7 +226,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
           </>
         )}
 
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorText>{error}</ErrorText>}
 
         <footer>
           {proxy && (

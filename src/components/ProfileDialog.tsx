@@ -36,6 +36,7 @@ import { groupName } from "../lib/quickCommands";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { useSubmitting } from "../lib/submitting";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
+import { ErrorText } from "./ErrorMessage";
 import { HelpTip } from "./HelpTip";
 import { IconButton } from "./IconButton";
 import { ArrowIcon, CloseIcon, RefreshIcon } from "./icons";
@@ -840,7 +841,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
             </div>
           </div>
 
-          {error && <p className="error">{error}</p>}
+          {error && <ErrorText>{error}</ErrorText>}
 
           <footer>
             {profile && (

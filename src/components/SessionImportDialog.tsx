@@ -5,6 +5,7 @@ import { errorMessage, sessionsFile, type SessionCandidate } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { forwardMapping } from "../lib/format";
 import { address } from "../lib/sessions";
+import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
 interface Props {
@@ -104,7 +105,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
           </>
         )}
         {candidates && candidates.length === 0 && <p className="hint">{t("sessionImport.empty")}</p>}
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorText>{error}</ErrorText>}
 
         <footer>
           <span className="grow" />

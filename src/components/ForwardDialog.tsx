@@ -5,6 +5,7 @@ import type { TFunction } from "i18next";
 import { errorMessage, type ForwardKind, type ForwardRule } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { hostPort } from "../lib/format";
+import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
 interface Props {
@@ -174,7 +175,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
           {t("forwards.dialog.autoStart")}
         </label>
 
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorText>{error}</ErrorText>}
 
         <footer>
           <span className="grow" />

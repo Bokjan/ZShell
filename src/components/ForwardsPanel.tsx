@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import { forwardMapping as mapping } from "../lib/format";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ErrorBanner } from "./ErrorMessage";
 import { ForwardDialog, explainRule } from "./ForwardDialog";
 import { IconButton } from "./IconButton";
 import { PencilIcon, TrashIcon } from "./icons";
@@ -105,9 +106,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
       </div>
 
       {error && (
-        <div className="panel-error" onClick={() => setError(null)} title={t("sftp.dismissHint")}>
-          {error}
-        </div>
+        <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>
       )}
       {!live && rules.length > 0 && <div className="panel-note">{t("forwards.notConnected")}</div>}
 

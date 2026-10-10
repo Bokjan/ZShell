@@ -13,6 +13,7 @@ import { basename, formatMode, formatSize, formatTime } from "../lib/format";
 import { isComposing, isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { ErrorBanner } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
 import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, RefreshIcon, SearchIcon } from "./icons";
 import { Modal } from "./Modal";
@@ -842,11 +843,9 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
       )}
 
       {error && (
-        <div className="sftp-error" onClick={() => setError(null)} title={t("sftp.dismissHint")}>
-          {error}
-        </div>
+        <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>
       )}
-      {!connected && <div className="sftp-error">{t("sftp.disconnected")}</div>}
+      {!connected && <div className="panel-error">{t("sftp.disconnected")}</div>}
 
       {/* A grid for screen readers: the list keeps the focus and points them at the cursor's row. */}
       <div

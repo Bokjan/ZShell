@@ -1300,12 +1300,32 @@ body.resizing .terminal-view {
   text-align: center;
 }
 .panel-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 6px 10px;
   background: var(--danger-soft);
   color: var(--danger);
   font-size: calc(12px * var(--text-scale));
   white-space: pre-wrap;
+}
+.panel-error > span {
+  flex: 1;
+  min-width: 0;
+}
+.panel-error.dismissable {
   cursor: pointer;
+}
+.panel-error-dismiss {
+  flex-shrink: 0;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+}
+.panel-error-dismiss:hover {
+  opacity: 1;
 }
 .panel-note {
   padding: 6px 10px;
@@ -1405,14 +1425,6 @@ body.resizing .terminal-view {
   border-top: 1px solid var(--border);
   color: var(--text-muted);
   font-size: calc(12px * var(--text-scale));
-}
-.sftp-error {
-  padding: 6px 10px;
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: calc(12px * var(--text-scale));
-  white-space: pre-wrap;
-  cursor: pointer;
 }
 .sftp-list {
   flex: 1;
