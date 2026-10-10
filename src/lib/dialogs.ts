@@ -28,6 +28,27 @@ function topOrder(): number | null {
 /** Whether a dialog (or the command palette) is shown over the tabs. */
 export const isDialogOpen = () => topOrder() !== null;
 
+const waiting = new Set<() => void>();
+
+/**
+ * Calls `callback` once no dialog is shown any more, in the frame after the last one closes
+ * (or is hidden); returns a function that cancels it.
+ */
+export function afterDialogs(callback: () => void): () => void {
+  waiting.add(callback);
+  return () => void waiting.delete(callback);
+}
+
+function dialogGone() {
+  if (waiting.size === 0) return;
+  requestAnimationFrame(() => {
+    if (isDialogOpen()) return;
+    const callbacks = [...waiting];
+    waiting.clear();
+    for (const callback of callbacks) callback();
+  });
+}
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -110,7 +131,10 @@ export function useDialog(onClose: () => void, options: Options = {}): DialogHan
         else onClose();
       },
     });
-    return () => void entries.delete(order);
+    return () => {
+      entries.delete(order);
+      dialogGone();
+    };
   }, [order, hidden]);
 
   return useMemo(

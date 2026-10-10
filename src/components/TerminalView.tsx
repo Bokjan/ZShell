@@ -13,6 +13,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
 import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../lib/api";
+import { afterDialogs, isDialogOpen } from "../lib/dialogs";
 import type { PaneSession } from "../lib/paneSession";
 import {
   clipboardKey,
@@ -360,11 +361,23 @@ export function TerminalView({
 
   useEffect(() => {
     if (!active) return;
+    let stopWaiting = () => {};
     const frame = requestAnimationFrame(() => {
       fitRef.current?.fit();
-      termRef.current?.focus();
+      // Behind a dialog (the pane before it closed while the settings were open), the
+      // terminal would take Escape and Tab from the dialog: it waits for the dialog to
+      // close, and then takes the focus unless something else has it.
+      if (!isDialogOpen()) termRef.current?.focus();
+      else
+        stopWaiting = afterDialogs(() => {
+          const lost = !document.activeElement || document.activeElement === document.body;
+          if (lost) termRef.current?.focus();
+        });
     });
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      stopWaiting();
+    };
   }, [active]);
 
   // A dialog (settings) above the terminal has the shortcut to itself.
