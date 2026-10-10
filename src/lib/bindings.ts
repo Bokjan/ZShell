@@ -89,6 +89,7 @@ export type ErrorCode =
   | "serial.openFailed"
   | "session.notConnected"
   | "session.notFound"
+  | "session.pageGone"
   | "sftp.chmodFailed"
   | "sftp.listFailed"
   | "sftp.mkdirFailed"

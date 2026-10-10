@@ -617,27 +617,50 @@ struct SessionEntry {
 pub struct SessionManager {
     next_id: AtomicU32,
     sessions: Mutex<HashMap<SessionId, SessionEntry>>,
+    /// How many times each webview's page has gone away (see [`Page`]). Locked after
+    /// `sessions`, never before.
+    pages: Mutex<HashMap<String, u64>>,
+}
+
+/// The page a session is opened for: a webview, and the page it shows at the time. A
+/// session opened while the page reloads (opening waits for its log) belongs to no page,
+/// and would never be shown or closed.
+pub struct Page {
+    webview: String,
+    generation: u64,
 }
 
 impl SessionManager {
-    /// Starts a session whose backend task is produced by `backend`, for a tab of the webview
-    /// labelled `webview`, logging to `log` (which may already be writing, so that the log
-    /// starts with the session's first output). `encoding` is the remote side's character
-    /// encoding.
+    /// The page `webview` shows now.
+    pub fn page(&self, webview: &str) -> Page {
+        let generation = self.pages.lock().unwrap().get(webview).copied().unwrap_or(0);
+        Page { webview: webview.to_owned(), generation }
+    }
+
+    /// Starts a session whose backend task is produced by `backend`, for a tab on `page`,
+    /// logging to `log` (which may already be writing, so that the log starts with the
+    /// session's first output). `encoding` is the remote side's character encoding. Fails
+    /// with `session.pageGone`, starting nothing, if the page has gone away since.
     #[allow(clippy::too_many_arguments)]
     pub fn spawn<F, Fut>(
         &self,
-        webview: &str,
+        page: &Page,
         channel: Channel,
         size: (u16, u16),
         log: Arc<LogSlot>,
         encoding: &'static encoding_rs::Encoding,
         backend: F,
-    ) -> SessionId
+    ) -> Result<SessionId>
     where
         F: FnOnce(SessionId, TermIo) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        // Held until the session is in, so that `remove_webview` either sees it or has
+        // already moved the page on.
+        let mut sessions = self.sessions.lock().unwrap();
+        if self.page(&page.webview).generation != page.generation {
+            return Err(Error::new("session.pageGone"));
+        }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (io, input) = TermIo::new(channel, size, log, encoding);
         let sink = io.sink();
@@ -646,9 +669,9 @@ impl SessionManager {
         let foreground = io.foreground();
         let zmodem = io.sink.zmodem.clone();
         let task = tauri::async_runtime::spawn(backend(id, io));
-        let entry = SessionEntry { webview: webview.to_owned(), input, sink, lifetime, flow, foreground, zmodem, task };
-        self.sessions.lock().unwrap().insert(id, entry);
-        id
+        let entry = SessionEntry { webview: page.webview.clone(), input, sink, lifetime, flow, foreground, zmodem, task };
+        sessions.insert(id, entry);
+        Ok(id)
     }
 
     pub fn send(&self, id: SessionId, input: SessionInput) -> Result<()> {
@@ -699,8 +722,11 @@ impl SessionManager {
     /// Closes the sessions of a webview whose page is going away (reloading, or its window
     /// closing): nothing would show them or close them any more.
     pub fn remove_webview(&self, webview: &str) {
-        let ids: Vec<SessionId> =
-            self.sessions.lock().unwrap().iter().filter(|(_, entry)| entry.webview == webview).map(|(id, _)| *id).collect();
+        let ids: Vec<SessionId> = {
+            let sessions = self.sessions.lock().unwrap();
+            *self.pages.lock().unwrap().entry(webview.to_owned()).or_default() += 1;
+            sessions.iter().filter(|(_, entry)| entry.webview == webview).map(|(id, _)| *id).collect()
+        };
         for id in ids {
             let _ = self.remove(id);
         }
@@ -763,7 +789,8 @@ mod tests {
     fn hold(sessions: &SessionManager, webview: &str) -> (SessionId, impl Fn() -> usize, impl Fn() -> usize) {
         let (released, released_count) = counter();
         let (dropped, dropped_count) = counter();
-        let id = sessions.spawn(webview, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
+        let page = sessions.page(webview);
+        let id = sessions.spawn(&page, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
             io.on_close(move || {
                 released.fetch_add(1, Ordering::SeqCst);
             });
@@ -776,7 +803,8 @@ mod tests {
             let _dropped = Dropped(dropped);
             let _io = io;
             std::future::pending::<()>().await;
-        });
+        })
+        .unwrap();
         (id, released_count, dropped_count)
     }
 
@@ -810,6 +838,20 @@ mod tests {
 
         sessions.remove(other).unwrap();
         assert_eq!((sessions.len(), other_released()), (0, 1));
+    }
+
+    /// A session opened for a page that has reloaded since is refused, and the new page's
+    /// sessions are not.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_for_a_page_gone_away_is_refused() {
+        let sessions = SessionManager::default();
+        let old = sessions.page("main");
+        sessions.remove_webview("main");
+        let refused = sessions.spawn(&old, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, |_, _| async {});
+        assert_eq!(refused.unwrap_err().code(), "session.pageGone");
+        assert_eq!(sessions.len(), 0);
+        let _ = hold(&sessions, "main");
+        assert_eq!(sessions.len(), 1);
     }
 
     /// Something registered once the session has closed (a task that connected just as its

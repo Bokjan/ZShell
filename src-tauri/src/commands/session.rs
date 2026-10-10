@@ -89,10 +89,11 @@ pub async fn session_open(
     log: Option<LogOpen>,
     channel: Channel,
 ) -> Result<SessionId> {
+    let page = sessions.page(webview.label());
     let Launch { log_info, auto_log, encoding, backend } = launch(&app, spec)?;
     let slot = LogSlot::new(log_info);
     let opened = open_log(&app, &slot, log, auto_log).await?;
-    let id = sessions.spawn(webview.label(), channel, (cols, rows), slot, encoding, |id, io| backend.start(id, io));
+    let id = sessions.spawn(&page, channel, (cols, rows), slot, encoding, |id, io| backend.start(id, io))?;
     report_log(&sessions, id, opened);
     Ok(id)
 }

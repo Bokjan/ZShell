@@ -65,7 +65,8 @@
     "credentialStore": "Credential store error",
     "session": {
       "notFound": "Session not found",
-      "notConnected": "The session has no SSH connection yet"
+      "notConnected": "The session has no SSH connection yet",
+      "pageGone": "The window reloaded while the session was opening"
     },
     "pty": {
       "openFailed": "Cannot create a pseudo terminal",
