@@ -2,6 +2,38 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.4.0] - 2026-10-10
+
+### Features
+
+- The session dialog asks before throwing away changes when it is closed with Escape or a click outside (Cancel still closes at once), and saving with a field that can't be saved goes to its page and puts the cursor in it.
+- A tab whose file panel has a question waiting (a file edited in another app also changed on the server) is marked, and so is the Files button; screen readers hear it with the tab's name.
+
+### Bug Fixes
+
+- Renaming, creating a folder, changing permissions or deleting in the file panel no longer goes back to the folder it started in when you have opened another one meanwhile (deleting a large folder).
+- A session log that stops because it can't be written (a full disk, a network drive gone) now says so in the terminal, and the tab no longer shows it as recording. A log being continued after a reconnection is never taken for an old one and deleted.
+- Closing a Telnet tab while a paste waits for a device that stopped reading now closes the connection (and a proxy command's process) instead of leaving them behind.
+- Host names with `, * ? ! [ ]` are refused, also in quick connections, and accepted host keys are written by ZShell itself: connecting to `*` through a command proxy that ignores the host could otherwise trust a key for every host. An empty known_hosts no longer starts with a blank line.
+- Ports in forwarding rules are whole decimal numbers: `0x16` is no longer taken as port 22.
+- The quick command bar counts the terminals its commands go to ("Sends to 3 terminals") rather than calling them tabs.
+- Dragging files out of the file panel: an item asked for just as the drop was taken as over no longer downloads after the transfer was reported done.
+- The page runs under a strict content security policy, as a safeguard: only the app's own scripts run.
+
+### Performance
+
+- Listing a folder with many symlinks (`/usr/lib`) looks them up in parallel rather than one after another.
+- A dynamic (-D) forwarding rule used by a browser no longer sends hundreds of updates a second to every tab of the session.
+- A shell updating its tab's title (at every prompt) no longer redraws every other tab and terminal.
+
+### Internal
+
+- Storage: the JSON files are read and written in one place (persist.rs); a file that can't be written is reported as such, settings that didn't change aren't rewritten, and hand-written session files may leave out settings that have defaults or repeat ids. Session lists no longer wait for the files of a change to be written.
+- The backend's commands are split by area, and connections to jump hosts take their options as one value.
+- The frontend's large components are split into parts with their logic in tested modules: the app shell's hooks, the file panel (listing, transfers, drag and drop, selection), the session dialog's form, the settings' sections, and shared fields (password, folder, port, import list).
+- The compose bar, quick commands and synced typing send through each pane's session, which decides in one place whether its shell is up.
+- More tests: pane layouts, the compose scope, quick connection addresses, reconnecting with forwarding rules, output acknowledgement, where a session's forwarding rules run, and asking again for a rejected proxy password.
+
 ## [2.3.6] - 2026-10-10
 
 ### Bug Fixes
