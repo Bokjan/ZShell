@@ -2,6 +2,27 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.3.5] - 2026-10-10
+
+### Bug Fixes
+
+- Screen readers name every icon button (they read the glyph, or nothing while the pointer was on the button), including which rule or jump host a button acts on, and say whether toggle buttons such as the compose bar, quick commands and the Files and Forwards panels are on. The port forwarding on/off switch had no name at all.
+- Icons are drawn the same on macOS and Windows: the arrows, close buttons, edit and delete buttons, check marks and the file list's folder and file icons were characters and emoji that looked different in each platform's fonts. Icons are also centered on the text beside them at every text size.
+- Errors in dialogs and at the top of the session list, file panel and forwarding panel are read out as they appear, and a panel's error can be dismissed from the keyboard.
+- Screen readers say what happens away from the focus: what the compose bar and quick commands sent, the number of matches when finding in the terminal, why a pane can't be split, and that saving a file edited in another app failed or found the file changed on the server.
+- More works from the keyboard: the file panel's and quick commands' menus open with the menu key or Shift+F10; the settings' choices (appearance, text size, color scheme, right-click) and the session dialog's pages move with the arrow keys; the dividers between panes and the edges of the side panel and session list can be focused and moved with the arrow keys; and the arrow keys in the quick command palette and the license list are read out.
+- On Windows, opening the file panel's menu with the menu key no longer clears the selection and shows the folder's menu.
+- Pressing ↓ then Enter in the session search with no matches no longer throws an error.
+- An invalid value for Change Permissions is shown in its dialog, rather than behind it where it seemed nothing happened.
+- Pressing Escape to cancel an input method's candidate no longer abandons renaming a file.
+- The SFTP filter field shows when it has the keyboard focus, and in a narrow pane the find bar takes two rows rather than cutting off its buttons.
+
+### Internal
+
+- The native window's background color comes from the theme's colors.
+- OpenSSH's prompts, kept in English on purpose, are in one place with the reason.
+- Every icon is drawn in one place, and a test fails on an icon drawn elsewhere or made of a character.
+
 ## [2.3.4] - 2026-10-10
 
 ### Bug Fixes
