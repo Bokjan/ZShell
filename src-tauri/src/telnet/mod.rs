@@ -125,7 +125,11 @@ async fn bridge(
                     if !telnet.remote_echoes() {
                         let echo = local_echo(&data);
                         if !echo.is_empty() {
-                            io.sink().remote(echo);
+                            // Whole characters, decoded on their own: the output's decoder may
+                            // hold the first byte of a character the server's output stopped
+                            // in the middle of, which a typed `a` would complete as GBK.
+                            let sink = io.sink();
+                            sink.write(crate::encoding::decode(sink.encoding(), &echo).into_bytes());
                         }
                     }
                     outgoing.extend(telnet.encode(&data));
@@ -312,6 +316,34 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn typing_does_not_complete_a_character_of_the_output() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            // "中" in GBK, in two pieces with the user typing in between.
+            stream.write_all(&[0xd6]).await.unwrap();
+            let mut buffer = [0; 64];
+            while !buffer.contains(&b'a') {
+                assert_ne!(stream.read(&mut buffer).await.unwrap(), 0);
+            }
+            stream.write_all(&[0xd0]).await.unwrap();
+        });
+
+        let remote = Remote::new("127.0.0.1".into(), port, String::new());
+        let (io, input, output, _events) = TermIo::detached_with((80, 24), encoding_rs::GBK);
+        let session = tokio::spawn(run(remote, Route::default(), || None, io));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        input.send(SessionInput::Data(b"a".to_vec())).unwrap();
+        server.await.unwrap();
+        session.await.unwrap();
+        let text = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
+        assert!(text.contains("a中"), "{text:?}");
+    }
+
+    #[tokio::test]
     async fn talks_to_a_server() {
         use tokio::net::TcpListener;
 
