@@ -9,6 +9,7 @@
     "increase": "Increase",
     "decrease": "Decrease",
     "dontAskAgain": "Don't ask again",
+    "passwordLeftTitle": "Password Not Removed",
     "opensInBrowser": "(opens in your browser)"
   },
   "app": {
@@ -49,6 +50,8 @@
     "connectSplitDown": "Connect in Pane Below",
     "duplicate": "Duplicate",
     "copyName": "{name} (copy)",
+    "passwordNotCopiedTitle": "Password Not Copied",
+    "passwordNotCopied": "The session was copied without its password, which could not be stored in the keychain: {message}",
     "copyAddress": "Copy Address",
     "delete": "Delete…",
     "deleteLogs": "Delete Logs…",
@@ -238,6 +241,7 @@
   "profile": {
     "titleNew": "New Session",
     "passwordNotSaved": "The session was saved, but the keychain could not be updated: {message}",
+    "passwordNotDeleted": "The session “{name}” was deleted, but its password is still in the keychain, which could not be updated: {message}",
     "titleEdit": "Edit Session",
     "name": "Name",
     "namePlaceholder": "Defaults to user@host",
@@ -762,6 +766,7 @@
   "proxy": {
     "titleNew": "New Proxy",
     "passwordNotSaved": "The proxy was saved, but the keychain could not be updated: {message}",
+    "passwordNotDeleted": "The proxy “{name}” was deleted, but its password is still in the keychain, which could not be updated: {message}",
     "titleEdit": "Edit Proxy",
     "name": "Name",
     "namePlaceholder": "Defaults to the address",

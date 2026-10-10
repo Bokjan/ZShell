@@ -71,6 +71,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const [proxies, setProxies] = useState<Proxy[] | null>(null);
   const [creatingProxy, setCreatingProxy] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  // Why the deleted session's password is still in the keychain.
+  const [passwordLeft, setPasswordLeft] = useState<string | null>(null);
   const home = useHomeDirectory();
   // The serial ports found here, listed once the serial protocol is chosen.
   const [ports, setPorts] = useState<SerialPortInfo[] | null>(null);
@@ -148,9 +150,11 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
     }
     await saving.submit(async () => {
       try {
-        await deleteProfile(profile.id);
+        const passwordError = await deleteProfile(profile.id);
         onChanged();
-        onClose();
+        // Said before closing: nothing else would.
+        if (passwordError) setPasswordLeft(passwordError.message);
+        else onClose();
       } catch (err) {
         setError(errorMessage(err));
       }
@@ -271,6 +275,16 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
           danger
           onConfirm={onClose}
           onCancel={() => setDiscarding(false)}
+        />
+      )}
+      {passwordLeft !== null && profile && (
+        <ConfirmDialog
+          title={t("common.passwordLeftTitle")}
+          message={t("profile.passwordNotDeleted", { name: profile.name, message: passwordLeft })}
+          confirmLabel={t("common.ok")}
+          notice
+          onConfirm={onClose}
+          onCancel={onClose}
         />
       )}
     </>

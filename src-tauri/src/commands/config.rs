@@ -140,13 +140,13 @@ pub async fn proxy_save(app: AppHandle, proxy: Proxy, password: Option<String>) 
     .await
 }
 
-/// Deletes a proxy no session uses (`proxy.inUse` otherwise), with its password.
+/// Deletes a proxy no session uses (`proxy.inUse` otherwise), with its password; returns the
+/// error removing the password gave, if any (see `profile_delete`).
 #[tauri::command]
-pub async fn proxy_delete(app: AppHandle, id: String) -> Result<()> {
+pub async fn proxy_delete(app: AppHandle, id: String) -> Result<Option<Error>> {
     blocking(app, move |app| {
         app.state::<ProfileStore>().delete_proxy(&id)?;
-        secrets::delete_proxy_password(&id)?;
-        Ok(())
+        Ok(secrets::delete_proxy_password(&id).err().map(Error::from))
     })
     .await
 }
@@ -224,15 +224,17 @@ pub async fn tree_move(app: AppHandle, item: Item, parent: Option<String>, befor
     blocking(app, move |app| app.state::<ProfileStore>().move_item(item, parent, before)).await
 }
 
-/// Copies a session, with its saved password, as `name` right after it.
+/// Copies a session, with its saved password, as `name` right after it. The copy is made
+/// even if the keychain refuses its password.
 #[tauri::command]
-pub async fn profile_duplicate(app: AppHandle, id: String, name: String) -> Result<Profile> {
+pub async fn profile_duplicate(app: AppHandle, id: String, name: String) -> Result<Saved<Profile>> {
     blocking(app, move |app| {
         let copy = app.state::<ProfileStore>().duplicate(&id, &name)?;
-        if let Some(password) = secrets::get_password(&id) {
-            secrets::set_password(&copy.id, &password)?;
-        }
-        Ok(copy)
+        let stored = match secrets::get_password(&id) {
+            Some(password) => secrets::set_password(&copy.id, &password),
+            None => Ok(()),
+        };
+        Ok(Saved { saved: copy, password_error: stored.err().map(Error::from) })
     })
     .await
 }
@@ -259,12 +261,14 @@ pub async fn sessions_import(app: AppHandle, path: PathBuf, ids: Vec<String>, di
     blocking(app, move |app| app.state::<ProfileStore>().add_all(|here| backup::plan(&path, &ids, &digest, here)).map(drop)).await
 }
 
+/// Deletes a session with its password; returns the error removing the password gave, if
+/// any. The session is deleted either way: failing would have the dialog try again or save
+/// it back, so the password left behind is reported apart.
 #[tauri::command]
-pub async fn profile_delete(app: AppHandle, id: String) -> Result<()> {
+pub async fn profile_delete(app: AppHandle, id: String) -> Result<Option<Error>> {
     blocking(app, move |app| {
         app.state::<ProfileStore>().delete(&id)?;
-        secrets::delete_password(&id)?;
-        Ok(())
+        Ok(secrets::delete_password(&id).err().map(Error::from))
     })
     .await
 }

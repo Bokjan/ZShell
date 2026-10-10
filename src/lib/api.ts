@@ -82,7 +82,8 @@ export const proxies = {
   /** `password`: undefined keeps the stored password, "" clears it. */
   save: (proxy: Proxy, password?: string) => invoke<Saved<Proxy>>("proxy_save", { proxy, password: password ?? null }),
   /** Fails with `proxy.inUse` while a session uses it. */
-  delete: (id: string) => invoke<void>("proxy_delete", { id }),
+  /** Resolves with the error removing its password gave, if any. */
+  delete: (id: string) => invoke<CommandError | null>("proxy_delete", { id }),
 };
 
 export const knownHosts = {
@@ -101,10 +102,11 @@ export const listProfiles = () => invoke<Profile[]>("profiles_list");
 export const saveProfile = (profile: Profile, password?: string) =>
   invoke<Saved<Profile>>("profile_save", { profile, password: password ?? null });
 
-export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id });
+/** Resolves with the error removing its password gave, if any. */
+export const deleteProfile = (id: string) => invoke<CommandError | null>("profile_delete", { id });
 
 /** Copies a profile (with its saved password) as `name`, right after it. */
-export const duplicateProfile = (id: string, name: string) => invoke<Profile>("profile_duplicate", { id, name });
+export const duplicateProfile = (id: string, name: string) => invoke<Saved<Profile>>("profile_duplicate", { id, name });
 
 export const DEFAULT_GROUP = "default";
 

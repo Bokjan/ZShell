@@ -18,6 +18,8 @@ interface Props {
   /** A second way to go ahead, beside the confirm button. */
   secondaryLabel?: string;
   onSecondary?(): void;
+  /** Only the confirm button: a message to acknowledge, with nothing to decide. */
+  notice?: boolean;
   onConfirm(checked: boolean): void;
   onCancel(): void;
 }
@@ -32,6 +34,7 @@ export function ConfirmDialog({
   checkboxLabel,
   secondaryLabel,
   onSecondary,
+  notice,
   onConfirm,
   onCancel,
 }: Props) {
@@ -59,9 +62,11 @@ export function ConfirmDialog({
         )}
         <footer>
           <span className="grow" />
-          <button type="button" onClick={onCancel}>
-            {cancelLabel ?? t("common.cancel")}
-          </button>
+          {!notice && (
+            <button type="button" onClick={onCancel}>
+              {cancelLabel ?? t("common.cancel")}
+            </button>
+          )}
           {secondaryLabel && (
             <button type="button" onClick={onSecondary}>
               {secondaryLabel}

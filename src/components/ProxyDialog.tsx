@@ -8,6 +8,7 @@ import { useDialog } from "../lib/dialogs";
 import { hostPort, parsePort } from "../lib/format";
 import { passwordUpdate } from "../lib/password";
 import { useSubmitting } from "../lib/submitting";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordField } from "./PasswordField";
@@ -49,6 +50,8 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
   const [command, setCommand] = useState(proxy?.command ?? "");
   const deleteButton = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
+  // Why the deleted proxy's password is still in the keychain.
+  const [passwordLeft, setPasswordLeft] = useState<string | null>(null);
   // Saving and deleting, one at a time.
   const saving = useSubmitting();
   const server = kind !== "command";
@@ -115,9 +118,10 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
     }
     await saving.submit(async () => {
       try {
-        await proxies.delete(proxy.id);
+        const passwordError = await proxies.delete(proxy.id);
         onChanged();
-        onClose();
+        if (passwordError) setPasswordLeft(passwordError.message);
+        else onClose();
       } catch (err) {
         deleteButton.setArmed(false);
         setError(errorMessage(err));
@@ -239,6 +243,16 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
           </button>
         </footer>
       </form>
+      {passwordLeft !== null && proxy && (
+        <ConfirmDialog
+          title={t("common.passwordLeftTitle")}
+          message={t("proxy.passwordNotDeleted", { name: proxy.name, message: passwordLeft })}
+          confirmLabel={t("common.ok")}
+          notice
+          onConfirm={onClose}
+          onCancel={onClose}
+        />
+      )}
     </Modal>
   );
 }
