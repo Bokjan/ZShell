@@ -16,7 +16,7 @@ ZShell is free to use and its source code is public, but it is source-available 
 
 ## Feedback and contributions
 
-Bug reports and feature requests are welcome as [GitHub issues](https://github.com/Bokjan/ZShell/issues); the maintainer implements the changes. Pull requests are generally not accepted, so please discuss a change in an issue first.
+Bug reports and feature requests are welcome as [GitHub issues](https://github.com/Bokjan/ZShell/issues); the maintainer implements the changes. Pull requests are generally not accepted, so please discuss a change in an issue first: since ZShell is source-available under this license rather than open source, its own code is written by the author alone, which keeps its ownership clear and its legal risk low.
 
 By posting anything in ZShell's issues, including ideas, text and code snippets, you grant the author a perpetual, worldwide, irrevocable, royalty-free license to use, copy, modify, distribute and sublicense it as part of ZShell, under any terms, and you agree not to assert any moral rights against that use, as far as the law allows. Post only what you have the right to share this way. Nothing is owed to you for it. People whose issues lead to a change are thanked in the changelog and in [THANKS.md](THANKS.md).
 

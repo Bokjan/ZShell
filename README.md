@@ -4,7 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/Bokjan/ZShell)](https://github.com/Bokjan/ZShell/releases/latest)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)
 
-A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by Xshell, built with Tauri 2, Rust and xterm.js.
+A cross-platform (macOS / Windows) SSH, Telnet and serial terminal, built with Tauri 2, Rust and xterm.js.
 
 ## Features
 
