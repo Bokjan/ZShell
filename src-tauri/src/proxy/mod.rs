@@ -256,7 +256,7 @@ mod tests {
         let proxy_port = proxy_listener.local_addr().unwrap().port();
         let requested = tokio::spawn(async move {
             let (mut client, _) = proxy_listener.accept().await.unwrap();
-            let request = socks::accept(&mut client).await.unwrap();
+            let request = socks::accept(&mut client).await.unwrap().unwrap();
             let mut target = tokio::net::TcpStream::connect(("127.0.0.1", request.port)).await.unwrap();
             socks::reply(&mut client, request.version, socks::Reply::Succeeded).await.unwrap();
             tokio::spawn(async move { tokio::io::copy_bidirectional(&mut client, &mut target).await });

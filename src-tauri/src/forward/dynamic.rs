@@ -64,14 +64,11 @@ async fn connect(handle: Arc<SshHandle>, mut stream: TcpStream, peer: SocketAddr
     Ok(())
 }
 
-/// The client's request; `None` if none came in time: a port scanner or a stuck client that
-/// connected and sent nothing would otherwise hold its connection (and a task) for good. Not
-/// an error of the rule's.
+/// The client's request; `None` if it closed the connection first, or if none came in time:
+/// a port scanner or a stuck client that connected and sent nothing would otherwise hold its
+/// connection (and a task) for good. Neither is an error of the rule's.
 async fn request<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, timeout: Duration) -> Result<Option<socks::Request>> {
-    match tokio::time::timeout(timeout, socks::accept(stream)).await {
-        Ok(request) => request.map(Some),
-        Err(_) => Ok(None),
-    }
+    tokio::time::timeout(timeout, socks::accept(stream)).await.unwrap_or(Ok(None))
 }
 
 #[cfg(test)]
@@ -87,5 +84,10 @@ mod tests {
         tokio::io::AsyncWriteExt::write_all(&mut client, &[4, 1, 0, 80, 10, 0, 0, 1, 0]).await.unwrap();
         let request = request(&mut ours, REQUEST_TIMEOUT).await.unwrap().unwrap();
         assert_eq!((request.host.as_str(), request.port), ("10.0.0.1", 80));
+
+        // A browser's connection made ahead and closed unused.
+        let (mut ours, client) = tokio::io::duplex(64);
+        drop(client);
+        assert!(super::request(&mut ours, REQUEST_TIMEOUT).await.unwrap().is_none());
     }
 }

@@ -36,12 +36,18 @@ const NO_AUTH: u8 = 0x00;
 const NO_ACCEPTABLE_METHODS: u8 = 0xff;
 const CONNECT: u8 = 0x01;
 
-/// Reads a client's greeting and CONNECT request. Requests this proxy cannot serve are
-/// answered with the matching failure before the error is returned.
-pub async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<Request> {
-    match read_u8(stream).await? {
-        4 => accept_v4(stream).await,
-        5 => accept_v5(stream).await,
+/// Reads a client's greeting and CONNECT request; `None` if the client closed the connection
+/// without sending anything (browsers connect ahead and drop what they didn't use). Requests
+/// this proxy cannot serve are answered with the matching failure before the error is
+/// returned.
+pub async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<Option<Request>> {
+    let mut version = [0];
+    if stream.read(&mut version).await.context(Error::new("forward.socksProtocol"))? == 0 {
+        return Ok(None);
+    }
+    match version[0] {
+        4 => accept_v4(stream).await.map(Some),
+        5 => accept_v5(stream).await.map(Some),
         version => Err(anyhow!(Error::new("forward.socksVersion").param("version", version))),
     }
 }
@@ -161,7 +167,7 @@ mod tests {
         let (mut client, mut server) = duplex(1024);
         client.write_all(input).await.unwrap();
         client.shutdown().await.unwrap();
-        let result = accept(&mut server).await;
+        let result = accept(&mut server).await.map(|request| request.expect("a request"));
         drop(server);
         let mut output = Vec::new();
         client.read_to_end(&mut output).await.unwrap();
