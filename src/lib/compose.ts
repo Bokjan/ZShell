@@ -44,5 +44,19 @@ export const sendsToMany = (compose: Compose) => compose.open && compose.scope !
 
 export const isConnected = (pane: Pane) => pane.status === "connected" && pane.sessionId != null;
 
+/**
+ * While syncing, the other connected panes in scope that typing in the focused pane `source`
+ * goes to. None until `source` itself is connected: before that, what is typed answers its own
+ * prompts in the terminal (host key, password, passphrase), which must not reach other shells.
+ */
+export function syncTargets(compose: Compose, tabs: Tab[], activeKey: number | null, source: number): Pane[] {
+  if (!compose.open || !compose.sync) return [];
+  const active = tabs.find((tab) => tab.key === activeKey);
+  if (!active || active.focused !== source) return [];
+  const from = active.panes.find((pane) => pane.key === source);
+  if (!from || !isConnected(from)) return [];
+  return scopePanes(compose, tabs, activeKey).filter((pane) => pane.key !== source && isConnected(pane));
+}
+
 /** Text as if typed: line breaks become Enter, and `enter` presses it once more at the end. */
 export const asTyped = (text: string, enter: boolean) => text.replace(/\r?\n/g, "\r") + (enter ? "\r" : "");

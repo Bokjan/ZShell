@@ -56,7 +56,7 @@ import {
 } from "./lib/platform";
 import { neighbor, type Direction } from "./lib/layout";
 import { storeBarVisible, storedBarVisible, tabGroup } from "./lib/quickCommands";
-import { asTyped, CLOSED_COMPOSE, isConnected, scopePanes, sendsToMany, type Compose, type SendResult } from "./lib/compose";
+import { asTyped, CLOSED_COMPOSE, isConnected, scopePanes, sendsToMany, syncTargets, type Compose, type SendResult } from "./lib/compose";
 import {
   findPane,
   focusedPane,
@@ -417,12 +417,8 @@ function App() {
   };
 
   // Syncing: what is typed in the focused terminal goes to the other connected panes in scope.
-  const syncedWith = (source: number): Pane[] => {
-    const compose = composeRef.current;
-    const active = activeTabOf(store.get());
-    if (!compose.open || !compose.sync || !active || active.focused !== source) return [];
-    return scopePanes(compose, store.get().tabs, store.get().activeKey).filter((pane) => pane.key !== source && isConnected(pane));
-  };
+  const syncedWith = (source: number): Pane[] =>
+    syncTargets(composeRef.current, store.get().tabs, store.get().activeKey, source);
   const onInput = (source: number, data: string) => {
     for (const pane of syncedWith(source)) writeSession(pane.sessionId!, data).catch(console.error);
   };
