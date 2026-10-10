@@ -34,6 +34,21 @@ const MAX_ROUNDS: usize = 8;
 /// Key files tried by automatic authentication, in `~/.ssh`.
 const DEFAULT_KEYS: &[&str] = &["id_ed25519", "id_ecdsa", "id_rsa"];
 
+// OpenSSH's own prompts, word for word: people know them, and scripts that drive a terminal
+// (expect) wait for them. They stay in English rather than going into the message catalog
+// (see "后端" in docs/I18N.md), like the answers to the host key question.
+
+/// After a password or an answer the server refused.
+const PERMISSION_DENIED: &str = "Permission denied, please try again.\n";
+
+fn password_prompt(user: &str, host: &str) -> String {
+    format!("{user}@{host}'s password: ")
+}
+
+fn passphrase_prompt(key: &Path) -> String {
+    format!("Enter passphrase for key '{}': ", key.display())
+}
+
 /// How one try of a method went.
 #[derive(Debug, PartialEq)]
 enum Outcome {
@@ -203,10 +218,10 @@ impl<H: Handler> Auth<'_, H> {
             }
         }
         for _ in 0..MAX_ATTEMPTS {
-            self.io.print(&format!("{user}@{}'s password: ", self.profile.ssh.remote.host));
+            self.io.print(&password_prompt(&user, &self.profile.ssh.remote.host));
             let password = self.io.read_line(false).await.context(Error::new("auth.cancelled"))?;
             match self.session.authenticate_password(&user, password).await?.into() {
-                Outcome::Rejected => self.io.print("Permission denied, please try again.\n"),
+                Outcome::Rejected => self.io.print(PERMISSION_DENIED),
                 outcome => return Ok(outcome),
             }
         }
@@ -248,7 +263,7 @@ impl<H: Handler> Auth<'_, H> {
                     }
                 }
             }
-            self.io.print("Permission denied, please try again.\n");
+            self.io.print(PERMISSION_DENIED);
         }
         Ok(Outcome::Rejected)
     }
@@ -353,7 +368,7 @@ async fn load_key(path: &Path, io: &mut TermIo) -> Result<PrivateKey> {
         Err(e) => return Err(e).context(Error::new("auth.keyReadFailed").param("path", path.display())),
     }
     for _ in 0..MAX_ATTEMPTS {
-        io.print(&format!("Enter passphrase for key '{}': ", path.display()));
+        io.print(&passphrase_prompt(path));
         let passphrase = io.read_line(false).await.context(Error::new("auth.cancelled"))?;
         match load_secret_key(path, Some(&passphrase)) {
             Ok(key) => return Ok(key),
@@ -412,7 +427,7 @@ impl Signer for PassphraseSigner<'_> {
 impl PassphraseSigner<'_> {
     async fn decrypt(&mut self) -> Option<PrivateKey> {
         for _ in 0..MAX_ATTEMPTS {
-            self.io.print(&format!("Enter passphrase for key '{}': ", self.path.display()));
+            self.io.print(&passphrase_prompt(self.path));
             let Some(passphrase) = self.io.read_line(false).await else {
                 self.cancelled = true;
                 return None;
