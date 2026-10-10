@@ -129,3 +129,21 @@ export function CheckIcon({ size = 10 }: { size?: number }) {
     </svg>
   );
 }
+
+/** A folder, in the file list; as tall as the text (1em), which the text size setting scales. */
+export function FolderIcon({ size = "1em" }: { size?: number | string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" aria-hidden="true">
+      <path d="M1.5 4a1 1 0 0 1 1-1h3.6l1.5 1.6h5.9a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V4z" />
+    </svg>
+  );
+}
+
+/** A file with a folded corner, in the file list; sized like `FolderIcon`. */
+export function FileIcon({ size = "1em" }: { size?: number | string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3.5 1.5h6l3 3v9a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM9.5 1.5v3h3" />
+    </svg>
+  );
+}

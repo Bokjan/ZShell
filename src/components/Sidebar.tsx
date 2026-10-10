@@ -17,6 +17,7 @@ import {
 } from "../lib/api";
 import { dragHorizontally } from "../lib/drag";
 import { clampIndex, navigateList } from "../lib/listNavigation";
+import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, searchShortcutLabel, settingsShortcutLabel } from "../lib/platform";
 import {
   RECENT_LIMIT,
@@ -237,6 +238,7 @@ export function Sidebar(props: Props) {
   ];
 
   const openMenu = (e: ReactMouseEvent, items: MenuItem[]) => {
+    if (followsMenuKey(e)) return;
     e.preventDefault();
     e.stopPropagation();
     setMenu({ x: e.clientX, y: e.clientY, items });
@@ -286,8 +288,9 @@ export function Sidebar(props: Props) {
       if (parent) setSelected(`f:${parent}`);
     } else if (e.key === "Enter" && row?.kind === "profile") onOpen(row.profile, "newTab");
     else if (e.key === "Enter" && row?.kind === "folder") setFolderCollapsed(row.folder.id, row.expanded);
-    else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+    else if (isMenuKey(e)) {
       // The selected row's menu, below it; the list's own without one.
+      openedByMenuKey();
       const element = listRef.current?.querySelector(`[data-key="${CSS.escape(selected ?? "")}"]`) ?? listRef.current!;
       const rect = element.getBoundingClientRect();
       const items =

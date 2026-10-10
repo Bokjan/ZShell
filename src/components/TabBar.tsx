@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import { focusedPane, isLogging, tabId, tabPanelId, tabTitle, type SidePanel, type Tab } from "../lib/panes";
 import type { Direction } from "../lib/layout";
+import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import {
   closeTabShortcutLabel,
   isComposing,
@@ -241,7 +242,8 @@ export function TabBar({
     else {
       if (e.key === "Enter" || e.key === " ") onSelect(key);
       else if (e.key === "F2") setEditing(key);
-      else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      else if (isMenuKey(e)) {
+        openedByMenuKey();
         const rect = e.currentTarget.getBoundingClientRect();
         setMenu({ key, x: rect.left, y: rect.bottom });
       } else return;
@@ -307,6 +309,7 @@ export function TabBar({
               onDoubleClick={() => setEditing(tab.key)}
               onAuxClick={(e) => e.button === 1 && onClose([tab.key])}
               onContextMenu={(e) => {
+                if (followsMenuKey(e)) return;
                 e.preventDefault();
                 setMenu({ key: tab.key, x: e.clientX, y: e.clientY });
               }}

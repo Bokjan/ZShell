@@ -10,12 +10,13 @@ import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from ".
 import { useDialog } from "../lib/dialogs";
 import { pathRange, storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";
+import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner, ErrorText } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
-import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, RefreshIcon, SearchIcon } from "./icons";
+import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, FileIcon, FolderIcon, RefreshIcon, SearchIcon } from "./icons";
 import { Modal } from "./Modal";
 import { TransferList, type Transfer } from "./TransferList";
 
@@ -685,7 +686,17 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
     },
   ];
 
+  // The menu key and Shift+F10 open the selection's menu below the cursor's row, or the
+  // folder's with nothing selected.
+  const openMenuFromKeyboard = () => {
+    openedByMenuKey();
+    const row = cursor ? listRef.current?.querySelector(`tr[data-path="${CSS.escape(cursor)}"]`) : null;
+    const rect = (row ?? listRef.current!).getBoundingClientRect();
+    setMenu({ x: rect.left + 24, y: row ? rect.bottom : rect.top, items: selected.length > 0 ? fileMenu(selected) : folderMenu() });
+  };
+
   const onRowContextMenu = (e: MouseEvent, entry: FileEntry) => {
+    if (followsMenuKey(e)) return;
     e.preventDefault();
     e.stopPropagation();
     const targets = selection.has(entry.path) ? selected : [entry];
@@ -694,6 +705,8 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   };
 
   const onListContextMenu = (e: MouseEvent) => {
+    // It would clear the selection and open the folder's menu.
+    if (followsMenuKey(e)) return;
     e.preventDefault();
     select([]);
     setMenu({ x: e.clientX, y: e.clientY, items: folderMenu() });
@@ -725,6 +738,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
       else download(selected);
     } else if ((e.key === "Delete" || e.key === "Backspace") && connected) askRemove(selected);
     else if (e.key === "F2" && selected.length === 1 && connected) startRename(selected[0]);
+    else if (isMenuKey(e)) openMenuFromKeyboard();
     else if (e.key === "Escape") {
       if (filter !== null) closeFilter();
       else select([]);
@@ -918,8 +932,8 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
               >
                 <td role="gridcell">
                   <div className="file-name">
-                    <span className="file-icon" aria-hidden="true">
-                      {entry.isDir ? "📁" : "📄"}
+                    <span className={`file-icon${entry.isDir ? " folder" : ""}`} aria-hidden="true">
+                      {entry.isDir ? <FolderIcon /> : <FileIcon />}
                     </span>
                     {/* Before the name, which is the last child (see `.file-name`). */}
                     {entry.isDir && <span className="visually-hidden">{t("sftp.folderKind")}</span>}

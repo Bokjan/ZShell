@@ -1516,7 +1516,14 @@ body.resizing .terminal-view {
 }
 .file-icon {
   flex-shrink: 0;
-  font-size: calc(12px * var(--text-scale));
+  font-size: calc(14px * var(--text-scale));
+  color: var(--text-muted);
+}
+.file-icon svg {
+  display: block;
+}
+.file-icon.folder {
+  color: var(--accent);
 }
 .symlink {
   font-style: italic;
@@ -2892,6 +2899,10 @@ body.resizing .terminal-view {
     forced-color-adjust: none;
     background: Highlight;
     color: HighlightText;
+  }
+  /* On a highlighted row, an icon is in the row's text color like the rest. */
+  .sftp-list tbody tr.selected .file-icon {
+    color: inherit;
   }
   /* Status and color marks are their color. */
   .status-dot,

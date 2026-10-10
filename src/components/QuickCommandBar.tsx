@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../lib/api";
 import type { SendResult } from "../lib/compose";
+import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import {
   addGroup,
   deleteCommand,
@@ -87,11 +88,11 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
     setMenu({ x: rect.left, y: rect.top, items });
   };
 
-  const commandMenu = (e: ReactMouseEvent, command: QuickCommand) => {
-    e.preventDefault();
+  // A command's menu: at the pointer, or below its button from the keyboard.
+  const commandMenu = (x: number, y: number, command: QuickCommand) => {
     setMenu({
-      x: e.clientX,
-      y: e.clientY,
+      x,
+      y,
       items: [
         { label: t("quick.run"), onSelect: () => run(command) },
         "separator",
@@ -175,7 +176,18 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
                 if (dragged.current) dragged.current = false;
                 else run(command);
               }}
-              onContextMenu={(e) => commandMenu(e, command)}
+              onContextMenu={(e) => {
+                if (followsMenuKey(e)) return;
+                e.preventDefault();
+                commandMenu(e.clientX, e.clientY, command);
+              }}
+              onKeyDown={(e) => {
+                if (!isMenuKey(e)) return;
+                e.preventDefault();
+                openedByMenuKey();
+                const rect = e.currentTarget.getBoundingClientRect();
+                commandMenu(rect.left, rect.bottom, command);
+              }}
             >
               {command.name}
               {!command.enter && <span className="quick-no-enter">…</span>}
