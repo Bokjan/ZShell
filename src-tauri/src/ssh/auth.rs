@@ -505,16 +505,8 @@ mod tests {
     use super::*;
     use crate::config::Remote;
     use crate::session::SessionInput;
-
-    /// Serves as the host key and the user's key.
-    const KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-QyNTUxOQAAACBmJacSIfoWm34XIu1XxBNljXN6rq4lFsD5uSBwBECvQAAAAIiHA/GKhwPx
-igAAAAtzc2gtZWQyNTUxOQAAACBmJacSIfoWm34XIu1XxBNljXN6rq4lFsD5uSBwBECvQA
-AAAEBQtLIgjSDC4h72YyOg7rcfkBUD/Fm2W/HoNlMi5m03MmYlpxIh+habfhci7VfEE2WN
-c3quriUWwPm5IHAEQK9AAAAAAAECAwQF
------END OPENSSH PRIVATE KEY-----
-";
+    // Serves as the host key and the user's key.
+    use crate::ssh::TEST_KEY as KEY;
 
     /// A server that requires `steps` in turn, as sshd's `AuthenticationMethods publickey,password`
     /// does. Keyboard-interactive asks `prompt` (hidden); it and password take `secret`.

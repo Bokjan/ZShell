@@ -165,16 +165,34 @@ async fn open_shell(session: &SshHandle, profile: &SshProfile, io: &mut TermIo) 
 /// Output keeps being read while a write waits for the server's window: russh delivers output
 /// into a bounded queue from its connection task, so a full queue would stall that task, and
 /// with it the window adjustments the write is waiting for (a large paste or a ZMODEM upload
-/// while the remote program prints). New input waits until the write is done.
+/// while the remote program prints).
+///
+/// So nothing sent to russh is awaited in a `select!` branch, window changes included: every
+/// message goes through russh's bounded queue to the connection task, which may itself be
+/// waiting for this channel to be read (output paused while the terminal is behind), and the
+/// branch would keep the reader and the flow control from being polled for good. One message
+/// is in flight at a time ([`Sending`]); while it is, one keystroke or paste waits, and window
+/// changes are merged into the latest size (dragging the window edge sends many).
 async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::Receiver<Option<String>>) -> Outcome {
     let (mut reader, writer) = channel.split();
     let writer = Arc::new(writer);
     let mut close = CloseOnDrop(Some(writer.clone()));
     let flow = io.sink().flow();
     let mut exit_status = None;
-    let mut writing = None;
+    let mut sending: Option<Sending> = None;
+    let mut data = None;
+    let mut resize = None;
     loop {
-        let idle = writing.is_none();
+        if sending.is_none() {
+            sending = match (data.take(), resize.take()) {
+                (Some(bytes), size) => {
+                    resize = size;
+                    Some(Box::pin(writer.data_bytes(bytes)))
+                }
+                (None, Some((cols, rows))) => Some(Box::pin(writer.window_change(cols, rows, 0, 0))),
+                (None, None) => None,
+            };
+        }
         let paused = flow.is_paused();
         let sent = tokio::select! {
             () = flow.ready(), if paused => Ok(()),
@@ -195,16 +213,19 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
                 None => break,
                 Some(_) => Ok(()),
             },
-            result = in_flight(&mut writing) => {
-                writing = None;
+            result = in_flight(&mut sending) => {
+                sending = None;
                 result
             }
-            input = io.recv(), if idle => match input {
-                Some(SessionInput::Data(data)) => {
-                    writing = Some(Box::pin(writer.data_bytes(data)));
+            input = io.recv(), if data.is_none() => match input {
+                Some(SessionInput::Data(bytes)) => {
+                    data = Some(bytes);
                     Ok(())
                 }
-                Some(SessionInput::Resize { cols, rows }) => writer.window_change(cols.into(), rows.into(), 0, 0).await,
+                Some(SessionInput::Resize { cols, rows }) => {
+                    resize = Some((cols.into(), rows.into()));
+                    Ok(())
+                }
                 Some(SessionInput::Break) => Ok(()),
                 // The tab is closing.
                 None => return Outcome::Exited(exit_status),
@@ -241,10 +262,13 @@ impl Drop for CloseOnDrop {
     }
 }
 
-/// Completes with the write in progress, if any; pending forever otherwise (for `select!`).
-async fn in_flight<F: Future + Unpin>(write: &mut Option<F>) -> F::Output {
-    match write {
-        Some(write) => write.await,
+/// A message to the server on its way to russh's connection task: data or a window change.
+type Sending<'a> = std::pin::Pin<Box<dyn Future<Output = Result<(), russh::Error>> + Send + 'a>>;
+
+/// Completes with the message in flight, if any; pending forever otherwise (for `select!`).
+async fn in_flight<F: Future + Unpin>(sending: &mut Option<F>) -> F::Output {
+    match sending {
+        Some(sending) => sending.await,
         None => std::future::pending().await,
     }
 }
@@ -329,6 +353,17 @@ where
     }
 }
 
+/// A private key for tests: the server's host key, and the user's key where one is needed.
+#[cfg(test)]
+const TEST_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBmJacSIfoWm34XIu1XxBNljXN6rq4lFsD5uSBwBECvQAAAAIiHA/GKhwPx
+igAAAAtzc2gtZWQyNTUxOQAAACBmJacSIfoWm34XIu1XxBNljXN6rq4lFsD5uSBwBECvQA
+AAAEBQtLIgjSDC4h72YyOg7rcfkBUD/Fm2W/HoNlMi5m03MmYlpxIh+habfhci7VfEE2WN
+c3quriUWwPm5IHAEQK9AAAAAAAECAwQF
+-----END OPENSSH PRIVATE KEY-----
+";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,5 +378,181 @@ mod tests {
         let result = handshake(&profile, false, stream, &mut io, RemoteRoutes::default(), watch::channel(None).0).await;
         let error = Error::from(result.err().unwrap());
         assert_eq!(error.code(), "ssh.handshakeTimeout");
+    }
+
+    /// A server whose shell prints without end if `flood` (and nothing otherwise), and that
+    /// reports what it is sent: window changes and typed data.
+    struct Server {
+        flood: bool,
+        sizes: mpsc::UnboundedSender<(u32, u32)>,
+        typed: mpsc::UnboundedSender<Vec<u8>>,
+    }
+
+    impl russh::server::Handler for Server {
+        type Error = russh::Error;
+
+        async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+            Ok(russh::server::Auth::Accept)
+        }
+
+        async fn channel_open_session(
+            &mut self,
+            _channel: Channel<russh::server::Msg>,
+            reply: russh::server::ChannelOpenHandle,
+            _session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            reply.accept().await;
+            Ok(())
+        }
+
+        async fn shell_request(&mut self, channel: russh::ChannelId, session: &mut russh::server::Session) -> Result<(), Self::Error> {
+            if self.flood {
+                let handle = session.handle();
+                tokio::spawn(async move { while handle.data(channel, vec![b'y'; 1 << 14]).await.is_ok() {} });
+            }
+            Ok(())
+        }
+
+        async fn data(&mut self, _channel: russh::ChannelId, data: &[u8], _session: &mut russh::server::Session) -> Result<(), Self::Error> {
+            let _ = self.typed.send(data.to_vec());
+            Ok(())
+        }
+
+        async fn window_change_request(
+            &mut self,
+            _channel: russh::ChannelId,
+            cols: u32,
+            rows: u32,
+            _pix_width: u32,
+            _pix_height: u32,
+            _session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            let _ = self.sizes.send((cols, rows));
+            Ok(())
+        }
+    }
+
+    struct AnyHostKey;
+
+    impl client::Handler for AnyHostKey {
+        type Error = russh::Error;
+
+        async fn check_server_key(&mut self, _key: &russh::keys::PublicKeyOrCertificate) -> Result<bool, Self::Error> {
+            Ok(true)
+        }
+    }
+
+    /// A shell on a [`Server`], bridged to a terminal that acknowledges nothing by itself.
+    struct Shell {
+        input: mpsc::UnboundedSender<SessionInput>,
+        output: std::sync::mpsc::Receiver<Vec<u8>>,
+        flow: Arc<crate::session::Flow>,
+        sizes: mpsc::UnboundedReceiver<(u32, u32)>,
+        typed: mpsc::UnboundedReceiver<Vec<u8>>,
+        bridge: tokio::task::JoinHandle<Outcome>,
+    }
+
+    impl Shell {
+        async fn start(flood: bool) -> Self {
+            let config = russh::server::Config {
+                methods: russh::MethodSet::from(&[russh::MethodKind::None][..]),
+                keys: vec![russh::keys::PrivateKey::from_openssh(TEST_KEY).unwrap()],
+                ..Default::default()
+            };
+            let (client_side, server_side) = tokio::io::duplex(1 << 16);
+            let (sizes_tx, sizes) = mpsc::unbounded_channel();
+            let (typed_tx, typed) = mpsc::unbounded_channel();
+            let server = Server { flood, sizes: sizes_tx, typed: typed_tx };
+            tokio::spawn(async move {
+                if let Ok(session) = russh::server::run_stream(Arc::new(config), server_side, server).await {
+                    let _ = session.await;
+                }
+            });
+            let mut session = client::connect_stream(Arc::new(client::Config::default()), client_side, AnyHostKey).await.unwrap();
+            assert!(session.authenticate_none("alice").await.unwrap().success());
+            let channel = session.channel_open_session().await.unwrap();
+            channel.request_shell(false).await.unwrap();
+            let (mut io, input, output, _events) = TermIo::detached((80, 24));
+            let flow = io.sink().flow();
+            let bridge = tokio::spawn(async move { bridge(channel, &mut io, watch::channel(None).1).await });
+            Self { input, output, flow, sizes, typed, bridge }
+        }
+
+        /// Acknowledges the output shown so far; returns how much there was.
+        fn catch_up(&self) -> usize {
+            let shown = self.output.try_iter().map(|bytes| bytes.len()).sum();
+            self.flow.ack(shown);
+            shown
+        }
+
+        /// Keeps up with the output until the server has got `typed` and the latest size is
+        /// `size`, and output has been shown if `output`; fails after a while.
+        async fn expect(&mut self, typed: &[u8], size: (u32, u32), output: bool) {
+            let (mut got, mut latest, mut shown) = (Vec::new(), None, 0);
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while got != typed || latest != Some(size) || (output && shown == 0) {
+                    shown += self.catch_up();
+                    while let Ok(bytes) = self.typed.try_recv() {
+                        got.extend(bytes);
+                    }
+                    while let Ok(size) = self.sizes.try_recv() {
+                        latest = Some(size);
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| {
+                let same = got.iter().zip(typed).take_while(|(a, b)| a == b).count();
+                panic!("the connection is stuck: got {} of {} bytes (same up to {same}), size {latest:?}, {shown} bytes shown", got.len(), typed.len())
+            });
+        }
+    }
+
+    /// Resizing the window while output is paused: the window changes wait for russh's
+    /// connection task, which waits for the paused channel to be read. Once the terminal
+    /// catches up, output goes on and the server gets the latest size.
+    #[tokio::test]
+    async fn window_changes_while_output_is_paused() {
+        let mut shell = Shell::start(true).await;
+        // Nothing is acknowledged, so the bridge stops reading; then the connection task fills
+        // the channel's queue and waits.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !shell.flow.is_paused() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("output never paused");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        // More window changes than russh queues for the connection task, and a keystroke.
+        for cols in 100..150 {
+            shell.input.send(SessionInput::Resize { cols, rows: 30 }).unwrap();
+        }
+        shell.input.send(SessionInput::Data(b"q".to_vec())).unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        shell.expect(b"q", (149, 30), true).await;
+        shell.bridge.abort();
+    }
+
+    /// Typing and pastes reach the shell whole and in order, with window changes in between.
+    #[tokio::test]
+    async fn typing_reaches_the_shell_in_order() {
+        let mut shell = Shell::start(false).await;
+        let mut typed = Vec::new();
+        for i in 0..200u16 {
+            let line = format!("line {i}\r").into_bytes();
+            typed.extend(&line);
+            shell.input.send(SessionInput::Data(line)).unwrap();
+            if i % 7 == 0 {
+                shell.input.send(SessionInput::Resize { cols: 80 + i, rows: 24 }).unwrap();
+            }
+        }
+        let paste = vec![b'p'; 1 << 20];
+        typed.extend(&paste);
+        shell.input.send(SessionInput::Data(paste)).unwrap();
+        shell.input.send(SessionInput::Resize { cols: 120, rows: 40 }).unwrap();
+        shell.expect(&typed, (120, 40), false).await;
+        shell.bridge.abort();
     }
 }
