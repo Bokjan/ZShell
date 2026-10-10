@@ -6,7 +6,7 @@
 header = """
 # Changelog
 
-User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
+Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
 """
 # The release workflow finds a version's notes by its "## [X.Y.Z]" heading.
@@ -28,11 +28,12 @@ trim = true
 [git]
 conventional_commits = true
 filter_unconventional = true
-# Only user-facing changes; docs, ci, chore, refactor and the like are left out unless breaking.
+# User-facing changes, then refactoring; docs, ci, chore and the like are left out unless breaking.
 commit_parsers = [
   { message = "^feat", group = "<!-- 0 -->Features" },
   { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
   { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^refactor", group = "<!-- 3 -->Internal" },
   { message = ".*", skip = true },
 ]
 protect_breaking_commits = true

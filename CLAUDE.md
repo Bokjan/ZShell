@@ -38,7 +38,7 @@ Never touch the maintainer's real configuration (`profiles.json`, `settings.json
 
 ## Commits
 
-- Conventional Commits subjects, with an optional scope: `feat(sftp): …`, `fix(macos): …`, `docs: …`, `ci: …`, `chore: …`, `refactor: …`. Only `feat`, `fix` and `perf` (and breaking changes) reach `CHANGELOG.md`, so pick the type accordingly.
+- Conventional Commits subjects, with an optional scope: `feat(sftp): …`, `fix(macos): …`, `docs: …`, `ci: …`, `chore: …`, `refactor: …`. Only `feat`, `fix`, `perf` and `refactor` (and breaking changes) reach `CHANGELOG.md`, refactors under "Internal" after the user-facing changes, so pick the type accordingly.
 - Do not hard-wrap the body: each paragraph or bullet stays on one line.
 - Commit with the repository's local git identity (check `git config user.email`).
 - A change made for a GitHub issue references it in the commit body (`Closes #12`). When the version's changelog section is edited, credit the issue's author at the end of the entry (`(thanks @name, #12)`) and add them to `THANKS.md`.

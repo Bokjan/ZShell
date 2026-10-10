@@ -1,6 +1,6 @@
 # Changelog
 
-User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
+Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
 ## [2.3.4] - 2026-10-10
 
