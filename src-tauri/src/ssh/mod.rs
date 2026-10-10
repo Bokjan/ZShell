@@ -94,8 +94,7 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         let (next_host, next_port) = jumps.get(index + 1).map_or((host, port), |next| (next.ssh.remote.host.as_str(), next.ssh.remote.port));
         let proxy = route.proxy.as_ref().filter(|_| index == 0);
         // The agent is only forwarded to the target, where the shell runs.
-        let mut session =
-            connect(hop, false, transport.take(), proxy, io, RemoteRoutes::default(), watch::channel(None).0).await?;
+        let mut session = connect(hop, HopOptions::jump_host(), transport.take(), proxy, io).await?;
         auth::authenticate(&mut session, hop, io).await?;
         let target = host_port(next_host, next_port);
         let channel = session
@@ -127,7 +126,8 @@ async fn start(
     let routes = RemoteRoutes::default();
     let (disconnect_tx, disconnect) = watch::channel(None);
     let proxy = route.proxy.as_ref();
-    let mut session = connect(profile, profile.ssh.forward_agent, transport, proxy, io, routes.clone(), disconnect_tx).await?;
+    let options = HopOptions { forward_agent: profile.ssh.forward_agent, routes: routes.clone(), disconnect: disconnect_tx };
+    let mut session = connect(profile, options, transport, proxy, io).await?;
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io);
@@ -273,17 +273,31 @@ async fn in_flight<F: Future + Unpin>(sending: &mut Option<F>) -> F::Output {
     }
 }
 
+/// What a connection to one hop takes besides its address: what the server may open, and
+/// where to report why the connection ended. The shell's host has its own; a jump host none.
+struct HopOptions {
+    /// Whether the server may open agent channels.
+    forward_agent: bool,
+    /// Where the channels of remote forwarding rules go.
+    routes: RemoteRoutes,
+    /// Receives a description of why the connection ended.
+    disconnect: watch::Sender<Option<String>>,
+}
+
+impl HopOptions {
+    fn jump_host() -> Self {
+        Self { forward_agent: false, routes: RemoteRoutes::default(), disconnect: watch::channel(None).0 }
+    }
+}
+
 /// Connects to one hop: over TCP (through `proxy`, if any), or through `via` (a channel from
 /// the previous jump host, with that host's name), then performs the SSH handshake.
-/// `forward_agent`: whether the server may open agent channels.
 async fn connect(
     hop: &SshProfile,
-    forward_agent: bool,
+    options: HopOptions,
     via: Option<(ChannelStream<Msg>, String)>,
     proxy: Option<&Proxy>,
     io: &mut TermIo,
-    routes: RemoteRoutes,
-    disconnect: watch::Sender<Option<String>>,
 ) -> Result<SshHandle> {
     let remote = &hop.ssh.remote;
     let (user, host, port) = (&remote.username, &remote.host, remote.port);
@@ -295,11 +309,11 @@ async fn connect(
         io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
         // SSH keepalives notice a dead connection; TCP ones aren't needed.
         let stream = crate::net::connect(host, port, user, proxy, None, io).await?;
-        return handshake(hop, forward_agent, stream, io, routes, disconnect).await;
+        return handshake(hop, options, stream, io).await;
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);
     io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
-    handshake(hop, forward_agent, stream, io, routes, disconnect).await
+    handshake(hop, options, stream, io).await
 }
 
 /// How long the SSH version and key exchange may take, not counting the time a host key
@@ -308,14 +322,7 @@ async fn connect(
 /// automatic reconnection would never try again.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
-async fn handshake<S>(
-    hop: &SshProfile,
-    forward_agent: bool,
-    stream: S,
-    io: &mut TermIo,
-    routes: RemoteRoutes,
-    disconnect: watch::Sender<Option<String>>,
-) -> Result<SshHandle>
+async fn handshake<S>(hop: &SshProfile, options: HopOptions, stream: S, io: &mut TermIo) -> Result<SshHandle>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -329,6 +336,7 @@ where
         ..Default::default()
     });
     let (queries_tx, mut queries) = mpsc::channel(1);
+    let HopOptions { forward_agent, routes, disconnect } = options;
     let handler = ClientHandler::new(remote.host.clone(), remote.port, forward_agent, queries_tx, routes, disconnect);
 
     // Drive the handshake while answering host key questions from the handler.
@@ -378,7 +386,7 @@ mod tests {
         let (stream, _server) = tokio::io::duplex(1024);
         let profile = SshProfile::quick("t".into(), Remote::new("example.com".into(), 22, "alice".into()));
         let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
-        let result = handshake(&profile, false, stream, &mut io, RemoteRoutes::default(), watch::channel(None).0).await;
+        let result = handshake(&profile, HopOptions::jump_host(), stream, &mut io).await;
         let error = Error::from(result.err().unwrap());
         assert_eq!(error.code(), "ssh.handshakeTimeout");
     }
