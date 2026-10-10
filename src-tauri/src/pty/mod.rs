@@ -168,7 +168,9 @@ impl Pty {
     }
 
     /// After the shell has exited, gives the reader a moment to pass on the rest of the
-    /// output (a background job may keep the terminal open indefinitely).
+    /// output (a background job may keep the terminal open indefinitely). Time the reader
+    /// spends waiting for the frontend to catch up (`cat big.log; exit`) doesn't count: the
+    /// rest of the output would otherwise follow the message that the shell exited.
     async fn drain(&mut self) {
         // ConPTY keeps its output pipe open until the pseudo console is closed, which also
         // flushes what it has not sent yet. Closing blocks until that output is read.
@@ -176,8 +178,21 @@ impl Pty {
         if let Some(master) = self.master.take() {
             thread::spawn(move || drop(master));
         }
-        if let Some(done) = self.output_done.take() {
-            let _ = tokio::time::timeout(DRAIN_TIMEOUT, done).await;
+        let Some(mut done) = self.output_done.take() else { return };
+        const STEP: Duration = Duration::from_millis(20);
+        let mut left = DRAIN_TIMEOUT;
+        while !left.is_zero() {
+            if self.flow.is_paused() {
+                tokio::select! {
+                    _ = &mut done => return,
+                    () = self.flow.ready() => continue,
+                }
+            }
+            let step = left.min(STEP);
+            tokio::select! {
+                _ = &mut done => return,
+                () = tokio::time::sleep(step) => left -= step,
+            }
         }
     }
 }
@@ -386,6 +401,33 @@ mod tests {
         assert_eq!(events.len(), 2, "{events:?}");
         assert!(events[0].contains(r#""type":"connected""#));
         assert!(events[1].contains(r#""reason":"exited""#) && events[1].contains(r#""status":3"#), "{events:?}");
+    }
+
+    /// Output still waiting for the frontend to catch up when the shell exits comes before
+    /// the message that it exited, however long the frontend takes.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn output_held_back_comes_before_the_exit_message() {
+        let (io, _input, output, _events) = TermIo::detached((80, 24));
+        let flow = io.sink().flow();
+        // A little more than the flow control lets through unacknowledged, so that the shell
+        // gets to exit while the reader waits.
+        let script = format!("head -c {} /dev/zero | tr '\\000' x; printf END; exit 0", (2 << 20) + 500);
+        let session = tokio::spawn(run(sh(&script), io));
+        // Catching up only well after the drain timeout.
+        tokio::time::sleep(DRAIN_TIMEOUT * 3).await;
+        let mut shown = Vec::new();
+        while !session.is_finished() {
+            for chunk in output.try_iter() {
+                flow.ack(chunk.len());
+                shown.extend(chunk);
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        shown.extend(output.try_iter().flatten());
+        let shown = String::from_utf8_lossy(&shown);
+        let end = shown.find("END").expect("all the output");
+        let exited = shown.find(&t!("terminal.processExited").to_string()).expect("the exit message");
+        assert!(end < exited, "{:?}", &shown[shown.len() - 200..]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
