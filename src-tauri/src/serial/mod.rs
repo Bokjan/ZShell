@@ -289,7 +289,9 @@ fn write_input(mut port: Box<dyn SerialPort>, mut inputs: mpsc::Receiver<Output>
 fn write_data(port: &mut dyn SerialPort, mut data: &[u8], failed: &mpsc::UnboundedSender<String>) -> std::io::Result<()> {
     while !data.is_empty() && !failed.is_closed() {
         match port.write(data) {
-            Ok(0) => return Err(ErrorKind::WriteZero.into()),
+            // On Windows a write that times out (the port's timeout is also the write
+            // timeout) succeeds having written nothing.
+            Ok(0) => {}
             Ok(n) => data = &data[n..],
             Err(e) if matches!(e.kind(), ErrorKind::TimedOut | ErrorKind::Interrupted | ErrorKind::WouldBlock) => {}
             Err(e) => return Err(e),
