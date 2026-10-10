@@ -14,16 +14,9 @@ import "@xterm/xterm/css/xterm.css";
 
 import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../lib/api";
 import { afterDialogs, isDialogOpen } from "../lib/dialogs";
+import { clipboardKeyOf, matches, shortcutLabel } from "../lib/keymap";
 import type { PaneSession } from "../lib/paneSession";
-import {
-  clipboardKey,
-  copyShortcutLabel,
-  findShortcutLabel,
-  isFindShortcut,
-  isMac,
-  pasteShortcutLabel,
-  selectAllShortcutLabel,
-} from "../lib/platform";
+import { isMac } from "../lib/platform";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
@@ -224,9 +217,9 @@ export function TerminalView({
       },
     });
 
-    // Ctrl+Shift+C / Ctrl+V and friends outside macOS (see `clipboardKey`).
+    // Ctrl+Shift+C / Ctrl+V and friends outside macOS (see `clipboardKeyOf`).
     term.attachCustomKeyEventHandler((e) => {
-      const key = clipboardKey(e);
+      const key = clipboardKeyOf(e);
       if (!key || (key === "copyIfSelected" && !term.hasSelection())) return true;
       if (e.type === "keydown") {
         e.preventDefault();
@@ -384,7 +377,7 @@ export function TerminalView({
   // A dialog (settings) above the terminal has the shortcut to itself.
   useShortcuts(
     (e) => {
-      if (!isFindShortcut(e)) return false;
+      if (!matches(e, "find")) return false;
       setSearchKey((key) => key + 1);
       return true;
     },
@@ -471,18 +464,18 @@ export function TerminalView({
     return [
       {
         label: t("terminal.menu.copy"),
-        shortcut: copyShortcutLabel,
+        shortcut: shortcutLabel("copy"),
         disabled: !term.hasSelection(),
         onSelect: () => copyText(term.getSelection()),
       },
       {
         label: t("terminal.menu.paste"),
-        shortcut: pasteShortcutLabel,
+        shortcut: shortcutLabel("paste"),
         onSelect: () => void readText().then(pasteRef.current, ignore),
       },
-      { label: t("terminal.menu.selectAll"), shortcut: selectAllShortcutLabel, onSelect: () => term.selectAll() },
+      { label: t("terminal.menu.selectAll"), shortcut: shortcutLabel("selectAll"), onSelect: () => term.selectAll() },
       "separator" as const,
-      { label: t("terminal.menu.find"), shortcut: findShortcutLabel, onSelect: () => setSearchKey((key) => key + 1) },
+      { label: t("terminal.menu.find"), shortcut: shortcutLabel("find"), onSelect: () => setSearchKey((key) => key + 1) },
       "separator" as const,
       { label: t("terminal.menu.clear"), onSelect: () => term.clear() },
       { label: t("terminal.menu.reset"), onSelect: () => term.reset() },

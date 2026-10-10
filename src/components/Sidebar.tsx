@@ -18,7 +18,8 @@ import {
 import { dragHorizontally, usePressDrag } from "../lib/drag";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
-import { isComposing, searchShortcutLabel, settingsShortcutLabel } from "../lib/platform";
+import { shortcutLabel } from "../lib/keymap";
+import { isComposing } from "../lib/platform";
 import {
   RECENT_LIMIT,
   address,
@@ -504,7 +505,7 @@ export function Sidebar(props: Props) {
           aria-activedescendant={
             highlighted < 0 ? undefined : highlighted < results.length ? rowId(`r:${results[highlighted].id}`) : rowId("quick")
           }
-          placeholder={t("sidebar.searchPlaceholder", { shortcut: searchShortcutLabel })}
+          placeholder={t("sidebar.searchPlaceholder", { shortcut: shortcutLabel("searchSessions") })}
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
@@ -586,7 +587,7 @@ export function Sidebar(props: Props) {
         <button className="sidebar-settings" onClick={props.onSettings}>
           <SettingsIcon />
           <span>{t("sidebar.settings")}</span>
-          <kbd>{settingsShortcutLabel}</kbd>
+          <kbd>{shortcutLabel("settings")}</kbd>
         </button>
       </footer>
       <Separator

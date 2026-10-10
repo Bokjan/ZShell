@@ -3,26 +3,8 @@ import { useTranslation } from "react-i18next";
 
 import { useConfirmButton } from "../lib/confirm";
 import { useDialog } from "../lib/dialogs";
-import {
-  allCopyShortcutsLabel,
-  allPasteShortcutsLabel,
-  closeTabShortcutLabel,
-  closeWindowShortcutLabel,
-  findShortcutLabel,
-  goToTabShortcutLabel,
-  isFindShortcut,
-  isMac,
-  lastTabShortcutLabel,
-  newTabShortcutLabel,
-  nextTabShortcutLabel,
-  paneFocusShortcutLabel,
-  previousTabShortcutLabel,
-  searchShortcutLabel,
-  settingsShortcutLabel,
-  shiftShortcutLabel,
-  splitDownShortcutLabel,
-  splitRightShortcutLabel,
-} from "../lib/platform";
+import { matches, shortcutRows } from "../lib/keymap";
+import { isMac } from "../lib/platform";
 import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
@@ -75,32 +57,6 @@ const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 
-/**
- * The app's shortcuts on this platform, each described by `settings.shortcutActions.<id>`;
- * those without keys here (closing the window on Windows, plain Ctrl+C on macOS) are left out.
- */
-const SHORTCUTS = [
-  { id: "searchSessions", keys: searchShortcutLabel },
-  { id: "newLocalTerminal", keys: newTabShortcutLabel, local: true },
-  { id: "nextTab", keys: nextTabShortcutLabel },
-  { id: "previousTab", keys: previousTabShortcutLabel },
-  { id: "goToTab", keys: goToTabShortcutLabel },
-  { id: "lastTab", keys: lastTabShortcutLabel },
-  { id: "closeTab", keys: closeTabShortcutLabel },
-  { id: "closeWindow", keys: closeWindowShortcutLabel },
-  { id: "splitRight", keys: splitRightShortcutLabel },
-  { id: "splitDown", keys: splitDownShortcutLabel },
-  { id: "focusPane", keys: paneFocusShortcutLabel },
-  { id: "copy", keys: allCopyShortcutsLabel },
-  { id: "copySelection", keys: isMac ? undefined : "Ctrl+C" },
-  { id: "paste", keys: allPasteShortcutsLabel },
-  { id: "find", keys: findShortcutLabel },
-  { id: "composeBar", keys: shiftShortcutLabel("I") },
-  { id: "quickCommands", keys: shiftShortcutLabel("J") },
-  { id: "filePanel", keys: shiftShortcutLabel("E") },
-  { id: "forwardsPanel", keys: shiftShortcutLabel("P") },
-  { id: "settings", keys: settingsShortcutLabel },
-] as const;
 
 export function SettingsDialog({ localAllowed, onClose }: Props) {
   const { t } = useTranslation();
@@ -144,7 +100,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
   useShortcuts(
     (e) => {
       const ctrlF = !isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
-      if (!isFindShortcut(e) && !ctrlF) return false;
+      if (!matches(e, "find") && !ctrlF) return false;
       searchRef.current?.select();
       return true;
     },
@@ -499,10 +455,9 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
             <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
 
             <Section id="shortcuts">
-              {SHORTCUTS.map(
+              {shortcutRows().map(
                 (shortcut) =>
-                  shortcut.keys &&
-                  (localAllowed || !("local" in shortcut)) && (
+                  (localAllowed || !shortcut.local) && (
                     <div key={shortcut.id} className="shortcut">
                       <span>{t(`settings.shortcutActions.${shortcut.id}`)}</span>
                       <kbd>{shortcut.keys}</kbd>

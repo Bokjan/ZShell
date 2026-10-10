@@ -17,7 +17,7 @@ import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog"
 import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar, type OpenMode } from "./components/Sidebar";
-import { PANEL_SHORTCUTS, TabBar } from "./components/TabBar";
+import { TabBar } from "./components/TabBar";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n";
@@ -36,19 +36,7 @@ import {
   type SetAsideFile,
 } from "./lib/api";
 import { basename } from "./lib/format";
-import {
-  closeTabShortcutLabel,
-  hasShiftShortcutModifiers,
-  isNewTabShortcut,
-  isSearchShortcut,
-  isSettingsShortcut,
-  paneFocusShortcut,
-  shiftShortcutLabel,
-  splitDownShortcutLabel,
-  splitRightShortcutLabel,
-  splitShortcut,
-  tabShortcut,
-} from "./lib/platform";
+import { actionOf, matches, paneSideOf, shortcutLabel, tabIndexOf } from "./lib/keymap";
 import { neighbor } from "./lib/layout";
 import { tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
@@ -220,7 +208,7 @@ function App() {
   // Settings open over a dialog too.
   useShortcuts(
     (e) => {
-      if (!isSettingsShortcut(e)) return false;
+      if (!matches(e, "settings")) return false;
       setSettingsOpen(true);
       return true;
     },
@@ -228,54 +216,55 @@ function App() {
   );
 
   useShortcuts((e) => {
-    if (isNewTabShortcut(e) && localAllowed) {
+    if (matches(e, "newLocalTerminal") && localAllowed) {
       openLocalTab();
       return true;
     }
-    if (isSearchShortcut(e)) {
+    if (matches(e, "searchSessions")) {
       setSearchFocusKey((key) => key + 1);
       return true;
     }
-    const tabKey = tabShortcut(e);
-    if (tabKey) {
+    const tabAction = actionOf(e, ["nextTab", "previousTab", "closeTab"]);
+    const tabIndex = tabIndexOf(e);
+    if (tabAction || tabIndex !== null) {
       const tabs = store.get().tabs;
       const index = tabs.findIndex((t) => t.key === store.get().activeKey);
       if (tabs.length === 0) return true;
-      if (tabKey.type === "close") {
+      if (tabAction === "closeTab") {
         closeFocused();
         return true;
       }
       let next: number;
-      if (tabKey.type === "next") next = (index + 1) % tabs.length;
-      else if (tabKey.type === "previous") next = (index - 1 + tabs.length) % tabs.length;
+      if (tabAction === "nextTab") next = (index + 1) % tabs.length;
+      else if (tabAction === "previousTab") next = (index - 1 + tabs.length) % tabs.length;
       // ⌘9 / Alt+9 is always the last tab, as in browsers.
-      else next = tabKey.index === 8 ? tabs.length - 1 : tabKey.index;
+      else next = tabIndex === -1 ? tabs.length - 1 : tabIndex!;
       if (next < tabs.length) activate(tabs[next].key);
       return true;
     }
-    const split = splitShortcut(e);
-    const side = paneFocusShortcut(e);
+    const split = actionOf(e, ["splitRight", "splitDown"]);
+    const side = paneSideOf(e);
     if ((split || side) && store.get().activeKey !== null) {
       const tab = activeTabOf(store.get());
       if (!tab) return true;
-      if (split) splitPane(tab.focused, split);
+      if (split) splitPane(tab.focused, split === "splitRight" ? "row" : "column");
       else {
         const next = neighbor(tab.layout, tab.focused, side!);
         if (next !== null) focusPane(next);
       }
       return true;
     }
-    if (e.code === "KeyJ" && hasShiftShortcutModifiers(e)) {
+    if (matches(e, "quickCommands")) {
       if (store.get().tabs.length > 0) quick.setPaletteOpen(true);
       return true;
     }
-    if (e.code === "KeyI" && hasShiftShortcutModifiers(e)) {
+    if (matches(e, "composeBar")) {
       if (store.get().tabs.length > 0) composer.toggle();
       return true;
     }
-    const panel = PANEL_SHORTCUTS[e.code];
-    if (!panel || !hasShiftShortcutModifiers(e)) return false;
-    togglePanel(panel);
+    const panel = actionOf(e, ["filePanel", "forwardsPanel"]);
+    if (!panel) return false;
+    togglePanel(panel === "filePanel" ? "files" : "forwards");
     return true;
   });
 
@@ -307,18 +296,18 @@ function App() {
       "separator",
       {
         label: t("tabs.splitRight"),
-        shortcut: splitRightShortcutLabel,
+        shortcut: shortcutLabel("splitRight"),
         disabled: serial || !roomToSplit(pane.key, "row"),
         onSelect: () => splitPane(pane.key, "row"),
       },
       {
         label: t("tabs.splitDown"),
-        shortcut: splitDownShortcutLabel,
+        shortcut: shortcutLabel("splitDown"),
         disabled: serial || !roomToSplit(pane.key, "column"),
         onSelect: () => splitPane(pane.key, "column"),
       },
       ...(split
-        ? [{ label: t("tabs.closePane"), shortcut: closeTabShortcutLabel, onSelect: () => void requestClose({ kind: "pane", key: pane.key }) }]
+        ? [{ label: t("tabs.closePane"), shortcut: shortcutLabel("closeTab"), onSelect: () => void requestClose({ kind: "pane", key: pane.key }) }]
         : []),
     ];
   };
@@ -329,7 +318,7 @@ function App() {
     return [
       "separator",
       ...group.commands.slice(0, MENU_COMMANDS).map((command) => ({ label: command.name, onSelect: () => runCommand(command) })),
-      { label: t("quick.paletteMenu"), shortcut: shiftShortcutLabel("J"), onSelect: () => quick.setPaletteOpen(true) },
+      { label: t("quick.paletteMenu"), shortcut: shortcutLabel("quickCommands"), onSelect: () => quick.setPaletteOpen(true) },
     ];
   };
 

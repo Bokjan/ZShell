@@ -192,7 +192,7 @@
 
 ### 快捷键、菜单与侧栏
 
-- **快捷键**：应用快捷键在 window 的捕获阶段拦截（`useShortcuts`），终端收不到。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 等留给 shell）。对话框（或命令面板）打开时，除打开设置外的应用快捷键都不处理，菜单的「关闭」也不关标签，否则会切换或关闭对话框背后的标签，并把焦点移到终端。剪贴板快捷键只在终端获得焦点时生效（xterm.js 的 `attachCustomKeyEventHandler`），输入框里仍是普通的复制粘贴。设置里的 Keyboard Shortcuts 一节列出当前平台的快捷键，按键文字取自 `lib/platform.ts` 的 `*ShortcutLabel`，改快捷键时一并更新。
+- **快捷键**：应用快捷键在 window 的捕获阶段拦截（`useShortcuts`），终端收不到。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 等留给 shell）。对话框（或命令面板）打开时，除打开设置外的应用快捷键都不处理，菜单的「关闭」也不关标签，否则会切换或关闭对话框背后的标签，并把焦点移到终端。剪贴板快捷键只在终端获得焦点时生效（xterm.js 的 `attachCustomKeyEventHandler`），输入框里仍是普通的复制粘贴。所有快捷键在 `lib/keymap.ts` 的一张表里声明：每个动作在 macOS 与其他平台（Windows，以及将来的 Linux）上的按键，写成美式键盘上的 `Cmd+Shift+E`，按 `KeyboardEvent.code`（物理按键）匹配，所以在其他键盘布局下位置不变。匹配（`matches` / `actionOf`）、菜单与提示里的按键文字（`shortcutLabel`）和设置里 Keyboard Shortcuts 一节的列表（`shortcutRows`）都由这张表得出，改快捷键只改这一处；macOS 原生菜单项（关闭标签 / 窗口、复制粘贴、全选、设置）的按键另外写在 `lib.rs`。将来的自定义快捷键只需在这张表上叠加用户的覆盖项。
 
   | 功能 | macOS | Windows |
   |---|---|---|

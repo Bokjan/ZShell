@@ -12,23 +12,13 @@ import { useTranslation } from "react-i18next";
 import { focusedPane, isLogging, tabId, tabPanelId, tabTitle, type SidePanel, type Tab } from "../lib/panes";
 import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
-import {
-  closeTabShortcutLabel,
-  isComposing,
-  isWindows,
-  newTabShortcutLabel,
-  shiftShortcutLabel,
-  splitDownShortcutLabel,
-  splitRightShortcutLabel,
-} from "../lib/platform";
+import { shortcutLabel } from "../lib/keymap";
+import { isComposing, isWindows } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
-
-/** Keyboard shortcut (with ⇧⌘ / Ctrl+Shift) toggling each side panel, by `KeyboardEvent.code`. */
-export const PANEL_SHORTCUTS: Record<string, SidePanel> = { KeyE: "files", KeyP: "forwards" };
 
 interface Props {
   tabs: Tab[];
@@ -186,13 +176,13 @@ export function TabBar({
         { label: t("tabs.duplicate"), onSelect: () => onDuplicate(key) },
         {
           label: t("tabs.splitRight"),
-          shortcut: splitRightShortcutLabel,
+          shortcut: shortcutLabel("splitRight"),
           disabled: !canSplit(key, "row"),
           onSelect: () => onSplit(key, "row"),
         },
         {
           label: t("tabs.splitDown"),
-          shortcut: splitDownShortcutLabel,
+          shortcut: shortcutLabel("splitDown"),
           disabled: !canSplit(key, "column"),
           onSelect: () => onSplit(key, "column"),
         },
@@ -211,7 +201,7 @@ export function TabBar({
     items.push(
       "separator",
       // ⌘W closes the focused pane of a split tab.
-      { label: t("tabs.close"), shortcut: split ? undefined : closeTabShortcutLabel, onSelect: () => onClose([key]) },
+      { label: t("tabs.close"), shortcut: split ? undefined : shortcutLabel("closeTab"), onSelect: () => onClose([key]) },
       {
         label: t("tabs.closeOthers"),
         disabled: tabs.length < 2,
@@ -342,7 +332,7 @@ export function TabBar({
                 className="tab-close"
                 tabIndex={-1}
                 aria-hidden="true"
-                title={tab.panes.length > 1 ? t("tabs.close") : t("tabs.closeWithShortcut", { shortcut: closeTabShortcutLabel })}
+                title={tab.panes.length > 1 ? t("tabs.close") : t("tabs.closeWithShortcut", { shortcut: shortcutLabel("closeTab") })}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -361,7 +351,7 @@ export function TabBar({
       {onNew && (
         <IconButton
           className="tab-new"
-          label={t("tabs.newLocalTerminal", { shortcut: newTabShortcutLabel })}
+          label={t("tabs.newLocalTerminal", { shortcut: shortcutLabel("newLocalTerminal") })}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onNew}
         >
@@ -373,7 +363,7 @@ export function TabBar({
       {tabs.length > 0 && (
         <IconButton
           className={`compose-toggle${composeOpen ? " on" : ""}`}
-          label={t("compose.toggle", { shortcut: shiftShortcutLabel("I") })}
+          label={t("compose.toggle", { shortcut: shortcutLabel("composeBar") })}
           aria-pressed={composeOpen}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onToggleCompose}
@@ -398,16 +388,16 @@ export function TabBar({
             "files",
             t("tabs.files"),
             activeTab && questionWaiting(activeTab)
-              ? t("tabs.filesHintQuestion", { shortcut: shiftShortcutLabel("E") })
-              : t("tabs.filesHint", { shortcut: shiftShortcutLabel("E") }),
+              ? t("tabs.filesHintQuestion", { shortcut: shortcutLabel("filePanel") })
+              : t("tabs.filesHint", { shortcut: shortcutLabel("filePanel") }),
             activeTab && questionWaiting(activeTab) && <span className="badge question" />,
           )}
           {segment(
             "forwards",
             t("tabs.forwards"),
             failed
-              ? t("tabs.forwardsHintFailed", { shortcut: shiftShortcutLabel("P") })
-              : t("tabs.forwardsHint", { shortcut: shiftShortcutLabel("P") }),
+              ? t("tabs.forwardsHintFailed", { shortcut: shortcutLabel("forwardsPanel") })
+              : t("tabs.forwardsHint", { shortcut: shortcutLabel("forwardsPanel") }),
             failed ? <span className="badge failed" /> : running > 0 && <span className="badge">{running}</span>,
           )}
         </div>
