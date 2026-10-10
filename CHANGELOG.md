@@ -2,6 +2,16 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.3.6] - 2026-10-10
+
+### Bug Fixes
+
+- A host recorded in known_hosts only with a key of another type (ECDSA in many older files) is no longer asked about as if it were new: ZShell asks the server for the type it knows, as OpenSSH does. When a server shows a type not recorded for a host that has others, the question says so and lists the recorded keys, so a server pretending to be a known one doesn't get the plain first-connection question.
+- If folders.json or proxies.json can't be read at startup, sessions keep their folders and proxies, which come back once the file is restored: they no longer lose them for good, and a session whose proxy is missing doesn't connect without it. A settings or session file that can't be read at all (open in another program) is never written over; changes that would write it ask you to restart ZShell.
+- Importing sessions shows, on each session, the jump hosts imported with it and the commands their proxies run, and the jump hosts are shown checked. A sessions file that changes after the import dialog opens is no longer imported.
+- Importing an SSH config that includes itself shows an error rather than closing ZShell, and `Include config.d/*` skips hidden files such as .DS_Store.
+- A ZMODEM upload (`rz`) of several files stops when one can't be read midway, rather than appending the next file to it on the server and reporting it sent.
+
 ## [2.3.5] - 2026-10-10
 
 ### Bug Fixes
