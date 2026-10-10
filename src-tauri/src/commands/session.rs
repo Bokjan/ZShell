@@ -240,6 +240,12 @@ pub fn session_write(sessions: State<'_, SessionManager>, id: SessionId, data: S
     sessions.send(id, SessionInput::Data(data.into_bytes()))
 }
 
+/// Sends bytes that are not text (see [`SessionInput::Raw`]).
+#[tauri::command]
+pub fn session_write_bytes(sessions: State<'_, SessionManager>, id: SessionId, data: Vec<u8>) -> Result<()> {
+    sessions.send(id, SessionInput::Raw(data))
+}
+
 /// Sends a break (serial and Telnet sessions).
 #[tauri::command]
 pub fn session_break(sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {

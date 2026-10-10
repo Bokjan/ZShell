@@ -214,7 +214,7 @@ impl Line {
                     });
                 }
                 input = io.recv() => match input {
-                    Some(SessionInput::Data(data)) => Output::Data(data),
+                    Some(SessionInput::Data(data) | SessionInput::Raw(data)) => Output::Data(data),
                     Some(SessionInput::Break) => Output::Break,
                     Some(SessionInput::Resize { .. }) => continue,
                     // The tab is closing.

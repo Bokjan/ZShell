@@ -149,7 +149,7 @@ impl Pty {
                     }
                 }
                 input = async { if backed_up { io.recv_typed().await } else { io.recv().await } } => match input {
-                    Some(SessionInput::Data(data)) => {
+                    Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
                         if self.input.is_some() {
                             pending_bytes += data.len();
                             pending.push_back(data);

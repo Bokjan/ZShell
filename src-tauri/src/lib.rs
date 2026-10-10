@@ -251,6 +251,7 @@ pub fn run() {
             commands::logs::logs_count,
             commands::logs::logs_delete,
             commands::session::session_write,
+            commands::session::session_write_bytes,
             commands::session::session_resize,
             commands::session::session_break,
             commands::session::serial_ports,

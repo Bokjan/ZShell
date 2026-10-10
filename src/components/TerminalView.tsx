@@ -278,6 +278,7 @@ export function TerminalView({
       term.onData((data) => {
         if (session.input(data) && !pasting && !REPORT.test(data)) onInputRef.current(data);
       }),
+      term.onBinary((data) => session.inputBinary(data)),
       term.onResize(({ cols, rows }) => session.resize(cols, rows)),
       term.onTitleChange((title) => onTitleRef.current(title)),
     ];

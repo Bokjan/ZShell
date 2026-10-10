@@ -134,6 +134,8 @@ async fn bridge(
                     }
                     outgoing.extend(telnet.encode(&data));
                 }
+                // Not typing: not echoed, and not a login answer.
+                Some(SessionInput::Raw(data)) => outgoing.extend(telnet.encode(&data)),
                 Some(SessionInput::Resize { cols, rows }) => outgoing.extend(telnet.resize(cols, rows)),
                 Some(SessionInput::Break) => outgoing.extend(BREAK),
                 // The tab is closing.

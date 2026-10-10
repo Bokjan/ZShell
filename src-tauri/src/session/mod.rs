@@ -47,7 +47,12 @@ pub type SessionId = u32;
 
 #[derive(Debug)]
 pub enum SessionInput {
+    /// Typed text (UTF-8), converted to the session's encoding on the way.
     Data(Vec<u8>),
+    /// Bytes to pass on as they are, not text: the terminal's mouse reports in the default
+    /// (X10) encoding, which past column 95 are not UTF-8. Backends treat them as `Data`;
+    /// prompts and ZMODEM transfers ignore them.
+    Raw(Vec<u8>),
     Resize { cols: u16, rows: u16 },
     /// A break signal: on a serial line, or Telnet's `BRK`. Other backends ignore it.
     Break,
@@ -505,6 +510,7 @@ impl TermIo {
                     self.sink.zmodem.input(data);
                     continue;
                 }
+                Some(SessionInput::Raw(_)) if self.sink.zmodem.is_active() => continue,
                 Some(SessionInput::Data(data)) if convert => {
                     if let Some(codec) = &self.sink.codec {
                         return Some(SessionInput::Data(codec.encode(data)));
@@ -948,6 +954,17 @@ mod tests {
         let shown: Vec<u8> = output.try_iter().flatten().collect();
         assert_eq!(String::from_utf8_lossy(&shown), "rz\r\r\n");
         sink.zmodem.cancel();
+    }
+
+    /// Typing is converted to the session's encoding; the terminal's binary reports are not.
+    #[tokio::test]
+    async fn raw_input_is_passed_on_as_it_is() {
+        let (mut io, input, _output, _events) = TermIo::detached_with((80, 24), encoding_rs::GBK);
+        input.send(SessionInput::Data("中".as_bytes().to_vec())).unwrap();
+        // A click at column 129 in the X10 mouse encoding.
+        input.send(SessionInput::Raw(b"\x1b[M \xa1!".to_vec())).unwrap();
+        assert!(matches!(io.recv().await, Some(SessionInput::Data(data)) if data == [0xd6, 0xd0]));
+        assert!(matches!(io.recv().await, Some(SessionInput::Raw(data)) if data == b"\x1b[M \xa1!"));
     }
 
     #[tokio::test(flavor = "multi_thread")]

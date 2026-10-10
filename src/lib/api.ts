@@ -71,6 +71,8 @@ export const errorCode = (e: unknown): ErrorCode | null => (isCommandError(e) ? 
 export interface Session {
   id: SessionId;
   write(data: string): Promise<void>;
+  /** Bytes that are not text, passed on without converting them to the session's encoding. */
+  writeBytes(data: Uint8Array): Promise<void>;
   resize(cols: number, rows: number): Promise<void>;
   /** Reports output bytes the terminal has processed (flow control). */
   ack(bytes: number): Promise<void>;
@@ -213,6 +215,7 @@ export async function openSession(
   return {
     id,
     write: (data) => invoke("session_write", { id, data }),
+    writeBytes: (data) => invoke("session_write_bytes", { id, data: Array.from(data) }),
     resize: (cols, rows) => invoke("session_resize", { id, cols, rows }),
     ack: (bytes) => invoke("session_ack", { id, bytes }),
     close: () => invoke("session_close", { id }),

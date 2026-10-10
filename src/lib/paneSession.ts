@@ -176,6 +176,15 @@ export class PaneSession {
     return false;
   }
 
+  /**
+   * What the terminal sends as binary rather than text (mouse reports in the X10 encoding
+   * past column 95): one character per byte. Only to a session that is up.
+   */
+  inputBinary(data: string) {
+    if (this.closed) return;
+    void this.session?.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff));
+  }
+
   resize(cols: number, rows: number) {
     void this.session?.resize(cols, rows);
   }

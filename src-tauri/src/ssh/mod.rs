@@ -218,7 +218,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
                 result
             }
             input = io.recv(), if data.is_none() => match input {
-                Some(SessionInput::Data(bytes)) => {
+                Some(SessionInput::Data(bytes) | SessionInput::Raw(bytes)) => {
                     data = Some(bytes);
                     Ok(())
                 }

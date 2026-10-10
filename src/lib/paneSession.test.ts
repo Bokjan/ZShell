@@ -44,6 +44,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
             acks: [] as number[],
             closed: false,
             write: async (data: string) => void session.writes.push(data),
+            writeBytes: async (data: Uint8Array) => void session.writes.push(String.fromCharCode(...data)),
             resize: async () => {},
             ack: async (bytes: number) => void session.acks.push(bytes),
             close: async () => void (session.closed = true),
