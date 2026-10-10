@@ -154,7 +154,12 @@ impl Remote {
 impl Remote {
     /// Checks and tidies the address; SSH also needs a user name.
     fn normalize(&mut self, ssh: bool) -> Result<()> {
-        self.host = self.host.trim().to_owned();
+        let host = self.host.trim();
+        // An IPv6 address written in brackets, as in a URL or `ssh user@[::1]`; the port has
+        // a field of its own.
+        let unbracketed = host.strip_prefix('[').and_then(|h| h.strip_suffix(']'));
+        let is_ipv6 = |h: &str| h.split('%').next().is_some_and(|address| address.parse::<std::net::Ipv6Addr>().is_ok());
+        self.host = unbracketed.filter(|h| is_ipv6(h)).unwrap_or(host).to_owned();
         self.username = self.username.trim().to_owned();
         if !self.host.is_empty() && !crate::ssh::known_hosts::is_plain_host(&self.host) {
             return Err(Error::new("profile.invalidHost"));
@@ -1057,6 +1062,14 @@ mod tests {
         let switch = store.save(telnet("switch.lan")).unwrap();
         assert_eq!(switch.name, "switch.lan");
         assert_eq!(store.save(telnet("")).unwrap_err().code(), "profile.missingHost");
+        // An IPv6 address loses its brackets; other bracketed hosts are still refused.
+        for (host, saved) in [(" [2001:db8::1] ", "2001:db8::1"), ("[fe80::1%en0]", "fe80::1%en0"), ("::1", "::1")] {
+            let Connection::Telnet(remote) = store.save(telnet(host)).unwrap().connection else { unreachable!() };
+            assert_eq!(remote.host, saved);
+        }
+        for host in ["[switch.lan]", "[::1]:23", "[::1"] {
+            assert_eq!(store.save(telnet(host)).unwrap_err().code(), "profile.invalidHost", "{host}");
+        }
 
         let serial = |device: &str| {
             Profile::new(String::new(), Connection::Serial(SerialOptions { device: device.into(), ..SerialOptions::default() }))
