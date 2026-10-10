@@ -29,7 +29,6 @@ import {
   sessionLog,
   sessionForeground,
   tree,
-  writeSession,
   type Folder,
   type ForwardRule,
   type Profile,
@@ -56,7 +55,7 @@ import {
 } from "./lib/platform";
 import { neighbor, type Direction } from "./lib/layout";
 import { storeBarVisible, storedBarVisible, tabGroup } from "./lib/quickCommands";
-import { asTyped, CLOSED_COMPOSE, isConnected, scopePanes, sendsToMany, syncTargets, type Compose, type SendResult } from "./lib/compose";
+import { asTyped, CLOSED_COMPOSE, scopePanes, sendsToMany, syncTargets, type Compose, type SendResult } from "./lib/compose";
 import {
   findPane,
   focusedPane,
@@ -408,8 +407,7 @@ function App() {
   /** Sends text as if typed to the panes in scope (see `scopePanes`); panes beyond the focused one flash. */
   const sendToScope = (data: string): SendResult => {
     const targets = scopePanes(composeRef.current, store.get().tabs, store.get().activeKey);
-    const sent = targets.filter(isConnected);
-    for (const pane of sent) writeSession(pane.sessionId!, data).catch(console.error);
+    const sent = targets.filter((pane) => sessions.get(pane.key)?.send(data));
     if (sendsToMany(composeRef.current) && sent.length > 0) {
       clearTimeout(flashTimer.current);
       setFlashing(sent.map((pane) => pane.key));
@@ -422,7 +420,7 @@ function App() {
   const syncedWith = (source: number): Pane[] =>
     syncTargets(composeRef.current, store.get().tabs, store.get().activeKey, source);
   const onInput = (source: number, data: string) => {
-    for (const pane of syncedWith(source)) writeSession(pane.sessionId!, data).catch(console.error);
+    for (const pane of syncedWith(source)) sessions.get(pane.key)?.send(data);
   };
   // Pastes go to each synced pane's terminal, which brackets them or not as its program wants.
   const pasteTargets = useRef(new Map<number, PasteTarget>());

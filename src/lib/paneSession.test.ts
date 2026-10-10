@@ -304,3 +304,36 @@ describe("login commands", () => {
     expect(session.writes).toEqual(["\x03"]);
   });
 });
+
+describe("text from elsewhere", () => {
+  it("goes only into a shell that is up", async () => {
+    const { pane, opened } = setup();
+    // Before the session exists, and while connecting (a passphrase prompt).
+    expect(pane.send("ls\r")).toBe(false);
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    expect(pane.send("secret\r")).toBe(false);
+    opened[0].event({ type: "connected" });
+    expect(pane.send("ls\r")).toBe(true);
+    await settle();
+    expect(session.writes).toEqual(["ls\r"]);
+    // Nor into a closed terminal, where Enter would connect again.
+    opened[0].event(lost());
+    expect(pane.send("\r")).toBe(false);
+    expect(opened).toHaveLength(1);
+  });
+
+  it("stops the login commands on Ctrl+C, as typing does", async () => {
+    const { pane, opened, setLine } = setup({ loginCommands: () => ["sleep 1"] });
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    setLine("$ ");
+    pane.send("\x03");
+    opened[0].output("$ ");
+    await vi.advanceTimersByTimeAsync(LOGIN_COMMAND_IDLE_MS);
+    expect(session.writes).toEqual(["\x03"]);
+  });
+});

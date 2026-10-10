@@ -103,6 +103,8 @@ function resetModes(port: TerminalPort) {
 export class PaneSession {
   private session: Session | undefined;
   private closed = false;
+  /** Whether the current session's shell is up (past its connection's prompts). */
+  private connected = false;
   private disposed = false;
   /** Automatic reconnection: the number of attempts so far and the pending one, if any. */
   private attempt = 0;
@@ -139,6 +141,21 @@ export class PaneSession {
     return this.closed;
   }
 
+  /** Whether the shell is up: connected, past the prompts of connecting (passwords, host keys). */
+  get isConnected() {
+    return this.connected && !this.closed && this.session !== undefined;
+  }
+
+  /**
+   * Text from elsewhere, as if typed: the compose bar, a quick command, typing synced from
+   * another pane. Only into a shell that is up: never into the prompts of connecting (a
+   * passphrase typed in one pane must not reach another), and never reconnecting a closed
+   * terminal. Returns whether it was sent.
+   */
+  send(data: string): boolean {
+    return this.isConnected && this.input(data);
+  }
+
   /**
    * What the user typed. Returns whether a session got it. Into a closed terminal, Enter
    * connects again and Ctrl+C cancels a pending retry.
@@ -167,6 +184,7 @@ export class PaneSession {
   reconnect() {
     const old = this.session;
     this.session = undefined;
+    this.connected = false;
     this.events.session(null);
     this.attempt = 0;
     resetModes(this.port);
@@ -195,6 +213,7 @@ export class PaneSession {
     this.cancelRetry();
     this.stopLoginCommands();
     this.closed = false;
+    this.connected = false;
     this.events.status("connecting");
     const target = this.config.target();
     const current = ++this.generation;
@@ -228,6 +247,7 @@ export class PaneSession {
         switch (event.type) {
           case "connected":
             connected = true;
+            this.connected = true;
             this.attempt = 0;
             this.carry = [];
             this.events.status("connected");
@@ -306,6 +326,7 @@ export class PaneSession {
   /** Forgets the current session, which has ended or is being replaced. */
   private dropSession() {
     this.closed = true;
+    this.connected = false;
     this.stopLoginCommands();
     this.session = undefined;
     this.events.session(null);
