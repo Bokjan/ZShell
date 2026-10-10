@@ -2,6 +2,20 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.5.0] - 2026-10-10
+
+### Features
+
+- Full screen for the terminals: ⌘↩ on macOS or F11 on Windows (also Full Screen in the terminal's menu) shows only the current tab's terminals, split panes included, without the session list, the tabs or the bars. The same keys bring everything back.
+
+### Bug Fixes
+
+- macOS: after the window left full screen, typing reached the terminal only once it was clicked.
+
+### Internal
+
+- Every keyboard shortcut is declared in one table, from which the keys, the labels in menus and the list in the settings come, to prepare for custom shortcuts and Linux. The macOS list of shortcuts now writes Ctrl+Tab as ⌃⇥, as macOS menus do.
+
 ## [2.4.3] - 2026-10-10
 
 ### Features
