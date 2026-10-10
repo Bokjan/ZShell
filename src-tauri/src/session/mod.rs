@@ -21,8 +21,9 @@
 //! encoded on the way back ([`TermIo::recv`]); ZMODEM data and our own messages are not.
 //!
 //! Output is flow controlled: the frontend acknowledges the bytes xterm.js has processed
-//! ([`SessionManager::ack`]), and backends that can produce output faster than the terminal
-//! renders it (local PTYs) wait on [`Flow`] before reading more.
+//! ([`SessionManager::ack`]), and every backend waits on [`Flow`] before reading more while
+//! the terminal is too far behind (the remote side is then held back by TCP, the SSH window
+//! or the serial line's flow control).
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -80,6 +81,8 @@ pub enum CloseReason {
 pub enum Outcome {
     /// The remote side closed the session, with the shell's exit status if it reported one.
     Exited(Option<u32>),
+    /// A local shell exited, with its exit code, or the signal that ended it.
+    ProcessEnded { code: Option<u32>, signal: Option<String> },
     /// The connection broke (or the device went away) after the session had started.
     Lost(Error),
     /// Connecting, authenticating or starting the session failed.
@@ -438,6 +441,15 @@ impl TermIo {
                 };
                 self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
                 (CloseReason::Exited, None, status)
+            }
+            Outcome::ProcessEnded { code, signal } => {
+                let message = match (signal, code) {
+                    (Some(signal), _) => t!("terminal.processSignaled", signal = signal),
+                    (None, Some(code)) if code != 0 => t!("terminal.processExitedWithCode", code = code),
+                    _ => t!("terminal.processExited"),
+                };
+                self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
+                (CloseReason::Exited, None, code)
             }
             Outcome::Lost(e) => {
                 // The remote program may have left the cursor mid-line.

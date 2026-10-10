@@ -20,7 +20,7 @@ use portable_pty::{native_pty_system, ChildKiller, ExitStatus, MasterPty, PtySiz
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::Error;
-use crate::session::{CloseReason, Flow, Foreground, ForegroundProbe, SessionEvent, SessionInput, SessionSink, TermIo};
+use crate::session::{Flow, Foreground, ForegroundProbe, Outcome, SessionEvent, SessionInput, SessionSink, TermIo};
 pub use shell::{default_shell, local_shells_allowed, Shell};
 
 /// How long to wait for the rest of the output once the shell has exited.
@@ -41,27 +41,19 @@ const INPUT_PENDING: usize = 64 << 10;
 pub async fn run(shell: Shell, mut io: TermIo) {
     let mut pty = match Pty::start(shell, &io) {
         Ok(pty) => pty,
-        Err(e) => {
-            let e = Error::from(e);
-            io.print(&format!("\x1b[31m{e}\x1b[0m\n"));
-            io.event(SessionEvent::Closed { reason: CloseReason::Failed, error: Some(e), status: None });
-            return;
-        }
+        Err(e) => return io.finish(Outcome::Failed(Error::from(e))),
     };
     io.event(SessionEvent::Connected);
     let Some(status) = pty.bridge(&mut io).await else {
         return;
     };
     pty.drain().await;
+    let signal = status.as_ref().and_then(|s| s.signal()).map(str::to_owned);
     let code = status.as_ref().filter(|s| s.signal().is_none()).map(ExitStatus::exit_code);
-    let message = match (&status, code) {
-        (Some(status), None) => t!("terminal.processSignaled", signal = status.signal().unwrap_or_default()),
-        (_, Some(code)) if code != 0 => t!("terminal.processExitedWithCode", code = code),
-        _ => t!("terminal.processExited"),
-    };
-    io.sink().reset_modes();
-    io.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
-    io.event(SessionEvent::Closed { reason: CloseReason::Exited, error: None, status: code });
+    // The pseudo terminal is closed first (dropping it), as the other backends release what
+    // they hold before reporting.
+    drop(pty);
+    io.finish(Outcome::ProcessEnded { code, signal });
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
