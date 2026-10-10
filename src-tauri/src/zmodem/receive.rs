@@ -176,8 +176,10 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                 if u64::from(header.pos()) != incoming.offset & 0xffff_ffff {
                     continue;
                 }
-                let mut incoming = current.take().unwrap();
-                finish(&mut incoming).await?;
+                // Still current until finished: a file whose last write fails (a full disk)
+                // is removed with the others, not left truncated under its name.
+                finish(current.as_mut().unwrap()).await?;
+                let incoming = current.take().unwrap();
                 report.received(&incoming.path, incoming.offset);
                 link.send_header(rinit, Encoding::Hex).await?;
             }
