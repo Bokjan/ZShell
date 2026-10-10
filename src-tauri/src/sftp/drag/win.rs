@@ -85,30 +85,38 @@ impl Shared {
                 *this.fetch.lock().unwrap() = Fetch::Done { ok };
             });
         }
+        // Once the application is quitting, its WM_QUIT stays queued for the main loop, and
+        // waiting for messages would return at once: just wait.
+        let mut quitting = false;
         loop {
             if let Fetch::Done { ok } = *self.fetch.lock().unwrap() {
                 return ok;
             }
-            pump_messages();
+            if quitting {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            } else {
+                quitting = pump_messages();
+            }
         }
     }
 }
 
-/// Handles the thread's messages for a moment, as a modal loop would.
-fn pump_messages() {
+/// Handles the thread's messages for a moment, as a modal loop would; returns whether the
+/// application is quitting (WM_QUIT, left for the main loop).
+fn pump_messages() -> bool {
     unsafe {
         MsgWaitForMultipleObjects(None, false, 50, QS_ALLINPUT);
         let mut msg = MSG::default();
         while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
             if msg.message == WM_QUIT {
-                // Left for the main loop.
                 PostQuitMessage(msg.wParam.0 as i32);
-                return;
+                return true;
             }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     }
+    false
 }
 
 fn is_hdrop(format: &FORMATETC) -> bool {
