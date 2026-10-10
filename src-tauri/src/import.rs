@@ -181,7 +181,8 @@ fn parse(path: &Path) -> Result<(SshConfig, bool)> {
     Ok((config, has_match))
 }
 
-/// How deeply `Include`s may nest, as in OpenSSH.
+/// How deeply `Include`s may nest, as in OpenSSH, which also stops with an error (a file that
+/// includes itself).
 const MAX_INCLUDE_DEPTH: usize = 16;
 /// Stands in for a `Match` line: a block that applies to no host and is not one to import.
 const SKIPPED_MATCH: &str = "Host *.zshell-skipped-match.invalid";
@@ -190,7 +191,9 @@ const SKIPPED_MATCH: &str = "Host *.zshell-skipped-match.invalid";
 /// has a `Match` block. ssh2-config doesn't know `Match` and would apply the options under it
 /// to the `Host` block before (importing a host with another user or jump host), so each
 /// `Match` line becomes a `Host` line matching nothing. `Include`d files are inlined here,
-/// which is how OpenSSH reads them, so that theirs are seen too.
+/// which is how OpenSSH reads them, so that theirs are seen too; none is left for
+/// ssh2-config, which follows them with no limit (a file that includes itself would overflow
+/// the stack).
 fn preprocess(path: &Path, depth: usize, out: &mut String) -> Result<bool> {
     let read_failed = |e: std::io::Error| Error::new("import.readFailed").param("path", path.display()).detail(e);
     let text = std::fs::read_to_string(path).map_err(read_failed)?;
@@ -201,7 +204,10 @@ fn preprocess(path: &Path, depth: usize, out: &mut String) -> Result<bool> {
         if keyword.eq_ignore_ascii_case("match") {
             has_match = true;
             out.push_str(SKIPPED_MATCH);
-        } else if keyword.eq_ignore_ascii_case("include") && depth < MAX_INCLUDE_DEPTH {
+        } else if keyword.eq_ignore_ascii_case("include") {
+            if depth >= MAX_INCLUDE_DEPTH {
+                return Err(Error::new("import.includeTooDeep").param("path", path.display()));
+            }
             let args = trimmed[keyword.len()..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
             for pattern in args.split_whitespace().map(|arg| arg.trim_matches('"')) {
                 for included in include_paths(pattern) {
@@ -217,7 +223,9 @@ fn preprocess(path: &Path, depth: usize, out: &mut String) -> Result<bool> {
 }
 
 /// The files an `Include` pattern names: relative to `~/.ssh` unless absolute, with `~`
-/// expanded and wildcards matched (no match is no file, as in OpenSSH).
+/// expanded and wildcards matched (no match is no file, as in OpenSSH). As with OpenSSH's
+/// glob(3), a wildcard doesn't match a leading dot (`.DS_Store`, an editor's swap file);
+/// folders are left out too.
 fn include_paths(pattern: &str) -> Vec<PathBuf> {
     let home = std::env::home_dir().unwrap_or_default();
     let path = match pattern.strip_prefix("~/") {
@@ -225,7 +233,10 @@ fn include_paths(pattern: &str) -> Vec<PathBuf> {
         None if Path::new(pattern).is_absolute() => PathBuf::from(pattern),
         None => home.join(".ssh").join(pattern),
     };
-    let mut paths: Vec<PathBuf> = glob::glob(&path.to_string_lossy()).map(|paths| paths.flatten().collect()).unwrap_or_default();
+    let options = glob::MatchOptions { require_literal_leading_dot: true, ..glob::MatchOptions::new() };
+    let mut paths: Vec<PathBuf> = glob::glob_with(&path.to_string_lossy(), options)
+        .map(|paths| paths.flatten().filter(|path| !path.is_dir()).collect())
+        .unwrap_or_default();
     paths.sort();
     paths
 }
@@ -599,6 +610,28 @@ Host *
         assert!(web.jump_hosts.is_empty());
         assert_eq!((db.username.as_str(), db.port), ("carol", 2222));
         assert!(candidates.iter().all(|c| c.skipped.contains(&"Match".to_owned())));
+    }
+
+    /// A file that includes itself is an error, as in OpenSSH, rather than a crash.
+    #[test]
+    fn refuses_includes_nested_too_deeply() {
+        let (_dir, path) = write_config("");
+        std::fs::write(&path, format!("Host web\n    User alice\nInclude {}\n", path.display())).unwrap();
+        assert_eq!(scan(&path, &[]).unwrap_err().code(), "import.includeTooDeep");
+    }
+
+    /// `Include config.d/*` leaves out hidden files and folders, which can't be read as
+    /// configs (`.DS_Store`).
+    #[test]
+    fn includes_neither_hidden_files_nor_folders() {
+        let (dir, path) = write_config("");
+        let included = dir.0.join("config.d");
+        std::fs::create_dir_all(included.join("old")).unwrap();
+        std::fs::write(included.join("web.conf"), "Host web\n    User alice\n").unwrap();
+        std::fs::write(included.join(".DS_Store"), [0u8, 0xff, 0xfe, 0x80]).unwrap();
+        std::fs::write(&path, format!("Include {}\n", included.join("*").display())).unwrap();
+        let candidates = scan(&path, &[]).unwrap();
+        assert_eq!(candidates.iter().map(|c| c.alias.as_str()).collect::<Vec<_>>(), ["web"]);
     }
 
     #[test]

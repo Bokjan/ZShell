@@ -159,7 +159,8 @@
       "unsupportedVersion": "{path} was exported by a version of ZShell whose files this version cannot read",
       "invalidSession": "Session {name} in the file is not valid",
       "invalidProxy": "Proxy {name} in the file is not valid",
-      "fileChanged": "{path} changed after it was opened, so what it would import may not be what was shown. Open it again to review it."
+      "fileChanged": "{path} changed after it was opened, so what it would import may not be what was shown. Open it again to review it.",
+      "includeTooDeep": "The Include lines in {path} nest too deeply; a file may be including itself"
     },
     "zmodem": {
       "cancelled": "Transfer cancelled",

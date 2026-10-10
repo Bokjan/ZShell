@@ -37,6 +37,7 @@ export type ErrorCode =
   | "forward.socksProtocol"
   | "forward.socksVersion"
   | "import.fileChanged"
+  | "import.includeTooDeep"
   | "import.invalidProxy"
   | "import.invalidSession"
   | "import.notSessionsFile"
