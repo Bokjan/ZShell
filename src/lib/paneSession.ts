@@ -194,7 +194,9 @@ export class PaneSession {
     this.cancelRetry();
     void (async () => {
       if (old) {
-        this.carry = await forwards.carry(old.id).catch(() => []);
+        // Added to what an earlier reconnection is still to carry (it never connected).
+        const running = await forwards.carry(old.id).catch(() => []);
+        this.carry = [...new Set([...this.carry, ...running])];
         void old.close().catch(ignore);
       }
       if (!this.disposed && current === this.generation) this.connect();

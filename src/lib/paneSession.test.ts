@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { CommandError, Session, SessionEvent, SessionTarget, openSession } from "./api";
+import { forwards, type CommandError, type Session, type SessionEvent, type SessionTarget, type openSession } from "./api";
 import { LOGIN_COMMAND_IDLE_MS, PaneSession, type SessionConfig, type SessionEvents, type TerminalPort } from "./paneSession";
 
 // The forwarding rules running on a connection being replaced (see `reconnect`).
@@ -293,6 +293,23 @@ describe("reconnecting by hand", () => {
     opened[1].event(lost());
     await vi.runOnlyPendingTimersAsync();
     expect(opened[2].carry).toEqual([]);
+  });
+
+  it("keeps the rules to carry when reconnecting again before connecting", async () => {
+    const { pane, opened } = setup({ target: () => ({ kind: "profile", profileId: "p" }) });
+    pane.connect();
+    opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    pane.reconnect();
+    await settle();
+    // Waiting at a password prompt: nothing runs on it yet.
+    opened[1].resolve();
+    await settle();
+    vi.mocked(forwards.carry).mockResolvedValueOnce([]);
+    pane.reconnect();
+    await settle();
+    expect(opened[2].carry).toEqual(["r1"]);
   });
 });
 
