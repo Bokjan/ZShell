@@ -272,31 +272,43 @@ impl Connections {
         disconnect: watch::Receiver<Option<String>>,
         io: &TermIo,
     ) -> Arc<Connection> {
-        let hub = {
-            let map = self.0.lock().unwrap();
+        // Under one lock, so that two tabs of a session connecting at once share a hub.
+        let connection = {
+            let mut map = self.0.lock().unwrap();
             let sibling = map.values().find(|other| !profile.id.is_empty() && other.profile.id == profile.id);
-            sibling.map(|other| other.forwards.hub()).unwrap_or_else(|| Arc::new(Hub::default()))
+            let hub = sibling.map(|other| other.forwards.hub()).unwrap_or_else(|| Arc::new(Hub::default()));
+            let connection = Arc::new(Connection {
+                handle: handle.clone(),
+                profile,
+                _jumps: jumps,
+                sftp: SftpSlot::default(),
+                transfer_sftp: SftpSlot::default(),
+                forwards: Forwards::new(handle, routes, hub),
+                keep_forwards: AtomicBool::new(false),
+                disconnect,
+            });
+            Self::register(&mut map, id, connection.clone(), io);
+            connection
         };
-        let forwards = Forwards::new(handle.clone(), routes, hub);
-        let connection = Arc::new(Connection {
-            handle,
-            profile,
-            _jumps: jumps,
-            sftp: SftpSlot::default(),
-            transfer_sftp: SftpSlot::default(),
-            forwards,
-            keep_forwards: AtomicBool::new(false),
-            disconnect,
-        });
-        self.attach(id, connection.clone(), io);
+        self.close_with(id, io);
         connection
     }
 
     /// Registers session `id` as another user of `connection` (a duplicated tab), until the
     /// session closes. A session closing meanwhile is unregistered right away.
     pub fn attach(&self, id: SessionId, connection: Arc<Connection>, io: &TermIo) {
+        Self::register(&mut self.0.lock().unwrap(), id, connection, io);
+        self.close_with(id, io);
+    }
+
+    fn register(map: &mut Map, id: SessionId, connection: Arc<Connection>, io: &TermIo) {
         connection.forwards.attach(id, io.sink());
-        self.0.lock().unwrap().insert(id, connection);
+        map.insert(id, connection);
+    }
+
+    /// Unregisters session `id` when it closes. Not under the lock: a session that has
+    /// already closed is unregistered at once.
+    fn close_with(&self, id: SessionId, io: &TermIo) {
         let connections = self.clone();
         io.on_close(move || connections.close(id));
     }
@@ -344,8 +356,10 @@ impl Connections {
     /// Starts the rules that start on connecting, and those in `carry` (running before the
     /// tab reconnected), unless another connection of the session runs them.
     pub fn auto_start(&self, connection: &Arc<Connection>, carry: &[String]) {
-        let rules = rules_to_start(&self.0.lock().unwrap(), connection, &connection.profile.ssh.forwards, carry);
-        for rule in rules {
+        // Started under the lock that chose them, so that two connections of the session
+        // starting at once don't both start a rule (one would find its port taken).
+        let map = self.0.lock().unwrap();
+        for rule in rules_to_start(&map, connection, &connection.profile.ssh.forwards, carry) {
             connection.forwards.start(rule, true);
         }
     }
@@ -353,11 +367,9 @@ impl Connections {
     /// Starts (or restarts with a new definition) a rule of session `id`'s saved session:
     /// where it runs, else on `id`'s connection.
     pub fn start_forward(&self, id: SessionId, rule: ForwardRule) -> Result<()> {
-        let target = {
-            let map = self.0.lock().unwrap();
-            let own = map.get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))?;
-            session_connections(&map, &own).into_iter().find(|c| c.forwards.is_running(&rule.id)).unwrap_or(own)
-        };
+        let map = self.0.lock().unwrap();
+        let own = map.get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))?;
+        let target = session_connections(&map, &own).into_iter().find(|c| c.forwards.is_running(&rule.id)).unwrap_or(own);
         target.forwards.start(rule, false);
         Ok(())
     }
@@ -411,7 +423,8 @@ impl Connections {
 
     /// Starts `rules` of a closed connection on another connection of its session, if any.
     fn adopt(&self, closed: &Connection, rules: Vec<ForwardRule>) {
-        let Some((target, rules)) = rules_to_adopt(&self.0.lock().unwrap(), closed, rules) else { return };
+        let map = self.0.lock().unwrap();
+        let Some((target, rules)) = rules_to_adopt(&map, closed, rules) else { return };
         for rule in rules {
             target.forwards.start(rule, true);
         }
