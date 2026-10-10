@@ -2,6 +2,13 @@
 
 User-facing changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org).
 
+## [2.3.4] - 2026-10-10
+
+### Bug Fixes
+
+- With Sync input on in the compose bar, what is typed in a terminal that is still connecting (a password, a key passphrase, the answer to a host key) is no longer sent to the other terminals, where it was run in their shells. Typing is synced once the terminal is connected.
+- Resizing the window while an SSH terminal was busy printing a lot of output could freeze that connection for good, together with its other tabs, file panel and port forwarding. The output now keeps flowing and the new size reaches the server.
+
 ## [2.3.3] - 2026-10-09
 
 ### Bug Fixes
