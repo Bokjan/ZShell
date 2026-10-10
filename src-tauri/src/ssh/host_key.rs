@@ -11,11 +11,12 @@ use russh::keys::known_hosts::learn_known_hosts;
 use russh::keys::{HashAlg, PublicKey};
 use tokio::sync::oneshot;
 
-use super::known_hosts::{self, host_pattern};
+use super::known_hosts::{self, host_pattern, OtherKey};
 use crate::session::TermIo;
 
 pub enum HostKeyStatus {
-    Unknown,
+    /// Not recorded; `others` are the keys of other types recorded for the host.
+    Unknown { others: Vec<OtherKey> },
     /// Another key is recorded on this line of this file.
     Changed { path: PathBuf, line: usize },
     /// Marked `@revoked` in this file.
@@ -57,8 +58,22 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }
-        HostKeyStatus::Unknown => {
-            io.print(&t!("hostKey.unknown", host = host, algorithm = algorithm, fingerprint = fingerprint));
+        HostKeyStatus::Unknown { others } => {
+            // As OpenSSH: the keys of other types it has for the host, then a question that
+            // says so, since a server the user trusts would normally show one of those.
+            for other in others {
+                let found = t!(
+                    "hostKey.otherTypeFound",
+                    kind = other.kind,
+                    host = host_pattern(host, port),
+                    path = other.path.display(),
+                    line = other.line,
+                    fingerprint = other.fingerprint
+                );
+                io.print(&format!("\x1b[33m{found}\x1b[0m\n"));
+            }
+            let question = if others.is_empty() { "hostKey.unknown" } else { "hostKey.unknownOtherTypes" };
+            io.print(&t!(question, host = host, algorithm = algorithm, fingerprint = fingerprint));
             // The answer words stay "yes"/"no" in every language, as in OpenSSH.
             io.print(" (yes/no)? ");
             loop {

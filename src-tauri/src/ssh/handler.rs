@@ -55,7 +55,8 @@ impl client::Handler for ClientHandler {
                 self.verified = Some(key);
                 return Ok(true);
             }
-            Ok(Check::Unknown) => HostKeyStatus::Unknown,
+            Ok(Check::Unknown) => HostKeyStatus::Unknown { others: Vec::new() },
+            Ok(Check::OtherTypesKnown(others)) => HostKeyStatus::Unknown { others },
             Ok(Check::Changed { path, line }) => HostKeyStatus::Changed { path, line },
             Ok(Check::Revoked { path, .. }) => HostKeyStatus::Revoked { path },
             Err(e) => return Err(std::io::Error::other(e.to_string()).into()),

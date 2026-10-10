@@ -20,6 +20,8 @@
   },
   "hostKey": {
     "unknown": "The authenticity of host '{host}' can't be established.\n{algorithm} key fingerprint is {fingerprint}.\nAre you sure you want to continue connecting",
+    "unknownOtherTypes": "The authenticity of host '{host}' can't be established\nbut keys of different type are already known for this host.\n{algorithm} key fingerprint is {fingerprint}.\nAre you sure you want to continue connecting",
+    "otherTypeFound": "WARNING: {kind} key found for host {host}\nin {path}:{line}\n{kind} key fingerprint {fingerprint}.",
     "typeYesOrNo": "Please type 'yes' or 'no':",
     "added": "Permanently added '{host}' ({algorithm}) to the list of known hosts.",
     "saveFailed": "Could not write to known_hosts: {error}",

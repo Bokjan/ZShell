@@ -320,9 +320,12 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let remote = &hop.ssh.remote;
+    let preferred = russh::Preferred::default();
+    let key = known_hosts::prefer_known(&preferred.key, &remote.host, remote.port).into();
     let config = Arc::new(client::Config {
         keepalive_interval: (remote.keepalive_interval > 0).then(|| Duration::from_secs(remote.keepalive_interval.into())),
         keepalive_max: 3,
+        preferred: russh::Preferred { key, ..preferred },
         ..Default::default()
     });
     let (queries_tx, mut queries) = mpsc::channel(1);

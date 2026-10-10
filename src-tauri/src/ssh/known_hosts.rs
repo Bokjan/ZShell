@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use data_encoding::BASE64;
 use hmac::{Hmac, KeyInit, Mac};
-use russh::keys::{HashAlg, PublicKey};
+use russh::keys::{Algorithm, HashAlg, PublicKey};
 use serde::Serialize;
 use ts_rs::TS;
 use sha1::Sha1;
@@ -197,19 +197,31 @@ pub fn find(query: &str) -> Result<Vec<usize>> {
 pub enum Check {
     /// A line for the host has this key.
     Known,
-    /// No line for the host has a key of this type.
+    /// No line for the host has a key of this type, nor of another.
     Unknown,
+    /// No line for the host has a key of this type, but some have keys of other types: a
+    /// server the user already trusts, or one pretending to be it (see `prefer_known`).
+    OtherTypesKnown(Vec<OtherKey>),
     /// The host's key of this type is another one, on this line of this file.
     Changed { path: PathBuf, line: usize },
     /// The key is marked `@revoked` on this line of this file (for any host).
     Revoked { path: PathBuf, line: usize },
 }
 
-/// Checks `key` against the files in `paths`, as one list, the way OpenSSH does. The first
+/// A key of another type that known_hosts has for a host, as OpenSSH shows it.
+#[derive(Debug, PartialEq)]
+pub struct OtherKey {
+    pub path: PathBuf,
+    pub line: usize,
+    /// As OpenSSH names the type, e.g. `ECDSA`.
+    pub kind: String,
+    pub fingerprint: String,
+}
+
+/// The entries of the files in `paths`, as one list, the way OpenSSH reads them. The first
 /// file (the user's own) must be readable; the others are skipped if they can't be read.
-fn check_at(paths: &[PathBuf], host: &str, port: u16, key: &PublicKey) -> Result<Check> {
-    let host_port = host_pattern(host, port).to_ascii_lowercase();
-    let mut entries: Vec<(&Path, Entry)> = Vec::new();
+fn entries_at(paths: &[PathBuf]) -> Result<Vec<(&Path, Entry)>> {
+    let mut entries = Vec::new();
     for (index, path) in paths.iter().enumerate() {
         let listed = match list_at(path) {
             Ok(listed) => listed,
@@ -218,21 +230,81 @@ fn check_at(paths: &[PathBuf], host: &str, port: u16, key: &PublicKey) -> Result
         };
         entries.extend(listed.into_iter().map(|entry| (path.as_path(), entry)));
     }
+    Ok(entries)
+}
+
+/// The keys of the plain lines (not `@revoked` or `@cert-authority`) for `host_port`.
+fn host_keys<'a>(entries: &'a [(&'a Path, Entry)], host_port: &'a str) -> impl Iterator<Item = (&'a Path, &'a Entry, &'a PublicKey)> {
+    entries
+        .iter()
+        .filter(move |(_, entry)| entry.marker.is_none() && entry.applies_to(host_port))
+        .filter_map(|(path, entry)| entry.key.as_ref().map(|key| (*path, entry, key)))
+}
+
+/// Checks `key` against the files in `paths` (see [`entries_at`]), the way OpenSSH does.
+fn check_at(paths: &[PathBuf], host: &str, port: u16, key: &PublicKey) -> Result<Check> {
+    let host_port = host_pattern(host, port).to_ascii_lowercase();
+    let entries = entries_at(paths)?;
     let has_key = |(_, entry): &&(&Path, Entry)| entry.key.as_ref() == Some(key);
     // As OpenSSH: a revoked key is refused whatever else is known, and the host's key on any
     // line is accepted whatever other keys of the type it has. CA lines are for certificates.
     if let Some((path, entry)) = entries.iter().filter(has_key).find(|(_, entry)| entry.marker.as_deref() == Some("revoked")) {
         return Ok(Check::Revoked { path: path.to_path_buf(), line: entry.line });
     }
-    let for_host: Vec<&(&Path, Entry)> =
-        entries.iter().filter(|(_, entry)| entry.marker.is_none() && entry.applies_to(&host_port)).collect();
-    if for_host.iter().any(has_key) {
+    let for_host: Vec<_> = host_keys(&entries, &host_port).collect();
+    if for_host.iter().any(|(_, _, recorded)| *recorded == key) {
         return Ok(Check::Known);
     }
-    let changed = for_host
-        .iter()
-        .find(|(_, entry)| entry.key.as_ref().is_some_and(|recorded| recorded.algorithm() == key.algorithm()));
-    Ok(changed.map_or(Check::Unknown, |(path, entry)| Check::Changed { path: path.to_path_buf(), line: entry.line }))
+    if let Some((path, entry, _)) = for_host.iter().find(|(_, _, recorded)| same_kind(&recorded.algorithm(), &key.algorithm())) {
+        return Ok(Check::Changed { path: path.to_path_buf(), line: entry.line });
+    }
+    // The first line of each other type, as OpenSSH's `show_other_keys`.
+    let mut others: Vec<OtherKey> = Vec::new();
+    for (path, entry, recorded) in for_host {
+        let kind = kind_name(&recorded.algorithm());
+        if !others.iter().any(|other| other.kind == kind) {
+            let fingerprint = recorded.fingerprint(HashAlg::Sha256).to_string();
+            others.push(OtherKey { path: path.to_path_buf(), line: entry.line, kind, fingerprint });
+        }
+    }
+    Ok(if others.is_empty() { Check::Unknown } else { Check::OtherTypesKnown(others) })
+}
+
+/// Whether two algorithms are for the same type of key: RSA keys sign with SHA-1 or SHA-2.
+fn same_kind(a: &Algorithm, b: &Algorithm) -> bool {
+    matches!((a, b), (Algorithm::Rsa { .. }, Algorithm::Rsa { .. })) || a == b
+}
+
+/// A key type as OpenSSH names it in messages (`sshkey_type`): `ED25519`, `ECDSA`, `RSA`.
+fn kind_name(algorithm: &Algorithm) -> String {
+    match algorithm {
+        Algorithm::Ed25519 => "ED25519".to_owned(),
+        Algorithm::Ecdsa { .. } => "ECDSA".to_owned(),
+        Algorithm::Rsa { .. } => "RSA".to_owned(),
+        Algorithm::Dsa => "DSA".to_owned(),
+        other => other.as_str().to_owned(),
+    }
+}
+
+/// `preferred` host key algorithms with those for the types of key known_hosts has for
+/// `host:port` first, keeping their order, as OpenSSH orders its `HostKeyAlgorithms`: a server
+/// with several keys then shows one that can be checked, rather than one of a type not yet
+/// recorded, which would look like a first connection.
+pub fn prefer_known(preferred: &[Algorithm], host: &str, port: u16) -> Vec<Algorithm> {
+    let user = path();
+    let mut paths: Vec<PathBuf> = user.iter().cloned().collect();
+    paths.extend(user.as_deref().map(other_paths).unwrap_or_default());
+    let host_port = host_pattern(host, port).to_ascii_lowercase();
+    let known: Vec<Algorithm> =
+        entries_at(&paths).map(|entries| host_keys(&entries, &host_port).map(|(_, _, key)| key.algorithm()).collect()).unwrap_or_default();
+    order_known(preferred, &known)
+}
+
+fn order_known(preferred: &[Algorithm], known: &[Algorithm]) -> Vec<Algorithm> {
+    let (mut first, rest): (Vec<Algorithm>, Vec<Algorithm>) =
+        preferred.iter().cloned().partition(|algorithm| known.iter().any(|k| same_kind(k, algorithm)));
+    first.extend(rest);
+    first
 }
 
 /// Checks the key a server at `host:port` presented, as OpenSSH does: against
@@ -281,6 +353,7 @@ mod tests {
 
     const KEY: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIGTF00LNp4OdvFjVtxiUae5Ybe6KH/QRshtgH9+knbzN";
     const OTHER: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
+    const ECDSA: &str = "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCLa00yW9Sf5+OVT1YXDU+6VfdRETny3PySJkcnNOtRp4F7bo7TdUnTO0drA5UYKxjy8XOteGkMO6alimShQOpY=";
     /// `[127.0.0.1]:2222`, hashed by `ssh-keygen -H`.
     const HASHED: &str = "|1|sXYIBsr10rhd0b/NMnyf/gj1YxQ=|/yzMUScN42HQtI9V9p2rFEu00bU=";
 
@@ -346,6 +419,32 @@ mod tests {
         let path = temp_file(&format!("@cert-authority * ssh-ed25519 {KEY}\n*.LAN ssh-ed25519 {KEY}\n"));
         assert_eq!(check_at(std::slice::from_ref(&path), "NAS.lan", 22, &key).unwrap(), Check::Known);
         assert_eq!(check_at(std::slice::from_ref(&path), "other", 22, &key).unwrap(), Check::Unknown);
+    }
+
+    /// A host recorded with keys of other types only isn't a first connection, as OpenSSH
+    /// says; and the connection asks for the types recorded first.
+    #[test]
+    fn tells_when_other_types_of_key_are_known() {
+        let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
+        let path = temp_file(&format!("# c\n[127.0.0.1]:2222 ecdsa-sha2-nistp256 {ECDSA}\n[127.0.0.1]:2222 ecdsa-sha2-nistp256 {ECDSA}\n"));
+        let other = OtherKey {
+            path: path.clone(),
+            line: 2,
+            kind: "ECDSA".into(),
+            fingerprint: "SHA256:JtxeYNtlueZkq+5MkevZVweMSrubYwvr5uRRzN3TMZc".into(),
+        };
+        assert_eq!(check_at(std::slice::from_ref(&path), "127.0.0.1", 2222, &key).unwrap(), Check::OtherTypesKnown(vec![other]));
+        assert_eq!(check_at(std::slice::from_ref(&path), "127.0.0.1", 22, &key).unwrap(), Check::Unknown);
+
+        let preferred = russh::Preferred::default().key.to_vec();
+        let ecdsa = Algorithm::Ecdsa { curve: russh::keys::EcdsaCurve::NistP256 };
+        let ordered = order_known(&preferred, std::slice::from_ref(&ecdsa));
+        assert_eq!((&ordered[0], ordered.len()), (&ecdsa, preferred.len()));
+        assert_eq!(ordered[1], Algorithm::Ed25519);
+        // An RSA key is checked whichever hash the server signs with.
+        let ordered = order_known(&preferred, &[Algorithm::Rsa { hash: None }]);
+        assert!(ordered[..3].iter().all(|a| matches!(a, Algorithm::Rsa { .. })), "{ordered:?}");
+        assert_eq!(order_known(&preferred, &[]), preferred);
     }
 
     #[test]
