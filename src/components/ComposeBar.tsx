@@ -2,6 +2,8 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react
 import { useTranslation } from "react-i18next";
 
 import type { Compose, ComposeScope, SendResult } from "../lib/compose";
+import { IconButton } from "./IconButton";
+import { ChevronIcon, CloseIcon } from "./icons";
 import { paneTitle, tabTitle, type Tab } from "../lib/panes";
 import { isComposing } from "../lib/platform";
 
@@ -138,7 +140,8 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
           title={t("compose.scopeHint")}
           onClick={() => setPicking(!picking)}
         >
-          {scopeLabel} ▾
+          {scopeLabel}
+          <ChevronIcon />
         </button>
         {picking && (
           <div className="compose-picker" role="dialog">
@@ -221,9 +224,9 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
       <button className="primary" disabled={!text.trim()} onClick={send}>
         {t("compose.send")}
       </button>
-      <button className="compose-close" title={t("compose.close")} onClick={onClose}>
-        ×
-      </button>
+      <IconButton className="compose-close" label={t("compose.close")} onClick={onClose}>
+        <CloseIcon />
+      </IconButton>
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
+import { IconButton } from "./IconButton";
+
 /** Glyphs of Segoe Fluent Icons (Windows 11), at the same code points in Segoe MDL2 Assets (Windows 10). */
 const GLYPHS = { minimize: "", maximize: "", restore: "", close: "" };
 
@@ -59,22 +61,22 @@ export function WindowControls() {
   return (
     // The buttons don't take focus from the terminal.
     <div className="window-controls" onMouseDown={(e) => e.preventDefault()}>
-      <button tabIndex={-1} title={t("window.minimize")} onClick={() => void window_.minimize()}>
+      <IconButton tabIndex={-1} label={t("window.minimize")} onClick={() => void window_.minimize()}>
         {GLYPHS.minimize}
-      </button>
-      <button
+      </IconButton>
+      <IconButton
         ref={maximizeRef}
         tabIndex={-1}
         className={maximizeClass}
-        title={maximized ? t("window.restore") : t("window.maximize")}
+        label={maximized ? t("window.restore") : t("window.maximize")}
         // Only reached if the native window over it is missing.
         onClick={() => void window_.toggleMaximize()}
       >
         {maximized ? GLYPHS.restore : GLYPHS.maximize}
-      </button>
-      <button tabIndex={-1} className="close" title={t("window.close")} onClick={() => void window_.close()}>
+      </IconButton>
+      <IconButton tabIndex={-1} className="close" label={t("window.close")} onClick={() => void window_.close()}>
         {GLYPHS.close}
-      </button>
+      </IconButton>
     </div>
   );
 }

@@ -84,3 +84,48 @@ export function HelpIcon({ size = 12 }: { size?: number }) {
     </svg>
   );
 }
+
+/** An arrow pointing up or down: moving up a folder or a list, the previous or next match, uploads and downloads. */
+export function ArrowIcon({ direction, size = 14 }: { direction: "up" | "down"; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === "up" ? "M8 13V3M4 7l4-4 4 4" : "M8 3v10M4 9l4 4 4-4"} />
+    </svg>
+  );
+}
+
+/** A chevron after a label: down on a button that opens a menu, up or down for a sort order. */
+export function ChevronIcon({ direction = "down", size = 10 }: { direction?: "up" | "down"; size?: number }) {
+  return (
+    <svg className="inline-icon" width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === "up" ? "M3.5 10.5L8 6l4.5 4.5" : "M3.5 6L8 10.5 12.5 6"} />
+    </svg>
+  );
+}
+
+/** A pencil, for editing. */
+export function PencilIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10.5 2.5l3 3-8 8H2.5v-3l8-8zM9 4l3 3" />
+    </svg>
+  );
+}
+
+/** A trash can, for deleting; drawn because the emoji looks different on every platform. */
+export function TrashIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 4.5h11M6.5 4.5V3a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1.5M4 4.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6M6.8 7v4.5M9.2 7v4.5" />
+    </svg>
+  );
+}
+
+/** A check mark, for a menu item that is on. */
+export function CheckIcon({ size = 10 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 8.5l3.2 3L13 4.5" />
+    </svg>
+  );
+}

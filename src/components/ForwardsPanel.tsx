@@ -14,6 +14,8 @@ import {
 import { forwardMapping as mapping } from "../lib/format";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ForwardDialog, explainRule } from "./ForwardDialog";
+import { IconButton } from "./IconButton";
+import { PencilIcon, TrashIcon } from "./icons";
 
 interface Props {
   sessionId: SessionId | null;
@@ -130,16 +132,18 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
                 )}
               </div>
               <span className="forward-actions">
-                <button title={t("forwards.edit")} onClick={() => setEditing(rule)}>
-                  ✎
-                </button>
-                <button title={t("forwards.delete")} onClick={() => setDeleting(rule)}>
-                  🗑
-                </button>
+                <IconButton label={t("forwards.editRule", { rule: mapping(rule) })} onClick={() => setEditing(rule)}>
+                  <PencilIcon />
+                </IconButton>
+                <IconButton label={t("forwards.deleteRule", { rule: mapping(rule) })} onClick={() => setDeleting(rule)}>
+                  <TrashIcon />
+                </IconButton>
               </span>
               <label className="switch" title={running ? t("forwards.stop") : t("forwards.start")}>
                 <input
                   type="checkbox"
+                  role="switch"
+                  aria-label={t("forwards.runRule", { rule: mapping(rule) })}
                   checked={running}
                   disabled={!live}
                   onChange={() => void (running ? stop(rule) : start(rule))}

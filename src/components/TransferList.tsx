@@ -3,6 +3,8 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import type { TransferProgress } from "../lib/api";
 import { formatSize } from "../lib/format";
+import { IconButton } from "./IconButton";
+import { ArrowIcon, CloseIcon, PencilIcon } from "./icons";
 import i18n from "../i18n";
 
 export interface Transfer {
@@ -37,7 +39,11 @@ interface Props {
   onStopEditing(id: string): void;
 }
 
-const KIND_ICONS = { upload: "↑", download: "↓", edit: "✎" };
+const KIND_ICONS = {
+  upload: <ArrowIcon direction="up" size={12} />,
+  download: <ArrowIcon direction="down" size={12} />,
+  edit: <PencilIcon size={12} />,
+};
 
 const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
 
@@ -84,7 +90,9 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, 
           return (
             <li key={transfer.id} className={transfer.status}>
               <div className="transfer-row">
-                <span className="transfer-kind">{KIND_ICONS[transfer.kind]}</span>
+                <span className="transfer-kind" role="img" aria-label={t(`transfer.kind.${transfer.kind}`)}>
+                  {KIND_ICONS[transfer.kind]}
+                </span>
                 <span className="transfer-label" title={transfer.label}>
                   {transfer.label}
                 </span>
@@ -109,9 +117,9 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, 
                   </>
                 )}
                 {finished(transfer) && (
-                  <button className="link-button" title={t("transfer.remove")} onClick={() => onDismiss(transfer.id)}>
-                    ×
-                  </button>
+                  <IconButton className="link-button" label={t("transfer.remove")} onClick={() => onDismiss(transfer.id)}>
+                    <CloseIcon size={12} />
+                  </IconButton>
                 )}
               </div>
               {transfer.status !== "editing" && (

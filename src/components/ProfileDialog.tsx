@@ -37,7 +37,8 @@ import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../lib/settings";
 import { useSubmitting } from "../lib/submitting";
 import { TERMINAL_SCHEMES, sessionScheme } from "../lib/terminalSchemes";
 import { HelpTip } from "./HelpTip";
-import { RefreshIcon } from "./icons";
+import { IconButton } from "./IconButton";
+import { ArrowIcon, CloseIcon, RefreshIcon } from "./icons";
 import { Modal } from "./Modal";
 import { ProxyDialog } from "./ProxyDialog";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
@@ -471,9 +472,9 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
             autoCorrect="off"
             spellCheck={false}
           />
-          <button type="button" className="icon-button" title={t("profile.refreshDevices")} onClick={refreshPorts}>
+          <IconButton type="button" className="icon-button" label={t("profile.refreshDevices")} onClick={refreshPorts}>
             <RefreshIcon />
-          </button>
+          </IconButton>
         </div>
         <datalist id="profile-serial-ports">
           {ports?.map((port) => (
@@ -574,32 +575,32 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
                 {jumpHosts.map((id, index) => (
                   <li key={id}>
                     <span className="jump-name">{profileName(id)}</span>
-                    <button
+                    <IconButton
                       type="button"
                       className="icon-button"
-                      title={t("profile.moveUp")}
+                      label={t("profile.moveUp", { name: profileName(id) })}
                       disabled={index === 0}
                       onClick={() => moveJumpHost(index, -1)}
                     >
-                      ↑
-                    </button>
-                    <button
+                      <ArrowIcon direction="up" size={12} />
+                    </IconButton>
+                    <IconButton
                       type="button"
                       className="icon-button"
-                      title={t("profile.moveDown")}
+                      label={t("profile.moveDown", { name: profileName(id) })}
                       disabled={index === jumpHosts.length - 1}
                       onClick={() => moveJumpHost(index, 1)}
                     >
-                      ↓
-                    </button>
-                    <button
+                      <ArrowIcon direction="down" size={12} />
+                    </IconButton>
+                    <IconButton
                       type="button"
                       className="icon-button"
-                      title={t("profile.removeJumpHost")}
+                      label={t("profile.removeJumpHost", { name: profileName(id) })}
                       onClick={() => setJumpHosts((hosts) => hosts.filter((h) => h !== id))}
                     >
-                      ×
-                    </button>
+                      <CloseIcon size={12} />
+                    </IconButton>
                   </li>
                 ))}
               </ol>

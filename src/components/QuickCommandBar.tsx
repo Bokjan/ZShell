@@ -15,8 +15,9 @@ import {
 import { CommandDialog } from "./CommandDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { IconButton } from "./IconButton";
 import { NameDialog } from "./NameDialog";
-import { PlusIcon } from "./icons";
+import { ChevronIcon, PlusIcon } from "./icons";
 
 interface Props {
   commands: QuickCommands;
@@ -157,7 +158,8 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
       {/* Pressing a button doesn't take focus from the terminal. */}
       <div className={`quick-bar${targets ? " many" : ""}`} onMouseDown={(e) => e.preventDefault()}>
         <button className="quick-group" title={t("quick.groupHint")} onClick={groupMenu}>
-          {groupName(group, t)} ▾
+          {groupName(group, t)}
+          <ChevronIcon />
         </button>
         {targets && <span className="quick-targets">{t("quick.sendsTo", { count: targets.length })}</span>}
         <div className="quick-commands" ref={listRef} onWheel={onWheel}>
@@ -181,9 +183,9 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           ))}
         </div>
         {status && <span className="quick-status">{status}</span>}
-        <button className="quick-add" title={t("quick.newCommand")} onClick={() => setEditing({ command: null })}>
+        <IconButton className="quick-add" label={t("quick.newCommand")} onClick={() => setEditing({ command: null })}>
           <PlusIcon />
-        </button>
+        </IconButton>
       </div>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {editing && (

@@ -22,7 +22,8 @@ import {
 } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { ComposeIcon, PlusIcon, QuickIcon } from "./icons";
+import { IconButton } from "./IconButton";
+import { CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
 
 /** Keyboard shortcut (with ⇧⌘ / Ctrl+Shift) toggling each side panel, by `KeyboardEvent.code`. */
@@ -261,6 +262,7 @@ export function TabBar({
   const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
     <button
       className={activeTab?.sidePanel === panel ? "on" : undefined}
+      aria-pressed={activeTab?.sidePanel === panel}
       disabled={!activeTab || (unavailable && activeTab.sidePanel !== panel)}
       onClick={() => onTogglePanel(panel)}
       title={unavailable ? t("tabs.panelUnavailable") : hint}
@@ -330,14 +332,14 @@ export function TabBar({
                 className="tab-close"
                 tabIndex={-1}
                 aria-hidden="true"
-                title={tab.panes.length > 1 ? t("tabs.close") : `${t("tabs.close")} (${closeTabShortcutLabel})`}
+                title={tab.panes.length > 1 ? t("tabs.close") : t("tabs.closeWithShortcut", { shortcut: closeTabShortcutLabel })}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   onClose([tab.key]);
                 }}
               >
-                ×
+                <CloseIcon size={12} />
               </button>
             </div>
           );
@@ -347,36 +349,38 @@ export function TabBar({
         <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />
       )}
       {onNew && (
-        <button
+        <IconButton
           className="tab-new"
-          title={t("tabs.newLocalTerminal", { shortcut: newTabShortcutLabel })}
+          label={t("tabs.newLocalTerminal", { shortcut: newTabShortcutLabel })}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onNew}
         >
           <PlusIcon />
-        </button>
+        </IconButton>
       )}
       {/* Grows, and keeps some room to move the window however many tabs there are. */}
       <span className="tab-bar-drag" {...DRAG_REGION} />
       {tabs.length > 0 && (
-        <button
+        <IconButton
           className={`compose-toggle${composeOpen ? " on" : ""}`}
-          title={t("compose.toggle", { shortcut: shiftShortcutLabel("I") })}
+          label={t("compose.toggle", { shortcut: shiftShortcutLabel("I") })}
+          aria-pressed={composeOpen}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onToggleCompose}
         >
           <ComposeIcon />
-        </button>
+        </IconButton>
       )}
       {tabs.length > 0 && (
-        <button
+        <IconButton
           className={`compose-toggle${quickBarOpen ? " on" : ""}`}
-          title={t("quick.toggle")}
+          label={t("quick.toggle")}
+          aria-pressed={quickBarOpen}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onToggleQuickBar}
         >
           <QuickIcon />
-        </button>
+        </IconButton>
       )}
       {tabs.length > 0 && (
         <div className="panel-switch">

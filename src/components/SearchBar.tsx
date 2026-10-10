@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 
 import { isComposing } from "../lib/platform";
+import { IconButton } from "./IconButton";
+import { ArrowIcon, CloseIcon } from "./icons";
 
 interface Props {
   addon: SearchAddon;
@@ -117,26 +119,26 @@ export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
         autoCorrect="off"
       />
       {FLAGS.map(({ flag, label, title }) => (
-        <button
+        <IconButton
           key={flag}
           className={`search-flag${flags[flag] ? " on" : ""}`}
           aria-pressed={flags[flag]}
-          title={t(title)}
+          label={t(title)}
           onClick={() => setFlags((f) => ({ ...f, [flag]: !f[flag] }))}
         >
           {label}
-        </button>
+        </IconButton>
       ))}
       <span className={`search-status${invalid || result?.count === 0 ? " empty" : ""}`}>{status}</span>
-      <button className="icon-button" title={t("search.previous")} disabled={!query} onClick={() => find(false)}>
-        ↑
-      </button>
-      <button className="icon-button" title={t("search.next")} disabled={!query} onClick={() => find(true)}>
-        ↓
-      </button>
-      <button className="icon-button" title={t("search.close")} onClick={onClose}>
-        ×
-      </button>
+      <IconButton className="icon-button" label={t("search.previous")} disabled={!query} onClick={() => find(false)}>
+        <ArrowIcon direction="up" />
+      </IconButton>
+      <IconButton className="icon-button" label={t("search.next")} disabled={!query} onClick={() => find(true)}>
+        <ArrowIcon direction="down" />
+      </IconButton>
+      <IconButton className="icon-button" label={t("search.close")} onClick={onClose}>
+        <CloseIcon />
+      </IconButton>
     </div>
   );
 }

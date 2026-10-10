@@ -75,6 +75,7 @@
       "exited": "Exited"
     },
     "close": "Close",
+    "closeWithShortcut": "Close ({shortcut})",
     "files": "Files",
     "filesHint": "Show/hide the SFTP file panel ({shortcut})",
     "forwards": "Forwards",
@@ -302,9 +303,9 @@
     "newProxy": "New proxy…",
     "proxyHint": "Connects through this proxy. Proxies are managed in Settings.",
     "proxyViaJumpHost": "With jump hosts, the first one ({name}) is reached through its own proxy: {proxy}.",
-    "moveUp": "Move up",
-    "moveDown": "Move down",
-    "removeJumpHost": "Remove",
+    "moveUp": "Move {name} up",
+    "moveDown": "Move {name} down",
+    "removeJumpHost": "Remove {name}",
     "missingFields": "Host and username are required",
     "missingHost": "Host is required",
     "missingDevice": "Choose a serial device",
@@ -424,7 +425,12 @@
       "skipped": "Not uploaded: the file changed on the server"
     },
     "reopen": "Open",
-    "stopEditing": "Stop"
+    "stopEditing": "Stop",
+    "kind": {
+      "upload": "Upload",
+      "download": "Download",
+      "edit": "Edited file"
+    }
   },
   "forwards": {
     "title": "Port Forwarding",
@@ -432,8 +438,9 @@
     "empty": "No forwarding rules yet. Rules are saved with this session and can start automatically when it connects.",
     "profileMissing": "This session has been deleted, so its forwarding rules are no longer available.",
     "notConnected": "Rules can be started once connected.",
-    "edit": "Edit",
-    "delete": "Delete",
+    "editRule": "Edit {rule}",
+    "deleteRule": "Delete {rule}",
+    "runRule": "Run {rule}",
     "start": "Start",
     "stop": "Stop",
     "autoStartTag": "Auto-start",

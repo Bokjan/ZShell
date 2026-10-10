@@ -151,6 +151,15 @@ main {
   background: var(--bg-active);
   color: var(--text);
 }
+/* Icons are SVGs (icons.tsx), not glyphs, which sit differently in each platform's fonts. Alone
+   in a button, one is centered in it; after a label (a menu's chevron), on the text's middle. */
+button > svg:only-child {
+  display: block;
+}
+.inline-icon {
+  margin-left: 4px;
+  vertical-align: middle;
+}
 
 /* Sidebar */
 
@@ -1361,9 +1370,6 @@ body.resizing .terminal-view {
   background: var(--bg-active);
   font-size: calc(12px * var(--text-scale));
 }
-.sftp-toolbar .icon-button svg {
-  display: block;
-}
 .sftp-toolbar .icon-button.on {
   background: var(--bg-active);
   color: var(--text);
@@ -1467,9 +1473,6 @@ body.resizing .terminal-view {
 }
 .sftp-list thead th:hover {
   color: var(--text);
-}
-.sort-arrow {
-  margin-left: 3px;
 }
 /* The column title, a button for the keyboard; looks like the header itself. */
 .sort-button {
@@ -1575,6 +1578,10 @@ body.resizing .terminal-view {
 }
 .transfer-kind {
   color: var(--text-muted);
+}
+.transfer-kind svg,
+.context-menu-check svg {
+  display: block;
 }
 .progress {
   height: 3px;
@@ -2036,9 +2043,6 @@ body.resizing .terminal-view {
 .dialog .input-with-button input {
   flex: 1;
   min-width: 0;
-}
-.dialog .input-with-button .icon-button svg {
-  display: block;
 }
 .dialog .hint {
   margin: -4px 0 0;

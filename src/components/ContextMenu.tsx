@@ -1,6 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
+import { CheckIcon } from "./icons";
+
 export type MenuItem =
   | {
       label: string;
@@ -133,7 +135,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
           >
             {item.checked !== undefined && (
               <span className="context-menu-check" aria-hidden="true">
-                {item.checked ? "✓" : ""}
+                {item.checked && <CheckIcon />}
               </span>
             )}
             <span className="context-menu-label">{item.label}</span>

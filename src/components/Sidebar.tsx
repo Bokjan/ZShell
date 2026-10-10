@@ -36,6 +36,7 @@ import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { PlusIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { IconButton } from "./IconButton";
 import { SessionImportDialog } from "./SessionImportDialog";
 
 /**
@@ -467,12 +468,12 @@ export function Sidebar(props: Props) {
           <span className="sidebar-brand-name">{t("app.name")}</span>
         </span>
         <span className="sidebar-actions">
-          <button className="icon-button" title={t("sidebar.importExport")} onClick={importMenu}>
+          <IconButton className="icon-button" label={t("sidebar.importExport")} onClick={importMenu}>
             <ImportExportIcon />
-          </button>
-          <button className="icon-button" title={t("sidebar.newSession")} onClick={() => onNew(currentFolder())}>
+          </IconButton>
+          <IconButton className="icon-button" label={t("sidebar.newSession")} onClick={() => onNew(currentFolder())}>
             <PlusIcon />
-          </button>
+          </IconButton>
         </span>
       </header>
       <div className="sidebar-search">

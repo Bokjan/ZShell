@@ -13,7 +13,8 @@ import { basename, formatMode, formatSize, formatTime } from "../lib/format";
 import { isComposing, isMac } from "../lib/platform";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { EyeIcon, RefreshIcon, SearchIcon } from "./icons";
+import { IconButton } from "./IconButton";
+import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, RefreshIcon, SearchIcon } from "./icons";
 import { Modal } from "./Modal";
 import { TransferList, type Transfer } from "./TransferList";
 
@@ -761,11 +762,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
     >
       <button type="button" className="sort-button" onClick={() => sortBy(key)}>
         {label}
-        {view.sort === key && (
-          <span className="sort-arrow" aria-hidden="true">
-            {view.descending ? "▾" : "▴"}
-          </span>
-        )}
+        {view.sort === key && <ChevronIcon direction={view.descending ? "down" : "up"} size={8} />}
       </button>
     </th>
   );
@@ -777,18 +774,18 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
   return (
     <div className={`sftp-panel${dragOver && !dropDir ? " drag-over" : ""}`} ref={panelRef}>
       <div className="sftp-toolbar">
-        <button
+        <IconButton
           className={`icon-button${parent && dropDir === parent ? " drop-target" : ""}`}
-          title={t("sftp.parentFolder")}
+          label={t("sftp.parentFolder")}
           disabled={!parent}
           data-drop-dir={parent ?? undefined}
           onClick={() => parent && load(parent)}
         >
-          ↑
-        </button>
-        <button className="icon-button" title={t("sftp.refresh")} disabled={!cwd} onClick={refresh}>
+          <ArrowIcon direction="up" />
+        </IconButton>
+        <IconButton className="icon-button" label={t("sftp.refresh")} disabled={!cwd} onClick={refresh}>
           <RefreshIcon />
-        </button>
+        </IconButton>
         <form
           className="sftp-path"
           onSubmit={(e) => {
@@ -798,20 +795,21 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
         >
           <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} spellCheck={false} title={t("sftp.pathHint")} />
         </form>
-        <button
+        <IconButton
           className={`icon-button${filter !== null ? " on" : ""}`}
-          title={t("sftp.filter")}
+          label={t("sftp.filter")}
+          aria-pressed={filter !== null}
           onClick={() => (filter === null ? openFilter() : closeFilter())}
         >
           <SearchIcon />
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           className="icon-button"
-          title={view.showHidden ? t("sftp.hideHiddenFiles") : t("sftp.showHiddenFiles")}
+          label={view.showHidden ? t("sftp.hideHiddenFiles") : t("sftp.showHiddenFiles")}
           onClick={() => changeView({ showHidden: !view.showHidden })}
         >
           <EyeIcon crossed={!view.showHidden} />
-        </button>
+        </IconButton>
       </div>
       <div className="sftp-actions">
         <button disabled={!connected || !cwd} onClick={() => pickAndUpload(false)}>
@@ -837,9 +835,9 @@ export function SftpPanel({ sessionId, connected, active, onTransfers }: Props) 
             autoCapitalize="off"
             autoCorrect="off"
           />
-          <button className="icon-button" title={t("sftp.clearFilter")} onClick={closeFilter}>
-            ×
-          </button>
+          <IconButton className="icon-button" label={t("sftp.clearFilter")} onClick={closeFilter}>
+            <CloseIcon size={12} />
+          </IconButton>
         </div>
       )}
 
