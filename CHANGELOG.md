@@ -2,6 +2,16 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.4.3] - 2026-10-10
+
+### Features
+
+- The session list shows an icon for each session's protocol (a terminal for SSH, an Ethernet jack for Telnet, a serial connector for serial) in the column of the folders' triangles, instead of starting with an empty gap; sessions in a folder now start below its name.
+
+### Bug Fixes
+
+- Microsoft Store version: the app's icon in the Start menu and the taskbar is sharp at every display scale.
+
 ## [2.4.2] - 2026-10-10
 
 ### Bug Fixes
