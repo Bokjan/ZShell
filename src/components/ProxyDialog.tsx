@@ -5,10 +5,12 @@ import type { TFunction } from "i18next";
 import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
 import { useDialog } from "../lib/dialogs";
-import { hostPort, wholeNumber } from "../lib/format";
+import { hostPort, parsePort } from "../lib/format";
+import { passwordUpdate } from "../lib/password";
 import { useSubmitting } from "../lib/submitting";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { PasswordField } from "./PasswordField";
 
 interface Props {
   /** null creates a new proxy. */
@@ -62,12 +64,12 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const portNumber = wholeNumber(port);
+    const portNumber = parsePort(port);
     if (server && !host.trim()) {
       setError(t("proxy.missingHost"));
       return;
     }
-    if (server && (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535)) {
+    if (server && portNumber === null) {
       setError(t("profile.invalidPort"));
       return;
     }
@@ -76,10 +78,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
       return;
     }
     // Only a SOCKS or HTTP proxy with a user name keeps a password; the backend drops it otherwise.
-    let passwordUpdate: string | undefined;
-    if (!server || !username.trim()) passwordUpdate = undefined;
-    else if (clearPassword) passwordUpdate = "";
-    else if (password) passwordUpdate = password;
+    const update = passwordUpdate({ keeps: server && !!username.trim(), existed: false, clear: clearPassword, password });
     await saving.submit(async () => {
       try {
         const { saved, passwordError } = await proxies.save(
@@ -88,11 +87,11 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
             name,
             kind,
             host,
-            port: Number.isInteger(portNumber) && portNumber > 0 && portNumber <= 65535 ? portNumber : (proxy?.port ?? 0),
+            port: portNumber ?? proxy?.port ?? 0,
             username,
             command,
           },
-          passwordUpdate,
+          update,
         );
         onChanged();
         onSaved?.(saved);
@@ -184,24 +183,14 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
               />
             </label>
             {username.trim() && (
-              <>
-                <label>
-                  {t("profile.password")}
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={clearPassword}
-                    placeholder={proxy?.username ? t("profile.passwordKeepPlaceholder") : t("profile.passwordAskPlaceholder")}
-                  />
-                </label>
-                {proxy?.username && (
-                  <label className="checkbox">
-                    <input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} />
-                    {t("profile.clearPassword")}
-                  </label>
-                )}
-              </>
+              <PasswordField
+                value={password}
+                onChange={setPassword}
+                clear={clearPassword}
+                onClearChange={setClearPassword}
+                canClear={!!proxy?.username}
+                placeholder={proxy?.username ? t("profile.passwordKeepPlaceholder") : t("profile.passwordAskPlaceholder")}
+              />
             )}
             <p className="hint">{t(kind === "socks5" ? "proxy.socksHint" : "proxy.httpHint")}</p>
           </>

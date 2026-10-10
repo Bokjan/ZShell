@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { errorMessage, sshConfig, type ImportCandidate } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { isComposing } from "../lib/platform";
+import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
@@ -60,12 +61,6 @@ export function ImportDialog({ onClose, onImported }: Props) {
     }
   };
 
-  const toggle = (alias: string) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      if (!next.delete(alias)) next.add(alias);
-      return next;
-    });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -80,7 +75,6 @@ export function ImportDialog({ onClose, onImported }: Props) {
     }
   };
 
-  const importable = candidates?.filter((c) => !c.existing) ?? [];
 
   return (
     <Modal dialog={dialog}>
@@ -116,48 +110,31 @@ export function ImportDialog({ onClose, onImported }: Props) {
 
         {candidates && candidates.length > 0 && (
           <>
-            <div className="import-select">
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setSelected(new Set(importable.map((c) => c.alias)))}
-              >
-                {t("importDialog.selectAll")}
-              </button>
-              <button type="button" className="link-button" onClick={() => setSelected(new Set())}>
-                {t("importDialog.selectNone")}
-              </button>
-            </div>
-            <ul className="import-list">
-              {candidates.map((c) => (
-                <li key={c.alias} className={c.existing ? "existing" : undefined}>
-                  <label className="checkbox">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(c.alias)}
-                      disabled={!!c.existing}
-                      onChange={() => toggle(c.alias)}
-                    />
-                    <span className="import-main">
-                      <span className="import-alias">{c.alias}</span>
-                      <span className="import-address">
-                        {c.username}@{c.host}
-                        {c.port !== 22 && `:${c.port}`}
-                      </span>
-                    </span>
-                  </label>
-                  <div className="import-notes">
-                    {c.existing && <span>{t("importDialog.existing", { name: c.existing })}</span>}
-                    {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: c.jumpHosts.join(", ") })}</span>}
-                    {c.proxyCommand && <span>{t("importDialog.proxyCommand", { command: c.proxyCommand })}</span>}
-                    {c.forwards.length > 0 && <span>{t("importDialog.forwards", { count: c.forwards.length })}</span>}
-                    {c.skipped.length > 0 && (
-                      <span className="warning">{t("importDialog.skipped", { options: c.skipped.join(", ") })}</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <CandidateList
+              candidates={candidates}
+              keyOf={(c) => c.alias}
+              isExisting={(c) => !!c.existing}
+              selected={selected}
+              onChange={setSelected}
+              main={(c) => (
+                <>
+                  <span className="import-alias">{c.alias}</span>
+                  <span className="import-address">
+                    {c.username}@{c.host}
+                    {c.port !== 22 && `:${c.port}`}
+                  </span>
+                </>
+              )}
+              notes={(c) => (
+                <>
+                  {c.existing && <span>{t("importDialog.existing", { name: c.existing })}</span>}
+                  {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: c.jumpHosts.join(", ") })}</span>}
+                  {c.proxyCommand && <span>{t("importDialog.proxyCommand", { command: c.proxyCommand })}</span>}
+                  {c.forwards.length > 0 && <span>{t("importDialog.forwards", { count: c.forwards.length })}</span>}
+                  {c.skipped.length > 0 && <span className="warning">{t("importDialog.skipped", { options: c.skipped.join(", ") })}</span>}
+                </>
+              )}
+            />
           </>
         )}
         {candidates && candidates.length === 0 && <p className="hint">{t("importDialog.empty")}</p>}

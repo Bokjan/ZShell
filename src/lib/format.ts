@@ -10,6 +10,12 @@ export function wholeNumber(text: string): number {
   return /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
 }
 
+/** A TCP port as typed (digits only: not `0x16` or `1e3`), 1–65535, or 0 too if allowed; else null. */
+export function parsePort(text: string, { allowZero = false } = {}): number | null {
+  const port = wholeNumber(text);
+  return port >= (allowZero ? 0 : 1) && port <= 65535 ? port : null;
+}
+
 /** Binary-prefixed size with locale-aware digits, e.g. "1.5 MB" ("1,5 MB" in German). */
 export function formatSize(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
