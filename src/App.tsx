@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
+
+import { useCloseFlow } from "./app/useCloseFlow";
+import { useCompose } from "./app/useCompose";
+import { usePaneActions } from "./app/usePaneActions";
+import { useQuickCommands } from "./app/useQuickCommands";
 
 import { CommandPalette } from "./components/CommandPalette";
 import { ComposeBar } from "./components/ComposeBar";
@@ -14,32 +18,24 @@ import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar, type OpenMode } from "./components/Sidebar";
 import { PANEL_SHORTCUTS, TabBar } from "./components/TabBar";
-import { MIN_PANE_HEIGHT, MIN_PANE_WIDTH, TabPage, type PaneHandlers } from "./components/TabPage";
-import type { PasteTarget } from "./components/TerminalView";
+import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n";
 import {
   configSetAside,
-  forwards,
   listProfiles,
   localShellName,
   localUsername,
-  quickCommands,
   sendBreak,
   sessionLog,
-  sessionForeground,
   tree,
   type Folder,
-  type ForwardRule,
   type Profile,
   type QuickCommand,
-  type QuickCommands,
-  type SessionId,
   type SessionTarget,
   type SetAsideFile,
 } from "./lib/api";
-import { isDialogOpen } from "./lib/dialogs";
-import { basename, forwardMapping } from "./lib/format";
+import { basename } from "./lib/format";
 import {
   closeTabShortcutLabel,
   hasShiftShortcutModifiers,
@@ -53,64 +49,27 @@ import {
   splitShortcut,
   tabShortcut,
 } from "./lib/platform";
-import { neighbor, type Direction } from "./lib/layout";
-import { storeBarVisible, storedBarVisible, tabGroup } from "./lib/quickCommands";
-import { asTyped, CLOSED_COMPOSE, scopePanes, sendsToMany, syncTargets, type Compose, type SendResult } from "./lib/compose";
-import {
-  findPane,
-  focusedPane,
-  paneLabel,
-  tabTitle,
-  targetProtocol,
-  type Pane,
-  type SidePanel,
-  type Tab,
-} from "./lib/panes";
+import { neighbor } from "./lib/layout";
+import { tabGroup } from "./lib/quickCommands";
+import { asTyped } from "./lib/compose";
+import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { useSettings } from "./lib/settings";
 import { useShortcuts } from "./lib/shortcuts";
-import { activeTabOf, createTabStore, useTabStore, type PanePatch, type PaneSpec } from "./lib/tabs";
+import { useStableHandlers } from "./lib/stableHandlers";
+import { activeTabOf, createTabStore, useTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
 import { useTitleBar } from "./lib/window";
 import "./styles.css";
 
 const profileIdOf = (pane: Pane) => (pane.target.kind === "profile" ? pane.target.profileId : undefined);
 
-/** Why closing a pane needs confirmation: a remote session is connected, or a local program runs. */
-type Busy = { kind: "connected" } | { kind: "process"; name: string } | { kind: "transfers"; count: number };
-
-interface Closing {
-  panes: number[];
-  tabs: number;
-  busy: Busy;
-  /** Of the busy pane. */
-  name: string;
-}
-
 /** Opening more sessions than this at once (a folder) asks first. */
 const OPEN_ALL_CONFIRM = 5;
 /** Quick commands listed in the terminal's menu; the palette has them all. */
 const MENU_COMMANDS = 8;
-/** How long panes that received text from the compose bar flash. */
-const FLASH_MS = 700;
-/** How long a pane that can't be split flashes. */
-const REFUSED_MS = 400;
-
-/** Moves the keyboard focus back to the active terminal (after the compose bar closes). */
-const focusActiveTerminal = () =>
-  requestAnimationFrame(() =>
-    document.querySelector<HTMLElement>(".tab-page.active .pane.focused .xterm-helper-textarea")?.focus(),
-  );
-
-async function busyReason(pane: Pane): Promise<Busy | null> {
-  if (pane.transfers > 0) return { kind: "transfers", count: pane.transfers };
-  if (pane.status !== "connected" || pane.sessionId == null) return null;
-  if (pane.target.kind !== "local") return { kind: "connected" };
-  const name = await sessionForeground(pane.sessionId).catch(() => null);
-  return name === null ? null : { kind: "process", name };
-}
 
 function App() {
   const { t } = useTranslation();
@@ -129,18 +88,6 @@ function App() {
   const { tabs, activeKey } = useTabStore(store);
   const { dispatch } = store;
   const activate = (key: number | null) => dispatch({ type: "activate", key });
-  const [compose, setCompose] = useState<Compose>(CLOSED_COMPOSE);
-  const composeRef = useRef(compose);
-  composeRef.current = compose;
-  const [flashing, setFlashing] = useState<number[]>([]);
-  // The pane that couldn't be split, flashing; `count` restarts the flash on each refusal.
-  const [refused, setRefused] = useState<{ key: number; count: number } | null>(null);
-  const refuseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [commands, setCommands] = useState<QuickCommands | null>(null);
-  const [quickBarOpen, setQuickBarOpen] = useState(storedBarVisible);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const latestCommands = useRef(0);
-  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // The profile dialog: an existing profile, or a new one (null) with defaults; `paneKey` is
   // the quick connection pane being saved as a session.
   const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; paneKey?: number } | null>(
@@ -148,13 +95,6 @@ function App() {
   );
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Panes waiting for the user to confirm closing them, with why the first busy one is busy;
-  // `tabs` is how many tabs are being closed, 0 for a pane.
-  const [closing, setClosing] = useState<Closing | null>(null);
-  // Closing panes whose connections run port forwarding another tab of the session could take over.
-  const [keeping, setKeeping] = useState<{ panes: number[]; ids: SessionId[]; rules: ForwardRule[] } | null>(null);
-  // The window waiting for the user to confirm closing it (quitting), with how many tabs are busy.
-  const [closingWindow, setClosingWindow] = useState<number | null>(null);
   // Title for local terminal tabs, e.g. "zsh".
   const [shellName, setShellName] = useState<string | null>(null);
   // False on Windows in S mode, which blocks local shells.
@@ -169,14 +109,30 @@ function App() {
   const localTitleRef = useRef("");
   localTitleRef.current = shellName ?? t("tabs.localTitle");
 
+  /** Moves the keyboard focus back to the active terminal (after a bar or the palette closes). */
+  const focusActiveTerminal = useCallback(
+    () =>
+      requestAnimationFrame(() => {
+        const tab = activeTabOf(store.get());
+        if (tab) sessions.focus(tab.focused);
+      }),
+    [store, sessions],
+  );
+  const quick = useQuickCommands();
+  const { commands } = quick;
+  const composer = useCompose(store, sessions, tabs, activeKey, {
+    followRemoteTitle: () => settingsRef.current.tabs.followRemoteTitle,
+    focusTerminal: focusActiveTerminal,
+  });
+  const { compose, flashing, inScope } = composer;
+  const close = useCloseFlow(store, settings, update);
+  const { requestClose, closeFocused } = close;
+
   const reloadProfiles = useCallback(() => {
     listProfiles().then(setProfiles).catch(console.error);
     tree.folders().then(setFolders).catch(console.error);
   }, []);
   useEffect(reloadProfiles, [reloadProfiles]);
-  useEffect(() => {
-    quickCommands.get().then(setCommands).catch(console.error);
-  }, []);
   // Returned only once, so a second call (StrictMode) must not clear the first's result.
   useEffect(() => {
     configSetAside()
@@ -184,18 +140,6 @@ function App() {
       .catch(console.error);
   }, []);
 
-  // Applied immediately; the stored copy (with ids for new commands) replaces it unless a
-  // newer change was made in the meantime.
-  const saveCommands = (next: QuickCommands) => {
-    const request = ++latestCommands.current;
-    setCommands(next);
-    quickCommands.set(next).then((saved) => request === latestCommands.current && setCommands(saved), console.error);
-  };
-
-  const toggleQuickBar = () => {
-    storeBarVisible(!quickBarOpen);
-    setQuickBarOpen(!quickBarOpen);
-  };
   useEffect(() => {
     localShellName()
       .then((name) => (name === null ? setLocalAllowed(false) : setShellName(name)))
@@ -205,6 +149,7 @@ function App() {
 
   /** What a tab's next session will be: a saved session's protocol may have been changed. */
   const protocolOf = useCallback((target: SessionTarget) => targetProtocol(target, profilesRef.current), []);
+  const { refused, onAreaSize, roomToSplit, splitPane, duplicateTab } = usePaneActions(store, protocolOf);
 
   const addTab = useCallback(
     (target: SessionTarget, title: string) => dispatch({ type: "open", pane: { target, protocol: protocolOf(target), title } }),
@@ -250,127 +195,6 @@ function App() {
 
   const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab]);
 
-  /**
-   * A new pane running what `pane` runs: an SSH pane whose shell is up opens its copy on the
-   * same connection; anything else opens the same target anew.
-   */
-  const copyOf = (pane: Pane): PaneSpec => {
-    const shareFrom = pane.protocol === "ssh" && pane.status === "connected" ? (pane.sessionId ?? undefined) : undefined;
-    return { target: pane.target, protocol: protocolOf(pane.target), title: pane.title, shareFrom };
-  };
-
-  // Copies the focused pane into a new tab. A serial device can only be open once.
-  const duplicateTab = (key: number) => {
-    const tab = store.get().tabs.find((t) => t.key === key);
-    if (!tab) return;
-    const pane = focusedPane(tab);
-    if (pane.protocol === "serial") return;
-    dispatch({ type: "open", pane: copyOf(pane), after: key });
-  };
-
-  /**
-   * Splits a pane, opening `added` (by default a copy of the pane) right of it (`row`) or
-   * below it (`column`), and focuses it. Not for a pane too small to split, nor to copy a
-   * serial pane (a device can only be open once).
-   */
-  const splitPane = (key: number, direction: Direction, added?: PaneSpec) => {
-    const found = findPane(store.get().tabs, key);
-    if (!found) return;
-    // Shortcuts and the session list can ask for what the menus disable: the pane flashes.
-    const serial = !added && found.pane.protocol === "serial";
-    if (serial || !roomToSplit(key, direction)) {
-      announce(t(serial ? "announce.splitSerial" : "announce.splitNoRoom"));
-      clearTimeout(refuseTimer.current);
-      setRefused((refused) => ({ key, count: (refused?.count ?? 0) + 1 }));
-      refuseTimer.current = setTimeout(() => setRefused(null), REFUSED_MS);
-      return;
-    }
-    dispatch({ type: "split", key, direction, pane: added ?? copyOf(found.pane) });
-  };
-  /** Whether the pane is large enough to split in two, each half at least the minimum size. */
-  const roomToSplit = (key: number, direction: Direction) => {
-    const rect = document.querySelector(`.pane[data-pane="${key}"]`)?.getBoundingClientRect();
-    return !rect || (direction === "row" ? rect.width >= 2 * MIN_PANE_WIDTH : rect.height >= 2 * MIN_PANE_HEIGHT);
-  };
-
-  const closePanes = useCallback((keys: number[]) => dispatch({ type: "close", keys }), [dispatch]);
-
-  /**
-   * Closes tabs (`kind: "tabs"`) or a pane, first asking if any pane is connected or running
-   * a program (see the settings).
-   */
-  const requestClose = useCallback(async (request: { kind: "tabs"; keys: number[] } | { kind: "pane"; key: number }) => {
-    const panes =
-      request.kind === "tabs"
-        ? store.get().tabs.filter((t) => request.keys.includes(t.key)).flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })))
-        : [findPane(store.get().tabs, request.key)].filter((found) => found !== null);
-    const keys = panes.map(({ pane }) => pane.key);
-    // Asking whether to keep the forwarding also asks whether to close.
-    const ids = panes.flatMap(({ pane }) => (pane.status === "connected" && pane.sessionId != null ? [pane.sessionId] : []));
-    const rules = ids.length > 0 ? await forwards.keepCandidates(ids).catch(() => []) : [];
-    if (rules.length > 0) {
-      setKeeping({ panes: keys, ids, rules });
-      return;
-    }
-    if (settingsRef.current.tabs.confirmClose) {
-      const reasons = await Promise.all(panes.map(({ pane }) => busyReason(pane)));
-      const index = reasons.findIndex((reason) => reason !== null);
-      if (index >= 0) {
-        const { tab, pane } = panes[index];
-        const follow = settingsRef.current.tabs.followRemoteTitle;
-        // A split tab is named as a whole (see `closeMessage`).
-        const name = request.kind === "tabs" && tab.panes.length > 1 ? tabTitle(tab, follow) : paneLabel(tab, pane, follow);
-        const tabs = request.kind === "tabs" ? request.keys.length : 0;
-        setClosing({ panes: keys, tabs, busy: reasons[index]!, name });
-        return;
-      }
-    }
-    closePanes(keys);
-  }, [closePanes]);
-
-  /** ⌘W / Ctrl+Shift+W: the focused pane of a split tab, otherwise the tab (the window if there is none). */
-  const closeFocused = useCallback(() => {
-    const tab = activeTabOf(store.get());
-    if (!tab) void getCurrentWindow().close();
-    else if (tab.panes.length > 1) void requestClose({ kind: "pane", key: tab.focused });
-    else void requestClose({ kind: "tabs", keys: [tab.key] });
-  }, [requestClose]);
-
-  const confirmClose = (dontAskAgain: boolean) => {
-    if (!closing) return;
-    if (dontAskAgain) update({ ...settings, tabs: { ...settings.tabs, confirmClose: false } });
-    closePanes(closing.panes);
-    setClosing(null);
-  };
-
-  const cancelClose = useCallback(() => setClosing(null), []);
-
-  const closeKeeping = async (keep: boolean) => {
-    if (!keeping) return;
-    setKeeping(null);
-    if (keep) await forwards.keep(keeping.ids).catch(console.error);
-    closePanes(keeping.panes);
-  };
-
-  const cancelKeeping = useCallback(() => setKeeping(null), []);
-
-  // Closing the window (the close button, ⌘Q, Alt+F4) quits, ending every session at once,
-  // so it always asks, whatever the setting for closing tabs.
-  useEffect(() => {
-    const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
-      const reasons = await Promise.all(store.get().tabs.flatMap((tab) => tab.panes).map(busyReason));
-      const busy = reasons.filter((reason) => reason !== null).length;
-      if (busy === 0) return;
-      event.preventDefault();
-      setClosingWindow(busy);
-    });
-    return () => void unlisten.then((f) => f());
-  }, []);
-
-  const confirmCloseWindow = () => void getCurrentWindow().destroy();
-
-  const cancelCloseWindow = useCallback(() => setClosingWindow(null), []);
-
   const moveTab = (key: number, index: number) => dispatch({ type: "move", key, index });
 
   /** Runs `f` on the focused pane of the tab with this key (tab menu actions). */
@@ -389,47 +213,6 @@ function App() {
     const tab = store.get().tabs.find((t) => t.key === key);
     return tab && focusedPane(tab);
   };
-
-  // Closing the bar turns syncing off; the scope stays for the next time, shown on the bar.
-  const toggleCompose = useCallback(() => {
-    const open = !composeRef.current.open;
-    setCompose({ ...composeRef.current, open, sync: false });
-    if (!open) focusActiveTerminal();
-  }, []);
-
-  /** Names of panes, as listed for the compose bar and quick commands. */
-  const labelsOf = (panes: Pane[]) =>
-    panes.flatMap((pane) => {
-      const found = findPane(store.get().tabs, pane.key);
-      return found ? [paneLabel(found.tab, pane, settingsRef.current.tabs.followRemoteTitle)] : [];
-    });
-
-  /** Sends text as if typed to the panes in scope (see `scopePanes`); panes beyond the focused one flash. */
-  const sendToScope = (data: string): SendResult => {
-    const targets = scopePanes(composeRef.current, store.get().tabs, store.get().activeKey);
-    const sent = targets.filter((pane) => sessions.get(pane.key)?.send(data));
-    if (sendsToMany(composeRef.current) && sent.length > 0) {
-      clearTimeout(flashTimer.current);
-      setFlashing(sent.map((pane) => pane.key));
-      flashTimer.current = setTimeout(() => setFlashing([]), FLASH_MS);
-    }
-    return { sent: labelsOf(sent), skipped: targets.length - sent.length };
-  };
-
-  // Syncing: what is typed in the focused terminal goes to the other connected panes in scope.
-  const syncedWith = (source: number): Pane[] =>
-    syncTargets(composeRef.current, store.get().tabs, store.get().activeKey, source);
-  const onInput = (source: number, data: string) => {
-    for (const pane of syncedWith(source)) sessions.get(pane.key)?.send(data);
-  };
-  // Pastes go to each synced pane's terminal, which brackets them or not as its program wants.
-  const pasteTargets = useRef(new Map<number, PasteTarget>());
-  const registerPaste = (key: number, target: PasteTarget | null) => {
-    if (target) pasteTargets.current.set(key, target);
-    else pasteTargets.current.delete(key);
-  };
-  const syncedPasteTargets = (source: number) =>
-    syncedWith(source).flatMap((pane) => pasteTargets.current.get(pane.key) ?? []);
 
   // Opens a panel only for an SSH pane; closes it whatever the pane.
   const togglePanel = useCallback((panel: SidePanel) => dispatch({ type: "togglePanel", panel }), [dispatch]);
@@ -483,11 +266,11 @@ function App() {
       return true;
     }
     if (e.code === "KeyJ" && hasShiftShortcutModifiers(e)) {
-      if (store.get().tabs.length > 0) setPaletteOpen(true);
+      if (store.get().tabs.length > 0) quick.setPaletteOpen(true);
       return true;
     }
     if (e.code === "KeyI" && hasShiftShortcutModifiers(e)) {
-      if (store.get().tabs.length > 0) toggleCompose();
+      if (store.get().tabs.length > 0) composer.toggle();
       return true;
     }
     const panel = PANEL_SHORTCUTS[e.code];
@@ -502,23 +285,14 @@ function App() {
     return () => void unlisten.then((f) => f());
   }, []);
 
-  // From the macOS File menu's "Close" item (⌘W), which closes the window once no tabs are
-  // left, as in Terminal.app.
-  useEffect(() => {
-    const unlisten = listen("close-tab", () => !isDialogOpen() && closeFocused());
-    return () => void unlisten.then((f) => f());
-  }, [closeFocused]);
-
-  const runCommand = (command: QuickCommand) => sendToScope(asTyped(command.text, command.enter));
+  const runCommand = (command: QuickCommand) => composer.send(asTyped(command.text, command.enter));
 
   const activeTab = tabs.find((tab) => tab.key === activeKey);
   const activePane = activeTab && focusedPane(activeTab);
   const profileOf = (pane: Pane) => profiles.find((p) => p.id === profileIdOf(pane));
   const groupOf = (pane: Pane) => commands && tabGroup(commands, pane.commandGroup, profileOf(pane)?.commandGroup);
   const activeGroup = activePane ? groupOf(activePane) : null;
-  const inScope = sendsToMany(compose) ? scopePanes(compose, tabs, activeKey) : [];
-  // Who a quick command goes to, when that is more than the focused pane.
-  const commandTargets = sendsToMany(compose) ? labelsOf(inScope) : null;
+  const inScopeKeys = inScope.map((pane) => pane.key);
   /** Tabs with any of these panes. */
   const tabsWith = (keys: number[]) => tabs.filter((t) => t.panes.some((p) => keys.includes(p.key))).map((t) => t.key);
 
@@ -555,7 +329,7 @@ function App() {
     return [
       "separator",
       ...group.commands.slice(0, MENU_COMMANDS).map((command) => ({ label: command.name, onSelect: () => runCommand(command) })),
-      { label: t("quick.paletteMenu"), shortcut: shiftShortcutLabel("J"), onSelect: () => setPaletteOpen(true) },
+      { label: t("quick.paletteMenu"), shortcut: shiftShortcutLabel("J"), onSelect: () => quick.setPaletteOpen(true) },
     ];
   };
 
@@ -581,34 +355,23 @@ function App() {
   const onProfileChanged = (updated: Profile) =>
     setProfiles((profiles) => profiles.map((p) => (p.id === updated.id ? updated : p)));
 
-  const handlers: PaneHandlers = {
+  const handlers = useStableHandlers<PaneHandlers>({
     sessions,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
-    onInput,
-    registerPaste,
-    pasteTargets: syncedPasteTargets,
+    onInput: composer.onInput,
+    registerPaste: composer.registerPaste,
+    pasteTargets: composer.syncedPasteTargets,
     onFocus: (key) => {
       const found = findPane(store.get().tabs, key);
       if (found && found.tab.focused !== key) updateTab(found.tab.key, { focused: key });
     },
     onLayout: (tabKey, layout) => updateTab(tabKey, { layout }),
+    onAreaSize,
     onTransfers: (key, count) => updatePane(key, { transfers: count }),
     menuItems: terminalMenu,
     profileOf,
     onProfileChanged,
-  };
-
-  const closeMessage = ({ panes, tabs, busy, name }: Closing) => {
-    if (panes.length > 1 && tabs > 1) return t("closeConfirm.many");
-    // A tab's panes are named; a lone pane or tab ends just its session.
-    if (panes.length > 1) return t("closeConfirm.panes", { name });
-    const what = tabs === 0 ? "pane" : "tab";
-    if (busy.kind === "connected") return t(`closeConfirm.connected.${what}`, { name });
-    if (busy.kind === "transfers") return t(`closeConfirm.transfers.${what}`, { count: busy.count, name });
-    return busy.name
-      ? t(`closeConfirm.process.${what}`, { process: busy.name, name })
-      : t(`closeConfirm.processUnknown.${what}`, { name });
-  };
+  });
 
   const closeDialog = useCallback(() => setEditing(null), []);
 
@@ -670,10 +433,10 @@ function App() {
           onShowLog={(key) => withFocused(key, (pane) => showLog(pane.key))}
           onTogglePanel={togglePanel}
           composeOpen={compose.open}
-          onToggleCompose={toggleCompose}
-          quickBarOpen={quickBarOpen}
-          onToggleQuickBar={toggleQuickBar}
-          inScope={tabsWith(inScope.map((pane) => pane.key))}
+          onToggleCompose={composer.toggle}
+          quickBarOpen={quick.barOpen}
+          onToggleQuickBar={quick.toggleBar}
+          inScope={tabsWith(inScopeKeys)}
           syncing={compose.open && compose.sync}
           flashing={tabsWith(flashing)}
           addressOf={(tab) => {
@@ -693,9 +456,9 @@ function App() {
             tabs={tabs}
             activeKey={activeKey}
             followRemoteTitle={settings.tabs.followRemoteTitle}
-            onChange={setCompose}
-            onSend={(text) => sendToScope(asTyped(text, true))}
-            onClose={toggleCompose}
+            onChange={composer.setCompose}
+            onSend={(text) => composer.send(asTyped(text, true))}
+            onClose={composer.toggle}
           />
         )}
         <div className="terminals">
@@ -705,22 +468,23 @@ function App() {
               tab={tab}
               active={tab.key === activeKey}
               syncing={compose.open && compose.sync && tab.key === activeKey ? tab.focused : null}
-              inScope={inScope.map((pane) => pane.key)}
+              inScope={inScopeKeys}
               flashing={flashing}
               refused={refused}
+              profiles={profiles}
               handlers={handlers}
             />
           ))}
           {tabs.length === 0 && <div className="placeholder">{t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}</div>}
         </div>
-        {quickBarOpen && activePane && commands && activeGroup && (
+        {quick.barOpen && activePane && commands && activeGroup && (
           <QuickCommandBar
             commands={commands}
             group={activeGroup}
             onPickGroup={(id) => updatePane(activePane.key, { commandGroup: id })}
-            onChange={saveCommands}
+            onChange={quick.save}
             onRun={runCommand}
-            targets={commandTargets}
+            targets={composer.targets}
           />
         )}
       </main>
@@ -747,64 +511,21 @@ function App() {
           onCancel={() => setOpeningAll(null)}
         />
       )}
-      {paletteOpen && commands && activeGroup && (
+      {quick.paletteOpen && commands && activeGroup && (
         <CommandPalette
           commands={commands}
           firstGroup={activeGroup.id}
-          targets={commandTargets}
+          targets={composer.targets}
           onRun={runCommand}
           onClose={() => {
-            setPaletteOpen(false);
+            quick.setPaletteOpen(false);
             focusActiveTerminal();
           }}
         />
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
       {settingsOpen && <SettingsDialog localAllowed={localAllowed} onClose={closeSettings} />}
-      {closingWindow !== null && (
-        <ConfirmDialog
-          title={t("closeConfirm.windowTitle")}
-          message={t("closeConfirm.window", { count: closingWindow })}
-          confirmLabel={t("closeConfirm.windowConfirm")}
-          danger
-          onConfirm={confirmCloseWindow}
-          onCancel={cancelCloseWindow}
-        />
-      )}
-      {keeping && (
-        <ConfirmDialog
-          title={t("closeForwards.title")}
-          message={t("closeForwards.message")}
-          confirmLabel={t("closeForwards.keep")}
-          secondaryLabel={t("closeForwards.stop")}
-          onSecondary={() => void closeKeeping(false)}
-          onConfirm={() => void closeKeeping(true)}
-          onCancel={cancelKeeping}
-        >
-          <ul className="dialog-list">
-            {keeping.rules.map((rule) => (
-              <li key={rule.id}>{forwardMapping(rule)}</li>
-            ))}
-          </ul>
-        </ConfirmDialog>
-      )}
-      {closing && (
-        <ConfirmDialog
-          title={
-            closing.tabs === 0
-              ? t("closeConfirm.paneTitle")
-              : closing.tabs > 1
-                ? t("closeConfirm.titleMany", { count: closing.tabs })
-                : t("closeConfirm.title")
-          }
-          message={closeMessage(closing)}
-          confirmLabel={t("closeConfirm.confirm")}
-          danger
-          checkboxLabel={t("common.dontAskAgain")}
-          onConfirm={confirmClose}
-          onCancel={cancelClose}
-        />
-      )}
+      {close.dialogs}
       {setAside.length > 0 && (
         <ConfirmDialog
           title={t("setAside.title")}

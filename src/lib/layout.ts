@@ -43,6 +43,25 @@ const childRect = (rect: Rect, direction: Direction, offset: number, size: numbe
  * Within a split of the same direction the new pane becomes a sibling, sharing the space
  * the pane had.
  */
+/** A pane is kept at least this large, in pixels: dragging a divider, and splitting it. */
+export const MIN_PANE_WIDTH = 120;
+export const MIN_PANE_HEIGHT = 60;
+
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/**
+ * Whether pane `key` of `layout`, in a pane area of `area` pixels, is large enough to split in
+ * two along `direction`, each half at least the minimum size. Unknown sizes allow it.
+ */
+export function canSplit(layout: Layout, key: number, area: Size | undefined, direction: Direction): boolean {
+  const rect = paneRects(layout).get(key);
+  if (!rect || !area) return true;
+  return direction === "row" ? rect.w * area.width >= 2 * MIN_PANE_WIDTH : rect.h * area.height >= 2 * MIN_PANE_HEIGHT;
+}
+
 export function splitLayout(layout: Layout, key: number, direction: Direction, added: number): Layout {
   if (layout.kind === "pane") {
     return layout.key === key ? { kind: "split", direction, children: [layout, leaf(added)], sizes: [0.5, 0.5] } : layout;

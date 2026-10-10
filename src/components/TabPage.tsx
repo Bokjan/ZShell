@@ -1,11 +1,11 @@
-import { Fragment, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Fragment, memo, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Profile } from "../lib/api";
 import { DialogsHidden } from "../lib/dialogs";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../lib/drag";
-import { dividers, equalize, moveDivider, paneRects, type Divider } from "../lib/layout";
+import { dividers, equalize, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, moveDivider, paneRects, type Divider, type Size } from "../lib/layout";
 import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { ForwardsPanel } from "./ForwardsPanel";
@@ -27,6 +27,8 @@ export interface PaneHandlers {
   onFocus(key: number): void;
   /** The tab's panes were resized. */
   onLayout(tabKey: number, layout: Layout): void;
+  /** The size of the tab's pane area changed (the window or the side panel was resized). */
+  onAreaSize(tabKey: number, size: Size): void;
   /** How many uploads and downloads are running in the pane's file panel. */
   onTransfers(key: number, count: number): void;
   /** Added to the end of the pane's terminal menu, when it opens. */
@@ -47,14 +49,14 @@ interface Props {
   flashing: number[];
   /** A pane that couldn't be split; its border flashes, anew for each `count`. */
   refused: { key: number; count: number } | null;
+  /** The saved sessions, which the panes' appearance and panels come from (see `profileOf`). */
+  profiles: Profile[];
+  /** Stable: the page renders again only when one of the other props changes. */
   handlers: PaneHandlers;
 }
 
 const MIN_PANEL = 280;
 const MIN_TERMINAL = 240;
-/** Dragging a divider keeps the panes next to it at least this large, in pixels. */
-export const MIN_PANE_WIDTH = 120;
-export const MIN_PANE_HEIGHT = 60;
 
 const percent = (fraction: number) => `${fraction * 100}%`;
 
@@ -62,7 +64,21 @@ const percent = (fraction: number) => `${fraction * 100}%`;
  * One tab's content: its panes, each a terminal, plus a side panel (files or port forwards)
  * on the focused pane's SSH connection.
  */
-export function TabPage({ tab, active, syncing, inScope, flashing, refused, handlers: h }: Props) {
+export const TabPage = memo(TabPageView, (a, b) => {
+  const same = (x: number[], y: number[]) => x.length === y.length && x.every((key, i) => key === y[i]);
+  return (
+    a.tab === b.tab &&
+    a.active === b.active &&
+    a.syncing === b.syncing &&
+    same(a.inScope, b.inScope) &&
+    same(a.flashing, b.flashing) &&
+    a.refused === b.refused &&
+    a.profiles === b.profiles &&
+    a.handlers === b.handlers
+  );
+});
+
+function TabPageView({ tab, active, syncing, inScope, flashing, refused, handlers: h }: Props) {
   const { t } = useTranslation();
   const [panelWidth, setPanelWidth] = useState(420);
   // Keep each pane's panels mounted once opened, so their state (directory, transfers)
@@ -74,6 +90,17 @@ export function TabPage({ tab, active, syncing, inScope, flashing, refused, hand
   tabRef.current = tab;
   const split = tab.panes.length > 1;
   const rects = paneRects(tab.layout);
+
+  // For whether a pane has room to split (see `canSplit`).
+  useEffect(() => {
+    const area = areaRef.current!;
+    const observer = new ResizeObserver(() => {
+      const { width, height } = area.getBoundingClientRect();
+      if (width > 0 && height > 0) h.onAreaSize(tab.key, { width, height });
+    });
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [h, tab.key]);
   const focused = focusedPane(tab);
   const panelHere = tab.sidePanel !== null && focused.protocol === "ssh";
   if (panelHere && !mounted[focused.key]?.includes(tab.sidePanel!)) {

@@ -189,6 +189,7 @@ export function TerminalView({
       },
       zmodem: (phase) => onZmodemRef.current(phase),
       session: () => setZmodemPhase(null),
+      focus: () => term.focus(),
     });
     sessionRef.current = session;
 

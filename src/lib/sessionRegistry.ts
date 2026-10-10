@@ -9,6 +9,8 @@ export interface PaneView {
   zmodem(phase: ZmodemPhase): void;
   /** The backend session changed: a new one, or none (null). */
   session(id: SessionId | null): void;
+  /** Gives the terminal the keyboard focus. */
+  focus(): void;
 }
 
 export interface SessionRegistry {
@@ -19,6 +21,8 @@ export interface SessionRegistry {
   get(key: number): PaneSession | undefined;
   /** Closes the pane's session and connects again. */
   reconnect(key: number): void;
+  /** Gives the pane's terminal the keyboard focus. */
+  focus(key: number): void;
 }
 
 interface Options {
@@ -40,6 +44,7 @@ const logOpen = (pane: Pane): LogOpen =>
  */
 export function createSessionRegistry(store: TabStore, { profiles, t, announce }: Options): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
+  const views = new Map<number, PaneView>();
 
   return {
     attach(key, view) {
@@ -97,13 +102,18 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce }
         found.pane.shareFrom,
       );
       sessions.set(key, session);
+      views.set(key, view);
       return session;
     },
     detach(key, session) {
       session.dispose();
-      if (sessions.get(key) === session) sessions.delete(key);
+      if (sessions.get(key) === session) {
+        sessions.delete(key);
+        views.delete(key);
+      }
     },
     get: (key) => sessions.get(key),
     reconnect: (key) => sessions.get(key)?.reconnect(),
+    focus: (key) => views.get(key)?.focus(),
   };
 }

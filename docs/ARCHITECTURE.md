@@ -67,7 +67,7 @@
 
 前端（`src/`）：
 
-- **标签页与窗格**：状态在 `lib/tabs.ts` 的 store 里（类型在 `lib/panes.ts`，窗格树的运算在 `lib/layout.ts`）。打开、分屏、关闭、移动等每个修改都是一个 action，由纯函数 `reduceTabs` 处理；store 在修改后立即是新状态，不必等下一次渲染。`App.tsx` 订阅它并分发 action。
+- **标签页与窗格**：状态在 `lib/tabs.ts` 的 store 里（类型在 `lib/panes.ts`，窗格树的运算在 `lib/layout.ts`）。打开、分屏、关闭、移动等每个修改都是一个 action，由纯函数 `reduceTabs` 处理；store 在修改后立即是新状态，不必等下一次渲染。`App.tsx` 订阅它并分发 action；关闭流程、撰写栏、快速命令与分屏各是 `app/` 下的一个 hook。`TabPage` 只在自己的标签、范围或闪烁变化时重新渲染（`memo`，回调经 `useStableHandlers` 保持不变），其他标签的提示符更新标题不会重绘它。分屏是否有空间按 `TabPage` 测得的窗格区尺寸计算（`canSplit`），聚焦终端经注册表里的视图句柄，不查询 DOM。
 - **窗格的会话**：`lib/sessionRegistry.ts` 为每个窗格建一个 `PaneSession`（`lib/paneSession.ts`），负责打开会话、手动与自动重连、复制窗格时共享连接、登录后命令和输出流控。它只经一个小接口读写终端，状态、后端会话 id、转发与日志直接写进 store。`TerminalView` 只管终端本身（输入、粘贴、菜单、查找、ZMODEM）。
 - **对话框**：经 `useDialog`（`lib/dialogs.ts`）登记到一个栈，用 `Modal` 渲染到 body 末尾。只有最上层的对话框响应 Esc 与点击背景，所以从设置里打开的代理对话框单独关闭。非活动标签或收起的侧栏里的对话框（如后台保存发现的编辑冲突）先隐藏，等它显示时再出现，期间也不挡快捷键。
 - **快捷键**：经 `useShortcuts`（`lib/shortcuts.ts`）注册，由一个捕获阶段的监听统一分发。注册时说明何时生效：作用于标签（有对话框时不处理）、总是生效（打开设置），或只在某个对话框位于最上层时生效（设置里的搜索）。输入法组字中的按键一律不处理。
