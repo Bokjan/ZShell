@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandError, Session, SessionEvent, SessionTarget, openSession } from "./api";
 import { LOGIN_COMMAND_IDLE_MS, PaneSession, type SessionConfig, type SessionEvents, type TerminalPort } from "./paneSession";
 
+// The forwarding rules running on a connection being replaced (see `reconnect`).
+vi.mock("./api", async (importOriginal) => {
+  const api = await importOriginal<typeof import("./api")>();
+  return { ...api, forwards: { ...api.forwards, carry: vi.fn(async () => ["r1"]) } };
+});
+
 /** One call of the fake `openSession`. */
 interface Opened {
   target: SessionTarget;
@@ -12,7 +18,7 @@ interface Opened {
   output(text: string): void;
   event(event: SessionEvent): void;
   /** Settles the call: a session, or an error. */
-  resolve(): Session & { writes: string[]; closed: boolean };
+  resolve(): Session & { writes: string[]; acks: number[]; closed: boolean };
   reject(error: unknown): void;
 }
 
@@ -35,10 +41,11 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
           const session = {
             id: nextId++,
             writes: [] as string[],
+            acks: [] as number[],
             closed: false,
             write: async (data: string) => void session.writes.push(data),
             resize: async () => {},
-            ack: async () => {},
+            ack: async (bytes: number) => void session.acks.push(bytes),
             close: async () => void (session.closed = true),
           };
           resolve(session);
@@ -268,6 +275,46 @@ describe("reconnecting by hand", () => {
     opened[0].event(lost());
     expect(screen()).not.toContain("late output");
     expect(events.status).toHaveBeenLastCalledWith("connecting");
+  });
+
+  it("starts the forwarding rules that ran on the new connection, once", async () => {
+    const { pane, opened } = setup({ target: () => ({ kind: "profile", profileId: "p" }) });
+    pane.connect();
+    opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    pane.reconnect();
+    await settle();
+    expect(opened[1].carry).toEqual(["r1"]);
+    opened[1].resolve();
+    await settle();
+    opened[1].event({ type: "connected" });
+    // A later automatic reconnection starts the session's automatic rules only.
+    opened[1].event(lost());
+    await vi.runOnlyPendingTimersAsync();
+    expect(opened[2].carry).toEqual([]);
+  });
+});
+
+describe("flow control", () => {
+  it("acknowledges what the terminal has processed in batches", async () => {
+    const { pane, opened } = setup();
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].output("x".repeat(40_000));
+    expect(session.acks).toEqual([]);
+    opened[0].output("y".repeat(40_000));
+    expect(session.acks).toEqual([80_000]);
+  });
+
+  it("acknowledges output that came before the session's id", async () => {
+    const { pane, opened } = setup();
+    pane.connect();
+    opened[0].output("z".repeat(70_000));
+    const session = opened[0].resolve();
+    await settle();
+    expect(session.acks).toEqual([70_000]);
   });
 });
 

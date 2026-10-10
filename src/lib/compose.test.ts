@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Compose } from "./compose";
-import { syncTargets } from "./compose";
+import { CLOSED_COMPOSE, scopePanes, syncTargets } from "./compose";
 import type { Pane } from "./panes";
 import type { PaneSpec, TabsAction } from "./tabs";
 import { INITIAL_TABS, reduceTabs } from "./tabs";
@@ -47,5 +47,23 @@ describe("syncTargets", () => {
     expect(syncTargets({ ...syncing, sync: false }, tabs, activeKey, focused)).toEqual([]);
     expect(syncTargets({ ...syncing, open: false }, tabs, activeKey, focused)).toEqual([]);
     expect(syncTargets(syncing, tabs, activeKey, keys[0])).toEqual([]);
+  });
+});
+
+describe("scopePanes", () => {
+  it("sends to the scope chosen while the bar is open, and to the focused pane otherwise", () => {
+    const { tabs, activeKey, keys, focused } = threePanes([true, true, true]);
+    // A second tab, in the background.
+    const other = { ...tabs[0], key: 99, panes: [{ ...tabs[0].panes[0], key: 50 }] };
+    const all = [...tabs, other];
+    const keysOf = (compose: Compose) => scopePanes(compose, all, activeKey).map((pane) => pane.key);
+    expect(keysOf(CLOSED_COMPOSE)).toEqual([focused]);
+    expect(keysOf({ ...syncing, scope: "current" })).toEqual([focused]);
+    expect(keysOf({ ...syncing, scope: "tab" })).toEqual(keys);
+    expect(keysOf({ ...syncing, scope: "all" })).toEqual([...keys, 50]);
+    expect(keysOf({ ...syncing, scope: "selected", selected: [keys[0], 50] })).toEqual([keys[0], 50]);
+    // A scope left on "all" sends only to the focused pane once the bar is closed.
+    expect(keysOf({ ...syncing, open: false, scope: "all" })).toEqual([focused]);
+    expect(scopePanes(CLOSED_COMPOSE, all, null)).toEqual([]);
   });
 });
