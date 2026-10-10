@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useCloseFlow } from "./app/useCloseFlow";
 import { useCompose } from "./app/useCompose";
 import { usePaneActions } from "./app/usePaneActions";
+import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommands } from "./app/useQuickCommands";
 
 import { CommandPalette } from "./components/CommandPalette";
@@ -107,6 +108,10 @@ function App() {
     [store, sessions],
   );
   const quick = useQuickCommands();
+  const fullScreen = useFullScreen(tabs.length > 0, (on) => {
+    announce(on ? t("announce.fullScreen", { shortcut: shortcutLabel("fullScreen") }) : t("announce.fullScreenLeft"));
+    focusActiveTerminal();
+  });
   const { commands } = quick;
   const composer = useCompose(store, sessions, tabs, activeKey, {
     followRemoteTitle: () => settingsRef.current.tabs.followRemoteTitle,
@@ -254,6 +259,10 @@ function App() {
       }
       return true;
     }
+    if (matches(e, "fullScreen")) {
+      if (store.get().tabs.length > 0) fullScreen.toggle();
+      return true;
+    }
     if (matches(e, "quickCommands")) {
       if (store.get().tabs.length > 0) quick.setPaletteOpen(true);
       return true;
@@ -309,6 +318,12 @@ function App() {
       ...(split
         ? [{ label: t("tabs.closePane"), shortcut: shortcutLabel("closeTab"), onSelect: () => void requestClose({ kind: "pane", key: pane.key }) }]
         : []),
+      "separator",
+      {
+        label: t(fullScreen.on ? "terminal.menu.exitFullScreen" : "terminal.menu.fullScreen"),
+        shortcut: shortcutLabel("fullScreen"),
+        onSelect: fullScreen.toggle,
+      },
     ];
   };
 
@@ -383,7 +398,7 @@ function App() {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   return (
-    <div className="app">
+    <div className={`app${fullScreen.on ? " full-screen" : ""}`}>
       <Sidebar
         profiles={profiles}
         folders={folders}
@@ -465,6 +480,12 @@ function App() {
               handlers={handlers}
             />
           ))}
+          {fullScreen.hint && (
+            // Announced as well, when it starts.
+            <div className="full-screen-hint" aria-hidden="true">
+              {t("app.fullScreenHint", { shortcut: shortcutLabel("fullScreen") })}
+            </div>
+          )}
           {tabs.length === 0 && <div className="placeholder">{t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}</div>}
         </div>
         {quick.barOpen && activePane && commands && activeGroup && (

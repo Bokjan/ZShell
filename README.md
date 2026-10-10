@@ -14,7 +14,7 @@ A cross-platform (macOS / Windows) SSH, Telnet and serial terminal inspired by X
 - **Files**: an SFTP panel with drag and drop in and out, transfers with progress, and remote files edited in your own editor and uploaded on save; `rz` and `sz` (ZMODEM) for hosts without SFTP.
 - **Port forwarding**: local, remote and dynamic SOCKS rules (`-L`, `-R`, `-D`) saved with the session, with live status.
 - **Sessions**: nested folders, search and quick connect, export and import, and per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login and environment variables.
-- **Terminal and tabs**: local terminals, split panes, tabs in the title bar, search, color schemes, copy on select, right-click paste and session logs.
+- **Terminal and tabs**: local terminals, split panes, tabs in the title bar, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
 - **Many hosts at once**: quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 
 Planned next: encrypted storage for sessions and passwords, and locking the app. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).

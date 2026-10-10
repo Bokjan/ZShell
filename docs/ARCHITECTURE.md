@@ -193,6 +193,7 @@
 ### 快捷键、菜单与侧栏
 
 - **快捷键**：应用快捷键在 window 的捕获阶段拦截（`useShortcuts`），终端收不到。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 等留给 shell）。对话框（或命令面板）打开时，除打开设置外的应用快捷键都不处理，菜单的「关闭」也不关标签，否则会切换或关闭对话框背后的标签，并把焦点移到终端。剪贴板快捷键只在终端获得焦点时生效（xterm.js 的 `attachCustomKeyEventHandler`），输入框里仍是普通的复制粘贴。所有快捷键在 `lib/keymap.ts` 的一张表里声明：每个动作在 macOS 与其他平台（Windows，以及将来的 Linux）上的按键，写成美式键盘上的 `Cmd+Shift+E`，按 `KeyboardEvent.code`（物理按键）匹配，所以在其他键盘布局下位置不变。匹配（`matches` / `actionOf`）、菜单与提示里的按键文字（`shortcutLabel`）和设置里 Keyboard Shortcuts 一节的列表（`shortcutRows`）都由这张表得出，改快捷键只改这一处；macOS 原生菜单项（关闭标签 / 窗口、复制粘贴、全选、设置）的按键另外写在 `lib.rs`。将来的自定义快捷键只需在这张表上叠加用户的覆盖项。
+- **终端全屏**（`app/useFullScreen.ts`）：窗口全屏，同时用 `.app.full-screen` 隐藏会话列表、标签栏、撰写栏、快速命令栏和侧边面板（隐藏而不是卸载，退出后原样恢复），只剩当前标签的窗格。窗口原本就全屏（macOS ⌃⌘F）时退出后保持全屏；窗口以其他方式离开全屏、或最后一个标签关闭时一并退出。macOS 上窗口进出全屏后键盘焦点会留在窗口而不是 WebView，后端在过渡结束后把焦点交还 WebView（`window.rs`）。
 
   | 功能 | macOS | Windows |
   |---|---|---|

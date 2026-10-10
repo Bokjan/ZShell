@@ -51,6 +51,8 @@ const KEYMAP = {
   quickCommands: { mac: "Cmd+Shift+J", other: "Ctrl+Shift+J" },
   filePanel: { mac: "Cmd+Shift+E", other: "Ctrl+Shift+E" },
   forwardsPanel: { mac: "Cmd+Shift+P", other: "Ctrl+Shift+P" },
+  // As in iTerm2 on macOS and Windows Terminal elsewhere.
+  fullScreen: { mac: "Cmd+Enter", other: "F11" },
 } satisfies Record<string, { mac?: string | string[]; other?: string | string[] }>;
 
 export type Action = keyof typeof KEYMAP;
@@ -216,6 +218,7 @@ export interface ShortcutRow {
     | "quickCommands"
     | "filePanel"
     | "forwardsPanel"
+    | "fullScreen"
     | "settings";
   /** Only where local terminals can be opened. */
   local?: boolean;
@@ -252,6 +255,7 @@ export function shortcutRows(mac = isMac): ShortcutRow[] {
     { id: "quickCommands", keys: all("quickCommands") },
     { id: "filePanel", keys: all("filePanel") },
     { id: "forwardsPanel", keys: all("forwardsPanel") },
+    { id: "fullScreen", keys: all("fullScreen") },
     { id: "settings", keys: all("settings") },
   ];
   return rows.filter((row) => row.keys);

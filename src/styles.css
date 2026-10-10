@@ -1236,6 +1236,37 @@ body.dragging-row {
   }
 }
 
+/* Full screen for the terminals: only the active tab's panes. The side panel's display is
+   set inline, hence !important. */
+.app.full-screen .sidebar,
+.app.full-screen .tab-bar,
+.app.full-screen .compose-bar,
+.app.full-screen .quick-bar,
+.app.full-screen .side-panel {
+  display: none !important;
+}
+.full-screen-hint {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  z-index: 10;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: 0 6px 20px var(--shadow);
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  /* A delay rather than a long animation, so that it also shows with reduced motion. */
+  animation: full-screen-hint-out 0.6s ease-in 2.4s forwards;
+}
+@keyframes full-screen-hint-out {
+  to {
+    opacity: 0;
+  }
+}
 .placeholder {
   display: grid;
   place-items: center;

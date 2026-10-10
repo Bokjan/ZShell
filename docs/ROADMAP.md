@@ -59,6 +59,9 @@
 | **M24 应用锁** | 用 Touch ID / Windows Hello 锁定应用 | P2 |
 | **M25 翻译** | 语言设置界面，首批简体中文 | — |
 | **M26 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
+| **M27 终端全屏** ✅ | 窗口全屏且只显示当前标签的终端（⌘↩ / F11）；快捷键集中声明在一张表里（`lib/keymap.ts`） | |
+| **M28 自定义快捷键** | 在设置里修改快捷键 | P2 |
+| **M29 Linux** | 支持 Linux 桌面 | P2 |
 
 ### M23 加密保险库与带密码导出
 
@@ -114,6 +117,22 @@
 - 上架前提：仓库设为公开（隐私政策与 Issues 的链接要能打开）。ZShell 本身不开源，条款见根目录的 `LICENSE.md`：发布的安装包可免费用于任何用途，源码可以自己研究、构建和修改，但不能分发；原则上不接受 PR，改动先在 issue 里讨论（`CONTRIBUTING.md`）。
 - 提交：先在 Partner Center 手动上传每个版本的 `.msixbundle`；流程稳定后再考虑用 Store 提交 API（`msstore` CLI，需要把 Entra ID 应用的凭据配成 secret）自动提交。
 - 商店页面：描述、截图、年龄分级在 Partner Center 填写；提交时说明使用 `runFullTrust` 的理由（完整的桌面应用，需要启动本地 shell、访问 SSH agent 等）。隐私政策写明应用不收集数据、配置只保存在本机，放在仓库里，用 GitHub 链接。
+
+### M28 自定义快捷键
+
+快捷键已集中在 `lib/keymap.ts` 的一张表里（见 [ARCHITECTURE.md](ARCHITECTURE.md)「快捷键、菜单与侧栏」），自定义只是在表上叠加用户的覆盖项：
+
+- `settings.json` 只保存改动过的动作（`"shortcuts": { "find": ["Ctrl+Shift+F"] }`），旧配置照常读取，"恢复默认"即删除覆盖项。
+- 设置里 Keyboard Shortcuts 一节的每行可以录制新按键：显示与其他动作的冲突；在 macOS 以外的平台上占用 shell 需要的键（不带 Shift 的 Ctrl+字母）时提示终端将收不到它。
+- 成组的动作（⌘1–⌘8、方向键切换窗格）只允许改修饰键。
+- macOS 原生菜单项（关闭标签 / 窗口、设置）的按键在 `lib.rs` 里，改它们需要后端按新按键重建菜单。
+
+### M29 Linux
+
+- 快捷键沿用 Windows 的一套（`keymap.ts` 的 `other`），按需单独覆盖。
+- 平台判断改为 `macos` / `windows` / `linux` 三种，检查现有只区分两种的地方：窗口按钮（Linux 用系统标题栏还是自绘）、"在文件管理器中显示"等文案、密码存储（Secret Service）的提示。
+- 本地终端用 `$SHELL` 登录 shell；SSH agent 用 `SSH_AUTH_SOCK`，与 macOS 相同。
+- 打包 deb / AppImage（图标用 `bundle.icon` 里的 PNG），CI 的 matrix 加上 `ubuntu-latest`。
 
 ## 暂不排期（P2）
 

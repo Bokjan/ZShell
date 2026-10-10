@@ -15,7 +15,8 @@
   "app": {
     "name": "ZShell",
     "placeholder": "Select a session on the left to connect, or open a local terminal",
-    "placeholderNoLocal": "Select a session on the left to connect"
+    "placeholderNoLocal": "Select a session on the left to connect",
+    "fullScreenHint": "Press {shortcut} to exit full screen"
   },
   "sidebar": {
     "listLabel": "Sessions",
@@ -202,7 +203,9 @@
     "editUploadFailed": "{name}: uploading your changes failed. {error}",
     "editConflict": "{name} was changed on the server. Open the file panel to choose whether to replace it.",
     "splitNoRoom": "There is no room to split this terminal.",
-    "splitSerial": "A serial port can be open in only one terminal."
+    "splitSerial": "A serial port can be open in only one terminal.",
+    "fullScreen": "Full screen: only the terminals of this tab are shown. Press {shortcut} to exit.",
+    "fullScreenLeft": "Exited full screen."
   },
   "terminal": {
     "inputLabel": "Terminal input",
@@ -220,7 +223,9 @@
       "selectAll": "Select All",
       "find": "Find…",
       "clear": "Clear Screen and Scrollback",
-      "reset": "Reset Terminal"
+      "reset": "Reset Terminal",
+      "fullScreen": "Full Screen",
+      "exitFullScreen": "Exit Full Screen"
     }
   },
   "search": {
@@ -654,6 +659,7 @@
       "quickCommands": "Quick command palette",
       "filePanel": "Show or hide the file panel",
       "forwardsPanel": "Show or hide the port forwarding panel",
+      "fullScreen": "Full screen, showing only the terminals of the tab",
       "settings": "Settings"
     },
     "about": "About",
