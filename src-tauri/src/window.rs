@@ -21,8 +21,49 @@ pub fn create_main(app: &App) -> tauri::Result<()> {
         builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS);
     #[cfg(windows)]
     let builder = builder.decorations(false);
-    builder.build()?;
+    let window = builder.build()?;
+    #[cfg(target_os = "macos")]
+    refocus_after_full_screen(&window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
     Ok(())
+}
+
+/// How long after a full screen transition the web view takes the focus back.
+#[cfg(target_os = "macos")]
+const REFOCUS_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Once the window has left full screen (its own or the terminals'), the keyboard focus is on
+/// the window rather than the web view, so keys go nowhere until it is clicked: the web view
+/// gets it back shortly after either transition ends, since focusing it right away is undone
+/// by what the window still does as the transition finishes.
+#[cfg(target_os = "macos")]
+fn refocus_after_full_screen(window: &WebviewWindow) {
+    use std::ptr::NonNull;
+
+    use block2::RcBlock;
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::{NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification};
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+
+    let Ok(ns_window) = window.ns_window() else { return };
+    let center = NSNotificationCenter::defaultCenter();
+    // SAFETY: the notification names are AppKit's constants.
+    for name in unsafe { [NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification] } {
+        let webview = window.as_ref().clone();
+        let block = RcBlock::new(move |_: NonNull<NSNotification>| {
+            let webview = webview.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(REFOCUS_DELAY).await;
+                let _ = webview.set_focus();
+            });
+        });
+        // SAFETY: `ns_window` is the window's NSWindow, which outlives the observer (both last
+        // as long as the app). The center keeps the observer, so the token can go.
+        let _ = unsafe {
+            center.addObserverForName_object_queue_usingBlock(Some(name), Some(&*ns_window.cast::<AnyObject>()), None, &block)
+        };
+    }
 }
 
 /// Brings the main window forward, restored if it was minimized.
