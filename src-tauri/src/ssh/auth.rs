@@ -132,8 +132,13 @@ impl<H: Handler> Auth<'_, H> {
             AuthMethod::PublicKey { key_path } => {
                 ensure!(offered(&[MethodKind::PublicKey]), not_offered());
                 let path = expand_home(key_path);
-                let key = load_key(&path, self.io).await?;
-                let outcome = self.sign_in_with(key).await?;
+                // As in automatic mode, the passphrase is asked for once the server accepts
+                // the key, but a key that can't be read or decrypted is an error.
+                let outcome = match load_secret_key(&path, None) {
+                    Ok(key) => self.sign_in_with(key).await?,
+                    Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(&path, true).await?,
+                    Err(e) => return Err(e).context(Error::new("auth.keyReadFailed").param("path", path.display())),
+                };
                 ensure!(outcome != Outcome::Rejected, Error::new("auth.keyRejected").param("path", path.display()));
                 outcome
             }
@@ -292,18 +297,21 @@ impl<H: Handler> Auth<'_, H> {
     async fn try_key_file(&mut self, path: &Path) -> Result<Outcome> {
         match load_secret_key(path, None) {
             Ok(key) => self.sign_in_with(key).await,
-            Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(path).await,
+            Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(path, false).await,
             Err(_) => Ok(Outcome::Rejected),
         }
     }
 
-    async fn try_encrypted_key(&mut self, path: &Path) -> Result<Outcome> {
+    /// Tries an encrypted key file. Wrong passphrases skip the key (as in OpenSSH), unless
+    /// it is the one the session is set to use (`chosen`): that fails with
+    /// `auth.keyDecryptFailed`.
+    async fn try_encrypted_key(&mut self, path: &Path, chosen: bool) -> Result<Outcome> {
+        let decrypt_failed = || Error::new("auth.keyDecryptFailed").param("path", path.display());
         // The OpenSSH format keeps the public key readable; legacy PEM keys need the passphrase first.
         let Ok(encrypted) = PrivateKey::read_openssh_file(path) else {
             return match load_key(path, self.io).await {
                 Ok(key) => self.sign_in_with(key).await,
-                // Wrong passphrases skip the key, as for OpenSSH-format keys (and in OpenSSH).
-                Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code() == "auth.keyDecryptFailed") => Ok(Outcome::Rejected),
+                Err(e) if !chosen && e.downcast_ref::<Error>().is_some_and(|e| e.code() == "auth.keyDecryptFailed") => Ok(Outcome::Rejected),
                 Err(e) => Err(e),
             };
         };
@@ -313,9 +321,10 @@ impl<H: Handler> Auth<'_, H> {
         }
         let hash_alg = rsa_hash(self.session, &public).await?;
         let user = self.user().to_owned();
-        let mut signer = PassphraseSigner { path, key: &encrypted, io: self.io, cancelled: false };
+        let mut signer = PassphraseSigner { path, key: &encrypted, io: self.io, cancelled: false, decrypt_failed: false };
         let result = self.session.authenticate_publickey_with(user, public, hash_alg, &mut signer).await.map_err(SignError::lost)?;
         ensure!(!signer.cancelled, Error::new("auth.cancelled"));
+        ensure!(!(chosen && signer.decrypt_failed), decrypt_failed());
         Ok(result.into())
     }
 
@@ -389,6 +398,8 @@ struct PassphraseSigner<'a> {
     key: &'a PrivateKey,
     io: &'a mut TermIo,
     cancelled: bool,
+    /// Every passphrase typed was wrong.
+    decrypt_failed: bool,
 }
 
 /// Signing itself never fails (see [`AgentSigner`]): this is the connection having closed.
@@ -437,6 +448,7 @@ impl PassphraseSigner<'_> {
                 Err(_) => self.io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
             }
         }
+        self.decrypt_failed = true;
         None
     }
 }
@@ -548,6 +560,11 @@ mod tests {
     impl server::Handler for Server {
         type Error = russh::Error;
 
+        // Keys are refused before they are signed with, as sshd does with keys it doesn't know.
+        async fn auth_publickey_offered(&mut self, _user: &str, _key: &PublicKey) -> Result<ServerAuth, Self::Error> {
+            Ok(if self.steps.get(self.passed) == Some(&MethodKind::PublicKey) { ServerAuth::Accept } else { ServerAuth::reject() })
+        }
+
         async fn auth_publickey(&mut self, _user: &str, _key: &PublicKey) -> Result<ServerAuth, Self::Error> {
             Ok(self.pass(MethodKind::PublicKey))
         }
@@ -586,6 +603,18 @@ mod tests {
     /// against a server that first offers `offered`; `typed` answers prompts. Returns the
     /// result and what the terminal showed.
     async fn sign_in(server: Server, offered: &[MethodKind], auth: AuthMethod, saved: Option<&str>, typed: &str) -> (Result<()>, String) {
+        sign_in_with_key(server, offered, auth, KEY, saved, typed).await
+    }
+
+    /// [`sign_in`] with `key_file` as the session's key file.
+    async fn sign_in_with_key(
+        server: Server,
+        offered: &[MethodKind],
+        auth: AuthMethod,
+        key_file: &str,
+        saved: Option<&str>,
+        typed: &str,
+    ) -> (Result<()>, String) {
         let key = PrivateKey::from_openssh(KEY).unwrap();
         let config = server::Config {
             methods: MethodSet::from(offered),
@@ -602,16 +631,17 @@ mod tests {
         });
         let mut session = russh::client::connect_stream(Arc::new(russh::client::Config::default()), client_side, Client).await.unwrap();
 
-        let key_path = std::env::temp_dir().join(format!("zshell-auth-key-{}", std::process::id()));
-        std::fs::write(&key_path, KEY).unwrap();
+        let key_path = std::env::temp_dir().join(format!("zshell-auth-key-{}-{}", std::process::id(), NEXT_FILE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+        std::fs::write(&key_path, key_file).unwrap();
         let mut profile = SshProfile::quick("t".into(), Remote::new("example.com".into(), 22, "alice".into()));
         profile.ssh.auth = match auth {
             AuthMethod::PublicKey { .. } => AuthMethod::PublicKey { key_path: key_path.display().to_string() },
             auth => auth,
         };
         let (mut io, input, output, _events) = TermIo::detached((80, 24));
-        if !typed.is_empty() {
-            input.send(SessionInput::Data(typed.as_bytes().to_vec())).unwrap();
+        // A line at a time, as typed: a prompt takes one line of what arrives at once.
+        for line in typed.split_inclusive('\r') {
+            input.send(SessionInput::Data(line.as_bytes().to_vec())).unwrap();
         }
         let auth = Auth { session: &mut session, profile: &profile, io: &mut io, saved_password: Some(saved.map(Into::into)), tried: Vec::new() };
         // A prompt nothing answers would wait for ever.
@@ -622,6 +652,42 @@ mod tests {
 
     fn key_file() -> AuthMethod {
         AuthMethod::PublicKey { key_path: String::new() }
+    }
+
+    /// Key files of tests running at once.
+    static NEXT_FILE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    /// A key encrypted with the passphrase `testpass`.
+    const ENCRYPTED_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABDaRmwemD
+htxWb1bChOpjBSAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAINENTQr9eKhIyDwv
+TURh5GMwE/ENMydw1PiA8I0JpMNMAAAAkNYp9HMv7LmX1t+mWzbwJ6pnUQSU4/mJupm6cA
+3xLTtzBWDgwkRpsH0uZpT2KqEZbRUkINuNk6DZBG+HwPkAQeUzerukaKXOJAEVzuJ9KXzf
+bCB8YKvbCxAid7SV3h+ksepr+amFJb0s7swnytfOowDnE3BwN05niZadRpto4kvLnBu35I
+wF5Blj6bR6iFUzJQ==
+-----END OPENSSH PRIVATE KEY-----
+";
+
+    /// The session's own encrypted key: its passphrase is only asked for once the server
+    /// accepts it, and wrong ones are an error rather than a rejected key.
+    #[tokio::test]
+    async fn chosen_encrypted_key_asks_once_accepted() {
+        let refusing = || Server { steps: vec![MethodKind::Password], passed: 0, prompt: "", secret: "" };
+        let offered = [MethodKind::PublicKey, MethodKind::Password];
+        let (result, shown) = sign_in_with_key(refusing(), &offered, key_file(), ENCRYPTED_KEY, None, "").await;
+        assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyRejected");
+        assert!(!shown.contains("passphrase"), "{shown:?}");
+
+        let accepting = || Server { steps: vec![MethodKind::PublicKey], passed: 0, prompt: "", secret: "" };
+        let (result, shown) = sign_in_with_key(accepting(), &offered, key_file(), ENCRYPTED_KEY, None, "testpass\r").await;
+        result.unwrap();
+        assert!(shown.contains("passphrase"), "{shown:?}");
+
+        let (result, _) = sign_in_with_key(accepting(), &offered, key_file(), ENCRYPTED_KEY, None, "a\rb\rc\r").await;
+        assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyDecryptFailed");
+
+        let (result, _) = sign_in_with_key(accepting(), &offered, key_file(), "not a key", None, "").await;
+        assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyReadFailed");
     }
 
     /// `AuthenticationMethods publickey,keyboard-interactive` with a one-time code (Duo,
