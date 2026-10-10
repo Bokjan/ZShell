@@ -23,7 +23,9 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
     let listener = Listener::bind(&rule.bind_host, rule.bind_port).await?;
     let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
     loop {
+        let report = tracker.report_due();
         tokio::select! {
+            () = super::at(report) => tracker.report(),
             accepted = listener.accept() => match accepted {
                 Ok((stream, peer)) => {
                     let handle = ctx.handle();

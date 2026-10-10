@@ -31,6 +31,7 @@ use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
+use tokio::time::Instant;
 
 use crate::error::{Error, Result};
 use crate::session::{SessionEvent, SessionId, SessionSink};
@@ -337,24 +338,73 @@ fn describe(rule: &ForwardRule) -> String {
     }
 }
 
+/// The least time between two reports of a rule's connections: a browser using a dynamic
+/// rule opens and closes hundreds a second, and each report goes to every tab of the session.
+const REPORT_INTERVAL: Duration = Duration::from_millis(200);
+
+/// When to report changes that come faster than [`REPORT_INTERVAL`]: the first at once, the
+/// rest together once the interval has passed.
+#[derive(Default)]
+struct Throttle {
+    reported: Option<Instant>,
+    /// A change not reported yet.
+    pending: bool,
+}
+
+impl Throttle {
+    /// Whether to report a change now; otherwise it is reported when [`Throttle::due`] says.
+    fn changed(&mut self, now: Instant) -> bool {
+        if self.reported.is_some_and(|reported| now < reported + REPORT_INTERVAL) {
+            self.pending = true;
+            return false;
+        }
+        self.reported(now);
+        true
+    }
+
+    fn reported(&mut self, now: Instant) {
+        self.reported = Some(now);
+        self.pending = false;
+    }
+
+    /// When the change put off is due, if there is one.
+    fn due(&self) -> Option<Instant> {
+        self.pending.then(|| self.reported.map_or_else(Instant::now, |reported| reported + REPORT_INTERVAL))
+    }
+}
+
+/// Completes at `deadline`; pending forever without one, for `select!`.
+async fn at(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
+        None => std::future::pending().await,
+    }
+}
+
 /// The connections carried by a running rule, reported as its `Active` state.
 struct Tracker<'a> {
     ctx: &'a Ctx,
     bound: String,
     connections: JoinSet<anyhow::Result<()>>,
     last_error: Option<Error>,
+    throttle: Throttle,
 }
 
 impl<'a> Tracker<'a> {
     fn new(ctx: &'a Ctx, bound: String) -> Self {
-        let tracker = Self { ctx, bound, connections: JoinSet::new(), last_error: None };
-        tracker.report();
+        let mut tracker = Self { ctx, bound, connections: JoinSet::new(), last_error: None, throttle: Throttle::default() };
+        tracker.changed();
         tracker
     }
 
     fn spawn(&mut self, connection: impl Future<Output = anyhow::Result<()>> + Send + 'static) {
         self.connections.spawn(connection);
-        self.report();
+        self.changed();
+    }
+
+    /// When changes put off by [`REPORT_INTERVAL`] are to be reported (with [`Tracker::report`]).
+    fn report_due(&self) -> Option<Instant> {
+        self.throttle.due()
     }
 
     /// Waits for a connection to end; pending forever while there are none, for `select!`.
@@ -369,15 +419,27 @@ impl<'a> Tracker<'a> {
         if let Ok(Err(e)) = result {
             self.last_error = Some(e.into());
         }
-        self.report();
+        self.changed();
     }
 
     fn failed(&mut self, error: impl Into<Error>) {
         self.last_error = Some(error.into());
-        self.report();
+        self.changed();
     }
 
-    fn report(&self) {
+    fn changed(&mut self) {
+        if self.throttle.changed(Instant::now()) {
+            self.send();
+        }
+    }
+
+    /// Reports what changed since the last report.
+    fn report(&mut self) {
+        self.throttle.reported(Instant::now());
+        self.send();
+    }
+
+    fn send(&self) {
         self.ctx.report(ForwardState::Active {
             bound: self.bound.clone(),
             connections: self.connections.len(),
@@ -392,4 +454,26 @@ async fn bridge(mut stream: TcpStream, channel: Channel<Msg>) {
     let _ = stream.set_nodelay(true);
     let mut channel = channel.into_stream();
     let _ = tokio::io::copy_bidirectional(&mut stream, &mut channel).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The first change is reported at once; those right after it together, once the
+    /// interval has passed.
+    #[tokio::test(start_paused = true)]
+    async fn reports_changes_at_most_once_an_interval() {
+        let mut throttle = Throttle::default();
+        let start = Instant::now();
+        assert!(throttle.changed(start));
+        assert_eq!(throttle.due(), None);
+        assert!(!throttle.changed(start + Duration::from_millis(10)));
+        assert!(!throttle.changed(start + Duration::from_millis(50)));
+        assert_eq!(throttle.due(), Some(start + REPORT_INTERVAL));
+        throttle.reported(start + REPORT_INTERVAL);
+        assert_eq!(throttle.due(), None);
+        // After a quiet interval, at once again.
+        assert!(throttle.changed(start + REPORT_INTERVAL * 3));
+    }
 }

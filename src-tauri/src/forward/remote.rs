@@ -116,7 +116,9 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
     let listening = Listening::new(ctx, rule.bind_host.clone(), port, sender);
     let mut tracker = Tracker::new(ctx, host_port(&rule.bind_host, port));
     loop {
+        let report = tracker.report_due();
         tokio::select! {
+            () = super::at(report) => tracker.report(),
             Some(next) = incoming.recv() => {
                 let (host, port) = (rule.target_host.clone(), rule.target_port);
                 tracker.spawn(async move { connect(next, host, port).await });
