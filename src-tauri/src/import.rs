@@ -12,7 +12,7 @@ use serde::Serialize;
 use ts_rs::TS;
 use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForwardListen, SshConfig};
 
-use crate::config::{AuthMethod, Connection, EnvVar, Profile, Remote, SshOptions};
+use crate::config::{local_username, AuthMethod, Connection, EnvVar, Profile, Remote, SshOptions};
 use crate::error::{Error, Result};
 use crate::forward::{ForwardKind, ForwardRule};
 use crate::proxy::{Proxy, ProxyKind};
@@ -505,10 +505,6 @@ fn stdio_forward_host(command: &str) -> Option<String> {
 /// `%h` (the alias) and `%%` in `HostName`.
 fn expand_host_tokens(name: &str, alias: &str) -> String {
     name.replace("%%", "\0").replace("%h", alias).replace('\0', "%")
-}
-
-fn local_username() -> String {
-    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default()
 }
 
 fn new_id() -> String {

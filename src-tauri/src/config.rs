@@ -476,6 +476,11 @@ pub enum Item {
     Folder { id: String },
 }
 
+/// The user name `ssh` uses when none is given: the local one.
+pub fn local_username() -> String {
+    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default()
+}
+
 fn default_keepalive_interval() -> u32 {
     30
 }

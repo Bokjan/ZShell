@@ -62,7 +62,7 @@
 | `local_name.rs` | 对方（SFTP 服务器的列表、ZMODEM 发送方）给出的文件名转成本地文件名 |
 | `import.rs` / `backup.rs` | ssh_config 导入；会话导出与导入 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
-| `commands.rs` | Tauri 命令入口 |
+| `commands/` | Tauri 命令入口，按领域分文件：配置（`config.rs`）、会话（`session.rs`，含会话的启动方式 `Launch`）、日志、SFTP、转发、ZMODEM |
 | `bindings.rs` | 生成前端的 TypeScript 类型（`src/lib/bindings.ts`） |
 
 前端（`src/`）：
@@ -94,7 +94,7 @@
   - 选 UTF-8 时以上全部跳过。修改编码从下一次连接起生效；复制标签沿用源连接当时的配置。
 - **会话事件**：`Connected`、`Forward`（转发规则状态）、`Zmodem`（见下文）、`Closed { reason, status, error }`。`reason` 为 `exited`（shell 退出，或 Telnet 服务器关闭连接）、`lost`（已建立的连接断开、串口设备被拔出）、`failed`（连接、认证、打开设备或启动阶段失败），前端据此决定重连、自动关闭标签或提示。
 - **Break**：输入队列里的 `SessionInput::Break`（`session_break`），串口发送约 250 ms 的 break 信号，Telnet 发 `IAC BRK`，SSH 与本地终端忽略。
-- **命令在哪个线程上运行**：Tauri 的同步命令跑在主线程上，等待时整个窗口卡住。碰文件系统、钥匙串或系统设备列表的命令是 async 的，阻塞部分放进 `spawn_blocking`（`commands.rs` 的 `blocking`）；会话任务里读钥匙串用 `secrets::password` 等异步接口（Telnet 的自动登录在任务内用 `block_in_place`），不占住 tokio 的工作线程。升级后签名变了，macOS 会对每个钥匙串条目重新询问，这时其他标签的输出、转发和 SFTP 照常运行。例外：前端连续发出、不等结果的整体替换（设置、快速命令、转发规则列表）仍是同步命令，因为 async 命令之间没有顺序保证，最后发出的未必最后写入；它们只写一个小文件，设置里耗时的日志清理放到后台。
+- **命令在哪个线程上运行**：Tauri 的同步命令跑在主线程上，等待时整个窗口卡住。碰文件系统、钥匙串或系统设备列表的命令是 async 的，阻塞部分放进 `spawn_blocking`（`commands/mod.rs` 的 `blocking`）；会话任务里读钥匙串用 `secrets::password` 等异步接口（Telnet 的自动登录在任务内用 `block_in_place`），不占住 tokio 的工作线程。升级后签名变了，macOS 会对每个钥匙串条目重新询问，这时其他标签的输出、转发和 SFTP 照常运行。例外：前端连续发出、不等结果的整体替换（设置、快速命令、转发规则列表）仍是同步命令，因为 async 命令之间没有顺序保证，最后发出的未必最后写入；它们只写一个小文件，设置里耗时的日志清理放到后台。
 
 ### SSH
 

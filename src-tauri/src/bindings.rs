@@ -65,8 +65,8 @@ mod tests {
         let mut collect = Collect { cfg: &cfg, declared: BTreeMap::new() };
         let visitor = &mut collect;
         visitor.visit::<error::Error>();
-        visitor.visit::<commands::Saved<config::Profile>>();
-        visitor.visit::<commands::SessionSpec>();
+        visitor.visit::<commands::config::Saved<config::Profile>>();
+        visitor.visit::<commands::session::SessionSpec>();
         visitor.visit::<config::Folder>();
         visitor.visit::<config::Item>();
         visitor.visit::<persist::SetAsideFile>();
