@@ -113,7 +113,14 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 - `icon.svg`：满幅，用于 Windows 与各尺寸 PNG。
 - `icon-macos.svg`：同一图形按 Apple 网格放置（1024 画布中央 824 的圆角方形，四周留 100 边距）。
 
-两者需同步修改，然后运行 `scripts/generate-icons.sh`：它用 `tauri icon` 重新生成全部图标，再用 macOS 母版覆盖 `icon.icns`，并删掉 CLI 总会生成的移动端图标。
+两者需同步修改，然后运行 `scripts/generate-icons.sh`：它用 `tauri icon` 重新生成全部图标，再用 macOS 母版覆盖 `icon.icns`，删掉用不到的图标（移动端、512 px 的 `icon.png`、只有一种缩放的 Store 图片），再生成 `msix/` 下的 Store 图片。
+
+各平台实际用到的图标：
+
+- macOS：`icon.icns`（16–1024，应用包与开发模式的 Dock 图标）。
+- Windows：`icon.ico`（16–256，exe 资源、窗口与任务栏、NSIS 与 MSI）。
+- Microsoft Store：`msix/` 下的 `Square44x44Logo`（开始菜单的应用列表、任务栏）、`Square150x150Logo`（开始菜单磁贴）、`StoreLogo`，各有 100 / 200 / 400 % 三种缩放；`Square44x44Logo` 另有任务栏等处直接使用的 `targetsize-16/24/32/48/256` 及其 `altform-unplated`（不画底板）版本。清单里写不带限定符的文件名，`package-msix.ps1` 用 `makepri` 生成 `resources.pri`，Windows 按它找到合适的那张。
+- PNG（`bundle.icon` 里的 `128x128@2x`、`128x128`、`32x32`）：非 Windows 平台的默认窗口图标取列表里第一个 PNG，Linux 的安装包使用全部，将来支持 Linux 时用到；README 也用 `128x128.png`。
 
 ## CI
 
