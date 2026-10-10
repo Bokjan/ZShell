@@ -6,7 +6,7 @@
 //! file order (subfolders first).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -503,7 +503,11 @@ pub struct ProfileStore {
     profiles_file: JsonFile,
     folders_file: JsonFile,
     proxies_file: JsonFile,
-    state: Mutex<State>,
+    /// Read briefly by every query; replaced once a change is saved, so that queries (some
+    /// on the main thread) never wait for the files to be written.
+    state: RwLock<State>,
+    /// Held by a change from reading the state to replacing it: one change at a time.
+    writing: Mutex<()>,
 }
 
 /// The sessions, folders and proxies an import is planned against.
@@ -590,20 +594,26 @@ impl ProfileStore {
         unique_ids(state.folders.iter_mut().map(|f| &mut f.id));
         unique_ids(state.proxies.iter_mut().map(|p| &mut p.id));
         state.repair();
-        Self { profiles_file, folders_file, proxies_file, state: Mutex::new(state) }
+        Self { profiles_file, folders_file, proxies_file, state: RwLock::new(state), writing: Mutex::new(()) }
     }
 
     pub fn list(&self) -> Vec<Profile> {
-        self.state.lock().unwrap().profiles.clone()
+        self.state.read().unwrap().profiles.clone()
+    }
+
+    /// The sessions, folders and proxies as one consistent copy (for exporting them).
+    pub fn snapshot(&self) -> (Vec<Profile>, Vec<Folder>, Vec<Proxy>) {
+        let state = self.state.read().unwrap();
+        (state.profiles.clone(), state.folders.clone(), state.proxies.clone())
     }
 
     pub fn folders(&self) -> Vec<Folder> {
-        self.state.lock().unwrap().folders.clone()
+        self.state.read().unwrap().folders.clone()
     }
 
     pub fn get(&self, id: &str) -> Result<Profile> {
         self.state
-            .lock()
+            .read()
             .unwrap()
             .profiles
             .iter()
@@ -709,8 +719,8 @@ impl ProfileStore {
 
     /// Adds what `plan` makes of the current sessions, folders and proxies in one write (an
     /// import: new folders, proxies and profiles that already have ids); returns the new
-    /// profiles. Planning under the store's lock keeps two imports at once from both adding
-    /// the same thing.
+    /// profiles. Planning while the store is held for writing (queries go on) keeps two
+    /// imports at once from both adding the same thing.
     pub fn add_all(&self, plan: impl FnOnce(&Snapshot) -> Result<Additions>) -> Result<Vec<Profile>> {
         self.update(|state| {
             let snapshot = Snapshot { profiles: &state.profiles, folders: &state.folders, proxies: &state.proxies };
@@ -724,11 +734,11 @@ impl ProfileStore {
     }
 
     pub fn proxies(&self) -> Vec<Proxy> {
-        self.state.lock().unwrap().proxies.clone()
+        self.state.read().unwrap().proxies.clone()
     }
 
     pub fn proxy(&self, id: &str) -> Result<Proxy> {
-        self.state.lock().unwrap().proxies.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("proxy.notFound"))
+        self.state.read().unwrap().proxies.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("proxy.notFound"))
     }
 
     /// Inserts or updates a proxy and returns it with its id filled in.
@@ -849,7 +859,8 @@ impl ProfileStore {
     /// leaves all of them as they were, matching the state kept. Only a rename failing
     /// part way through can still leave them apart; loading repairs references across them.
     fn update<T>(&self, change: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
-        let mut state = self.state.lock().unwrap();
+        let _writing = self.writing.lock().unwrap();
+        let state = self.state.read().unwrap().clone();
         let mut updated = state.clone();
         let value = change(&mut updated)?;
         let mut staged = Vec::new();
@@ -865,7 +876,7 @@ impl ProfileStore {
         for file in staged {
             file.commit()?;
         }
-        *state = updated;
+        *self.state.write().unwrap() = updated;
         Ok(value)
     }
 }

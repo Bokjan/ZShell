@@ -280,8 +280,8 @@ pub async fn profile_duplicate(app: AppHandle, id: String, name: String) -> Resu
 #[tauri::command]
 pub async fn sessions_export(app: AppHandle, path: PathBuf) -> Result<()> {
     blocking(app, move |app| {
-        let store = app.state::<ProfileStore>();
-        backup::export(&path, store.folders(), store.proxies(), store.list())
+        let (profiles, folders, proxies) = app.state::<ProfileStore>().snapshot();
+        backup::export(&path, folders, proxies, profiles)
     })
     .await
 }
