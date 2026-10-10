@@ -1,11 +1,12 @@
 //! Sending files (the remote runs `rz`).
 
+use std::future::Future;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use anyhow::{bail, Context, Result};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader};
 
 use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, CANOVIO, ZCBIN, ZCRCE, ZCRCG, ZCRCW};
 use super::link::{is_timeout, Link};
@@ -28,8 +29,23 @@ struct Outgoing<'a> {
 }
 
 /// Sends `paths` to a receiver that has announced itself with `rinit`, then ends the
-/// session. Files that cannot be read are reported and skipped.
+/// session. Files that cannot be opened are reported and skipped.
 pub async fn send(link: &mut Link, rinit: Header, paths: &[PathBuf], report: &mut impl Report) -> Result<()> {
+    send_with(link, rinit, paths, report, tokio::fs::File::open).await
+}
+
+/// `send`, reading the files that `open` opens (a test's reader that fails).
+pub(super) async fn send_with<R, Fut>(
+    link: &mut Link,
+    rinit: Header,
+    paths: &[PathBuf],
+    report: &mut impl Report,
+    open: impl Fn(PathBuf) -> Fut,
+) -> Result<()>
+where
+    R: AsyncRead + AsyncSeek + Unpin,
+    Fut: Future<Output = std::io::Result<R>>,
+{
     let encoding = if rinit.zf0() & CANFC32 != 0 { Encoding::Bin32 } else { Encoding::Bin16 };
     // A receiver that can't take data while writing, or has a limited buffer (ZP0/ZP1),
     // acknowledges each subpacket.
@@ -48,12 +64,17 @@ pub async fn send(link: &mut Link, rinit: Header, paths: &[PathBuf], report: &mu
         let mut info = crate::encoding::encode(link.charset, &file.name);
         info.extend(format!("\0{} {:o} {:o} 0 {files_left} {bytes_left}\0", file.size, file.modified, file.mode).into_bytes());
         bytes_left -= file.size;
-        match send_file(link, file, &info, encoding, streaming, report).await {
-            Ok(()) => {}
-            // A file that went away or became unreadable midway; the receiver is told it ended.
-            Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code() == "transfer.readFailed") => report.failed(e),
-            Err(e) => return Err(e),
-        }
+        // A file that can't be opened is skipped. One that can't be read once it has been
+        // offered ends the transfer: the receiver is in the middle of it, and would take the
+        // next file's data as the rest of it.
+        let reader = match open(file.path.to_path_buf()).await {
+            Ok(reader) => reader,
+            Err(e) => {
+                report.failed(anyhow::Error::new(e).context(Error::new("transfer.readFailed").param("path", file.path.display())));
+                continue;
+            }
+        };
+        send_file(link, file, reader, &info, encoding, streaming, report).await?;
     }
     finish(link).await
 }
@@ -77,6 +98,7 @@ async fn describe(path: &Path) -> Result<Outgoing<'_>> {
 async fn send_file(
     link: &mut Link,
     file: &Outgoing<'_>,
+    reader: impl AsyncRead + AsyncSeek + Unpin,
     info: &[u8],
     encoding: Encoding,
     streaming: bool,
@@ -84,7 +106,7 @@ async fn send_file(
 ) -> Result<()> {
     let crc32 = encoding == Encoding::Bin32;
     let read_error = || Error::new("transfer.readFailed").param("path", file.path.display());
-    let mut reader = BufReader::with_capacity(READ_BUFFER, tokio::fs::File::open(file.path).await.with_context(read_error)?);
+    let mut reader = BufReader::with_capacity(READ_BUFFER, reader);
 
     let mut offer = frame::encode_header(&Header::with_flags(Kind::File, ZCBIN), encoding);
     frame::encode_subpacket(&mut offer, info, ZCRCW, crc32);
@@ -265,7 +287,7 @@ async fn finish(link: &mut Link) -> Result<()> {
 }
 
 /// Fills `block` as far as the file allows; 0 at the end.
-async fn read_block(reader: &mut BufReader<tokio::fs::File>, block: &mut [u8]) -> std::io::Result<usize> {
+async fn read_block(reader: &mut (impl AsyncRead + Unpin), block: &mut [u8]) -> std::io::Result<usize> {
     let mut filled = 0;
     while filled < block.len() {
         let n = reader.read(&mut block[filled..]).await?;

@@ -1,11 +1,14 @@
 //! Whole transfers: our sender against our receiver, and both against lrzsz's `lsz` / `lrz`
 //! when installed (skipped otherwise, e.g. on CI).
 
-use std::io::{Read, Write};
+use std::io::{Read, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::process::{Command, Stdio};
+use std::task::{ready, Context, Poll};
 
+use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 use tokio::sync::{mpsc, watch};
 
 use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, ZCRCE, ZCRCW};
@@ -298,6 +301,89 @@ async fn receiving_gives_up_on_data_damaged_every_time() {
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
+/// A file that can't be read past `limit` bytes, like one on a network share that went away.
+struct FailingFile {
+    file: tokio::fs::File,
+    limit: u64,
+    pos: u64,
+}
+
+impl AsyncRead for FailingFile {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        if self.pos >= self.limit {
+            return Poll::Ready(Err(std::io::Error::other("the share went away")));
+        }
+        let before = buf.filled().len();
+        ready!(Pin::new(&mut self.file).poll_read(cx, buf))?;
+        self.pos += (buf.filled().len() - before) as u64;
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncSeek for FailingFile {
+    fn start_seek(mut self: Pin<&mut Self>, position: SeekFrom) -> std::io::Result<()> {
+        Pin::new(&mut self.file).start_seek(position)
+    }
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<u64>> {
+        let pos = ready!(Pin::new(&mut self.file).poll_complete(cx))?;
+        self.pos = pos;
+        Poll::Ready(Ok(pos))
+    }
+}
+
+/// Opens files for `send::send_with`, `failing` one that can't be read past its first 100 kB.
+fn opening_failing(failing: &Path) -> impl Fn(PathBuf) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<FailingFile>> + Send>> {
+    let failing = failing.to_path_buf();
+    move |path| {
+        let limit = if path == failing { 100_000 } else { u64::MAX };
+        Box::pin(async move { Ok(FailingFile { file: tokio::fs::File::open(&path).await?, limit, pos: 0 }) })
+    }
+}
+
+/// Files to send: large.bin, which can't be read past what has been sent of it when it fails
+/// (the reader's buffer, 256 kB), then a file larger than that.
+fn failing_then_large(src: &Path) -> [PathBuf; 2] {
+    let next = src.join("next.bin");
+    std::fs::write(&next, (0..300_000u32).map(|i| (i % 251) as u8).collect::<Vec<_>>()).unwrap();
+    [src.join("large.bin"), next]
+}
+
+/// After a file that couldn't be read midway, no file is made of its start and the next one's
+/// end (where the receiver had got to), and the next file isn't sent.
+fn assert_not_spliced(src: &Path, dst: &Path) {
+    assert!(!dst.join("next.bin").exists());
+    if let Ok(received) = std::fs::read(dst.join("large.bin")) {
+        let sent = std::fs::read(src.join("large.bin")).unwrap();
+        assert!(received.len() < sent.len() && sent.starts_with(&received), "large.bin: {} bytes", received.len());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_unreadable_midway_ends_the_transfer() {
+    let src = temp_dir("unreadable-src");
+    let dst = temp_dir("unreadable-dst");
+    make_files(&src);
+    let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
+    let (mut receiver, (to_receiver, from_receiver, _cancel_r)) = link();
+    pipe(from_sender, to_receiver);
+    pipe(from_receiver, to_sender);
+
+    let dst2 = dst.clone();
+    let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
+    let rinit = sender.header(TIMEOUT).await.unwrap();
+    let paths = failing_then_large(&src);
+    let mut log = Log::default();
+    let error = send::send_with(&mut sender, rinit, &paths, &mut log, opening_failing(&paths[0])).await.unwrap_err();
+    assert!(format!("{error:#}").contains("the share went away"), "{error:#}");
+    // As `run` does.
+    sender.abort().await;
+    assert!(receiving.await.unwrap().is_err());
+    assert_not_spliced(&src, &dst);
+    assert!(!log.events.iter().any(|e| e.starts_with("sent ")), "{:?}", log.events);
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_deletes_the_partial_file() {
     let src = temp_dir("cancel-src");
@@ -524,6 +610,25 @@ async fn sends_to_lrz() {
     send::send(&mut link, rinit, &files[..1], &mut log).await.unwrap();
     child.wait().unwrap();
     assert_eq!(log.events, ["skipped all-bytes.bin"]);
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_unreadable_midway_ends_the_transfer_to_lrz() {
+    let Some(lrz) = lrzsz("lrz") else { return };
+    let src = temp_dir("unreadable-lrz-src");
+    let dst = temp_dir("unreadable-lrz-dst");
+    make_files(&src);
+    let (mut link, mut child, _cancel) = spawn_with_link(&lrz, &[], &dst);
+    let rinit = link.header(TIMEOUT).await.unwrap();
+    let paths = failing_then_large(&src);
+    let mut log = Log::default();
+    let error = send::send_with(&mut link, rinit, &paths, &mut log, opening_failing(&paths[0])).await.unwrap_err();
+    assert!(format!("{error:#}").contains("the share went away"), "{error:#}");
+    link.abort().await;
+    child.wait().unwrap();
+    assert_not_spliced(&src, &dst);
     std::fs::remove_dir_all(&src).unwrap();
     std::fs::remove_dir_all(&dst).unwrap();
 }
