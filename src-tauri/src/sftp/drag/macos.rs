@@ -4,6 +4,7 @@
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use block2::DynBlock;
 use objc2::rc::Retained;
@@ -11,7 +12,7 @@ use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSDragOperation, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource, NSEvent,
-    NSEventModifierFlags, NSEventType, NSFilePromiseProvider, NSFilePromiseProviderDelegate, NSView, NSWorkspace,
+    NSEventModifierFlags, NSEventType, NSFilePromiseProvider, NSFilePromiseProviderDelegate, NSView, NSWindow, NSWorkspace,
 };
 use objc2_foundation::{
     ns_string, NSArray, NSError, NSNumber, NSOperationQueue, NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSURL,
@@ -21,12 +22,22 @@ use tokio::sync::oneshot;
 
 use super::{DragResult, DropDownload, Item, Outcome};
 use crate::error::{Error, Result};
+use crate::local_name::local_file_name;
 
 const ICON_SIZE: f64 = 32.0;
 
 /// Promise delegates whose drag or downloads are not over; promise providers only hold their
 /// delegate weakly.
 static PROMISES: Mutex<Vec<Retained<PromiseDelegate>>> = Mutex::new(Vec::new());
+
+/// Promise delegates let go of, and when. The last download of a drop lets go of its delegate
+/// from inside the delegate's own `write_promise`, on a thread of the receiving application's
+/// choosing, which must not free it while it runs: they are freed a while later.
+static RELEASED: Mutex<Vec<(Instant, Retained<PromiseDelegate>)>> = Mutex::new(Vec::new());
+
+/// How long a let-go promise delegate is kept, far longer than its `write_promise` takes to
+/// return.
+const RELEASE_DELAY: Duration = Duration::from_secs(5);
 
 thread_local! {
     /// Drag sources of drags in progress (main thread only).
@@ -51,7 +62,10 @@ define_class!(
     unsafe impl NSFilePromiseProviderDelegate for PromiseDelegate {
         #[unsafe(method_id(filePromiseProvider:fileNameForType:))]
         fn file_name(&self, provider: &NSFilePromiseProvider, _file_type: &NSString) -> Retained<NSString> {
-            NSString::from_str(self.item(provider).map_or("", Item::name))
+            // As for every local name (`local_file_name`); an item never has a name it
+            // refuses (`..`, a `/`), and Finder would make it safe anyway.
+            let name = self.item(provider).map_or("", Item::name);
+            NSString::from_str(&local_file_name(name).unwrap_or_else(|| name.to_owned()))
         }
 
         #[unsafe(method(filePromiseProvider:writePromiseToURL:completionHandler:))]
@@ -65,7 +79,8 @@ define_class!(
                 }
                 _ => Err(Error::new("transfer.invalidPath").param("path", url_text(url))),
             };
-            // Not `self` from here on: the last download released it (`release`).
+            // The last download may have let go of `self` (`release`), which stays until
+            // this returns but is not used again.
             match result {
                 Ok(()) => completion.call((std::ptr::null_mut(),)),
                 Err(_) => {
@@ -92,7 +107,7 @@ impl PromiseDelegate {
 
 }
 
-/// Lets go of the promise delegate of a drop that is over.
+/// Lets go of the promise delegate of a drop that is over (see `RELEASED`).
 pub(super) fn release(download: &DropDownload) {
     let released: Vec<_> = {
         let mut promises = PROMISES.lock().unwrap();
@@ -101,13 +116,31 @@ pub(super) fn release(download: &DropDownload) {
         *promises = kept;
         released
     };
-    drop(released);
+    if released.is_empty() {
+        return;
+    }
+    let now = Instant::now();
+    RELEASED.lock().unwrap().extend(released.into_iter().map(|delegate| (now, delegate)));
+    tauri::async_runtime::spawn(async {
+        tokio::time::sleep(RELEASE_DELAY).await;
+        let freed: Vec<_> = {
+            let mut released = RELEASED.lock().unwrap();
+            let (freed, kept) = released.drain(..).partition(|(at, _)| at.elapsed() >= RELEASE_DELAY);
+            *released = kept;
+            freed
+        };
+        drop(freed);
+    });
 }
 
 struct SourceIvars {
     promises: Retained<PromiseDelegate>,
     /// The window's frame on screen, to tell drops on it apart and place them in the page.
     frame: NSRect,
+    /// The window's number, to tell drops on it from drops on what is in front of it.
+    window_number: isize,
+    /// To let go of the source once its `ended` has returned.
+    window: WebviewWindow,
     done: RefCell<Option<oneshot::Sender<DragResult>>>,
 }
 
@@ -130,10 +163,13 @@ define_class!(
         #[unsafe(method(draggingSession:endedAtPoint:operation:))]
         fn ended(&self, _session: &NSDraggingSession, point: NSPoint, operation: NSDragOperation) {
             let frame = self.ivars().frame;
+            // In the window's frame, and on the window rather than on something in front of
+            // it (the Dock over a window as tall as the screen, a floating panel).
             let inside = point.x >= frame.origin.x
                 && point.x <= frame.origin.x + frame.size.width
                 && point.y >= frame.origin.y
-                && point.y <= frame.origin.y + frame.size.height;
+                && point.y <= frame.origin.y + frame.size.height
+                && NSWindow::windowNumberAtPoint_belowWindowWithWindowNumber(point, 0, self.mtm()) == self.ivars().window_number;
             let outcome = if operation == NSDragOperation::None {
                 Outcome::Cancelled
             } else if inside {
@@ -150,8 +186,12 @@ define_class!(
             if outcome != Outcome::Outside {
                 release(&self.ivars().promises.ivars().download);
             }
-            let this: *const Self = self;
-            SOURCES.with_borrow_mut(|sources| sources.retain(|source| !std::ptr::eq(Retained::as_ptr(source), this)));
+            // Not freed while running: once this has returned (the main thread runs one thing
+            // at a time).
+            let this = self as *const Self as usize;
+            let _ = self.ivars().window.run_on_main_thread(move || {
+                SOURCES.with_borrow_mut(|sources| sources.retain(|source| Retained::as_ptr(source) as usize != this));
+            });
         }
     }
 );
@@ -172,6 +212,7 @@ pub(super) fn start(
     download: Arc<DropDownload>,
     done: oneshot::Sender<DragResult>,
 ) -> Result<()> {
+    let owner = window.clone();
     window
         .with_webview(move |webview| {
             let Some(mtm) = MainThreadMarker::new() else { return };
@@ -238,6 +279,8 @@ pub(super) fn start(
             let source = DragSource::alloc(mtm).set_ivars(SourceIvars {
                 promises: promises.clone(),
                 frame: ns_window.frame(),
+                window_number: ns_window.windowNumber(),
+                window: owner,
                 done: RefCell::new(Some(done)),
             });
             let source: Retained<DragSource> = unsafe { msg_send![super(source), init] };
