@@ -50,6 +50,10 @@ pub struct Candidate {
     /// The name of an existing profile for the same alias or address; such hosts are not
     /// imported again.
     pub existing: Option<String>,
+    /// That profile's id: the name may also be another session's (a Telnet one).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub existing_id: Option<String>,
     /// Options in the config that are not imported.
     pub skipped: Vec<String>,
 }
@@ -84,9 +88,8 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
             continue;
         }
         let mut candidate = candidate(&config, alias.clone(), existing);
-        if let Some(name) = &candidate.existing {
-            let profile = existing.iter().find(|p| &p.name == name).expect("existing profile");
-            ids.insert(alias, profile.id.clone());
+        if let Some(id) = candidate.existing_id {
+            ids.insert(alias, id);
             continue;
         }
         candidate.jump_hosts = jump_chain(&config, &candidate.jump_hosts, &known, existing, 0);
@@ -325,7 +328,8 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
         .iter()
         .filter_map(|p| Some((p, &p.ssh()?.remote)))
         .find(|(p, remote)| p.name == alias || (remote.host == host && remote.port == port && remote.username == username))
-        .map(|(p, _)| p.name.clone());
+        .map(|(p, _)| p);
+    let (existing, existing_id) = (existing.map(|p| p.name.clone()), existing.map(|p| p.id.clone()));
     Candidate {
         alias,
         host,
@@ -339,6 +343,7 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
         forward_agent,
         env,
         existing,
+        existing_id,
         skipped,
     }
 }
@@ -691,9 +696,17 @@ Host *
         // An existing profile for the jump host is referenced instead of duplicated.
         let ssh = SshOptions { auth: AuthMethod::Agent, ..SshOptions::new(Remote::new("bastion.example.com".into(), 2200, "alice".into())) };
         let bastion = new_profile("existing".into(), "bastion".into(), ssh);
-        let (_, profiles) = plan(&path, &["db".to_owned(), "web".to_owned()], &[bastion], &[]).unwrap();
+        let (_, profiles) = plan(&path, &["db".to_owned(), "web".to_owned()], std::slice::from_ref(&bastion), &[]).unwrap();
         assert_eq!(plan_ids(&profiles), ["db", "web"]);
         assert!(profiles.iter().all(|p| p.jump_hosts() == ["existing"]));
+
+        // A Telnet session of the same name, listed first, is not the one used.
+        let mut telnet = bastion.clone();
+        telnet.id = "telnet".into();
+        telnet.connection = Connection::Telnet(Remote::new("bastion.example.com".into(), 23, "alice".into()));
+        let (_, profiles) = plan(&path, &["db".to_owned()], &[telnet, bastion], &[]).unwrap();
+        assert_eq!(plan_ids(&profiles), ["db"]);
+        assert_eq!(profiles[0].jump_hosts(), ["existing"]);
     }
 
     /// A jump host written as an alias with another user or port keeps the alias's address
