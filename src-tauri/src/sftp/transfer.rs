@@ -1,6 +1,6 @@
 //! Recursive uploads and downloads with progress reporting and cancellation.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -246,10 +246,18 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
     for dir in parents.chain(plan.dirs.iter().map(PathBuf::as_path)) {
         tokio::fs::create_dir_all(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
     }
-    for (remote, local) in &plan.files {
+    for ((remote, local), clashes) in plan.files.iter().zip(clashing(&plan.files)) {
         reporter.start_file(file_name(remote).to_owned());
         let mut src = sftp.open(remote).await.context(Error::new("transfer.openFailed").param("path", remote))?;
-        let mut dst = LocalTarget::create(local).await?;
+        // A file that would land where another of this download did (or a folder is) gets a
+        // free name instead.
+        let local = if clashes || local.is_dir() {
+            let (path, _) = create_unique_file(local).context(Error::new("transfer.createFailed").param("path", local.display()))?;
+            path
+        } else {
+            local.clone()
+        };
+        let mut dst = LocalTarget::create(&local).await?;
         let result = copy(&mut src, &mut dst.file, reporter).await;
         let _ = src.shutdown().await;
         let result = match result {
@@ -265,6 +273,21 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
         reporter.finish_file();
     }
     Ok(())
+}
+
+/// Which of a download's files would land on one before them: names the local file system
+/// takes for the same (`README` and `readme` on macOS and Windows, which ignore case; `a:b`
+/// and `a_b` on Windows, where `local_file_name` makes both `a_b`).
+fn clashing(files: &[(String, PathBuf)]) -> Vec<bool> {
+    let ignores_case = cfg!(any(windows, target_os = "macos"));
+    let mut seen = HashSet::new();
+    files
+        .iter()
+        .map(|(_, local)| {
+            let name = local.to_string_lossy();
+            !seen.insert(if ignores_case { name.to_lowercase() } else { name.into_owned() })
+        })
+        .collect()
 }
 
 async fn scan_remote_dir(
@@ -359,5 +382,13 @@ mod tests {
         remote.sort();
         assert_eq!(remote, ["/r/sub/a.txt", "/r/sub/link.txt"]);
         assert_eq!(reporter.progress.total, 6);
+    }
+
+    #[test]
+    fn finds_files_that_land_on_the_same_name() {
+        let files: Vec<(String, PathBuf)> =
+            ["/d/README", "/d/x", "/d/readme", "/d/README"].iter().map(|&r| (r.to_owned(), PathBuf::from(r))).collect();
+        let ignores_case = cfg!(target_os = "macos");
+        assert_eq!(clashing(&files), [false, false, ignores_case, true]);
     }
 }
