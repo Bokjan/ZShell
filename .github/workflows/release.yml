@@ -81,9 +81,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+      # A cache saved on a tag is only visible to runs on that same tag, so never reused.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       # Third-party license notices, which the frontend build embeds; fails without
       # cargo-about rather than leaving out the Rust crates.
       - uses: taiki-e/install-action@v2
@@ -102,16 +104,15 @@ jobs:
           args: --target universal-apple-darwin
           uploadWorkflowArtifacts: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
-  # Every Windows package from one x64 and one ARM64 build: the x64 executable is the one
-  # in the installers, the standalone executable and the Store bundle alike.
+  # Every Windows package but the Store bundle, from one x64 build whose executable is also
+  # the one in the Store bundle:
   # - NSIS installer (-setup.exe) and MSI.
   # - The bare executable, runnable without installing (needs the WebView2 runtime, which
   #   Windows 11 and up-to-date Windows 10 include).
-  # - The Microsoft Store bundle (x64 and ARM64), only as a workflow artifact.
-  windows:
+  windows-x64:
     needs: create-release
     if: ${{ !failure() && !cancelled() }}
-    name: Windows
+    name: Windows x64
     runs-on: windows-latest
     defaults:
       run:
@@ -128,25 +129,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+          targets: x86_64-pc-windows-msvc
+      # A cache saved on a tag is only visible to runs on that same tag, so never reused.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
       - run: pnpm licenses:generate
-      - name: Build for x64
-        run: pnpm tauri build --target x86_64-pc-windows-msvc ${{ inputs.store_only && '--no-bundle' || '' }}
-      # Cross-compiled on the x64 runner; ring needs clang for ARM64, which the runner
-      # image includes.
-      - name: Build for ARM64
-        run: pnpm tauri build --no-bundle --target aarch64-pc-windows-msvc
-      - run: scripts/package-msix.ps1
+      - run: pnpm tauri build --target x86_64-pc-windows-msvc ${{ inputs.store_only && '--no-bundle' || '' }}
+      # For the msix job; only lives as long as the run needs it.
       - uses: actions/upload-artifact@v7
         with:
-          name: Microsoft Store
-          path: src-tauri/target/msix/*.msixbundle
+          name: zshell-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/zshell.exe
+          retention-days: 1
       # Outside the checkout: dist/ there is the frontend build.
       - name: Collect the packages
         if: ${{ !inputs.store_only }}
@@ -171,3 +170,69 @@ jobs:
         with:
           name: Windows
           path: ${{ runner.temp }}/packages/*
+
+  # The ARM64 executable for the Store bundle, built natively in parallel with x64 (cross-
+  # compiling it after x64 on one runner doubled the job's time). ring needs clang for
+  # ARM64, which the runner image includes.
+  windows-arm64:
+    needs: create-release
+    if: ${{ !failure() && !cancelled() }}
+    name: Windows ARM64
+    runs-on: windows-11-arm
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: pnpm licenses:generate
+      - run: pnpm tauri build --no-bundle --target aarch64-pc-windows-msvc
+      - uses: actions/upload-artifact@v7
+        with:
+          name: zshell-arm64
+          path: src-tauri/target/aarch64-pc-windows-msvc/release/zshell.exe
+          retention-days: 1
+
+  # The Microsoft Store bundle (x64 and ARM64), only as a workflow artifact.
+  msix:
+    needs: [windows-x64, windows-arm64]
+    # A skipped create-release would otherwise skip this job too.
+    if: ${{ !failure() && !cancelled() }}
+    name: Microsoft Store
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      # Where scripts/package-msix.ps1 looks for the executables.
+      - uses: actions/download-artifact@v7
+        with:
+          name: zshell-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release
+      - uses: actions/download-artifact@v7
+        with:
+          name: zshell-arm64
+          path: src-tauri/target/aarch64-pc-windows-msvc/release
+      - run: scripts/package-msix.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Microsoft Store
+          path: src-tauri/target/msix/*.msixbundle

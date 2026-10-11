@@ -125,7 +125,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 ## CI
 
 - `.github/workflows/ci.yml`：推送到 main 和 PR 时在 `macos-latest` 与 `windows-latest` 上各跑一遍 `pnpm build`、`pnpm test`、`cargo clippy --all-targets -D warnings` 和 `cargo test`。平台专用代码（Windows 的 ConPTY、OpenSSH agent 管道、Pageant）在别的平台上编译不到，靠它检查。以后支持 Linux 时在 matrix 里加上 `ubuntu-latest`。
-- `.github/workflows/release.yml`：只能手动运行。在版本 tag 上运行时创建草稿 release（见下文「发布」）；在分支上运行时只打包，产物作为 workflow artifacts。macOS 一个 job；Windows 的所有包在一个 job 里由一次 x64 构建和一次 ARM64 交叉编译得到（安装包、免安装 exe 与 Store 包里的 x64 exe 是同一个，不重复编译）。Store 包无论在 tag 还是分支上运行都只作为 workflow artifact（`Microsoft Store`），不附到 release（见下文「Microsoft Store」）。勾选 "Microsoft Store only" 时只打 Store 包，跳过 macOS job，x64 也不打安装包，在 tag 上运行也不创建 release。
+- `.github/workflows/release.yml`：只能手动运行。在版本 tag 上运行时创建草稿 release（见下文「发布」）；在分支上运行时只打包，产物作为 workflow artifacts。macOS 一个 job；Windows 的 x64 与 ARM64 各一个 job 并行构建（ARM64 在 `windows-11-arm` runner 上原生编译），x64 打出安装包和免安装 exe，两边的 exe 再交给 `msix` job 打 Store 包（安装包、免安装 exe 与 Store 包里的 x64 exe 是同一个，不重复编译）。在 tag 上运行时不保存 Rust 缓存：tag 上存的缓存只有同一个 tag 能读到，留着只占 10 GB 的缓存配额。Store 包无论在 tag 还是分支上运行都只作为 workflow artifact（`Microsoft Store`），不附到 release（见下文「Microsoft Store」）。勾选 "Microsoft Store only" 时只打 Store 包，跳过 macOS job，x64 也不打安装包，在 tag 上运行也不创建 release。
 - `.github/dependabot.yml`：每周检查 npm、Cargo 和 GitHub Actions 的依赖更新。各生态的 minor / patch 更新合并为一个 PR，Tauri（及 xterm.js、russh）的相关包各自成组；major 更新单独成 PR。提交前缀为 `chore(deps)` / `ci`，不进更新日志。Dependabot 的 PR 会触发 CI。
 
 ## 发布
