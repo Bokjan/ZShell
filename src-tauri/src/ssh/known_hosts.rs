@@ -91,8 +91,9 @@ fn learn_at(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<()> {
     let key = key.to_openssh().map_err(|e| Error::new("knownHosts.writeFailed").param("path", path.display()).detail(e))?;
     let write_failed = |e: std::io::Error| Error::new("knownHosts.writeFailed").param("path", path.display()).detail(e);
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(write_failed)?;
+        create_ssh_dir(dir).map_err(write_failed)?;
     }
+    // Readable by others, as OpenSSH leaves it.
     let mut file = fs::OpenOptions::new().read(true).append(true).create(true).open(path).map_err(write_failed)?;
     // A file that doesn't end with a line break gets one first; an empty one doesn't.
     let mut last = *b"\n";
@@ -102,6 +103,17 @@ fn learn_at(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<()> {
     let separator = if last[0] == b'\n' { "" } else { "\n" };
     let line = format!("{separator}{} {key}\n", host_pattern(&host.to_ascii_lowercase(), port));
     file.write_all(line.as_bytes()).map_err(write_failed)
+}
+
+/// Creates `~/.ssh` if it isn't there, as OpenSSH does: only its owner may list it.
+fn create_ssh_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)
+    }
+    #[cfg(not(unix))]
+    fs::create_dir_all(dir)
 }
 
 /// How a host is recorded: `host`, or `[host]:port` off port 22.
@@ -350,6 +362,29 @@ pub fn check(host: &str, port: u16, key: &PublicKey) -> Result<Check> {
     check_at(&paths, host, port, key)
 }
 
+/// Writes `content` to `path`, replacing what is there with a file no more readable than the
+/// one `like` describes: a copy of a private known_hosts names the hosts the user connects to.
+/// Created so on Unix rather than changed afterwards, so it is never readable meanwhile.
+/// Elsewhere a plain write: a read-only copy of a read-only file couldn't be replaced later.
+fn write_new_like(path: &Path, content: &[u8], like: &fs::Metadata) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        match fs::remove_file(path) {
+            Err(e) if e.kind() != ErrorKind::NotFound => return Err(e),
+            _ => {}
+        }
+        let mode = like.permissions().mode() & 0o777;
+        fs::OpenOptions::new().write(true).create_new(true).mode(mode).open(path)?.write_all(content)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = like;
+        fs::write(path, content)
+    }
+}
+
 fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
     let content = fs::read(path).map_err(|e| Error::new("knownHosts.readFailed").param("path", path.display()).detail(e))?;
     // Keep each line's own ending, so the rest of the file stays byte for byte.
@@ -360,12 +395,13 @@ fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
     }
     let rest: Vec<u8> = lines.iter().enumerate().filter(|(i, _)| *i != line - 1).flat_map(|(_, l)| l.iter().copied()).collect();
     let write = || -> anyhow::Result<()> {
+        let metadata = fs::metadata(path)?;
         // As `ssh-keygen -R` does.
-        fs::write(path.with_file_name("known_hosts.old"), &content).context("known_hosts.old")?;
+        write_new_like(&path.with_file_name("known_hosts.old"), &content, &metadata).context("known_hosts.old")?;
         // Written beside it and renamed over it, so the file is never half written.
         let temp = path.with_file_name("known_hosts.zshell-tmp");
-        fs::write(&temp, rest)?;
-        fs::set_permissions(&temp, fs::metadata(path)?.permissions())?;
+        write_new_like(&temp, &rest, &metadata)?;
+        fs::set_permissions(&temp, metadata.permissions())?;
         fs::rename(&temp, path)?;
         Ok(())
     };
@@ -573,5 +609,31 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), format!("# keep\r\nb ssh-ed25519 {OTHER}"));
         assert_eq!(fs::read_to_string(path.with_file_name("known_hosts.old")).unwrap(), content);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    /// The copy of a private file is private too, and so is a new `~/.ssh`.
+    #[cfg(unix)]
+    #[test]
+    fn keeps_private_files_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let path = temp_file(&format!("a ssh-ed25519 {KEY}
+b ssh-ed25519 {OTHER}
+"));
+        let old = path.with_file_name("known_hosts.old");
+        // One left by an earlier removal, when the file was still readable by others.
+        fs::write(&old, "").unwrap();
+        fs::set_permissions(&old, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let entries = list_at(&path).unwrap();
+        remove_at(&path, entries[0].line, &entries[0].text).unwrap();
+        assert_eq!((mode(&path), mode(&old)), (0o600, 0o600));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+
+        let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
+        let path = temp_file("").with_file_name(".ssh").join("known_hosts");
+        learn_at(&path, "a", 22, &key).unwrap();
+        assert_eq!(mode(path.parent().unwrap()), 0o700);
+        fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
     }
 }
