@@ -59,11 +59,27 @@ export function useSftpListing(sessionId: SessionId | null, connected: boolean, 
     if (cwdRef.current) void load(cwdRef.current);
   }, [load]);
 
-  // (Re)open on connect, staying in the current directory across reconnects.
+  // (Re)open on connect, staying in the current directory across reconnects. An answer that
+  // comes after a reconnection is dropped: its listing would make the newer one stale, and
+  // its error would show over it.
   useEffect(() => {
     if (sessionId == null || !connected) return;
-    if (cwdRef.current) void load(cwdRef.current);
-    else sftp.open(sessionId).then(load, fail);
+    if (cwdRef.current) {
+      void load(cwdRef.current);
+      return;
+    }
+    let live = true;
+    sftp.open(sessionId).then(
+      (path) => {
+        if (live) void load(path);
+      },
+      (e) => {
+        if (live) fail(e);
+      },
+    );
+    return () => {
+      live = false;
+    };
   }, [sessionId, connected, load, fail]);
 
   return { cwd, cwdRef, pathInput, setPathInput, entries, loading, error, setError, fail, load, reload };
