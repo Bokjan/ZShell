@@ -152,6 +152,23 @@ export function ArrowIcon({ direction, size = 14 }: { direction: "up" | "down"; 
 }
 
 /**
+ * A solid arrow up or down, for the status bar's send and receive lights. Unlike the other
+ * icons it is filled: a light is on or off, and at its small size an outline would barely
+ * show the difference. The thin stroke only rounds its corners a little.
+ */
+export function ActivityIcon({ direction, size = 12 }: { direction: "up" | "down"; size?: number }) {
+  return (
+    <Svg size={size} strokeWidth={0.6}>
+      <path
+        d="M8 1.76L14.09 8.3H10.2V14.1H5.8V8.3H1.91Z"
+        fill="currentColor"
+        transform={direction === "down" ? "rotate(180 8 8)" : undefined}
+      />
+    </Svg>
+  );
+}
+
+/**
  * A chevron: after a label, down on a button that opens a menu, up or down for a sort order
  * (`inline`, centered beside the label); alone in a button, the steps of a number field.
  */

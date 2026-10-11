@@ -18,6 +18,7 @@ import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog"
 import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar, type OpenMode } from "./components/Sidebar";
+import { StatusBar } from "./components/StatusBar";
 import { TabBar } from "./components/TabBar";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
@@ -497,6 +498,9 @@ function App() {
             onRun={runCommand}
             targets={composer.targets}
           />
+        )}
+        {settings.statusBar.show && activePane && (
+          <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />
         )}
       </main>
       {editing && (

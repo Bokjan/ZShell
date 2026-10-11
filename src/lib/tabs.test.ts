@@ -139,13 +139,20 @@ describe("side panels", () => {
   it("closes when the focused pane's session reconnects as another protocol", () => {
     let state = run({ type: "open", pane: ssh("a") }, { type: "togglePanel", panel: "files" });
     const key = state.tabs[0].panes[0].key;
-    state = reduceTabs(state, { type: "updatePane", key, patch: { status: "connected", remoteTitle: "vim", forwards: { r: { type: "starting" } } } });
-    state = reduceTabs(state, { type: "connecting", key, protocol: "ssh" });
+    const patch = { status: "connected" as const, remoteTitle: "vim", forwards: { r: { type: "starting" as const } }, retryAt: 5 };
+    state = reduceTabs(state, { type: "updatePane", key, patch });
+    state = reduceTabs(state, { type: "connecting", key, protocol: "ssh", termType: "xterm-256color" });
     expect(state.tabs[0].sidePanel).toBe("files");
-    expect(state.tabs[0].panes[0]).toMatchObject({ status: "connecting", remoteTitle: null, forwards: {} });
-    state = reduceTabs(state, { type: "connecting", key, protocol: "telnet" });
+    expect(state.tabs[0].panes[0]).toMatchObject({
+      status: "connecting",
+      remoteTitle: null,
+      forwards: {},
+      termType: "xterm-256color",
+      retryAt: null,
+    });
+    state = reduceTabs(state, { type: "connecting", key, protocol: "telnet", termType: "vt100" });
     expect(state.tabs[0].sidePanel).toBeNull();
-    expect(state.tabs[0].panes[0].protocol).toBe("telnet");
+    expect(state.tabs[0].panes[0]).toMatchObject({ protocol: "telnet", termType: "vt100" });
   });
 });
 

@@ -226,7 +226,8 @@
       "reset": "Reset Terminal",
       "fullScreen": "Full Screen",
       "exitFullScreen": "Exit Full Screen"
-    }
+    },
+    "size": "{cols} x {rows}"
   },
   "search": {
     "placeholder": "Find",
@@ -550,6 +551,8 @@
       "larger": "Larger"
     },
     "textSizeHint": "For the app's own text. The terminal's font size is set under Terminal.",
+    "showStatusBar": "Show the status bar",
+    "showStatusBarHint": "Below the terminals: the connection, data sent and received, the terminal type, the terminal's size and the cursor's position.",
     "terminal": "Terminal",
     "colorScheme": "Color scheme",
     "schemeAuto": "Match appearance",
@@ -791,5 +794,24 @@
     "commandPasswordHint": "The command cannot ask for passwords. To go through another SSH server that needs one, use jump hosts instead.",
     "missingHost": "Host is required",
     "missingCommand": "Enter the command to run"
+  },
+  "statusBar": {
+    "label": "Status bar",
+    "local": "Local terminal",
+    "reconnectIn_one": "Reconnecting in {count} second",
+    "reconnectIn_other": "Reconnecting in {count} seconds",
+    "traffic": "Sent {sent} and received {received} on this connection.",
+    "lastReceived": "Data last received {time}.",
+    "nothingReceived": "No data received yet.",
+    "trafficScope": "Counts terminal data only, not file transfers or port forwarding.",
+    "termType": "Terminal type sent to the server (TERM)",
+    "localTermType": "Terminal type (TERM)",
+    "termTypeLabel": "Terminal type: {type}",
+    "serialLine": "Baud rate, data bits, parity and stop bits",
+    "serialLineLabel": "Serial line: {line}",
+    "size": "{cols}x{rows}",
+    "sizeLabel": "Terminal size: {cols} columns, {rows} rows",
+    "cursor": "{row}, {column}",
+    "cursorLabel": "Cursor position: row {row}, column {column}"
   }
 }

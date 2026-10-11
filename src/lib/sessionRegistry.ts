@@ -1,11 +1,21 @@
 import type { LogOpen, Profile, SessionId, ZmodemPhase } from "./api";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
-import { findPane, targetProtocol, type Pane } from "./panes";
+import { findPane, targetProtocol, targetTermType, type Pane } from "./panes";
 import { activeTabOf, type TabStore } from "./tabs";
+
+/** A pane's terminal as the status bar shows it. */
+export interface TerminalScreen {
+  size(): { cols: number; rows: number };
+  /** Where the cursor is on the screen, counted from 1. */
+  cursor(): { row: number; column: number };
+  /** Calls `listener` when the size or the cursor changes, which can be often. */
+  subscribe(listener: () => void): () => void;
+}
 
 /** What a pane's terminal hears of its session, besides what goes into the tab store. */
 export interface PaneView {
   port: TerminalPort;
+  screen: TerminalScreen;
   zmodem(phase: ZmodemPhase): void;
   /** The backend session changed: a new one, or none (null). */
   session(id: SessionId | null): void;
@@ -19,6 +29,8 @@ export interface SessionRegistry {
   /** The terminal is gone: its session closes. */
   detach(key: number, session: PaneSession): void;
   get(key: number): PaneSession | undefined;
+  /** The pane's terminal, while it is shown. */
+  screen(key: number): TerminalScreen | undefined;
   /** Closes the pane's session and connects again. */
   reconnect(key: number): void;
   /** Gives the pane's terminal the keyboard focus. */
@@ -81,7 +93,13 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce }
           // authentication), so states are only reset when a connection attempt starts or ends.
           status: (status) => {
             if (status === "connecting") {
-              store.dispatch({ type: "connecting", key, protocol: targetProtocol(pane().target, profiles()) });
+              const { target } = pane();
+              store.dispatch({
+                type: "connecting",
+                key,
+                protocol: targetProtocol(target, profiles()),
+                termType: targetTermType(target, profiles()),
+              });
             } else {
               announceStatus(status);
               update(status === "connected" ? { status } : { status, forwards: {} });
@@ -98,6 +116,7 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce }
           exited: (status) => {
             if (pane().target.kind === "local" && status === 0) store.dispatch({ type: "close", keys: [key] });
           },
+          retry: (at) => update({ retryAt: at }),
         },
         found.pane.shareFrom,
       );
@@ -113,6 +132,7 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce }
       }
     },
     get: (key) => sessions.get(key),
+    screen: (key) => views.get(key)?.screen,
     reconnect: (key) => sessions.get(key)?.reconnect(),
     focus: (key) => views.get(key)?.focus(),
   };

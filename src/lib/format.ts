@@ -41,6 +41,16 @@ export function formatTime(seconds: number | null): string {
   return new Intl.DateTimeFormat(i18n.language, options).format(date);
 }
 
+/** How long ago something happened, given in milliseconds: "5 seconds ago", "2 minutes ago". */
+export function formatAgo(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const format = new Intl.RelativeTimeFormat(i18n.language, { numeric: "always" });
+  if (seconds < 60) return format.format(-seconds, "second");
+  if (seconds < 3600) return format.format(-Math.floor(seconds / 60), "minute");
+  if (seconds < 86400) return format.format(-Math.floor(seconds / 3600), "hour");
+  return format.format(-Math.floor(seconds / 86400), "day");
+}
+
 /** `ls -l` style mode string, e.g. "drwxr-xr-x". */
 export function formatMode(mode: number | null, isDir: boolean, isSymlink: boolean): string {
   if (mode == null) return "";

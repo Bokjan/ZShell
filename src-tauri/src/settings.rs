@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, text size, terminal, tabs, sidebar, files, ZMODEM, session logs), persisted as `settings.json` next to
+//! App-wide preferences (appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ use crate::error::Result;
 pub struct Settings {
     pub appearance: Appearance,
     pub text_size: TextSize,
+    pub status_bar: StatusBarSettings,
     pub terminal: TerminalSettings,
     pub tabs: TabSettings,
     pub sidebar: SidebarSettings,
@@ -40,6 +41,20 @@ pub enum TextSize {
     Normal,
     Large,
     Larger,
+}
+
+/// The bar under the terminals with the focused pane's connection, activity, terminal type,
+/// size and cursor position.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StatusBarSettings {
+    pub show: bool,
+}
+
+impl Default for StatusBarSettings {
+    fn default() -> Self {
+        Self { show: true }
+    }
 }
 
 /// The terminal font sizes allowed, here and in session profiles.
@@ -210,6 +225,7 @@ impl Default for Settings {
         Self {
             appearance: Appearance::System,
             text_size: TextSize::Normal,
+            status_bar: StatusBarSettings::default(),
             terminal: TerminalSettings::default(),
             tabs: TabSettings::default(),
             sidebar: SidebarSettings::default(),
@@ -307,6 +323,7 @@ mod tests {
         assert_eq!(settings.terminal.color_scheme, "auto");
         assert_eq!(settings.terminal.scrollback, 5000);
         assert!(settings.terminal.confirm_multiline_paste && settings.tabs.confirm_close);
+        assert!(settings.status_bar.show);
     }
 
     #[test]

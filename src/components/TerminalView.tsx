@@ -59,6 +59,14 @@ export interface PasteTarget {
 /** Characters of a multi-line paste shown in the confirmation dialog. */
 const PASTE_PREVIEW = 4000;
 
+/**
+ * How long the terminal's size shows after it changes: a second, then it fades out (see
+ * `.size-overlay`). Not in a pane that opened less than `SIZE_SETTLE_MS` ago, whose terminal is
+ * still settling into its place.
+ */
+const SIZE_SHOWN_MS = 1150;
+const SIZE_SETTLE_MS = 500;
+
 const ignore = () => {};
 
 const copyText = (text: string) => void writeText(text).catch(console.error);
@@ -108,6 +116,10 @@ export function TerminalView({
   // A ZMODEM transfer waiting for files or running; null when there is none.
   const [zmodemPhase, setZmodemPhase] = useState<Exclude<ZmodemPhase, "idle"> | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // The size shown while the terminal is resized; `count` starts its fade-out over at each change.
+  const [sizeShown, setSizeShown] = useState<{ cols: number; rows: number; count: number } | null>(null);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   const wrapRef = useRef<HTMLDivElement>(null);
   const { settings, theme, update } = useSettings();
   const settingsRef = useRef(settings);
@@ -171,6 +183,18 @@ export function TerminalView({
           return buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX) ?? "";
         },
         alternateScreen: () => term.buffer.active.type === "alternate",
+      },
+      screen: {
+        size: () => ({ cols: term.cols, rows: term.rows }),
+        cursor: () => {
+          const buffer = term.buffer.active;
+          // Past the last column while a line waits to wrap.
+          return { row: buffer.cursorY + 1, column: Math.min(buffer.cursorX, term.cols - 1) + 1 };
+        },
+        subscribe: (listener) => {
+          const events = [term.onCursorMove(listener), term.onResize(listener), term.buffer.onBufferChange(listener)];
+          return () => events.forEach((e) => e.dispose());
+        },
       },
       zmodem: (phase) => onZmodemRef.current(phase),
       session: () => setZmodemPhase(null),
@@ -258,13 +282,26 @@ export function TerminalView({
     };
     container.addEventListener("contextmenu", onContextMenu);
 
+    const opened = Date.now();
+    let hideSize: ReturnType<typeof setTimeout> | undefined;
+    const showSize = (cols: number, rows: number) => {
+      // Out of sight (a hidden tab resized with the window), nobody would see it.
+      if (!visibleRef.current || Date.now() - opened < SIZE_SETTLE_MS) return;
+      setSizeShown((shown) => ({ cols, rows, count: (shown?.count ?? 0) + 1 }));
+      clearTimeout(hideSize);
+      hideSize = setTimeout(() => setSizeShown(null), SIZE_SHOWN_MS);
+    };
+
     const subscriptions: IDisposable[] = [
       // Reports are for the program in this pane only, so not synced to other panes.
       term.onData((data) => {
         if (session.input(data) && !pasting && !isTerminalReport(data)) onInputRef.current(data);
       }),
       term.onBinary((data) => session.inputBinary(data)),
-      term.onResize(({ cols, rows }) => session.resize(cols, rows)),
+      term.onResize(({ cols, rows }) => {
+        session.resize(cols, rows);
+        showSize(cols, rows);
+      }),
       term.onTitleChange((title) => onTitleRef.current(title)),
     ];
     const observer = new ResizeObserver(() => fit.fit());
@@ -276,6 +313,7 @@ export function TerminalView({
 
     return () => {
       clearTimeout(start);
+      clearTimeout(hideSize);
       window.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("mousedown", onMouseDown, true);
@@ -491,6 +529,12 @@ export function TerminalView({
     // The scheme's background also fills the padding around the terminal.
     <div className="terminal-wrap" ref={wrapRef} style={{ background: scheme.theme.background }}>
       <div className="terminal-view" ref={containerRef} />
+      {sizeShown && (
+        // The status bar has the size for screen readers.
+        <div key={sizeShown.count} className="size-overlay" aria-hidden="true" style={{ fontFamily }}>
+          {t("terminal.size", { cols: sizeShown.cols, rows: sizeShown.rows })}
+        </div>
+      )}
       {zmodemPhase && (
         <ZmodemBar
           phase={zmodemPhase}

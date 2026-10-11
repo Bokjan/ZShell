@@ -14,6 +14,7 @@ export type {
   RightClick,
   Settings,
   SidebarSettings,
+  StatusBarSettings,
   TabSettings,
   TerminalSettings,
   TextSize,
@@ -32,6 +33,7 @@ export const DEFAULT_LOG_FILE_NAME = "{session}_{date}_{time}.log";
 export const DEFAULT_SETTINGS: Settings = {
   appearance: "system",
   textSize: "normal",
+  statusBar: { show: true },
   terminal: {
     colorScheme: "auto",
     fontFamily: "",

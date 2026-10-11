@@ -14,6 +14,7 @@ import {
   type ZmodemPhase,
 } from "./api";
 import { isTerminalReport } from "./terminalReports";
+import { TrafficMeter, utf8Length } from "./traffic";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
@@ -39,6 +40,8 @@ export interface SessionEvents {
   log(path: string | null): void;
   /** The shell exited (rather than failing to start or losing the connection). */
   exited(status: number | null): void;
+  /** An automatic reconnection is due at this time (`Date.now()`), or none is any more (null). */
+  retry(at: number | null): void;
 }
 
 /** Read again for each connection: a saved session may have been changed in between. */
@@ -123,6 +126,8 @@ export class PaneSession {
   /** The login commands not yet typed into the current shell, and the wait for its prompt. */
   private loginPending: string[] = [];
   private loginTimer: ReturnType<typeof setTimeout> | undefined;
+  /** What the terminal has sent and received on the current connection. */
+  readonly traffic = new TrafficMeter();
 
   constructor(
     private readonly port: TerminalPort,
@@ -169,8 +174,10 @@ export class PaneSession {
       // The user has taken over: a command typed now would land in what they are typing.
       // The terminal's answers to the shell's queries (fish asks at startup) aren't typing.
       if (!isTerminalReport(data)) this.stopLoginCommands();
-      void this.session?.write(data);
-      return this.session !== undefined;
+      if (!this.session) return false;
+      void this.session.write(data);
+      this.traffic.addSent(utf8Length(data));
+      return true;
     }
     // Enter pressed, not a line break in something else that came in (a paste).
     if (data === "\r") this.connect();
@@ -187,8 +194,9 @@ export class PaneSession {
    * past column 95): one character per byte. Only to a session that is up.
    */
   inputBinary(data: string) {
-    if (this.closed) return;
-    void this.session?.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff));
+    if (this.closed || !this.session) return;
+    void this.session.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff));
+    this.traffic.addSent(data.length);
   }
 
   resize(cols: number, rows: number) {
@@ -233,6 +241,7 @@ export class PaneSession {
     this.stopLoginCommands();
     this.closed = false;
     this.connected = false;
+    this.traffic.reset();
     this.events.status("connecting");
     const target = this.config.target();
     const current = ++this.generation;
@@ -255,6 +264,7 @@ export class PaneSession {
       this.port.size(),
       (data) => {
         if (stale()) return;
+        this.traffic.addReceived(data.byteLength);
         this.port.write(data, () => {
           processed += data.byteLength;
           acknowledge();
@@ -367,21 +377,27 @@ export class PaneSession {
     clearTimeout(this.loginTimer);
     this.loginTimer = setTimeout(() => {
       if (!this.session || this.closed || !looksLikePrompt(this.port.lineBeforeCursor())) return;
-      void this.session.write(`${this.loginPending.shift()}\r`).catch(ignore);
+      const command = `${this.loginPending.shift()}\r`;
+      void this.session.write(command).catch(ignore);
+      this.traffic.addSent(utf8Length(command));
     }, LOGIN_COMMAND_IDLE_MS);
   }
 
   private cancelRetry() {
+    if (this.retryTimer === undefined) return;
     clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
+    this.events.retry(null);
   }
 
   private scheduleRetry() {
     const delay = RETRY_DELAYS[Math.min(this.attempt, RETRY_DELAYS.length - 1)];
     this.attempt++;
     this.dim(this.config.t("terminal.reconnectIn", { count: delay }));
+    this.events.retry(Date.now() + delay * 1000);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
+      this.events.retry(null);
       this.connect();
     }, delay * 1000);
   }

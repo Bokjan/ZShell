@@ -239,6 +239,17 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
                 </div>
                 <p className="hint">{t("settings.textSizeHint")}</p>
               </Setting>
+              <Setting>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.statusBar.show}
+                    onChange={(e) => update({ ...settings, statusBar: { ...settings.statusBar, show: e.target.checked } })}
+                  />
+                  {t("settings.showStatusBar")}
+                </label>
+                <p className="hint">{t("settings.showStatusBarHint")}</p>
+              </Setting>
             </Section>
 
             <Section id="terminal">

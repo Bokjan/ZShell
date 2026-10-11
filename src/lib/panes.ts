@@ -1,4 +1,4 @@
-import type { ForwardState, Profile, Protocol, SessionId, SessionTarget } from "./api";
+import { DEFAULT_TERM_TYPE, type ForwardState, type Profile, type Protocol, type SessionId, type SessionTarget } from "./api";
 import type { SessionStatus } from "./paneSession";
 
 export type SidePanel = "files" | "forwards";
@@ -17,6 +17,10 @@ export interface Pane {
   /** Set by the shell (OSC 0 / 2); shown unless turned off in the settings. */
   remoteTitle: string | null;
   status: SessionStatus;
+  /** The terminal type (`TERM`) the current (or last) session started with; none for serial ports. */
+  termType: string | null;
+  /** When the next automatic reconnection is due (`Date.now()`), while one is. */
+  retryAt: number | null;
   /** The backend session, while there is one. */
   sessionId: SessionId | null;
   /** For a duplicated SSH pane: the session whose connection its first shell runs on. */
@@ -61,6 +65,17 @@ export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabP
   if (target.kind === "local") return "local";
   if (target.kind === "quick") return target.protocol;
   return profiles.find((p) => p.id === target.profileId)?.connection.protocol ?? "ssh";
+}
+
+/**
+ * The terminal type a session of the target starts with: the saved session's, the default
+ * for quick connections, and the one local shells get (see `pty/shell.rs`).
+ */
+export function targetTermType(target: SessionTarget, profiles: Profile[]): string | null {
+  if (target.kind !== "profile") return DEFAULT_TERM_TYPE;
+  const connection = profiles.find((p) => p.id === target.profileId)?.connection;
+  if (!connection) return DEFAULT_TERM_TYPE;
+  return connection.protocol === "serial" ? null : connection.termType;
 }
 
 /** Ids that connect a tab and its page for screen readers. */

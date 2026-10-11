@@ -45,16 +45,18 @@ export type TabsAction =
   | { type: "togglePanel"; panel: SidePanel }
   /**
    * A pane's session starts connecting: forwarding states and the remote title are reset,
-   * and the protocol is the target's current one. The side panel closes when the focused
-   * pane is no longer SSH.
+   * and the protocol and terminal type are the target's current ones. The side panel closes
+   * when the focused pane is no longer SSH.
    */
-  | { type: "connecting"; key: number; protocol: TabProtocol };
+  | { type: "connecting"; key: number; protocol: TabProtocol; termType: string | null };
 
 const newPane = (key: number, spec: PaneSpec): Pane => ({
   key,
   ...spec,
   remoteTitle: null,
   status: "connecting",
+  termType: null,
+  retryAt: null,
   sessionId: null,
   forwards: {},
   commandGroup: null,
@@ -165,7 +167,15 @@ export function reduceTabs(state: TabsState, action: TabsAction): TabsState {
       return mapTab(state, tab.key, (t) => {
         const panes = t.panes.map((p) =>
           p.key === action.key
-            ? { ...p, status: "connecting" as const, forwards: {}, remoteTitle: null, protocol: action.protocol }
+            ? {
+                ...p,
+                status: "connecting" as const,
+                forwards: {},
+                remoteTitle: null,
+                protocol: action.protocol,
+                termType: action.termType,
+                retryAt: null,
+              }
             : p,
         );
         const sidePanel = t.focused === action.key && action.protocol !== "ssh" ? null : t.sidePanel;

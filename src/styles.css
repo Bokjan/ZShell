@@ -34,6 +34,11 @@
   --kind-local: #93c5fd;
   --kind-remote: #c4b5fd;
   --kind-dynamic: #fcd34d;
+  /* The status bar's lights for data sent and received (as in Xshell), and their off state:
+     dimmer than --text-muted, so that on and off differ clearly. */
+  --indicator-send: #4ade80;
+  --indicator-receive: #60a5fa;
+  --indicator-off: #4b4b4b;
   --backdrop: rgb(0 0 0 / 0.45);
   --shadow: rgb(0 0 0 / 0.45);
   /* Window buttons on Windows, as the system draws them. */
@@ -75,6 +80,10 @@
   --kind-local: #1d4ed8;
   --kind-remote: #6d28d9;
   --kind-dynamic: #a16207;
+  /* No lighter: on white, a lighter blue comes close to the off state's gray. */
+  --indicator-send: #16a34a;
+  --indicator-receive: #3b82f6;
+  --indicator-off: #b5b5b5;
   --backdrop: rgb(0 0 0 / 0.25);
   --shadow: rgb(0 0 0 / 0.18);
   --caption-hover: rgb(0 0 0 / 0.04);
@@ -1091,6 +1100,31 @@ body.dragging-row {
   /* The find bar fits itself to the pane's width. */
   container: terminal / inline-size;
 }
+/* The terminal's size while it changes; it fades out a second after the last change (see
+   `SIZE_SHOWN_MS` in TerminalView). */
+.size-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  translate: -50% -50%;
+  padding: 4px 14px;
+  font-size: calc(21px * var(--text-scale));
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px var(--shadow);
+  pointer-events: none;
+  animation: size-overlay-out 0.15s ease-in 1s forwards;
+}
+@keyframes size-overlay-out {
+  to {
+    opacity: 0;
+  }
+}
 .terminal-view {
   flex: 1;
   min-width: 0;
@@ -1242,6 +1276,7 @@ body.dragging-row {
 .app.full-screen .tab-bar,
 .app.full-screen .compose-bar,
 .app.full-screen .quick-bar,
+.app.full-screen .status-bar,
 .app.full-screen .side-panel {
   display: none !important;
 }
@@ -3004,6 +3039,68 @@ body.resizing .terminal-view {
   }
 }
 
+/* Under the terminals: the focused pane's connection, activity lights, terminal type, size
+   and cursor. The size and cursor keep a width for three digits each, so that the items
+   before them don't move as the numbers change. */
+.status-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  height: calc(22px * var(--text-scale));
+  padding: 0 10px;
+  font-size: calc(12px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border);
+  cursor: default;
+}
+.status-connection {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-address {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.status-state {
+  flex-shrink: 0;
+}
+.status-activity {
+  display: flex;
+  gap: 2px;
+  color: var(--indicator-off);
+}
+.status-activity svg {
+  display: block;
+}
+/* On at once, off with a short fade. */
+.status-activity > span {
+  transition: color 0.12s ease-out;
+}
+.status-activity > .on {
+  transition: none;
+}
+.status-activity > .send.on {
+  color: var(--indicator-send);
+}
+.status-activity > .receive.on {
+  color: var(--indicator-receive);
+}
+.status-size {
+  min-width: 7ch;
+}
+.status-cursor {
+  min-width: 8ch;
+}
+
 /* Windows contrast themes replace the colors with a few system ones, and backgrounds are
    dropped: states shown only by a background (the active tab, selected rows, choices that
    are on) use the system's highlight colors instead. */
@@ -3028,6 +3125,15 @@ body.resizing .terminal-view {
   /* On a highlighted row, an icon is in the row's text color like the rest. */
   .sftp-list tbody tr.selected .file-icon {
     color: inherit;
+  }
+  /* The status bar's lights: on is highlighted, off is grayed. */
+  .status-activity {
+    forced-color-adjust: none;
+    color: GrayText;
+  }
+  .status-activity > .send.on,
+  .status-activity > .receive.on {
+    color: Highlight;
   }
   /* Status and color marks are their color. */
   .status-dot,

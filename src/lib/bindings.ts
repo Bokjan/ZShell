@@ -551,7 +551,7 @@ export type SetAsideFile = { path: string,
  */
 movedTo: string | null, error: string, };
 
-export type Settings = { appearance: Appearance, textSize: TextSize, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, };
+export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, };
 
 export type SidebarSettings = { 
 /**
@@ -597,6 +597,12 @@ keepaliveInterval: number,
  * The terminal type the remote side is told (`TERM`, Telnet's terminal type option).
  */
 termType: string, };
+
+/**
+ * The bar under the terminals with the focused pane's connection, activity, terminal type,
+ * size and cursor position.
+ */
+export type StatusBarSettings = { show: boolean, };
 
 export type TabSettings = { 
 /**

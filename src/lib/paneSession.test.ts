@@ -73,6 +73,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
     zmodem: vi.fn(),
     log: vi.fn(),
     exited: vi.fn(),
+    retry: vi.fn(),
   } satisfies SessionEvents;
   const pane = new PaneSession(
     port,
@@ -203,6 +204,22 @@ describe("automatic reconnection", () => {
     expect(opened).toHaveLength(1);
   });
 
+  it("reports when the next attempt is due, until it starts or is cancelled", async () => {
+    const { pane, opened, events } = setup();
+    pane.connect();
+    opened[0].event({ type: "connected" });
+    opened[0].event(lost());
+    expect(events.retry).toHaveBeenLastCalledWith(Date.now() + 2000);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(events.retry).toHaveBeenLastCalledWith(null);
+    opened[1].event({ type: "connected" });
+    opened[1].event(lost());
+    expect(events.retry).toHaveBeenLastCalledWith(Date.now() + 2000);
+    pane.input("\x03");
+    expect(events.retry).toHaveBeenLastCalledWith(null);
+    expect(events.retry).toHaveBeenCalledTimes(4);
+  });
+
   it("cancels the pending retry on Ctrl+C, and retries at once when the network is back", async () => {
     const { pane, opened, screen } = setup();
     pane.connect();
@@ -229,6 +246,30 @@ describe("automatic reconnection", () => {
     expect(screen()).toContain("terminal.restartHint");
     await vi.advanceTimersByTimeAsync(60_000);
     expect(opened).toHaveLength(1);
+  });
+});
+
+describe("traffic", () => {
+  it("counts what the terminal sends and receives on each connection", async () => {
+    const { pane, opened, setLine } = setup({ loginCommands: () => ["cd /"] });
+    pane.connect();
+    // Nothing is sent before there is a session to send it to.
+    expect(pane.input("x")).toBe(false);
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    opened[0].output("é$ ");
+    setLine("$ ");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.writes).toEqual(["cd /\r"]);
+    pane.input("ls\r");
+    pane.inputBinary("\x1b[M !!");
+    expect(pane.traffic).toMatchObject({ sent: 5 + 3 + 6, received: 4 });
+    expect(pane.traffic.lastSent).toBe(Date.now());
+
+    opened[0].event(lost());
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(pane.traffic).toMatchObject({ sent: 0, received: 0, lastSent: null, lastReceived: null });
   });
 });
 
