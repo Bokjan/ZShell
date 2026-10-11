@@ -2,6 +2,18 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.5.4] - 2026-10-11
+
+### Bug Fixes
+
+- Serial on macOS: closing a tab while a paste or ZMODEM upload waits for a device holding the line with flow control lets go of the device at once, instead of keeping it busy (reconnecting failed with the device in use) for as long as the device held the line.
+- Uploading over an existing file no longer removes the original before the new file is in place: it is moved aside first and removed only after. If the connection is lost in between, both are kept and the error says where.
+- A session log continued after a reconnection no longer mixes the line marking the reconnection into the previous connection's last output when the log's folder is slow (a network drive), and reconnecting no longer waits for that folder.
+
+### Internal
+
+- A local terminal stops reading its output once its tab is closed, which closes the terminal for programs still using it, instead of waiting for them to let go. macOS does this itself when the shell exits; this prepares for Linux, which doesn't.
+
 ## [2.5.3] - 2026-10-11
 
 ### Bug Fixes
