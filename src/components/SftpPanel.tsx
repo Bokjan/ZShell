@@ -4,7 +4,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { announce } from "../lib/announce";
-import { sftp, type FileEntry, type SessionId } from "../lib/api";
+import { notConnected, sftp, type FileEntry, type SessionId } from "../lib/api";
 import { storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";
@@ -62,6 +62,9 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onQuestio
   const filterRef = useRef<HTMLInputElement>(null);
   /** The rows the last two presses in the list were on (null elsewhere). */
   const pressedRowsRef = useRef<[string | null, string | null]>([null, null]);
+
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
 
   const listing = useSftpListing(sessionId, connected, () => {
     setSelection(NO_SELECTION);
@@ -179,11 +182,13 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onQuestio
             : t("sftp.deleteFileMessage", { name: first.name }),
       confirmLabel: t("common.delete"),
       danger: true,
+      // Through the connection there is when the user confirms: it may have been replaced.
       action: async () => {
-        if (sessionId == null) return;
+        const current = sessionRef.current;
+        if (current == null) return fail(notConnected(t("sftp.disconnected")));
         for (const entry of targets) {
           try {
-            await sftp.remove(sessionId, entry.path);
+            await sftp.remove(current, entry.path);
           } catch (err) {
             fail(err);
             break;

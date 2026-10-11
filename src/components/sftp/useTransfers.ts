@@ -4,7 +4,7 @@ import { dirname, join } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { announce } from "../../lib/announce";
-import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from "../../lib/api";
+import { errorCode, errorMessage, notConnected, sftp, type FileEntry, type SessionId } from "../../lib/api";
 import { basename } from "../../lib/format";
 import { storedString, storeString } from "../../lib/storage";
 import type { Transfer } from "../TransferList";
@@ -63,6 +63,16 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
   const failed = (id: string, e: unknown) =>
     update(id, errorCode(e) === "transfer.cancelled" ? { status: "cancelled" } : { status: "error", error: errorMessage(e) });
 
+  /**
+   * The session to transfer through when the transfer starts: the connection may have been
+   * replaced while a question or a file dialog was open.
+   */
+  const currentSession = (): SessionId => {
+    const { sessionId } = sessionRef.current;
+    if (sessionId == null) throw notConnected(t("sftp.disconnected"));
+    return sessionId;
+  };
+
   const labelFor = (names: string[]) => (names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 }));
 
   const run = async (kind: Transfer["kind"], names: string[], work: (id: string) => Promise<string[] | void>) => {
@@ -81,7 +91,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     if (sessionId == null || localPaths.length === 0) return;
     const start = () =>
       run("upload", localPaths.map(basename), async (id) => {
-        await sftp.upload(sessionId, id, localPaths, remoteDir, (progress) => update(id, { progress }));
+        await sftp.upload(currentSession(), id, localPaths, remoteDir, (progress) => update(id, { progress }));
         if (cwdRef.current === remoteDir) void load(remoteDir);
       });
     const names =
@@ -106,7 +116,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     void run(
       "download",
       targets.map((e) => e.name),
-      (id) => sftp.download(sessionId, id, targets.map((e) => e.path), localDir, (progress) => update(id, { progress })),
+      async (id) => sftp.download(currentSession(), id, targets.map((e) => e.path), localDir, (progress) => update(id, { progress })),
     );
   };
 
@@ -121,7 +131,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
       if (!path) return;
       storeString(DOWNLOAD_TO_KEY, await dirname(path));
       void run("download", [first.name], async (id) => [
-        await sftp.downloadAs(sessionId, id, first.path, path, (progress) => update(id, { progress })),
+        await sftp.downloadAs(currentSession(), id, first.path, path, (progress) => update(id, { progress })),
       ]);
       return;
     }

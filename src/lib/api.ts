@@ -68,6 +68,9 @@ export const errorMessage = (e: unknown): string => (isCommandError(e) ? e.messa
 
 export const errorCode = (e: unknown): ErrorCode | null => (isCommandError(e) ? e.code : null);
 
+/** The error for an operation that finds the tab without a connection (`message` localized). */
+export const notConnected = (message: string): CommandError => ({ code: "session.notConnected", params: {}, message });
+
 export interface Session {
   id: SessionId;
   write(data: string): Promise<void>;
