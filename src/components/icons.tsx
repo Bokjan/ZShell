@@ -101,14 +101,12 @@ export function EyeIcon({ size = 14, crossed = false }: { size?: number; crossed
   );
 }
 
-/** Sliders, for the settings. */
+/** A gear, for the settings. Six teeth: more run together at its size. */
 export function SettingsIcon({ size = 14 }: { size?: number }) {
   return (
     <Svg size={size}>
-      <path d="M2 4h1.4M6.6 4H14M2 8h7.4M12.6 8H14M2 12h3.4M8.6 12H14" />
-      <circle cx="5" cy="4" r="1.6" />
-      <circle cx="11" cy="8" r="1.6" />
-      <circle cx="7" cy="12" r="1.6" />
+      <path d="M6.76 3.36L7.19 1.55H8.81L9.24 3.36L11.39 4.61L13.18 4.07L13.99 5.48L12.64 6.76V9.24L13.99 10.52L13.18 11.93L11.39 11.39L9.24 12.64L8.81 14.45H7.19L6.76 12.64L4.61 11.39L2.82 11.93L2.01 10.52L3.36 9.24V6.76L2.01 5.48L2.82 4.07L4.61 4.61Z" />
+      <circle cx="8" cy="8" r="1.9" />
     </Svg>
   );
 }

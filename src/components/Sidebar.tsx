@@ -70,8 +70,9 @@ interface Props {
   onSettings(): void;
 }
 
-const DEFAULT_WIDTH = 220;
-const MIN_WIDTH = 160;
+const DEFAULT_WIDTH = 260;
+// Room for the traffic lights and the three buttons of the title bar.
+const MIN_WIDTH = 176;
 const MAX_WIDTH = 480;
 /** Space always left for the terminal area. */
 const MIN_MAIN = 400;
@@ -87,7 +88,8 @@ const DRAG_THRESHOLD = 4;
 /** The width saved by the last resize; layout state, so kept per machine rather than in the settings. */
 function storedWidth(): number {
   const width = Number(storedString(WIDTH_KEY));
-  return width >= MIN_WIDTH && width <= MAX_WIDTH ? width : DEFAULT_WIDTH;
+  // One saved under other limits (the minimum used to be smaller) is brought within these.
+  return width > 0 ? Math.min(Math.max(width, MIN_WIDTH), MAX_WIDTH) : DEFAULT_WIDTH;
 }
 
 const storeWidth = (width: number) => storeString(WIDTH_KEY, String(width));
@@ -483,6 +485,13 @@ export function Sidebar(props: Props) {
           <span className="sidebar-brand-name">{t("app.name")}</span>
         </span>
         <span className="sidebar-actions">
+          <IconButton
+            className="icon-button"
+            label={t("sidebar.settings", { shortcut: shortcutLabel("settings") })}
+            onClick={props.onSettings}
+          >
+            <SettingsIcon />
+          </IconButton>
           <IconButton className="icon-button" label={t("sidebar.importExport")} onClick={importMenu}>
             <ImportExportIcon />
           </IconButton>
@@ -583,13 +592,6 @@ export function Sidebar(props: Props) {
           </>
         )}
       </div>
-      <footer className="sidebar-footer">
-        <button className="sidebar-settings" onClick={props.onSettings}>
-          <SettingsIcon />
-          <span>{t("sidebar.settings")}</span>
-          <kbd>{shortcutLabel("settings")}</kbd>
-        </button>
-      </footer>
       <Separator
         className="sidebar-splitter"
         label={t("sidebar.resize")}
