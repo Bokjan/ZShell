@@ -61,10 +61,6 @@ const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 /// Chunks of output a log's writer thread may have waiting.
 const QUEUE: usize = 256;
 
-/// How long going on with a log after a reconnection waits for the previous connection's
-/// writer to finish the file.
-const APPEND_WAIT: Duration = Duration::from_secs(5);
-
 /// What a log's writer thread is given.
 enum Chunk {
     Output(Vec<u8>),
@@ -362,9 +358,16 @@ struct ActiveLogs {
 
 impl ActiveLogs {
     /// Waits until nothing writes `path` any more, for at most `timeout`.
+    #[cfg(test)]
     fn wait_closed(&self, path: &Path, timeout: Duration) {
         let paths = self.paths.lock().unwrap();
         let _paths = self.closed.wait_timeout_while(paths, timeout, |paths| paths.contains_key(path)).unwrap();
+    }
+
+    /// Waits until one writer of `path` is left: the caller's.
+    fn wait_alone(&self, path: &Path) {
+        let paths = self.paths.lock().unwrap();
+        let _paths = self.closed.wait_while(paths, |paths| paths.get(path).is_some_and(|&count| count > 1)).unwrap();
     }
 
     /// Counts a writer of `path` until the returned value is dropped.
@@ -457,7 +460,7 @@ impl Logs {
         let header = t!("log.started", session = info.session, address = address, time = now());
         // Not in the index yet, so no cleanup or deletion can see it.
         let active = self.active.add(path.clone());
-        self.install(slot, path.clone(), file, active, settings, &header)?;
+        self.install(slot, path.clone(), file, active, settings, &header, false)?;
         self.remember(Entry { path: path.clone(), profile: info.profile.clone() });
         Ok(path)
     }
@@ -472,8 +475,6 @@ impl Logs {
         if !is_log(&self.index.lock().unwrap()) {
             return self.start(slot, settings);
         }
-        // The previous connection's writer may still be writing what it was given.
-        self.active.wait_closed(&path, APPEND_WAIT);
         // Checked again, opened and counted as written under the index's lock, which
         // deleting holds: otherwise a log deleted in between would be written again, or one
         // about to be written deleted.
@@ -488,19 +489,44 @@ impl Logs {
             .map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
         let active = self.active.add(path.clone());
         drop(index);
-        self.install(slot, path.clone(), file, active, settings, &t!("log.resumed", time = now()))?;
+        // The previous connection's writer may still be writing what it was given (to a slow
+        // network drive, say): this one waits for it, while output queues up meanwhile.
+        self.install(slot, path.clone(), file, active, settings, &t!("log.resumed", time = now()), true)?;
         Ok(path)
     }
 
-    fn install(&self, slot: &LogSlot, path: PathBuf, file: File, active: Active, settings: &LogSettings, note: &str) -> Result<()> {
+    /// Starts the writer thread with `note`, after the log's other writers have finished if
+    /// `after_others` (otherwise a failure to write the note is returned).
+    #[allow(clippy::too_many_arguments)]
+    fn install(
+        &self,
+        slot: &LogSlot,
+        path: PathBuf,
+        file: File,
+        active: Active,
+        settings: &LogSettings,
+        note: &str,
+        after_others: bool,
+    ) -> Result<()> {
         let text = (settings.format == LogFormat::Text)
             .then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
         let failure = Arc::new(Mutex::new(None));
         let mut writer =
             LogWriter { file: BufWriter::new(file), text, flushed: Instant::now(), dirty: false, _active: active, failure: failure.clone() };
-        writer.note(note).map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
         let (chunks, queued) = sync_channel(QUEUE);
-        thread::spawn(move || writer.run(queued));
+        if after_others {
+            let (active, path, note) = (self.active.clone(), path.clone(), note.to_owned());
+            thread::spawn(move || {
+                active.wait_alone(&path);
+                match writer.note(&note) {
+                    Ok(()) => writer.run(queued),
+                    Err(e) => *writer.failure.lock().unwrap() = Some(e.to_string()),
+                }
+            });
+        } else {
+            writer.note(note).map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
+            thread::spawn(move || writer.run(queued));
+        }
         *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0, path, failure });
         Ok(())
     }
@@ -738,6 +764,39 @@ mod tests {
         assert!(set.contains(&path));
         drop(second);
         assert!(!set.contains(&path));
+    }
+
+    /// Going on with a log whose previous writer hasn't finished (a slow network drive)
+    /// starts at once, and writes only after it, so the two don't mix.
+    #[test]
+    fn appending_waits_for_the_previous_writer() {
+        let dir = std::env::temp_dir().join(format!("zshell-logs-append-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let logs = Logs::load(dir.join("logs.json"), dir.join("Logs"), &SetAside::default());
+        let settings = LogSettings { format: LogFormat::Raw, ..LogSettings::default() };
+        let slot = LogSlot::new(LogInfo::default());
+        let path = logs.start(&slot, &settings).unwrap();
+        logs.stop(&slot);
+        logs.active.wait_closed(&path, Duration::from_secs(5));
+        let before = std::fs::read(&path).unwrap();
+
+        // Still writing.
+        let previous = logs.active.add(path.clone());
+        let slot = LogSlot::new(LogInfo::default());
+        let started = Instant::now();
+        logs.open(&slot, LogOpen::Append { path: path.clone() }, false, &settings).unwrap().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(1));
+        slot.write(b"after");
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        drop(previous);
+        drop(slot);
+        logs.active.wait_closed(&path, Duration::from_secs(5));
+        let content = String::from_utf8(std::fs::read(&path).unwrap()).unwrap();
+        assert!(content.ends_with("after"), "{content:?}");
+        assert_eq!(content.lines().count(), before.iter().filter(|&&b| b == b'\n').count() + 2);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
