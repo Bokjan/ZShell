@@ -2,6 +2,20 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.5.3] - 2026-10-11
+
+### Bug Fixes
+
+- A session's login commands stop once you start typing, pasting or sending from the compose bar, instead of only on Ctrl+C. Before, a short pause while typing let the next command be added to your unfinished line (`ls` became `lscd /srv`).
+- Duplicating or splitting a quick connect's SSH tab opens the new shell on the connection already open, as for saved sessions, instead of connecting and asking for the password again.
+- Reconnecting a tab by hand waits for the old connection to close, so the forwarding rules running on it can't be left on it and stop with it.
+- File panel: when the tab reconnects while its first folder is still opening, the late answer no longer leaves the panel empty or shows an error over the new listing. Uploads waiting on the question about replacing files, "Download to…" and deletes use the connection there is when you answer, instead of failing on the closed one or running on the old one.
+- ZMODEM: Ctrl+C cancels an upload to `lrz` over a slower link at once, instead of only after the file; choosing files at the moment the transfer is cancelled no longer starts it.
+- Two remote (`-R`) forwarding rules on the same port with different addresses: a connection the server reports with an address spelled differently is refused instead of going to whichever rule came first, possibly the wrong local service.
+- Removing a host key keeps `known_hosts.old` as private as `known_hosts` instead of readable by everyone, and a `~/.ssh` folder created to record a host key is readable only by you, as OpenSSH makes it.
+- A known_hosts line with many `*` in its host pattern no longer holds up connecting while host keys are checked.
+- Importing `ProxyCommand ssh -W %h:%p user@2001:db8::1` from an OpenSSH config keeps the IPv6 jump host whole instead of taking its last group for a port.
+
 ## [2.5.2] - 2026-10-10
 
 ### Bug Fixes
