@@ -1,12 +1,15 @@
 # Builds the macOS and Windows packages; only when run by hand (`scripts/release.sh publish`),
 # since version tags are also pushed for versions that are not released.
 # - Run on a tag vX.Y.Z (matching the version in src-tauri/Cargo.toml), it creates a draft
-#   GitHub release with all packages attached and, as its notes, the sections of
+#   GitHub release with the packages attached and, as its notes, the sections of
 #   CHANGELOG.md for every version since the previous published release
 #   (scripts/release-notes.sh); publish it by hand after checking it.
 # - Run on a branch, it only builds, and attaches the packages to the run as workflow
 #   artifacts.
-# "Microsoft Store only" skips the other packages.
+# The Microsoft Store bundle is never attached to the release: it is unsigned, and only the
+# Store, which signs it on submission, can install it. It is always a workflow artifact,
+# uploaded to Partner Center by hand. "Microsoft Store only" skips the other packages, and
+# so creates no release.
 name: Release
 
 on:
@@ -38,6 +41,7 @@ jobs:
       # Every version's section since the previous published release, since not every
       # version is released.
       - name: Read the release notes from CHANGELOG.md
+        if: ${{ !inputs.store_only }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -48,6 +52,7 @@ jobs:
       # Created once here, so the parallel build jobs upload into the same release instead
       # of racing to create it.
       - name: Create a draft release
+        if: ${{ !inputs.store_only }}
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -102,7 +107,7 @@ jobs:
   # - NSIS installer (-setup.exe) and MSI.
   # - The bare executable, runnable without installing (needs the WebView2 runtime, which
   #   Windows 11 and up-to-date Windows 10 include).
-  # - The Microsoft Store bundle (x64 and ARM64), uploaded to Partner Center by hand.
+  # - The Microsoft Store bundle (x64 and ARM64), only as a workflow artifact.
   windows:
     needs: create-release
     if: ${{ !failure() && !cancelled() }}
@@ -138,30 +143,31 @@ jobs:
       - name: Build for ARM64
         run: pnpm tauri build --no-bundle --target aarch64-pc-windows-msvc
       - run: scripts/package-msix.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Microsoft Store
+          path: src-tauri/target/msix/*.msixbundle
       # Outside the checkout: dist/ there is the frontend build.
       - name: Collect the packages
+        if: ${{ !inputs.store_only }}
         env:
-          STORE_ONLY: ${{ inputs.store_only }}
           PACKAGES: ${{ runner.temp }}/packages
         run: |
           $version = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "(.+)"' |
             Select-Object -First 1).Matches[0].Groups[1].Value
           $release = "src-tauri/target/x86_64-pc-windows-msvc/release"
           New-Item -ItemType Directory -Path $env:PACKAGES | Out-Null
-          Copy-Item src-tauri/target/msix/*.msixbundle $env:PACKAGES
-          if ($env:STORE_ONLY -ne "true") {
-            Copy-Item "$release/bundle/nsis/*-setup.exe", "$release/bundle/msi/*.msi" $env:PACKAGES
-            Copy-Item "$release/zshell.exe" "$env:PACKAGES/ZShell_${version}_x64_standalone.exe"
-          }
+          Copy-Item "$release/bundle/nsis/*-setup.exe", "$release/bundle/msi/*.msi" $env:PACKAGES
+          Copy-Item "$release/zshell.exe" "$env:PACKAGES/ZShell_${version}_x64_standalone.exe"
           Get-ChildItem $env:PACKAGES | ForEach-Object Name
       - name: Upload to the release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.store_only }}
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGES: ${{ runner.temp }}/packages
         run: gh release upload "$env:GITHUB_REF_NAME" (Get-ChildItem $env:PACKAGES)
       - uses: actions/upload-artifact@v7
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.store_only }}
         with:
           name: Windows
           path: ${{ runner.temp }}/packages/*
