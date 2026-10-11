@@ -209,7 +209,8 @@ export async function openSession(
     else if (bytes[0] === 1) onEvent(JSON.parse(decoder.decode(bytes.subarray(1))) as SessionEvent);
   };
   let spec: SessionSpec;
-  if (target.kind === "profile") spec = shareFrom !== undefined ? { kind: "shared", source: shareFrom } : { ...target, carry };
+  if (shareFrom !== undefined) spec = { kind: "shared", source: shareFrom };
+  else if (target.kind === "profile") spec = { ...target, carry };
   else spec = target;
   const id = await invoke<SessionId>("session_open", { spec, ...size, log, channel });
   return {
