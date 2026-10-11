@@ -2,6 +2,14 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.6.0] - 2026-10-11
+
+### Features
+
+- A status bar under the terminals shows the focused pane's connection (with the countdown to the next automatic reconnection), lights for data sent and received, the terminal type sent to the server (a serial port's line settings instead), the terminal's size and the cursor's position. The lights' tooltip has what the connection has sent and received and when data last came in. It can be turned off under Settings > Appearance.
+- While a terminal is resized, its new size shows in its middle for a moment.
+- Settings opens from a gear button in the sidebar header instead of the row at the bottom of the sidebar, so the session list runs to the bottom of the window. The sidebar is a little wider by default.
+
 ## [2.5.4] - 2026-10-11
 
 ### Bug Fixes
