@@ -6,11 +6,17 @@
 //! session ends when the shell exits rather than at the end of the output: background jobs
 //! can keep the terminal open after that, and ConPTY only closes its output when the
 //! pseudo console is closed.
+//!
+//! Once the session has shut down, the reader stops, and with it our last handle to the
+//! terminal, which then closes for whatever still has it open. macOS closes it anyway when
+//! the shell exits (the shell's session loses its terminal), Linux doesn't: a program that
+//! ignores the hangup (`nohup`) would keep the reader waiting as long as it runs.
 
 mod shell;
 
 use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -31,6 +37,9 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a shell gets to exit after its terminal is closed before it is killed.
 const KILL_GRACE: Duration = Duration::from_secs(2);
 const READ_BUFFER: usize = 64 << 10;
+/// How long a read waits for output before checking whether the session has shut down.
+#[cfg(unix)]
+const READ_WAIT: Duration = Duration::from_millis(200);
 /// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
 /// is paced by how fast the shell reads).
 const INPUT_QUEUE: usize = 16;
@@ -73,6 +82,8 @@ struct Pty {
     killer: Box<dyn ChildKiller + Send + Sync>,
     pid: Option<u32>,
     exited: Arc<Exited>,
+    /// Set once the session has shut down, to stop the reader.
+    shut: Arc<AtomicBool>,
     flow: Arc<Flow>,
     foreground: Foreground,
 }
@@ -81,6 +92,9 @@ impl Pty {
     fn start(shell: Shell, io: &TermIo) -> Result<Self> {
         let (cols, rows) = io.size;
         let pair = native_pty_system().openpty(pty_size(cols, rows)).context(Error::new("pty.openFailed"))?;
+        #[cfg(unix)]
+        let reader: Box<dyn Read + Send> = Box::new(OutputReader::new(&*pair.master).context(Error::new("pty.openFailed"))?);
+        #[cfg(windows)]
         let reader = pair.master.try_clone_reader().context(Error::new("pty.openFailed"))?;
         let writer = pair.master.take_writer().context(Error::new("pty.openFailed"))?;
         let mut child =
@@ -92,8 +106,10 @@ impl Pty {
         let sink = io.sink();
         let flow = sink.flow();
         let (output_done_tx, output_done) = oneshot::channel();
+        let shut = Arc::new(AtomicBool::new(false));
+        let reader_shut = shut.clone();
         thread::spawn(move || {
-            read_output(reader, &sink);
+            read_output(reader, &sink, &reader_shut);
             let _ = output_done_tx.send(());
         });
 
@@ -122,6 +138,7 @@ impl Pty {
             killer,
             pid,
             exited,
+            shut,
             flow,
             foreground,
         })
@@ -209,8 +226,12 @@ impl Drop for Pty {
         let killer = self.killer.clone_killer();
         let exited = self.exited.clone();
         let pid = self.pid;
+        let shut = self.shut.clone();
         // Waiting for the shell to exit (and closing a pseudo console) blocks.
-        thread::spawn(move || shut_down(master, killer, &exited, pid));
+        thread::spawn(move || {
+            shut_down(master, killer, &exited, pid);
+            shut.store(true, Ordering::Relaxed);
+        });
     }
 }
 
@@ -357,7 +378,8 @@ impl Exited {
     }
 }
 
-fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink) {
+/// Reads until the end of the output, or until the session has shut down (`shut`).
+fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink, shut: &AtomicBool) {
     let flow = sink.flow();
     let mut buffer = vec![0; READ_BUFFER];
     loop {
@@ -366,9 +388,59 @@ fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink) {
             Ok(0) => break,
             Ok(n) => sink.output(buffer[..n].to_vec()),
             Err(e) if e.kind() == ErrorKind::Interrupted => {}
+            Err(e) if matches!(e.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) => {
+                if shut.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
             // EIO on macOS once the shell and its children have all closed the terminal.
             Err(_) => break,
         }
+    }
+}
+
+/// The terminal's output, read through a handle of our own that waits at most [`READ_WAIT`]
+/// (portable-pty's reader waits for ever), so that reading can stop (see the module comment).
+#[cfg(unix)]
+struct OutputReader(std::os::fd::OwnedFd);
+
+#[cfg(unix)]
+impl OutputReader {
+    fn new(master: &dyn MasterPty) -> std::io::Result<Self> {
+        let fd = master.as_raw_fd().ok_or(ErrorKind::Unsupported)?;
+        Self::from_master(fd)
+    }
+
+    fn from_master(fd: std::os::fd::RawFd) -> std::io::Result<Self> {
+        use std::os::fd::FromRawFd;
+        // SAFETY: plain syscall; `fd` is open, and the new descriptor is ours alone.
+        let copy = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+        if copy < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: `copy` was just opened, and nothing else owns it.
+        Ok(Self(unsafe { std::os::fd::OwnedFd::from_raw_fd(copy) }))
+    }
+}
+
+#[cfg(unix)]
+impl Read for OutputReader {
+    /// Fails with `TimedOut` when nothing comes within [`READ_WAIT`], and with EIO (macOS)
+    /// or reads nothing at the end of the output.
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::os::fd::AsRawFd;
+        let fd = self.0.as_raw_fd();
+        let mut ready = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let wait = libc::c_int::try_from(READ_WAIT.as_millis()).unwrap_or(libc::c_int::MAX);
+        // SAFETY: one valid pollfd.
+        match unsafe { libc::poll(&mut ready, 1, wait) } {
+            -1 => return Err(std::io::Error::last_os_error()),
+            0 => return Err(ErrorKind::TimedOut.into()),
+            _ => {}
+        }
+        // SAFETY: `buf` is valid for writes of its length.
+        let read = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
+        usize::try_from(read).map_err(|_| std::io::Error::last_os_error())
     }
 }
 
@@ -507,6 +579,39 @@ mod tests {
         input.send(SessionInput::Data(b"exit\r".to_vec())).unwrap();
         session.await.unwrap();
         assert_eq!(foreground.get(), None);
+    }
+
+    /// Reading stops once the session has shut down, though something still has the
+    /// terminal open (on Linux, a program that ignores the hangup).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reading_stops_once_shut_down() {
+        let (mut master, mut slave) = (0, 0);
+        // SAFETY: openpty fills in two descriptors; null name, termios and size are allowed.
+        let result = unsafe {
+            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
+        };
+        assert_eq!(result, 0);
+        let reader = OutputReader::from_master(master).unwrap();
+        let (io, _input, output, _events) = TermIo::detached((80, 24));
+        let sink = io.sink();
+        let shut = Arc::new(AtomicBool::new(false));
+        let reading = thread::spawn({
+            let shut = shut.clone();
+            move || read_output(Box::new(reader), &sink, &shut)
+        });
+        // SAFETY: the slave is open; the buffer is valid for its length.
+        unsafe { libc::write(slave, b"out".as_ptr().cast(), 3) };
+        tokio::time::sleep(READ_WAIT * 2).await;
+        assert_eq!(text(&output), "out");
+        assert!(!reading.is_finished());
+        shut.store(true, Ordering::Relaxed);
+        tokio::time::sleep(READ_WAIT * 2).await;
+        assert!(reading.is_finished());
+        // SAFETY: both descriptors are open and ours.
+        unsafe {
+            libc::close(slave);
+            libc::close(master);
+        }
     }
 
     /// Closing the tab must not submit a line that was typed but not entered, here to a
