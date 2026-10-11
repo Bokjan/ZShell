@@ -446,14 +446,18 @@ fn parse_listen(text: &str) -> Option<(String, u16)> {
     }
 }
 
-/// `host:port` or `[v6]:port` (also `host/port`, an OpenSSH alternative).
+/// `host:port` or `[v6]:port` (also `host/port`, an OpenSSH alternative). A single colon
+/// separates a port: an IPv6 address without brackets, which has several, has no port.
 fn parse_host_port(text: &str) -> Option<(String, u16)> {
     let (host, port) = match text.strip_prefix('[') {
         Some(rest) => {
             let (host, port) = rest.split_once("]:")?;
             (host, port)
         }
-        None => text.rsplit_once(':').or_else(|| text.rsplit_once('/'))?,
+        None => match text.split_once(':') {
+            Some((host, port)) if !port.contains(':') => (host, port),
+            _ => text.rsplit_once('/')?,
+        },
     };
     Some((host.to_owned(), port.parse().ok()?))
 }
@@ -517,6 +521,8 @@ fn stdio_forward_host(command: &str) -> Option<String> {
     };
     let address = match port {
         Some(port) => crate::forward::host_port(host, port),
+        // An IPv6 address in brackets, as a ProxyJump entry writes it.
+        None if host.contains(':') => format!("[{host}]"),
         None => host.to_owned(),
     };
     Some(match user {
@@ -786,10 +792,15 @@ Host *
         assert_eq!(parse_host_port("db/5432"), Some(("db".into(), 5432)));
         assert_eq!(split_destination("ops@jump:2222"), (Some("ops".into()), "jump".into(), Some(2222)));
         assert_eq!(split_destination("jump"), (None, "jump".into(), None));
+        assert_eq!(parse_host_port("2001:db8::1"), None);
+        assert_eq!(parse_host_port("2001:db8::1/22"), Some(("2001:db8::1".into(), 22)));
+        assert_eq!(split_destination("ops@2001:db8::1"), (Some("ops".into()), "2001:db8::1".into(), None));
+        assert_eq!(split_destination("[::1]"), (None, "::1".into(), None));
         assert_eq!(expand_host_tokens("%h.corp%%", "db"), "db.corp%");
         assert_eq!(stdio_forward_host("ssh -W %h:%p jump").as_deref(), Some("jump"));
         assert_eq!(stdio_forward_host("/usr/bin/ssh -l ops -p 2222 jump -W [%h]:%p").as_deref(), Some("ops@jump:2222"));
         assert_eq!(stdio_forward_host("ssh -W %h:%p ops@::1 -p 2").as_deref(), Some("ops@[::1]:2"));
+        assert_eq!(stdio_forward_host("ssh -W %h:%p ops@::1").as_deref(), Some("ops@[::1]"));
         assert_eq!(stdio_forward_host("ssh -i key -W %h:%p jump"), None);
         assert_eq!(stdio_forward_host("ssh jump nc %h %p"), None);
         assert_eq!(stdio_forward_host("ssh -W db:22 jump"), None);
