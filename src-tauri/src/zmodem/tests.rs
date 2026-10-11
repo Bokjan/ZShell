@@ -411,6 +411,17 @@ async fn cancelling_deletes_the_partial_file() {
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
+/// An answer from the user that comes with a cancel (a file dialog closed after the
+/// transfer was cancelled) doesn't start the transfer.
+#[tokio::test]
+async fn a_cancel_wins_over_an_answer() {
+    let (mut link, (_to_link, _from_link, cancel)) = link();
+    cancel.send(true).unwrap();
+    for _ in 0..20 {
+        assert!(link.wait_for(std::future::ready(())).await.is_err());
+    }
+}
+
 #[tokio::test]
 async fn binary_headers_skip_flow_control() {
     let (mut link, (to_link, _from_link, _cancel)) = link();

@@ -380,11 +380,15 @@ impl Link {
 
     /// Waits for `task` (a question to the user), meanwhile discarding what arrives (the
     /// other side repeating its init header) but noticing if it cancels or the user does.
+    /// A cancel wins over an answer that came at the same time.
     pub async fn wait_for<T>(&mut self, task: impl Future<Output = T>) -> Result<T> {
         tokio::pin!(task);
         loop {
             tokio::select! {
-                value = &mut task => return Ok(value),
+                value = &mut task => {
+                    self.check_cancelled()?;
+                    return Ok(value);
+                }
                 read = self.byte(Duration::MAX) => { read?; }
             }
         }
