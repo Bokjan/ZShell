@@ -141,7 +141,8 @@
       "createDirFailed": "Cannot create folder {path}",
       "uploadFailed": "Failed to upload {path}",
       "downloadFailed": "Failed to download {path}",
-      "replaceFailed": "Uploaded {path} but could not put it in place; the new contents are in {temporary}"
+      "replaceFailed": "Uploaded {path} but could not put it in place; the new contents are in {temporary}",
+      "replaceInterrupted": "Uploaded {path} but could not put it in place; the new contents are in {temporary} and the old ones in {original}"
     },
     "forward": {
       "missingTarget": "Local and remote forwards need a target host and port",

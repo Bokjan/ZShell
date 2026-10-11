@@ -110,6 +110,7 @@ export type ErrorCode =
   | "transfer.openFailed"
   | "transfer.readFailed"
   | "transfer.replaceFailed"
+  | "transfer.replaceInterrupted"
   | "transfer.uploadFailed"
   | "unexpected"
   | "zmodem.cancelled"

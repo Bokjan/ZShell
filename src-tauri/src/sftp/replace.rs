@@ -10,12 +10,13 @@
 //! permissions. Hard links to the original keep its old contents.
 //!
 //! SFTP v3's rename doesn't replace an existing file, and russh-sftp can't send OpenSSH's
-//! `posix-rename@openssh.com`, so the original is removed just before the rename: only a
-//! failure between the two leaves the new contents under the temporary name.
+//! `posix-rename@openssh.com`, so the original is first renamed out of the way (to another
+//! `.<name>.zshell-<random>`), then removed once the new file is in place. A connection lost
+//! in between leaves both: the error names the files they are in.
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use russh_sftp::client::fs::File;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileAttributes, OpenFlags};
@@ -70,13 +71,27 @@ impl RemoteTarget {
             let attributes = FileAttributes { permissions: Some(permissions), ..FileAttributes::empty() };
             let _ = sftp.set_metadata(temporary, attributes).await;
         }
-        if let Err(e) = sftp.remove_file(&self.path).await {
+        let original = join(parent(&self.path), &temporary_name(file_name(&self.path)));
+        if let Err(e) = sftp.rename(&self.path, &original).await {
             let _ = sftp.remove_file(temporary).await;
             return Err(anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", &self.path)));
         }
-        sftp.rename(temporary, &self.path)
-            .await
-            .context(Error::new("transfer.replaceFailed").param("path", &self.path).param("temporary", temporary))?;
+        if let Err(e) = sftp.rename(temporary, &self.path).await {
+            let error = anyhow::Error::from(e);
+            // The original back where it was, if the connection still allows.
+            return Err(match sftp.rename(&original, &self.path).await {
+                Ok(()) => error.context(Error::new("transfer.replaceFailed").param("path", &self.path).param("temporary", temporary)),
+                Err(_) => error.context(
+                    Error::new("transfer.replaceInterrupted")
+                        .param("path", &self.path)
+                        .param("temporary", temporary)
+                        .param("original", &original),
+                ),
+            });
+        }
+        // The upload is done; a copy of the old contents left behind (the connection lost
+        // just now) is a hidden file beside it.
+        let _ = sftp.remove_file(&original).await;
         Ok(())
     }
 
@@ -97,6 +112,15 @@ impl RemoteTarget {
     }
 }
 
+/// The folder `path` is in.
+fn parent(path: &str) -> &str {
+    match path.trim_end_matches('/').rsplit_once('/') {
+        Some(("", _)) => "/",
+        Some((dir, _)) => dir,
+        None => ".",
+    }
+}
+
 /// A new file beside `path` that can replace it without changing its owner; `None` if there
 /// can't be one (see the module comment).
 async fn create_beside(
@@ -105,12 +129,7 @@ async fn create_beside(
     original: &FileAttributes,
     permissions: Option<u32>,
 ) -> Option<(File, String)> {
-    let dir = match path.trim_end_matches('/').rsplit_once('/') {
-        Some(("", _)) => "/",
-        Some((dir, _)) => dir,
-        None => ".",
-    };
-    let temporary = join(dir, &temporary_name(file_name(path)));
+    let temporary = join(parent(path), &temporary_name(file_name(path)));
     let flags = OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE;
     let attributes = FileAttributes { permissions, ..FileAttributes::empty() };
     let file = sftp.open_with_flags_and_attributes(&temporary, flags, attributes).await.ok()?;
@@ -225,6 +244,56 @@ mod tests {
         let target = LocalTarget::create(&new).await.unwrap();
         target.abandon().await;
         assert!(!new.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// OpenSSH's `sftp-server` on this computer, if any, as an SFTP session on its stdio.
+    #[cfg(unix)]
+    async fn local_sftp_server() -> Option<SftpSession> {
+        let program = ["/usr/libexec/sftp-server", "/usr/lib/openssh/sftp-server", "/usr/lib/ssh/sftp-server"]
+            .into_iter()
+            .find(|p| Path::new(p).exists())?;
+        let mut child = tokio::process::Command::new(program)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .ok()?;
+        let stream = tokio::io::join(child.stdout.take()?, child.stdin.take()?);
+        // Ends with the session's stream.
+        tokio::spawn(async move { child.wait().await });
+        SftpSession::new(stream).await.ok()
+    }
+
+    /// Replacing a remote file: never removed before the new one is complete, and nothing
+    /// left beside it afterwards. Skipped without `sftp-server` (Windows).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn remote_files_are_replaced_once_complete() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(sftp) = local_sftp_server().await else { return };
+        let dir = std::env::temp_dir().join(format!("zshell-replace-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.txt");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let remote = path.to_str().unwrap();
+
+        let mut target = RemoteTarget::create(&sftp, remote).await.unwrap();
+        assert!(target.temporary.is_some());
+        target.file.write_all(b"new").await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
+        target.finish(&sftp).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o640);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+
+        // Abandoned: the original stays.
+        let mut target = RemoteTarget::create(&sftp, remote).await.unwrap();
+        target.file.write_all(b"half").await.unwrap();
+        target.abandon(&sftp).await;
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
