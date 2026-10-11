@@ -172,15 +172,36 @@ pub fn list() -> Result<Vec<Entry>> {
 }
 
 /// OpenSSH's `match_pattern`: `*` matches any run of characters and `?` any one, ignoring
-/// case (host names are compared in lower case).
+/// case (host names are compared in lower case). Only the last `*` is ever gone back to:
+/// whatever an earlier one could match, the later one can too. So a line with many stars
+/// takes time in proportion to the pattern's length times the host's, not exponential time
+/// in the number of stars, while checking a host key.
 fn glob_matches(pattern: &[u8], text: &[u8]) -> bool {
-    match pattern.split_first() {
-        None => text.is_empty(),
-        Some((b'*', rest)) => (0..=text.len()).any(|skip| glob_matches(rest, &text[skip..])),
-        Some((&c, rest)) => text.split_first().is_some_and(|(&t, text_rest)| {
-            (c == b'?' || c.eq_ignore_ascii_case(&t)) && glob_matches(rest, text_rest)
-        }),
+    let (mut p, mut t) = (0, 0);
+    // The last `*` seen, and where in the text what it matches ends so far.
+    let mut star: Option<(usize, usize)> = None;
+    while t < text.len() {
+        match pattern.get(p) {
+            Some(b'*') => {
+                star = Some((p, t));
+                p += 1;
+            }
+            Some(&c) if c == b'?' || c.eq_ignore_ascii_case(&text[t]) => {
+                p += 1;
+                t += 1;
+            }
+            // Let the last `*` take one more character, and try the rest again from there.
+            _ => match star {
+                Some((star_p, star_t)) => {
+                    star = Some((star_p, star_t + 1));
+                    p = star_p + 1;
+                    t = star_t + 1;
+                }
+                None => return false,
+            },
+        }
     }
+    pattern[p..].iter().all(|&c| c == b'*')
 }
 
 /// Whether a host pattern is `host_port` (see [`host_pattern`]): hashed, or written out,
@@ -560,6 +581,41 @@ mod tests {
         let path = temp_file("").with_file_name("new").join("known_hosts");
         learn_at(&path, "a", 22, &key).unwrap();
         assert!(path.is_file());
+    }
+
+    #[test]
+    fn matches_wildcards_as_openssh() {
+        // `match_pattern`'s definition, in exponential time.
+        fn reference(pattern: &[u8], text: &[u8]) -> bool {
+            match pattern.split_first() {
+                None => text.is_empty(),
+                Some((b'*', rest)) => (0..=text.len()).any(|skip| reference(rest, &text[skip..])),
+                Some((&c, rest)) => text
+                    .split_first()
+                    .is_some_and(|(&t, text_rest)| (c == b'?' || c.eq_ignore_ascii_case(&t)) && reference(rest, text_rest)),
+            }
+        }
+        // Every pattern and text up to a length, from a few characters.
+        fn all(alphabet: &[u8], max: usize) -> Vec<Vec<u8>> {
+            let mut all = vec![Vec::new()];
+            let mut last = all.clone();
+            for _ in 0..max {
+                last = last.iter().flat_map(|s| alphabet.iter().map(move |&c| [s.as_slice(), &[c]].concat())).collect();
+                all.extend(last.iter().cloned());
+            }
+            all
+        }
+        let texts = all(b"aAb", 5);
+        for pattern in all(b"ab*?", 5) {
+            for text in &texts {
+                assert_eq!(glob_matches(&pattern, text), reference(&pattern, text), "{pattern:?} {text:?}");
+            }
+        }
+        // Many stars that can't match take no time to give up on.
+        let pattern = format!("{}x", "*".repeat(64));
+        let started = std::time::Instant::now();
+        assert!(!glob_matches(pattern.as_bytes(), b"[server.lan]:2222"));
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
     }
 
     #[test]
