@@ -278,6 +278,21 @@ describe("reconnecting by hand", () => {
     expect(events.status).toHaveBeenLastCalledWith("connecting");
   });
 
+  it("connects again once the old session has closed", async () => {
+    const { pane, opened } = setup();
+    pane.connect();
+    const first = opened[0].resolve();
+    await settle();
+    let closed = () => {};
+    first.close = () => new Promise<void>((resolve) => (closed = resolve));
+    pane.reconnect();
+    await settle();
+    expect(opened).toHaveLength(1);
+    closed();
+    await settle();
+    expect(opened).toHaveLength(2);
+  });
+
   it("starts the forwarding rules that ran on the new connection, once", async () => {
     const { pane, opened } = setup({ target: () => ({ kind: "profile", profileId: "p" }) });
     pane.connect();

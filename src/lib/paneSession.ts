@@ -212,7 +212,9 @@ export class PaneSession {
         // Added to what an earlier reconnection is still to carry (it never connected).
         const running = await forwards.carry(old.id).catch(() => []);
         this.carry = [...new Set([...this.carry, ...running])];
-        void old.close().catch(ignore);
+        // Closed first: while the old connection is still listed, the new one would leave
+        // the rules to it (they run there), and they would stop with it.
+        await old.close().catch(ignore);
       }
       if (!this.disposed && current === this.generation) this.connect();
     })();
