@@ -153,10 +153,30 @@ fn open(options: &SerialOptions) -> Result<(Box<dyn SerialPort>, Box<dyn SerialP
     }
     #[cfg(not(windows))]
     {
-        let port = builder.open().map_err(open_failed)?;
-        let writer = port.try_clone().map_err(open_failed)?;
+        let port = builder.open_native().map_err(open_failed)?;
+        let writer = port.try_clone_native().map_err(open_failed)?;
+        non_blocking(&writer).map_err(|e| Error::new("serial.openFailed").param("device", &options.device).detail(e))?;
+        let (port, writer): (Box<dyn SerialPort>, Box<dyn SerialPort>) = (Box::new(port), Box::new(writer));
         Ok((port, writer))
     }
+}
+
+/// serialport waits (up to the port's timeout) for room to write, then writes blocking: more
+/// than there is room for would wait as long as flow control holds the line, and a closed
+/// tab's writer couldn't let go of the device. Without blocking, a write takes what fits and
+/// `write_data` looks again. The setting is the open file's, so reads don't block either,
+/// which changes nothing: they too wait for data first.
+#[cfg(not(windows))]
+fn non_blocking(port: &serialport::TTYPort) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let fd = port.as_raw_fd();
+    // SAFETY: `fd` is the port's, open as long as `port` is.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    // SAFETY: as above.
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// serialport duplicates the handle as inheritable, and `std::process::Command` lets child
@@ -285,7 +305,8 @@ fn write_input(mut port: Box<dyn SerialPort>, mut inputs: mpsc::Receiver<Output>
 }
 
 /// Writes all of `data`, waiting as long as flow control holds the line, unless the line is
-/// dropped (`failed` closes).
+/// dropped (`failed` closes): each write returns within the port's timeout (see
+/// `non_blocking` on Unix).
 fn write_data(port: &mut dyn SerialPort, mut data: &[u8], failed: &mpsc::UnboundedSender<String>) -> std::io::Result<()> {
     while !data.is_empty() && !failed.is_closed() {
         match port.write(data) {
@@ -367,6 +388,26 @@ mod tests {
         let events: Vec<String> = events.try_iter().collect();
         assert!(events.first().is_some_and(|e| e.contains(r#""type":"connected""#)), "{events:?}");
         second.abort();
+    }
+
+    /// A tab closed while a write waits for a device that takes no more (flow control holding
+    /// the line) lets go of the device, so that it can be opened again.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn lets_go_of_a_device_holding_up_a_write() {
+        // Never read: the line fills up.
+        let (_device, path) = fake_device();
+        let (io, input, _output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(run(SerialOptions { device: path.clone(), ..SerialOptions::default() }, io));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        input.send(SessionInput::Data(vec![b'x'; 1 << 20])).unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drop(input);
+        tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
+        let since = Instant::now();
+        while Hold::is_held(&path) && since.elapsed() < RELEASE_WAIT {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(!Hold::is_held(&path));
     }
 
     #[tokio::test(flavor = "multi_thread")]
