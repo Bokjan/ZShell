@@ -497,13 +497,17 @@ impl TermIo {
     async fn next_input(&mut self, convert: bool, transfers: bool) -> Option<SessionInput> {
         loop {
             self.transfer_data = false;
+            // Typing first: a transfer whose data is always ready (streaming to a receiver
+            // that doesn't acknowledge each subpacket, over a slower link) would otherwise
+            // keep Ctrl+C from ever being read. Typing during a transfer is taken here, so
+            // it can't hold the transfer up.
             let input = tokio::select! {
                 biased;
+                input = self.input.recv() => input,
                 Some(data) = self.zmodem_out.recv(), if transfers => {
                     self.transfer_data = true;
                     return Some(SessionInput::Data(data));
                 }
-                input = self.input.recv() => input,
             };
             match &input {
                 Some(SessionInput::Data(data)) if self.sink.zmodem.is_active() => {

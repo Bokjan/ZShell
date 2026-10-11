@@ -11,7 +11,7 @@ use std::task::{ready, Context, Poll};
 use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 use tokio::sync::{mpsc, watch};
 
-use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, ZCRCE, ZCRCW};
+use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, CANOVIO, ZCRCE, ZCRCW};
 use super::link::{Link, TIMEOUT};
 use super::{detect, partial_header, receive, send, Direction, Report};
 
@@ -539,6 +539,61 @@ async fn a_transfer_right_after_another_is_detected() {
     sink.zmodem().cancel();
     std::fs::remove_dir_all(&src).unwrap();
     std::fs::remove_dir_all(&dst).unwrap();
+}
+
+/// Ctrl+C cancels an upload streaming to a receiver that doesn't acknowledge each subpacket
+/// (as `lrz`), though the transfer's data keeps waiting to be sent over a slow link.
+#[tokio::test(flavor = "multi_thread")]
+async fn ctrl_c_cancels_a_streaming_upload() {
+    use crate::session::{SessionInput, TermIo};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    const SIZE: usize = 8 << 20;
+    let src = temp_dir("ctrl-c-src");
+    let file = src.join("large.bin");
+    std::fs::write(&file, vec![0x55; SIZE]).unwrap();
+    let (mut io, input, _output, events) = TermIo::detached((80, 24));
+    let sink = io.sink();
+    let sent = Arc::new(AtomicUsize::new(0));
+    tokio::spawn({
+        let sent = sent.clone();
+        async move {
+            while let Some(input) = io.recv().await {
+                if let SessionInput::Data(data) = input {
+                    sent.fetch_add(data.len(), Ordering::Relaxed);
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                }
+            }
+        }
+    });
+    // Within a few seconds in all, though progress keeps coming.
+    let wait_for = |phase: &str| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let event = events.recv_timeout(left).expect(phase);
+            if event.contains(phase) {
+                break;
+            }
+        }
+    };
+
+    sink.output(frame::encode_header(&Header::with_flags(Kind::Rinit, CANFDX | CANOVIO | CANFC32), Encoding::Hex));
+    wait_for("chooseFiles");
+    sink.zmodem().reply(super::Reply::Files(vec![file]));
+    wait_for("transferring");
+    // The receiver takes the file from its start (the answer to ZFILE), then only listens.
+    sink.output(frame::encode_header(&Header::with_pos(Kind::Rpos, 0), Encoding::Hex));
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while sent.load(Ordering::Relaxed) < 64 << 10 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("streaming");
+    input.send(SessionInput::Data(vec![0x03])).unwrap();
+    wait_for("idle");
+    assert!(sent.load(Ordering::Relaxed) < SIZE, "sent the whole file before cancelling");
+    std::fs::remove_dir_all(&src).unwrap();
 }
 
 /// An lrzsz program (`lsz` / `lrz`, as Homebrew and most distributions install them), if any.
