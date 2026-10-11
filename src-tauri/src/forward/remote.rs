@@ -32,15 +32,24 @@ type Route = mpsc::UnboundedSender<Incoming>;
 impl RemoteRoutes {
     /// Delivers a `forwarded-tcpip` channel to its rule; unknown ones are rejected.
     pub fn route(&self, address: &str, port: u32, incoming: Incoming) {
-        let routes = self.0.lock().unwrap();
-        // Servers normally echo the requested address, but match on the port alone if a
-        // server spells it differently.
-        let rule = routes
-            .get(&(address.to_owned(), port))
-            .or_else(|| routes.iter().find(|((_, p), _)| *p == port).map(|(_, rule)| rule));
-        if let Some(rule) = rule {
+        if let Some(rule) = find_route(&self.0.lock().unwrap(), address, port) {
             let _ = rule.send(incoming);
         }
+    }
+}
+
+/// The route for a channel. Servers normally echo the requested address (OpenSSH does), but
+/// one that spells it differently (`localhost` for `127.0.0.1`, say) is matched on the port
+/// alone, as long as only one rule listens on it: with two, the connection may be meant for
+/// either, and is rejected rather than sent to the wrong one.
+fn find_route<'a, R>(routes: &'a HashMap<(String, u32), R>, address: &str, port: u32) -> Option<&'a R> {
+    if let Some(route) = routes.get(&(address.to_owned(), port)) {
+        return Some(route);
+    }
+    let mut on_port = routes.iter().filter(|((_, p), _)| *p == port).map(|(_, route)| route);
+    match (on_port.next(), on_port.next()) {
+        (Some(route), None) => Some(route),
+        _ => None,
     }
 }
 
@@ -150,5 +159,23 @@ async fn connect(incoming: Incoming, host: String, port: u16) -> Result<()> {
             incoming.reply.reject(ChannelOpenFailure::ConnectFailed).await;
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn routes_by_address_then_by_port_alone_when_unambiguous() {
+        let mut routes = HashMap::new();
+        routes.insert(("127.0.0.1".to_owned(), 9000), "loopback");
+        assert_eq!(find_route(&routes, "127.0.0.1", 9000), Some(&"loopback"));
+        assert_eq!(find_route(&routes, "localhost", 9000), Some(&"loopback"));
+        assert_eq!(find_route(&routes, "127.0.0.1", 9001), None);
+
+        routes.insert(("10.0.0.1".to_owned(), 9000), "lan");
+        assert_eq!(find_route(&routes, "10.0.0.1", 9000), Some(&"lan"));
+        assert_eq!(find_route(&routes, "localhost", 9000), None);
     }
 }
