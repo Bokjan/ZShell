@@ -20,6 +20,7 @@ import { isMac } from "../lib/platform";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
+import { isTerminalReport } from "../lib/terminalReports";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -54,16 +55,6 @@ export interface PasteTarget {
   bracketed(): boolean;
   paste(text: string): void;
 }
-
-/**
- * What the terminal sends for programs rather than for the user, so not synced to other
- * panes: mouse (SGR, X10) and focus reports, and answers to queries (device attributes,
- * cursor position, status, modes, window size, OSC colors, DCS). Each comes as one `onData`.
- * A cursor position report can't be told apart from Shift+F3 (`ESC[1;2R`), which is not
- * synced either.
- */
-const REPORT =
-  /^\x1b(?:\[(?:<\d+;\d+;\d+[Mm]|M[\s\S]{3}|I|O|[?>]?[\d;]*c|\??\d+;\d+(?:\$y|R)|\d*n|[\d;]*t)|[\]P][\s\S]*(?:\x1b\\|\x07))$/;
 
 /** Characters of a multi-line paste shown in the confirmation dialog. */
 const PASTE_PREVIEW = 4000;
@@ -268,8 +259,9 @@ export function TerminalView({
     container.addEventListener("contextmenu", onContextMenu);
 
     const subscriptions: IDisposable[] = [
+      // Reports are for the program in this pane only, so not synced to other panes.
       term.onData((data) => {
-        if (session.input(data) && !pasting && !REPORT.test(data)) onInputRef.current(data);
+        if (session.input(data) && !pasting && !isTerminalReport(data)) onInputRef.current(data);
       }),
       term.onBinary((data) => session.inputBinary(data)),
       term.onResize(({ cols, rows }) => session.resize(cols, rows)),

@@ -13,6 +13,7 @@ import {
   type SessionTarget,
   type ZmodemPhase,
 } from "./api";
+import { isTerminalReport } from "./terminalReports";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
@@ -45,7 +46,10 @@ export interface SessionConfig {
   target(): SessionTarget;
   /** How the new session starts its log. */
   logOpen(): LogOpen;
-  /** Typed into each new shell, one after another as the shell shows its prompt. */
+  /**
+   * Typed into each new shell, one after another as the shell shows its prompt, until the
+   * user types something.
+   */
   loginCommands(): string[];
   /** Reconnect automatically when an established connection is lost. */
   autoReconnect(): boolean;
@@ -162,7 +166,9 @@ export class PaneSession {
    */
   input(data: string): boolean {
     if (!this.closed) {
-      if (data.includes("\x03")) this.stopLoginCommands();
+      // The user has taken over: a command typed now would land in what they are typing.
+      // The terminal's answers to the shell's queries (fish asks at startup) aren't typing.
+      if (!isTerminalReport(data)) this.stopLoginCommands();
       void this.session?.write(data);
       return this.session !== undefined;
     }

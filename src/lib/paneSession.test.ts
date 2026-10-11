@@ -356,17 +356,31 @@ describe("login commands", () => {
     expect(session.writes).toEqual(["cd /srv\r", "ls\r"]);
   });
 
-  it("stops typing them on Ctrl+C", async () => {
-    const { pane, opened, setLine } = setup({ loginCommands: () => ["sleep 1"] });
+  it("stops typing them once the user types", async () => {
+    const { pane, opened, setLine } = setup({ loginCommands: () => ["cd /srv"] });
     pane.connect();
     const session = opened[0].resolve();
     await settle();
     opened[0].event({ type: "connected" });
     setLine("$ ");
-    pane.input("\x03");
+    pane.input("l");
+    setLine("$ l");
+    opened[0].output("l");
+    await vi.advanceTimersByTimeAsync(LOGIN_COMMAND_IDLE_MS);
+    expect(session.writes).toEqual(["l"]);
+  });
+
+  it("goes on past the terminal's answers to the shell's queries", async () => {
+    const { pane, opened, setLine } = setup({ loginCommands: () => ["cd /srv"] });
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    pane.input("\x1b[?62;22c");
+    setLine("$ ");
     opened[0].output("$ ");
     await vi.advanceTimersByTimeAsync(LOGIN_COMMAND_IDLE_MS);
-    expect(session.writes).toEqual(["\x03"]);
+    expect(session.writes).toEqual(["\x1b[?62;22c", "cd /srv\r"]);
   });
 });
 
@@ -389,16 +403,16 @@ describe("text from elsewhere", () => {
     expect(opened).toHaveLength(1);
   });
 
-  it("stops the login commands on Ctrl+C, as typing does", async () => {
+  it("stops the login commands, as typing does", async () => {
     const { pane, opened, setLine } = setup({ loginCommands: () => ["sleep 1"] });
     pane.connect();
     const session = opened[0].resolve();
     await settle();
     opened[0].event({ type: "connected" });
     setLine("$ ");
-    pane.send("\x03");
+    pane.send("ls\r");
     opened[0].output("$ ");
     await vi.advanceTimersByTimeAsync(LOGIN_COMMAND_IDLE_MS);
-    expect(session.writes).toEqual(["\x03"]);
+    expect(session.writes).toEqual(["ls\r"]);
   });
 });
