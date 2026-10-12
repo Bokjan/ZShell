@@ -464,6 +464,7 @@ function App() {
             return !!tab && windowing.canMove(tab);
           }}
           onMoveToWindow={(key, target) => void windowing.moveTab(key, target)}
+          onDropOut={windowing.dropTab}
           onRename={(key, customTitle) => updateTab(key, { customTitle })}
           onDuplicate={duplicateTab}
           onSaveAsSession={(key) => withFocused(key, (pane) => saveAsSession(pane.key))}

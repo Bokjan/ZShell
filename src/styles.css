@@ -442,6 +442,21 @@ body.dragging-row {
   opacity: 0.7;
   cursor: grabbing;
 }
+/* Dropped now, it would leave the window. */
+.tab.dragging.leaving {
+  opacity: 0.4;
+}
+/* Where a tab dragged from another window would go. */
+.tab-drop-marker {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
 /* The session's own background color (e.g. red for production), along the left edge. */
 .tab-color {
   position: absolute;

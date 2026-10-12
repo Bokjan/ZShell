@@ -14,8 +14,10 @@ import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { shortcutLabel } from "../lib/keymap";
 import { isComposing, isWindows } from "../lib/platform";
+import type { Point } from "../lib/bindings";
+import { tabIndexAt } from "../lib/tabStrip";
 import { DRAG_REGION } from "../lib/window";
-import type { WindowInfo } from "../lib/windows";
+import { tabDrag, useWindowEvent, type DropTarget, type WindowInfo } from "../lib/windows";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
@@ -38,6 +40,11 @@ interface Props {
   canMoveToWindow(key: number): boolean;
   /** Moves the tab to window `target`, or to a new window (null). */
   onMoveToWindow(key: number, target: string | null): void;
+  /**
+   * The tab was dragged out of the window and dropped on `target`, `grab`bed that far from the
+   * top left of the window.
+   */
+  onDropOut(key: number, target: DropTarget, grab: Point): void;
   /** `title` null goes back to the automatic title. */
   onRename(key: number, title: string | null): void;
   onDuplicate(key: number): void;
@@ -89,6 +96,7 @@ export function TabBar({
   windows,
   canMoveToWindow,
   onMoveToWindow,
+  onDropOut,
   onSplit,
   canSplit,
   onSaveAsSession,
@@ -110,7 +118,13 @@ export function TabBar({
   const { t } = useTranslation();
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
   const stripRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLElement>(null);
   const [dragging, setDragging] = useState<number | null>(null);
+  // The dragged tab would leave the window if dropped now.
+  const [leaving, setLeaving] = useState(false);
+  // Where a tab dragged from another window would go, while it is over this tab bar.
+  const [dropX, setDropX] = useState<number | null>(null);
+  useWindowEvent<number | null>("tab-drag-over", setDropX);
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
   const tabsRef = useRef(tabs);
@@ -127,6 +141,23 @@ export function TabBar({
     }
   }, [activeKey, tabs.length]);
 
+  // Where the tab bar is, for tabs dragged from other windows (see `tab_drag.rs`).
+  useEffect(() => {
+    const bar = barRef.current!;
+    const report = () => {
+      const { x, y, width, height } = bar.getBoundingClientRect();
+      void tabDrag.setTabBar({ x, y, width, height }).catch(console.error);
+    };
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(bar);
+    window.addEventListener("resize", report);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", report);
+    };
+  }, []);
+
   // A mouse wheel scrolls the strip sideways; trackpads already scroll horizontally.
   const onWheel = (e: ReactWheelEvent) => {
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) stripRef.current!.scrollLeft += e.deltaY;
@@ -141,39 +172,98 @@ export function TabBar({
 
   // Reorders live while dragging: the tab moves past each neighbor whose middle the pointer
   // crosses. Pressing doesn't take focus from the terminal. Mouse events rather than HTML5
-  // drag and drop, which Tauri's file drop handling intercepts on Windows.
+  // drag and drop, which Tauri's file drop handling intercepts on Windows. Dragged out of the
+  // window, the tab goes where the backend says it is over when dropped (another window's tab
+  // bar, or a window of its own); Escape puts it back.
   const startDrag = (e: ReactMouseEvent, key: number) => {
     if (e.button !== 0) return;
     e.preventDefault();
     const startX = e.clientX;
+    const grab = { x: e.clientX, y: e.clientY };
+    const startIndex = tabsRef.current.findIndex((tab) => tab.key === key);
     let moved = false;
+    // Whether it can go to another window, as the drag starts.
+    let movable = false;
+    // One question about where it would go at a time, and the latest position after it.
+    let asking = false;
+    let askAgain = false;
+    let ended = false;
+    const ask = () => {
+      if (asking) {
+        askAgain = true;
+        return;
+      }
+      asking = true;
+      void tabDrag
+        .move()
+        .then((target) => {
+          // A window's only tab has nowhere new to go.
+          const leaves = target.kind === "window" || (target.kind === "elsewhere" && tabsRef.current.length > 1);
+          if (!ended) setLeaving(leaves);
+        }, console.error)
+        .finally(() => {
+          asking = false;
+          if (askAgain && !ended) {
+            askAgain = false;
+            ask();
+          }
+        });
+    };
     const move = (ev: MouseEvent) => {
+      // Released where the page didn't hear it.
+      if (ev.buttons === 0) {
+        finish(true);
+        return;
+      }
       if (!moved) {
         if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
         moved = true;
+        movable = canMoveToWindow(key);
         setDragging(key);
       }
+      if (movable) ask();
+      const inside = ev.clientX >= 0 && ev.clientY >= 0 && ev.clientX < window.innerWidth && ev.clientY < window.innerHeight;
+      if (!inside) return;
       const strip = stripRef.current!;
       const bounds = strip.getBoundingClientRect();
       if (ev.clientX < bounds.left + DRAG_SCROLL_EDGE) strip.scrollLeft -= DRAG_SCROLL_STEP;
       else if (ev.clientX > bounds.right - DRAG_SCROLL_EDGE) strip.scrollLeft += DRAG_SCROLL_STEP;
-      const others = [...strip.querySelectorAll<HTMLElement>(".tab")].filter(
-        (el) => el.dataset.key !== String(key),
-      );
-      const index = others.filter((el) => {
-        const rect = el.getBoundingClientRect();
-        return rect.left + rect.width / 2 < ev.clientX;
-      }).length;
+      const index = tabIndexAt(strip, ev.clientX, key);
       if (tabsRef.current.findIndex((tab) => tab.key === key) !== index) onMove(key, index);
     };
-    const up = () => {
+    const keyDown = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (moved) onMove(key, startIndex);
+      finish(false);
+    };
+    const finish = (dropped: boolean) => {
+      ended = true;
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      window.removeEventListener("keydown", keyDown, true);
       setDragging(null);
+      setLeaving(false);
+      if (!movable) return;
+      void tabDrag.end(dropped).then((target) => target && onDropOut(key, target, grab), console.error);
     };
+    const up = () => finish(true);
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
+    window.addEventListener("keydown", keyDown, true);
   };
+
+  // Where a tab dragged from another window would go among the tabs.
+  const dropMarker = (() => {
+    const strip = stripRef.current;
+    if (dropX === null || !strip) return null;
+    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")];
+    const index = tabIndexAt(strip, dropX);
+    const last = elements[elements.length - 1];
+    const left = index < elements.length ? elements[index].offsetLeft : last ? last.offsetLeft + last.offsetWidth : 0;
+    return <span className="tab-drop-marker" style={{ left }} aria-hidden="true" />;
+  })();
 
   const menuItems = (key: number): MenuItem[] => {
     const index = tabs.findIndex((tab) => tab.key === key);
@@ -294,7 +384,7 @@ export function TabBar({
 
   // The window's title bar: always shown, so "+" and room to move the window stay available.
   return (
-    <nav className="tab-bar" {...DRAG_REGION}>
+    <nav className="tab-bar" ref={barRef} {...DRAG_REGION}>
       <div className="tab-strip" ref={stripRef} onWheel={onWheel} role="tablist" aria-label={t("tabs.listLabel")}>
         {tabs.map((tab, index) => {
           const pane = focusedPane(tab);
@@ -316,7 +406,7 @@ export function TabBar({
               className={[
                 "tab",
                 tab.key === activeKey && "active",
-                tab.key === dragging && "dragging",
+                tab.key === dragging && (leaving ? "dragging leaving" : "dragging"),
                 inScope.includes(tab.key) && (syncing ? "in-scope syncing" : "in-scope"),
                 flashing.includes(tab.key) && "flash",
               ]
@@ -366,6 +456,7 @@ export function TabBar({
             </div>
           );
         })}
+        {dropMarker}
       </div>
       {menu && tabs.some((tab) => tab.key === menu.key) && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />

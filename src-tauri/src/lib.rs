@@ -26,6 +26,7 @@ mod session;
 mod settings;
 mod sftp;
 mod ssh;
+mod tab_drag;
 mod telnet;
 mod vault;
 mod window;
@@ -264,6 +265,7 @@ pub fn run() {
         })
         .manage(SessionManager::default())
         .manage(Windows::default())
+        .manage(tab_drag::TabDrag::default())
         .manage(Connections::default())
         .manage(Transfers::default())
         .invoke_handler(tauri::generate_handler![
@@ -357,6 +359,9 @@ pub fn run() {
             window::window_set_title,
             window::window_send_tab,
             window::window_pane_stayed,
+            tab_drag::window_set_tab_bar,
+            tab_drag::tab_drag_move,
+            tab_drag::tab_drag_end,
             window::window_busy_reply,
             window::app_busy_count,
             window::app_quit,

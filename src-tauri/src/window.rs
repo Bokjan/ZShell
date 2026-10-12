@@ -22,6 +22,7 @@ use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::session::SessionManager;
+use crate::tab_drag::{self, Point};
 
 const MAIN: &str = "main";
 const LABEL_PREFIX: &str = "window-";
@@ -63,7 +64,7 @@ struct BusyQuery {
 }
 
 /// Where a window is in the order they opened: `main` first.
-fn order(label: &str) -> u32 {
+pub(crate) fn order(label: &str) -> u32 {
     label.strip_prefix(LABEL_PREFIX).and_then(|n| n.parse().ok()).unwrap_or(0)
 }
 
@@ -99,6 +100,7 @@ pub fn destroyed(window: &tauri::Window) {
         inbox.pending.remove(window.label());
         inbox.closing.remove(window.label());
     }
+    tab_drag::forget(window.app_handle(), window.label());
     let _ = window.emit("window-closed", window.label());
     #[cfg(windows)]
     if let Ok(hwnd) = window.hwnd() {
@@ -138,27 +140,36 @@ pub fn create_main(app: &App) -> tauri::Result<()> {
     build(app.handle(), MAIN, None).map(drop)
 }
 
-/// A window the size of `source`, a little down and to the right of it.
-fn cascade(source: &WebviewWindow) -> tauri::Result<(tauri::LogicalPosition<f64>, tauri::LogicalSize<f64>)> {
-    let scale = source.scale_factor()?;
-    let position = source.outer_position()?.to_logical::<f64>(scale);
-    let size = source.inner_size()?.to_logical::<f64>(scale);
-    Ok((tauri::LogicalPosition::new(position.x + CASCADE, position.y + CASCADE), size))
+fn size(window: &WebviewWindow) -> tauri::Result<tauri::LogicalSize<f64>> {
+    Ok(window.inner_size()?.to_logical::<f64>(window.scale_factor()?))
 }
 
-/// Opens a window next to this one, which shows `content` first (see [`window_take`]), and
-/// returns its label. Async: creating a window from a synchronous command deadlocks on
-/// Windows.
+/// A window the size of `source`, a little down and to the right of it.
+fn cascade(source: &WebviewWindow) -> tauri::Result<(tauri::LogicalPosition<f64>, tauri::LogicalSize<f64>)> {
+    let position = source.outer_position()?.to_logical::<f64>(source.scale_factor()?);
+    Ok((tauri::LogicalPosition::new(position.x + CASCADE, position.y + CASCADE), size(source)?))
+}
+
+/// Opens a window the size of this one, which shows `content` first (see [`window_take`]),
+/// and returns its label. It goes next to this one, or under the cursor with the cursor
+/// `grab` from its top left corner (a tab dragged out). Async: creating a window from a
+/// synchronous command deadlocks on Windows.
 #[tauri::command]
 pub async fn window_open(
     app: AppHandle,
     window: WebviewWindow,
     windows: State<'_, Windows>,
     content: serde_json::Value,
+    grab: Option<Point>,
 ) -> tauri::Result<String> {
     let label = format!("{LABEL_PREFIX}{}", windows.next.fetch_add(1, Ordering::Relaxed) + 1);
     windows.inbox.lock().unwrap().pending.insert(label.clone(), vec![content]);
-    if let Err(e) = build(&app, &label, cascade(&window).ok()) {
+    let at_cursor = || {
+        let size = size(&window).ok()?;
+        Some((tab_drag::place_at_cursor(&app, grab?, size)?, size))
+    };
+    let place = at_cursor().or_else(|| cascade(&window).ok());
+    if let Err(e) = build(&app, &label, place) {
         windows.inbox.lock().unwrap().pending.remove(&label);
         return Err(e);
     }
@@ -217,17 +228,24 @@ pub fn window_set_title(app: AppHandle, window: WebviewWindow, title: String) ->
 }
 
 /// Gives a tab to window `target`, which takes it (see [`window_take`]) when it hears
-/// `tab-received`, and comes forward. Fails with `window.notFound` if it has closed or is
-/// closing.
+/// `tab-received`, and comes forward. `at`: where in its page it was dropped (CSS pixels from
+/// the left), to put it there among the tabs. Fails with `window.notFound` if it has closed or
+/// is closing.
 #[tauri::command]
-pub fn window_send_tab(app: AppHandle, windows: State<'_, Windows>, target: String, tab: serde_json::Value) -> Result<()> {
+pub fn window_send_tab(
+    app: AppHandle,
+    windows: State<'_, Windows>,
+    target: String,
+    tab: serde_json::Value,
+    at: Option<f64>,
+) -> Result<()> {
     let window = app.get_webview_window(&target).ok_or_else(|| Error::new("window.notFound"))?;
     {
         let mut inbox = windows.inbox.lock().unwrap();
         if inbox.closing.contains(&target) {
             return Err(Error::new("window.notFound"));
         }
-        inbox.pending.entry(target.clone()).or_default().push(serde_json::json!({ "kind": "tab", "tab": tab }));
+        inbox.pending.entry(target.clone()).or_default().push(serde_json::json!({ "kind": "tab", "tab": tab, "at": at }));
     }
     let _ = app.emit_to(EventTarget::webview_window(target), "tab-received", ());
     let _ = window.unminimize();

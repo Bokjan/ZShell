@@ -226,6 +226,11 @@ export type DragOutcome = "cancelled" | "inside" | "outside";
 export type DragResult = { outcome: DragOutcome, x: number, y: number, };
 
 /**
+ * Where a dragged tab would go if released now.
+ */
+export type DropTarget = { "kind": "here" } | { "kind": "window", label: string, x: number, } | { "kind": "elsewhere" };
+
+/**
  * What the watcher sends the frontend.
  */
 export type EditEvent = { "type": "changed" };
@@ -397,6 +402,11 @@ export type LogSummary = { count: number, bytes: number, };
 export type Parity = "none" | "odd" | "even";
 
 /**
+ * A point in a page's CSS pixels.
+ */
+export type Point = { x: number, y: number, };
+
+/**
  * A saved session: what it connects to (by protocol), and how its tabs behave.
  */
 export type Profile = { 
@@ -490,6 +500,11 @@ text: string,
 enter: boolean, };
 
 export type QuickCommands = { groups: Array<CommandGroup>, };
+
+/**
+ * A rectangle in a page's CSS pixels.
+ */
+export type Rect = { x: number, y: number, width: number, height: number, };
 
 /**
  * What SSH and Telnet sessions have in common: where they connect, through what, and the

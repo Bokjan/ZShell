@@ -3,10 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { EventCallback, UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-import type { Change, WindowInfo } from "./bindings";
+import type { Change, DropTarget, Point, Rect, WindowInfo } from "./bindings";
 import type { TabTransfer } from "./tabs";
 
-export type { Change, WindowInfo } from "./bindings";
+export type { Change, DropTarget, WindowInfo } from "./bindings";
 
 /**
  * Listens to an event for this window: sent to it, or to all windows. (The event module's
@@ -30,12 +30,20 @@ export function useConfigChanged(change: Change, handler: () => void) {
   useWindowEvent<Change>("config-changed", (changed) => changed === change && handler());
 }
 
-/** What a new window shows first: a tab moved out of another window, or a saved session to open. */
-export type WindowContent = { kind: "tab"; tab: TabTransfer } | { kind: "profile"; profileId: string; title: string };
+/**
+ * What a window is to show: a tab moved out of another window (dropped `at` that many CSS
+ * pixels from the left of the page, if dragged there), or a saved session to open.
+ */
+export type WindowContent =
+  | { kind: "tab"; tab: TabTransfer; at?: number | null }
+  | { kind: "profile"; profileId: string; title: string };
 
 export const windows = {
-  /** Opens a window next to this one, showing `content`; returns its label. */
-  open: (content: WindowContent) => invoke<string>("window_open", { content }),
+  /**
+   * Opens a window showing `content`, and returns its label: next to this one, or under the
+   * cursor with the cursor `grab` from its top left corner (a tab dragged out).
+   */
+  open: (content: WindowContent, grab?: Point) => invoke<string>("window_open", { content, grab: grab ?? null }),
   /**
    * What this window is to show and hasn't taken yet: what it opened for, and the tabs other
    * windows gave it (`tab-received` says when). Each is taken once.
@@ -50,7 +58,7 @@ export const windows = {
   list: () => invoke<WindowInfo[]>("window_list"),
   setTitle: (title: string) => invoke<void>("window_set_title", { title }),
   /** Gives a tab to another window, which comes forward (`window.notFound` if it has closed). */
-  sendTab: (target: string, tab: TabTransfer) => invoke<void>("window_send_tab", { target, tab }),
+  sendTab: (target: string, tab: TabTransfer, at?: number) => invoke<void>("window_send_tab", { target, tab, at: at ?? null }),
   /** Tells the window a tab came from that its pane `pane` couldn't move here (`pane-stayed`). */
   paneStayed: (target: string, pane: number) => invoke<void>("window_pane_stayed", { target, pane }),
   /** How many tabs in all the windows are busy (connected, running a program), for quitting. */
@@ -58,4 +66,14 @@ export const windows = {
   /** This window's answer to the `busy-query` event. */
   busyReply: (query: number, count: number) => invoke<void>("window_busy_reply", { query, count }),
   quit: () => invoke<void>("app_quit"),
+};
+
+/** Dragging a tab out of its window (see `tab_drag.rs`). */
+export const tabDrag = {
+  /** Where this window's tab bar is, for tabs dragged from the other windows. */
+  setTabBar: (rect: Rect) => invoke<void>("window_set_tab_bar", { rect }),
+  /** Where a tab dragged from this window would go now; the window it would go into shows where (`tab-drag-over`). */
+  move: () => invoke<DropTarget>("tab_drag_move"),
+  /** Ends the drag: where the tab goes if `dropped`, or null. */
+  end: (dropped: boolean) => invoke<DropTarget | null>("tab_drag_end", { dropped }),
 };

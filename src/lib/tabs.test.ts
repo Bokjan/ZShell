@@ -60,6 +60,13 @@ describe("insert", () => {
     expect(keys).not.toContain(next.tabs[2].key);
     expect(keys).not.toContain(next.tabs[2].panes[0].key);
   });
+
+  it("puts the tab where it was dropped", () => {
+    const moving = run({ type: "open", pane: ssh("moved") }).tabs[0];
+    const here = run({ type: "open", pane: ssh("a") }, { type: "open", pane: ssh("b") });
+    const state = reduceTabs(here, { type: "insert", tab: moving, index: 1 });
+    expect(state.tabs.map((tab) => tab.panes[0].title)).toEqual(["a", "moved", "b"]);
+  });
 });
 
 describe("split", () => {

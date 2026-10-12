@@ -5,8 +5,10 @@ import { useTranslation } from "react-i18next";
 import type { SessionTarget } from "../lib/api";
 import { tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
+import type { Point } from "../lib/bindings";
+import { tabIndexAt, tabStrip } from "../lib/tabStrip";
 import { useTabStore, type TabStore, type TabTransfer } from "../lib/tabs";
-import { useWindowEvent, windows, type WindowInfo } from "../lib/windows";
+import { useWindowEvent, windows, type DropTarget, type WindowInfo } from "../lib/windows";
 
 interface Options {
   followRemoteTitle: boolean;
@@ -73,7 +75,11 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       .take()
       .then((contents) => {
         for (const content of contents) {
-          if (content.kind === "tab") store.dispatch({ type: "insert", tab: content.tab });
+          if (content.kind === "tab") {
+            const strip = tabStrip();
+            const index = content.at != null && strip ? tabIndexAt(strip, content.at) : undefined;
+            store.dispatch({ type: "insert", tab: content.tab, index });
+          }
           else openTabRef.current({ kind: "profile", profileId: content.profileId }, content.title);
         }
       }, console.error)
@@ -131,9 +137,13 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
     [settle],
   );
 
-  /** Moves a tab to window `target`, or to a new window (null). */
+  /**
+   * Moves a tab to window `target`, or to a new window (null). Dragged there: dropped `at`
+   * that many CSS pixels from the left of the target's page, or `grab`bed that far from the
+   * top left of this window, which is where it goes in the new one.
+   */
   const moveTab = useCallback(
-    async (key: number, target: string | null) => {
+    async (key: number, target: string | null, { at, grab }: { at?: number; grab?: Point } = {}) => {
       const tab = store.get().tabs.find((t) => t.key === key);
       if (!tab || !canMove(tab)) return;
       const here = getCurrentWindow().label;
@@ -163,8 +173,8 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       const move: Moving = { target, waiting: new Set(live), stayed: new Set() };
       moving.current.set(key, move);
       try {
-        if (target === null) move.target = await windows.open({ kind: "tab", tab: transfer });
-        else await windows.sendTab(target, transfer);
+        if (target === null) move.target = await windows.open({ kind: "tab", tab: transfer }, grab);
+        else await windows.sendTab(target, transfer, at);
       } catch (e) {
         moving.current.delete(key);
         console.error(e);
@@ -173,6 +183,18 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       if (live.length === 0) settle(key);
     },
     [store, sessions, canMove, settle],
+  );
+
+  /**
+   * A tab dragged out of the window and dropped on `target`: into another window's tab bar, or
+   * anywhere else into a window of its own, unless it is this window's only tab.
+   */
+  const dropTab = useCallback(
+    (key: number, target: DropTarget, grab: Point) => {
+      if (target.kind === "window") void moveTab(key, target.label, { at: target.x });
+      else if (target.kind === "elsewhere" && store.get().tabs.length > 1) void moveTab(key, null, { grab });
+    },
+    [store, moveTab],
   );
 
   /** The pane's session has moved to the other window (see `SessionRegistry`). */
@@ -206,5 +228,5 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
     [],
   );
 
-  return { others, canMove, moveTab, movedAway, stayed, openInNewWindow };
+  return { others, canMove, moveTab, dropTab, movedAway, stayed, openInNewWindow };
 }
