@@ -1,5 +1,6 @@
 //! SSH shell sessions on top of russh.
 
+mod abortable;
 mod auth;
 mod connections;
 mod handler;
@@ -321,7 +322,8 @@ async fn connect(
 /// How long the SSH version and key exchange may take, not counting the time a host key
 /// question waits for the user. A port that accepts connections but never speaks SSH (or a
 /// proxy command that hangs) would otherwise leave the tab connecting for ever, and an
-/// automatic reconnection would never try again.
+/// automatic reconnection would never try again. Giving up (or the tab closing) ends the
+/// connection, which russh would otherwise keep (see [`abortable`]).
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
 async fn handshake<S>(hop: &SshProfile, options: HopOptions, stream: S, io: &mut TermIo) -> Result<SshHandle>
@@ -342,6 +344,7 @@ where
     let handler = ClientHandler::new(remote.host.clone(), remote.port, forward_agent, queries_tx, routes, disconnect);
 
     // Drive the handshake while answering host key questions from the handler.
+    let (stream, abort) = abortable::abortable(stream);
     let handshake = client::connect_stream(config, stream, handler);
     tokio::pin!(handshake);
     let deadline = tokio::time::sleep(HANDSHAKE_TIMEOUT);
@@ -349,10 +352,12 @@ where
     loop {
         tokio::select! {
             result = &mut handshake => {
-                return result.map_err(|e| match e {
+                let session = result.map_err(|e| match e {
                     russh::Error::UnknownKey => anyhow!(Error::new("ssh.hostKeyRejected")),
                     e => anyhow!(e).context(Error::new("ssh.handshakeFailed")),
-                });
+                })?;
+                abort.disarm();
+                return Ok(session);
             }
             Some(query) = queries.recv() => {
                 let accepted = host_key::confirm(io, &remote.host, remote.port, &query).await;
@@ -391,6 +396,30 @@ mod tests {
         let result = handshake(&profile, HopOptions::jump_host(), stream, &mut io).await;
         let error = Error::from(result.err().unwrap());
         assert_eq!(error.code(), "ssh.handshakeTimeout");
+    }
+
+    /// A server that sends its version line, then nothing. russh has started its connection
+    /// task by then; giving up on the handshake (the tab closing, here) must end it too, or the
+    /// connection stays open.
+    #[tokio::test]
+    async fn giving_up_on_a_handshake_closes_the_connection() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (stream, mut server) = tokio::io::duplex(1 << 16);
+        server.write_all(b"SSH-2.0-silent\r\n").await.unwrap();
+        let profile = SshProfile::quick("t".into(), Remote::new("example.com".into(), 22, "alice".into()));
+        let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
+        let mut buf = vec![0; 4096];
+        tokio::select! {
+            _ = handshake(&profile, HopOptions::jump_host(), stream, &mut io) => panic!("the handshake ended"),
+            // The client's version line and key exchange offer.
+            read = server.read(&mut buf) => assert!(read.unwrap() > 0),
+        }
+        let closed = tokio::time::timeout(Duration::from_secs(5), async {
+            while server.read(&mut buf).await.is_ok_and(|n| n > 0) {}
+        })
+        .await;
+        assert!(closed.is_ok(), "the connection is still open");
     }
 
     /// A server whose shell prints without end if `flood` (and nothing otherwise), and that

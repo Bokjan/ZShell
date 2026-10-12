@@ -6,7 +6,7 @@
 
 ### SSH：认证完成前 keepalive 定时器空转，占满一个核
 
-- **现象**：密码、口令或验证码提示停在终端里超过 keepalive 间隔（默认 30 秒），或者在等 Duo 推送时，ZShell 占满一个 CPU 核。用户输入、服务器断开（`LoginGraceTime` 默认 120 秒）或关掉标签后恢复。握手超时后留下的 russh 任务也会这样空转。
+- **现象**：密码、口令或验证码提示停在终端里超过 keepalive 间隔（默认 30 秒），或者在等 Duo 推送时，ZShell 占满一个 CPU 核。用户输入、服务器断开（`LoginGraceTime` 默认 120 秒）或关掉标签后恢复。
 - **原因**：russh 0.64.1 客户端主循环（`client/mod.rs` 约 1426–1438 行）在 `keepalive_timer` 到期时，只有状态是 `Authenticated` 才发 keepalive；定时器只在 `received_data || sent_keepalive` 时重置（约 1515–1521 行）。认证完成前到期，这个分支什么都不做，也不重置。tokio 的 `Sleep` 到期后每次 poll 都是 Ready，`select!` 就一直空转，直到对端再发数据。`ssh/mod.rs` 在连接时就把 `keepalive_interval` 交给 russh。2026-10-12 用同一份 `Cargo.lock` 写小程序复现：keepalive 设 1 秒，认证前空等 4 秒用掉 3.16 秒 CPU，不设 keepalive 时是 0。
 - **上游修复**：还没有。问题由 [Eugeny/russh#642](https://github.com/Eugeny/russh/pull/642)（认证前不发 keepalive，2026-02-28 合入）引入；2026-10-12 查过，crates.io 上最新仍是 0.64.1，main 分支（最近一次修改这个文件是 2026-10-04 的 `a0ded76`）也没有改，上游没有相关 issue。修法是未认证时到期也重置定时器，一两行。
 - **处理**：russh 发布修复后，在 `src-tauri/` 下升级 russh，用上面的方法确认认证提示停留时 CPU 不再升高，作为补丁版本发布。
