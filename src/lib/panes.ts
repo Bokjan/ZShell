@@ -1,4 +1,12 @@
-import { DEFAULT_TERM_TYPE, type ForwardState, type Profile, type Protocol, type SessionId, type SessionTarget } from "./api";
+import {
+  DEFAULT_TERM_TYPE,
+  type ForwardState,
+  type Profile,
+  type Protocol,
+  type SessionId,
+  type SessionSnapshot,
+  type SessionTarget,
+} from "./api";
 import type { SessionStatus } from "./paneSession";
 
 export type SidePanel = "files" | "forwards";
@@ -35,11 +43,32 @@ export interface Pane {
   logStopped: boolean;
   /** Uploads and downloads running in the pane's file panel; closing the pane cancels them. */
   transfers: number;
+  /** Files of the pane's file panel open in a local editor, which closing the pane stops watching. */
+  edits: number;
   /**
    * Questions waiting in the pane's file panel (an edit conflict a background save found),
    * marked on its tab while the panel is out of sight.
    */
   questions: number;
+  /** For a pane that came from another window, until its terminal takes over. */
+  arrival?: Arrival;
+}
+
+/** A terminal's content, to draw again in another window (see `SessionSnapshot`). */
+export type Snapshot = Omit<SessionSnapshot, "id">;
+
+/**
+ * How a pane that moved from another window goes on: with its session (`sessionId`), whose
+ * screen the old window hands over once the session has moved, or without one, its terminal
+ * as it was (`snapshot`).
+ */
+export interface Arrival {
+  sessionId: SessionId | null;
+  /** The session's shell is up (rather than still connecting). */
+  connected: boolean;
+  snapshot: Snapshot | null;
+  /** It was waiting to reconnect: it connects at once. */
+  reconnect: boolean;
 }
 
 /** How a tab's panes are arranged: one pane, or several side by side (`row`) or stacked (`column`). */

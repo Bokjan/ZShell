@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
-import { useAppLock } from "../components/AppLockGate";
+import { useAppLock, type PendingClose } from "../components/AppLockGate";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { forwards, sessionForeground, type ForwardRule, type SessionId, type Settings } from "../lib/api";
 import { isAppLocked } from "../lib/appLock";
@@ -11,6 +10,7 @@ import { isDialogOpen } from "../lib/dialogs";
 import { forwardMapping } from "../lib/format";
 import { findPane, paneLabel, tabTitle, type Pane } from "../lib/panes";
 import { activeTabOf, type TabStore } from "../lib/tabs";
+import { listenHere, useWindowEvent, windows } from "../lib/windows";
 
 /** Why closing a pane needs confirmation: a remote session is connected, or a local program runs. */
 type Busy = { kind: "connected" } | { kind: "process"; name: string } | { kind: "transfers"; count: number };
@@ -26,6 +26,12 @@ interface Closing {
 
 export type CloseRequest = { kind: "tabs"; keys: number[] } | { kind: "pane"; key: number };
 
+/** How many panes of the window closing it would end. */
+async function busyPanes(store: TabStore): Promise<number> {
+  const reasons = await Promise.all(store.get().tabs.flatMap((tab) => tab.panes).map(busyReason));
+  return reasons.filter((reason) => reason !== null).length;
+}
+
 async function busyReason(pane: Pane): Promise<Busy | null> {
   if (pane.transfers > 0) return { kind: "transfers", count: pane.transfers };
   if (pane.status !== "connected" || pane.sessionId == null) return null;
@@ -35,7 +41,8 @@ async function busyReason(pane: Pane): Promise<Busy | null> {
 }
 
 /**
- * Closing tabs, panes and the window, asking first when a pane is busy (see the settings), and
+ * Closing tabs, panes and the window, and quitting, asking first when a pane is busy (see the
+ * settings for tabs and panes; closing a window or quitting always asks), and
  * whether port forwarding another tab of the session could take over should keep running.
  * `dialogs` is what to render for the questions.
  */
@@ -47,8 +54,8 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
   const [closing, setClosing] = useState<Closing | null>(null);
   // Closing panes whose connections run port forwarding another tab of the session could take over.
   const [keeping, setKeeping] = useState<{ panes: number[]; ids: SessionId[]; rules: ForwardRule[] } | null>(null);
-  // The window waiting for the user to confirm closing it (quitting), with how many tabs are busy.
-  const [closingWindow, setClosingWindow] = useState<number | null>(null);
+  // The window waiting for the user to confirm closing it, or quitting.
+  const [closingWindow, setClosingWindow] = useState<PendingClose | null>(null);
 
   // While the app is locked the dialogs are under the lock screen, which asks instead; a close
   // still waiting there when it is unlocked is asked again here.
@@ -102,25 +109,35 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
     else void requestClose({ kind: "tabs", keys: [tab.key] });
   }, [store, requestClose]);
 
-  // Closing the window (the close button, ⌘Q, Alt+F4) quits, ending every session at once,
-  // so it always asks, whatever the setting for closing tabs. Quitting from the macOS Dock,
-  // logging out or shutting down ends the app without asking (a known limitation).
+  // Closing the window (the close button, ⇧⌘W, Alt+F4) ends its sessions at once, so it
+  // always asks, whatever the setting for closing tabs; the last window closing quits.
+  // Quitting from the macOS Dock, logging out or shutting down ends the app without asking (a
+  // known limitation).
   useEffect(() => {
     const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
-      const reasons = await Promise.all(store.get().tabs.flatMap((tab) => tab.panes).map(busyReason));
-      const busy = reasons.filter((reason) => reason !== null).length;
+      const busy = await busyPanes(store);
       if (busy === 0) return;
       event.preventDefault();
-      if (isAppLocked()) confirmCloseLocked(busy);
-      else setClosingWindow(busy);
+      if (isAppLocked()) confirmCloseLocked({ busy, quit: false });
+      else setClosingWindow({ busy, quit: false });
     });
     return () => void unlisten.then((f) => f());
   }, [store, confirmCloseLocked]);
 
+  // Quitting (⌘Q, from the window that had the focus) asks once for all the windows: each
+  // says how many of its panes are busy.
+  useWindowEvent<number>("busy-query", (query) => void busyPanes(store).then((count) => windows.busyReply(query, count)));
+  useWindowEvent("quit-requested", async () => {
+    const busy = await windows.busyCount().catch(() => 0);
+    if (busy === 0) void windows.quit();
+    else if (isAppLocked()) confirmCloseLocked({ busy, quit: true });
+    else setClosingWindow({ busy, quit: true });
+  });
+
   // From the macOS File menu's "Close" item (⌘W), which closes the window once no tabs are
   // left, as in Terminal.app.
   useEffect(() => {
-    const unlisten = listen("close-tab", () => !isDialogOpen() && !isAppLocked() && closeFocused());
+    const unlisten = listenHere("close-tab", () => !isDialogOpen() && !isAppLocked() && closeFocused());
     return () => void unlisten.then((f) => f());
   }, [closeFocused]);
 
@@ -156,11 +173,11 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
     <>
       {closingWindow !== null && (
         <ConfirmDialog
-          title={t("closeConfirm.windowTitle")}
-          message={t("closeConfirm.window", { count: closingWindow })}
-          confirmLabel={t("closeConfirm.windowConfirm")}
+          title={closingWindow.quit ? t("closeConfirm.quitTitle", { name: t("app.name") }) : t("closeConfirm.windowTitle")}
+          message={t(closingWindow.quit ? "closeConfirm.quit" : "closeConfirm.window", { count: closingWindow.busy })}
+          confirmLabel={t(closingWindow.quit ? "closeConfirm.quitConfirm" : "closeConfirm.windowConfirm")}
           danger
-          onConfirm={() => void getCurrentWindow().destroy()}
+          onConfirm={() => void (closingWindow.quit ? windows.quit() : getCurrentWindow().destroy())}
           onCancel={cancelCloseWindow}
         />
       )}

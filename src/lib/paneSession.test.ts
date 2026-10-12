@@ -1,13 +1,25 @@
 import type { TFunction } from "i18next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { forwards, type CommandError, type Session, type SessionEvent, type SessionTarget, type openSession } from "./api";
+import {
+  forwards,
+  handOver,
+  type adoptSession,
+  type CommandError,
+  type Session,
+  type SessionEvent,
+  type SessionSnapshot,
+  type SessionTarget,
+  type openSession,
+} from "./api";
+import type { Arrival } from "./panes";
 import { LOGIN_COMMAND_IDLE_MS, PaneSession, type SessionConfig, type SessionEvents, type TerminalPort } from "./paneSession";
 
-// The forwarding rules running on a connection being replaced (see `reconnect`).
+// The forwarding rules running on a connection being replaced (see `reconnect`), and the
+// screen handed over when a session moves to another window.
 vi.mock("./api", async (importOriginal) => {
   const api = await importOriginal<typeof import("./api")>();
-  return { ...api, forwards: { ...api.forwards, carry: vi.fn(async () => ["r1"]) } };
+  return { ...api, forwards: { ...api.forwards, carry: vi.fn(async () => ["r1"]) }, handOver: vi.fn(async () => {}) };
 });
 
 /** One call of the fake `openSession`. */
@@ -27,7 +39,34 @@ const failed = (error: CommandError | null = null): SessionEvent => ({ type: "cl
 
 let nextId = 1;
 
-function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
+/** A fake session, recording what it is sent. */
+function fakeSession(id = nextId++) {
+  const session = {
+    id,
+    writes: [] as string[],
+    acks: [] as number[],
+    sizes: [] as [number, number][],
+    closed: false,
+    write: async (data: string) => void session.writes.push(data),
+    writeBytes: async (data: Uint8Array) => void session.writes.push(String.fromCharCode(...data)),
+    resize: async (cols: number, rows: number) => void session.sizes.push([cols, rows]),
+    ack: async (bytes: number) => void session.acks.push(bytes),
+    close: async () => void (session.closed = true),
+  };
+  return session;
+}
+
+/** The one call of the fake `adoptSession`. */
+interface Adopted {
+  id: number;
+  output(text: string): void;
+  event(event: SessionEvent): void;
+  session: ReturnType<typeof fakeSession>;
+  /** The old window hands the screen over (or doesn't: null). */
+  handOver(snapshot: SessionSnapshot | null): void;
+}
+
+function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?: Arrival) {
   const opened: Opened[] = [];
   const open = ((target, _size, onOutput, onEvent, share, _log, carry = []) =>
     new Promise<Session>((resolve, reject) => {
@@ -38,17 +77,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
         output: (text) => onOutput(new TextEncoder().encode(text)),
         event: onEvent,
         resolve: () => {
-          const session = {
-            id: nextId++,
-            writes: [] as string[],
-            acks: [] as number[],
-            closed: false,
-            write: async (data: string) => void session.writes.push(data),
-            writeBytes: async (data: Uint8Array) => void session.writes.push(String.fromCharCode(...data)),
-            resize: async () => {},
-            ack: async (bytes: number) => void session.acks.push(bytes),
-            close: async () => void (session.closed = true),
-          };
+          const session = fakeSession();
           resolve(session);
           return session;
         },
@@ -65,7 +94,20 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
     size: () => ({ cols: 80, rows: 24 }),
     lineBeforeCursor: () => line,
     alternateScreen: () => false,
+    snapshot: () => ({ data: "<screen>", cols: 80, rows: 24 }),
+    restore: (snapshot, done) => {
+      written.push(`<restored ${snapshot.data} ${snapshot.cols}x${snapshot.rows}>`);
+      done();
+    },
   };
+  const adopted: Adopted[] = [];
+  const adopt = (async (id, onOutput, onEvent) => {
+    const session = fakeSession(id);
+    let handOver: (snapshot: SessionSnapshot | null) => void = () => {};
+    const snapshot = new Promise<SessionSnapshot | null>((resolve) => (handOver = resolve));
+    adopted.push({ id, output: (text) => onOutput(new TextEncoder().encode(text)), event: onEvent, session, handOver });
+    return { session, snapshot };
+  }) as typeof adoptSession;
   const events = {
     status: vi.fn(),
     session: vi.fn(),
@@ -74,6 +116,8 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
     log: vi.fn(),
     exited: vi.fn(),
     retry: vi.fn(),
+    arrived: vi.fn(),
+    movedAway: vi.fn(),
   } satisfies SessionEvents;
   const pane = new PaneSession(
     port,
@@ -87,11 +131,14 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number) {
     },
     events,
     shareFrom,
+    arrival,
     open,
+    adopt,
   );
   return {
     pane,
     opened,
+    adopted,
     events,
     written,
     setLine: (text: string) => (line = text),
@@ -470,5 +517,75 @@ describe("text from elsewhere", () => {
     opened[0].output("$ ");
     await vi.advanceTimersByTimeAsync(LOGIN_COMMAND_IDLE_MS);
     expect(session.writes).toEqual(["ls\r"]);
+  });
+});
+
+describe("moving to another window", () => {
+  it("hands the screen over once the session has moved, and leaves the session open", async () => {
+    const { pane, opened, events, written } = setup();
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    opened[0].output("$ ");
+    opened[0].event({ type: "moved" });
+    expect(handOver).toHaveBeenLastCalledWith({ id: session.id, data: "<screen>", cols: 80, rows: 24 });
+    expect(events.movedAway).toHaveBeenCalledOnce();
+    expect(events.session).toHaveBeenLastCalledWith(null);
+    // Nothing more goes to it from here, and closing the pane doesn't end it.
+    expect(pane.input("ls\r")).toBe(false);
+    pane.dispose();
+    await settle();
+    expect(session.closed).toBe(false);
+    expect(written.join("")).toBe("$ ");
+  });
+
+  it("takes the session over: its screen first, then the output that came since", async () => {
+    const arrival: Arrival = { sessionId: 42, connected: true, snapshot: null, reconnect: false };
+    const { pane, adopted, events, screen, opened } = setup({}, undefined, arrival);
+    pane.start();
+    expect(events.arrived).toHaveBeenCalledOnce();
+    await settle();
+    expect(adopted[0].id).toBe(42);
+    adopted[0].output("late");
+    expect(screen()).toBe("");
+    adopted[0].handOver({ id: 42, data: "<old>", cols: 100, rows: 30 });
+    await settle();
+    expect(screen()).toBe("<restored <old> 100x30>late");
+    expect(adopted[0].session.sizes).toEqual([[80, 24]]);
+    expect(events.session).toHaveBeenLastCalledWith(42);
+    // Its shell was up: typing goes to it, and nothing connects anew.
+    expect(pane.send("ls\r")).toBe(true);
+    await settle();
+    expect(adopted[0].session.writes).toEqual(["ls\r"]);
+    expect(opened).toHaveLength(0);
+  });
+
+  it("goes on without the screen if the old window doesn't hand it over", async () => {
+    const arrival: Arrival = { sessionId: 7, connected: true, snapshot: null, reconnect: false };
+    const { pane, adopted, screen } = setup({}, undefined, arrival);
+    pane.start();
+    await settle();
+    adopted[0].output("late");
+    adopted[0].handOver(null);
+    await settle();
+    expect(screen()).toBe("late");
+  });
+
+  it("shows what a pane without a session showed, and connects on Enter", async () => {
+    const snapshot = { data: "<bye>", cols: 80, rows: 24 };
+    const { pane, opened, screen } = setup({}, undefined, { sessionId: null, connected: false, snapshot, reconnect: false });
+    pane.start();
+    expect(screen()).toBe("<restored <bye> 80x24>");
+    expect(pane.isClosed).toBe(true);
+    expect(opened).toHaveLength(0);
+    pane.input("\r");
+    expect(opened).toHaveLength(1);
+  });
+
+  it("connects at once if it was waiting to reconnect", () => {
+    const { pane, opened } = setup({}, undefined, { sessionId: null, connected: false, snapshot: null, reconnect: true });
+    pane.start();
+    expect(opened).toHaveLength(1);
   });
 });

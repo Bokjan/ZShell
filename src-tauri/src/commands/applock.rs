@@ -8,33 +8,42 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use crate::applock::{AppLock, AppLockSettings, AppLockStatus, Trigger};
 use crate::error::Result;
 
-use super::blocking;
+use super::{blocking, notified, tell_others, Change};
 
 #[tauri::command]
 pub async fn app_lock_status(app: AppHandle) -> Result<AppLockStatus> {
     blocking(app, |app| Ok(app.state::<Arc<AppLock>>().status())).await
 }
 
-/// Locks now (the "Lock" action), if the app lock is on.
+/// Locks now (the "Lock" action), if the app lock is on; the other windows hear `app-locked`,
+/// as when the backend locks.
 #[tauri::command]
-pub async fn app_lock_lock(app: AppHandle) -> Result<AppLockStatus> {
-    blocking(app, |app| {
+pub async fn app_lock_lock(app: AppHandle, window: WebviewWindow) -> Result<AppLockStatus> {
+    let status = blocking(app, |app| {
         let lock = app.state::<Arc<AppLock>>();
         lock.lock(Trigger::Manual);
         Ok(lock.status())
     })
-    .await
+    .await?;
+    if status.locked {
+        tell_others(&window, "app-locked", ());
+    }
+    Ok(status)
 }
 
 /// Asks the user to authenticate, over the window that asks; `appLock.cancelled` if they
 /// didn't.
 #[tauri::command]
 pub async fn app_lock_unlock(app: AppHandle, window: WebviewWindow) -> Result<AppLockStatus> {
-    blocking(app, move |app| app.state::<Arc<AppLock>>().unlock(Some(&window))).await
+    let asking = window.clone();
+    let result = blocking(app, move |app| app.state::<Arc<AppLock>>().unlock(Some(&asking))).await;
+    notified(&window, Change::AppLock, result)
 }
 
 /// Saves the settings; turning the lock on asks the user to authenticate first.
 #[tauri::command]
 pub async fn app_lock_configure(app: AppHandle, window: WebviewWindow, settings: AppLockSettings) -> Result<AppLockStatus> {
-    blocking(app, move |app| app.state::<Arc<AppLock>>().configure(settings, Some(&window))).await
+    let asking = window.clone();
+    let result = blocking(app, move |app| app.state::<Arc<AppLock>>().configure(settings, Some(&asking))).await;
+    notified(&window, Change::AppLock, result)
 }

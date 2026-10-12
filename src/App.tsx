@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
@@ -8,6 +7,7 @@ import { useCompose } from "./app/useCompose";
 import { usePaneActions } from "./app/usePaneActions";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommands } from "./app/useQuickCommands";
+import { useWindows } from "./app/useWindows";
 
 import { useAppLock } from "./components/AppLockGate";
 import { CommandPalette } from "./components/CommandPalette";
@@ -54,6 +54,7 @@ import { useShortcuts } from "./lib/shortcuts";
 import { useStableHandlers } from "./lib/stableHandlers";
 import { activeTabOf, createTabStore, useTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
+import { useConfigChanged, useWindowEvent } from "./lib/windows";
 import "./styles.css";
 
 const profileIdOf = (pane: Pane) => (pane.target.kind === "profile" ? pane.target.profileId : undefined);
@@ -95,8 +96,15 @@ function App() {
   const [username, setUsername] = useState("");
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
+  // Set once `useWindows` has run below.
+  const movedAwayRef = useRef<(key: number) => void>(() => {});
   const [sessions] = useState(() =>
-    createSessionRegistry(store, { profiles: () => profilesRef.current, t: i18n.t, announce }),
+    createSessionRegistry(store, {
+      profiles: () => profilesRef.current,
+      t: i18n.t,
+      announce,
+      movedAway: (key) => movedAwayRef.current(key),
+    }),
   );
   const localTitleRef = useRef("");
   localTitleRef.current = shellName ?? t("tabs.localTitle");
@@ -129,6 +137,13 @@ function App() {
     tree.folders().then(setFolders).catch(console.error);
   }, []);
   useEffect(reloadProfiles, [reloadProfiles]);
+  useConfigChanged("profiles", reloadProfiles);
+  // Opened in another window (the windows share the browser storage, and hear its changes).
+  useEffect(() => {
+    const onStorage = () => setRecent(storedRecent());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   // Returned only once, so a second call (StrictMode) must not clear the first's result.
   useEffect(() => {
     configSetAside()
@@ -152,15 +167,23 @@ function App() {
     [dispatch, protocolOf],
   );
 
+  const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: addTab });
+  movedAwayRef.current = windowing.movedAway;
+
   /** Shows the pane: activates its tab and focuses it there. */
   const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);
 
   /**
    * "connect" switches to a pane the session already has; "newTab" always opens a tab;
-   * "splitRight" and "splitDown" split the focused pane (or open a tab if there is none).
+   * "splitRight" and "splitDown" split the focused pane (or open a tab if there is none);
+   * "newWindow" opens a window with a tab for it.
    */
   const openProfile = (profile: Profile, mode: OpenMode) => {
     setRecent(addRecent(profile.id));
+    if (mode === "newWindow") {
+      windowing.openInNewWindow(profile.id, profile.name);
+      return;
+    }
     const target: SessionTarget = { kind: "profile", profileId: profile.id };
     const existing = store.get().tabs
       .flatMap((t) => t.panes)
@@ -286,13 +309,8 @@ function App() {
   });
 
   // From the macOS app menu's "Settings…" (⌘,) and "Lock ZShell" (⇧⌘L) items.
-  useEffect(() => {
-    const unlisteners = [
-      listen("open-settings", () => !isAppLocked() && setSettingsOpen(true)),
-      listen("lock-app", () => !isAppLocked() && lockApp()),
-    ];
-    return () => unlisteners.forEach((unlisten) => void unlisten.then((f) => f()));
-  }, [lockApp]);
+  useWindowEvent("open-settings", () => !isAppLocked() && setSettingsOpen(true));
+  useWindowEvent("lock-app", () => !isAppLocked() && lockApp());
 
   const runCommand = (command: QuickCommand) => composer.send(asTyped(command.text, command.enter));
 
@@ -383,6 +401,7 @@ function App() {
     onLayout: (tabKey, layout) => updateTab(tabKey, { layout }),
     onAreaSize,
     onTransfers: (key, count) => updatePane(key, { transfers: count }),
+    onEdits: (key, count) => updatePane(key, { edits: count }),
     onQuestions: (key, count) => updatePane(key, { questions: count }),
     menuItems: terminalMenu,
     profileOf,
@@ -438,6 +457,12 @@ function App() {
             return !!pane && roomToSplit(pane.key, direction);
           }}
           onMove={moveTab}
+          windows={windowing.others}
+          canMoveToWindow={(key) => {
+            const tab = store.get().tabs.find((t) => t.key === key);
+            return !!tab && windowing.canMove(tab);
+          }}
+          onMoveToWindow={(key, target) => void windowing.moveTab(key, target)}
           onRename={(key, customTitle) => updateTab(key, { customTitle })}
           onDuplicate={duplicateTab}
           onSaveAsSession={(key) => withFocused(key, (pane) => saveAsSession(pane.key))}

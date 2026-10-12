@@ -33,7 +33,7 @@ mod zmodem;
 
 use std::sync::Arc;
 
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, EventTarget, Manager};
 
 use applock::AppLock;
 use config::ProfileStore;
@@ -46,6 +46,7 @@ use sftp::edit::Edits;
 use sftp::transfer::Transfers;
 use ssh::Connections;
 use vault::Vault;
+use window::Windows;
 
 const SETTINGS_MENU_ID: &str = "settings";
 const CLOSE_TAB_MENU_ID: &str = "close-tab";
@@ -58,8 +59,9 @@ const LOCK_MENU_ID: &str = "lock";
 /// of a split tab, else the tab) and "Close Window" (⇧⌘W), as in iTerm2; the predefined "Close
 /// Window" item would take ⌘W.
 /// These shortcuts have to be menu items: macOS handles them before the web view sees them.
-/// "Quit" closes the window rather than exiting directly, so the frontend can ask first when
-/// tabs are connected. Elsewhere the frontend handles Ctrl+, and Ctrl+Shift+W itself.
+/// They act on the window that last had the focus. "Quit" asks that window's page, which
+/// asks first when tabs of any window are connected, and then quits. Elsewhere the frontend
+/// handles Ctrl+, and Ctrl+Shift+W itself, and closing the last window quits.
 #[cfg(target_os = "macos")]
 fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID};
@@ -169,7 +171,7 @@ pub fn run() {
     // first, so that the second process ends before anything else. Elsewhere the lock is the
     // configuration folder's (`instance.rs`).
     #[cfg(windows)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::show_main(app)));
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::show_current(app)));
     // Tauri only gives macOS a default menu; other platforms keep having none.
     #[cfg(target_os = "macos")]
     let builder = builder.menu(app_menu);
@@ -219,28 +221,38 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| {
+            let Some(current) = window::current(app) else {
+                if event.id() == QUIT_MENU_ID {
+                    app.exit(0);
+                }
+                return;
+            };
+            let to_current = |name: &str| {
+                let _ = app.emit_to(EventTarget::webview_window(current.label()), name, ());
+            };
             if event.id() == SETTINGS_MENU_ID {
-                let _ = app.emit("open-settings", ());
+                to_current("open-settings");
             } else if event.id() == LOCK_MENU_ID {
                 // As the shortcut elsewhere: the frontend says what to do when the lock is off.
-                let _ = app.emit("lock-app", ());
+                to_current("lock-app");
             } else if event.id() == CLOSE_TAB_MENU_ID {
                 // The frontend may ask first, and closes the window when there are no tabs.
-                let _ = app.emit("close-tab", ());
-            } else if event.id() == CLOSE_WINDOW_MENU_ID || event.id() == QUIT_MENU_ID {
-                // The last window closing quits the app; the frontend may ask first.
-                match app.get_webview_window("main") {
-                    Some(window) => {
-                        let _ = window.close();
-                    }
-                    None => app.exit(0),
-                }
+                to_current("close-tab");
+            } else if event.id() == CLOSE_WINDOW_MENU_ID {
+                // The frontend may ask first; the last window closing quits the app.
+                let _ = current.close();
+            } else if event.id() == QUIT_MENU_ID {
+                to_current("quit-requested");
             }
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => window::update_border(window),
-            // Its webview has the same label.
-            tauri::WindowEvent::Destroyed => window.state::<SessionManager>().remove_webview(window.label()),
+            tauri::WindowEvent::Focused(true) => window::focused(window),
+            tauri::WindowEvent::Destroyed => {
+                // Its webview has the same label.
+                window.state::<SessionManager>().remove_webview(window.label());
+                window::destroyed(window);
+            }
             _ => {}
         })
         // A page that loads again (reloaded, or after its web content process crashed) has
@@ -251,6 +263,7 @@ pub fn run() {
             }
         })
         .manage(SessionManager::default())
+        .manage(Windows::default())
         .manage(Connections::default())
         .manage(Transfers::default())
         .invoke_handler(tauri::generate_handler![
@@ -309,6 +322,8 @@ pub fn run() {
             commands::session::session_break,
             commands::session::serial_ports,
             commands::session::session_ack,
+            commands::session::session_adopt,
+            commands::session::session_handover,
             commands::session::session_foreground,
             commands::session::session_close,
             commands::sftp::sftp_open,
@@ -335,6 +350,14 @@ pub fn run() {
             commands::zmodem::zmodem_save_to,
             commands::zmodem::zmodem_send_files,
             commands::zmodem::zmodem_cancel,
+            window::window_open,
+            window::window_handoff,
+            window::window_list,
+            window::window_set_title,
+            window::window_send_tab,
+            window::window_busy_reply,
+            window::app_busy_count,
+            window::app_quit,
             window::window_title_double_click,
             window::window_system_menu,
             window::window_set_maximize_button,

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -168,6 +169,8 @@ export function TerminalView({
     term.loadAddon(fit);
     const search = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
     term.loadAddon(search);
+    const serialize = new SerializeAddon();
+    term.loadAddon(serialize);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
     term.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
@@ -186,6 +189,17 @@ export function TerminalView({
           return buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX) ?? "";
         },
         alternateScreen: () => term.buffer.active.type === "alternate",
+        // With the modes programs set (mouse reporting, bracketed paste and so on), though
+        // not the mouse reports' encoding (SGR), which the addon doesn't keep.
+        snapshot: () => ({ data: serialize.serialize(), cols: term.cols, rows: term.rows }),
+        // Drawn at the size it was taken at, as the addon advises, then fitted to the pane.
+        restore: (snapshot, done) => {
+          term.resize(snapshot.cols, snapshot.rows);
+          term.write(snapshot.data, () => {
+            fit.fit();
+            done();
+          });
+        },
       },
       screen: {
         size: () => ({ cols: term.cols, rows: term.rows }),
@@ -312,7 +326,7 @@ export function TerminalView({
     // A tick later: React's StrictMode (in development) mounts, unmounts and mounts again at
     // once, which would open a backend session (and a log file, or a serial device that is
     // then busy) for the first mount too.
-    const start = setTimeout(() => session.connect(), 0);
+    const start = setTimeout(() => session.start(), 0);
 
     return () => {
       clearTimeout(start);

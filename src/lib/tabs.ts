@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
 
 import type { SessionId, SessionTarget } from "./api";
-import { heirOf, removeFromLayout, splitLayout, type Direction } from "./layout";
-import { focusedPane, type Pane, type SidePanel, type Tab, type TabProtocol } from "./panes";
+import { heirOf, mapLayout, removeFromLayout, splitLayout, type Direction } from "./layout";
+import { focusedPane, type Layout, type Pane, type SidePanel, type Tab, type TabProtocol } from "./panes";
 
 /** The tabs of the window, and which one is shown. */
 export interface TabsState {
@@ -25,12 +25,26 @@ export interface PaneSpec {
   shareFrom?: SessionId;
 }
 
+/**
+ * A tab moving to another window, by the keys it had there: its panes go on in the new
+ * window as `Pane.arrival` says.
+ */
+export interface TabTransfer {
+  layout: Layout;
+  focused: number;
+  customTitle: string | null;
+  sidePanel: SidePanel | null;
+  panes: Pane[];
+}
+
 /** A change to a pane: its fields, or a function of the pane and its tab giving them. */
 export type PanePatch = Partial<Pane> | ((pane: Pane, tab: Tab) => Partial<Pane>);
 
 export type TabsAction =
   /** Opens a tab with one pane and shows it; after the tab `after` if given, else last. */
   | { type: "open"; pane: PaneSpec; after?: number }
+  /** Adds a tab from another window, with keys of this one, and shows it. */
+  | { type: "insert"; tab: TabTransfer }
   /** Splits pane `key`, opening `pane` right of it (`row`) or below it (`column`), and focuses it. */
   | { type: "split"; key: number; direction: Direction; pane: PaneSpec }
   /** Closes panes, and the tabs left without any. */
@@ -63,6 +77,7 @@ const newPane = (key: number, spec: PaneSpec): Pane => ({
   logPath: null,
   logStopped: false,
   transfers: 0,
+  edits: 0,
   questions: 0,
 });
 
@@ -126,6 +141,18 @@ export function reduceTabs(state: TabsState, action: TabsAction): TabsState {
         focused: pane.key,
       }));
       return { ...next, activeKey: tab.key, nextKey: state.nextKey + 1 };
+    }
+    case "insert": {
+      const keys = new Map(action.tab.panes.map((pane, i) => [pane.key, state.nextKey + i]));
+      const key = state.nextKey + keys.size;
+      const tab: Tab = {
+        ...action.tab,
+        key,
+        layout: mapLayout(action.tab.layout, (old) => keys.get(old)!),
+        focused: keys.get(action.tab.focused)!,
+        panes: action.tab.panes.map((pane) => ({ ...pane, key: keys.get(pane.key)! })),
+      };
+      return { tabs: [...state.tabs, tab], activeKey: key, nextKey: key + 1 };
     }
     case "close":
       return close(state, action.keys);

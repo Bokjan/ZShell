@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { quickCommands, type QuickCommands } from "../lib/api";
 import { storeBarVisible, storedBarVisible } from "../lib/quickCommands";
+import { useConfigChanged } from "../lib/windows";
 
 /** The quick commands, their bar under the terminals and their palette. */
 export function useQuickCommands() {
@@ -13,6 +14,11 @@ export function useQuickCommands() {
   useEffect(() => {
     quickCommands.get().then(setCommands).catch(console.error);
   }, []);
+  // Changed in another window.
+  useConfigChanged("quickCommands", () => {
+    const request = ++latest.current;
+    quickCommands.get().then((stored) => request === latest.current && setCommands(stored), console.error);
+  });
 
   // Applied immediately; the stored copy (with ids for new commands) replaces it unless a
   // newer change was made in the meantime.

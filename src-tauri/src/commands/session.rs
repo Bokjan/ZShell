@@ -1,13 +1,13 @@
-//! Commands for terminal sessions: opening one (what it runs, with its log) and passing
-//! the terminal's input, size and acknowledgements to it.
+//! Commands for terminal sessions: opening one (what it runs, with its log), passing the
+//! terminal's input, size and acknowledgements to it, and moving it to another window.
 
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State, Webview};
+use tauri::{AppHandle, Emitter, EventTarget, Manager, State, Webview};
 use ts_rs::TS;
 
 use crate::config::{Connection, Profile, ProfileStore, Protocol, Remote, SerialOptions, SshOptions, SshProfile};
@@ -265,8 +265,38 @@ pub fn session_resize(sessions: State<'_, SessionManager>, id: SessionId, cols: 
 
 /// Records that the frontend has processed `bytes` of the session's output.
 #[tauri::command]
-pub fn session_ack(sessions: State<'_, SessionManager>, id: SessionId, bytes: usize) -> Result<()> {
-    sessions.ack(id, bytes)
+pub fn session_ack(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId, bytes: usize) -> Result<()> {
+    sessions.ack(webview.label(), id, bytes)
+}
+
+/// Moves a session to a tab of this window (see [`SessionManager::adopt`]): its output and
+/// events come on `channel` from now on. The tab that showed it hands over its screen
+/// ([`session_handover`]) once it hears that the session moved.
+#[tauri::command]
+pub fn session_adopt(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId, channel: Channel) -> Result<()> {
+    sessions.adopt(id, &sessions.page(webview.label()), channel)
+}
+
+/// What a session's terminal showed in the tab it moved from: written to the new tab's
+/// terminal before the output that came since.
+#[derive(Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSnapshot {
+    pub id: SessionId,
+    /// The screen and the scrollback, as escape sequences that draw them again.
+    pub data: String,
+    /// The size of the terminal it was taken from, which it is written into before fitting.
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// Passes the screen of a session that moved to the window showing it now, as the
+/// `session-snapshot` event.
+#[tauri::command]
+pub fn session_handover(app: AppHandle, sessions: State<'_, SessionManager>, snapshot: SessionSnapshot) -> Result<()> {
+    let owner = sessions.owner(snapshot.id)?;
+    let _ = app.emit_to(EventTarget::webview_window(owner), "session-snapshot", snapshot);
+    Ok(())
 }
 
 /// The program running in the session's terminal other than the shell (an empty string if

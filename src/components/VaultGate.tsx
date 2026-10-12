@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { errorMessage, vault, type VaultStatus } from "../lib/api";
 import { useSettings } from "../lib/settings";
 import { useTitleBar } from "../lib/window";
+import { useConfigChanged } from "../lib/windows";
 import { ProtectionDialog } from "./ProtectionDialog";
 import { UnlockScreen } from "./UnlockScreen";
 
@@ -54,6 +55,9 @@ export function VaultGate({ children }: { children: ReactNode }) {
       (e) => setFailure(errorMessage(e)),
     );
   }, [tryUnlock]);
+
+  // Its protection changed in another window.
+  useConfigChanged("vault", () => void vault.status().then(setStatus, console.error));
 
   // Reset: everything starts again, including the question.
   const onReset = (next: VaultStatus) => {

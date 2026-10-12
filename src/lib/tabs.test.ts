@@ -34,6 +34,34 @@ describe("open", () => {
   });
 });
 
+describe("insert", () => {
+  it("adds a tab from another window with keys of this one, and shows it", () => {
+    // A split tab, as another window has it.
+    const there = run({ type: "open", pane: local }, { type: "open", pane: ssh("a") });
+    const moving = reduceTabs(there, { type: "split", key: there.tabs[1].panes[0].key, direction: "column", pane: ssh("b") }).tabs[1];
+    const here = run({ type: "open", pane: local });
+    const state = reduceTabs(here, { type: "insert", tab: moving });
+    const tab = state.tabs[1];
+    expect(state.activeKey).toBe(tab.key);
+    expect(tab.panes.map((pane) => pane.title)).toEqual(["a", "b"]);
+    const keys = state.tabs.flatMap((t) => [t.key, ...t.panes.map((pane) => pane.key)]);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(tab.focused).toBe(tab.panes[1].key);
+    expect(tab.layout).toMatchObject({
+      kind: "split",
+      direction: "column",
+      children: [
+        { kind: "pane", key: tab.panes[0].key },
+        { kind: "pane", key: tab.panes[1].key },
+      ],
+    });
+    // Keys given later don't collide with the inserted ones.
+    const next = reduceTabs(state, { type: "open", pane: local });
+    expect(keys).not.toContain(next.tabs[2].key);
+    expect(keys).not.toContain(next.tabs[2].panes[0].key);
+  });
+});
+
 describe("split", () => {
   it("adds the pane beside the split one, focuses it and shows its tab", () => {
     let state = run({ type: "open", pane: ssh("a") }, { type: "open", pane: local });

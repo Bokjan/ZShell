@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
 import { appLock, errorCode, errorMessage, type AppLockStatus } from "../lib/api";
 import { setAppLocked } from "../lib/appLock";
+import { listenHere, useConfigChanged, windows } from "../lib/windows";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 
@@ -14,14 +14,20 @@ interface AppLockContextValue {
   setStatus(status: AppLockStatus): void;
   /** The "Lock" action: locks, and returns false if the app lock is off. */
   lock(): boolean;
-  /** Closing the window while locked would end `busy` sessions: asks on the lock screen. */
-  confirmClose(busy: number): void;
+  /** Closing the window (or quitting) while locked would end busy tabs: asks on the lock screen. */
+  confirmClose(close: PendingClose): void;
   /**
    * A close that was waiting on the lock screen when the app was unlocked (the system's dialog
    * can be over it): the close flow asks again, as when unlocked.
    */
-  pendingClose: number | null;
+  pendingClose: PendingClose | null;
   clearPendingClose(): void;
+}
+
+/** Closing the window, or quitting (all of them), would end `busy` tabs. */
+export interface PendingClose {
+  busy: number;
+  quit: boolean;
 }
 
 const AppLockContext = createContext<AppLockContextValue | null>(null);
@@ -46,7 +52,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   const [failure, setFailure] = useState<string | null>(null);
   // Sessions that closing the window would end, waiting for confirmation on the lock screen;
   // left for the close flow once unlocked.
-  const [closing, setClosing] = useState<number | null>(null);
+  const [closing, setClosing] = useState<PendingClose | null>(null);
   const statusRef = useRef(status);
   statusRef.current = status;
 
@@ -59,12 +65,14 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   // Locked by the backend (idle, the system locking or sleeping).
   useEffect(() => {
     refresh();
-    const unlisten = listen("app-locked", () => {
+    const unlisten = listenHere("app-locked", () => {
       coverNow();
       refresh();
     });
     return () => void unlisten.then((f) => f());
   }, [refresh, coverNow]);
+  // Unlocked in another window, or its settings changed there.
+  useConfigChanged("appLock", refresh);
 
   const locked = status?.locked ?? false;
   useLayoutEffect(() => setAppLocked(locked), [locked]);
@@ -76,7 +84,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     void appLock.lock().then(setStatus, console.error);
     return true;
   }, [coverNow]);
-  const confirmClose = useCallback((busy: number) => setClosing(busy), []);
+  const confirmClose = useCallback((close: PendingClose) => setClosing(close), []);
   const clearPendingClose = useCallback(() => setClosing(null), []);
 
   if (!status) return failure ? <p className="vault-failure">{failure}</p> : null;
@@ -91,7 +99,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
 interface ScreenProps {
   status: AppLockStatus;
   onStatus(status: AppLockStatus): void;
-  closing: number | null;
+  closing: PendingClose | null;
   onKeepOpen(): void;
 }
 
@@ -172,13 +180,17 @@ function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
         ) : (
           <div className="unlock-panel" role="alert">
             <LockHeading id="app-lock-title" />
-            <p>{t("closeConfirm.window", { count: closing })}</p>
+            <p>{t(closing.quit ? "closeConfirm.quit" : "closeConfirm.window", { count: closing.busy })}</p>
             <div className="unlock-actions">
               <button type="button" onClick={onKeepOpen} autoFocus>
                 {t("common.cancel")}
               </button>
-              <button type="button" className="primary danger-fill" onClick={() => void getCurrentWindow().destroy()}>
-                {t("closeConfirm.windowConfirm")}
+              <button
+                type="button"
+                className="primary danger-fill"
+                onClick={() => void (closing.quit ? windows.quit() : getCurrentWindow().destroy())}
+              >
+                {t(closing.quit ? "closeConfirm.quitConfirm" : "closeConfirm.windowConfirm")}
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import type { LogOpen, Profile, SessionId, ZmodemPhase } from "./api";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
-import { findPane, targetProtocol, targetTermType, type Pane } from "./panes";
+import { findPane, targetProtocol, targetTermType, type Pane, type Snapshot } from "./panes";
 import { activeTabOf, type TabStore } from "./tabs";
 
 /** A pane's terminal as the status bar shows it. */
@@ -35,6 +35,10 @@ export interface SessionRegistry {
   reconnect(key: number): void;
   /** Gives the pane's terminal the keyboard focus. */
   focus(key: number): void;
+  /** What the pane's terminal shows, while it is shown. */
+  snapshot(key: number): Snapshot | undefined;
+  /** Whether a ZMODEM transfer runs in the pane, or waits for an answer. */
+  inZmodem(key: number): boolean;
 }
 
 interface Options {
@@ -43,6 +47,8 @@ interface Options {
   t: SessionConfig["t"];
   /** Tells screen readers (see `announce`). */
   announce(message: string): void;
+  /** The pane's session moved to another window, which has its screen now. */
+  movedAway(key: number): void;
 }
 
 /** How a pane's next session starts logging (see `Pane.logPath`). */
@@ -54,9 +60,10 @@ const logOpen = (pane: Pane): LogOpen =>
  * forwarding and log into the tab store; a local shell that exits cleanly (`exit`, Ctrl+D)
  * closes its pane, as in Terminal.app.
  */
-export function createSessionRegistry(store: TabStore, { profiles, t, announce }: Options): SessionRegistry {
+export function createSessionRegistry(store: TabStore, { profiles, t, announce, movedAway }: Options): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
+  const zmodemPhases = new Map<number, ZmodemPhase>();
 
   return {
     attach(key, view) {
@@ -106,19 +113,26 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce }
             }
           },
           session: (id) => {
+            zmodemPhases.delete(key);
             update({ sessionId: id });
             view.session(id);
           },
           forward: (ruleId, state) =>
             store.dispatch({ type: "updatePane", key, patch: (p) => ({ forwards: { ...p.forwards, [ruleId]: state } }) }),
-          zmodem: view.zmodem,
+          zmodem: (phase) => {
+            zmodemPhases.set(key, phase);
+            view.zmodem(phase);
+          },
           log: (path) => update({ logPath: path }),
           exited: (status) => {
             if (pane().target.kind === "local" && status === 0) store.dispatch({ type: "close", keys: [key] });
           },
           retry: (at) => update({ retryAt: at }),
+          arrived: () => update({ arrival: undefined }),
+          movedAway: () => movedAway(key),
         },
         found.pane.shareFrom,
+        found.pane.arrival,
       );
       sessions.set(key, session);
       views.set(key, view);
@@ -129,11 +143,14 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce }
       if (sessions.get(key) === session) {
         sessions.delete(key);
         views.delete(key);
+        zmodemPhases.delete(key);
       }
     },
     get: (key) => sessions.get(key),
     screen: (key) => views.get(key)?.screen,
     reconnect: (key) => sessions.get(key)?.reconnect(),
     focus: (key) => views.get(key)?.focus(),
+    snapshot: (key) => views.get(key)?.port.snapshot(),
+    inZmodem: (key) => (zmodemPhases.get(key) ?? "idle") !== "idle",
   };
 }

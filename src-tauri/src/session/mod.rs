@@ -24,6 +24,11 @@
 //! ([`SessionManager::ack`]), and every backend waits on [`Flow`] before reading more while
 //! the terminal is too far behind (the remote side is then held back by TCP, the SSH window
 //! or the serial line's flow control).
+//!
+//! A session belongs to the webview whose tab shows it, and can move to another window's tab
+//! ([`SessionManager::adopt`]): its output goes to the new tab's channel from then on, and the
+//! old tab hears [`SessionEvent::Moved`] after the last output it was sent, which is when it
+//! hands its screen over to the new one.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -69,6 +74,8 @@ pub enum SessionEvent {
     Zmodem { phase: zmodem::Phase },
     /// The session's log started (`path`), stopped (neither), or couldn't start (`error`).
     Log { path: Option<String>, error: Option<Error> },
+    /// The session moved to another window's tab: the last message on this channel.
+    Moved,
 }
 
 #[derive(Clone, Copy, Serialize, TS)]
@@ -171,6 +178,18 @@ impl Flow {
         }
     }
 
+    /// Forgets what is unacknowledged: the session moved to another tab, which acknowledges
+    /// only the output it receives.
+    fn reset(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.unacked = 0;
+        if state.paused {
+            state.paused = false;
+            self.resumed.notify_all();
+            self.resumed_async.notify_waiters();
+        }
+    }
+
     /// Stops all waiting, for good (the session is closing).
     pub fn close(&self) {
         self.state.lock().unwrap().closed = true;
@@ -225,11 +244,20 @@ const OUTPUT: u8 = 0;
 /// about how a session ended comes after its last output.
 const EVENT: u8 = 1;
 
+/// A session's channel message for an event.
+fn event_message(event: &SessionEvent) -> Option<InvokeResponseBody> {
+    let mut message = vec![EVENT];
+    serde_json::to_writer(&mut message, event).ok()?;
+    Some(InvokeResponseBody::Raw(message))
+}
+
 /// Output side of a session: terminal bytes and lifecycle events. Cloneable, so features
 /// running beside the shell (port forwarding) can report to the same tab.
 #[derive(Clone)]
 pub struct SessionSink {
-    channel: Channel,
+    /// To the tab showing the session; replaced when it moves to another window
+    /// ([`SessionSink::move_to`]), for every clone.
+    channel: Arc<Mutex<Channel>>,
     flow: Arc<Flow>,
     zmodem: Arc<Zmodem>,
     log: Arc<LogSlot>,
@@ -285,12 +313,26 @@ impl SessionSink {
     }
 
     fn send_output(&self, bytes: &[u8]) {
-        self.flow.sent(bytes.len());
         let mut message = Vec::with_capacity(bytes.len() + 1);
         message.push(OUTPUT);
         message.extend_from_slice(bytes);
+        // Counted and sent under the lock, so that a move falls before both or after both.
+        let channel = self.channel.lock().unwrap();
+        self.flow.sent(bytes.len());
         // A send error means the frontend is gone; the session will be closed shortly.
-        let _ = self.channel.send(InvokeResponseBody::Raw(message));
+        let _ = channel.send(InvokeResponseBody::Raw(message));
+    }
+
+    /// Sends what follows to `channel`, another window's tab: the old channel's last message
+    /// is [`SessionEvent::Moved`], after all the output it was sent. What the old tab hasn't
+    /// acknowledged no longer counts.
+    fn move_to(&self, channel: Channel) {
+        let mut current = self.channel.lock().unwrap();
+        if let Some(message) = event_message(&SessionEvent::Moved) {
+            let _ = current.send(message);
+        }
+        *current = channel;
+        self.flow.reset();
     }
 
     pub fn flow(&self) -> Arc<Flow> {
@@ -319,9 +361,8 @@ impl SessionSink {
     }
 
     pub fn event(&self, event: SessionEvent) {
-        let mut message = vec![EVENT];
-        if serde_json::to_writer(&mut message, &event).is_ok() {
-            let _ = self.channel.send(InvokeResponseBody::Raw(message));
+        if let Some(message) = event_message(&event) {
+            let _ = self.channel.lock().unwrap().send(message);
         }
     }
 }
@@ -369,7 +410,7 @@ impl TermIo {
         let (tx, rx) = mpsc::unbounded_channel();
         let (zmodem, zmodem_out) = Zmodem::new();
         let codec = Codec::new(encoding).map(Arc::new);
-        let sink = SessionSink { channel, flow: Arc::default(), zmodem, log, codec };
+        let sink = SessionSink { channel: Arc::new(Mutex::new(channel)), flow: Arc::default(), zmodem, log, codec };
         let lifetime = Lifetime::new();
         // A reader waiting for the frontend would wait for ever, and a transfer waiting for
         // the user to choose files too.
@@ -692,12 +733,38 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Records that the frontend has processed `bytes` of output.
-    pub fn ack(&self, id: SessionId, bytes: usize) -> Result<()> {
+    /// Records that the frontend has processed `bytes` of output, in `webview`. Ignored from
+    /// a webview the session has moved away from, whose output no longer counts.
+    pub fn ack(&self, webview: &str, id: SessionId, bytes: usize) -> Result<()> {
         let sessions = self.sessions.lock().unwrap();
         let entry = sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?;
-        entry.flow.ack(bytes);
+        if entry.webview == webview {
+            entry.flow.ack(bytes);
+        }
         Ok(())
+    }
+
+    /// Moves a session to a tab on `page` (another window's), which receives its output and
+    /// events on `channel` from now on (see [`SessionSink::move_to`]). Not during a ZMODEM
+    /// transfer, whose file dialogs belong to the old tab (`session.busy`).
+    pub fn adopt(&self, id: SessionId, page: &Page, channel: Channel) -> Result<()> {
+        let mut sessions = self.sessions.lock().unwrap();
+        if self.page(&page.webview).generation != page.generation {
+            return Err(Error::new("session.pageGone"));
+        }
+        let entry = sessions.get_mut(&id).ok_or_else(|| Error::new("session.notFound"))?;
+        if entry.zmodem.is_active() {
+            return Err(Error::new("session.busy"));
+        }
+        entry.webview = page.webview.clone();
+        entry.sink.move_to(channel);
+        Ok(())
+    }
+
+    /// The webview whose tab shows the session.
+    pub fn owner(&self, id: SessionId) -> Result<String> {
+        let sessions = self.sessions.lock().unwrap();
+        Ok(sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.webview.clone())
     }
 
     /// The program running in the session's foreground other than its shell, if any (see
@@ -862,6 +929,57 @@ mod tests {
         assert_eq!(sessions.len(), 0);
         let _ = hold(&sessions, "main");
         assert_eq!(sessions.len(), 1);
+    }
+
+    /// A channel that keeps what it is sent.
+    fn recording() -> (Channel, Arc<Mutex<Vec<Vec<u8>>>>) {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let kept = messages.clone();
+        let channel = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(message) = body {
+                kept.lock().unwrap().push(message);
+            }
+            Ok(())
+        });
+        (channel, messages)
+    }
+
+    /// A session moving to another window: the old tab gets the output sent before and then
+    /// `moved`, the new one what follows; only the new tab's acknowledgements count.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_moves_to_another_window() {
+        let sessions = SessionManager::default();
+        let (old, old_messages) = recording();
+        let (sink_tx, sink_rx) = std::sync::mpsc::channel();
+        let page = sessions.page("main");
+        let id = sessions
+            .spawn(&page, old, (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
+                let _ = sink_tx.send(io.sink());
+                let _io = io;
+                std::future::pending::<()>().await;
+            })
+            .unwrap();
+        let sink = sink_rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+        sink.write(b"before".to_vec());
+
+        let (new, new_messages) = recording();
+        sessions.adopt(id, &sessions.page("other"), new).unwrap();
+        sink.write(b"after".to_vec());
+        assert_eq!(*old_messages.lock().unwrap(), [b"\0before".to_vec(), b"\x01{\"type\":\"moved\"}".to_vec()]);
+        assert_eq!(*new_messages.lock().unwrap(), [b"\0after".to_vec()]);
+        assert_eq!(sessions.owner(id).unwrap(), "other");
+
+        let unacked = || sink.flow().state.lock().unwrap().unacked;
+        assert_eq!(unacked(), 5);
+        sessions.ack("main", id, 5).unwrap();
+        assert_eq!(unacked(), 5);
+        sessions.ack("other", id, 5).unwrap();
+        assert_eq!(unacked(), 0);
+
+        // Not to a page that has gone away since.
+        let gone = sessions.page("third");
+        sessions.remove_webview("third");
+        assert_eq!(sessions.adopt(id, &gone, Channel::new(|_| Ok(()))).unwrap_err().code(), "session.pageGone");
     }
 
     /// Something registered once the session has closed (a task that connected just as its

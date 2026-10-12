@@ -73,6 +73,7 @@ mod tests {
         visitor.visit::<error::Error>();
         visitor.visit::<commands::config::Saved<config::Profile>>();
         visitor.visit::<commands::session::SessionSpec>();
+        visitor.visit::<commands::session::SessionSnapshot>();
         visitor.visit::<config::Folder>();
         visitor.visit::<config::Item>();
         visitor.visit::<persist::SetAsideFile>();
@@ -97,6 +98,8 @@ mod tests {
         visitor.visit::<sftp::drag::Item>();
         visitor.visit::<sftp::drag::DragResult>();
         visitor.visit::<sftp::drag::DragEvent>();
+        visitor.visit::<window::WindowInfo>();
+        visitor.visit::<commands::Change>();
 
         let mut out = String::from(HEADER);
         let codes: Vec<String> = error_codes().iter().map(|code| format!("\n  | \"{code}\"")).collect();

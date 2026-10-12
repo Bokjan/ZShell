@@ -32,6 +32,10 @@ const EPSILON = 1e-6;
 
 const leaf = (key: number): Layout => ({ kind: "pane", key });
 
+/** The layout with each pane's key changed by `f`. */
+export const mapLayout = (layout: Layout, f: (key: number) => number): Layout =>
+  layout.kind === "pane" ? leaf(f(layout.key)) : { ...layout, children: layout.children.map((child) => mapLayout(child, f)) };
+
 /** The part of `rect` a split's child gets, `offset` and `size` being fractions of the split. */
 const childRect = (rect: Rect, direction: Direction, offset: number, size: number): Rect =>
   direction === "row"

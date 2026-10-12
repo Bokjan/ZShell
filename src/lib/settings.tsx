@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { Appearance, Settings, TextSize } from "./bindings";
 import { isWindows } from "./platform";
+import { useConfigChanged } from "./windows";
 
 export type {
   Appearance,
@@ -118,8 +119,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [textSize]);
 
   // Applied immediately; the backend's validated copy replaces it once saved, unless a
-  // newer change was made in the meantime.
+  // newer change was made in the meantime (here, or in another window).
   const latest = useRef(0);
+  useConfigChanged("settings", () => {
+    const request = ++latest.current;
+    invoke<Settings>("settings_get").then((saved) => request === latest.current && setSettings(saved), console.error);
+  });
   const update = useCallback((next: Settings) => {
     const request = ++latest.current;
     setSettings(next);

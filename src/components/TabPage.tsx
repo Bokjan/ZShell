@@ -31,6 +31,8 @@ export interface PaneHandlers {
   onAreaSize(tabKey: number, size: Size): void;
   /** How many uploads and downloads are running in the pane's file panel. */
   onTransfers(key: number, count: number): void;
+  /** How many files of the pane's file panel are open in a local editor. */
+  onEdits(key: number, count: number): void;
   /** How many questions are waiting in the pane's file panel. */
   onQuestions(key: number, count: number): void;
   /** Added to the end of the pane's terminal menu, when it opens. */
@@ -160,6 +162,7 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
                 connected={connected}
                 active={active && shown("files")}
                 onTransfers={(count) => h.onTransfers(pane.key, count)}
+                onEdits={(count) => h.onEdits(pane.key, count)}
                 onQuestions={(count) => h.onQuestions(pane.key, count)}
               />
             </DialogsHidden.Provider>

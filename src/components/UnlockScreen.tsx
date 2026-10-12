@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
@@ -8,6 +7,7 @@ import { configDirectory, errorMessage, vault, type VaultStatus } from "../lib/a
 import { announce } from "../lib/announce";
 import { useDialog } from "../lib/dialogs";
 import { isWindows } from "../lib/platform";
+import { listenHere } from "../lib/windows";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 import { Modal } from "./Modal";
@@ -41,7 +41,7 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
 
   // No tabs to close: ⌘W (the File menu's Close) closes the window, as it does without tabs.
   useEffect(() => {
-    const unlisten = listen("close-tab", () => void getCurrentWindow().close().catch(console.error));
+    const unlisten = listenHere("close-tab", () => void getCurrentWindow().close().catch(console.error));
     return () => void unlisten.then((f) => f());
   }, []);
 

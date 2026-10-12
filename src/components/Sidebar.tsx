@@ -49,7 +49,7 @@ import { SessionImportDialog } from "./SessionImportDialog";
  * How a session is opened: switch to a pane it already has, always in a new tab, or in a
  * new pane right of or below the focused one.
  */
-export type OpenMode = "connect" | "newTab" | "splitRight" | "splitDown";
+export type OpenMode = "connect" | "newTab" | "splitRight" | "splitDown" | "newWindow";
 
 interface Props {
   profiles: Profile[];
@@ -220,6 +220,7 @@ export function Sidebar(props: Props) {
     { label: t("sidebar.connectNewTab"), onSelect: () => onOpen(profile, "newTab") },
     { label: t("sidebar.connectSplitRight"), onSelect: () => onOpen(profile, "splitRight") },
     { label: t("sidebar.connectSplitDown"), onSelect: () => onOpen(profile, "splitDown") },
+    { label: t("sidebar.connectNewWindow"), onSelect: () => onOpen(profile, "newWindow") },
     "separator",
     { label: t("sidebar.edit"), onSelect: () => onEdit(profile) },
     { label: t("sidebar.duplicate"), onSelect: () => duplicate(profile) },

@@ -1,5 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+import { listenHere } from "./windows";
+
 import type {
   AppLockSettings,
   AppLockStatus,
@@ -25,6 +27,7 @@ import type {
   SerialOptions,
   SerialPortInfo,
   SessionEvent,
+  SessionSnapshot,
   SessionsScan,
   SessionSpec,
   SetAsideFile,
@@ -246,8 +249,19 @@ export async function openSession(
   /** Forwarding rules to start besides the automatic ones (see `forwards.carry`). */
   carry: string[] = [],
 ): Promise<Session> {
-  // Output and events share one channel, which keeps them in order: each message is a type
-  // byte (0 output, 1 event as JSON) and its content.
+  let spec: SessionSpec;
+  if (shareFrom !== undefined) spec = { kind: "shared", source: shareFrom };
+  else if (target.kind === "profile") spec = { ...target, carry };
+  else spec = target;
+  const id = await invoke<SessionId>("session_open", { spec, ...size, log, channel: sessionChannel(onOutput, onEvent) });
+  return sessionHandle(id);
+}
+
+/**
+ * A session's output and events share one channel, which keeps them in order: each message is
+ * a type byte (0 output, 1 event as JSON) and its content.
+ */
+function sessionChannel(onOutput: (data: Uint8Array) => void, onEvent: (event: SessionEvent) => void) {
   const channel = new Channel<ArrayBuffer>();
   const decoder = new TextDecoder();
   channel.onmessage = (message) => {
@@ -255,20 +269,60 @@ export async function openSession(
     if (bytes[0] === 0) onOutput(bytes.subarray(1));
     else if (bytes[0] === 1) onEvent(JSON.parse(decoder.decode(bytes.subarray(1))) as SessionEvent);
   };
-  let spec: SessionSpec;
-  if (shareFrom !== undefined) spec = { kind: "shared", source: shareFrom };
-  else if (target.kind === "profile") spec = { ...target, carry };
-  else spec = target;
-  const id = await invoke<SessionId>("session_open", { spec, ...size, log, channel });
-  return {
-    id,
-    write: (data) => invoke("session_write", { id, data }),
-    writeBytes: (data) => invoke("session_write_bytes", { id, data: Array.from(data) }),
-    resize: (cols, rows) => invoke("session_resize", { id, cols, rows }),
-    ack: (bytes) => invoke("session_ack", { id, bytes }),
-    close: () => invoke("session_close", { id }),
-  };
+  return channel;
 }
+
+const sessionHandle = (id: SessionId): Session => ({
+  id,
+  write: (data) => invoke("session_write", { id, data }),
+  writeBytes: (data) => invoke("session_write_bytes", { id, data: Array.from(data) }),
+  resize: (cols, rows) => invoke("session_resize", { id, cols, rows }),
+  ack: (bytes) => invoke("session_ack", { id, bytes }),
+  close: () => invoke("session_close", { id }),
+});
+
+/** How long a session moving here waits for its old window's screen; it goes on without it. */
+const SNAPSHOT_TIMEOUT_MS = 5000;
+
+/** Who waits for the screen of each session moving to this window. */
+const snapshotWaiters = new Map<SessionId, (snapshot: SessionSnapshot) => void>();
+let snapshotListener: Promise<unknown> | undefined;
+
+/**
+ * Takes over a session that another window's tab showed (a tab moved here): its output and
+ * events come here from now on. `snapshot` is what its terminal showed there, which the other
+ * window hands over once the session has moved (null if it doesn't in time); output that
+ * comes meanwhile goes after it.
+ */
+export async function adoptSession(
+  id: SessionId,
+  onOutput: (data: Uint8Array) => void,
+  onEvent: (event: SessionEvent) => void,
+): Promise<{ session: Session; snapshot: Promise<SessionSnapshot | null> }> {
+  snapshotListener ??= listenHere<SessionSnapshot>("session-snapshot", ({ payload }) => snapshotWaiters.get(payload.id)?.(payload));
+  await snapshotListener;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const snapshot = new Promise<SessionSnapshot | null>((resolve) => {
+    const done = (value: SessionSnapshot | null) => {
+      clearTimeout(timer);
+      snapshotWaiters.delete(id);
+      resolve(value);
+    };
+    timer = setTimeout(() => done(null), SNAPSHOT_TIMEOUT_MS);
+    snapshotWaiters.set(id, done);
+  });
+  try {
+    await invoke("session_adopt", { id, channel: sessionChannel(onOutput, onEvent) });
+  } catch (e) {
+    clearTimeout(timer);
+    snapshotWaiters.delete(id);
+    throw e;
+  }
+  return { session: sessionHandle(id), snapshot };
+}
+
+/** Passes the screen of a session that moved away to the window it moved to. */
+export const handOver = (snapshot: SessionSnapshot) => invoke<void>("session_handover", { snapshot });
 
 export const sessionLog = {
   /** Starts logging in a new file; the session reports it with a `log` event. */

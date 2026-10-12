@@ -28,13 +28,15 @@ interface Options {
   fail(e: unknown): void;
   /** How many uploads and downloads are running, each time that changes. */
   onTransfers(count: number): void;
+  /** How many files are open in a local editor, each time that changes. */
+  onEdits(count: number): void;
 }
 
 /**
  * The file panel's transfers: uploads, downloads, and files open in another application,
  * whose saves are uploaded through the current connection.
  */
-export function useTransfers({ sessionId, connected, active, cwdRef, entries, load, ask, fail, onTransfers }: Options) {
+export function useTransfers({ sessionId, connected, active, cwdRef, entries, load, ask, fail, onTransfers, onEdits }: Options) {
   const { t } = useTranslation();
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const transfersRef = useRef(transfers);
@@ -195,6 +197,10 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
   const onTransfersRef = useRef(onTransfers);
   onTransfersRef.current = onTransfers;
   useEffect(() => onTransfersRef.current(running), [running]);
+  const editing = transfers.filter((t) => t.status === "editing").length;
+  const onEditsRef = useRef(onEdits);
+  onEditsRef.current = onEdits;
+  useEffect(() => onEditsRef.current(editing), [editing]);
 
   // Closing the pane stops watching its files and cancels its transfers, which would otherwise
   // go on out of sight on a connection that other panes share.

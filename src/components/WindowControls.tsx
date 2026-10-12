@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
+import { listenHere } from "../lib/windows";
 import { IconButton } from "./IconButton";
 
 /** Glyphs of Segoe Fluent Icons (Windows 11), at the same code points in Segoe MDL2 Assets (Windows 10). */
@@ -30,7 +30,7 @@ export function WindowControls() {
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<{ hover: boolean; pressed: boolean }>("window-maximize-button", (e) =>
+    const unlisten = listenHere<{ hover: boolean; pressed: boolean }>("window-maximize-button", (e) =>
       setMaximizeState(e.payload),
     );
     return () => void unlisten.then((f) => f());

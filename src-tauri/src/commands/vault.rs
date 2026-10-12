@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::applock::AppLock;
 use crate::config::ProfileStore;
@@ -13,7 +13,7 @@ use crate::persist::SetAside;
 use crate::quick::QuickCommandStore;
 use crate::vault::{Target, Vault, VaultStatus};
 
-use super::blocking;
+use super::{blocking, notified, Change};
 
 /// The stores take what the vault has, once it is unlocked or reset.
 fn reload(app: &AppHandle) {
@@ -67,11 +67,13 @@ pub async fn vault_reset(app: AppHandle) -> Result<VaultStatus> {
 #[tauri::command]
 pub async fn vault_set_protection(
     app: AppHandle,
+    window: WebviewWindow,
     change: Target,
     current: Option<String>,
     skip_unreadable: bool,
 ) -> Result<VaultStatus> {
-    blocking(app, move |app| app.state::<Arc<Vault>>().set_protection(change, current.as_deref(), skip_unreadable)).await
+    let result = blocking(app, move |app| app.state::<Arc<Vault>>().set_protection(change, current.as_deref(), skip_unreadable)).await;
+    notified(&window, Change::Vault, result)
 }
 
 /// Whether the system's credential store can be used; on Linux there may be none.

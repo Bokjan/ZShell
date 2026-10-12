@@ -30,6 +30,8 @@ interface Props {
   active: boolean;
   /** How many uploads and downloads are running, each time that changes. */
   onTransfers(count: number): void;
+  /** How many files are open in a local editor, each time that changes. */
+  onEdits(count: number): void;
   /** How many questions are waiting, each time that changes. */
   onQuestions(count: number): void;
 }
@@ -46,7 +48,7 @@ const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name 
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
  */
-export function SftpPanel({ sessionId, connected, active, onTransfers, onQuestions }: Props) {
+export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, onQuestions }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<FileView>(storedView);
   /** The name filter; null while the filter field is closed. */
@@ -75,7 +77,18 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onQuestio
   const onQuestionsRef = useRef(onQuestions);
   onQuestionsRef.current = onQuestions;
   useEffect(() => onQuestionsRef.current(questions), [questions]);
-  const transfers = useTransfers({ sessionId, connected, active, cwdRef: listing.cwdRef, entries, load, ask, fail, onTransfers });
+  const transfers = useTransfers({
+    sessionId,
+    connected,
+    active,
+    cwdRef: listing.cwdRef,
+    entries,
+    load,
+    ask,
+    fail,
+    onTransfers,
+    onEdits,
+  });
 
   const visible = useMemo(() => visibleEntries(entries, view, filter ?? ""), [entries, view, filter]);
   const rows = useMemo(() => visible.map((entry) => entry.path), [visible]);

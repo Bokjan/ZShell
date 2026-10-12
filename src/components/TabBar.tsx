@@ -15,6 +15,7 @@ import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { shortcutLabel } from "../lib/keymap";
 import { isComposing, isWindows } from "../lib/platform";
 import { DRAG_REGION } from "../lib/window";
+import type { WindowInfo } from "../lib/windows";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
@@ -31,6 +32,12 @@ interface Props {
   onClose(keys: number[]): void;
   /** Moves the tab to `index` in the tab order. */
   onMove(key: number, index: number): void;
+  /** The other windows, which a tab can move to. */
+  windows: WindowInfo[];
+  /** Whether the tab can move to another window now. */
+  canMoveToWindow(key: number): boolean;
+  /** Moves the tab to window `target`, or to a new window (null). */
+  onMoveToWindow(key: number, target: string | null): void;
   /** `title` null goes back to the automatic title. */
   onRename(key: number, title: string | null): void;
   onDuplicate(key: number): void;
@@ -79,6 +86,9 @@ export function TabBar({
   onMove,
   onRename,
   onDuplicate,
+  windows,
+  canMoveToWindow,
+  onMoveToWindow,
   onSplit,
   canSplit,
   onSaveAsSession,
@@ -199,6 +209,17 @@ export function TabBar({
     if (isLogging(pane)) items.push({ label: t("tabs.stopLog"), onSelect: () => onLog(key, false) });
     else items.push({ label: t("tabs.startLog"), disabled: pane.status !== "connected", onSelect: () => onLog(key, true) });
     if (pane.logPath) items.push({ label: t("tabs.showLog"), onSelect: () => onShowLog(key) });
+    // A window's only tab has nowhere new to go.
+    const movable = canMoveToWindow(key);
+    items.push(
+      "separator",
+      { label: t("tabs.moveToNewWindow"), disabled: !movable || tabs.length < 2, onSelect: () => onMoveToWindow(key, null) },
+      ...windows.map((other) => ({
+        label: t("tabs.moveToWindow", { name: other.title || t("app.name") }),
+        disabled: !movable,
+        onSelect: () => onMoveToWindow(key, other.label),
+      })),
+    );
     items.push(
       "separator",
       // ⌘W closes the focused pane of a split tab.

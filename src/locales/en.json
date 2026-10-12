@@ -49,6 +49,7 @@
     "connectNewTab": "Connect in New Tab",
     "connectSplitRight": "Connect in Pane to the Right",
     "connectSplitDown": "Connect in Pane Below",
+    "connectNewWindow": "Connect in New Window",
     "duplicate": "Duplicate",
     "copyName": "{name} (copy)",
     "passwordNotCopiedTitle": "Password Not Copied",
@@ -95,6 +96,8 @@
     "localTitle": "Local",
     "rename": "Rename",
     "duplicate": "Duplicate",
+    "moveToNewWindow": "Move to New Window",
+    "moveToWindow": "Move to “{name}”",
     "splitRight": "Split Right",
     "splitDown": "Split Down",
     "closePane": "Close Pane",
@@ -761,7 +764,11 @@
     "windowTitle": "Close All Tabs?",
     "window_one": "{count} tab is still connected or running a program. Closing the window ends it.",
     "window_other": "{count} tabs are still connected or running a program. Closing the window ends them.",
-    "windowConfirm": "Close All"
+    "windowConfirm": "Close All",
+    "quitTitle": "Quit {name}?",
+    "quit_one": "{count} tab is still connected or running a program. Quitting ends it.",
+    "quit_other": "{count} tabs are still connected or running a program. Quitting ends them.",
+    "quitConfirm": "Quit"
   },
   "closeForwards": {
     "title": "Keep Port Forwarding Running?",

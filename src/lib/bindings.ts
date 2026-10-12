@@ -98,6 +98,7 @@ export type ErrorCode =
   | "pty.spawnFailed"
   | "serial.disconnected"
   | "serial.openFailed"
+  | "session.busy"
   | "session.notConnected"
   | "session.notFound"
   | "session.pageGone"
@@ -136,6 +137,7 @@ export type ErrorCode =
   | "vault.readFailed"
   | "vault.verifyFailed"
   | "vault.wrongPassword"
+  | "window.notFound"
   | "zmodem.cancelled"
   | "zmodem.corrupt"
   | "zmodem.incomplete"
@@ -178,6 +180,12 @@ idle: boolean, systemLock: boolean, };
 export type Appearance = "system" | "dark" | "light";
 
 export type AuthMethod = { "type": "auto" } | { "type": "password" } | { "type": "publicKey", keyPath: string, } | { "type": "agent" };
+
+/**
+ * What a window saved that the other windows show, which they read again when they hear of
+ * it (the `config-changed` event).
+ */
+export type Change = "settings" | "profiles" | "quickCommands" | "vault" | "appLock";
 
 export type CloseReason = "exited" | "lost" | "failed";
 
@@ -603,7 +611,21 @@ autoForwards: Array<ForwardRule>,
  */
 brings: Array<string>, };
 
-export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, };
+export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, } | { "type": "moved" };
+
+/**
+ * What a session's terminal showed in the tab it moved from: written to the new tab's
+ * terminal before the output that came since.
+ */
+export type SessionSnapshot = { id: number, 
+/**
+ * The screen and the scrollback, as escape sequences that draw them again.
+ */
+data: string, 
+/**
+ * The size of the terminal it was taken from, which it is written into before fitting.
+ */
+cols: number, rows: number, };
 
 /**
  * What a new session runs.
@@ -753,6 +775,11 @@ protection: Protection | null,
  * With password protection: the data key is also in the credential store.
  */
 remember: boolean, locked: VaultLock | null, store: StoreKind, };
+
+/**
+ * Another window, as the tab menu lists it.
+ */
+export type WindowInfo = { label: string, title: string, };
 
 /**
  * What the frontend is asked for, or that a transfer is running (for its cancel button).

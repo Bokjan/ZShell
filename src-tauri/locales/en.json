@@ -71,7 +71,11 @@
     "session": {
       "notFound": "Session not found",
       "notConnected": "The session has no SSH connection yet",
-      "pageGone": "The window reloaded while the session was opening"
+      "pageGone": "The window reloaded while the session was opening",
+      "busy": "The session is transferring files with ZMODEM"
+    },
+    "window": {
+      "notFound": "The window has closed"
     },
     "pty": {
       "openFailed": "Cannot create a pseudo terminal",
