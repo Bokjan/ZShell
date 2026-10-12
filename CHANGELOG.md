@@ -2,6 +2,27 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.11.3] - 2026-10-12
+
+### Bug Fixes
+
+- When a download of several items fails, empty files and folders that had already arrived in full are kept; only the items from the one that failed onward are taken back.
+- Choosing Replace for a file edited in another app, while another save of it is still uploading, is no longer lost, which brought the same question back.
+- Uploading onto a folder whose contents can't be listed asks before replacing anything there.
+- On Windows, items dragged out of the file panel whose names Windows can't tell apart (`README` and `readme`, or `a:b` and `a_b`) no longer land on the same file.
+- Choosing to keep forwards when closing several tabs no longer hands over the forwards of a connection another tab still uses, once that tab is closed later with Stop chosen.
+- Closing the last tab of a connection no longer waits for an SFTP session still being opened on it.
+- A remote forward tries each address of its target in turn, so a target whose first address doesn't answer (IPv6 broken on this network) is still reached.
+- A local or dynamic forward listening on a host name can be stopped or restarted while that name is looked up, and the lookup gives up after 15 seconds.
+- SOCKS4 requests are accepted whatever their user id, which used to have to be UTF-8.
+- A session log that falls behind no longer reports more missing output than there was.
+- On Windows, a session log is never written to a device such as `NUL` or `COM1` when the file name template gives that name.
+- ZMODEM receiving asks for the data again at once when the header starting it arrives damaged, as on a noisy serial line, instead of after 10 seconds; with more than 16 MiB left, the transfer used to fail.
+- Unlocking says so when unencrypted copies of the sessions, left by a change of protection that did not finish, can't be deleted.
+- Turning on encryption lists the session files that could not be read at an earlier start and were set aside in the clear, and offers to delete them.
+- Output that arrives while a tab moves to another window is drawn at the size the program wrote it for, so progress bars and lines being edited no longer come out garbled.
+- Moving a tab that is waiting to reconnect to another window connects once, from the new window.
+
 ## [2.11.2] - 2026-10-12
 
 ### Bug Fixes
