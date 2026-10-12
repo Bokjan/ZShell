@@ -6,6 +6,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
     "preview": "vite preview",
     "licenses:generate": "node scripts/generate-licenses.mjs",
     "tauri": "tauri"
@@ -32,6 +34,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
+    "prettier": "3.6.2",
     "typescript": "~7.0.2",
     "vite": "^8.0.16",
     "vitest": "^5.0.3"

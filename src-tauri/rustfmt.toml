@@ -1,0 +1,5 @@
+# Matches how the code was written: long lines, short constructs kept on one line. The style
+# edition is fixed so that rustfmt versions (Homebrew's, CI's stable) format alike.
+style_edition = "2021"
+max_width = 140
+use_small_heuristics = "Max"
