@@ -38,12 +38,12 @@ pub async fn vault_try_unlock(app: AppHandle) -> Result<VaultStatus> {
 }
 
 /// Unlocks with the master password; `vault.wrongPassword` if it isn't the one. The app lock
-/// then doesn't ask again.
+/// then doesn't ask again, if the password was checked (the vault wasn't open already).
 #[tauri::command]
 pub async fn vault_unlock(app: AppHandle, password: String) -> Result<VaultStatus> {
     blocking(app, move |app| {
-        let status = app.state::<Arc<Vault>>().unlock(&password)?;
-        if status.locked.is_none() {
+        let (status, opened) = app.state::<Arc<Vault>>().unlock(&password)?;
+        if opened {
             app.state::<Arc<AppLock>>().unlocked_by_password();
         }
         reload(app);

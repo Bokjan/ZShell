@@ -605,8 +605,10 @@ impl Vault {
     }
 
     /// Unlocks with the master password: `vault.wrongPassword` if it isn't the one. Blocks
-    /// while the key is derived.
-    pub fn unlock(&self, password: &str) -> Result<VaultStatus> {
+    /// while the key is derived. Also says whether this call opened it, which checked the
+    /// password: an open vault takes any.
+    pub fn unlock(&self, password: &str) -> Result<(VaultStatus, bool)> {
+        let mut opened = false;
         {
             let mut state = self.state.lock().unwrap();
             if let State::Locked { .. } = &*state {
@@ -621,6 +623,7 @@ impl Vault {
                         match file.open(&key) {
                             Ok(data) => {
                                 self.remove_leftovers();
+                                opened = true;
                                 State::Encrypted(Encrypted { header: file.header, key, data })
                             }
                             Err(_) => {
@@ -631,7 +634,7 @@ impl Vault {
                 };
             }
         }
-        Ok(self.status())
+        Ok((self.status(), opened))
     }
 
     /// Deletes the vault, whose key is lost (a forgotten master password), with any plain
@@ -913,7 +916,10 @@ mod tests {
         assert_eq!(vault.data().unwrap_err().code(), "vault.locked");
         assert_eq!(vault.update(|_| ()).unwrap_err().code(), "vault.locked");
         assert_eq!(vault.unlock("wrong").unwrap_err().code(), "vault.wrongPassword");
-        assert!(vault.unlock("master").unwrap().locked.is_none());
+        let (status, opened) = vault.unlock("master").unwrap();
+        assert!(status.locked.is_none() && opened);
+        // Open already: any password passes, and says it wasn't checked.
+        assert!(!vault.unlock("wrong").unwrap().1);
         assert_eq!(names(&vault), ["alpha"]);
 
         // Leaving password protection takes the master password.
@@ -950,7 +956,7 @@ mod tests {
         let vault = open(&dir, &store);
         let lock = vault.try_unlock().locked.unwrap();
         assert_eq!((lock.reason, lock.error.map(|e| e.code())), (LockReason::Password, Some("credentialStore")));
-        assert!(vault.unlock("master").unwrap().locked.is_none());
+        assert!(vault.unlock("master").unwrap().0.locked.is_none());
         store.failing.store(false, Ordering::Relaxed);
 
         // Not remembered any more: the key leaves the credential store.
@@ -958,7 +964,7 @@ mod tests {
         assert!(!store.entries.lock().unwrap().contains_key(KEY_ACCOUNT));
         let vault = open(&dir, &store);
         assert_eq!(vault.try_unlock().locked.map(|l| l.reason), Some(LockReason::Password));
-        assert!(vault.unlock("master").unwrap().locked.is_none());
+        assert!(vault.unlock("master").unwrap().0.locked.is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1082,7 +1088,7 @@ mod tests {
         store.entries.lock().unwrap().insert(KEY_ACCOUNT.into(), first);
         let vault = open(&dir, &store);
         assert_eq!(vault.try_unlock().locked.map(|l| l.reason), Some(LockReason::Password));
-        assert!(vault.unlock("master").unwrap().locked.is_none());
+        assert!(vault.unlock("master").unwrap().0.locked.is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1112,7 +1118,7 @@ mod tests {
         fs::write(dir.join("commands.json.tmp"), "{}").unwrap();
         let vault = open(&dir, &store);
         assert!(dir.join(PASSWORDS_FILE).exists());
-        assert!(vault.unlock("master").unwrap().locked.is_none());
+        assert!(vault.unlock("master").unwrap().0.locked.is_none());
         for name in PLAIN_FILES {
             assert!(!dir.join(name).exists(), "{name}");
         }
@@ -1214,7 +1220,7 @@ mod tests {
         assert!(!dir.join(VAULT_FILE).exists() && dir.join("profiles.json").exists());
         // A master password works without it.
         vault.set_protection(password(Some("master"), false), None, false).unwrap();
-        assert!(open(&dir, &store).unlock("master").unwrap().locked.is_none());
+        assert!(open(&dir, &store).unlock("master").unwrap().0.locked.is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
 }
