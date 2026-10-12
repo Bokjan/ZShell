@@ -93,7 +93,8 @@ export function TerminalView({
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
+  // Fits the terminal to the pane, except while a screen from another window is drawn.
+  const fitRef = useRef<{ fit(): void } | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -178,7 +179,6 @@ export function TerminalView({
     term.open(container);
     fit.fit();
     termRef.current = term;
-    fitRef.current = fit;
     searchRef.current = search;
 
     const session = sessionsRef.current.attach(paneKey, {
@@ -193,14 +193,12 @@ export function TerminalView({
         // With the modes programs set (mouse reporting, bracketed paste and so on), and what
         // the addon doesn't keep.
         snapshot: () => ({ data: serialize.serialize() + extraModes(term), cols: term.cols, rows: term.rows }),
-        // Drawn at the size it was taken at, as the addon advises, then fitted to the pane.
+        // Drawn at the size it was taken at, as the addon advises; fitted to the pane after.
         restore: (snapshot, done) => {
           term.resize(snapshot.cols, snapshot.rows);
-          term.write(snapshot.data, () => {
-            fit.fit();
-            done();
-          });
+          term.write(snapshot.data, done);
         },
+        fit: () => fit.fit(),
       },
       screen: {
         size: () => ({ cols: term.cols, rows: term.rows }),
@@ -220,6 +218,11 @@ export function TerminalView({
       hasSelection: () => term.hasSelection(),
     });
     sessionRef.current = session;
+    fitRef.current = {
+      fit: () => {
+        if (!session.isArriving) fit.fit();
+      },
+    };
 
     // While syncing, a paste isn't passed on as typed input (wrapped for bracketed paste, or
     // not, as this terminal is): each synced pane pastes it as its own terminal requires.
@@ -323,7 +326,7 @@ export function TerminalView({
       }),
       term.onTitleChange((title) => onTitleRef.current(title)),
     ];
-    const observer = new ResizeObserver(() => fit.fit());
+    const observer = new ResizeObserver(() => fitRef.current?.fit());
     observer.observe(container);
     // A tick later: React's StrictMode (in development) mounts, unmounts and mounts again at
     // once, which would open a backend session (and a log file, or a serial device that is

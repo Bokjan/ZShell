@@ -33,8 +33,10 @@ export interface TerminalPort {
   alternateScreen(): boolean;
   /** What the terminal shows, with its scrollback, to draw again elsewhere. */
   snapshot(): Snapshot;
-  /** Draws a snapshot (from another window); `done` runs once it is drawn. */
+  /** Draws a snapshot (from another window) at its size; `done` runs once it is drawn. */
   restore(snapshot: Snapshot, done: () => void): void;
+  /** Fits the terminal to its pane. */
+  fit(): void;
 }
 
 /** What the session reports as it goes. */
@@ -225,7 +227,9 @@ export class PaneSession {
     this.traffic.addSent(data.length);
   }
 
+  /** The terminal's new size. Not while a screen from another window is drawn: at its size. */
   resize(cols: number, rows: number) {
+    if (this.arriving) return;
     void this.session?.resize(cols, rows);
   }
 
@@ -277,7 +281,7 @@ export class PaneSession {
     if (arrival.sessionId !== null) this.adopt(arrival.sessionId, arrival.connected);
     else {
       this.closed = true;
-      if (arrival.snapshot) this.port.restore(arrival.snapshot, ignore);
+      if (arrival.snapshot) this.port.restore(arrival.snapshot, () => this.port.fit());
       if (arrival.reconnect) this.connect();
     }
   }
@@ -327,9 +331,16 @@ export class PaneSession {
         const pending = waiting;
         waiting = null;
         pending.forEach((f) => f());
+        // The output that came meanwhile was written for the size the program knew, the
+        // other window's: drawn at it too, and only then fitted to this pane.
+        await new Promise<void>((done) => this.port.write("", done));
         settled();
+        const before = this.port.size();
+        this.port.fit();
         const { cols, rows } = this.port.size();
-        void adopted.session.resize(cols, rows).catch(ignore);
+        // A new size reaches the session as the terminal resizes. Without a screen handed
+        // over, the terminal may never have had the session's size: told it here.
+        if (cols === before.cols && rows === before.rows) void adopted.session.resize(cols, rows).catch(ignore);
         return adopted.session;
       },
       () => {

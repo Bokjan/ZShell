@@ -86,18 +86,33 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     })) as typeof openSession;
   let line = "";
   const written: string[] = [];
+  // The terminal's size: the pane's (80x24) once fitted. Each write notes the size it was
+  // drawn at.
+  let size = { cols: 80, rows: 24 };
+  const drawnAt: string[] = [];
   const port: TerminalPort = {
     write: (data, done) => {
-      written.push(typeof data === "string" ? data : new TextDecoder().decode(data));
+      const text = typeof data === "string" ? data : new TextDecoder().decode(data);
+      if (text) {
+        written.push(text);
+        drawnAt.push(`${text} ${size.cols}x${size.rows}`);
+      }
       done?.();
     },
-    size: () => ({ cols: 80, rows: 24 }),
+    size: () => size,
     lineBeforeCursor: () => line,
     alternateScreen: () => false,
     snapshot: () => ({ data: "<screen>", cols: 80, rows: 24 }),
     restore: (snapshot, done) => {
+      size = { cols: snapshot.cols, rows: snapshot.rows };
       written.push(`<restored ${snapshot.data} ${snapshot.cols}x${snapshot.rows}>`);
       done();
+    },
+    // As the terminal does: a new size is passed on.
+    fit: () => {
+      if (size.cols === 80 && size.rows === 24) return;
+      size = { cols: 80, rows: 24 };
+      pane.resize(80, 24);
     },
   };
   const adopted: Adopted[] = [];
@@ -146,6 +161,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     failAdoption: (error: unknown) => (adoptFailure = error),
     events,
     written,
+    drawnAt,
     setLine: (text: string) => (line = text),
     /** What was written to the terminal, as one string. */
     screen: () => written.join(""),
@@ -549,7 +565,7 @@ describe("moving to another window", () => {
 
   it("takes the session over: its screen first, then the output that came since", async () => {
     const arrival: Arrival = { sessionId: 42, connected: true, snapshot: null, reconnect: false, from };
-    const { pane, adopted, events, screen, opened } = setup({}, undefined, arrival);
+    const { pane, adopted, events, screen, opened, drawnAt } = setup({}, undefined, arrival);
     pane.start();
     expect(events.arrived).toHaveBeenCalledOnce();
     await settle();
@@ -560,9 +576,13 @@ describe("moving to another window", () => {
     expect(events.session).toHaveBeenLastCalledWith(42);
     expect(pane.isArriving).toBe(true);
     expect(pane.send("ls\r")).toBe(true);
+    // The terminal resizing meanwhile isn't passed on.
+    pane.resize(90, 20);
     adopted[0].handOver({ id: 42, moveId: "m1", data: "<old>", cols: 100, rows: 30 });
     await settle();
     expect(screen()).toBe("<restored <old> 100x30>late");
+    // Drawn at the size the program wrote it for; then fitted, and the session told once.
+    expect(drawnAt).toEqual(["late 100x30"]);
     expect(pane.isArriving).toBe(false);
     expect(adopted[0].session.sizes).toEqual([[80, 24]]);
     // Its shell was up: nothing connects anew.
