@@ -228,7 +228,13 @@ export type DragResult = { outcome: DragOutcome, x: number, y: number, };
 /**
  * Where a dragged tab would go if released now.
  */
-export type DropTarget = { "kind": "here" } | { "kind": "window", label: string, x: number, } | { "kind": "elsewhere" };
+export type DropTarget = { "kind": "here" } | { "kind": "window", label: string, x: number, } | { "kind": "elsewhere", cursor: Point, };
+
+/**
+ * A tab dropped outside the windows: the cursor in screen coordinates (from [`DropTarget`]),
+ * and where it held the tab in the window it came from, in CSS pixels from its top left.
+ */
+export type Dropped = { cursor: Point, grab: Point, };
 
 /**
  * What the watcher sends the frontend.
@@ -402,7 +408,7 @@ export type LogSummary = { count: number, bytes: number, };
 export type Parity = "none" | "odd" | "even";
 
 /**
- * A point in a page's CSS pixels.
+ * A point: in a page's CSS pixels, or in screen coordinates (see [`screen`]).
  */
 export type Point = { x: number, y: number, };
 

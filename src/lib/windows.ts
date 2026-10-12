@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { EventCallback, UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-import type { Change, DropTarget, Point, Rect, WindowInfo } from "./bindings";
+import type { Change, DropTarget, Dropped, Rect, WindowInfo } from "./bindings";
 import type { TabTransfer } from "./tabs";
 
 export type { Change, DropTarget, WindowInfo } from "./bindings";
@@ -40,10 +40,10 @@ export type WindowContent =
 
 export const windows = {
   /**
-   * Opens a window showing `content`, and returns its label: next to this one, or under the
-   * cursor with the cursor `grab` from its top left corner (a tab dragged out).
+   * Opens a window showing `content`, and returns its label: next to this one, or where a tab
+   * was `dropped` outside the windows.
    */
-  open: (content: WindowContent, grab?: Point) => invoke<string>("window_open", { content, grab: grab ?? null }),
+  open: (content: WindowContent, dropped?: Dropped) => invoke<string>("window_open", { content, dropped: dropped ?? null }),
   /**
    * What this window is to show and hasn't taken yet: what it opened for, and the tabs other
    * windows gave it (`tab-received` says when). Each is taken once.
@@ -72,8 +72,11 @@ export const windows = {
 export const tabDrag = {
   /** Where this window's tab bar is, for tabs dragged from the other windows. */
   setTabBar: (rect: Rect) => invoke<void>("window_set_tab_bar", { rect }),
-  /** Where a tab dragged from this window would go now; the window it would go into shows where (`tab-drag-over`). */
-  move: () => invoke<DropTarget>("tab_drag_move"),
-  /** Ends the drag: where the tab goes if `dropped`, or null. */
-  end: (dropped: boolean) => invoke<DropTarget | null>("tab_drag_end", { dropped }),
+  /**
+   * Where the tab of drag `id` from this window would go now; the window it would go into
+   * shows where (`tab-drag-over`) while the drag goes on.
+   */
+  move: (id: string) => invoke<DropTarget>("tab_drag_move", { id }),
+  /** Ends drag `id`: where the tab goes if `dropped`, or null. */
+  end: (id: string, dropped: boolean) => invoke<DropTarget | null>("tab_drag_end", { id, dropped }),
 };

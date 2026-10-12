@@ -178,8 +178,9 @@ export function TabBar({
   const startDrag = (e: ReactMouseEvent, key: number) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const startX = e.clientX;
     const grab = { x: e.clientX, y: e.clientY };
+    // Names the drag for the backend, which ignores answers that come back after it ended.
+    const id = crypto.randomUUID();
     const startIndex = tabsRef.current.findIndex((tab) => tab.key === key);
     let moved = false;
     // Whether it can go to another window, as the drag starts.
@@ -195,7 +196,7 @@ export function TabBar({
       }
       asking = true;
       void tabDrag
-        .move()
+        .move(id)
         .then((target) => {
           // A window's only tab has nowhere new to go.
           const leaves = target.kind === "window" || (target.kind === "elsewhere" && tabsRef.current.length > 1);
@@ -216,7 +217,8 @@ export function TabBar({
         return;
       }
       if (!moved) {
-        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
+        // Any way: straight down out of the window too.
+        if (Math.hypot(ev.clientX - grab.x, ev.clientY - grab.y) < DRAG_THRESHOLD) return;
         moved = true;
         movable = canMoveToWindow(key);
         setDragging(key);
@@ -246,7 +248,7 @@ export function TabBar({
       setDragging(null);
       setLeaving(false);
       if (!movable) return;
-      void tabDrag.end(dropped).then((target) => target && onDropOut(key, target, grab), console.error);
+      void tabDrag.end(id, dropped).then((target) => target && onDropOut(key, target, grab), console.error);
     };
     const up = () => finish(true);
     window.addEventListener("mousemove", move);

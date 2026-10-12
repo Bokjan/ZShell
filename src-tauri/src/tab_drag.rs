@@ -3,8 +3,8 @@
 //! in a window of its own under the cursor. The page drags with mouse events, as when it
 //! reorders tabs, and asks here where the tab would go ([`tab_drag_move`]): the window under
 //! the cursor is the one the system shows on top there, which only native code can tell, and
-//! the cursor is read here in screen pixels, which the page's `screenX` doesn't give reliably
-//! across displays with different scales.
+//! the cursor is read here in screen coordinates (see [`screen`]), which the page's `screenX`
+//! doesn't give reliably across displays with different scales.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -29,8 +29,8 @@ impl Rect {
     }
 }
 
-/// A point in a page's CSS pixels.
-#[derive(Clone, Copy, Deserialize, TS)]
+/// A point: in a page's CSS pixels, or in screen coordinates (see [`screen`]).
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize, TS)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -44,25 +44,89 @@ pub enum DropTarget {
     Here,
     /// Over window `label`'s tab bar, `x` CSS pixels from the left of its page.
     Window { label: String, x: f64 },
-    /// Anywhere else (outside the windows, or over another window but not its tab bar).
-    Elsewhere,
+    /// Anywhere else (outside the windows, or over another window but not its tab bar), with
+    /// the cursor in screen coordinates, for the window it would open in.
+    Elsewhere { cursor: Point },
+}
+
+/// A tab dropped outside the windows: the cursor in screen coordinates (from [`DropTarget`]),
+/// and where it held the tab in the window it came from, in CSS pixels from its top left.
+#[derive(Clone, Copy, Deserialize, TS)]
+pub struct Dropped {
+    pub cursor: Point,
+    pub grab: Point,
 }
 
 #[derive(Default)]
 pub struct TabDrag {
     /// Where each window's tab bar is (see [`window_set_tab_bar`]).
     tab_bars: Mutex<HashMap<String, Rect>>,
-    /// The window showing where a dragged tab would go in its tab bar.
-    showing: Mutex<Option<String>>,
+    drags: Mutex<Drags>,
 }
 
-/// After a window is gone.
+/// The drag going on, if any. Each drag is named by the page; the questions it asks are
+/// answered after a while (on the main thread), so one can come back after the drag ended,
+/// and must not show where the tab would go any more.
+#[derive(Default)]
+struct Drags {
+    /// The drag going on: its id and the window it drags from.
+    current: Option<(String, String)>,
+    /// The drag that ended last.
+    ended: Option<String>,
+    /// The window showing where the tab would go in its tab bar.
+    showing: Option<String>,
+}
+
+impl Drags {
+    /// Shows where `target` would put the tab, in the window it would go into, and stops
+    /// showing it in the window that showed it before (the `tab-drag-over` event with the
+    /// cursor's `x` in its page, or null).
+    fn show(&mut self, app: &AppHandle, target: &DropTarget) {
+        let (label, x) = match target {
+            DropTarget::Window { label, x } => (Some(label.clone()), Some(*x)),
+            _ => (None, None),
+        };
+        if let Some(previous) = self.showing.take().filter(|previous| Some(previous) != label.as_ref()) {
+            let _ = app.emit_to(EventTarget::webview_window(previous), "tab-drag-over", None::<f64>);
+        }
+        if let Some(label) = label {
+            let _ = app.emit_to(EventTarget::webview_window(label.clone()), "tab-drag-over", x);
+            self.showing = Some(label);
+        }
+    }
+
+    /// Whether drag `id` from window `source` is the one going on: it starts with its first
+    /// question, unless it has ended already.
+    fn is_current(&mut self, id: &str, source: &str) -> bool {
+        if self.current.is_none() && self.ended.as_deref() != Some(id) {
+            self.current = Some((id.to_owned(), source.to_owned()));
+        }
+        self.current.as_ref().is_some_and(|(current, _)| current == id)
+    }
+
+    fn finish(&mut self, id: String) {
+        if self.current.as_ref().is_some_and(|(current, _)| *current == id) {
+            self.current = None;
+        }
+        self.ended = Some(id);
+    }
+
+    fn end(&mut self, app: &AppHandle, id: String) {
+        self.finish(id);
+        self.show(app, &DropTarget::Here);
+    }
+}
+
+/// After a window is gone: a drag from it ends.
 pub fn forget(app: &AppHandle, label: &str) {
     let drag = app.state::<TabDrag>();
     drag.tab_bars.lock().unwrap().remove(label);
-    let mut showing = drag.showing.lock().unwrap();
-    if showing.as_deref() == Some(label) {
-        *showing = None;
+    let mut drags = drag.drags.lock().unwrap();
+    if drags.showing.as_deref() == Some(label) {
+        drags.showing = None;
+    }
+    if let Some((id, _)) = drags.current.clone().filter(|(_, source)| source == label) {
+        drags.end(app, id);
     }
 }
 
@@ -72,42 +136,34 @@ pub fn window_set_tab_bar(window: WebviewWindow, drag: State<'_, TabDrag>, rect:
     drag.tab_bars.lock().unwrap().insert(window.label().to_owned(), rect);
 }
 
-/// Where a tab dragged from this window would go if released now. The window it would move
-/// into shows where (the `tab-drag-over` event with the cursor's `x` in its page, then null
-/// once it no longer would).
+/// Where the tab of drag `id` from this window would go if released now; the window it would
+/// go into shows where, while the drag goes on.
 #[tauri::command]
-pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow) -> tauri::Result<DropTarget> {
-    let target = drop_target(&app, window.label().to_owned()).await?;
-    show(&app, &target);
+pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow, id: String) -> tauri::Result<DropTarget> {
+    let source = window.label().to_owned();
+    let target = drop_target(&app, source.clone()).await?;
+    let drag = app.state::<TabDrag>();
+    let mut drags = drag.drags.lock().unwrap();
+    if drags.is_current(&id, &source) {
+        drags.show(&app, &target);
+    }
     Ok(target)
 }
 
-/// Ends dragging a tab from this window: where it goes if `dropped` (rather than cancelled).
+/// Ends drag `id` from this window: where the tab goes if `dropped` (rather than cancelled).
 #[tauri::command]
-pub async fn tab_drag_end(app: AppHandle, window: WebviewWindow, dropped: bool) -> tauri::Result<Option<DropTarget>> {
-    show(&app, &DropTarget::Here);
+pub async fn tab_drag_end(
+    app: AppHandle,
+    window: WebviewWindow,
+    drag: State<'_, TabDrag>,
+    id: String,
+    dropped: bool,
+) -> tauri::Result<Option<DropTarget>> {
+    drag.drags.lock().unwrap().end(&app, id);
     if !dropped {
         return Ok(None);
     }
     drop_target(&app, window.label().to_owned()).await.map(Some)
-}
-
-/// Shows where `target` would put the tab, in the window it would go into, and stops showing
-/// it in the window that showed it before.
-fn show(app: &AppHandle, target: &DropTarget) {
-    let drag = app.state::<TabDrag>();
-    let mut showing = drag.showing.lock().unwrap();
-    let (label, x) = match target {
-        DropTarget::Window { label, x } => (Some(label.clone()), Some(*x)),
-        _ => (None, None),
-    };
-    if let Some(previous) = showing.take().filter(|previous| Some(previous) != label.as_ref()) {
-        let _ = app.emit_to(EventTarget::webview_window(previous), "tab-drag-over", None::<f64>);
-    }
-    if let Some(label) = label {
-        let _ = app.emit_to(EventTarget::webview_window(label.clone()), "tab-drag-over", x);
-        *showing = Some(label);
-    }
 }
 
 /// Where a tab dragged from window `source` would go, on the main thread (where AppKit is
@@ -122,52 +178,110 @@ async fn drop_target(app: &AppHandle, source: String) -> tauri::Result<DropTarge
 }
 
 fn target_at_cursor(app: &AppHandle, source: &str) -> DropTarget {
-    let Some(window) = window_at_cursor(app) else { return DropTarget::Elsewhere };
+    // Nowhere new if the cursor can't be read.
+    let Some(cursor) = cursor(app) else { return DropTarget::Here };
+    let Some(window) = window_at_cursor(app, cursor) else { return DropTarget::Elsewhere { cursor } };
     if window.label() == source {
         return DropTarget::Here;
     }
-    let Some((x, y)) = cursor_in(app, &window) else { return DropTarget::Elsewhere };
     let tab_bar = app.state::<TabDrag>().tab_bars.lock().unwrap().get(window.label()).copied();
-    match tab_bar {
-        Some(rect) if rect.contains(x, y) => DropTarget::Window { label: window.label().to_owned(), x },
-        _ => DropTarget::Elsewhere,
+    match (tab_bar, page_point(&window, cursor)) {
+        (Some(rect), Some(Point { x, y })) if rect.contains(x, y) => DropTarget::Window { label: window.label().to_owned(), x },
+        _ => DropTarget::Elsewhere { cursor },
     }
 }
 
-/// The cursor in `window`'s page, in CSS pixels. The page fills the window (on macOS the
-/// title bar overlays it; on Windows the window has no decorations).
-fn cursor_in(app: &AppHandle, window: &WebviewWindow) -> Option<(f64, f64)> {
-    let cursor = app.cursor_position().ok()?;
-    let origin = window.inner_position().ok()?;
-    let scale = window.scale_factor().ok()?;
-    Some(((cursor.x - f64::from(origin.x)) / scale, (cursor.y - f64::from(origin.y)) / scale))
+/// A position in screen coordinates: ones that positions on displays with different scales
+/// can be compared in. On macOS these are the global points AppKit works in, which are also
+/// the page's CSS pixels: tao gives each position in pixels of a scale of its own (the cursor
+/// in the main display's, a window's origin in its display's, a display's bounds in its own),
+/// and dividing by that scale gives the points back. Elsewhere physical pixels are global, and
+/// logical ones aren't (a logical position means a different place on each display).
+#[cfg(target_os = "macos")]
+pub fn screen(physical: f64, scale: f64) -> f64 {
+    physical / scale
 }
 
-/// Where a window of `size` opened for a dragged tab goes: with the cursor `grab` from its top
-/// left corner, where it was in the window the tab came from, but within the screen's work
-/// area (a tab dropped near the bottom of the screen would leave the window mostly below it).
-pub fn place_at_cursor(app: &AppHandle, grab: Point, size: tauri::LogicalSize<f64>) -> Option<tauri::LogicalPosition<f64>> {
+#[cfg(not(target_os = "macos"))]
+pub fn screen(physical: f64, _scale: f64) -> f64 {
+    physical
+}
+
+/// How many screen units a CSS pixel is, on a display of `scale`.
+#[cfg(target_os = "macos")]
+pub fn screen_per_css(_scale: f64) -> f64 {
+    1.0
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn screen_per_css(scale: f64) -> f64 {
+    scale
+}
+
+/// A position in screen coordinates, as Tauri takes it.
+#[cfg(target_os = "macos")]
+pub fn screen_position(x: f64, y: f64) -> tauri::Position {
+    tauri::LogicalPosition::new(x, y).into()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn screen_position(x: f64, y: f64) -> tauri::Position {
+    tauri::PhysicalPosition::new(x.round() as i32, y.round() as i32).into()
+}
+
+/// The cursor in screen coordinates.
+fn cursor(app: &AppHandle) -> Option<Point> {
     let cursor = app.cursor_position().ok()?;
+    // On macOS in the main display's scale.
+    let scale = if cfg!(target_os = "macos") {
+        app.primary_monitor().ok().flatten().map_or(1.0, |monitor| monitor.scale_factor())
+    } else {
+        1.0
+    };
+    Some(Point { x: screen(cursor.x, scale), y: screen(cursor.y, scale) })
+}
+
+/// Where `point` (screen coordinates) is in `window`'s page, in CSS pixels. The page fills the
+/// window (on macOS the title bar overlays it; on Windows the window has no decorations).
+fn page_point(window: &WebviewWindow, point: Point) -> Option<Point> {
+    let origin = window.inner_position().ok()?;
+    let scale = window.scale_factor().ok()?;
+    let per_css = screen_per_css(scale);
+    Some(Point {
+        x: (point.x - screen(f64::from(origin.x), scale)) / per_css,
+        y: (point.y - screen(f64::from(origin.y), scale)) / per_css,
+    })
+}
+
+/// Where a window the size of `source` opened for a tab dropped outside the windows goes:
+/// holding the tab where it was in `source`, but within the work area of the display the
+/// cursor is on (a tab dropped near the bottom of the screen would leave the window mostly
+/// below it).
+pub fn place_dropped(app: &AppHandle, source: &WebviewWindow, dropped: Dropped) -> Option<tauri::Position> {
+    let size = source.inner_size().ok()?.to_logical::<f64>(source.scale_factor().ok()?);
+    let Dropped { cursor, grab } = dropped;
     let monitor = app.available_monitors().ok()?.into_iter().find(|monitor| {
+        let scale = monitor.scale_factor();
         let (position, size) = (monitor.position(), monitor.size());
-        cursor.x >= f64::from(position.x)
-            && cursor.y >= f64::from(position.y)
-            && cursor.x < f64::from(position.x) + f64::from(size.width)
-            && cursor.y < f64::from(position.y) + f64::from(size.height)
+        let (left, top) = (screen(f64::from(position.x), scale), screen(f64::from(position.y), scale));
+        let (width, height) = (screen(f64::from(size.width), scale), screen(f64::from(size.height), scale));
+        cursor.x >= left && cursor.y >= top && cursor.x < left + width && cursor.y < top + height
     })?;
     let scale = monitor.scale_factor();
+    let per_css = screen_per_css(scale);
     let area = monitor.work_area();
-    let (left, top) = (f64::from(area.position.x) / scale, f64::from(area.position.y) / scale);
-    let (right, bottom) = (left + f64::from(area.size.width) / scale, top + f64::from(area.size.height) / scale);
-    let x = (cursor.x / scale - grab.x).min(right - size.width).max(left);
-    let y = (cursor.y / scale - grab.y).min(bottom - size.height).max(top);
-    Some(tauri::LogicalPosition::new(x, y))
+    let (left, top) = (screen(f64::from(area.position.x), scale), screen(f64::from(area.position.y), scale));
+    let right = left + screen(f64::from(area.size.width), scale);
+    let bottom = top + screen(f64::from(area.size.height), scale);
+    let x = (cursor.x - grab.x * per_css).min(right - size.width * per_css).max(left);
+    let y = (cursor.y - grab.y * per_css).min(bottom - size.height * per_css).max(top);
+    Some(screen_position(x, y))
 }
 
 /// The app's window the system shows on top under the cursor, if any (not when another app's
 /// window covers it).
 #[cfg(target_os = "macos")]
-fn window_at_cursor(app: &AppHandle) -> Option<WebviewWindow> {
+fn window_at_cursor(app: &AppHandle, _cursor: Point) -> Option<WebviewWindow> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSEvent, NSWindow};
 
@@ -180,7 +294,7 @@ fn window_at_cursor(app: &AppHandle) -> Option<WebviewWindow> {
 }
 
 #[cfg(windows)]
-fn window_at_cursor(app: &AppHandle) -> Option<WebviewWindow> {
+fn window_at_cursor(app: &AppHandle, _cursor: Point) -> Option<WebviewWindow> {
     use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetCursorPos, WindowFromPoint, GA_ROOT};
 
@@ -199,11 +313,12 @@ fn window_at_cursor(app: &AppHandle) -> Option<WebviewWindow> {
 /// Without the system's order of windows: the focused window, then the others in the order
 /// they opened, whichever the cursor is over.
 #[cfg(not(any(target_os = "macos", windows)))]
-fn window_at_cursor(app: &AppHandle) -> Option<WebviewWindow> {
+fn window_at_cursor(app: &AppHandle, cursor: Point) -> Option<WebviewWindow> {
     let mut windows: Vec<WebviewWindow> = app.webview_windows().into_values().collect();
     windows.sort_by_key(|window| (!window.is_focused().unwrap_or(false), crate::window::order(window.label())));
     windows.into_iter().find(|window| {
-        let (Some((x, y)), Ok(size), Ok(scale)) = (cursor_in(app, window), window.inner_size(), window.scale_factor()) else {
+        let (Some(Point { x, y }), Ok(size), Ok(scale)) = (page_point(window, cursor), window.inner_size(), window.scale_factor())
+        else {
             return false;
         };
         let size = size.to_logical::<f64>(scale);
@@ -223,5 +338,21 @@ mod tests {
         assert!(!rect.contains(110.0, 10.0));
         assert!(!rect.contains(50.0, 34.0));
         assert!(!rect.contains(9.9, 10.0));
+    }
+
+    /// An answer that comes back after its drag ended doesn't count, nor starts it again; the
+    /// next drag does.
+    #[test]
+    fn a_drag_that_ended_stays_ended() {
+        let mut drags = Drags::default();
+        assert!(drags.is_current("a", "main"));
+        assert!(!drags.is_current("b", "window-1"));
+        drags.finish("a".into());
+        assert!(!drags.is_current("a", "main"));
+        assert!(drags.current.is_none());
+        assert!(drags.is_current("b", "window-1"));
+        // Ended before its first answer came back.
+        drags.finish("c".into());
+        assert!(drags.is_current("b", "window-1"));
     }
 }

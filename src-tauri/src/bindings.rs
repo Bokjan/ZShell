@@ -102,6 +102,7 @@ mod tests {
         visitor.visit::<tab_drag::Rect>();
         visitor.visit::<tab_drag::Point>();
         visitor.visit::<tab_drag::DropTarget>();
+        visitor.visit::<tab_drag::Dropped>();
         visitor.visit::<commands::Change>();
 
         let mut out = String::from(HEADER);

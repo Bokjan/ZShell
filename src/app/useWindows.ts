@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { SessionTarget } from "../lib/api";
 import { tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
-import type { Point } from "../lib/bindings";
+import type { Dropped, Point } from "../lib/bindings";
 import { tabIndexAt, tabStrip } from "../lib/tabStrip";
 import { useTabStore, type TabStore, type TabTransfer } from "../lib/tabs";
 import { useWindowEvent, windows, type DropTarget, type WindowInfo } from "../lib/windows";
@@ -139,11 +139,11 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
 
   /**
    * Moves a tab to window `target`, or to a new window (null). Dragged there: dropped `at`
-   * that many CSS pixels from the left of the target's page, or `grab`bed that far from the
-   * top left of this window, which is where it goes in the new one.
+   * that many CSS pixels from the left of the target's page, or `dropped` outside the windows,
+   * where the new one opens.
    */
   const moveTab = useCallback(
-    async (key: number, target: string | null, { at, grab }: { at?: number; grab?: Point } = {}) => {
+    async (key: number, target: string | null, { at, dropped }: { at?: number; dropped?: Dropped } = {}) => {
       const tab = store.get().tabs.find((t) => t.key === key);
       if (!tab || !canMove(tab)) return;
       const here = getCurrentWindow().label;
@@ -173,7 +173,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       const move: Moving = { target, waiting: new Set(live), stayed: new Set() };
       moving.current.set(key, move);
       try {
-        if (target === null) move.target = await windows.open({ kind: "tab", tab: transfer }, grab);
+        if (target === null) move.target = await windows.open({ kind: "tab", tab: transfer }, dropped);
         else await windows.sendTab(target, transfer, at);
       } catch (e) {
         moving.current.delete(key);
@@ -192,7 +192,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   const dropTab = useCallback(
     (key: number, target: DropTarget, grab: Point) => {
       if (target.kind === "window") void moveTab(key, target.label, { at: target.x });
-      else if (target.kind === "elsewhere" && store.get().tabs.length > 1) void moveTab(key, null, { grab });
+      else if (target.kind === "elsewhere" && store.get().tabs.length > 1) void moveTab(key, null, { dropped: { cursor: target.cursor, grab } });
     },
     [store, moveTab],
   );

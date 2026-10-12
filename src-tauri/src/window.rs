@@ -22,7 +22,7 @@ use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::session::SessionManager;
-use crate::tab_drag::{self, Point};
+use crate::tab_drag::{self, Dropped};
 
 const MAIN: &str = "main";
 const LABEL_PREFIX: &str = "window-";
@@ -109,14 +109,14 @@ pub fn destroyed(window: &tauri::Window) {
     changed(window.app_handle());
 }
 
+/// Where a new window goes: its top left corner in screen coordinates (see
+/// [`tab_drag::screen`]), and its size.
+type Place = (tauri::Position, tauri::LogicalSize<f64>);
+
 /// Creates a window from the main window's configuration (which has `create: false`, so the
 /// platform's title bar options can be set here rather than in per-platform config files), at
-/// `place` (logical position and size) if given.
-fn build(
-    app: &AppHandle,
-    label: &str,
-    place: Option<(tauri::LogicalPosition<f64>, tauri::LogicalSize<f64>)>,
-) -> tauri::Result<WebviewWindow> {
+/// `place` if given.
+fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<WebviewWindow> {
     let mut config = app.config().app.windows.iter().find(|w| w.label == MAIN).cloned().unwrap_or_default();
     config.label = label.to_owned();
     let builder = WebviewWindowBuilder::from_config(app, &config)?;
@@ -125,11 +125,16 @@ fn build(
         builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS);
     #[cfg(windows)]
     let builder = builder.decorations(false);
-    let builder = match place {
-        Some((position, size)) => builder.position(position.x, position.y).inner_size(size.width, size.height),
-        None => builder,
-    };
+    // Placed once created, then shown: the builder takes a logical position, which on Windows
+    // means a different place on each display.
+    let builder = if place.is_some() { builder.visible(false) } else { builder };
     let window = builder.build()?;
+    if let Some((position, size)) = place {
+        window.set_position(position)?;
+        // After moving: on another display the size is in that display's scale.
+        window.set_size(size)?;
+        window.show()?;
+    }
     #[cfg(target_os = "macos")]
     refocus_after_full_screen(&window);
     Ok(window)
@@ -145,30 +150,31 @@ fn size(window: &WebviewWindow) -> tauri::Result<tauri::LogicalSize<f64>> {
 }
 
 /// A window the size of `source`, a little down and to the right of it.
-fn cascade(source: &WebviewWindow) -> tauri::Result<(tauri::LogicalPosition<f64>, tauri::LogicalSize<f64>)> {
-    let position = source.outer_position()?.to_logical::<f64>(source.scale_factor()?);
-    Ok((tauri::LogicalPosition::new(position.x + CASCADE, position.y + CASCADE), size(source)?))
+fn cascade(source: &WebviewWindow) -> tauri::Result<Place> {
+    let position = source.outer_position()?;
+    let scale = source.scale_factor()?;
+    let offset = CASCADE * tab_drag::screen_per_css(scale);
+    let x = tab_drag::screen(f64::from(position.x), scale) + offset;
+    let y = tab_drag::screen(f64::from(position.y), scale) + offset;
+    Ok((tab_drag::screen_position(x, y), size(source)?))
 }
 
 /// Opens a window the size of this one, which shows `content` first (see [`window_take`]),
-/// and returns its label. It goes next to this one, or under the cursor with the cursor
-/// `grab` from its top left corner (a tab dragged out). Async: creating a window from a
-/// synchronous command deadlocks on Windows.
+/// and returns its label. It goes next to this one, or where a tab was `dropped` outside the
+/// windows (see [`tab_drag::place_dropped`]). Async: creating a window from a synchronous
+/// command deadlocks on Windows.
 #[tauri::command]
 pub async fn window_open(
     app: AppHandle,
     window: WebviewWindow,
     windows: State<'_, Windows>,
     content: serde_json::Value,
-    grab: Option<Point>,
+    dropped: Option<Dropped>,
 ) -> tauri::Result<String> {
     let label = format!("{LABEL_PREFIX}{}", windows.next.fetch_add(1, Ordering::Relaxed) + 1);
     windows.inbox.lock().unwrap().pending.insert(label.clone(), vec![content]);
-    let at_cursor = || {
-        let size = size(&window).ok()?;
-        Some((tab_drag::place_at_cursor(&app, grab?, size)?, size))
-    };
-    let place = at_cursor().or_else(|| cascade(&window).ok());
+    let at_drop = || Some((tab_drag::place_dropped(&app, &window, dropped?)?, size(&window).ok()?));
+    let place = at_drop().or_else(|| cascade(&window).ok());
     if let Err(e) = build(&app, &label, place) {
         windows.inbox.lock().unwrap().pending.remove(&label);
         return Err(e);
