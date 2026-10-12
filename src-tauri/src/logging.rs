@@ -101,15 +101,20 @@ impl LogSlot {
             Err(TrySendError::Full(_)) => Some(false),
             Err(TrySendError::Disconnected(_)) => None,
         };
-        let sent = match queue.dropped {
-            0 => send(Chunk::Output(bytes.to_vec())),
-            dropped => match send(Chunk::Dropped(dropped)) {
-                Some(true) => send(Chunk::Output(bytes.to_vec())),
-                other => other,
-            },
-        };
+        // What was left out is noted first; once it is, what is left out next is counted
+        // anew.
+        let mut sent = Some(true);
+        if queue.dropped > 0 {
+            sent = send(Chunk::Dropped(queue.dropped));
+            if sent == Some(true) {
+                queue.dropped = 0;
+            }
+        }
+        if sent == Some(true) {
+            sent = send(Chunk::Output(bytes.to_vec()));
+        }
         match sent {
-            Some(true) => queue.dropped = 0,
+            Some(true) => {}
             Some(false) => queue.dropped += bytes.len(),
             None => {
                 let queue = slot.take()?;
@@ -726,6 +731,15 @@ mod tests {
         assert_eq!((taken(&queued), taken(&queued)), ("a".into(), "b".into()));
         slot.write(b"e");
         assert_eq!((taken(&queued), taken(&queued)), ("<5 dropped>".into(), "e".into()));
+        // Room for the note of what was left out, but not for the output after it.
+        for chunk in [b"h".as_slice(), b"i", b"jj"] {
+            slot.write(chunk);
+        }
+        assert_eq!(taken(&queued), "h");
+        slot.write(b"k");
+        assert_eq!((taken(&queued), taken(&queued)), ("i".into(), "<2 dropped>".into()));
+        slot.write(b"l");
+        assert_eq!((taken(&queued), taken(&queued)), ("<1 dropped>".into(), "l".into()));
         // A writer that failed ends the log, which says so once.
         *failure.lock().unwrap() = Some("No space left on device".into());
         drop(queued);
