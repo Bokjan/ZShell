@@ -125,6 +125,7 @@ export type ErrorCode =
   | "transfer.replaceInterrupted"
   | "transfer.uploadFailed"
   | "unexpected"
+  | "update.failed"
   | "vault.deleteFailed"
   | "vault.emptyPassword"
   | "vault.keyMismatch"
@@ -525,6 +526,19 @@ export type QuickCommands = { groups: Array<CommandGroup>, };
 export type Rect = { x: number, y: number, width: number, height: number, };
 
 /**
+ * A published release.
+ */
+export type Release = { 
+/**
+ * Without the tag's `v`: `2.11.0`.
+ */
+version: string, 
+/**
+ * Its page on GitHub, with the release notes and the downloads.
+ */
+url: string, };
+
+/**
  * What SSH and Telnet sessions have in common: where they connect, through what, and the
  * terminal type the remote side is told.
  */
@@ -685,7 +699,7 @@ export type SetAsideFile = { path: string,
  */
 movedTo: string | null, error: string, };
 
-export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, security: SecuritySettings, };
+export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, security: SecuritySettings, updates: UpdateSettings, };
 
 export type SidebarSettings = { 
 /**
@@ -796,6 +810,32 @@ export type TransferProgress = { transferred: number, total: number, filesDone: 
  * A session or a folder, as dragged in the sidebar.
  */
 export type TreeItem = { "kind": "profile", id: string, } | { "kind": "folder", id: string, };
+
+/**
+ * Checking for a newer version (`update.rs`).
+ */
+export type UpdateSettings = { 
+/**
+ * Once a day, automatically.
+ */
+check: boolean, 
+/**
+ * A version the user doesn't want to hear about again.
+ */
+skipped: string | null, };
+
+/**
+ * What the frontend shows.
+ */
+export type UpdateStatus = { 
+/**
+ * False in the Microsoft Store package, which never checks.
+ */
+supported: boolean, 
+/**
+ * The latest release, when it is newer than this version.
+ */
+newer: Release | null, };
 
 export type VaultLock = { reason: LockReason, 
 /**

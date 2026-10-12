@@ -54,6 +54,10 @@ ring = "0.17.14"
 zeroize = "1.9"
 # TypeScript types for the frontend (`src/lib/bindings.ts`, checked and written by `cargo test`).
 ts-rs = "12"
+# The update check (already in the tree through tauri, without TLS): the system's TLS and
+# proxy settings.
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "system-proxy", "json"] }
+semver = "1"
 
 [dev-dependencies]
 tokio = { version = "1.53.2", features = ["test-util"] }
@@ -67,6 +71,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    "Win32_Storage_Packaging_Appx",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_LibraryLoader",
     "Win32_System_RemoteDesktop",

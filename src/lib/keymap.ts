@@ -65,6 +65,7 @@ const KEYMAP = {
   importSshConfig: {},
   importSessions: {},
   exportSessions: {},
+  checkForUpdates: {},
   releaseNotes: {},
   reportIssue: {},
   about: {},
@@ -97,6 +98,7 @@ export type MenuAction = Extract<
   | "composeBar"
   | "quickCommands"
   | "fullScreen"
+  | "checkForUpdates"
   | "releaseNotes"
   | "reportIssue"
   | "about"
@@ -137,7 +139,7 @@ export function appMenu(mac = isMac): { section: MenuSection; items: MenuEntry[]
   ];
   if (mac) {
     return [
-      { section: "app", items: ["settings", "separator", "lock"] },
+      { section: "app", items: ["checkForUpdates", "separator", "settings", "separator", "lock"] },
       { section: "file", items: file },
       { section: "edit", items: ["find"] },
       { section: "view", items: view },
@@ -148,7 +150,7 @@ export function appMenu(mac = isMac): { section: MenuSection; items: MenuEntry[]
     { section: "file", items: file },
     { section: "edit", items: ["copy", "paste", "separator", "find"] },
     { section: "view", items: view },
-    { section: "help", items: ["releaseNotes", "reportIssue", "separator", "about"] },
+    { section: "help", items: ["releaseNotes", "reportIssue", "separator", "checkForUpdates", "about"] },
     { section: "app", items: ["lock", "settings", "separator", "quit"] },
   ];
 }

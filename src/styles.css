@@ -239,6 +239,22 @@ button > svg:only-child:not(.inline-icon) {
 .app-menu-button .inline-icon {
   margin-left: -2px;
 }
+/* A newer version of the app: on the way to Settings › About, where it is shown. */
+.dot-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.app-menu-button .dot-icon {
+  margin-left: 1px;
+}
+.sidebar-actions .icon-button.marked {
+  position: relative;
+}
+.sidebar-actions .icon-button.marked .dot-icon {
+  position: absolute;
+  top: 0;
+  right: 2px;
+}
 .sidebar-titlebar {
   container-type: inline-size;
 }
@@ -2058,6 +2074,14 @@ body.resizing .terminal-view {
   width: 10px;
   margin-right: -16px;
 }
+.context-menu-badge {
+  display: flex;
+  margin-left: -16px;
+  color: var(--accent);
+}
+.context-menu-item.highlighted .context-menu-badge {
+  color: inherit;
+}
 .context-menu-arrow {
   display: flex;
   margin-right: -4px;
@@ -2691,6 +2715,19 @@ body.resizing .terminal-view {
 }
 .settings-dialog .about-links button.link {
   margin-top: 0;
+}
+.about-update p {
+  margin: 0;
+}
+.about-update-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.settings-nav-list .dot-icon {
+  margin-left: 6px;
+  vertical-align: 1px;
 }
 /* After the text of a link that opens in the browser. */
 .external-link-icon {

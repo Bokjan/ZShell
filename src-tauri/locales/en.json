@@ -73,6 +73,9 @@
     "window": {
       "notFound": "The window has closed"
     },
+    "update": {
+      "failed": "Could not check for updates"
+    },
     "pty": {
       "openFailed": "Cannot create a pseudo terminal",
       "spawnFailed": "Cannot start the shell {shell}"

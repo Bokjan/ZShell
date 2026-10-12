@@ -54,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   zmodem: { receive: "ask" },
   logs: { directory: "", fileName: DEFAULT_LOG_FILE_NAME, format: "text", timestamps: false, autoLocal: false, keepDays: 0 },
   security: { prompted: false },
+  updates: { check: true, skipped: null },
 };
 
 interface SettingsContextValue {

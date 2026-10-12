@@ -6,6 +6,7 @@ import { menuLabel } from "../lib/appMenu";
 import { appMenu, matches, shortcutLabel, type MenuAction, type MenuEntry } from "../lib/keymap";
 import { isMac } from "../lib/platform";
 import { runAction, useShortcuts } from "../lib/shortcuts";
+import type { Release } from "../lib/updates";
 
 /** Where the menu opens when the button is out of sight (terminal full screen). */
 const CORNER = 4;
@@ -13,6 +14,8 @@ const CORNER = 4;
 export interface AppMenuButton {
   ref: RefObject<HTMLButtonElement | null>;
   open: boolean;
+  /** A newer version, which the button marks. */
+  update: Release | null;
   /** Opens or closes the menu; `fromKeyboard` highlights its first item. */
   toggle(fromKeyboard: boolean): void;
 }
@@ -21,9 +24,19 @@ export interface AppMenuButton {
  * The app menu outside macOS (see `appMenu` in keymap.ts): opened by the app's icon and name in
  * the title bar (`button`), or by its shortcut, below the button or, while the button is out
  * of sight, in the window's corner. Its items run their actions as their keys would
- * (`runAction`); `enabled` says which apply now, in this window.
+ * (`runAction`); `enabled` says which apply now, in this window. A newer version (`update`)
+ * is marked on the way to "Check for Updates…"; the Microsoft Store package, which can't
+ * check, has no such item.
  */
-export function useAppMenu({ enabled, fullScreen }: { enabled(action: MenuAction): boolean; fullScreen: boolean }) {
+export function useAppMenu({
+  enabled,
+  fullScreen,
+  updates,
+}: {
+  enabled(action: MenuAction): boolean;
+  fullScreen: boolean;
+  updates: { supported: boolean; available: Release | null };
+}) {
   const { t } = useTranslation();
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState<{ x: number; y: number; fromKeyboard: boolean } | null>(null);
@@ -44,25 +57,31 @@ export function useAppMenu({ enabled, fullScreen }: { enabled(action: MenuAction
     return true;
   });
 
+  const badge = updates.available ? t("updates.available", { version: updates.available.version }) : undefined;
   const entries = (items: MenuEntry[]): MenuItem[] =>
-    items.map((action) =>
-      action === "separator"
-        ? action
-        : {
-            label: action === "fullScreen" && fullScreen ? t("appMenu.exitFullScreen") : menuLabel(t, action),
-            shortcut: shortcutLabel(action),
-            disabled: !enabled(action),
-            onSelect: () => void runAction(action),
-          },
-    );
+    items
+      .filter((action) => action !== "checkForUpdates" || updates.supported)
+      .map((action) =>
+        action === "separator"
+          ? action
+          : {
+              label: action === "fullScreen" && fullScreen ? t("appMenu.exitFullScreen") : menuLabel(t, action),
+              shortcut: shortcutLabel(action),
+              disabled: !enabled(action),
+              badge: action === "checkForUpdates" ? badge : undefined,
+              onSelect: () => void runAction(action),
+            },
+      );
 
   // The sections as submenus, then the app's own items.
   const items = (): MenuItem[] =>
     appMenu(false).flatMap(({ section, items }): MenuItem[] =>
-      section === "app" ? ["separator", ...entries(items)] : [{ label: t(`appMenu.${section}`), submenu: entries(items) }],
+      section === "app"
+        ? ["separator", ...entries(items)]
+        : [{ label: t(`appMenu.${section}`), badge: section === "help" ? badge : undefined, submenu: entries(items) }],
     );
 
-  const button: AppMenuButton = { ref, open: open !== null, toggle };
+  const button: AppMenuButton = { ref, open: open !== null, update: updates.available, toggle };
   const menu = open && (
     <ContextMenu
       x={open.x}

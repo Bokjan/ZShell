@@ -24,7 +24,8 @@ import {
 } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
 import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
-import { CloseIcon } from "./icons";
+import { useUpdates } from "../lib/updates";
+import { CloseIcon, DotIcon } from "./icons";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
 import { RadioGroup } from "./RadioGroup";
@@ -72,6 +73,7 @@ export function SettingsDialog({ localAllowed, section, onClose }: Props) {
   const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
   const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
   const [licensesOpen, setLicensesOpen] = useState(false);
+  const updates = useUpdates();
   const resetButton = useConfirmButton();
   const [query, setQuery] = useState("");
   const queryRef = useRef(query);
@@ -212,6 +214,12 @@ export function SettingsDialog({ localAllowed, section, onClose }: Props) {
                     onClick={() => jump(id)}
                   >
                     {t(`settings.${id}`)}
+                    {id === "about" && updates.available && (
+                      <>
+                        <DotIcon />
+                        <span className="visually-hidden">{t("updates.available", { version: updates.available.version })}</span>
+                      </>
+                    )}
                   </button>
                 </li>
               ))}

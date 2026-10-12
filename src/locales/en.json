@@ -20,6 +20,7 @@
   },
   "appMenu": {
     "button": "{name} menu ({shortcut})",
+    "buttonUpdate": "{name} menu ({shortcut}). Version {version} is available.",
     "file": "File",
     "edit": "Edit",
     "view": "View",
@@ -46,11 +47,23 @@
       "composeBar": "Compose Bar",
       "quickCommands": "Quick Commands…",
       "fullScreen": "Terminal Full Screen",
+      "checkForUpdates": "Check for Updates…",
       "releaseNotes": "Release Notes",
       "reportIssue": "Report an Issue",
       "about": "About ZShell",
       "quit": "Exit"
     }
+  },
+  "updates": {
+    "available": "ZShell {version} is available.",
+    "found": "ZShell {version} is available. See Settings › About.",
+    "checking": "Checking for updates…",
+    "upToDate": "ZShell is up to date.",
+    "download": "Download",
+    "skip": "Skip This Version",
+    "checkNow": "Check Now",
+    "automatic": "Check for updates automatically",
+    "automaticHint": "Once a day, ZShell asks GitHub for the number of its latest version. Nothing about you or your sessions is sent. New versions are downloaded from their page in your browser."
   },
   "sidebar": {
     "listLabel": "Sessions",
@@ -60,6 +73,7 @@
     "openHint": "Double-click to open in a new tab",
     "edit": "Edit…",
     "settings": "Settings ({shortcut})",
+    "settingsUpdate": "Settings ({shortcut}). ZShell {version} is available.",
     "resize": "Resize the session list",
     "resizeHint": "Drag to resize, double-click to reset",
     "folderHint": "Double-click to open all its sessions",

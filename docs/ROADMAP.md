@@ -54,21 +54,11 @@
 | **M26 应用锁** ✅ | 用 Touch ID / Windows Hello 锁定应用：启动、闲置、系统锁屏或睡眠时，以及手动 | |
 | **M27 多窗口** ✅ | 多个窗口各有自己的标签；标签可以从菜单或拖拽移到新窗口或其他窗口，连接不断开 | |
 | **M28 应用菜单** ✅ | Windows 上由标题栏的图标与名称打开应用菜单；菜单与 macOS 原生菜单由同一份定义生成 | |
-| **M29 检查更新** | 定期查询 GitHub Release，有新版本时提示（Store 版不检查） | |
+| **M29 检查更新** ✅ | 定期查询 GitHub Release，有新版本时提示（Store 版不检查） | |
 | **M30 翻译** | 语言设置界面，首批简体中文 | — |
 | **M31 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
 | **M32 自定义快捷键** | 在设置里修改快捷键 | P2 |
 | **M33 Linux** | 支持 Linux 桌面 | P2 |
-
-### M29 检查更新
-
-与 M28 一起作为 2.11.0。只检查并提示，不自动下载安装（updater 需要签名密钥与更新清单，还要分别处理每种安装包）。
-
-- **请求**：`GET https://api.github.com/repos/Bokjan/ZShell/releases/latest`（只返回已发布的正式版），取 `tag_name` 按 semver 与当前版本比较。User-Agent 只写 `ZShell`，不带版本与平台。HTTP 客户端倾向 `reqwest` + 系统原生 TLS（Security.framework / SChannel），加依赖前检查许可证。
-- **时机**：默认开启，设置里可关。启动时一次，之后每 24 小时一次，记下上次检查的时间。自动检查失败时不提示；手动的"检查更新…"（帮助菜单、设置 › 关于）失败时提示。
-- **提示**：不弹对话框。菜单按钮的箭头换成圆点，帮助菜单与其中的"获取 ZShell X…"项带圆点，打开 Release 页面；设置 › 关于里显示新版本与更新说明的链接；用 `announce()` 播报。每个版本只提示一次，可以跳过这个版本。macOS 没有菜单按钮，圆点显示在侧栏的设置按钮上。
-- **Store 版**：有包身份时整个功能隐藏，更新由 Microsoft Store 负责。
-- **隐私**：改 `PRIVACY.md`：开头不再说没有检查更新；Network connections 写明连接 `api.github.com` 及请求带了什么；本机保存的上次检查时间与跳过的版本；Third parties 加上 GitHub；Store 版不检查。
 
 ### M30 翻译
 

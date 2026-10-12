@@ -29,6 +29,7 @@ mod sftp;
 mod ssh;
 mod tab_drag;
 mod telnet;
+mod update;
 mod vault;
 mod window;
 mod zmodem;
@@ -139,6 +140,8 @@ pub fn run() {
             app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs"), &set_aside));
             app.manage(set_aside);
             clean_up_logs(app.handle().clone());
+            app.manage(update::Updates::load(config_dir.join("update.json")));
+            update::watch(app.handle().clone());
             app.manage(Edits::new(app.path().temp_dir()?.join("ZShell-edit")));
             window::create_main(app)?;
             Ok(())
@@ -171,6 +174,8 @@ pub fn run() {
             commands::set_locale,
             menu::app_menu_set,
             menu::app_menu_set_label,
+            update::update_status,
+            update::update_check,
             commands::config::settings_get,
             commands::config::settings_set,
             commands::config::config_directory,

@@ -55,6 +55,7 @@ import { useShortcuts } from "./lib/shortcuts";
 import { useStableHandlers } from "./lib/stableHandlers";
 import { activeTabOf, createTabStore, useTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
+import { checkForUpdates, useUpdates } from "./lib/updates";
 import { useConfigChanged } from "./lib/windows";
 import "./styles.css";
 
@@ -251,6 +252,11 @@ function App() {
       if (matches(e, "lock")) lockApp();
       else if (matches(e, "settings")) setSettingsOpen(true);
       else if (matches(e, "about")) setSettingsOpen("about");
+      else if (matches(e, "checkForUpdates")) {
+        // The result shows there.
+        setSettingsOpen("about");
+        checkForUpdates();
+      }
       else if (matches(e, "releaseNotes")) void openUrl(RELEASES_URL).catch(console.error);
       else if (matches(e, "reportIssue")) void openUrl(ISSUES_URL).catch(console.error);
       else return false;
@@ -363,7 +369,21 @@ function App() {
         return true;
     }
   };
-  const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on });
+  const updates = useUpdates();
+  const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on, updates });
+
+  // A newer version found while the app runs (not one known at the start, marked already),
+  // told in the window in use; Settings › About tells of the checks made there.
+  const announcedUpdate = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!updates.loaded) return;
+    const version = updates.available?.version ?? null;
+    const known = announcedUpdate.current;
+    announcedUpdate.current = version;
+    if (known !== undefined && version && version !== known && document.hasFocus() && !settingsOpen) {
+      announce(t("updates.found", { version }));
+    }
+  }, [updates.loaded, updates.available?.version, settingsOpen, t]);
 
   /** Splitting and closing the pane, then quick commands: those of the pane's group, and the palette. */
   const terminalMenu = (pane: Pane): MenuItem[] => [...paneMenu(pane), ...commandMenu(pane)];

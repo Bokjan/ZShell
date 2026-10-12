@@ -195,6 +195,15 @@ export function ChevronIcon({
   );
 }
 
+/** A dot marking something new: a newer version of the app, where to find it. */
+export function DotIcon({ size = 8 }: { size?: number }) {
+  return (
+    <Svg size={size} className="dot-icon">
+      <circle cx="8" cy="8" r="6" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
 /** A chevron pointing right, turned down when `open`: a folder in the session list. */
 export function DisclosureIcon({ open, size = 10 }: { open: boolean; size?: number }) {
   return (

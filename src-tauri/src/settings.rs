@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs, security), persisted as `settings.json` next to
+//! App-wide preferences (appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs, security, updates), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -23,6 +23,7 @@ pub struct Settings {
     pub zmodem: ZmodemSettings,
     pub logs: LogSettings,
     pub security: SecuritySettings,
+    pub updates: UpdateSettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, TS)]
@@ -58,6 +59,22 @@ pub struct StatusBarSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct SecuritySettings {
     pub prompted: bool,
+}
+
+/// Checking for a newer version (`update.rs`).
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UpdateSettings {
+    /// Once a day, automatically.
+    pub check: bool,
+    /// A version the user doesn't want to hear about again.
+    pub skipped: Option<String>,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self { check: true, skipped: None }
+    }
 }
 
 impl Default for StatusBarSettings {
@@ -242,6 +259,7 @@ impl Default for Settings {
             zmodem: ZmodemSettings::default(),
             logs: LogSettings::default(),
             security: SecuritySettings::default(),
+            updates: UpdateSettings::default(),
         }
     }
 }

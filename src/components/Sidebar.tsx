@@ -38,7 +38,7 @@ import { useShortcuts } from "../lib/shortcuts";
 import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../lib/window";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
-import { ChevronIcon, DisclosureIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
+import { ChevronIcon, DisclosureIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
@@ -70,7 +70,10 @@ interface Props {
   onChanged(): void;
   onImportSshConfig(): void;
   onSettings(): void;
-  /** The app menu, opened by the app's icon and name outside macOS. */
+  /**
+   * The app menu, opened by the app's icon and name outside macOS; a newer version marks it,
+   * and on macOS the settings button, where the check is.
+   */
   appMenu: AppMenuButton;
 }
 
@@ -104,6 +107,7 @@ type Drop = { key: string; position: "before" | "after" | "into" } | { key: null
 export function Sidebar(props: Props) {
   const { profiles, folders, recent, searchFocusKey, onOpen, onOpenAll, onQuickConnect, onEdit, onNew, onChanged } = props;
   const { t } = useTranslation();
+  const update = props.appMenu.update;
   const [width, setWidth] = useState(storedWidth);
   const widthRef = useRef(width);
   widthRef.current = width;
@@ -269,6 +273,10 @@ export function Sidebar(props: Props) {
     const path = await openDialog({ title: t("sidebar.importSessions"), filters: fileFilters });
     if (typeof path === "string") setImporting(path);
   };
+
+  const menuButtonLabel = update
+    ? t("appMenu.buttonUpdate", { name: t("app.name"), shortcut: shortcutLabel("appMenu"), version: update.version })
+    : t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") });
 
   // From the app menu.
   useShortcuts((e) => {
@@ -502,8 +510,8 @@ export function Sidebar(props: Props) {
             ref={props.appMenu.ref}
             type="button"
             className="sidebar-brand app-menu-button"
-            aria-label={t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") })}
-            title={t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") })}
+            aria-label={menuButtonLabel}
+            title={menuButtonLabel}
             aria-haspopup="menu"
             aria-expanded={props.appMenu.open}
             onMouseDown={(e) => e.preventDefault()}
@@ -517,16 +525,21 @@ export function Sidebar(props: Props) {
           >
             <img src={appIcon} alt="" />
             <span className="sidebar-brand-name">{t("app.name")}</span>
-            <ChevronIcon />
+            {update ? <DotIcon /> : <ChevronIcon />}
           </button>
         )}
         <span className="sidebar-actions">
           <IconButton
-            className="icon-button"
-            label={t("sidebar.settings", { shortcut: shortcutLabel("settings") })}
+            className={`icon-button${isMac && update ? " marked" : ""}`}
+            label={
+              isMac && update
+                ? t("sidebar.settingsUpdate", { shortcut: shortcutLabel("settings"), version: update.version })
+                : t("sidebar.settings", { shortcut: shortcutLabel("settings") })
+            }
             onClick={props.onSettings}
           >
             <SettingsIcon />
+            {isMac && update && <DotIcon size={6} />}
           </IconButton>
           <IconButton className="icon-button" label={t("sidebar.importExport")} onClick={importMenu}>
             <ImportExportIcon />
