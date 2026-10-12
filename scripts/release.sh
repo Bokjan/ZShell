@@ -67,9 +67,10 @@ tag() {
   [[ -z $unexpected ]] || die "unexpected changes besides the version and the changelog:
 $unexpected"
 
+  pnpm format:check
   pnpm build
   pnpm test
-  (cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test)
+  (cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test)
 
   git add "$manifest" src-tauri/Cargo.lock "$changelog"
   git commit -m "chore: release v$version" "$@"

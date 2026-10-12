@@ -25,11 +25,12 @@ When a feature lands: mark its milestone ✅ in ROADMAP.md, move cross-module de
 ```bash
 pnpm build                                  # tsc + vite build
 pnpm test                                   # frontend unit tests (vitest, *.test.ts next to the module)
+pnpm format && (cd src-tauri && cargo fmt)  # Prettier and rustfmt, 140 columns
 cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
 pnpm tauri dev                              # run the app
 ```
 
-Run the first three before committing; CI runs the same build, clippy and tests on macOS and Windows. Windows-only code (ConPTY, the OpenSSH agent pipe, Pageant) cannot be compiled on macOS, so CI is the only check for it.
+Run the first four before committing; CI runs the same build, formatting check, clippy and tests on macOS and Windows (formatting on macOS only). Windows-only code (ConPTY, the OpenSSH agent pipe, Pageant) cannot be compiled on macOS, so CI is the only check for it.
 
 Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/lib/bindings.ts` (never mirror them by hand in `api.ts`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale.
 

@@ -1,0 +1,5 @@
+# Formatting-only commits, skipped by `git blame` (GitHub reads this file; locally run
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs`).
+
+# chore: format with rustfmt and Prettier
+b9ac19fac722eeb6d88545557050507f479eb064

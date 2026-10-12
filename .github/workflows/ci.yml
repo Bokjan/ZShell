@@ -31,15 +31,23 @@ jobs:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Formatting doesn't depend on the platform, and Windows checks out CRLF line endings,
+      # which Prettier would report in every file.
+      - if: runner.os == 'macOS'
+        run: pnpm format:check
       # tauri::generate_context! embeds the built frontend.
       - run: pnpm build
       - run: pnpm test
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - name: Rustfmt
+        if: runner.os == 'macOS'
+        working-directory: src-tauri
+        run: cargo fmt --check
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
