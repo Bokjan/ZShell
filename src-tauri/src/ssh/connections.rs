@@ -218,24 +218,26 @@ fn rules_to_start<C: Holder>(map: &Map<C>, connection: &Arc<C>, rules: &[Forward
 /// The rules that closing sessions `ids` would stop although another connection of their
 /// saved session stays open, which could take them over.
 fn rules_to_keep<C: Holder>(map: &Map<C>, ids: &[SessionId]) -> Vec<ForwardRule> {
-    let mut closing: Vec<Arc<C>> = Vec::new();
-    for connection in ids.iter().filter_map(|id| map.get(id)) {
-        if !closing.iter().any(|c| Arc::ptr_eq(c, connection)) {
-            closing.push(connection.clone());
-        }
-    }
     let stays = |other: &Arc<C>| map.iter().any(|(id, c)| !ids.contains(id) && Arc::ptr_eq(c, other));
     let mut rules = Vec::new();
-    for connection in closing {
-        // Used by a tab that stays open: it doesn't close.
-        if stays(&connection) {
-            continue;
-        }
+    for connection in closing(map, ids) {
         if session_connections(map, &connection).iter().skip(1).any(stays) {
             rules.extend(connection.running());
         }
     }
     rules
+}
+
+/// The connections that closing sessions `ids` disconnects: those no other tab uses.
+fn closing<C>(map: &Map<C>, ids: &[SessionId]) -> Vec<Arc<C>> {
+    let mut closing: Vec<Arc<C>> = Vec::new();
+    for connection in ids.iter().filter_map(|id| map.get(id)) {
+        let stays = map.iter().any(|(id, c)| !ids.contains(id) && Arc::ptr_eq(c, connection));
+        if !stays && !closing.iter().any(|c| Arc::ptr_eq(c, connection)) {
+            closing.push(connection.clone());
+        }
+    }
+    closing
 }
 
 /// The rules running on session `id`'s connection if it is the connection's last user, to
@@ -406,11 +408,11 @@ impl Connections {
         rules_to_keep(&self.0.lock().unwrap(), ids)
     }
 
-    /// Moves the forwards of the connections of sessions `ids` to another connection of their
-    /// saved session once they close.
+    /// Moves the forwards of the connections that closing sessions `ids` disconnects to
+    /// another connection of their saved session once they close. A connection another tab
+    /// still uses is left alone: when it closes later, the user is asked again.
     pub fn keep_forwards(&self, ids: &[SessionId]) {
-        let map = self.0.lock().unwrap();
-        for connection in ids.iter().filter_map(|id| map.get(id)) {
+        for connection in closing(&self.0.lock().unwrap(), ids) {
             connection.keep_forwards.store(true, Ordering::Relaxed);
         }
     }
@@ -513,6 +515,17 @@ mod tests {
 
     #[test]
     fn carries_rules_over_a_reconnection_by_the_last_user() {
+    #[test]
+    fn finds_the_connections_that_close() {
+        let (map, shared, other) = tabs();
+        // Tab 2 still uses the shared connection.
+        assert!(closing(&map, &[1, 3]).iter().all(|c| Arc::ptr_eq(c, &other)));
+        assert_eq!(closing(&map, &[1, 3]).len(), 1);
+        let both = closing(&map, &[1, 2]);
+        assert_eq!(both.len(), 1);
+        assert!(Arc::ptr_eq(&both[0], &shared));
+    }
+
         let (mut map, _, _) = tabs();
         // Tab 2 still uses the connection: tab 1 reconnecting takes nothing with it.
         assert!(rules_to_carry(&map, 1).is_empty());
