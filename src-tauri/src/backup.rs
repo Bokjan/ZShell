@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use ts_rs::TS;
 
 use crate::config::{Additions, Connection, Folder, Profile, Snapshot};
@@ -22,7 +23,8 @@ const FORMAT: &str = "zshell-sessions";
 /// of version 1 are not read.
 const VERSION: u32 = 2;
 const CIPHER: &str = "aes-256-gcm";
-/// Associated data of the encrypted passwords.
+/// Begins the associated data of the encrypted passwords, which binds them to the rest of the
+/// file (see [`content_aad`]).
 const PASSWORDS_AAD: &[u8] = b"zshell-sessions-passwords-v1";
 
 #[derive(Serialize, Deserialize)]
@@ -42,13 +44,54 @@ struct SessionsFile {
 }
 
 /// The saved passwords of the sessions and proxies in the file, by account (a session's id, or
-/// `proxy:<id>`, ids in the file), encrypted with a key from the file's passphrase.
+/// `proxy:<id>`, ids in the file), encrypted with a key from the file's passphrase and bound
+/// to the file's folders, sessions and proxies: a file changed to send them elsewhere (another
+/// host, a proxy command) no longer gives them up.
 #[derive(Serialize, Deserialize)]
 struct Passwords {
     kdf: Kdf,
     cipher: String,
     nonce: String,
     data: String,
+}
+
+/// What a file with passwords was exported with, as written (see [`content_aad`]).
+#[derive(Serialize)]
+struct SessionsFileOut<'a> {
+    format: &'a str,
+    version: u32,
+    folders: &'a RawValue,
+    profiles: &'a RawValue,
+    proxies: &'a RawValue,
+    passwords: &'a Passwords,
+}
+
+/// The parts of a file its passwords are bound to, exactly as they are in it.
+#[derive(Deserialize)]
+struct Content {
+    #[serde(default)]
+    folders: Option<Box<RawValue>>,
+    #[serde(default)]
+    profiles: Option<Box<RawValue>>,
+    #[serde(default)]
+    proxies: Option<Box<RawValue>>,
+}
+
+/// The associated data of the passwords: [`PASSWORDS_AAD`] and the SHA-256 of the folders,
+/// sessions and proxies as they are in the file (each preceded by its length; an absent one
+/// is empty). Taken from the bytes rather than serialized again, which could differ.
+fn content_aad(folders: &str, profiles: &str, proxies: &str) -> Vec<u8> {
+    use sha2::Digest;
+
+    let mut hash = sha2::Sha256::new();
+    for part in [folders, profiles, proxies] {
+        hash.update((part.len() as u64).to_le_bytes());
+        hash.update(part.as_bytes());
+    }
+    let mut aad = PASSWORDS_AAD.to_vec();
+    aad.push(b':');
+    aad.extend(hash.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>().bytes());
+    aad
 }
 
 #[derive(Deserialize)]
@@ -108,17 +151,36 @@ pub fn export(
     profiles: Vec<Profile>,
     passwords: Option<(&str, BTreeMap<String, String>)>,
 ) -> Result<()> {
-    let passwords = passwords
-        .map(|(passphrase, passwords)| {
+    let written = match passwords {
+        None => {
+            let file = SessionsFile { format: FORMAT.to_owned(), version: VERSION, folders, profiles, proxies, passwords: None };
+            write_json_atomic(path, &file)
+        }
+        Some((passphrase, passwords)) => {
+            // The sections are written as serialized here, so that the passwords can be bound
+            // to exactly those bytes.
+            let raw = |value: String| RawValue::from_string(value);
+            let folders = raw(serde_json::to_string_pretty(&folders)?)?;
+            let profiles = raw(serde_json::to_string_pretty(&profiles)?)?;
+            let proxies = raw(serde_json::to_string_pretty(&proxies)?)?;
             let kdf = Kdf::new();
             let key = kdf.derive(passphrase).expect("the current parameters");
             let plaintext = zeroize::Zeroizing::new(serde_json::to_vec(&passwords)?);
-            let Sealed { nonce, data } = crypto::seal(&key, PASSWORDS_AAD, &plaintext);
-            Ok::<_, Error>(Passwords { kdf, cipher: CIPHER.to_owned(), nonce, data })
-        })
-        .transpose()?;
-    let file = SessionsFile { format: FORMAT.to_owned(), version: VERSION, folders, profiles, proxies, passwords };
-    write_json_atomic(path, &file).map_err(|e| Error::new("export.writeFailed").param("path", path.display()).detail(e))
+            let aad = content_aad(folders.get(), profiles.get(), proxies.get());
+            let Sealed { nonce, data } = crypto::seal(&key, &aad, &plaintext);
+            let passwords = Passwords { kdf, cipher: CIPHER.to_owned(), nonce, data };
+            let file = SessionsFileOut {
+                format: FORMAT,
+                version: VERSION,
+                folders: &folders,
+                profiles: &profiles,
+                proxies: &proxies,
+                passwords: &passwords,
+            };
+            write_json_atomic(path, &file)
+        }
+    };
+    written.map_err(|e| Error::new("export.writeFailed").param("path", path.display()).detail(e))
 }
 
 pub fn scan(path: &Path, existing: &[Profile]) -> Result<Scan> {
@@ -147,21 +209,25 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Scan> {
 }
 
 /// The saved passwords in the file, by account (ids in the file), if it is still the one
-/// `scan` read (`digest`): `import.wrongPassphrase` with another passphrase. Blocks while the
-/// key is derived.
+/// `scan` read (`digest`): `import.wrongPassphrase` with another passphrase, or if the file
+/// was changed after it was exported. Blocks while the key is derived.
 pub fn passwords(path: &Path, digest: &str, passphrase: &str) -> Result<BTreeMap<String, String>> {
-    let (file, read_digest) = read(path)?;
+    let (bytes, read_digest) = read_bytes(path)?;
     if read_digest != digest {
         return Err(Error::new("import.fileChanged").param("path", path.display()));
     }
+    let file = parse(path, &bytes)?;
     let Some(passwords) = file.passwords else { return Ok(BTreeMap::new()) };
+    let content: Content = serde_json::from_slice(&bytes).map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
+    let part = |raw: &Option<Box<RawValue>>| raw.as_ref().map_or("", |raw| raw.get()).to_owned();
+    let aad = content_aad(&part(&content.folders), &part(&content.profiles), &part(&content.proxies));
     let key = match passwords.cipher == CIPHER {
         true => passwords.kdf.derive(passphrase),
         false => None,
     };
     let key = key.ok_or_else(|| Error::new("import.unsupportedPasswords").param("path", path.display()))?;
     let sealed = Sealed { nonce: passwords.nonce, data: passwords.data };
-    let plaintext = crypto::open(&key, PASSWORDS_AAD, &sealed).ok_or_else(|| Error::new("import.wrongPassphrase"))?;
+    let plaintext = crypto::open(&key, &aad, &sealed).ok_or_else(|| Error::new("import.wrongPassphrase"))?;
     serde_json::from_slice(&plaintext).map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))
 }
 
@@ -268,25 +334,35 @@ pub fn plan(path: &Path, selected: &[String], digest: &str, here: &Snapshot) -> 
 
 /// The file, and a digest of it (SHA-256, in hex).
 fn read(path: &Path) -> Result<(SessionsFile, String)> {
+    let (bytes, digest) = read_bytes(path)?;
+    Ok((parse(path, &bytes)?, digest))
+}
+
+/// The file's bytes, and their digest (SHA-256, in hex).
+fn read_bytes(path: &Path) -> Result<(Vec<u8>, String)> {
     use sha2::Digest;
 
     let bytes = std::fs::read(path).map_err(|e| Error::new("import.readFailed").param("path", path.display()).detail(e))?;
     let digest = sha2::Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+    Ok((bytes, digest))
+}
+
+fn parse(path: &Path, bytes: &[u8]) -> Result<SessionsFile> {
     let parse_failed = |e| Error::new("import.parseFailed").param("path", path.display()).detail(e);
     // The format and version first: a file of another version doesn't parse as this one.
-    let header: Header = serde_json::from_slice(&bytes).map_err(parse_failed)?;
+    let header: Header = serde_json::from_slice(bytes).map_err(parse_failed)?;
     if header.format != FORMAT {
         return Err(Error::new("import.notSessionsFile").param("path", path.display()));
     }
     if header.version != VERSION {
         return Err(Error::new("import.unsupportedVersion").param("path", path.display()));
     }
-    let mut file: SessionsFile = serde_json::from_slice(&bytes).map_err(parse_failed)?;
+    let mut file: SessionsFile = serde_json::from_slice(bytes).map_err(parse_failed)?;
     // A hand-written file may leave ids out or repeat them; references go to the first.
     unique_ids(file.profiles.iter_mut().map(|p| &mut p.id));
     unique_ids(file.proxies.iter_mut().map(|p| &mut p.id));
     unique_ids(file.folders.iter_mut().map(|f| &mut f.id));
-    Ok((file, digest))
+    Ok(file)
 }
 
 /// An existing session with the same name, else one that connects to the same place (see
@@ -553,6 +629,16 @@ mod tests {
         assert!(has_passwords);
         assert_eq!(super::passwords(&path, &digest, "wrong").unwrap_err().code(), "import.wrongPassphrase");
         assert_eq!(super::passwords(&path, &digest, "passphrase").unwrap(), passwords);
+
+        // Changed to send them elsewhere, the file no longer gives the passwords up.
+        let exported = std::fs::read_to_string(&path).unwrap();
+        for (from, to) in [("a.internal", "evil.example.com"), ("\"proxy.lan\"", "\"evil.example.com\"")] {
+            assert!(exported.contains(from), "{from}");
+            std::fs::write(&path, exported.replace(from, to)).unwrap();
+            let Scan { digest, .. } = scan(&path, &[]).unwrap();
+            assert_eq!(super::passwords(&path, &digest, "passphrase").unwrap_err().code(), "import.wrongPassphrase", "{from}");
+        }
+        std::fs::write(&path, &exported).unwrap();
 
         // The new sessions and the new proxy get the passwords of their accounts in the file.
         let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };

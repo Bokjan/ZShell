@@ -127,11 +127,13 @@ mod memory {
 
     use super::CredentialStore;
 
-    /// A credential store in memory; `failing` makes every call fail, as an unavailable store.
+    /// A credential store in memory; `failing` makes every call fail, as an unavailable store,
+    /// and `set_delay_ms` makes saving take that long, as when the system asks the user.
     #[derive(Default)]
     pub struct MemoryStore {
         pub entries: Mutex<HashMap<String, String>>,
         pub failing: std::sync::atomic::AtomicBool,
+        pub set_delay_ms: std::sync::atomic::AtomicU64,
     }
 
     impl MemoryStore {
@@ -151,6 +153,8 @@ mod memory {
 
         fn set(&self, account: &str, secret: &str) -> keyring::Result<()> {
             self.check()?;
+            let delay = self.set_delay_ms.load(std::sync::atomic::Ordering::Relaxed);
+            std::thread::sleep(std::time::Duration::from_millis(delay));
             self.entries.lock().unwrap().insert(account.to_owned(), secret.to_owned());
             Ok(())
         }

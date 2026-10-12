@@ -119,6 +119,7 @@ export type ErrorCode =
   | "vault.emptyPassword"
   | "vault.keyMismatch"
   | "vault.keyMissing"
+  | "vault.leftover"
   | "vault.locked"
   | "vault.notLocked"
   | "vault.passwordRequired"
@@ -421,8 +422,8 @@ id: string, name: string, kind: ProxyKind,
  */
 host: string, port: number, 
 /**
- * SOCKS5 and HTTP: empty for a proxy without authentication. The password is in the
- * keychain.
+ * SOCKS5 and HTTP: empty for a proxy without authentication. The password is kept with
+ * the others (see `vault.rs`).
  */
 username: string, 
 /**

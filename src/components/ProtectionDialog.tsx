@@ -30,7 +30,7 @@ interface Props {
 export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props) {
   const { t } = useTranslation();
   // Asked once: answered with "Later" or "Apply", not dismissed by accident.
-  const dialog = useDialog(onClose, { persistent: onboarding });
+  const dialog = useDialog(() => close(), { persistent: onboarding });
   const current = status.protection ?? "unset";
   const store = t(`vault.store.${status.store}`);
   const [choice, setChoice] = useState<Choice>(current === "unset" ? "password" : current);
@@ -45,6 +45,9 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
   const [error, setError] = useState<string | null>(null);
   // Passwords that couldn't be read from the credential store, which may be left behind.
   const [unreadable, setUnreadable] = useState(false);
+  // Changed, but the old files couldn't all be deleted (`vault.leftover`): the new status,
+  // shown with that error until the dialog is closed.
+  const [changed, setChanged] = useState<VaultStatus | null>(null);
 
   useEffect(() => {
     vault.storeAvailable().then(setStoreAvailable, () => setStoreAvailable(false));
@@ -71,16 +74,41 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
       announce(t("protection.changed"));
       onDone(next);
     } catch (err) {
+      if (errorCode(err) === "vault.leftover") {
+        announce(t("protection.changed"));
+        setChanged(await vault.status().catch(() => status));
+      }
       setUnreadable(errorCode(err) === "vault.passwordsUnreadable");
       setError(errorMessage(err));
       setBusy(false);
     }
   };
 
+  // Once changed, closing passes the new status on.
+  const close = () => (changed ? onDone(changed) : onClose());
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void apply(false);
+    if (changed) close();
+    else void apply(false);
   };
+
+  if (changed) {
+    return (
+      <Modal dialog={dialog}>
+        <form className="dialog protection-dialog" onSubmit={submit}>
+          <h2>{t(onboarding ? "protection.onboardingTitle" : "protection.title")}</h2>
+          {error && <ErrorText>{error}</ErrorText>}
+          <footer>
+            <span className="grow" />
+            <button type="submit" className="primary" autoFocus>
+              {t("common.close")}
+            </button>
+          </footer>
+        </form>
+      </Modal>
+    );
+  }
 
   const option = (value: Choice, label: string, description: string, disabled = false) => (
     <label className={disabled ? "protection-option disabled" : "protection-option"}>

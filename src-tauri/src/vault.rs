@@ -41,6 +41,9 @@ const FORMAT: &str = "zshell-vault";
 const VERSION: u32 = 1;
 /// The credential store's entry for the data key.
 const KEY_ACCOUNT: &str = "vault-key";
+/// Where a new data key waits until the vault that needs it is in place, so that `vault-key`
+/// opens the vault on disk whenever a change stops part way (see [`Vault::set_protection`]).
+const NEXT_KEY_ACCOUNT: &str = "vault-key-next";
 /// Associated data of the data key encrypted with the master password's key.
 const WRAP_AAD: &[u8] = b"zshell-vault-key";
 
@@ -231,6 +234,9 @@ fn stage_vault(path: &Path, header: &Header, key: &Key, data: &Data) -> Result<p
     Ok(staged)
 }
 
+/// Copies a part of the data (a file's) from the first to the second.
+type TakeSection = fn(&Data, &mut Data);
+
 /// The plain files of the unset and none protections.
 struct Plain {
     profiles: JsonFile,
@@ -266,8 +272,8 @@ impl Plain {
         Self { profiles, folders, proxies, commands, passwords, data }
     }
 
-    /// Plain files in `dir` to be written (none protection).
-    fn at(dir: &Path, data: Data) -> Self {
+    /// Plain files in `dir` to be written (none protection), holding nothing yet.
+    fn at(dir: &Path) -> Self {
         let file = |name: &str| JsonFile::at(dir.join(name));
         Self {
             profiles: file("profiles.json"),
@@ -275,7 +281,7 @@ impl Plain {
             proxies: file("proxies.json"),
             commands: file("commands.json"),
             passwords: Some(file(PASSWORDS_FILE)),
-            data,
+            data: Data::default(),
         }
     }
 
@@ -286,35 +292,38 @@ impl Plain {
         }
     }
 
-    /// Writes the files whose part of the data differs from `old` (all of them without one),
-    /// all of them staged before any is put in place.
-    fn write(&self, old: Option<&Data>, new: &Data) -> Result<()> {
-        fn changed<T: Serialize>(old: Option<&T>, new: &T) -> Result<bool> {
-            Ok(match old {
-                Some(old) => serde_json::to_value(old)? != serde_json::to_value(new)?,
-                None => true,
-            })
+    /// Writes the files whose part of the data differs from what they hold (all of them with
+    /// `all`), all of them staged before any is put in place.
+    ///
+    /// Putting several files in place is not atomic: if one fails, those before it hold the
+    /// new data. `self.data` follows what is on disk, file by file, so that memory and disk
+    /// agree either way.
+    fn write(&mut self, new: &Data, all: bool) -> Result<()> {
+        fn changed<T: Serialize>(all: bool, old: &T, new: &T) -> Result<bool> {
+            Ok(all || serde_json::to_value(old)? != serde_json::to_value(new)?)
         }
-        let mut staged = Vec::new();
-        if changed(old.map(|d| &d.folders), &new.folders)? {
-            staged.push(self.folders.stage(&new.folders)?);
+        let old = &self.data;
+        let mut staged: Vec<(persist::Staged, TakeSection)> = Vec::new();
+        if changed(all, &old.folders, &new.folders)? {
+            staged.push((self.folders.stage(&new.folders)?, |new, data| data.folders.clone_from(&new.folders)));
         }
-        if changed(old.map(|d| &d.proxies), &new.proxies)? {
-            staged.push(self.proxies.stage(&new.proxies)?);
+        if changed(all, &old.proxies, &new.proxies)? {
+            staged.push((self.proxies.stage(&new.proxies)?, |new, data| data.proxies.clone_from(&new.proxies)));
         }
-        if changed(old.map(|d| &d.profiles), &new.profiles)? {
-            staged.push(self.profiles.stage(&new.profiles)?);
+        if changed(all, &old.profiles, &new.profiles)? {
+            staged.push((self.profiles.stage(&new.profiles)?, |new, data| data.profiles.clone_from(&new.profiles)));
         }
-        if changed(old.map(|d| &d.commands), &new.commands)? {
-            staged.push(self.commands.stage(&new.commands)?);
+        if changed(all, &old.commands, &new.commands)? {
+            staged.push((self.commands.stage(&new.commands)?, |new, data| data.commands.clone_from(&new.commands)));
         }
         if let Some(passwords) = &self.passwords {
-            if changed(old.map(|d| &d.passwords), &new.passwords)? {
-                staged.push(passwords.stage(&new.passwords)?);
+            if changed(all, &old.passwords, &new.passwords)? {
+                staged.push((passwords.stage(&new.passwords)?, |new, data| data.passwords.clone_from(&new.passwords)));
             }
         }
-        for file in staged {
+        for (file, take) in staged {
             file.commit()?;
+            take(new, &mut self.data);
         }
         Ok(())
     }
@@ -426,8 +435,7 @@ impl Vault {
             State::Plain(plain) => {
                 let mut data = plain.data.clone();
                 let value = change(&mut data);
-                plain.write(Some(&plain.data), &data)?;
-                plain.data = data;
+                plain.write(&data, false)?;
                 Ok(value)
             }
             State::Encrypted(vault) => {
@@ -464,13 +472,18 @@ impl Vault {
 
     /// Saves the password of `account`, or deletes it (`None`).
     pub fn set_password(&self, account: &str, password: Option<&str>) -> Result<()> {
-        let in_store = matches!(&*self.state.lock().unwrap(), State::Plain(plain) if plain.passwords.is_none());
-        if in_store {
+        let state = self.state.lock().unwrap();
+        if matches!(&*state, State::Plain(plain) if plain.passwords.is_none()) {
+            // Unset: into the credential store while holding the state, so that a change of
+            // protection moving the passwords out of it waits, rather than taking the old
+            // password and deleting the entry this one goes into.
             return Ok(match password {
                 Some(password) => self.store.set(account, password),
                 None => self.store.delete(account),
             }?);
         }
+        // Elsewhere the protection can't go back to unset: wherever it is by then.
+        drop(state);
         self.update(|data| match password {
             Some(password) => data.passwords.insert(account.to_owned(), password.to_owned()),
             None => data.passwords.remove(account),
@@ -487,10 +500,63 @@ impl Vault {
             let next = self.unlock_saved();
             let mut state = self.state.lock().unwrap();
             if let State::Locked { .. } = &*state {
+                if let State::Encrypted(_) = &next {
+                    self.remove_leftovers();
+                }
                 *state = next;
             }
         }
         self.status()
+    }
+
+    /// Deletes plain data files next to an encrypted vault that opened, so that it is known
+    /// to be good: left by a change of protection that stopped part way. Until then they may
+    /// be all that is left of the sessions, should the vault turn out to be unreadable.
+    /// Failures are left for the next unlock.
+    fn remove_leftovers(&self) {
+        let _ = self.remove_plain();
+    }
+
+    /// Deletes the plain data files (and temporary ones next to them); the first that can't
+    /// be deleted fails it.
+    fn remove_plain(&self) -> Result<()> {
+        let mut result = Ok(());
+        for name in PLAIN_FILES {
+            for path in [self.dir.join(name), self.dir.join(format!("{name}.tmp"))] {
+                if let Err(e) = persist::remove_file(&path) {
+                    if result.is_ok() {
+                        result = Err(Error::new("vault.deleteFailed").param("path", path.display()).detail(e));
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// The data key in the credential store, if it opens `file`: `vault-key`, else a new key
+    /// left in `vault-key-next` by a change that stopped after putting its vault in place,
+    /// which then becomes `vault-key`. The error is `vault-key`'s.
+    fn saved_key(&self, file: &VaultFile) -> Result<Key> {
+        let read = |account| match self.store.get(account) {
+            Ok(text) => crypto::decode_key(&text).ok_or_else(|| Error::new("vault.keyMismatch")),
+            Err(keyring::Error::NoEntry) => Err(Error::new("vault.keyMissing")),
+            Err(e) => Err(Error::from(e)),
+        };
+        let opens = |key: &Key| crypto::key_id(key) == file.header.key_id;
+        let error = match read(KEY_ACCOUNT) {
+            Ok(key) if opens(&key) => return Ok(key),
+            Ok(_) => Error::new("vault.keyMismatch"),
+            Err(e) => e,
+        };
+        match read(NEXT_KEY_ACCOUNT) {
+            Ok(key) if opens(&key) => {
+                if self.store.set(KEY_ACCOUNT, &crypto::encode(&*key)).is_ok() {
+                    let _ = self.store.delete(NEXT_KEY_ACCOUNT);
+                }
+                Ok(key)
+            }
+            _ => Err(error),
+        }
     }
 
     fn unlock_saved(&self) -> State {
@@ -505,21 +571,12 @@ impl Vault {
         if !file.header.uses_store() {
             return State::Locked { header: Some(file.header), lock: Lock { reason: fallback, error: None } };
         }
-        let key = match self.store.get(KEY_ACCOUNT) {
-            Ok(text) => crypto::decode_key(&text).ok_or_else(|| Error::new("vault.keyMismatch")),
-            Err(keyring::Error::NoEntry) => Err(Error::new("vault.keyMissing")),
-            Err(e) => Err(Error::from(e)),
-        };
-        let key = match key {
+        let key = match self.saved_key(&file) {
             Ok(key) => key,
             Err(error) => return State::Locked { header: Some(file.header), lock: Lock { reason: fallback, error: Some(error) } },
         };
         match file.open(&key) {
             Ok(data) => State::Encrypted(Encrypted { header: file.header, key, data }),
-            Err(LockReason::KeyUnavailable) => State::Locked {
-                header: Some(file.header),
-                lock: Lock { reason: fallback, error: Some(Error::new("vault.keyMismatch")) },
-            },
             Err(reason) => State::Locked { header: Some(file.header), lock: Lock { reason, error: None } },
         }
     }
@@ -539,7 +596,10 @@ impl Vault {
                         }
                         let key = file.header.unwrap_key(password).ok_or_else(|| Error::new("vault.wrongPassword"))?;
                         match file.open(&key) {
-                            Ok(data) => State::Encrypted(Encrypted { header: file.header, key, data }),
+                            Ok(data) => {
+                                self.remove_leftovers();
+                                State::Encrypted(Encrypted { header: file.header, key, data })
+                            }
                             Err(_) => {
                                 State::Locked { header: Some(file.header), lock: Lock { reason: LockReason::Damaged, error: None } }
                             }
@@ -551,17 +611,20 @@ impl Vault {
         Ok(self.status())
     }
 
-    /// Deletes the vault, whose key is lost (a forgotten master password), and starts again
-    /// from the plain files, which normally don't exist any more: no sessions, unset.
+    /// Deletes the vault, whose key is lost (a forgotten master password), with any plain
+    /// data files left next to it, which must not come back as the sessions: no sessions,
+    /// unset.
     pub fn reset(&self, set_aside: &SetAside) -> Result<VaultStatus> {
         {
             let mut state = self.state.lock().unwrap();
             if !matches!(&*state, State::Locked { .. }) {
                 return Err(Error::new("vault.notLocked"));
             }
+            self.remove_plain()?;
             let path = self.path();
             persist::remove_file(&path).map_err(|e| Error::new("vault.deleteFailed").param("path", path.display()).detail(e))?;
             let _ = self.store.delete(KEY_ACCOUNT);
+            let _ = self.store.delete(NEXT_KEY_ACCOUNT);
             *state = State::Plain(Plain::load(&self.dir, set_aside));
         }
         Ok(self.status())
@@ -574,18 +637,27 @@ impl Vault {
     /// `skip_unreadable`, which leaves it there.
     ///
     /// The new files are written and checked before the old ones are deleted, and each change
-    /// uses a new data key, so that a key left in the credential store opens nothing. Blocks:
-    /// the credential store may ask the user, and keys are derived from passwords.
+    /// uses a new data key, so that a key left in the credential store opens nothing. A new
+    /// key goes into the credential store under `vault-key-next`, and replaces `vault-key`
+    /// only once the vault that needs it is in place: stopping at any point leaves a vault
+    /// that `vault-key`, `vault-key-next` or the master password opens. If the old files
+    /// can't be deleted afterwards the change is made all the same and `vault.leftover` says
+    /// so; they go at the next unlock. Blocks: the credential store may ask the user, and keys
+    /// are derived from passwords.
     pub fn set_protection(&self, target: Target, current: Option<&str>, skip_unreadable: bool) -> Result<VaultStatus> {
-        {
+        let leftover = {
             let mut state = self.state.lock().unwrap();
-            let next = self.change(&state, target, current, skip_unreadable)?;
+            let (next, leftover) = self.change(&state, target, current, skip_unreadable)?;
             *state = next;
+            leftover
+        };
+        match leftover {
+            Some(error) => Err(error),
+            None => Ok(self.status()),
         }
-        Ok(self.status())
     }
 
-    fn change(&self, state: &State, target: Target, current: Option<&str>, skip_unreadable: bool) -> Result<State> {
+    fn change(&self, state: &State, target: Target, current: Option<&str>, skip_unreadable: bool) -> Result<(State, Option<Error>)> {
         let (from, mut data) = match state {
             State::Locked { .. } => return Err(locked()),
             State::Plain(plain) => {
@@ -635,14 +707,25 @@ impl Vault {
             }
         }
         let used_store = old.is_some_and(|vault| vault.header.uses_store());
+        let mut leftover = None;
 
         let next = match target {
             Target::None => {
-                let plain = Plain::at(&self.dir, data);
-                plain.write(None, &plain.data)?;
+                let mut plain = Plain::at(&self.dir);
+                let written = plain.write(&data, true);
                 if old.is_some() {
+                    // While the vault is there it is the one read: plain files beside it,
+                    // half written or complete, are only a copy in the clear.
                     let path = self.path();
-                    persist::remove_file(&path).map_err(|e| Error::new("vault.deleteFailed").param("path", path.display()).detail(e))?;
+                    let removed = written.and_then(|()| {
+                        persist::remove_file(&path).map_err(|e| Error::new("vault.deleteFailed").param("path", path.display()).detail(e))
+                    });
+                    if let Err(e) = removed {
+                        let _ = self.remove_plain();
+                        return Err(e);
+                    }
+                } else {
+                    written?;
                 }
                 State::Plain(plain)
             }
@@ -670,25 +753,34 @@ impl Vault {
                     kdf,
                     wrapped_key,
                 };
-                let staged = stage_vault(&self.path(), &header, &key, &data)?;
-                // The key goes into the credential store before the vault that needs it is
-                // put in place, and comes back out if that fails.
+                let path = self.path();
+                let staged = stage_vault(&path, &header, &key, &data)?;
                 if header.uses_store() {
-                    self.store.set(KEY_ACCOUNT, &crypto::encode(&*key))?;
+                    self.store.set(NEXT_KEY_ACCOUNT, &crypto::encode(&*key))?;
                 }
                 if let Err(e) = staged.commit() {
-                    if header.uses_store() {
-                        let _ = match old.filter(|vault| vault.header.uses_store()) {
-                            Some(vault) => self.store.set(KEY_ACCOUNT, &crypto::encode(&*vault.key)),
-                            None => self.store.delete(KEY_ACCOUNT),
-                        };
-                    }
+                    let _ = self.store.delete(NEXT_KEY_ACCOUNT);
                     return Err(e);
                 }
-                if old.is_none() {
-                    for name in PLAIN_FILES {
-                        let _ = persist::remove_file(&self.dir.join(name));
+                if header.uses_store() {
+                    // Only once the vault in place opens with the new key: until then
+                    // `vault-key` (the old key) or `vault-key-next` opens whichever is there.
+                    let opens = VaultFile::read(&path).ok().is_some_and(|file| file.open(&key).is_ok());
+                    if !opens {
+                        // Coming from plain files, which stay the ones written to, a vault
+                        // beside them would be read instead of them at the next start.
+                        if old.is_none() {
+                            let _ = persist::remove_file(&path);
+                            let _ = self.store.delete(NEXT_KEY_ACCOUNT);
+                        }
+                        return Err(Error::new("vault.verifyFailed").param("path", path.display()));
                     }
+                    if self.store.set(KEY_ACCOUNT, &crypto::encode(&*key)).is_ok() {
+                        let _ = self.store.delete(NEXT_KEY_ACCOUNT);
+                    }
+                }
+                if old.is_none() {
+                    leftover = self.remove_plain().err().map(|e| Error::new("vault.leftover").detail(e));
                 }
                 State::Encrypted(Encrypted { header, key, data })
             }
@@ -698,11 +790,12 @@ impl Vault {
         let uses_store = matches!(&next, State::Encrypted(vault) if vault.header.uses_store());
         if used_store && !uses_store {
             let _ = self.store.delete(KEY_ACCOUNT);
+            let _ = self.store.delete(NEXT_KEY_ACCOUNT);
         }
         for account in moved {
             let _ = self.store.delete(&account);
         }
-        Ok(next)
+        Ok((next, leftover))
     }
 }
 
@@ -912,6 +1005,174 @@ mod tests {
         // The entry that couldn't be read stays where it is.
         store.failing.store(false, Ordering::Relaxed);
         assert_eq!(store.entries.lock().unwrap()["a"], "secret");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A directory where `name` goes, which a file can't be put in place of.
+    fn block(dir: &Path, name: &str) {
+        let _ = fs::remove_file(dir.join(name));
+        fs::create_dir_all(dir.join(name).join("x")).unwrap();
+    }
+
+    fn unblock(dir: &Path, name: &str) {
+        fs::remove_dir_all(dir.join(name)).unwrap();
+    }
+
+    #[test]
+    fn a_new_key_waits_until_its_vault_is_in_place() {
+        let dir = dir("next-key");
+        let store = Arc::new(MemoryStore::default());
+        let vault = open(&dir, &store);
+        vault.update(|data| data.profiles.push(profile("a", "alpha"))).unwrap();
+
+        // The vault can't be put in place: nothing reaches the credential store.
+        block(&dir, VAULT_FILE);
+        assert!(vault.set_protection(Target::System, None, false).is_err());
+        assert!(store.entries.lock().unwrap().is_empty());
+        assert_eq!(vault.status().protection, Some(Protection::Unset));
+        assert!(dir.join("profiles.json").exists());
+        unblock(&dir, VAULT_FILE);
+
+        vault.set_protection(Target::System, None, false).unwrap();
+        let first = store.entries.lock().unwrap()[KEY_ACCOUNT].clone();
+        assert!(!store.entries.lock().unwrap().contains_key(NEXT_KEY_ACCOUNT));
+
+        // Stopped after saving the new key, before its vault was in place: the old key opens.
+        store.entries.lock().unwrap().insert(NEXT_KEY_ACCOUNT.into(), crypto::encode(&*crypto::random_key()));
+        assert!(open(&dir, &store).try_unlock().locked.is_none());
+
+        // Stopped after the new vault was in place, before `vault-key` was replaced: the new
+        // key opens it, and becomes `vault-key`. From system protection, with no master
+        // password to fall back on, this is all there is.
+        vault.set_protection(password(Some("master"), true), None, false).unwrap();
+        let new = store.entries.lock().unwrap()[KEY_ACCOUNT].clone();
+        assert_ne!(new, first);
+        store.entries.lock().unwrap().insert(KEY_ACCOUNT.into(), first.clone());
+        store.entries.lock().unwrap().insert(NEXT_KEY_ACCOUNT.into(), new.clone());
+        let vault = open(&dir, &store);
+        assert!(vault.try_unlock().locked.is_none());
+        assert_eq!(names(&vault), ["alpha"]);
+        assert_eq!(store.entries.lock().unwrap()[KEY_ACCOUNT], new);
+        assert!(!store.entries.lock().unwrap().contains_key(NEXT_KEY_ACCOUNT));
+
+        // With a master password, a key that opens nothing still leaves the password.
+        store.entries.lock().unwrap().insert(KEY_ACCOUNT.into(), first);
+        let vault = open(&dir, &store);
+        assert_eq!(vault.try_unlock().locked.map(|l| l.reason), Some(LockReason::Password));
+        assert!(vault.unlock("master").unwrap().locked.is_none());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_change_that_stops_part_way_leaves_nothing_in_the_clear() {
+        let dir = dir("clear");
+        let store = Arc::new(MemoryStore::default());
+        let vault = open(&dir, &store);
+        vault.update(|data| data.profiles.push(profile("a", "alpha"))).unwrap();
+        vault.set_password("a", Some("secret")).unwrap();
+        vault.set_protection(password(Some("master"), false), None, false).unwrap();
+
+        // Turning encryption off fails after some plain files are in place: they go again.
+        block(&dir, "proxies.json");
+        assert!(vault.set_protection(Target::None, Some("master"), false).is_err());
+        unblock(&dir, "proxies.json");
+        for name in PLAIN_FILES {
+            assert!(!dir.join(name).exists(), "{name}");
+        }
+        assert_eq!(vault.status().protection, Some(Protection::Password));
+        assert_eq!(names(&vault), ["alpha"]);
+
+        // A change that stopped (a crash) left plain files beside the vault: they stay until
+        // the vault opens, then go.
+        fs::write(dir.join("profiles.json"), "[]").unwrap();
+        fs::write(dir.join(PASSWORDS_FILE), r#"{"a":"secret"}"#).unwrap();
+        fs::write(dir.join("commands.json.tmp"), "{}").unwrap();
+        let vault = open(&dir, &store);
+        assert!(dir.join(PASSWORDS_FILE).exists());
+        assert!(vault.unlock("master").unwrap().locked.is_none());
+        for name in PLAIN_FILES {
+            assert!(!dir.join(name).exists(), "{name}");
+        }
+        assert!(!dir.join("commands.json.tmp").exists());
+        assert_eq!(vault.password("a").unwrap().as_deref(), Some("secret"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_reset_does_not_bring_back_what_was_left_in_the_clear() {
+        let dir = dir("reset-leftovers");
+        let store = Arc::new(MemoryStore::default());
+        let vault = open(&dir, &store);
+        vault.update(|data| data.profiles.push(profile("a", "alpha"))).unwrap();
+        vault.set_protection(Target::None, None, false).unwrap();
+        vault.set_password("a", Some("secret")).unwrap();
+        // Left behind by a change to encryption that stopped part way.
+        let profiles = fs::read(dir.join("profiles.json")).unwrap();
+        let passwords = fs::read(dir.join(PASSWORDS_FILE)).unwrap();
+        vault.set_protection(password(Some("master"), false), None, false).unwrap();
+        fs::write(dir.join("profiles.json"), profiles).unwrap();
+        fs::write(dir.join(PASSWORDS_FILE), passwords).unwrap();
+
+        let vault = open(&dir, &store);
+        vault.reset(&SetAside::default()).unwrap();
+        assert_eq!(vault.status().protection, Some(Protection::Unset));
+        assert!(vault.data().unwrap().profiles.is_empty());
+        for name in PLAIN_FILES {
+            assert!(!dir.join(name).exists(), "{name}");
+        }
+        assert!(!dir.join(VAULT_FILE).exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn memory_follows_the_disk_when_a_write_stops_part_way() {
+        let dir = dir("part-way");
+        let store = Arc::new(MemoryStore::default());
+        let vault = open(&dir, &store);
+        vault.update(|data| data.profiles.push(profile("a", "alpha"))).unwrap();
+        let folder = Folder { id: "f".into(), name: "Work".into(), parent: None };
+
+        // Folders are put in place first, proxies next; the proxies can't be.
+        block(&dir, "proxies.json");
+        let changed = vault.update(|data| {
+            data.folders.push(folder.clone());
+            let kind = crate::proxy::ProxyKind::Socks5;
+            data.proxies.push(Proxy { id: "x".into(), name: "corp".into(), kind, host: "proxy.lan".into(), port: 1080, username: String::new(), command: String::new() });
+            data.profiles.push(profile("b", "beta"));
+        });
+        assert!(changed.is_err());
+        let data = vault.data().unwrap();
+        assert_eq!(data.folders.len(), 1);
+        assert!(data.proxies.is_empty());
+        assert_eq!(names(&vault), ["alpha"]);
+
+        unblock(&dir, "proxies.json");
+        let reopened = open(&dir, &store).data().unwrap();
+        assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&data).unwrap());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_password_saved_while_moving_out_of_the_credential_store_is_kept() {
+        let dir = dir("overlap");
+        let store = Arc::new(MemoryStore::default());
+        let vault = Arc::new(open(&dir, &store));
+        vault.update(|data| data.profiles.push(profile("a", "alpha"))).unwrap();
+        vault.set_password("a", Some("old")).unwrap();
+
+        // Saving takes a while (the system asking); meanwhile the passwords move out.
+        store.set_delay_ms.store(300, Ordering::Relaxed);
+        let saving = {
+            let vault = vault.clone();
+            std::thread::spawn(move || vault.set_password("a", Some("new")).unwrap())
+        };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        vault.set_protection(Target::None, None, false).unwrap();
+        saving.join().unwrap();
+        store.set_delay_ms.store(0, Ordering::Relaxed);
+
+        assert_eq!(vault.password("a").unwrap().as_deref(), Some("new"));
+        assert!(!store.entries.lock().unwrap().contains_key("a"));
         fs::remove_dir_all(&dir).unwrap();
     }
 

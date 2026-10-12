@@ -872,16 +872,26 @@ impl ProfileStore {
     }
 
     /// Applies `change` to a copy of the state and, if it succeeds, saves it and keeps the
-    /// copy. The vault writes all the files that changed or none (see `Vault::update`).
+    /// copy.
+    ///
+    /// Plain files are all written before any is put in place, so a failed write (a full
+    /// disk) leaves them as they were. Putting them in place can still fail part way (a file
+    /// held by an antivirus on Windows), leaving some of the change on disk: the state is
+    /// then read back from the vault, which follows the disk, and loading repairs references
+    /// across the files.
     fn update<T>(&self, change: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
         let _writing = self.writing.lock().unwrap();
         let mut updated = self.state.read().unwrap().clone();
         let value = change(&mut updated)?;
-        self.vault.update(|data| {
+        let saved = self.vault.update(|data| {
             data.folders.clone_from(&updated.folders);
             data.proxies.clone_from(&updated.proxies);
             data.profiles.clone_from(&updated.profiles);
-        })?;
+        });
+        if let Err(e) = saved {
+            *self.state.write().unwrap() = Self::read(&self.vault);
+            return Err(e);
+        }
         *self.state.write().unwrap() = updated;
         Ok(value)
     }
@@ -946,6 +956,22 @@ mod tests {
         assert!(set_aside.take().is_empty());
         store.save(new_profile("a", None)).unwrap();
         assert_eq!(fs::read(files[0].moved_to.as_ref().unwrap()).unwrap(), b"");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Some files of a change in place and others not: the store shows what is on disk.
+    #[test]
+    fn follows_the_disk_when_a_change_is_saved_part_way() {
+        let (store, dir) = store("part-way");
+        store.save(new_profile("a", None)).unwrap();
+        // Folders are put in place before sessions, which can't be.
+        fs::remove_file(dir.join("profiles.json")).unwrap();
+        fs::create_dir_all(dir.join("profiles.json").join("x")).unwrap();
+        let work = Folder { id: "w".into(), name: "Work".into(), parent: None };
+        let added = store.add_all(|_| Ok(Additions { folders: vec![work], profiles: vec![new_profile("b", None)], ..Default::default() }));
+        assert!(added.is_err());
+        assert_eq!(store.folders().len(), 1);
+        assert_eq!(store.list().len(), 1);
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -167,7 +167,7 @@
       "invalidProxy": "Proxy {name} in the file is not valid",
       "fileChanged": "{path} changed after it was opened, so what it would import may not be what was shown. Open it again to review it.",
       "includeTooDeep": "The Include lines in {path} nest too deeply; a file may be including itself",
-      "wrongPassphrase": "The passphrase is not the one the file was exported with",
+      "wrongPassphrase": "The passphrase is not the one the file was exported with, or the file was changed after it was exported",
       "unsupportedPasswords": "The passwords in {path} are encrypted in a way this version of ZShell cannot read"
     },
     "zmodem": {
@@ -221,7 +221,8 @@
       "wrongPassword": "Incorrect master password",
       "passwordRequired": "Enter the current master password",
       "emptyPassword": "The master password can't be empty",
-      "passwordsUnreadable": "The passwords of {names} could not be read from the credential store"
+      "passwordsUnreadable": "The passwords of {names} could not be read from the credential store",
+      "leftover": "The protection was changed, but the old files could not all be deleted. ZShell deletes them the next time it unlocks"
     }
   },
   "zmodem": {
