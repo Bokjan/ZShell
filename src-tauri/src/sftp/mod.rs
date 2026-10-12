@@ -25,7 +25,13 @@ pub struct FileEntry {
     pub size: u64,
     /// Seconds since the Unix epoch.
     pub modified: Option<u32>,
+    /// Of the entry itself: for a symlink, its own (usually `0777` on Linux).
     pub permissions: Option<u32>,
+    /// For a symlink, those of what it points to, which changing its permissions changes
+    /// (SFTP's `SETSTAT` follows links); unknown for a broken one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub target_permissions: Option<u32>,
 }
 
 #[derive(Serialize, TS)]
@@ -68,9 +74,11 @@ pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
             size: metadata.size.unwrap_or(0),
             modified: metadata.mtime,
             permissions: metadata.permissions,
+            target_permissions: None,
         });
     }
-    // A symlink is shown as a folder if it leads to one.
+    // A symlink is shown as a folder if it leads to one, and changing its permissions changes
+    // its target's.
     let symlinks: Vec<(usize, String)> = entries.iter().enumerate().filter(|(_, e)| e.is_symlink).map(|(i, e)| (i, e.path.clone())).collect();
     let mut symlinks = symlinks.into_iter();
     let mut lookups = tokio::task::JoinSet::new();
@@ -78,10 +86,14 @@ pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
         while lookups.len() < SYMLINK_LOOKUPS {
             let Some((index, target)) = symlinks.next() else { break };
             let sftp = sftp.clone();
-            lookups.spawn(async move { (index, sftp.metadata(&target).await.is_ok_and(|m| m.file_type().is_dir())) });
+            lookups.spawn(async move { (index, sftp.metadata(&target).await.ok()) });
         }
         match lookups.join_next().await {
-            Some(Ok((index, is_dir))) => entries[index].is_dir = is_dir,
+            Some(Ok((index, target))) => {
+                let entry = &mut entries[index];
+                entry.is_dir = target.as_ref().is_some_and(|m| m.file_type().is_dir());
+                entry.target_permissions = target.and_then(|m| m.permissions);
+            }
             Some(Err(_)) => {}
             None => break,
         }

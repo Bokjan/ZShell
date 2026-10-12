@@ -253,7 +253,16 @@ isDir: boolean, isSymlink: boolean, size: number,
 /**
  * Seconds since the Unix epoch.
  */
-modified: number | null, permissions: number | null, };
+modified: number | null, 
+/**
+ * Of the entry itself: for a symlink, its own (usually `0777` on Linux).
+ */
+permissions: number | null, 
+/**
+ * For a symlink, those of what it points to, which changing its permissions changes
+ * (SFTP's `SETSTAT` follows links); unknown for a broken one.
+ */
+targetPermissions?: number, };
 
 /**
  * Remote files: SFTP and ZMODEM downloads, and editing remote files locally.

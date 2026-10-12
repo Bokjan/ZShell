@@ -190,10 +190,22 @@ async fn create_beside(
     Ok(Some((file, temporary)))
 }
 
-/// A new file beside local `path`; `None` if the folder doesn't let us create files.
-async fn create_new_beside(path: &Path) -> std::io::Result<Option<(tokio::fs::File, PathBuf)>> {
+/// A new file beside local `path`, as private as the `original` there (Unix: created with its
+/// permissions, not readable by others meanwhile if it isn't); `None` if the folder doesn't
+/// let us create files.
+async fn create_new_beside(path: &Path, original: &std::fs::Metadata) -> std::io::Result<Option<(tokio::fs::File, PathBuf)>> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Owner write, at least: it is written to.
+        options.mode(original.permissions().mode() & 0o777 | 0o200);
+    }
+    #[cfg(not(unix))]
+    let _ = original;
     let open = |temporary: PathBuf| async {
-        let file = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).await?;
+        let file = options.open(&temporary).await?;
         Ok::<_, std::io::Error>((file, temporary))
     };
     let named = temporary_name(&path.file_name().unwrap_or_default().to_string_lossy());
@@ -231,7 +243,7 @@ impl LocalTarget {
         let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path.display()));
         let original = tokio::fs::symlink_metadata(path).await.ok();
         if let Some(original) = original.as_ref().filter(|m| m.is_file()) {
-            if let Some((file, temporary)) = create_new_beside(path).await.map_err(created)? {
+            if let Some((file, temporary)) = create_new_beside(path, original).await.map_err(created)? {
                 let permissions = Some(original.permissions());
                 return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed: true, permissions });
             }
@@ -296,6 +308,13 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
         }
         let mut target = LocalTarget::create(&path).await.unwrap();
+        // Never more open than the original, even before it is complete.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let temporary = target.temporary.as_ref().unwrap();
+            assert_eq!(std::fs::metadata(temporary).unwrap().permissions().mode() & 0o777, 0o640);
+        }
         target.file.write_all(b"new").await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
         target.finish().await.unwrap();

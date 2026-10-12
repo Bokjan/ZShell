@@ -15,11 +15,16 @@ interface Props {
   onClose(): void;
 }
 
-/** Changes a file's permissions, typed as an octal mode (`644`) with what it means shown below. */
+/**
+ * Changes a file's permissions, typed as an octal mode (`644`) with what it means shown below.
+ * For a symbolic link, those of what it points to: SFTP changes them (a link's own are
+ * ignored), so they are what the field starts with, rather than the link's `777`.
+ */
 export function ChmodDialog({ entry, onSubmit, onClose }: Props) {
   const { t } = useTranslation();
   const dialog = useDialog(onClose);
-  const [value, setValue] = useState(((entry.permissions ?? 0o644) & 0o7777).toString(8).padStart(3, "0"));
+  const current = entry.isSymlink ? entry.targetPermissions : entry.permissions;
+  const [value, setValue] = useState(((current ?? 0o644) & 0o7777).toString(8).padStart(3, "0"));
   // Once OK was pressed with a value that isn't a mode, until it is changed.
   const [invalid, setInvalid] = useState(false);
   const mode = parseMode(value);
@@ -34,6 +39,7 @@ export function ChmodDialog({ entry, onSubmit, onClose }: Props) {
     <Modal dialog={dialog}>
       <form className="dialog" onSubmit={submit}>
         <h2>{t("sftp.chmodTitle")}</h2>
+        {entry.isSymlink && <p>{t("sftp.chmodSymlink", { name: entry.name })}</p>}
         <label>
           {t("sftp.chmodLabel", { name: entry.name })}
           <input

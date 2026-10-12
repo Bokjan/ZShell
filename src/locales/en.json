@@ -450,6 +450,7 @@
     "deleteFileMessage": "Delete \"{name}\"? This cannot be undone.",
     "chmodTitle": "Change Permissions",
     "chmodLabel": "Permissions for \"{name}\" (octal)",
+    "chmodSymlink": "\"{name}\" is a symbolic link: this changes the permissions of what it points to.",
     "chmodInvalid": "Permissions must be 3–4 octal digits, e.g. 644 or 0755",
     "open": "Open",
     "downloadTo": "Download To…",
