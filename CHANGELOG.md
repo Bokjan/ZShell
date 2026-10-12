@@ -2,6 +2,14 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.9.0] - 2026-10-12
+
+### Features
+
+- Several windows: a tab's menu has Move to New Window and Move to “window”, and a saved session's menu has Connect in New Window. A moved tab keeps its connections, its split panes and what its terminals show, scrollback and full screen programs included. A window closes once its last tab has closed or moved away, unless it is the only one. A tab can't move while its file panel is transferring or editing files, or during a ZMODEM transfer; the file panel opens again in the new window, at the home folder.
+- Settings, sessions, quick commands, the vault and the app lock stay the same in every window: what is changed or unlocked in one applies to all.
+- Quitting asks once for all the windows, counting the busy tabs in each.
+
 ## [2.8.0] - 2026-10-12
 
 ### Features
