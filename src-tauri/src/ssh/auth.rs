@@ -407,10 +407,17 @@ impl<H: Handler> Auth<'_, H> {
     }
 }
 
-/// Whether a keyboard-interactive prompt asks for the account's password (PAM's
-/// `Password:`), rather than for a verification code or the like.
+/// Whether a keyboard-interactive prompt asks for the account's password, in one of the
+/// forms PAM and sshd use (`Password:`, `alice@host's password:`, `Password for alice:`),
+/// rather than for a verification code or the like. Anything else (`One-time password:`,
+/// `Password + OTP:`) is left to the user: a wrong answer may count against the account.
 fn asks_for_password(prompt: &str, echo: bool) -> bool {
-    !echo && prompt.to_lowercase().contains("password")
+    let text = prompt.trim().trim_end_matches(':').trim_end().to_lowercase();
+    let one_word = |name: &str| !name.is_empty() && !name.contains(char::is_whitespace);
+    !echo
+        && (text == "password"
+            || text.strip_suffix("'s password").is_some_and(one_word)
+            || text.strip_prefix("password for ").is_some_and(one_word))
 }
 
 /// The methods as the server names them, for messages: `publickey, keyboard-interactive`.
@@ -837,6 +844,12 @@ wF5Blj6bR6iFUzJQ==
         assert!(!asks_for_password("Verification code: ", false));
         assert!(!asks_for_password("Passcode or option (1-3): ", false));
         assert!(!asks_for_password("Password: ", true));
+        assert!(asks_for_password("Password for alice@example.com: ", false));
+        // pam_oath, and servers that want the password and a code together.
+        assert!(!asks_for_password("One-time password (OATH) for `alice': ", false));
+        assert!(!asks_for_password("Password + OTP: ", false));
+        assert!(!asks_for_password("Password for alice (and code): ", false));
+        assert!(!asks_for_password("New password: ", false));
     }
 
     /// An agent that refuses to sign still yields a (useless) signature, since russh waits
