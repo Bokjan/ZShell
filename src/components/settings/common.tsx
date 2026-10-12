@@ -17,6 +17,7 @@ export const SECTIONS = [
   "files",
   "proxies",
   "knownHosts",
+  "security",
   "zmodem",
   "logs",
   "shortcuts",

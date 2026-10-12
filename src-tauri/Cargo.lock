@@ -7011,6 +7011,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "portable-pty",
+ "ring",
  "russh",
  "russh-sftp",
  "serde",
@@ -7035,6 +7036,7 @@ dependencies = [
  "windows",
  "windows-core",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

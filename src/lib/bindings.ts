@@ -44,7 +44,9 @@ export type ErrorCode =
   | "import.notSessionsFile"
   | "import.parseFailed"
   | "import.readFailed"
+  | "import.unsupportedPasswords"
   | "import.unsupportedVersion"
+  | "import.wrongPassphrase"
   | "knownHosts.changed"
   | "knownHosts.noHome"
   | "knownHosts.readFailed"
@@ -113,6 +115,17 @@ export type ErrorCode =
   | "transfer.replaceInterrupted"
   | "transfer.uploadFailed"
   | "unexpected"
+  | "vault.deleteFailed"
+  | "vault.emptyPassword"
+  | "vault.keyMismatch"
+  | "vault.keyMissing"
+  | "vault.locked"
+  | "vault.notLocked"
+  | "vault.passwordRequired"
+  | "vault.passwordsUnreadable"
+  | "vault.readFailed"
+  | "vault.verifyFailed"
+  | "vault.wrongPassword"
   | "zmodem.cancelled"
   | "zmodem.corrupt"
   | "zmodem.incomplete"
@@ -295,6 +308,11 @@ export type Listing = {
  */
 path: string, entries: Array<FileEntry>, };
 
+/**
+ * Why the vault is locked, for the unlock screen.
+ */
+export type LockReason = "saved" | "password" | "keyUnavailable" | "unreadable" | "damaged" | "newer";
+
 export type LogFormat = "text" | "raw";
 
 /**
@@ -384,6 +402,13 @@ colorScheme?: string,
  */
 background?: string, fontFamily?: string, fontSize?: number, };
 
+export type Protection = "unset" | "none" | "system" | "password";
+
+/**
+ * What the protection changes to (see `Vault::set_protection`).
+ */
+export type ProtectionChange = { "protection": "none" } | { "protection": "system" } | { "protection": "password", password: string | null, remember: boolean, };
+
 export type Protocol = "ssh" | "telnet" | "serial";
 
 export type Proxy = { 
@@ -457,8 +482,15 @@ export type RightClick = "menu" | "paste";
 /**
  * A saved session or proxy, with the error storing its password gave, if any. It is saved
  * either way: the dialog then goes on editing it, so that saving again doesn't add another.
+ * (Only likely while the passwords are in the credential store, apart from the sessions.)
  */
 export type Saved<T> = { saved: T, passwordError: CommandError | null, };
+
+/**
+ * The protection of the sessions and passwords is the vault's (`vault.rs`); here only
+ * whether the user was asked to choose one, once.
+ */
+export type SecuritySettings = { prompted: boolean, };
 
 /**
  * A serial line's settings: 115200 8N1 without flow control unless set otherwise.
@@ -543,7 +575,11 @@ export type SessionSpec = { "kind": "profile", profileId: string, carry: Array<s
  * What a sessions file holds, as it would be imported, and a digest of the file: importing
  * checks that the file is still what was shown.
  */
-export type SessionsScan = { candidates: Array<SessionCandidate>, digest: string, };
+export type SessionsScan = { candidates: Array<SessionCandidate>, digest: string, 
+/**
+ * The file has saved passwords, which need its passphrase.
+ */
+hasPasswords: boolean, };
 
 export type SetAsideFile = { path: string, 
 /**
@@ -551,7 +587,7 @@ export type SetAsideFile = { path: string,
  */
 movedTo: string | null, error: string, };
 
-export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, };
+export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, security: SecuritySettings, };
 
 export type SidebarSettings = { 
 /**
@@ -603,6 +639,11 @@ termType: string, };
  * size and cursor position.
  */
 export type StatusBarSettings = { show: boolean, };
+
+/**
+ * Which system store the platform has, for the frontend to name it.
+ */
+export type StoreKind = "keychain" | "credentialManager" | "secretService";
 
 export type TabSettings = { 
 /**
@@ -657,6 +698,22 @@ export type TransferProgress = { transferred: number, total: number, filesDone: 
  * A session or a folder, as dragged in the sidebar.
  */
 export type TreeItem = { "kind": "profile", id: string, } | { "kind": "folder", id: string, };
+
+export type VaultLock = { reason: LockReason, 
+/**
+ * What went wrong, if something did (reading the key, the file).
+ */
+error: CommandError | null, };
+
+export type VaultStatus = { 
+/**
+ * `None` when locked by a file whose header can't be read.
+ */
+protection: Protection | null, 
+/**
+ * With password protection: the data key is also in the credential store.
+ */
+remember: boolean, locked: VaultLock | null, store: StoreKind, };
 
 /**
  * What the frontend is asked for, or that a transfer is running (for its cancel button).

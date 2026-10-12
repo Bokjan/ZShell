@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { announce } from "../lib/announce";
 import {
@@ -9,7 +9,6 @@ import {
   duplicateProfile,
   errorMessage,
   logs,
-  sessionsFile,
   tree,
   type Folder,
   type Profile,
@@ -43,6 +42,7 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
 import { Separator } from "./Separator";
+import { ExportDialog } from "./ExportDialog";
 import { SessionImportDialog } from "./SessionImportDialog";
 
 /**
@@ -117,7 +117,7 @@ export function Sidebar(props: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [deleting, setDeleting] = useState<Profile | null>(null);
-  // A deleted or copied session whose password the keychain refused to change.
+  // A deleted or copied session whose password couldn't be changed.
   const [passwordNotice, setPasswordNotice] = useState<{ title: string; message: string } | null>(null);
   // A session whose logs are about to be deleted, with how many it has.
   const [deletingLogs, setDeletingLogs] = useState<{ profile: Profile; count: number } | null>(null);
@@ -125,6 +125,7 @@ export function Sidebar(props: Props) {
   const [drag, setDrag] = useState<{ item: TreeItem; drop: Drop | null } | null>(null);
   // A sessions file being imported.
   const [importing, setImporting] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const rows = treeRows(folders, profiles, collapsed);
   const searching = query.trim() !== "";
@@ -259,11 +260,6 @@ export function Sidebar(props: Props) {
 
   const fileFilters = [{ name: t("sidebar.sessionsFileType"), extensions: ["json"] }];
 
-  const exportSessions = async () => {
-    const path = await saveDialog({ title: t("sidebar.exportSessions"), defaultPath: "zshell-sessions.json", filters: fileFilters });
-    if (path) sessionsFile.export(path).catch(fail);
-  };
-
   const importSessions = async () => {
     const path = await openDialog({ title: t("sidebar.importSessions"), filters: fileFilters });
     if (typeof path === "string") setImporting(path);
@@ -278,7 +274,7 @@ export function Sidebar(props: Props) {
         { label: t("sidebar.importSshConfig"), onSelect: props.onImportSshConfig },
         { label: t("sidebar.importSessions"), onSelect: () => void importSessions() },
         "separator",
-        { label: t("sidebar.exportSessions"), disabled: profiles.length === 0, onSelect: () => void exportSessions() },
+        { label: t("sidebar.exportSessions"), disabled: profiles.length === 0, onSelect: () => setExporting(true) },
       ],
     });
   };
@@ -603,6 +599,7 @@ export function Sidebar(props: Props) {
         onMouseDown={startResize}
       />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       {importing && <SessionImportDialog path={importing} onClose={() => setImporting(null)} onImported={onChanged} />}
       {deleting && (
         <ConfirmDialog

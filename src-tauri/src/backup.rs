@@ -1,23 +1,29 @@
 //! Exporting sessions (with their folders and proxies) to a JSON file and importing them
-//! back, for backups and for moving to another computer. Passwords stay in the system keychain
-//! and are never exported.
+//! back, for backups and for moving to another computer. Their saved passwords can come along,
+//! encrypted with a passphrase given for the file (`passwords`): files without them, and
+//! versions before 2.7, which ignore them, import the rest.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::config::{Additions, Connection, Folder, Profile, Snapshot};
+use crate::crypto::{self, Kdf, Sealed};
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::persist::{unique_ids, write_json_atomic};
 use crate::proxy::{Proxy, ProxyKind};
+use crate::secrets::proxy_account;
 
 const FORMAT: &str = "zshell-sessions";
 /// 2 since sessions keep the settings of their protocol under `connection` (ZShell 2.0); files
 /// of version 1 are not read.
 const VERSION: u32 = 2;
+const CIPHER: &str = "aes-256-gcm";
+/// Associated data of the encrypted passwords.
+const PASSWORDS_AAD: &[u8] = b"zshell-sessions-passwords-v1";
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +37,18 @@ struct SessionsFile {
     /// Absent in files from before proxies.
     #[serde(default)]
     proxies: Vec<Proxy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    passwords: Option<Passwords>,
+}
+
+/// The saved passwords of the sessions and proxies in the file, by account (a session's id, or
+/// `proxy:<id>`, ids in the file), encrypted with a key from the file's passphrase.
+#[derive(Serialize, Deserialize)]
+struct Passwords {
+    kdf: Kdf,
+    cipher: String,
+    nonce: String,
+    data: String,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +65,8 @@ struct Header {
 pub struct Scan {
     pub candidates: Vec<Candidate>,
     pub digest: String,
+    /// The file has saved passwords, which need its passphrase.
+    pub has_passwords: bool,
 }
 
 /// A session in a file, as it would be imported.
@@ -79,8 +99,25 @@ pub struct Candidate {
     pub brings: Vec<String>,
 }
 
-pub fn export(path: &Path, folders: Vec<Folder>, proxies: Vec<Proxy>, profiles: Vec<Profile>) -> Result<()> {
-    let file = SessionsFile { format: FORMAT.to_owned(), version: VERSION, folders, profiles, proxies };
+/// Writes the sessions to `path`, with the `passwords` (by account) encrypted with a key from
+/// `passphrase` if given. Blocks while the key is derived.
+pub fn export(
+    path: &Path,
+    folders: Vec<Folder>,
+    proxies: Vec<Proxy>,
+    profiles: Vec<Profile>,
+    passwords: Option<(&str, BTreeMap<String, String>)>,
+) -> Result<()> {
+    let passwords = passwords
+        .map(|(passphrase, passwords)| {
+            let kdf = Kdf::new();
+            let key = kdf.derive(passphrase).expect("the current parameters");
+            let plaintext = zeroize::Zeroizing::new(serde_json::to_vec(&passwords)?);
+            let Sealed { nonce, data } = crypto::seal(&key, PASSWORDS_AAD, &plaintext);
+            Ok::<_, Error>(Passwords { kdf, cipher: CIPHER.to_owned(), nonce, data })
+        })
+        .transpose()?;
+    let file = SessionsFile { format: FORMAT.to_owned(), version: VERSION, folders, profiles, proxies, passwords };
     write_json_atomic(path, &file).map_err(|e| Error::new("export.writeFailed").param("path", path.display()).detail(e))
 }
 
@@ -106,7 +143,26 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Scan> {
             }
         })
         .collect();
-    Ok(Scan { candidates, digest })
+    Ok(Scan { candidates, digest, has_passwords: file.passwords.is_some() })
+}
+
+/// The saved passwords in the file, by account (ids in the file), if it is still the one
+/// `scan` read (`digest`): `import.wrongPassphrase` with another passphrase. Blocks while the
+/// key is derived.
+pub fn passwords(path: &Path, digest: &str, passphrase: &str) -> Result<BTreeMap<String, String>> {
+    let (file, read_digest) = read(path)?;
+    if read_digest != digest {
+        return Err(Error::new("import.fileChanged").param("path", path.display()));
+    }
+    let Some(passwords) = file.passwords else { return Ok(BTreeMap::new()) };
+    let key = match passwords.cipher == CIPHER {
+        true => passwords.kdf.derive(passphrase),
+        false => None,
+    };
+    let key = key.ok_or_else(|| Error::new("import.unsupportedPasswords").param("path", path.display()))?;
+    let sealed = Sealed { nonce: passwords.nonce, data: passwords.data };
+    let plaintext = crypto::open(&key, PASSWORDS_AAD, &sealed).ok_or_else(|| Error::new("import.wrongPassphrase"))?;
+    serde_json::from_slice(&plaintext).map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))
 }
 
 /// The sessions in `file` (ids) that importing `selected` adds, in the order found: those and
@@ -139,7 +195,8 @@ fn to_import(file: &SessionsFile, selected: impl IntoIterator<Item = String>, ex
 /// and profiles, with new ids. Jump hosts and proxies come along unless they already exist
 /// here, in which case the existing one is used; folders are matched by name and merged.
 /// `digest` is the one `scan` gave: a file that has changed since isn't imported, since what
-/// it would add (proxy commands, forwarding rules) isn't what was shown.
+/// it would add (proxy commands, forwarding rules) isn't what was shown. `accounts` maps the
+/// new sessions and proxies from their accounts in the file, for their passwords.
 pub fn plan(path: &Path, selected: &[String], digest: &str, here: &Snapshot) -> Result<Additions> {
     let folders = here.folders;
     let (file, read_digest) = read(path)?;
@@ -153,6 +210,7 @@ pub fn plan(path: &Path, selected: &[String], digest: &str, here: &Snapshot) -> 
         ids.insert(id.clone(), uuid::Uuid::new_v4().to_string());
     }
     let imported: HashSet<String> = imported.into_iter().collect();
+    let mut accounts: Vec<(String, String)> = imported.iter().map(|id| (id.clone(), ids[id].clone())).collect();
 
     // File proxy id → the id of the proxy it becomes, for the proxies the imported use.
     let mut proxy_ids: HashMap<&str, String> = HashMap::new();
@@ -176,10 +234,12 @@ pub fn plan(path: &Path, selected: &[String], digest: &str, here: &Snapshot) -> 
             None => {
                 let taken = |name: &str| here.proxies.iter().chain(&proxies).any(|p| p.name == name);
                 let name = free_name(&proxy.name, taken);
+                let file_proxy_id = proxy.id.clone();
                 let mut proxy = Proxy { id: uuid::Uuid::new_v4().to_string(), name, ..proxy.clone() };
                 proxy.normalize().map_err(|e| Error::new("import.invalidProxy").param("name", &proxy.name).detail(e))?;
                 let id = proxy.id.clone();
                 proxies.push(proxy);
+                accounts.push((proxy_account(&file_proxy_id), proxy_account(&id)));
                 id
             }
         };
@@ -203,7 +263,7 @@ pub fn plan(path: &Path, selected: &[String], digest: &str, here: &Snapshot) -> 
             Ok(profile)
         })
         .collect::<Result<_>>()?;
-    Ok(Additions { folders: merger.added, proxies, profiles: new_profiles })
+    Ok(Additions { folders: merger.added, proxies, profiles: new_profiles, accounts })
 }
 
 /// The file, and a digest of it (SHA-256, in hex).
@@ -316,18 +376,19 @@ mod tests {
             profile("db", "db", "db.internal", Some("f2"), &["bastion"]),
             profile("web", "web", "web.example.com", None, &["bastion"]),
         ];
-        export(&path, folders, Vec::new(), profiles).unwrap();
+        export(&path, folders, Vec::new(), profiles, None).unwrap();
 
         // Here: a "Work" folder and the bastion already exist (same address, other name).
         let here_folders = vec![folder("w", "Work", None)];
         let here_profiles = vec![profile("b2", "jump", "bastion.example.com", None, &[])];
-        let Scan { candidates, digest } = scan(&path, &here_profiles).unwrap();
+        let Scan { candidates, digest, has_passwords } = scan(&path, &here_profiles).unwrap();
+        assert!(!has_passwords);
         assert_eq!(candidates[0].existing.as_deref(), Some("jump"));
         assert_eq!(candidates[1].folder, ["Work", "DB"]);
         assert_eq!(candidates[1].jump_hosts, ["bastion"]);
 
         let here = Snapshot { profiles: &here_profiles, folders: &here_folders, proxies: &[] };
-        let Additions { folders: new_folders, profiles: new_profiles, proxies } = plan(&path, &["db".into()], &digest, &here).unwrap();
+        let Additions { folders: new_folders, profiles: new_profiles, proxies, .. } = plan(&path, &["db".into()], &digest, &here).unwrap();
         assert!(proxies.is_empty());
         // Only "DB" is new, inside the existing "Work".
         assert_eq!(new_folders.len(), 1);
@@ -366,10 +427,10 @@ mod tests {
             profile("", "a", "a.internal", None, &[]),
             profile("", "b", "b.internal", None, &[]),
         ];
-        export(&path, Vec::new(), Vec::new(), profiles).unwrap();
+        export(&path, Vec::new(), Vec::new(), profiles, None).unwrap();
 
         let telnet = Profile { connection: Connection::Telnet(Remote::new("10.0.0.1".into(), 23, String::new())), ..profile("t", "router", "", None, &[]) };
-        let Scan { candidates, digest } = scan(&path, std::slice::from_ref(&telnet)).unwrap();
+        let Scan { candidates, digest, .. } = scan(&path, std::slice::from_ref(&telnet)).unwrap();
         assert_eq!(candidates[0].existing, None);
         assert_eq!(candidates[1].auto_forwards[0].bind_host, "localhost");
         assert_ne!(candidates[2].id, candidates[3].id);
@@ -413,9 +474,9 @@ mod tests {
             with_proxy(profile("c", "c", "c.internal", None, &[]), "missing"),
             with_proxy(profile("d", "d", "d.internal", None, &[]), "x1"),
         ];
-        export(&path, Vec::new(), proxies, profiles).unwrap();
+        export(&path, Vec::new(), proxies, profiles, None).unwrap();
 
-        let Scan { candidates, digest } = scan(&path, &[]).unwrap();
+        let Scan { candidates, digest, .. } = scan(&path, &[]).unwrap();
         assert_eq!(candidates[0].proxy.as_deref(), Some("corp"));
         assert_eq!(candidates[0].proxy_command, None);
         assert_eq!(candidates[1].proxy_command.as_deref(), Some("cloudflared access ssh --hostname %h"));
@@ -456,9 +517,9 @@ mod tests {
             profile("db", "db", "db.internal", None, &["inner"]),
             profile("web", "web", "web.example.com", None, &[]),
         ];
-        export(&path, Vec::new(), proxies, profiles).unwrap();
+        export(&path, Vec::new(), proxies, profiles, None).unwrap();
 
-        let Scan { candidates, digest } = scan(&path, &[]).unwrap();
+        let Scan { candidates, digest, .. } = scan(&path, &[]).unwrap();
         let brings: Vec<&[String]> = candidates.iter().map(|c| c.brings.as_slice()).collect();
         assert_eq!(brings, [&[][..], &["bastion".to_owned()], &["inner".to_owned(), "bastion".to_owned()], &[]]);
         // A jump host that exists here is used rather than imported.
@@ -476,6 +537,41 @@ mod tests {
         let shown = std::fs::read(&path).unwrap();
         std::fs::write(&path, String::from_utf8(shown).unwrap().replace("example.com/x", "example.com/y")).unwrap();
         assert_eq!(plan_error(&path, &digest), "import.fileChanged");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn carries_passwords_encrypted_with_a_passphrase() {
+        let path = std::env::temp_dir().join(format!("zshell-sessions-passwords-{}.json", std::process::id()));
+        let proxies = vec![proxy("x", "corp", ProxyKind::Socks5, "")];
+        let profiles = vec![with_proxy(profile("a", "a", "a.internal", None, &[]), "x"), profile("b", "b", "b.internal", None, &[])];
+        let passwords = BTreeMap::from([("a".to_owned(), "secret-a".to_owned()), ("proxy:x".to_owned(), "secret-x".to_owned())]);
+        export(&path, Vec::new(), proxies, profiles, Some(("passphrase", passwords.clone()))).unwrap();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("secret"));
+
+        let Scan { digest, has_passwords, .. } = scan(&path, &[]).unwrap();
+        assert!(has_passwords);
+        assert_eq!(super::passwords(&path, &digest, "wrong").unwrap_err().code(), "import.wrongPassphrase");
+        assert_eq!(super::passwords(&path, &digest, "passphrase").unwrap(), passwords);
+
+        // The new sessions and the new proxy get the passwords of their accounts in the file.
+        let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
+        let planned = plan(&path, &["a".to_owned(), "b".to_owned()], &digest, &here).unwrap();
+        let mut accounts = planned.accounts.clone();
+        accounts.sort();
+        let mut expected = vec![
+            ("a".to_owned(), planned.profiles[0].id.clone()),
+            ("b".to_owned(), planned.profiles[1].id.clone()),
+            ("proxy:x".to_owned(), format!("proxy:{}", planned.proxies[0].id)),
+        ];
+        expected.sort();
+        assert_eq!(accounts, expected);
+
+        // A proxy that exists here keeps its own password.
+        let here_proxies = vec![proxy("mine", "corp", ProxyKind::Socks5, "")];
+        let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
+        let planned = plan(&path, &["a".to_owned()], &digest, &here).unwrap();
+        assert_eq!(planned.accounts, [("a".to_owned(), planned.profiles[0].id.clone())]);
         std::fs::remove_file(&path).unwrap();
     }
 

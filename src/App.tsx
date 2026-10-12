@@ -51,7 +51,6 @@ import { useShortcuts } from "./lib/shortcuts";
 import { useStableHandlers } from "./lib/stableHandlers";
 import { activeTabOf, createTabStore, useTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
-import { useTitleBar } from "./lib/window";
 import "./styles.css";
 
 const profileIdOf = (pane: Pane) => (pane.target.kind === "profile" ? pane.target.profileId : undefined);
@@ -64,7 +63,6 @@ const MENU_COMMANDS = 8;
 function App() {
   const { t } = useTranslation();
   const { settings, update } = useSettings();
-  useTitleBar();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [profiles, setProfiles] = useState<Profile[]>([]);

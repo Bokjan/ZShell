@@ -16,6 +16,7 @@ import type {
   LogOpen,
   LogSummary,
   Profile,
+  ProtectionChange,
   Proxy,
   QuickCommands,
   Saved,
@@ -27,6 +28,7 @@ import type {
   SetAsideFile,
   TransferProgress,
   TreeItem,
+  VaultStatus,
 } from "./bindings";
 
 export type * from "./bindings";
@@ -132,10 +134,39 @@ export const tree = {
 };
 
 export const sessionsFile = {
-  export: (path: string) => invoke<void>("sessions_export", { path }),
+  /**
+   * With `passphrase`, the saved passwords come along, encrypted with it. Resolves with the
+   * names of the sessions and proxies whose passwords couldn't be read, which are left out.
+   */
+  export: (path: string, passphrase?: string) => invoke<string[]>("sessions_export", { path, passphrase: passphrase ?? null }),
   scan: (path: string) => invoke<SessionsScan>("sessions_import_scan", { path }),
-  /** `digest` is the scan's: a file that changed since isn't imported. */
-  import: (path: string, ids: string[], digest: string) => invoke<void>("sessions_import", { path, ids, digest }),
+  /**
+   * `digest` is the scan's: a file that changed since isn't imported. With the file's
+   * `passphrase`, its passwords are imported too (`import.wrongPassphrase` for another one).
+   * Resolves with the error storing the passwords gave, if any.
+   */
+  import: (path: string, ids: string[], digest: string, passphrase?: string) =>
+    invoke<CommandError | null>("sessions_import", { path, ids, digest, passphrase: passphrase ?? null }),
+};
+
+/** Where the sessions and passwords are kept, and how they are protected (see `vault.rs`). */
+export const vault = {
+  status: () => invoke<VaultStatus>("vault_status"),
+  /** Unlocks with the key in the credential store, reading the file again first. */
+  tryUnlock: () => invoke<VaultStatus>("vault_try_unlock"),
+  /** Fails with `vault.wrongPassword`. */
+  unlock: (password: string) => invoke<VaultStatus>("vault_unlock", { password }),
+  /** Deletes the locked vault: every session and password in it. */
+  reset: () => invoke<VaultStatus>("vault_reset"),
+  /**
+   * `current`: the master password, to leave or change password protection. Fails with
+   * `vault.passwordsUnreadable` when passwords can't be moved out of the credential store,
+   * unless `skipUnreadable`.
+   */
+  setProtection: (change: ProtectionChange, current: string | null, skipUnreadable: boolean) =>
+    invoke<VaultStatus>("vault_set_protection", { change, current, skipUnreadable }),
+  /** Whether the system's credential store can be used; on Linux there may be none. */
+  storeAvailable: () => invoke<boolean>("credential_store_available"),
 };
 
 /** The user's home folder, which `~` stands for in key paths. */

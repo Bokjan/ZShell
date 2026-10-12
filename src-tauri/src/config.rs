@@ -1,12 +1,11 @@
 //! Saved connection profiles, the folders they are organized in and the proxies they use,
-//! persisted as JSON in the app config directory (`profiles.json`, `folders.json`,
-//! `proxies.json`). Passwords are never stored here; see [`crate::secrets`].
+//! kept by the vault (`vault.rs`: in `profiles.json`, `folders.json` and `proxies.json`, or
+//! encrypted in `vault.json`). Their passwords are kept apart; see [`crate::secrets`].
 //!
-//! The order of each file is the order shown: a folder's subfolders and sessions appear in
+//! The order of each list is the order shown: a folder's subfolders and sessions appear in
 //! file order (subfolders first).
 
-use std::path::PathBuf;
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -14,8 +13,9 @@ use ts_rs::TS;
 use crate::error::{Error, Result};
 use crate::forward::ForwardRule;
 use crate::net::Route;
-use crate::persist::{unique_ids, JsonFile, SetAside};
+use crate::persist::unique_ids;
 use crate::proxy::Proxy;
+use crate::vault::Vault;
 
 /// A saved session: what it connects to (by protocol), and how its tabs behave.
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -510,9 +510,8 @@ pub enum AuthMethod {
 }
 
 pub struct ProfileStore {
-    profiles_file: JsonFile,
-    folders_file: JsonFile,
-    proxies_file: JsonFile,
+    /// Where they are kept; empty while it is locked, and loaded again once unlocked.
+    vault: Arc<Vault>,
     /// Read briefly by every query; replaced once a change is saved, so that queries (some
     /// on the main thread) never wait for the files to be written.
     state: RwLock<State>,
@@ -533,6 +532,9 @@ pub struct Additions {
     pub folders: Vec<Folder>,
     pub proxies: Vec<Proxy>,
     pub profiles: Vec<Profile>,
+    /// The accounts of the new sessions and proxies (see `secrets::proxy_account`), from those
+    /// in the file imported: where its passwords go.
+    pub accounts: Vec<(String, String)>,
 }
 
 #[derive(Clone, Default)]
@@ -594,17 +596,25 @@ impl State {
 }
 
 impl ProfileStore {
-    /// `path` is `profiles.json`; the folders and proxies are kept next to it.
-    pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
-        let (profiles_file, profiles) = JsonFile::load(path.clone(), set_aside);
-        let (folders_file, folders) = JsonFile::load(path.with_file_name("folders.json"), set_aside);
-        let (proxies_file, proxies) = JsonFile::load(path.with_file_name("proxies.json"), set_aside);
-        let mut state = State { profiles, folders, proxies };
+    pub fn load(vault: Arc<Vault>) -> Self {
+        let state = Self::read(&vault);
+        Self { vault, state: RwLock::new(state), writing: Mutex::new(()) }
+    }
+
+    /// Takes what the vault has again, once it is unlocked or reset.
+    pub fn reload(&self) {
+        let _writing = self.writing.lock().unwrap();
+        *self.state.write().unwrap() = Self::read(&self.vault);
+    }
+
+    fn read(vault: &Vault) -> State {
+        let data = vault.data().unwrap_or_default();
+        let mut state = State { profiles: data.profiles, folders: data.folders, proxies: data.proxies };
         unique_ids(state.profiles.iter_mut().map(|p| &mut p.id));
         unique_ids(state.folders.iter_mut().map(|f| &mut f.id));
         unique_ids(state.proxies.iter_mut().map(|p| &mut p.id));
         state.repair();
-        Self { profiles_file, folders_file, proxies_file, state: RwLock::new(state), writing: Mutex::new(()) }
+        state
     }
 
     pub fn list(&self) -> Vec<Profile> {
@@ -734,7 +744,7 @@ impl ProfileStore {
     pub fn add_all(&self, plan: impl FnOnce(&Snapshot) -> Result<Additions>) -> Result<Vec<Profile>> {
         self.update(|state| {
             let snapshot = Snapshot { profiles: &state.profiles, folders: &state.folders, proxies: &state.proxies };
-            let Additions { folders, proxies, profiles } = plan(&snapshot)?;
+            let Additions { folders, proxies, profiles, .. } = plan(&snapshot)?;
             state.folders.extend(folders);
             state.proxies.extend(proxies);
             state.profiles.extend(profiles.iter().cloned());
@@ -861,30 +871,17 @@ impl ProfileStore {
         })
     }
 
-    /// Applies `change` to a copy of the state and, if it succeeds, saves the files that
-    /// changed and keeps the copy.
-    ///
-    /// Every file is written before any is put in place, so a failed write (a full disk)
-    /// leaves all of them as they were, matching the state kept. Only a rename failing
-    /// part way through can still leave them apart; loading repairs references across them.
+    /// Applies `change` to a copy of the state and, if it succeeds, saves it and keeps the
+    /// copy. The vault writes all the files that changed or none (see `Vault::update`).
     fn update<T>(&self, change: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
         let _writing = self.writing.lock().unwrap();
-        let state = self.state.read().unwrap().clone();
-        let mut updated = state.clone();
+        let mut updated = self.state.read().unwrap().clone();
         let value = change(&mut updated)?;
-        let mut staged = Vec::new();
-        if updated.folders != state.folders {
-            staged.push(self.folders_file.stage(&updated.folders)?);
-        }
-        if updated.proxies != state.proxies {
-            staged.push(self.proxies_file.stage(&updated.proxies)?);
-        }
-        if serde_json::to_value(&updated.profiles)? != serde_json::to_value(&state.profiles)? {
-            staged.push(self.profiles_file.stage(&updated.profiles)?);
-        }
-        for file in staged {
-            file.commit()?;
-        }
+        self.vault.update(|data| {
+            data.folders.clone_from(&updated.folders);
+            data.proxies.clone_from(&updated.proxies);
+            data.profiles.clone_from(&updated.profiles);
+        })?;
         *self.state.write().unwrap() = updated;
         Ok(value)
     }
@@ -899,12 +896,21 @@ fn jump_host_users<'a>(state: &'a State, id: &str) -> Vec<&'a str> {
 mod tests {
     use std::fs;
 
+    use std::path::PathBuf;
+
     use super::*;
+    use crate::persist::SetAside;
+
+    /// A store over plain files next to `path` (`profiles.json`).
+    fn load_at(path: PathBuf, set_aside: &SetAside) -> ProfileStore {
+        let store = Arc::new(crate::secrets::MemoryStore::default());
+        ProfileStore::load(Arc::new(Vault::open(path.parent().unwrap().to_owned(), store, set_aside)))
+    }
 
     fn store(name: &str) -> (ProfileStore, PathBuf) {
         let dir = std::env::temp_dir().join(format!("zshell-store-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        (ProfileStore::load(dir.join("profiles.json"), &SetAside::default()), dir)
+        (load_at(dir.join("profiles.json"), &SetAside::default()), dir)
     }
 
     fn new_profile(name: &str, folder: Option<&str>) -> Profile {
@@ -930,7 +936,7 @@ mod tests {
         fs::write(dir.join("profiles.json"), b"").unwrap();
         fs::write(dir.join("proxies.json"), br#"[{"id": "x", "type": "fromTheFuture"}]"#).unwrap();
         let set_aside = SetAside::default();
-        let store = ProfileStore::load(dir.join("profiles.json"), &set_aside);
+        let store = load_at(dir.join("profiles.json"), &set_aside);
         assert!(store.list().is_empty());
         let files = set_aside.take();
         assert_eq!(files.len(), 2, "{files:?}");
@@ -986,7 +992,7 @@ mod tests {
         }
 
         // Everything is on disk.
-        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
+        let reloaded = load_at(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(reloaded.list().len(), 2);
         assert!(reloaded.folders().is_empty());
         fs::remove_dir_all(&dir).unwrap();
@@ -1011,7 +1017,7 @@ mod tests {
 
         fs::remove_dir(dir.join("profiles.json.tmp")).unwrap();
         store.delete_folder(&work.id).unwrap();
-        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
+        let reloaded = load_at(dir.join("profiles.json"), &SetAside::default());
         assert!(reloaded.folders().is_empty() && reloaded.list()[0].folder.is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -1029,7 +1035,7 @@ mod tests {
             parent: Some("x".into()),
         }];
         fs::write(dir.join("folders.json"), serde_json::to_vec(&loops).unwrap()).unwrap();
-        let store = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
+        let store = load_at(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(store.list()[0].folder.as_deref(), Some("missing"));
         assert!(store.folders().iter().any(|f| f.parent.is_none()));
         fs::remove_dir_all(&dir).unwrap();
@@ -1050,7 +1056,7 @@ mod tests {
         let old = r#"[{"id":"p","name":"web","host":"web.example.com","port":22,"username":"alice","auth":{"type":"auto"}}]"#;
         fs::write(dir.join("profiles.json"), old).unwrap();
         let set_aside = SetAside::default();
-        assert!(ProfileStore::load(dir.join("profiles.json"), &set_aside).list().is_empty());
+        assert!(load_at(dir.join("profiles.json"), &set_aside).list().is_empty());
         assert_eq!(set_aside.take().len(), 1);
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -1167,7 +1173,7 @@ mod tests {
         assert_eq!(kept.name, "nc");
         let dangling = with_remote(Profile { id: "p".into(), ..new_profile("p", None) }, |remote| remote.proxy = Some("gone".into()));
         fs::write(dir.join("profiles.json"), serde_json::to_vec(&[dangling]).unwrap()).unwrap();
-        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
+        let reloaded = load_at(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(reloaded.list()[0].proxy(), Some("gone"));
         assert_eq!(reloaded.route(reloaded.list()[0].remote().unwrap()).err().map(|e| e.code()), Some("profile.invalidProxy"));
         assert_eq!(reloaded.proxies(), [kept]);
@@ -1184,7 +1190,7 @@ mod tests {
         let profiles = format!(r#"[{{"id": "a", "name": "one", "connection": {connection}}}, {{"id": "a", "name": "two", "connection": {connection}}}, {{"name": "three", "connection": {connection}}}]"#);
         fs::write(dir.join("profiles.json"), profiles).unwrap();
         let set_aside = SetAside::default();
-        let store = ProfileStore::load(dir.join("profiles.json"), &set_aside);
+        let store = load_at(dir.join("profiles.json"), &set_aside);
         assert!(set_aside.take().is_empty());
         let list = store.list();
         let ids: std::collections::HashSet<&str> = list.iter().map(|p| p.id.as_str()).collect();
@@ -1205,7 +1211,7 @@ mod tests {
         fs::write(dir.join("folders.json"), b"[{").unwrap();
         fs::write(dir.join("proxies.json"), br#"[{"id": "corp", "type": "fromTheFuture"}]"#).unwrap();
         let set_aside = SetAside::default();
-        let store = ProfileStore::load(dir.join("profiles.json"), &set_aside);
+        let store = load_at(dir.join("profiles.json"), &set_aside);
         assert_eq!(set_aside.take().len(), 2);
         let p = store.get("p").unwrap();
         assert_eq!((p.folder.as_deref(), p.proxy()), (Some("work"), Some("corp")));
@@ -1214,7 +1220,7 @@ mod tests {
         // Saving something else, and importing, keep them on disk too.
         store.save(new_profile("q", None)).unwrap();
         store.add_all(|_| Ok(Additions { profiles: vec![Profile { id: "r".into(), ..new_profile("r", None) }], ..Additions::default() })).unwrap();
-        let reloaded = ProfileStore::load(dir.join("profiles.json"), &SetAside::default());
+        let reloaded = load_at(dir.join("profiles.json"), &SetAside::default());
         let p = reloaded.get("p").unwrap();
         assert_eq!((p.folder.as_deref(), p.proxy()), (Some("work"), Some("corp")));
         assert_eq!(reloaded.list().len(), 3);
@@ -1235,7 +1241,7 @@ mod tests {
         let saved = fs::read(&path).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
         let set_aside = SetAside::default();
-        let store = ProfileStore::load(path.clone(), &set_aside);
+        let store = load_at(path.clone(), &set_aside);
         let files = set_aside.take();
         assert_eq!((files.len(), files[0].moved_to.is_none()), (1, true), "{files:?}");
         assert!(store.list().is_empty());
@@ -1246,7 +1252,7 @@ mod tests {
         store.save_folder(folder("Work", None)).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         assert_eq!(fs::read(&path).unwrap(), saved);
-        assert_eq!(ProfileStore::load(path, &SetAside::default()).folders().len(), 1);
+        assert_eq!(load_at(path, &SetAside::default()).folders().len(), 1);
         fs::remove_dir_all(&dir).unwrap();
     }
 

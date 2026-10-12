@@ -77,6 +77,8 @@ mod tests {
         visitor.visit::<import::Candidate>();
         visitor.visit::<backup::Candidate>();
         visitor.visit::<backup::Scan>();
+        visitor.visit::<vault::VaultStatus>();
+        visitor.visit::<vault::Target>();
         visitor.visit::<logging::LogOpen>();
         visitor.visit::<logging::LogSummary>();
         visitor.visit::<session::SessionEvent>();

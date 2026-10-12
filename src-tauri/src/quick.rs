@@ -1,16 +1,15 @@
 //! Quick commands: named texts sent to the terminal from a button, the terminal's menu or the
-//! command palette, kept in groups in `commands.json` next to `profiles.json`. The frontend
-//! edits them as a whole; the backend stores and validates.
+//! command palette, kept in groups by the vault (`commands.json`, or in `vault.json`). The
+//! frontend edits them as a whole; the backend stores and validates.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::persist::{JsonFile, SetAside};
 use crate::error::Result;
+use crate::vault::Vault;
 
 /// The group that always exists, first, for commands not put in a group of their own. Its
 /// name is shown translated, so it is stored empty.
@@ -86,16 +85,26 @@ impl QuickCommands {
 }
 
 pub struct QuickCommandStore {
-    file: JsonFile,
+    /// Where they are kept; empty while it is locked, and loaded again once unlocked.
+    vault: Arc<Vault>,
     commands: Mutex<QuickCommands>,
 }
 
 impl QuickCommandStore {
-    /// A missing or unreadable file (see [`JsonFile::load`]) starts with just the empty
+    /// A missing or unreadable file (see `JsonFile::load`) starts with just the empty
     /// default group.
-    pub fn load(path: PathBuf, set_aside: &SetAside) -> Self {
-        let (file, commands) = JsonFile::load::<QuickCommands>(path, set_aside);
-        Self { file, commands: Mutex::new(commands.normalize()) }
+    pub fn load(vault: Arc<Vault>) -> Self {
+        let commands = Self::read(&vault);
+        Self { vault, commands: Mutex::new(commands) }
+    }
+
+    /// Takes what the vault has again, once it is unlocked or reset.
+    pub fn reload(&self) {
+        *self.commands.lock().unwrap() = Self::read(&self.vault);
+    }
+
+    fn read(vault: &Vault) -> QuickCommands {
+        vault.data().map(|data| data.commands).unwrap_or_default().normalize()
     }
 
     pub fn get(&self) -> QuickCommands {
@@ -106,7 +115,7 @@ impl QuickCommandStore {
     pub fn set(&self, commands: QuickCommands) -> Result<QuickCommands> {
         let commands = commands.normalize();
         let mut current = self.commands.lock().unwrap();
-        self.file.write_changed(&*current, &commands)?;
+        self.vault.update(|data| data.commands.clone_from(&commands))?;
         *current = commands.clone();
         Ok(commands)
     }

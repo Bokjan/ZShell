@@ -2266,6 +2266,10 @@ body.resizing .terminal-view {
   background: var(--danger-fill);
   border-color: var(--danger);
 }
+.dialog footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .dialog .field {
   display: flex;
   flex-direction: column;
@@ -2992,6 +2996,155 @@ body.resizing .terminal-view {
 }
 
 /* The system asks for less motion: no transitions, and flashes are skipped. */
+/* Unlock screen: covers the window while the sessions are locked (see `UnlockScreen`). */
+
+.unlock-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+/* Moves the window; the traffic lights sit over it on macOS, the window buttons at its end
+   on Windows. */
+.unlock-titlebar {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  height: var(--titlebar-height);
+}
+.unlock-body {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow-y: auto;
+  /* Optically centered: a little above the middle. */
+  padding-bottom: calc(16px + var(--titlebar-height));
+}
+.unlock-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: calc(320px * var(--text-scale));
+  max-width: 100%;
+  text-align: center;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.unlock-icon {
+  align-self: center;
+  color: var(--text-muted);
+}
+.unlock-panel h1 {
+  margin: 0;
+  font-size: calc(18px * var(--text-scale));
+  font-weight: 600;
+}
+.unlock-panel p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.unlock-panel .hint {
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.unlock-panel .error {
+  margin: 0;
+  color: var(--danger);
+}
+.unlock-panel input {
+  padding: 7px 9px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.unlock-panel input:focus {
+  border-color: var(--accent);
+}
+.unlock-panel button:not(.link),
+.unlock-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+}
+.unlock-panel button.primary {
+  background: var(--accent-fill);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.unlock-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.unlock-panel button.link {
+  align-self: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: calc(12px * var(--text-scale));
+}
+.unlock-panel button.link:hover {
+  text-decoration: underline;
+}
+.unlock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.vault-failure {
+  margin: calc(var(--titlebar-height) + 16px) 16px;
+  color: var(--danger);
+}
+
+/* The protection choices, each with what it protects from. */
+.protection-dialog {
+  width: calc(460px * var(--text-scale));
+}
+.dialog label.protection-option {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+}
+.dialog label.protection-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.dialog label.protection-option.disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.protection-option input {
+  margin: 3px 0 0;
+  flex-shrink: 0;
+}
+.protection-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.protection-label {
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 600;
+}
+.protection-description {
+  color: var(--text-muted);
+}
+.security-state {
+  margin: 0 0 8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

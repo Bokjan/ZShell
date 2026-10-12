@@ -44,6 +44,7 @@ import { FileSection } from "./settings/FileSection";
 import { KnownHostsSection } from "./settings/KnownHostsSection";
 import { LogSection } from "./settings/LogSection";
 import { ProxySection } from "./settings/ProxySection";
+import { SecuritySection } from "./settings/SecuritySection";
 
 interface Props {
   /** Whether the system allows local terminals (not Windows in S mode). */
@@ -443,6 +444,8 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
             <ProxySection />
 
             <KnownHostsSection />
+
+            <SecuritySection />
 
             <Section id="zmodem">
               <Setting>

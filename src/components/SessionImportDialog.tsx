@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessage, sessionsFile, type SessionsScan } from "../lib/api";
+import { errorCode, errorMessage, sessionsFile, type SessionsScan } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
 import { forwardMapping } from "../lib/format";
 import { address } from "../lib/sessions";
@@ -16,13 +16,20 @@ interface Props {
   onImported(): void;
 }
 
-/** Imports sessions from a file exported by ZShell, skipping those that already exist. */
+/**
+ * Imports sessions from a file exported by ZShell, skipping those that already exist, with
+ * the passwords in the file if its passphrase is given.
+ */
 export function SessionImportDialog({ path, onClose, onImported }: Props) {
   const { t } = useTranslation();
   const [scan, setScan] = useState<SessionsScan | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // For the file's passwords; empty imports the sessions without them.
+  const [passphrase, setPassphrase] = useState("");
+  // Imported, but the passwords couldn't be saved: why.
+  const [passwordsNotSaved, setPasswordsNotSaved] = useState<string | null>(null);
 
   const dialog = useDialog(onClose);
 
@@ -37,16 +44,24 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
   }, [path]);
 
 
+  const passphraseRef = useRef<HTMLInputElement>(null);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (passwordsNotSaved) return onClose();
     setBusy(true);
+    setError(null);
     try {
-      await sessionsFile.import(path, [...selected], scan!.digest);
+      const passwordError = await sessionsFile.import(path, [...selected], scan!.digest, passphrase || undefined);
       onImported();
-      onClose();
+      if (passwordError) {
+        setPasswordsNotSaved(errorMessage(passwordError));
+        setBusy(false);
+      } else onClose();
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
+      if (errorCode(err) === "import.wrongPassphrase") requestAnimationFrame(() => passphraseRef.current?.select());
     }
   };
 
@@ -120,15 +135,27 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
           </>
         )}
         {candidates && candidates.length === 0 && <p className="hint">{t("sessionImport.empty")}</p>}
+        {scan?.hasPasswords && candidates && candidates.length > 0 && !passwordsNotSaved && (
+          <>
+            <label>
+              {t("sessionImport.passphrase")}
+              <input ref={passphraseRef} type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
+            </label>
+            <p className="hint">{t("sessionImport.passphraseHint")}</p>
+          </>
+        )}
         {error && <ErrorText>{error}</ErrorText>}
+        {passwordsNotSaved && <ErrorText>{t("sessionImport.passwordsNotSaved", { message: passwordsNotSaved })}</ErrorText>}
 
         <footer>
           <span className="grow" />
-          <button type="button" onClick={onClose}>
-            {t("common.cancel")}
-          </button>
-          <button type="submit" className="primary" disabled={busy || selected.size === 0}>
-            {t("sessionImport.import", { count: importing.size })}
+          {!passwordsNotSaved && (
+            <button type="button" onClick={onClose}>
+              {t("common.cancel")}
+            </button>
+          )}
+          <button type="submit" className="primary" disabled={busy || (!passwordsNotSaved && selected.size === 0)}>
+            {passwordsNotSaved ? t("common.close") : t("sessionImport.import", { count: importing.size })}
           </button>
         </footer>
       </form>

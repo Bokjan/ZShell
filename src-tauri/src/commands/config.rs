@@ -1,7 +1,9 @@
 //! Commands for what is saved: settings, quick commands, sessions, folders, proxies,
-//! known hosts, and importing and exporting sessions.
+//! known hosts, and importing and exporting sessions. The vault's own are in `vault.rs`.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -16,9 +18,10 @@ use crate::logging::Logs;
 use crate::persist::{SetAside, SetAsideFile};
 use crate::proxy::Proxy;
 use crate::quick::{QuickCommandStore, QuickCommands};
-use crate::secrets;
+use crate::secrets::proxy_account;
 use crate::settings::{Settings, SettingsStore};
 use crate::ssh::{known_hosts, Connections};
+use crate::vault::Vault;
 
 use super::blocking;
 
@@ -73,6 +76,7 @@ pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
 
 /// A saved session or proxy, with the error storing its password gave, if any. It is saved
 /// either way: the dialog then goes on editing it, so that saving again doesn't add another.
+/// (Only likely while the passwords are in the credential store, apart from the sessions.)
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Saved<T> {
@@ -88,12 +92,13 @@ pub async fn profile_save(app: AppHandle, profile: Profile, password: Option<Str
         // A session that is no longer SSH has no forwarding rules; running ones stop.
         let rules: Vec<String> = profile.forwards().iter().map(|rule| rule.id.clone()).collect();
         app.state::<Connections>().retain_forwards(&profile.id, &rules);
+        let vault = app.state::<Arc<Vault>>();
         let stored = match password.as_deref() {
             None => Ok(()),
-            Some("") => secrets::delete_password(&profile.id),
-            Some(password) => secrets::set_password(&profile.id, password),
+            Some("") => vault.set_password(&profile.id, None),
+            Some(password) => vault.set_password(&profile.id, Some(password)),
         };
-        Ok(Saved { saved: profile, password_error: stored.err().map(Error::from) })
+        Ok(Saved { saved: profile, password_error: stored.err() })
     })
     .await
 }
@@ -125,17 +130,19 @@ pub async fn proxy_save(app: AppHandle, proxy: Proxy, password: Option<String>) 
         let store = app.state::<ProfileStore>();
         let had_password = store.proxy(&proxy.id).is_ok_and(|previous| previous.uses_password());
         let proxy = store.save_proxy(proxy)?;
+        let vault = app.state::<Arc<Vault>>();
+        let account = proxy_account(&proxy.id);
         let stored = match password.as_deref() {
-            // The keychain is only touched when there can be a password to remove.
+            // The credential store is only touched when there can be a password to remove.
             _ if !proxy.uses_password() => match had_password {
-                true => secrets::delete_proxy_password(&proxy.id),
+                true => vault.set_password(&account, None),
                 false => Ok(()),
             },
             None => Ok(()),
-            Some("") => secrets::delete_proxy_password(&proxy.id),
-            Some(password) => secrets::set_proxy_password(&proxy.id, password),
+            Some("") => vault.set_password(&account, None),
+            Some(password) => vault.set_password(&account, Some(password)),
         };
-        Ok(Saved { saved: proxy, password_error: stored.err().map(Error::from) })
+        Ok(Saved { saved: proxy, password_error: stored.err() })
     })
     .await
 }
@@ -146,7 +153,7 @@ pub async fn proxy_save(app: AppHandle, proxy: Proxy, password: Option<String>) 
 pub async fn proxy_delete(app: AppHandle, id: String) -> Result<Option<Error>> {
     blocking(app, move |app| {
         app.state::<ProfileStore>().delete_proxy(&id)?;
-        Ok(secrets::delete_proxy_password(&id).err().map(Error::from))
+        Ok(app.state::<Arc<Vault>>().set_password(&proxy_account(&id), None).err())
     })
     .await
 }
@@ -225,26 +232,53 @@ pub async fn tree_move(app: AppHandle, item: Item, parent: Option<String>, befor
 }
 
 /// Copies a session, with its saved password, as `name` right after it. The copy is made
-/// even if the keychain refuses its password.
+/// even if the credential store refuses its password.
 #[tauri::command]
 pub async fn profile_duplicate(app: AppHandle, id: String, name: String) -> Result<Saved<Profile>> {
     blocking(app, move |app| {
         let copy = app.state::<ProfileStore>().duplicate(&id, &name)?;
-        let stored = match secrets::get_password(&id) {
-            Some(password) => secrets::set_password(&copy.id, &password),
-            None => Ok(()),
+        let vault = app.state::<Arc<Vault>>();
+        let stored = match vault.password(&id) {
+            Ok(Some(password)) => vault.set_password(&copy.id, Some(&password)),
+            Ok(None) => Ok(()),
+            Err(e) => Err(e),
         };
-        Ok(Saved { saved: copy, password_error: stored.err().map(Error::from) })
+        Ok(Saved { saved: copy, password_error: stored.err() })
     })
     .await
 }
 
-/// Writes all sessions, folders and proxies (without passwords) to `path`.
+/// Writes all sessions, folders and proxies to `path`, with their saved passwords encrypted
+/// with `passphrase` if given. Returns the names of the sessions and proxies whose passwords
+/// couldn't be read from the credential store, which are left out.
 #[tauri::command]
-pub async fn sessions_export(app: AppHandle, path: PathBuf) -> Result<()> {
+pub async fn sessions_export(app: AppHandle, path: PathBuf, passphrase: Option<String>) -> Result<Vec<String>> {
     blocking(app, move |app| {
         let (profiles, folders, proxies) = app.state::<ProfileStore>().snapshot();
-        backup::export(&path, folders, proxies, profiles)
+        let mut unreadable = Vec::new();
+        let passwords = match passphrase.as_deref() {
+            None | Some("") => None,
+            Some(passphrase) => {
+                let vault = app.state::<Arc<Vault>>();
+                let accounts = profiles
+                    .iter()
+                    .map(|p| (p.id.clone(), &p.name))
+                    .chain(proxies.iter().filter(|p| p.uses_password()).map(|p| (proxy_account(&p.id), &p.name)));
+                let mut passwords = BTreeMap::new();
+                for (account, name) in accounts {
+                    match vault.password(&account) {
+                        Ok(Some(password)) => {
+                            passwords.insert(account, password);
+                        }
+                        Ok(None) => {}
+                        Err(_) => unreadable.push(name.clone()),
+                    }
+                }
+                Some((passphrase, passwords))
+            }
+        };
+        backup::export(&path, folders, proxies, profiles, passwords)?;
+        Ok(unreadable)
     })
     .await
 }
@@ -255,10 +289,41 @@ pub async fn sessions_import_scan(app: AppHandle, path: PathBuf) -> Result<backu
 }
 
 /// Imports the sessions `ids` (ids in the file) and what they need (jump hosts, proxies,
-/// folders), if the file is still the one `sessions_import_scan` read (`digest`).
+/// folders), if the file is still the one `sessions_import_scan` read (`digest`), with the
+/// passwords in the file if its `passphrase` is given (`import.wrongPassphrase` for another
+/// one, before anything is imported). Returns the error storing the passwords gave, if any:
+/// the sessions are imported either way.
 #[tauri::command]
-pub async fn sessions_import(app: AppHandle, path: PathBuf, ids: Vec<String>, digest: String) -> Result<()> {
-    blocking(app, move |app| app.state::<ProfileStore>().add_all(|here| backup::plan(&path, &ids, &digest, here)).map(drop)).await
+pub async fn sessions_import(
+    app: AppHandle,
+    path: PathBuf,
+    ids: Vec<String>,
+    digest: String,
+    passphrase: Option<String>,
+) -> Result<Option<Error>> {
+    blocking(app, move |app| {
+        let passwords = match passphrase.as_deref() {
+            None | Some("") => BTreeMap::new(),
+            Some(passphrase) => backup::passwords(&path, &digest, passphrase)?,
+        };
+        let mut accounts = Vec::new();
+        app.state::<ProfileStore>().add_all(|here| {
+            let additions = backup::plan(&path, &ids, &digest, here)?;
+            accounts.clone_from(&additions.accounts);
+            Ok(additions)
+        })?;
+        let vault = app.state::<Arc<Vault>>();
+        let mut error = None;
+        for (from, to) in accounts {
+            if let Some(password) = passwords.get(&from) {
+                if let Err(e) = vault.set_password(&to, Some(password)) {
+                    error.get_or_insert(e);
+                }
+            }
+        }
+        Ok(error)
+    })
+    .await
 }
 
 /// Deletes a session with its password; returns the error removing the password gave, if
@@ -268,7 +333,7 @@ pub async fn sessions_import(app: AppHandle, path: PathBuf, ids: Vec<String>, di
 pub async fn profile_delete(app: AppHandle, id: String) -> Result<Option<Error>> {
     blocking(app, move |app| {
         app.state::<ProfileStore>().delete(&id)?;
-        Ok(secrets::delete_password(&id).err().map(Error::from))
+        Ok(app.state::<Arc<Vault>>().set_password(&id, None).err())
     })
     .await
 }

@@ -16,7 +16,8 @@
 | 应用框架 | Tauri 2 |
 | 后端 | Rust + tokio |
 | SSH / SFTP | `russh`（`ring` 加密后端，避免 Windows 上依赖 CMake/NASM）/ `russh-sftp` |
-| 凭据 | `keyring`（macOS Keychain / Windows Credential Manager） |
+| 凭据 | `keyring`（macOS Keychain / Windows Credential Manager / Linux Secret Service） |
+| 加密 | `ring`（AES-256-GCM、PBKDF2-HMAC-SHA256、随机数），`zeroize` |
 | ssh_config 导入 | `ssh2-config` |
 | 本地终端 | `portable-pty`（Windows 走 ConPTY） |
 | 串口 | `serialport` |
@@ -56,7 +57,8 @@
 | `logging.rs` | 会话日志：写入线程、纯文本 / 原始格式、日志索引 `logs.json` 与清理 |
 | `quick.rs` | 快速命令（`commands.json`） |
 | `window.rs` | 主窗口：按平台创建，macOS 的红绿灯位置，Windows 的窗口按钮与贴靠边框 |
-| `config.rs` / `settings.rs` / `secrets.rs` | 会话、文件夹与代理的配置（`profiles.json`、`folders.json`、`proxies.json`）、应用设置 `settings.json`、钥匙串 |
+| `config.rs` / `settings.rs` | 会话、文件夹与代理的配置、应用设置 `settings.json` |
+| `vault.rs` / `crypto.rs` / `secrets.rs` | 保险库：会话、文件夹、代理、快速命令与密码存在哪里、如何保护；加密与口令派生；系统凭据存储 |
 | `persist.rs` | 各 JSON 文件的读写（`JsonFile`）：读不出的文件改名保留或不再写入、原子写入、手写文件缺失或重复的 id |
 | `encoding.rs` | 会话的字符编码：支持的编码、流式解码与编码 |
 | `local_name.rs` | 对方（SFTP 服务器的列表、ZMODEM 发送方）给出的文件名转成本地文件名 |
@@ -69,6 +71,7 @@
 
 - **标签页与窗格**：状态在 `lib/tabs.ts` 的 store 里（类型在 `lib/panes.ts`，窗格树的运算在 `lib/layout.ts`）。打开、分屏、关闭、移动等每个修改都是一个 action，由纯函数 `reduceTabs` 处理；store 在修改后立即是新状态，不必等下一次渲染。`App.tsx` 订阅它并分发 action；关闭流程、撰写栏、快速命令与分屏各是 `app/` 下的一个 hook。`TabPage` 只在自己的标签、范围或闪烁变化时重新渲染（`memo`，回调经 `useStableHandlers` 保持不变），其他标签的提示符更新标题不会重绘它。分屏是否有空间按 `TabPage` 测得的窗格区尺寸计算（`canSplit`），聚焦终端经注册表里的视图句柄，不查询 DOM。
 - **窗格的会话**：`lib/sessionRegistry.ts` 为每个窗格建一个 `PaneSession`（`lib/paneSession.ts`），负责打开会话、手动与自动重连、复制窗格时共享连接、登录后命令和输出流控。它只经一个小接口读写终端，状态、后端会话 id、转发与日志直接写进 store。`TerminalView` 只管终端本身（输入、粘贴、菜单、查找、ZMODEM）。
+- **解锁**：`main.tsx` 里 `SettingsProvider` 之下是 `VaultGate`：保险库锁定时显示 `UnlockScreen`（自带可拖动的标题栏，Windows 上有窗口按钮），解锁后才挂载 `App`；标题栏的处理（`useTitleBar`）因此放在 `VaultGate` 里。首次询问保护方式的对话框也由它在 `App` 之上显示，设置 › 安全经 `useVault` 读取并更新状态。
 - **对话框**：经 `useDialog`（`lib/dialogs.ts`）登记到一个栈，用 `Modal` 渲染到 body 末尾。只有最上层的对话框响应 Esc 与点击背景，所以从设置里打开的代理对话框单独关闭。非活动标签或收起的侧栏里的对话框（如后台保存发现的编辑冲突）先隐藏，等它显示时再出现，期间也不挡快捷键。
 - **快捷键**：经 `useShortcuts`（`lib/shortcuts.ts`）注册，由一个捕获阶段的监听统一分发。注册时说明何时生效：作用于标签（有对话框时不处理）、总是生效（打开设置），或只在某个对话框位于最上层时生效（设置里的搜索）。输入法组字中的按键一律不处理。
 - **其他**：`components/` 下每个面板一个组件；`lib/api.ts` 封装全部后端命令，与后端交换的类型都来自生成的 `lib/bindings.ts`。纯逻辑模块有 vitest 单元测试（与模块放在一起的 `*.test.ts`）。
@@ -157,19 +160,29 @@
 
 ### 配置与设置
 
-- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下的 `profiles.json`、`folders.json`、`proxies.json`、`commands.json`（快速命令）、`logs.json`（会话日志索引）与 `settings.json`；密码与口令只存系统钥匙串，服务名为 bundle identifier `org.boyin.zshell`。保存会话或代理时先写配置再写钥匙串，钥匙串失败不算保存失败：命令返回已保存的项和密码错误（`Saved`），对话框改为编辑这一项并提示，再次保存是更新而不是新增。复制会话同样返回 `Saved`，侧栏显示副本并弹出提示说密码未复制；删除会话或代理时钥匙串失败也不算删除失败（报错会让对话框重试或把它存回来）：命令返回密码错误，提示密码还留在钥匙串里。
+- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`）下。会话、文件夹、代理、快速命令与保存的密码由保险库管理（见「加密保险库」），明文时是 `profiles.json`、`folders.json`、`proxies.json`、`commands.json` 与 `passwords.json`，加密时合为 `vault.json`；`logs.json`（会话日志索引）与 `settings.json` 总是明文。unix 上配置目录为 0700，文件创建时即为 0600。保存会话或代理时先写配置再写密码，密码失败不算保存失败：命令返回已保存的项和密码错误（`Saved`），对话框改为编辑这一项并提示，再次保存是更新而不是新增。复制会话同样返回 `Saved`，侧栏显示副本并弹出提示说密码未复制；删除会话或代理时密码删除失败也不算删除失败（报错会让对话框重试或把它存回来）：命令返回密码错误并提示。密码在凭据存储里时（未设置保护方式）这类失败才常见。
 - **单实例**：Windows 上再次打开应用会启动新进程，两个进程各自写回整份配置会互相覆盖，所以用 `tauri-plugin-single-instance` 把已有窗口提到前面后退出（插件第一个注册）。macOS 上系统本来就会激活已运行的应用，不加插件（插件在 macOS 上的锁是 `/tmp` 下与 HOME 无关的 socket，会妨碍用隔离 HOME 做端到端测试）。
 - **读不出的文件**：配置文件都经 `JsonFile`（`persist.rs`）读写，写入失败报 `config.writeFailed`，内容没变时不重写。启动时文件存在但内容读不出（崩溃截断、手工改错、更新版本写入的新枚举值）时，改名为 `<文件名>.bad-<时间>` 保留，该部分从空开始；文件本身读不出（被杀毒或同步软件占用，短暂重试后仍失败）或改名失败时，文件留在原处，本次运行不再写它，修改报 `config.unreadable`，重启后再读。前端启动后列出这些文件（`config_set_aside`，只返回一次）并可在访达 / 资源管理器中显示。不让应用因此无法启动，也不让之后的保存覆盖原文件。会话指向不存在的文件夹或代理时保留引用，文件恢复后即恢复：找不到文件夹的会话显示在顶层，找不到代理的会话连接时报错，而不是不经代理直连。写入时先写临时文件并 `fsync`，再改名替换，只写有变化的文件。一次修改要写几个文件时（删除文件夹会改 `folders.json` 和 `profiles.json`），先把所有临时文件都写好，再依次改名，写入失败（磁盘满）时所有文件都保持原样，与内存中的状态一致。导入在同一把写锁下读取现有会话并写入，两次导入同时进行也不会重复添加。修改只在写完文件后才换入新状态，查询（部分在主线程上）只取读锁，不等写盘。
 - **设置**：按功能分组（终端、标签页、侧栏、文件、ZMODEM、日志等），后端校验并夹取数值。前端 `SettingsProvider` 启动时读取，修改即时生效并保存，较旧的保存结果不会覆盖较新的修改。界面文字大小（`textSize`）通过 CSS 变量 `--text-scale` 缩放界面的字号、文字行的高度和对话框等的宽度，标题栏高度、图标和终端（有自己的字号）不变，以免红绿灯和 Windows 窗口按钮错位。
 - **主题**：`<html data-theme>` 选择 CSS 变量组，样式中不写死颜色；原生窗口用 `setTheme` 同步原生菜单与对话框（Windows 上还决定 WebView2 的 `prefers-color-scheme`），用 `setBackgroundColor` 同步调整大小时露出的背景；首帧背景由 `index.html` 的内联样式按系统外观给出，避免闪烁。终端配色、字体等通过 `term.options` 应用到所有已打开的终端。
 - **会话与文件夹**：会话的 `folder` 字段指向所在文件夹，文件夹存在 `folders.json`（`parent` 可嵌套）。文件中的顺序即显示顺序，每个文件夹里先列子文件夹、再列会话；拖拽只有一个后端操作 `tree_move`（放进某文件夹、排在某项之前或末尾）；拖到展开且有子项的文件夹下沿算放进去（指示线画在文件夹与第一个子项之间，「之后」却会排到整棵子树后面），最近连接区不接受放下。删除文件夹时其中的内容移到上一级，不删除会话。加载时修正指向不存在文件夹的引用和循环。文件夹折叠状态与最近连接是本机的界面状态，与侧栏宽度一样存在 localStorage。
-- **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`、`version: 2`，含文件夹、会话与全部代理，不含密码）。先读格式与版本，2.0 之前导出的 `version: 1` 文件不能导入（`import.unsupportedVersion`）。导入时同名、否则同地址（同协议的用户、主机、端口；串口为同一设备）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；导入的会话用到的代理也一并导入，同名且同类型、否则同地址（同类型的主机、端口、用户名；命令类型为同一命令）的代理视为已存在，名字已被别的代理占用时新导入的加 ` (2)` 等；导入列表里显示命令类型代理的命令原文与自动启动的转发规则，因为导入后连接时会执行、监听它们；随所选会话一并导入的跳板机（`brings`，含跳板机的跳板机）在列表中显示为选中，所选会话一行也列出它们代理的命令。扫描返回文件的 SHA-256，导入时文件已变化则拒绝（`import.fileChanged`），导入的内容总是列表中显示过的。同名只在协议相同时算已存在（不让同名的 Telnet 会话顶替 SSH 跳板机）。文件夹按名称路径合并；导入的会话与代理一律分配新 id。文件可能是手写的或别人的：缺失或重复的 id 按位置补上，导入的会话、代理与转发规则都经过与保存时相同的校验和整理（如空的绑定地址改为 localhost），加载配置时也去掉指向不存在、非 SSH 或自身的跳板机。
+- **导出 / 导入**：导出为 JSON（`format: "zshell-sessions"`、`version: 2`，含文件夹、会话与全部代理）。勾选"包含保存的密码"时，密码按帐户（文件中的会话 id、`proxy:<id>`）组成 JSON，以导出口令派生的密钥加密为可选的 `passwords` 一节（`{ kdf, cipher: "aes-256-gcm", nonce, data }`，AAD 为 `zshell-sessions-passwords-v1`），与本机的保护方式无关；读不出的密码（凭据存储拒绝）跳过并列出。2.7 之前的版本忽略这一节。导入时文件带密码则多一个口令输入框，留空则不导入密码，口令错误报 `import.wrongPassphrase` 且什么都不导入；新导入的会话与新建的代理按文件帐户 → 新帐户（`Additions::accounts`）存入当前的保护方式，已存在的会话、复用的已有代理不改动其密码。先读格式与版本，2.0 之前导出的 `version: 1` 文件不能导入（`import.unsupportedVersion`）。导入时同名、否则同地址（同协议的用户、主机、端口；串口为同一设备）的会话视为已存在，不再导入；被选中会话的跳板机一并导入，已存在的则引用现有会话；导入的会话用到的代理也一并导入，同名且同类型、否则同地址（同类型的主机、端口、用户名；命令类型为同一命令）的代理视为已存在，名字已被别的代理占用时新导入的加 ` (2)` 等；导入列表里显示命令类型代理的命令原文与自动启动的转发规则，因为导入后连接时会执行、监听它们；随所选会话一并导入的跳板机（`brings`，含跳板机的跳板机）在列表中显示为选中，所选会话一行也列出它们代理的命令。扫描返回文件的 SHA-256，导入时文件已变化则拒绝（`import.fileChanged`），导入的内容总是列表中显示过的。同名只在协议相同时算已存在（不让同名的 Telnet 会话顶替 SSH 跳板机）。文件夹按名称路径合并；导入的会话与代理一律分配新 id。文件可能是手写的或别人的：缺失或重复的 id 按位置补上，导入的会话、代理与转发规则都经过与保存时相同的校验和整理（如空的绑定地址改为 localhost），加载配置时也去掉指向不存在、非 SSH 或自身的跳板机。
 - **快速连接**：标签目标 `quick`（`session_open` 的 `quick`）不需要已保存的会话。SSH 用"自动"认证，未写用户名时用本机用户名（同 `ssh host`）；Telnet 写了用户名时在登录提示处填入。"另存为会话"把标签目标改为新会话（协议、地址预先填好）但不重连（窗格的终端与 `PaneSession` 随窗格存在，每次连接时才读取目标），下次连接起使用会话的设置。
 - **会话日志**：后端在 `SessionSink::write` 里把终端显示的全部内容（远端输出、回显、我们自己的提示，不含 ZMODEM 数据）交给日志的写入线程，不经过前端，所以不回显的密码不会进日志；日志目录慢时丢弃放不下的输出并记下缺了多少，不拖住会话。纯文本格式应用行编辑与进度条的结果（`logging.rs`），原始格式原样写入。新会话打开时由前端说明日志如何开始（`LogOpen`）：按会话的 `autoLog` 或设置自动记录、续写（重连时接着写同一个文件；只接受索引里有的文件）或不记录（该标签手动停止过）；日志在会话启动前就开始写，所以包含最早的连接提示。ZShell 写过的日志记在 `logs.json`，清理与删除只针对索引中的文件，日志目录中的其他文件不会被删除。默认目录为"文档/ZShellLogs"，第一次写日志（或在设置里点"显示"）时才创建。
 - **ssh_config 导入**：一次性复制，导入后与 config 文件无关联。与已有会话同名或同地址的主机不再导入；`ForwardAgent`、`SetEnv` 一并映射，不支持的选项（SendEnv 等）在列表中标出。`ProxyCommand` 导入为命令类型的代理，命令相同的共用一个（也复用已有的同命令代理）；`ssh [-q] [-l user] [-p port] -W %h:%p host` 这种 ProxyJump 的旧写法识别为跳板机。OpenSSH 中 ProxyJump 与 ProxyCommand 以先出现者为准，解析库不保留顺序，两者并存时取 ProxyJump，ProxyCommand 标为未导入。解析库不认识 `Match`，会把其下的选项算进前一个 `Host`，所以交给它之前先预处理：`Include` 由我们按 OpenSSH 的方式内联展开（相对路径基于 `~/.ssh`，支持通配但不匹配点开头的文件与文件夹；超过 16 层报 `import.includeTooDeep`，不交给解析库，它不限层数，自包含会栈溢出），`Match` 行换成不匹配任何别名的 `Host` 行，`Host` 块里 `Include` 的文件有自己的 `Host` 块时，展开后再写一次外层的 `Host` 行（在任何块之前则写 `Host *`），后面的选项仍归外层，同 OpenSSH；有 `Match` 时每个主机都标出未导入。`IdentityFile` 在家目录下的存为 `~/…`（解析库会展开 `~`），导出到别的机器或用户名下仍可用。ProxyJump 的条目是别名时用别名的地址与认证（`admin@bastion:2222` 只改用户名与端口）；跳板机自己的 ProxyJump 展开到列表前面，因为 ZShell 不展开跳板机的跳板机。
 - **`~` 与主目录**：私钥路径开头的 `~/`（或 `~\`）由后端展开为 `std::env::home_dir()`（Windows 上是 `USERPROFILE`，即 `C:\Users\<用户名>`），`~/.ssh` 下的 known_hosts、config 与默认私钥同理，与 OpenSSH 用同一个目录。用"选择…"挑的私钥在主目录下时存成 `~/…`（正斜杠，两个平台都认），导出的会话换一台电脑、换一个用户名也能用。界面上出现 `~` 的地方有问号图标，悬停显示实际路径；终端里的主机密钥告警直接写实际路径。
 - **单会话外观**：会话的 `appearance` 可覆盖配色、背景色、字体和字号，未设置的项跟随设置。只由前端解释（`sessionScheme`），编辑后已打开的标签立即应用；快速连接与本地终端总是跟随设置。设了背景色的会话，标签左侧有一条同色相、固定中等亮度的色条，深色、浅色背景都能看清。
 - **登录后命令**：由前端发送。每个新 shell（首次连接、重连、复制标签）收到 `Connected` 后开始：远端输出停顿 300 ms，且光标前的文字像提示符（非空、不以 `:` 或 `?` 结尾，这样 `sudo -i` 能先问完密码）时，才发下一条。用户一开始输入（按键、粘贴、发送栏）就放弃剩下的命令，免得命令接在用户打的字后面；终端对 shell 查询的自动应答（fish 启动时会查询终端）不算输入。
+
+### 加密保险库
+
+- **保护方式**（`vault.rs`）：未设置（2.7 之前的行为：明文文件，每个密码在凭据存储里单独一条，帐户为会话 id 或 `proxy:<id>`）、不加密（明文文件，密码在 `passwords.json`）、系统凭据存储（数据密钥在凭据存储里）、主密码（数据密钥以主密码派生的密钥包装，可选"在此设备上记住"即同时存进凭据存储）。当前方式由文件决定，不另存标记：有 `vault.json` 按其头部，否则有 `passwords.json` 为不加密，都没有为未设置。首次启动（含从旧版本升级）在未设置时询问一次，问过与否记在 `settings.json` 的 `security.prompted`。
+- **范围**：会话、文件夹、代理、快速命令与密码。`settings.json`（外观要在解锁界面之前生效）、`logs.json`、会话日志与 `~/.ssh/known_hosts` 不加密。
+- **格式**：`vault.json` 为 `{ header, nonce, data }`。`header` 明文：`format: "zshell-vault"`、`version: 1`、`protection`、`keyId`（数据密钥 SHA-256 的前 8 字节，区分"密钥不对"与"文件损坏"）、`remember`，主密码时还有 `kdf`（`pbkdf2-sha256`、迭代次数、盐）与 `wrappedKey`。`data` 是全部内容的 JSON 经 AES-256-GCM 加密，每次写入换新的随机 nonce，AAD 为 `header` 在文件中的原样字节（读取时用 `RawValue` 取出，不重新序列化），头部被改动即解密失败；`version` 更高时直接报"由更新的版本创建"。凭据存储里只有一条 `vault-key`（base64 的数据密钥）。PBKDF2-HMAC-SHA256 60 万次（`crypto.rs`，参数随文件保存，可以调高），导出口令同样。内存中的密钥用 `Zeroizing` 包装。
+- **存储与写入**：`Vault` 持有全部数据的一份副本；`ProfileStore`、`QuickCommandStore` 各有自己的副本供查询（不等写盘），修改经 `Vault::update` 写出：明文时只写变化的文件（先全部写好临时文件再改名），加密时整个 `vault.json` 重写，写好后读回解密校验再改名。`vault.json` 读不出或解不开时不按"读不出的文件"改名重建，保持原样。会话任务读密码经 `secrets::password` 访问全局安装的保险库，未设置时读凭据存储不持有保险库的锁。
+- **解锁**：启动时 `setup()` 只读 `vault.json` 的头部，不碰凭据存储（可能弹授权或解锁对话框，Linux 上 D-Bus 可能等到超时）。前端 `VaultGate` 在解锁前只显示解锁界面（`UnlockScreen`），不挂载 `App`，没有会话也没有标签；数据密钥在凭据存储里时立即 `vault_try_unlock`（读凭据存储时不持有锁，记住的主密码模式下可以同时输入主密码）。锁定原因：`saved`（尚未读凭据存储）、`password`、`keyUnavailable`（系统模式读不出密钥、条目不存在或 `keyId` 不符，只能重置）、`unreadable`（文件暂时读不出，可重试）、`damaged`、`newer`。解锁前涉及这些数据的写入返回 `vault.locked`；解锁或重置后各存储重新载入。重置删除 `vault.json` 与 `vault-key`，需输入确认词，之后回到未设置并再次询问。
+- **更改保护方式**（`Vault::set_protection`）：每次更改都换新的数据密钥（整个文件反正要重写），残留在凭据存储里的旧 `vault-key` 因 `keyId` 不符而无效。顺序是先写好新的（临时文件读回校验），需要凭据存储时先存 `vault-key` 再改名放置 `vault.json`（放置失败则恢复原来的 `vault-key`），最后删除旧的明文文件、旧的逐条密码与不再需要的 `vault-key`。从未设置迁出时逐条读出凭据存储里的密码，读不出的列出会话名（`vault.passwordsUnreadable`），用户可以选择不带它们继续（留在原处）。离开或修改主密码要输入当前主密码；明文文件中有本次运行读不出而未改名的（`config.unreadable`）时拒绝更改，以免删掉它。
+- **凭据存储**（`secrets.rs`）：`CredentialStore` 接口，系统实现为 keyring 4（macOS 钥匙串、Windows 凭据管理器、Linux Secret Service），单元测试用内存实现。可用性在打开保护方式对话框时探测：读一条不存在的条目得到"无此条目"即可用，macOS 与 Windows 视为总是可用；Linux 上没有 Secret Service 时"系统凭据存储"与"记住"不可选。后端把存储种类（`StoreKind`）随保险库状态返回，界面文案按种类选择，前端不猜平台。界面说明它防不了什么：macOS 上其他程序读取需要用户授权，Windows 与 Linux 上以该用户身份运行的程序都能直接读到。
 
 ## 交互约定
 

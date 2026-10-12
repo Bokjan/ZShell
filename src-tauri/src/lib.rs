@@ -5,6 +5,7 @@ mod backup;
 mod bindings;
 mod commands;
 mod config;
+mod crypto;
 mod encoding;
 mod error;
 mod forward;
@@ -23,8 +24,11 @@ mod settings;
 mod sftp;
 mod ssh;
 mod telnet;
+mod vault;
 mod window;
 mod zmodem;
+
+use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
 
@@ -37,6 +41,7 @@ use settings::SettingsStore;
 use sftp::edit::Edits;
 use sftp::transfer::Transfers;
 use ssh::Connections;
+use vault::Vault;
 
 const SETTINGS_MENU_ID: &str = "settings";
 const CLOSE_TAB_MENU_ID: &str = "close-tab";
@@ -167,9 +172,14 @@ pub fn run() {
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let set_aside = SetAside::default();
-            app.manage(ProfileStore::load(config_dir.join("profiles.json"), &set_aside));
+            // Only reads the header of an encrypted vault: unlocking it may wait for the
+            // credential store, and the frontend shows the unlock screen meanwhile.
+            let vault = Arc::new(Vault::open(config_dir.clone(), Arc::new(secrets::SystemStore), &set_aside));
+            vault::install(vault.clone());
+            app.manage(ProfileStore::load(vault.clone()));
+            app.manage(QuickCommandStore::load(vault.clone()));
+            app.manage(vault);
             app.manage(SettingsStore::load(config_dir.join("settings.json"), &set_aside));
-            app.manage(QuickCommandStore::load(config_dir.join("commands.json"), &set_aside));
             let documents = app.path().document_dir().unwrap_or_else(|_| config_dir.clone());
             app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs"), &set_aside));
             app.manage(set_aside);
@@ -233,6 +243,12 @@ pub fn run() {
             commands::config::sessions_export,
             commands::config::sessions_import_scan,
             commands::config::sessions_import,
+            commands::vault::vault_status,
+            commands::vault::vault_try_unlock,
+            commands::vault::vault_unlock,
+            commands::vault::vault_reset,
+            commands::vault::vault_set_protection,
+            commands::vault::credential_store_available,
             commands::local_username,
             commands::home_directory,
             commands::config::ssh_config_default_path,

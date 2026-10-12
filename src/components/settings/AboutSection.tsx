@@ -4,7 +4,6 @@ import { getName, getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { configDirectory } from "../../lib/api";
-import { isMac } from "../../lib/platform";
 import { ExternalLinkIcon } from "../icons";
 import { FolderField, Section, Setting } from "./common";
 
@@ -51,7 +50,7 @@ export function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
       </Setting>
       <Setting>
         <FolderField label={t("settings.dataFolder")} path={directory} />
-        <p className="hint">{t(isMac ? "settings.dataFolderHint" : "settings.dataFolderHintWindows")}</p>
+        <p className="hint">{t("settings.dataFolderHint")}</p>
       </Setting>
     </Section>
   );

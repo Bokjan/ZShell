@@ -13,7 +13,7 @@ interface Props {
   hint?: ReactNode;
 }
 
-/** A password to store in the system keychain, with the choice to delete the stored one. */
+/** A password to save, with the choice to delete the saved one. */
 export function PasswordField({ value, onChange, clear, onClearChange, canClear, placeholder, hint }: Props) {
   const { t } = useTranslation();
   return (

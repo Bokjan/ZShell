@@ -50,7 +50,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
   const [command, setCommand] = useState(proxy?.command ?? "");
   const deleteButton = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
-  // Why the deleted proxy's password is still in the keychain.
+  // Why the deleted proxy's saved password couldn't be deleted.
   const [passwordLeft, setPasswordLeft] = useState<string | null>(null);
   // Saving and deleting, one at a time.
   const saving = useSubmitting();

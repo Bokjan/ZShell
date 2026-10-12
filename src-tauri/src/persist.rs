@@ -35,6 +35,21 @@ const READ_ATTEMPTS: u32 = 3;
 const READ_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
 impl JsonFile {
+    /// The file at `path`, not read: one that is about to be written (a store moving from
+    /// the vault back to plain files).
+    pub fn at(path: PathBuf) -> Self {
+        Self { path, found: Found::Read }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Whether the file couldn't be read at startup and is left alone (see [`Found::LeftAlone`]).
+    pub fn left_alone(&self) -> bool {
+        self.found == Found::LeftAlone
+    }
+
     /// Reads the file at `path`, or gives the default if it doesn't exist yet.
     ///
     /// A file that can be read but not as `T` (cut short by a crash, edited by hand, or
@@ -141,19 +156,59 @@ pub struct Staged {
 }
 
 fn stage_json(path: &Path, value: &impl Serialize) -> std::io::Result<Staged> {
+    stage_bytes(path, &serde_json::to_vec_pretty(value)?)
+}
+
+/// Writes `bytes` next to `path`, to be put in place by [`Staged::commit`].
+///
+/// On unix the file is created readable by the user only, rather than made so after it is
+/// written, which would leave it readable for a moment: the data files hold host names and
+/// commands, and on Linux home folders are often readable by everyone.
+pub fn stage_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<Staged> {
     use std::io::Write;
 
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let staged = Staged { tmp: path.with_extension("json.tmp"), path: path.to_owned(), committed: false };
-    let mut file = fs::File::create(&staged.tmp)?;
-    file.write_all(&serde_json::to_vec_pretty(value)?)?;
+    let mut name = path.file_name().unwrap_or_default().to_owned();
+    name.push(".tmp");
+    let staged = Staged { tmp: path.with_file_name(name), path: path.to_owned(), committed: false };
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(&staged.tmp)?;
+    // A temporary file left by an older version keeps its permissions when opened again.
+    #[cfg(unix)]
+    file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    file.write_all(bytes)?;
     file.sync_all()?;
     Ok(staged)
 }
 
+/// Makes the folder the data files are in accessible to the user only (unix), as `ssh` wants
+/// `~/.ssh`. Created if needed.
+pub fn secure_dir(dir: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o700))?;
+    Ok(())
+}
+
+/// Removes the file at `path`; one that isn't there is fine.
+pub fn remove_file(path: &Path) -> std::io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 impl Staged {
+    /// The temporary file, to read back what was written before putting it in place.
+    pub fn written(&self) -> &Path {
+        &self.tmp
+    }
+
     /// Puts the file in place; `config.writeFailed` if it can't be.
     pub fn commit(self) -> Result<()> {
         let path = self.path.clone();

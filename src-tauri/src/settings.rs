@@ -1,4 +1,4 @@
-//! App-wide preferences (appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs), persisted as `settings.json` next to
+//! App-wide preferences (appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs, security), persisted as `settings.json` next to
 //! `profiles.json`. Only the frontend interprets them; the backend stores and validates.
 
 use std::path::PathBuf;
@@ -22,6 +22,7 @@ pub struct Settings {
     pub files: FileSettings,
     pub zmodem: ZmodemSettings,
     pub logs: LogSettings,
+    pub security: SecuritySettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, TS)]
@@ -49,6 +50,14 @@ pub enum TextSize {
 #[serde(rename_all = "camelCase", default)]
 pub struct StatusBarSettings {
     pub show: bool,
+}
+
+/// The protection of the sessions and passwords is the vault's (`vault.rs`); here only
+/// whether the user was asked to choose one, once.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SecuritySettings {
+    pub prompted: bool,
 }
 
 impl Default for StatusBarSettings {
@@ -232,6 +241,7 @@ impl Default for Settings {
             files: FileSettings::default(),
             zmodem: ZmodemSettings::default(),
             logs: LogSettings::default(),
+            security: SecuritySettings::default(),
         }
     }
 }

@@ -166,7 +166,9 @@
       "invalidSession": "Session {name} in the file is not valid",
       "invalidProxy": "Proxy {name} in the file is not valid",
       "fileChanged": "{path} changed after it was opened, so what it would import may not be what was shown. Open it again to review it.",
-      "includeTooDeep": "The Include lines in {path} nest too deeply; a file may be including itself"
+      "includeTooDeep": "The Include lines in {path} nest too deeply; a file may be including itself",
+      "wrongPassphrase": "The passphrase is not the one the file was exported with",
+      "unsupportedPasswords": "The passwords in {path} are encrypted in a way this version of ZShell cannot read"
     },
     "zmodem": {
       "cancelled": "Transfer cancelled",
@@ -207,6 +209,19 @@
       "unsafeName": "\"{name}\" contains characters that cannot be passed to a proxy command",
       "hostTooLong": "The host name is too long for a SOCKS proxy",
       "commandFailed": "Cannot run the proxy command {command}"
+    },
+    "vault": {
+      "locked": "The sessions are locked. Unlock them first.",
+      "readFailed": "Cannot read the encrypted sessions file",
+      "verifyFailed": "The encrypted sessions written to {path} could not be read back, so nothing was changed",
+      "deleteFailed": "Cannot delete {path}",
+      "notLocked": "The sessions are not locked",
+      "keyMissing": "The key is not in the credential store",
+      "keyMismatch": "The key in the credential store belongs to another encrypted sessions file",
+      "wrongPassword": "Incorrect master password",
+      "passwordRequired": "Enter the current master password",
+      "emptyPassword": "The master password can't be empty",
+      "passwordsUnreadable": "The passwords of {names} could not be read from the credential store"
     }
   },
   "zmodem": {

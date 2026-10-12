@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { VaultGate } from "./components/VaultGate";
 import { setupI18n } from "./i18n";
 import { applyTheme, SettingsProvider } from "./lib/settings";
 import { suppressWebViewMenu } from "./lib/window";
@@ -15,7 +16,9 @@ void setupI18n().then(() => {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <SettingsProvider>
-        <App />
+        <VaultGate>
+          <App />
+        </VaultGate>
       </SettingsProvider>
     </React.StrictMode>,
   );

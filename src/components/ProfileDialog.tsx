@@ -71,7 +71,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const [proxies, setProxies] = useState<Proxy[] | null>(null);
   const [creatingProxy, setCreatingProxy] = useState(false);
   const [discarding, setDiscarding] = useState(false);
-  // Why the deleted session's password is still in the keychain.
+  // Why the deleted session's saved password couldn't be deleted.
   const [passwordLeft, setPasswordLeft] = useState<string | null>(null);
   const home = useHomeDirectory();
   // The serial ports found here, listed once the serial protocol is chosen.

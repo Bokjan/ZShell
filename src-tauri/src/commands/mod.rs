@@ -9,6 +9,7 @@ pub mod forward;
 pub mod logs;
 pub mod session;
 pub mod sftp;
+pub mod vault;
 pub mod zmodem;
 
 use std::path::PathBuf;
