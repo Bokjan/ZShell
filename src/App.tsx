@@ -91,7 +91,10 @@ function App() {
   );
   const [importing, setImporting] = useState(false);
   // Open, scrolled to a section if one is named.
-  const [settingsOpen, setSettingsOpen] = useState<boolean | SectionId>(false);
+  // A new object each time they are asked for, so that a section asked for while they are
+  // open is shown too.
+  const [settingsOpen, setSettingsOpen] = useState<false | { section?: SectionId }>(false);
+  const openSettings = useCallback((section?: SectionId) => setSettingsOpen({ section }), []);
   // Title for local terminal tabs, e.g. "zsh".
   const [shellName, setShellName] = useState<string | null>(null);
   // False on Windows in S mode, which blocks local shells.
@@ -244,17 +247,17 @@ function App() {
 
   // The "Lock" action: the app lock's settings when it is off, to turn it on.
   const { lock } = useAppLock();
-  const lockApp = useCallback(() => !lock() && setSettingsOpen("security"), [lock]);
+  const lockApp = useCallback(() => !lock() && openSettings("security"), [lock, openSettings]);
 
   // Settings open over a dialog too, and the app locks over one.
   useShortcuts(
     (e) => {
       if (matches(e, "lock")) lockApp();
-      else if (matches(e, "settings")) setSettingsOpen(true);
-      else if (matches(e, "about")) setSettingsOpen("about");
+      else if (matches(e, "settings")) openSettings();
+      else if (matches(e, "about")) openSettings("about");
       else if (matches(e, "checkForUpdates")) {
         // The result shows there.
-        setSettingsOpen("about");
+        openSettings("about");
         checkForUpdates();
       }
       else if (matches(e, "releaseNotes")) void openUrl(RELEASES_URL).catch(console.error);
@@ -503,7 +506,7 @@ function App() {
         onNew={(folder) => setEditing({ profile: null, defaults: { folder } })}
         onChanged={reloadProfiles}
         onImportSshConfig={() => setImporting(true)}
-        onSettings={() => setSettingsOpen(true)}
+        onSettings={() => openSettings()}
         appMenu={appMenu.button}
       />
       <main>
@@ -641,7 +644,7 @@ function App() {
       {settingsOpen && (
         <SettingsDialog
           localAllowed={localAllowed}
-          section={typeof settingsOpen === "string" ? settingsOpen : undefined}
+          request={settingsOpen}
           onClose={closeSettings}
         />
       )}

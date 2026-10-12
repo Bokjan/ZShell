@@ -50,8 +50,8 @@ import { SecuritySection } from "./settings/SecuritySection";
 interface Props {
   /** Whether the system allows local terminals (not Windows in S mode). */
   localAllowed: boolean;
-  /** The section to show first. */
-  section?: SectionId;
+  /** What opened the settings, with the section to show; a new one shows its section too. */
+  request: { section?: SectionId };
   onClose(): void;
 }
 
@@ -62,7 +62,7 @@ const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 
 
-export function SettingsDialog({ localAllowed, section, onClose }: Props) {
+export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { t } = useTranslation();
   const { settings, theme, update } = useSettings();
   const terminal = settings.terminal;
@@ -148,16 +148,19 @@ export function SettingsDialog({ localAllowed, section, onClose }: Props) {
     updateActive();
   }, [query, applySearch, updateActive]);
 
-  // Opened at a section: there at once, and back there when a search is cleared.
+  // Opened at a section, or asked for one while open: there at once, and back there when a
+  // search is cleared.
   useLayoutEffect(() => {
+    const { section } = request;
     const content = contentRef.current!;
     const target = section && content.querySelector<HTMLElement>(`section[data-section="${section}"]`);
-    if (!target) return;
+    // A search may hide it, and moves the content itself.
+    if (!target || queryRef.current) return;
     content.scrollTop = target.offsetTop - parseFloat(getComputedStyle(content).paddingTop);
     scrollBeforeSearch.current = content.scrollTop;
     updateActive();
-    // Only as it opens.
-  }, []);
+    // Only for a new request.
+  }, [request]);
 
   const search = (next: string) => {
     if (!query) scrollBeforeSearch.current = contentRef.current!.scrollTop;
