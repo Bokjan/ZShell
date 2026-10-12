@@ -31,6 +31,9 @@ struct Incoming {
     file: BufWriter<tokio::fs::File>,
     offset: u64,
     modified: Option<SystemTime>,
+    /// We asked the sender to go back to `offset` (other than to start the file), and it
+    /// hasn't yet: what arrives meanwhile is skipped.
+    asked: bool,
 }
 
 /// Receives files into `dir` until the sender ends the session. A file left incomplete (by
@@ -55,13 +58,23 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
     let (mut errors, mut bad_at) = (0, 0);
     let mut data = Vec::with_capacity(8192);
     loop {
-        let header = match link.header(link.timeout).await {
-            Ok(header) => header,
+        let header = match link.header_or_damaged(link.timeout).await {
+            Ok(Some(header)) => header,
+            // Maybe the ZDATA header the data we are waiting for starts with: its subpackets
+            // would be skipped until the sender's ZEOF, which is then stale. Asked for again
+            // at once, as lrzsz does, unless we already did: what was in flight is skipped
+            // meanwhile, and may contain what looks like a damaged header.
+            Ok(None) => {
+                if let Some(incoming) = current.as_mut().filter(|incoming| !incoming.asked) {
+                    ask(link, incoming).await?;
+                }
+                continue;
+            }
             Err(e) if is_timeout(&e) && retries < MAX_RETRIES => {
                 retries += 1;
                 // Ask again for what we are missing.
                 match current {
-                    Some(incoming) => link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?,
+                    Some(incoming) => ask(link, incoming).await?,
                     None => link.send_header(rinit, Encoding::Hex).await?,
                 }
                 continue;
@@ -83,9 +96,9 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     continue;
                 }
                 let info = FileInfo::parse(&data, link.charset);
-                if let Some(incoming) = current.as_ref().filter(|incoming| incoming.name == info.name) {
+                if let Some(incoming) = current.as_mut().filter(|incoming| incoming.name == info.name) {
                     // Our ZRPOS was lost and the sender is offering the same file again.
-                    link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?;
+                    ask(link, incoming).await?;
                     continue;
                 }
                 // Another file before this one's ZEOF: what we have of it is incomplete.
@@ -116,6 +129,7 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     file: BufWriter::with_capacity(WRITE_BUFFER, file),
                     offset: 0,
                     modified: info.modified,
+                    asked: false,
                 });
                 link.send_header(Header::with_pos(Kind::Rpos, 0), Encoding::Hex).await?;
             }
@@ -125,9 +139,10 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     continue;
                 };
                 if u64::from(header.pos()) != incoming.offset & 0xffff_ffff {
-                    link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?;
+                    ask(link, incoming).await?;
                     continue;
                 }
+                incoming.asked = false;
                 loop {
                     let end = match link.subpacket(&mut data).await? {
                         Ok(end) => end,
@@ -143,7 +158,7 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                                 });
                             }
                             // Resume from what we have; the junk until the next header is skipped.
-                            link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await?;
+                            ask(link, incoming).await?;
                             break;
                         }
                     };
@@ -167,13 +182,17 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                 }
             }
             Kind::Eof => {
-                let Some(incoming) = current.as_ref() else {
+                let Some(incoming) = current.as_mut() else {
                     link.send_header(rinit, Encoding::Hex).await?;
                     continue;
                 };
-                // An EOF for a position we haven't reached yet is stale; the data will be
-                // resent from our ZRPOS.
+                // An EOF for a position we haven't reached yet is stale: the data will be
+                // resent from our ZRPOS. Without one (the data's header was lost unnoticed),
+                // ask now rather than when nothing more arrives.
                 if u64::from(header.pos()) != incoming.offset & 0xffff_ffff {
+                    if !incoming.asked {
+                        ask(link, incoming).await?;
+                    }
                     continue;
                 }
                 // Still current until finished: a file whose last write fails (a full disk)
@@ -193,6 +212,12 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
             _ => {}
         }
     }
+}
+
+/// Asks the sender to go back to what we have (`ZRPOS`).
+async fn ask(link: &mut Link, incoming: &mut Incoming) -> Result<()> {
+    incoming.asked = true;
+    link.send_header(Header::with_pos(Kind::Rpos, incoming.offset), Encoding::Hex).await
 }
 
 async fn finish(incoming: &mut Incoming) -> Result<()> {

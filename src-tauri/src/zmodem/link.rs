@@ -174,8 +174,18 @@ impl Link {
         }
     }
 
-    /// Reads the next header, skipping anything before it.
+    /// Reads the next header, skipping anything before it, and damaged ones.
     pub async fn header(&mut self, timeout: Duration) -> Result<Header> {
+        loop {
+            if let Some(header) = self.header_or_damaged(timeout).await? {
+                return Ok(header);
+            }
+        }
+    }
+
+    /// Reads the next header, skipping anything before it; `None` for one that arrived
+    /// damaged (a bad CRC). Data skipped while looking for a header can look like one too.
+    pub async fn header_or_damaged(&mut self, timeout: Duration) -> Result<Option<Header>> {
         let mut skipped = 0;
         loop {
             if skipped > GARBAGE_LIMIT {
@@ -199,10 +209,10 @@ impl Link {
                 Encoding::Hex => self.hex_header(timeout).await?,
                 _ => self.bin_header(encoding, timeout).await?,
             };
-            if let Some(header) = header {
+            if header.is_some() {
                 self.last_encoding = encoding;
-                return Ok(header);
             }
+            return Ok(header);
         }
     }
 

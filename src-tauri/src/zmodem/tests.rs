@@ -271,6 +271,41 @@ async fn receiving_drops_control_characters_the_sender_did_not_escape() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_damaged_data_header_is_asked_for_again_at_once() {
+    let src = temp_dir("header-src");
+    let dst = temp_dir("header-dst");
+    let files = make_files(&src);
+    let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
+    let (mut receiver, (to_receiver, from_receiver, _cancel_r)) = link();
+    // The first ZDATA header (a binary one with CRC-32, at position 0, everything escaped)
+    // arrives with its position changed, so its CRC fails.
+    const ZDATA_AT_0: &[u8] = b"*\x18C\x18J\x18@";
+    let mut damaged = false;
+    pipe_through(from_sender, to_receiver, move |mut chunk| {
+        if !damaged {
+            if let Some(at) = chunk.windows(ZDATA_AT_0.len()).position(|w| w == ZDATA_AT_0) {
+                chunk[at + ZDATA_AT_0.len() - 1] = b'A';
+                damaged = true;
+            }
+        }
+        async move { chunk }
+    });
+    pipe(from_receiver, to_sender);
+
+    let dst2 = dst.clone();
+    let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
+    let rinit = sender.header(TIMEOUT).await.unwrap();
+    let started = std::time::Instant::now();
+    send::send(&mut sender, rinit, &files, &mut Log::default()).await.unwrap();
+    receiving.await.unwrap().unwrap();
+    // Not after waiting for the data until the receiver's timeout.
+    assert!(started.elapsed() < TIMEOUT / 2, "{:?}", started.elapsed());
+    assert_same_files(&files, &dst);
+    std::fs::remove_dir_all(&src).unwrap();
+    std::fs::remove_dir_all(&dst).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn receiving_gives_up_on_data_damaged_every_time() {
     const MARKER: &[u8] = b"DAMAGED-HERE-EVERY-TIME";
     let src = temp_dir("damage-src");
