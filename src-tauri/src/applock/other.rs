@@ -1,5 +1,5 @@
 //! Platforms without an app lock yet. On Linux it is planned with polkit, Mutter's idle monitor
-//! and logind (see M30 in `docs/ROADMAP.md`).
+//! and logind (see M31 in `docs/ROADMAP.md`).
 
 use tauri::WebviewWindow;
 

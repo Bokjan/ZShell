@@ -117,7 +117,7 @@ pub fn hand_over(pid: Option<i32>) {
     });
 }
 
-/// Linux has no way to ask another process to come forward yet (see M30 in ROADMAP.md).
+/// Linux has no way to ask another process to come forward yet (see M31 in ROADMAP.md).
 #[cfg(not(target_os = "macos"))]
 pub fn hand_over(_pid: Option<i32>) {
     std::process::exit(0);
