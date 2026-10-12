@@ -2,6 +2,13 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.10.1] - 2026-10-12
+
+### Bug Fixes
+
+- With Settings open in two windows, a value typed but not yet saved in one is no longer replaced when the other window changes it; saving it then wins.
+- The number of host keys, the known hosts list and the size of the session logs in Settings are read again when the window comes back to the front, so they include changes made in another window or outside ZShell.
+
 ## [2.10.0] - 2026-10-12
 
 ### Features
