@@ -8,10 +8,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use russh::client::{ChannelOpenHandle, Msg};
 use russh::{Channel, ChannelOpenFailure};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
-use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker, CONNECT_TIMEOUT};
+use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
 use crate::error::Error;
 use crate::ssh::SshHandle;
 
@@ -142,14 +141,10 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
 }
 
 /// Connects to the target first and only then accepts the channel, so an unreachable
-/// target is reported to the server as a failed open, as OpenSSH does.
+/// target is reported to the server as a failed open, as OpenSSH does. Each of the target's
+/// addresses is tried in turn, as for a session's host.
 async fn connect(incoming: Incoming, host: String, port: u16) -> Result<()> {
-    let target = host_port(&host, port);
-    let connected = match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host.as_str(), port))).await {
-        Ok(result) => result.context(Error::new("forward.connectFailed").param("target", &target)),
-        Err(_) => Err(Error::new("forward.connectTimeout").param("target", &target).into()),
-    };
-    match connected {
+    match crate::net::tcp(&host, port).await {
         Ok(stream) => {
             incoming.reply.accept().await;
             bridge(stream, incoming.channel).await;
