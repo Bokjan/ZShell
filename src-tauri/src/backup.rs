@@ -136,6 +136,9 @@ pub struct Candidate {
     /// Forwarding rules that start when it connects, as they will be saved: importing them
     /// means listening on those ports.
     pub auto_forwards: Vec<ForwardRule>,
+    /// Commands typed into its shell once it connects: importing them means running them on
+    /// the server, which the file may name as one of the user's own.
+    pub login_commands: Vec<String>,
     /// The other sessions in the file (ids) that importing it imports too: the jump hosts it
     /// goes through, and theirs, that don't exist here. Their proxies and forwarding rules
     /// come with them; with jump hosts, the first one's proxy is the one used.
@@ -201,6 +204,7 @@ pub fn scan(path: &Path, existing: &[Profile]) -> Result<Scan> {
                 proxy_command: proxy.filter(|proxy| proxy.kind == ProxyKind::Command).map(|proxy| proxy.command.clone()),
                 existing: duplicate_of(p, existing).map(|e| e.name.clone()),
                 auto_forwards: p.forwards().iter().filter(|f| f.auto_start).filter_map(|f| f.clone().normalize().ok()).collect(),
+                login_commands: p.login_commands.iter().filter(|c| !c.trim().is_empty()).cloned().collect(),
                 brings: to_import(&file, [p.id.clone()], existing).0.into_iter().filter(|id| *id != p.id).collect(),
             }
         })
@@ -498,6 +502,7 @@ mod tests {
                 let mut db = profile("db", "db", "db.internal", None, &["router"]);
                 let Connection::Ssh(ssh) = &mut db.connection else { unreachable!() };
                 ssh.forwards = vec![forward];
+                db.login_commands = vec!["cd /srv".into(), "  ".into()];
                 db
             },
             profile("", "a", "a.internal", None, &[]),
@@ -509,6 +514,7 @@ mod tests {
         let Scan { candidates, digest, .. } = scan(&path, std::slice::from_ref(&telnet)).unwrap();
         assert_eq!(candidates[0].existing, None);
         assert_eq!(candidates[1].auto_forwards[0].bind_host, "localhost");
+        assert_eq!(candidates[1].login_commands, ["cd /srv"]);
         assert_ne!(candidates[2].id, candidates[3].id);
 
         let ids: Vec<String> = candidates.iter().map(|c| c.id.clone()).collect();

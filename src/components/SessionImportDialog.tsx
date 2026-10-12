@@ -128,6 +128,15 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
                       {t("sessionImport.autoForward", { rule: forwardMapping(rule), kind: t(`forwards.kind.${rule.kind}`) })}
                     </span>
                   ))}
+                  {c.connection.protocol === "ssh" && c.connection.forwardAgent && (
+                    <span className="warning">{t("sessionImport.forwardAgent")}</span>
+                  )}
+                  {c.loginCommands.length > 0 && (
+                    <span className="warning">{t("sessionImport.loginCommands", { commands: c.loginCommands.join("; ") })}</span>
+                  )}
+                  {c.connection.protocol === "ssh" && c.connection.env.length > 0 && (
+                    <span>{t("sessionImport.env", { names: c.connection.env.map((v) => v.name).join(", ") })}</span>
+                  )}
                 </>
               )}
             />

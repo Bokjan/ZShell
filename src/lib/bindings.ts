@@ -663,6 +663,11 @@ existing: string | null,
  */
 autoForwards: Array<ForwardRule>, 
 /**
+ * Commands typed into its shell once it connects: importing them means running them on
+ * the server, which the file may name as one of the user's own.
+ */
+loginCommands: Array<string>, 
+/**
  * The other sessions in the file (ids) that importing it imports too: the jump hosts it
  * goes through, and theirs, that don't exist here. Their proxies and forwarding rules
  * come with them; with jump hosts, the first one's proxy is the one used.
