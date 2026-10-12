@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import { errorMessage, sshConfig, type ImportCandidate } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
+import { directory } from "../lib/directory";
 import { isComposing } from "../lib/platform";
 import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";
@@ -11,11 +12,10 @@ import { Modal } from "./Modal";
 
 interface Props {
   onClose(): void;
-  onImported(): void;
 }
 
 /** Imports hosts from an OpenSSH client config file as session profiles. */
-export function ImportDialog({ onClose, onImported }: Props) {
+export function ImportDialog({ onClose }: Props) {
   const { t } = useTranslation();
   const [path, setPath] = useState("");
   const [candidates, setCandidates] = useState<ImportCandidate[] | null>(null);
@@ -72,7 +72,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
     setBusy(true);
     try {
       await sshConfig.import(scanned, [...selected]);
-      onImported();
+      void directory.reload();
       onClose();
     } catch (err) {
       setError(errorMessage(err));

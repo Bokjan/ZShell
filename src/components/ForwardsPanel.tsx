@@ -11,6 +11,7 @@ import {
   type Profile,
   type SessionId,
 } from "../lib/api";
+import { directory } from "../lib/directory";
 import { forwardMapping as mapping } from "../lib/format";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorBanner } from "./ErrorMessage";
@@ -26,12 +27,14 @@ interface Props {
   quick: boolean;
   /** Live rule states on this tab's connection, by rule id. */
   states: Record<string, ForwardState>;
-  onProfileChanged(profile: Profile): void;
 }
 
 const isRunning = (state: ForwardState | undefined) => state?.type === "starting" || state?.type === "active";
 
-export function ForwardsPanel({ sessionId, connected, profile, quick, states, onProfileChanged }: Props) {
+/** Puts the session with its new rules in this window's directory; the other windows read theirs again. */
+const profileSaved = (profile: Profile) => directory.dispatch({ type: "profileSaved", profile });
+
+export function ForwardsPanel({ sessionId, connected, profile, quick, states }: Props) {
   const { t } = useTranslation();
   // undefined: dialog closed; null: adding a new rule.
   const [editing, setEditing] = useState<ForwardRule | null | undefined>(undefined);
@@ -50,7 +53,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
     const isNew = !rule.id;
     const list = isNew ? [...rules, rule] : rules.map((r) => (r.id === rule.id ? rule : r));
     const updated = await setProfileForwards(profile.id, list);
-    onProfileChanged(updated);
+    profileSaved(updated);
     // New rules start right away; edited ones restart with their new definition if running.
     const updatedRules = profileForwards(updated);
     const saved = isNew ? updatedRules[updatedRules.length - 1] : updatedRules.find((r) => r.id === rule.id);
@@ -63,7 +66,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
     try {
       // Also clears a failed state, so the tab's badge forgets the rule.
       if (live && states[rule.id]) await forwards.stop(sessionId, rule.id);
-      onProfileChanged(
+      profileSaved(
         await setProfileForwards(
           profile.id,
           rules.filter((r) => r.id !== rule.id),

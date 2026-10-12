@@ -120,7 +120,8 @@ export function parseQuickConnect(text: string): QuickTarget | null {
   return looksLikeHost ? { protocol, username, host, port } : null;
 }
 
-const RECENT_KEY = "zshell.recentSessions";
+/** Where the recent sessions are kept; the windows hear each other change it (`storage` events). */
+export const RECENT_KEY = "zshell.recentSessions";
 const COLLAPSED_KEY = "zshell.collapsedFolders";
 export const RECENT_LIMIT = 5;
 
@@ -134,9 +135,15 @@ const writeList = (key: string, list: string[]) => storeJson(key, list);
 
 export const storedRecent = () => readList(RECENT_KEY);
 
-/** Puts `id` first in the recent sessions; returns the new list. */
+/**
+ * `list` with `id` first, once. Twice as many as shown are kept, so that deleting a few
+ * sessions still leaves the list full.
+ */
+export const withRecent = (list: string[], id: string) => [id, ...list.filter((r) => r !== id)].slice(0, RECENT_LIMIT * 2);
+
+/** Puts `id` first in the recent sessions, as stored now (another window may have added one); returns the new list. */
 export function addRecent(id: string): string[] {
-  const list = [id, ...readList(RECENT_KEY).filter((r) => r !== id)].slice(0, RECENT_LIMIT * 2);
+  const list = withRecent(readList(RECENT_KEY), id);
   writeList(RECENT_KEY, list);
   return list;
 }

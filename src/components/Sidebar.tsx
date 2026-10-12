@@ -6,13 +6,13 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { AppMenuButton } from "../app/useAppMenu";
 import { announce } from "../lib/announce";
 import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../lib/api";
+import { directory, recentProfiles as recentOf, useDirectory } from "../lib/directory";
 import { dragHorizontally, usePressDrag } from "../lib/drag";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { matches, shortcutLabel } from "../lib/keymap";
 import { isComposing, isMac } from "../lib/platform";
 import {
-  RECENT_LIMIT,
   address,
   folderPath,
   isWithin,
@@ -25,6 +25,7 @@ import {
   type QuickTarget,
   type Row,
 } from "../lib/sessions";
+import { useSettings } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
 import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../lib/window";
@@ -45,10 +46,6 @@ import { SessionImportDialog } from "./SessionImportDialog";
 export type OpenMode = "connect" | "newTab" | "splitRight" | "splitDown" | "newWindow";
 
 interface Props {
-  profiles: Profile[];
-  folders: Folder[];
-  /** Recently opened session ids, most recent first; empty hides the section. */
-  recent: string[];
   /** Changes when the search shortcut is pressed, to focus the search box. */
   searchFocusKey: number;
   onOpen(profile: Profile, mode: OpenMode): void;
@@ -57,8 +54,6 @@ interface Props {
   onEdit(profile: Profile): void;
   /** Creates a session in `folder` (undefined: top level). */
   onNew(folder: string | undefined): void;
-  /** Sessions or folders changed here; reload them. */
-  onChanged(): void;
   onImportSshConfig(): void;
   onSettings(): void;
   /**
@@ -96,8 +91,11 @@ const storeWidth = (width: number) => storeString(WIDTH_KEY, String(width));
 type Drop = { key: string; position: "before" | "after" | "into" } | { key: null };
 
 export function Sidebar(props: Props) {
-  const { profiles, folders, recent, searchFocusKey, onOpen, onOpenAll, onQuickConnect, onEdit, onNew, onChanged } = props;
+  const { searchFocusKey, onOpen, onOpenAll, onQuickConnect, onEdit, onNew } = props;
   const { t } = useTranslation();
+  const { settings } = useSettings();
+  const state = useDirectory();
+  const { profiles, folders } = state;
   const update = props.appMenu.update;
   const [width, setWidth] = useState(storedWidth);
   const widthRef = useRef(width);
@@ -133,10 +131,7 @@ export function Sidebar(props: Props) {
   // The search results, then the quick connect line.
   const resultCount = results.length + (quick ? 1 : 0);
   const highlighted = clampIndex(highlight, resultCount);
-  const recentProfiles = recent
-    .map((id) => profiles.find((p) => p.id === id))
-    .filter((p): p is Profile => !!p)
-    .slice(0, RECENT_LIMIT);
+  const recentProfiles = settings.sidebar.showRecent ? recentOf(state) : [];
 
   useEffect(() => {
     if (searchFocusKey === 0) return;
@@ -147,7 +142,7 @@ export function Sidebar(props: Props) {
   useEffect(() => setHighlight(0), [query]);
 
   const fail = (e: unknown) => setError(errorMessage(e));
-  const run = (action: Promise<unknown>) => void action.then(onChanged, fail);
+  const run = (action: Promise<unknown>) => void action.then(directory.reload, fail);
 
   const setFolderCollapsed = (id: string, value: boolean) =>
     setCollapsed((current) => {
@@ -190,7 +185,7 @@ export function Sidebar(props: Props) {
   const createFolder = (parent: string | undefined) => {
     tree.saveFolder({ id: "", name: t("sidebar.newFolderName"), parent }).then((folder) => {
       if (parent) setFolderCollapsed(parent, false);
-      onChanged();
+      void directory.reload();
       setSelected(`f:${folder.id}`);
       setRenaming(folder.id);
     }, fail);
@@ -204,7 +199,7 @@ export function Sidebar(props: Props) {
 
   const duplicate = (profile: Profile) => {
     duplicateProfile(profile.id, t("sidebar.copyName", { name: profile.name })).then(({ saved, passwordError }) => {
-      onChanged();
+      void directory.reload();
       setSelected(`p:${saved.id}`);
       if (passwordError)
         setPasswordNotice({
@@ -640,7 +635,7 @@ export function Sidebar(props: Props) {
       />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
-      {importing && <SessionImportDialog path={importing} onClose={() => setImporting(null)} onImported={onChanged} />}
+      {importing && <SessionImportDialog path={importing} onClose={() => setImporting(null)} />}
       {deleting && (
         <ConfirmDialog
           title={t("sidebar.deleteTitle")}
@@ -651,7 +646,7 @@ export function Sidebar(props: Props) {
             const profile = deleting;
             setDeleting(null);
             deleteProfile(profile.id).then((passwordError) => {
-              onChanged();
+              void directory.reload();
               if (passwordError)
                 setPasswordNotice({
                   title: t("common.passwordLeftTitle"),

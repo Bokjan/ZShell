@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Folder, Profile } from "./api";
-import { parseQuickConnect, rowKey, treeRows } from "./sessions";
+import { parseQuickConnect, rowKey, treeRows, withRecent } from "./sessions";
 
 const folder = (id: string, parent?: string): Folder => ({ id, name: id, parent });
 // Only what the tree looks at.
@@ -39,5 +39,14 @@ describe("parseQuickConnect", () => {
     expect(parseQuickConnect("web server")).toBeNull();
     expect(parseQuickConnect("host:70000")).toBeNull();
     expect(parseQuickConnect("host:0")).toBeNull();
+  });
+});
+
+describe("withRecent", () => {
+  it("puts a session first, once, keeping twice as many as are shown", () => {
+    expect(withRecent(["a", "b", "c"], "b")).toEqual(["b", "a", "c"]);
+    expect(withRecent([], "a")).toEqual(["a"]);
+    const full = Array.from({ length: 10 }, (_, i) => `s${i}`);
+    expect(withRecent(full, "new")).toEqual(["new", ...full.slice(0, 9)]);
   });
 });

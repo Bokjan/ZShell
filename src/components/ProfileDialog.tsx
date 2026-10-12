@@ -18,6 +18,7 @@ import {
 } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
 import { useDialog } from "../lib/dialogs";
+import { directory, useDirectory } from "../lib/directory";
 import { rovingTarget } from "../lib/listNavigation";
 import { passwordUpdate } from "../lib/password";
 import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
@@ -48,12 +49,9 @@ interface Props {
   /** null creates a new profile. */
   profile: Profile | null;
   defaults?: ProfileDefaults;
-  /** All profiles, to pick jump hosts from. */
-  profiles: Profile[];
   /** To pick the quick command group its tabs show first; null until they have loaded. */
   commandGroups: CommandGroup[] | null;
   onClose(): void;
-  onChanged(): void;
   /** Called with the saved profile (not on delete). */
   onSaved?(profile: Profile): void;
 }
@@ -64,7 +62,7 @@ interface Props {
  * page, with its field focused. Closing with Esc or a click outside asks first if anything
  * was changed.
  */
-export function ProfileDialog({ profile: initial, defaults, profiles, commandGroups, onClose, onChanged, onSaved }: Props) {
+export function ProfileDialog({ profile: initial, defaults, commandGroups, onClose, onSaved }: Props) {
   const { t } = useTranslation();
   // The profile being edited: a new one becomes the saved one when only its password failed,
   // so that saving again updates it instead of adding another.
@@ -78,6 +76,8 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
   const pageId = useId();
   const tabsRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  // All the sessions, to pick jump hosts from.
+  const { profiles } = useDirectory();
   const [proxies, setProxies] = useState<Proxy[] | null>(null);
   const [creatingProxy, setCreatingProxy] = useState(false);
   const [discarding, setDiscarding] = useState(false);
@@ -138,7 +138,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
     await saving.submit(async () => {
       try {
         const { saved, passwordError } = await saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update);
-        onChanged();
+        void directory.reload();
         onSaved?.(saved);
         if (passwordError) {
           setProfile(saved);
@@ -161,7 +161,7 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
     await saving.submit(async () => {
       try {
         const passwordError = await deleteProfile(profile.id);
-        onChanged();
+        void directory.reload();
         // Said before closing: nothing else would.
         if (passwordError) setPasswordLeft(passwordError.message);
         else onClose();

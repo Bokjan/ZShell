@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { errorCode, errorMessage, sessionsFile, type SessionsScan } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
+import { directory } from "../lib/directory";
 import { forwardMapping } from "../lib/format";
 import { address } from "../lib/sessions";
 import { CandidateList } from "./CandidateList";
@@ -13,14 +14,13 @@ interface Props {
   /** The exported sessions file. */
   path: string;
   onClose(): void;
-  onImported(): void;
 }
 
 /**
  * Imports sessions from a file exported by ZShell, skipping those that already exist, with
  * the passwords in the file if its passphrase is given.
  */
-export function SessionImportDialog({ path, onClose, onImported }: Props) {
+export function SessionImportDialog({ path, onClose }: Props) {
   const { t } = useTranslation();
   const [scan, setScan] = useState<SessionsScan | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -52,7 +52,7 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
     setError(null);
     try {
       const passwordError = await sessionsFile.import(path, [...selected], scan!.digest, passphrase || undefined);
-      onImported();
+      void directory.reload();
       if (passwordError) {
         setPasswordsNotSaved(errorMessage(passwordError));
         setBusy(false);

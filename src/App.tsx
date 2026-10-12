@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useAppMenu } from "./app/useAppMenu";
 import { useCloseFlow } from "./app/useCloseFlow";
 import { useCompose } from "./app/useCompose";
+import { useDirectorySync } from "./app/useDirectorySync";
 import { usePaneActions } from "./app/usePaneActions";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommands } from "./app/useQuickCommands";
@@ -28,12 +29,10 @@ import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n";
 import {
   configSetAside,
-  listProfiles,
   localShellName,
   localUsername,
   sendBreak,
   sessionLog,
-  tree,
   type Folder,
   type Profile,
   type QuickCommand,
@@ -47,8 +46,9 @@ import { neighbor } from "./lib/layout";
 import { tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
 import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
-import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
+import { address, sessionsIn, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
+import { directory, paneProfile, useDirectory } from "./lib/directory";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { useSettings } from "./lib/settings";
 import { useShortcuts } from "./lib/shortcuts";
@@ -56,10 +56,7 @@ import { useStableHandlers } from "./lib/stableHandlers";
 import { activeTabOf, createTabStore, useTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
 import { checkForUpdates, useUpdates } from "./lib/updates";
-import { useConfigChanged } from "./lib/windows";
 import "./styles.css";
-
-const profileIdOf = (pane: Pane) => (pane.target.kind === "profile" ? pane.target.profileId : undefined);
 
 /** Opening more sessions than this at once (a folder) asks first. */
 const OPEN_ALL_CONFIRM = 5;
@@ -73,9 +70,8 @@ function App() {
   const { settings, update } = useSettings();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [recent, setRecent] = useState(storedRecent);
+  useDirectorySync();
+  const { profiles } = useDirectory();
   const [searchFocusKey, setSearchFocusKey] = useState(0);
   // A folder's sessions waiting for confirmation to open them all.
   const [openingAll, setOpeningAll] = useState<{ folder: Folder; profiles: Profile[] } | null>(null);
@@ -99,13 +95,11 @@ function App() {
   const [localAllowed, setLocalAllowed] = useState(true);
   // For quick connections without a user name.
   const [username, setUsername] = useState("");
-  const profilesRef = useRef(profiles);
-  profilesRef.current = profiles;
   // Set once `useWindows` has run below.
   const windowingRef = useRef<Pick<ReturnType<typeof useWindows>, "movedAway" | "stayed">>(undefined);
   const [sessions] = useState(() =>
     createSessionRegistry(store, {
-      profiles: () => profilesRef.current,
+      profiles: () => directory.get().profiles,
       t: i18n.t,
       announce,
       movedAway: (key) => windowingRef.current?.movedAway(key),
@@ -139,18 +133,6 @@ function App() {
   const close = useCloseFlow(store, settings, update);
   const { requestClose, closeFocused } = close;
 
-  const reloadProfiles = useCallback(() => {
-    listProfiles().then(setProfiles).catch(console.error);
-    tree.folders().then(setFolders).catch(console.error);
-  }, []);
-  useEffect(reloadProfiles, [reloadProfiles]);
-  useConfigChanged("profiles", reloadProfiles);
-  // Opened in another window (the windows share the browser storage, and hear its changes).
-  useEffect(() => {
-    const onStorage = () => setRecent(storedRecent());
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
   // Returned only once, so a second call (StrictMode) must not clear the first's result.
   useEffect(() => {
     configSetAside()
@@ -166,7 +148,7 @@ function App() {
   }, []);
 
   /** What a tab's next session will be: a saved session's protocol may have been changed. */
-  const protocolOf = useCallback((target: SessionTarget) => targetProtocol(target, profilesRef.current), []);
+  const protocolOf = useCallback((target: SessionTarget) => targetProtocol(target, directory.get().profiles), []);
   const { refused, onAreaSize, roomToSplit, splitPane, duplicateTab } = usePaneActions(store, protocolOf);
 
   const addTab = useCallback(
@@ -186,7 +168,7 @@ function App() {
    * "newWindow" opens a window with a tab for it.
    */
   const openProfile = (profile: Profile, mode: OpenMode) => {
-    setRecent(addRecent(profile.id));
+    directory.opened(profile.id);
     if (mode === "newWindow") {
       windowing.openInNewWindow(profile.id, profile.name);
       return;
@@ -208,6 +190,7 @@ function App() {
   };
 
   const openAll = (folder: Folder) => {
+    const { folders, profiles } = directory.get();
     const list = sessionsIn(folder.id, folders, profiles);
     if (list.length > OPEN_ALL_CONFIRM) setOpeningAll({ folder, profiles: list });
     else list.forEach((p) => openProfile(p, "newTab"));
@@ -330,7 +313,7 @@ function App() {
 
   const activeTab = tabs.find((tab) => tab.key === activeKey);
   const activePane = activeTab && focusedPane(activeTab);
-  const profileOf = (pane: Pane) => profiles.find((p) => p.id === profileIdOf(pane));
+  const profileOf = (pane: Pane) => paneProfile(profiles, pane);
   const groupOf = (pane: Pane) => commands && tabGroup(commands, pane.commandGroup, profileOf(pane)?.commandGroup);
   const activeGroup = activePane ? groupOf(activePane) : null;
   const inScopeKeys = inScope.map((pane) => pane.key);
@@ -451,8 +434,6 @@ function App() {
     if (path) revealItemInDir(path).catch(console.error);
   };
 
-  const onProfileChanged = (updated: Profile) => setProfiles((profiles) => profiles.map((p) => (p.id === updated.id ? updated : p)));
-
   const handlers = useStableHandlers<PaneHandlers>({
     sessions,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
@@ -469,8 +450,6 @@ function App() {
     onEdits: (key, count) => updatePane(key, { edits: count }),
     onQuestions: (key, count) => updatePane(key, { questions: count }),
     menuItems: terminalMenu,
-    profileOf,
-    onProfileChanged,
   });
 
   const closeDialog = useCallback(() => setEditing(null), []);
@@ -495,16 +474,12 @@ function App() {
   return (
     <div className={`app${fullScreen.on ? " full-screen" : ""}`}>
       <Sidebar
-        profiles={profiles}
-        folders={folders}
-        recent={settings.sidebar.showRecent ? recent : []}
         searchFocusKey={searchFocusKey}
         onOpen={openProfile}
         onOpenAll={openAll}
         onQuickConnect={quickConnect}
         onEdit={(profile) => setEditing({ profile })}
         onNew={(folder) => setEditing({ profile: null, defaults: { folder } })}
-        onChanged={reloadProfiles}
         onImportSshConfig={() => setImporting(true)}
         onSettings={() => openSettings()}
         appMenu={appMenu.button}
@@ -577,7 +552,6 @@ function App() {
               inScope={inScopeKeys}
               flashing={flashing}
               refused={refused}
-              profiles={profiles}
               handlers={handlers}
             />
           ))}
@@ -605,10 +579,8 @@ function App() {
         <ProfileDialog
           profile={editing.profile}
           defaults={editing.defaults}
-          profiles={profiles}
           commandGroups={commands?.groups ?? null}
           onClose={closeDialog}
-          onChanged={reloadProfiles}
           onSaved={onProfileSaved}
         />
       )}
@@ -636,7 +608,7 @@ function App() {
           }}
         />
       )}
-      {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
+      {importing && <ImportDialog onClose={closeImport} />}
       {settingsOpen && <SettingsDialog localAllowed={localAllowed} request={settingsOpen} onClose={closeSettings} />}
       {close.dialogs}
       {appMenu.menu}

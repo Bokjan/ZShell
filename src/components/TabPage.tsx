@@ -1,8 +1,8 @@
 import { Fragment, memo, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Profile } from "../lib/api";
 import { DialogsHidden } from "../lib/dialogs";
+import { paneProfile, useDirectory } from "../lib/directory";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../lib/drag";
 import { dividers, equalize, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, moveDivider, paneRects, type Divider, type Size } from "../lib/layout";
@@ -37,9 +37,6 @@ export interface PaneHandlers {
   onQuestions(key: number, count: number): void;
   /** Added to the end of the pane's terminal menu, when it opens. */
   menuItems(pane: Pane): MenuItem[];
-  /** The pane's saved session; undefined for local terminals and deleted sessions. */
-  profileOf(pane: Pane): Profile | undefined;
-  onProfileChanged(profile: Profile): void;
 }
 
 interface Props {
@@ -53,8 +50,6 @@ interface Props {
   flashing: number[];
   /** A pane that couldn't be split; its border flashes, anew for each `count`. */
   refused: { key: number; count: number } | null;
-  /** The saved sessions, which the panes' appearance and panels come from (see `profileOf`). */
-  profiles: Profile[];
   /** Stable: the page renders again only when one of the other props changes. */
   handlers: PaneHandlers;
 }
@@ -77,13 +72,14 @@ export const TabPage = memo(TabPageView, (a, b) => {
     same(a.inScope, b.inScope) &&
     same(a.flashing, b.flashing) &&
     a.refused === b.refused &&
-    a.profiles === b.profiles &&
     a.handlers === b.handlers
   );
 });
 
 function TabPageView({ tab, active, syncing, inScope, flashing, refused, handlers: h }: Props) {
   const { t } = useTranslation();
+  // The panes' saved sessions, which their appearance and panels come from.
+  const { profiles } = useDirectory();
   const [panelWidth, setPanelWidth] = useState(420);
   // Keep each pane's panels mounted once opened, so their state (directory, transfers)
   // survives switching panels and panes.
@@ -151,7 +147,7 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
     const shown = (panel: SidePanel) => pane.key === focused.key && tab.sidePanel === panel;
     const connected = pane.status === "connected" && pane.sessionId != null;
     const list = mounted[pane.key] ?? [];
-    const profile = h.profileOf(pane);
+    const profile = paneProfile(profiles, pane);
     return (
       <Fragment key={pane.key}>
         {list.includes("files") && (
@@ -177,7 +173,6 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
                 profile={profile}
                 quick={pane.target.kind === "quick"}
                 states={pane.forwards}
-                onProfileChanged={h.onProfileChanged}
               />
             </DialogsHidden.Provider>
           </div>
@@ -226,7 +221,7 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
               closing or resizing never remounts another pane's terminal, which would end its
               session. */}
           {tab.panes.map((pane) => {
-            const profile = h.profileOf(pane);
+            const profile = paneProfile(profiles, pane);
             const rect = rects.get(pane.key) ?? { x: 0, y: 0, w: 1, h: 1 };
             return (
               <div
