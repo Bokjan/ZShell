@@ -54,7 +54,7 @@
 | `net.rs` / `proxy/` | 出站连接（直连或经代理）、`Route`；代理：SOCKS5、HTTP CONNECT、ProxyCommand |
 | `zmodem/` | rz / sz：检测与接管、帧格式、收发 |
 | `logging.rs` | 会话日志：写入线程、格式、索引 `logs.json` 与清理 |
-| `config.rs` / `quick.rs` / `settings.rs` | 会话、文件夹与代理；快速命令；应用设置 `settings.json` |
+| `config/` / `quick.rs` / `settings.rs` | 会话、文件夹与代理；快速命令；应用设置 `settings.json` |
 | `vault.rs` / `crypto.rs` / `secrets.rs` | 保险库（上面几类数据与密码存在哪里、如何保护）；加密与口令派生；系统凭据存储 |
 | `applock/` | 应用锁：锁定状态、各平台的系统认证、闲置与锁屏检测 |
 | `persist.rs` | JSON 文件的读写：读不出的文件、原子写入、手写文件的 id |
