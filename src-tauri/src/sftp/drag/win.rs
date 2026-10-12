@@ -32,7 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use super::{DragResult, DropDownload, Item, Outcome};
 use crate::error::{Error, Result};
-use crate::local_name::local_file_name;
+use crate::local_name::{create_unique, create_unique_file, local_file_name};
 use crate::sftp::edit::remove_old;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -300,19 +300,28 @@ pub(super) fn start(
     let scale = window.scale_factor().map_err(Error::from)?;
     let root = std::env::temp_dir().join("ZShell-drag");
     remove_old(&root);
+    if download.transfer_id.contains(['/', '\\', '.']) {
+        return Err(Error::new("transfer.invalidPath").param("path", &download.transfer_id));
+    }
     let dir = root.join(&download.transfer_id);
+    std::fs::create_dir_all(&dir).map_err(|e| Error::new("transfer.createDirFailed").param("path", dir.display()).detail(e))?;
+    // Placeholders, in case the application dragged over looks at the files before the drop.
+    // Each takes a free name: items the file system can't tell apart (`README` and `readme`,
+    // or `a:b` and `a_b`, both `a_b` here) would otherwise land on one file.
     let items = items
         .iter()
         .map(|item| {
             let name = local_file_name(item.name()).ok_or_else(|| Error::new("transfer.invalidName").param("name", &item.path))?;
-            Ok((item.path.clone(), dir.join(name), item.is_dir))
+            let path = dir.join(name);
+            let created = if item.is_dir {
+                create_unique(&path, |path| std::fs::create_dir(path))
+            } else {
+                create_unique_file(&path).map(|(path, _)| (path, ()))
+            };
+            let (local, ()) = created.map_err(|e| Error::new("transfer.createFailed").param("path", path.display()).detail(e))?;
+            Ok((item.path.clone(), local))
         })
         .collect::<Result<Vec<_>>>()?;
-    // Placeholders, in case the application dragged over looks at the files before the drop.
-    for (_, local, is_dir) in &items {
-        let _ = if *is_dir { std::fs::create_dir_all(local) } else { std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(local, b"")) };
-    }
-    let items = items.into_iter().map(|(remote, local, _)| (remote, local)).collect();
     let shared = Arc::new(Shared {
         items,
         download,
