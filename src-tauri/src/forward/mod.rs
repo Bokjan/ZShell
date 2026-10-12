@@ -38,8 +38,8 @@ use crate::session::{SessionEvent, SessionId, SessionSink};
 use crate::ssh::SshHandle;
 pub use remote::{Incoming, RemoteRoutes};
 
-/// How long to wait for a TCP connection to a forward's target on this computer.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long to wait for the name a local or dynamic rule listens on to be looked up.
+const LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

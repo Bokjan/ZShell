@@ -20,7 +20,10 @@ use crate::ssh::SshHandle;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
-    let listener = Listener::bind(&rule.bind_host, rule.bind_port).await?;
+    let listener = tokio::select! {
+        listener = Listener::bind(&rule.bind_host, rule.bind_port) => listener?,
+        () = stopping.requested() => return Ok(()),
+    };
     let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
     loop {
         let report = tracker.report_due();

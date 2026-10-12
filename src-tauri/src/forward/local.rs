@@ -9,12 +9,15 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use tokio::net::{TcpListener, TcpStream};
 
-use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
+use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker, LOOKUP_TIMEOUT};
 use crate::error::Error;
 use crate::ssh::SshHandle;
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
-    let listener = Listener::bind(&rule.bind_host, rule.bind_port).await?;
+    let listener = tokio::select! {
+        listener = Listener::bind(&rule.bind_host, rule.bind_port) => listener?,
+        () = stopping.requested() => return Ok(()),
+    };
     let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
     loop {
         let report = tracker.report_due();
@@ -43,7 +46,10 @@ impl Listener {
     pub(super) async fn bind(host: &str, port: u16) -> Result<Self> {
         let failed = || Error::new("forward.bindFailed").param("address", host_port(host, port));
         let mut addresses: Vec<SocketAddr> = Vec::new();
-        for address in tokio::net::lookup_host((host, port)).await.with_context(failed)? {
+        let found = tokio::time::timeout(LOOKUP_TIMEOUT, tokio::net::lookup_host((host, port)))
+            .await
+            .unwrap_or_else(|_| Err(std::io::ErrorKind::TimedOut.into()));
+        for address in found.with_context(failed)? {
             if !addresses.contains(&address) {
                 addresses.push(address);
             }
