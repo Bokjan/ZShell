@@ -7,13 +7,11 @@ import {
   DEFAULT_PORTS,
   deleteProfile,
   errorMessage,
-  proxies as proxyApi,
   saveProfile,
   serialPorts,
   type CommandGroup,
   type Profile,
   type Protocol,
-  type Proxy,
   type SerialPortInfo,
 } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
@@ -76,9 +74,8 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
   const pageId = useId();
   const tabsRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  // All the sessions, to pick jump hosts from.
-  const { profiles } = useDirectory();
-  const [proxies, setProxies] = useState<Proxy[] | null>(null);
+  // All the sessions, to pick jump hosts from, and the proxies (another window's new ones too).
+  const { loaded, profiles, proxies } = useDirectory();
   const [creatingProxy, setCreatingProxy] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   // Why the deleted session's saved password couldn't be deleted.
@@ -98,9 +95,6 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
   // A group deleted since counts as the default group, as its tabs do. Until the groups have
   // loaded (or if they couldn't), the profile's stays as it is.
   const shownGroup = !commandGroups || commandGroups.some((group) => group.id === form.commandGroup) ? form.commandGroup : DEFAULT_GROUP;
-
-  const refreshProxies = () => void proxyApi.list().then(setProxies, console.error);
-  useEffect(refreshProxies, []);
 
   const refreshPorts = () => void serialPorts().then(setPorts, () => setPorts([]));
   useEffect(() => {
@@ -192,7 +186,7 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
         set={set}
         profile={profile}
         profiles={profiles}
-        proxies={proxies}
+        proxies={loaded ? proxies : null}
         newProxy={() => setCreatingProxy(true)}
       />
     ),
@@ -275,14 +269,7 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
           </footer>
         </form>
       </Modal>
-      {creatingProxy && (
-        <ProxyDialog
-          proxy={null}
-          onClose={() => setCreatingProxy(false)}
-          onSaved={(saved) => set({ proxy: saved.id })}
-          onChanged={refreshProxies}
-        />
-      )}
+      {creatingProxy && <ProxyDialog proxy={null} onClose={() => setCreatingProxy(false)} onSaved={(saved) => set({ proxy: saved.id })} />}
       {discarding && (
         <ConfirmDialog
           title={t("profile.discardTitle")}

@@ -5,6 +5,7 @@ import type { TFunction } from "i18next";
 import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
 import { useConfirmButton } from "../lib/confirm";
 import { useDialog } from "../lib/dialogs";
+import { directory } from "../lib/directory";
 import { hostPort, parsePort } from "../lib/format";
 import { passwordUpdate } from "../lib/password";
 import { useSubmitting } from "../lib/submitting";
@@ -19,8 +20,6 @@ interface Props {
   onClose(): void;
   /** Called with the saved proxy. */
   onSaved?(proxy: Proxy): void;
-  /** Called after saving or deleting, also when only storing the password failed. */
-  onChanged(): void;
 }
 
 const KINDS: ProxyKind[] = ["socks5", "http", "command"];
@@ -36,7 +35,7 @@ export function proxySummary(t: TFunction, proxy: Proxy) {
 }
 
 /** Creates, edits or deletes a proxy. */
-export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Props) {
+export function ProxyDialog({ proxy: initial, onClose, onSaved }: Props) {
   const { t } = useTranslation();
   // A new proxy becomes the saved one when only its password failed (see ProfileDialog).
   const [proxy, setProxy] = useState(initial);
@@ -96,7 +95,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
           },
           update,
         );
-        onChanged();
+        void directory.reload();
         onSaved?.(saved);
         if (passwordError) {
           setProxy(saved);
@@ -119,7 +118,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved, onChanged }: Pro
     await saving.submit(async () => {
       try {
         const passwordError = await proxies.delete(proxy.id);
-        onChanged();
+        void directory.reload();
         if (passwordError) setPasswordLeft(passwordError.message);
         else onClose();
       } catch (err) {

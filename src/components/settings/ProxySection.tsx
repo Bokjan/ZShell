@@ -1,21 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { proxies as proxyApi, type Proxy } from "../../lib/api";
+import type { Proxy } from "../../lib/api";
+import { useDirectory } from "../../lib/directory";
 import { ProxyDialog, proxySummary } from "../ProxyDialog";
 import { Section, Setting } from "./common";
 
 /** The saved proxies, which sessions choose on their Connection page. */
 export function ProxySection() {
   const { t } = useTranslation();
-  const [list, setList] = useState<Proxy[]>([]);
+  const { proxies: list } = useDirectory();
   // The proxy being edited; null for a new one.
   const [editing, setEditing] = useState<Proxy | null | undefined>(undefined);
-
-  const refresh = useCallback(() => {
-    proxyApi.list().then(setList).catch(console.error);
-  }, []);
-  useEffect(refresh, [refresh]);
 
   return (
     <Section id="proxies">
@@ -39,7 +35,7 @@ export function ProxySection() {
         </div>
         <p className="hint">{t("settings.proxiesHint")}</p>
       </Setting>
-      {editing !== undefined && <ProxyDialog proxy={editing} onClose={() => setEditing(undefined)} onChanged={refresh} />}
+      {editing !== undefined && <ProxyDialog proxy={editing} onClose={() => setEditing(undefined)} />}
     </Section>
   );
 }
