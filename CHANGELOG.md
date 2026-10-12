@@ -2,6 +2,18 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.11.1] - 2026-10-12
+
+### Bug Fixes
+
+- A connection that drops while signing in no longer counts as a wrong password or a rejected key: automatic reconnection goes on, and the terminal no longer reports the saved password as rejected or asks for another on a connection that is gone. When the server itself ends the connection, as after too many failed attempts, ZShell shows the server's reason and stops, as OpenSSH does.
+- SSH connections use TCP keepalives until signed in, so a connection that died while a password prompt waited fails as soon as the prompt is answered.
+- A server that stops answering during the SSH handshake no longer leaves its connection (or proxy command) open after ZShell gives up or the tab is closed, one more with each automatic reconnection.
+
+### Internal
+
+- Removed a host key check on re-keying that never ran: the SSH library doesn't call it then.
+
 ## [2.11.0] - 2026-10-12
 
 ### Features
