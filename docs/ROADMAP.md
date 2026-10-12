@@ -65,10 +65,27 @@
 
 ### M26 应用锁
 
-- 启动时、闲置一段时间后、系统锁屏或睡眠后，盖上锁定界面，用系统认证解锁：macOS 用 LocalAuthentication（Touch ID，不可用时退回登录密码），Windows 用 Windows Hello（PIN、指纹、人脸）。会话在锁定期间照常运行。
-- 系统没有可用的认证方式时不能开启。
-- 锁定界面复用 M25 的解锁界面（`UnlockScreen`，见 [ARCHITECTURE.md](ARCHITECTURE.md)「加密保险库」）。只锁界面，不重新加密内存中的数据；要让保险库真正受生物识别保护，需要把数据密钥放进要求生物识别的钥匙串项（M25 的"在此设备上记住"），macOS 上需要开发者证书签名。
-- 开工前先用原型确认 ad-hoc 签名下 LocalAuthentication 可用。
+盖上锁定界面，用系统认证解锁，会话在锁定期间照常运行。只锁界面，不重新加密内存中的数据；要让保险库真正受生物识别保护，需要把数据密钥放进要求生物识别的钥匙串项（M25 的"在此设备上记住"），macOS 上需要开发者证书签名，不在本阶段。威胁模型是离开座位时别人动已打开的 ZShell，以及改配置文件后重启绕过。
+
+- **范围**：只实现 macOS 与 Windows，接口按三个平台设计（Linux 见 M30）。
+- **系统认证**（新模块 `applock.rs`，按平台分文件）：macOS 用 LocalAuthentication 的 `DeviceOwnerAuthentication`（Touch ID，没有时退回登录密码；已用原型确认 ad-hoc 签名下可用，不需要 entitlement），依赖 `objc2-local-authentication`；Windows 用 Windows Hello，经 `IUserConsentVerifierInterop::RequestVerificationForWindowAsync` 把认证框挂在主窗口上（不用 `RequestVerificationAsync`，它在 Win32 应用里可能出现在窗口后面）。后端报告三项能力：认证方式（`touchId` / `password` / `windowsHello` / 不可用）、能否检测闲置、能否检测锁屏与睡眠；前端按它选择文案、隐藏不支持的选项，不猜平台。
+- **锁定状态在后端**：后端持有是否锁定，前端启动时查询，所以页面重载后仍然锁着；解锁由后端调用系统认证，通过后才改状态。后端锁定时发事件通知前端。
+- **何时锁定**：
+  - 启动时：主密码保护且未"记住"时，输入主密码即算认证，不再锁一次；其他情况先读出保险库（系统凭据存储照常静默读取），设置为开启则先显示锁定界面，再显示应用。
+  - 闲置：按整个系统的闲置时间（macOS `CGEventSourceSecondsSinceLastEventType`，Windows `GetLastInputInfo`），不只看 ZShell 窗口，终端输出不算活动。可选从不 / 1 / 5 / 15 / 30 / 60 分钟，默认 15。
+  - 系统锁屏、睡眠、切换用户（可关，默认开）：事件发生时就锁，醒来时画面已被盖住。macOS 监听 `com.apple.screenIsLocked`、`NSWorkspaceWillSleepNotification` 与会话切换；Windows 用 `WTSRegisterSessionNotification`（`WTS_SESSION_LOCK`）与 `PBT_APMSUSPEND`。
+  - 手动：`keymap.ts` 加"锁定"动作（⌘⇧L / Ctrl+Shift+L，与现有快捷键不冲突），macOS 的 App 菜单与命令面板各有一项。
+- **设置存放**：应用锁的设置存进保险库，与会话、密码在一起，不放 `settings.json`，这样加密时改不了也删不掉；旧文件读出为关闭，重置保险库时一并清除。不加密时与会话一样是明文，设置里提示加密才能防止被绕过；未设置保护方式时不能开启，先选一种。
+- **设置界面**：在"安全"一节保护方式之下，与"更改保护方式"一样走后端命令，不经 `SettingsProvider` 的即时保存。开启时先认证一次，确认可用；系统没有可用的认证方式时开关禁用并说明原因。"恢复默认设置"不影响保护方式与应用锁，确认文字里写明。
+- **认证方式不可用**：开启后认证方式没了（如删除了 Windows Hello PIN），启动时不锁定，并在设置里提示。删除 PIN、修改 macOS 登录密码都要先输入账户密码，做得到的人已控制这个账户。
+- **锁定界面**：把 `UnlockScreen` 的外壳（标题栏、面板、图标）拆成共用的 `LockScreen`，保险库解锁与应用锁各填内容；内容同时支持"系统认证按钮"与"输入密码"两种，后者供 Linux 以后的 PAM 后备复用。应用锁是覆盖层，应用保持挂载：其下的应用根元素加 `inert` 并以 `visibility: hidden` 隐藏，不能用 `display: none`（xterm 会被 fit 成 0×0，向远端发 resize）；覆盖层有自己的标题栏与窗口按钮，所以这里给根元素加 `inert` 不影响 Windows 的窗口按钮。只在窗口有焦点时自动弹出系统认证（闲置锁定时用户可能在别的应用里），取消后不再自动弹出，等用户点"解锁"。
+- **锁定期间要拦住的**：
+  - ZMODEM：远端 `rz`（以及"选择文件夹"设置下的 `sz`）会自动打开原生文件对话框，它会出现在锁定界面之上，所以等解锁后再打开。
+  - 拖放：Tauri 的 `onDragDropEvent` 不受 `inert` 影响，终端与 SFTP 的处理里判断是否锁定。
+  - 快捷键与原生菜单事件（⌘W、⌘, 等）不处理；⌘Q 与关闭窗口照常可用，确认放在锁定界面上，只说会结束几个会话。
+  - `announce()` 在锁定期间丢弃，读屏软件不播报后台会话的变化。
+  - 已知限制：锁定时已经打开的原生文件对话框盖不住。
+- **验证**：锁定的判断（启动时是否锁、闲置、认证方式不可用）用假的认证实现做单元测试；Touch ID 在真机上试，Windows Hello 只有 CI 编译检查，需在 Windows 真机上试。
 
 ### M27 翻译
 
@@ -95,10 +112,13 @@
 
 ### M30 Linux
 
+第一阶段的目标是 Debian 与 Fedora 的默认桌面，即 GNOME + Wayland；其他桌面与发行版按需再做。
+
 - 快捷键沿用 Windows 的一套（`keymap.ts` 的 `other`），按需单独覆盖。
 - 平台判断改为 `macos` / `windows` / `linux` 三种，检查现有只区分两种的地方：窗口按钮（Linux 用系统标题栏还是自绘）、"在文件管理器中显示"等文案、密码存储（Secret Service）的提示。
 - 本地终端用 `$SHELL` 登录 shell；SSH agent 用 `SSH_AUTH_SOCK`，与 macOS 相同。
-- 打包 deb / AppImage（图标用 `bundle.icon` 里的 PNG），CI 的 matrix 加上 `ubuntu-latest`。
+- 打包 deb 与 rpm（图标用 `bundle.icon` 里的 PNG），CI 的 matrix 加上 `ubuntu-latest`。不打 AppImage：应用锁的 polkit 策略文件要由包管理器装进系统目录。
+- 应用锁（M26 的接口已按三个平台设计）：认证用 polkit，自定义一个 `auth_self` 的 action，弹出 GNOME Shell 自带的认证框（登录密码，启用了 fprintd 时也可用指纹），策略文件随 deb / rpm 装进 `/usr/share/polkit-1/actions/`；PAM（在锁定界面输入登录密码，经 `unix_chkpwd` 校验，各发行版的 service 名不同）作为以后没有 polkit 代理时的后备。闲置用 Mutter 的 `org.gnome.Mutter.IdleMonitor`（Wayland 没有通用接口；X11 有 XScreenSaver 扩展，KDE 有 `org.freedesktop.ScreenSaver.GetSessionIdleTime`）。锁屏与睡眠用 logind 的 `PrepareForSleep` 与会话的 `Lock` / `LockedHint`。这些都经 D-Bus，需要 zbus（MIT），它目前不在依赖树里。
 - 只允许一个实例，与 Windows 相同：再次启动时把已有的窗口提到前台，第二个进程立即退出。保险库每次写入是整个文件，两个实例会互相覆盖对方的修改（明文的配置文件同样如此）。single-instance 插件支持 Linux（经 D-Bus），把 `Cargo.toml` 里它的 target 与 `lib.rs` 注册处的 `cfg(windows)` 改为 Windows 与 Linux。
 - 密码与保险库：Secret Service 已经在 keyring 的依赖里，保险库按三个平台设计（见 [ARCHITECTURE.md](ARCHITECTURE.md)「加密保险库」）。没有 Secret Service 时"系统凭据存储"与"记住"不可选、主密码与不加密照常可用；可用性探测与界面文案已按 `secretService` 处理，需要在真机上验证（GNOME Keyring、KWallet、无桌面环境）。Flatpak 沙箱里要经 portal 访问，不在计划内。
 - 许可证：`about.toml` 的 `targets` 加上 Linux；Linux 独有的依赖（GTK / WebKitGTK 绑定、zbus 等）目前都是 MIT / Apache-2.0 / Zlib / ISC，`target-lexicon`（Apache-2.0 WITH LLVM-exception）只是构建依赖。
