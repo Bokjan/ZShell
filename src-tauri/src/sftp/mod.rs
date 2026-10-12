@@ -79,7 +79,8 @@ pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
     }
     // A symlink is shown as a folder if it leads to one, and changing its permissions changes
     // its target's.
-    let symlinks: Vec<(usize, String)> = entries.iter().enumerate().filter(|(_, e)| e.is_symlink).map(|(i, e)| (i, e.path.clone())).collect();
+    let symlinks: Vec<(usize, String)> =
+        entries.iter().enumerate().filter(|(_, e)| e.is_symlink).map(|(i, e)| (i, e.path.clone())).collect();
     let mut symlinks = symlinks.into_iter();
     let mut lookups = tokio::task::JoinSet::new();
     loop {

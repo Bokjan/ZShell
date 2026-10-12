@@ -47,9 +47,7 @@ async fn connect(handle: Arc<SshHandle>, mut stream: TcpStream, peer: SocketAddr
         return Ok(());
     };
     let target = host_port(&request.host, request.port);
-    let opened = handle
-        .channel_open_direct_tcpip(request.host, request.port.into(), peer.ip().to_string(), peer.port().into())
-        .await;
+    let opened = handle.channel_open_direct_tcpip(request.host, request.port.into(), peer.ip().to_string(), peer.port().into()).await;
     let channel = match opened {
         Ok(channel) => channel,
         Err(e) => {

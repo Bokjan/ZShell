@@ -3,8 +3,7 @@ import type { TFunction } from "i18next";
 import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "./api";
 import { storedString, storeString } from "./storage";
 
-export const groupName = (group: CommandGroup, t: TFunction): string =>
-  group.id === DEFAULT_GROUP ? t("quick.defaultGroup") : group.name;
+export const groupName = (group: CommandGroup, t: TFunction): string => (group.id === DEFAULT_GROUP ? t("quick.defaultGroup") : group.name);
 
 /**
  * The group a tab shows: the one picked in it, else its session's, else the default group
@@ -12,9 +11,7 @@ export const groupName = (group: CommandGroup, t: TFunction): string =>
  */
 export function tabGroup(commands: QuickCommands, picked: string | null, sessionGroup: string | undefined) {
   return (
-    commands.groups.find((group) => group.id === picked) ??
-    commands.groups.find((group) => group.id === sessionGroup) ??
-    commands.groups[0]
+    commands.groups.find((group) => group.id === picked) ?? commands.groups.find((group) => group.id === sessionGroup) ?? commands.groups[0]
   );
 }
 

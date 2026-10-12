@@ -30,9 +30,7 @@ export function WindowControls() {
   }, []);
 
   useEffect(() => {
-    const unlisten = listenHere<{ hover: boolean; pressed: boolean }>("window-maximize-button", (e) =>
-      setMaximizeState(e.payload),
-    );
+    const unlisten = listenHere<{ hover: boolean; pressed: boolean }>("window-maximize-button", (e) => setMaximizeState(e.payload));
     return () => void unlisten.then((f) => f());
   }, []);
 
@@ -42,9 +40,7 @@ export function WindowControls() {
     const button = maximizeRef.current!;
     const place = () => {
       const r = button.getBoundingClientRect();
-      invoke("window_set_maximize_button", { rect: { x: r.left, y: r.top, width: r.width, height: r.height } }).catch(
-        console.error,
-      );
+      invoke("window_set_maximize_button", { rect: { x: r.left, y: r.top, width: r.width, height: r.height } }).catch(console.error);
     };
     place();
     window.addEventListener("resize", place);

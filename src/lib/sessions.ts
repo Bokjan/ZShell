@@ -107,18 +107,16 @@ export interface QuickTarget {
  * names), unless they say telnet.
  */
 export function parseQuickConnect(text: string): QuickTarget | null {
-  const match =
-    /^(?:(ssh|telnet)\s+|(ssh|telnet):\/\/)?(?:([^\s@/]+)@)?(\[[0-9a-fA-F:.]+\]|[^\s:@/[\]]+)(?::(\d{1,5}))?\/?$/i.exec(
-      text.trim(),
-    );
+  const match = /^(?:(ssh|telnet)\s+|(ssh|telnet):\/\/)?(?:([^\s@/]+)@)?(\[[0-9a-fA-F:.]+\]|[^\s:@/[\]]+)(?::(\d{1,5}))?\/?$/i.exec(
+    text.trim(),
+  );
   if (!match) return null;
   const [, word, scheme, username = "", rawHost, rawPort] = match;
   const protocol = (word ?? scheme ?? "ssh").toLowerCase() as QuickTarget["protocol"];
   const host = rawHost.replace(/^\[|\]$/g, "");
   const port = rawPort ? Number(rawPort) : DEFAULT_PORTS[protocol];
   if (port < 1 || port > 65535) return null;
-  const looksLikeHost =
-    protocol === "telnet" || username !== "" || rawPort !== undefined || host.includes(".") || host.includes(":");
+  const looksLikeHost = protocol === "telnet" || username !== "" || rawPort !== undefined || host.includes(".") || host.includes(":");
   return looksLikeHost ? { protocol, username, host, port } : null;
 }
 

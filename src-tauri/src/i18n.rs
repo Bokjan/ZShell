@@ -82,9 +82,7 @@ fn interpolate(template: &str, args: &[(&str, &dyn Display)]) -> String {
     while let Some(start) = rest.find('{') {
         out.push_str(&rest[..start]);
         let after = &rest[start + 1..];
-        let value = after
-            .find('}')
-            .and_then(|end| args.iter().find(|(name, _)| *name == &after[..end]).map(|(_, value)| (end, value)));
+        let value = after.find('}').and_then(|end| args.iter().find(|(name, _)| *name == &after[..end]).map(|(_, value)| (end, value)));
         match value {
             Some((end, value)) => {
                 let _ = write!(out, "{value}");

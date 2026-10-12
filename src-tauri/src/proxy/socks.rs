@@ -89,7 +89,8 @@ pub async fn connect<S: AsyncRead + AsyncWrite + Unpin>(
 
 /// RFC 1929: the user name and password, each at most 255 bytes.
 async fn authenticate<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, credentials: &Credentials, errors: &Errors<'_>) -> Result<()> {
-    let (Ok(user_length), Ok(password_length)) = (u8::try_from(credentials.username.len()), u8::try_from(credentials.password.len())) else {
+    let (Ok(user_length), Ok(password_length)) = (u8::try_from(credentials.username.len()), u8::try_from(credentials.password.len()))
+    else {
         bail!(errors.error("proxy.authFailed"));
     };
     let mut request = vec![1, user_length];

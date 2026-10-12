@@ -67,7 +67,13 @@ export function useSftpDragDrop(options: Options) {
       const result = await sftp.dragOut(sessionId, id, items, (event) => {
         if (!listed) {
           listed = true;
-          transfers.add({ id, kind: "download", label: transfers.labelFor(items.map((entry) => entry.name)), progress: null, status: "running" });
+          transfers.add({
+            id,
+            kind: "download",
+            label: transfers.labelFor(items.map((entry) => entry.name)),
+            progress: null,
+            status: "running",
+          });
         }
         if (event.type === "progress") transfers.update(id, { progress: event });
         else if (event.type === "done") transfers.update(id, { status: "done", results: event.paths });

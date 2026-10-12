@@ -52,7 +52,11 @@ export function ChmodDialog({ entry, onSubmit, onClose }: Props) {
             }}
           />
         </label>
-        {invalid ? <ErrorText>{t("sftp.chmodInvalid")}</ErrorText> : <p className="hint">{mode !== null && formatMode(mode, entry.isDir, false)}</p>}
+        {invalid ? (
+          <ErrorText>{t("sftp.chmodInvalid")}</ErrorText>
+        ) : (
+          <p className="hint">{mode !== null && formatMode(mode, entry.isDir, false)}</p>
+        )}
         <footer>
           <span className="grow" />
           <button type="button" onClick={onClose}>

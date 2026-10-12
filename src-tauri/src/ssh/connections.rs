@@ -384,7 +384,11 @@ impl Connections {
             let map = self.0.lock().unwrap();
             let own = map.get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))?;
             let holders: Vec<_> = session_connections(&map, &own).into_iter().filter(|c| c.forwards.has(rule_id)).collect();
-            if holders.is_empty() { vec![own] } else { holders }
+            if holders.is_empty() {
+                vec![own]
+            } else {
+                holders
+            }
         };
         for target in targets {
             target.forwards.stop(rule_id);
@@ -499,7 +503,10 @@ mod tests {
         assert_eq!(ids(&rules_to_start(&map, &shared, &rules, &[])), ["r1", "r2"]);
         // A quick connection shares rules with nothing.
         let quick = connection("", &[]);
-        assert_eq!(ids(&rules_to_start(&HashMap::from([(5, quick.clone()), (6, connection("", &["r1"]))]), &quick, &rules, &[])), ["r1", "r2"]);
+        assert_eq!(
+            ids(&rules_to_start(&HashMap::from([(5, quick.clone()), (6, connection("", &["r1"]))]), &quick, &rules, &[])),
+            ["r1", "r2"]
+        );
     }
 
     #[test]

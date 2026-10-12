@@ -5,12 +5,7 @@ import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } fr
  * (or y, for a splitter between stacked areas). While dragging, `body.resizing` keeps the
  * resize cursor and stops terminals from swallowing the mouse.
  */
-export function dragSplitter(
-  e: ReactMouseEvent,
-  axis: "x" | "y",
-  onMove: (position: number) => void,
-  onEnd?: () => void,
-) {
+export function dragSplitter(e: ReactMouseEvent, axis: "x" | "y", onMove: (position: number) => void, onEnd?: () => void) {
   e.preventDefault();
   const move = (ev: MouseEvent) => onMove(axis === "x" ? ev.clientX : ev.clientY);
   const classes = axis === "x" ? ["resizing"] : ["resizing", "rows"];

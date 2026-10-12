@@ -166,11 +166,7 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
                     </strong>
                     <span>{selected.pkg.license}</span>
                     {selected.pkg.url && (
-                      <button
-                        type="button"
-                        className="link"
-                        onClick={() => void openUrl(selected.pkg.url!).catch(console.error)}
-                      >
+                      <button type="button" className="link" onClick={() => void openUrl(selected.pkg.url!).catch(console.error)}>
                         {selected.pkg.url}
                         <ExternalLinkIcon />
                         <span className="visually-hidden">{t("common.opensInBrowser")}</span>

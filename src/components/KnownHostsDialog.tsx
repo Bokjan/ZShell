@@ -52,10 +52,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
       current = false;
     };
   }, [query, entries]);
-  const hashedMatches = useMemo(
-    () => (hashed && hashed.entries === entries && query.trim() ? hashed.lines : []),
-    [hashed, entries, query],
-  );
+  const hashedMatches = useMemo(() => (hashed && hashed.entries === entries && query.trim() ? hashed.lines : []), [hashed, entries, query]);
 
   const shown = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);

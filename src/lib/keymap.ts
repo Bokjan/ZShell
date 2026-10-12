@@ -205,7 +205,9 @@ function parse(keys: string): Chord {
 }
 
 function chordsOf(action: Action, mac: boolean): Chord[] {
-  const keys: string | string[] | undefined = (KEYMAP[action] as { mac?: string | string[]; other?: string | string[] })[mac ? "mac" : "other"];
+  const keys: string | string[] | undefined = (KEYMAP[action] as { mac?: string | string[]; other?: string | string[] })[
+    mac ? "mac" : "other"
+  ];
   return (keys === undefined ? [] : Array.isArray(keys) ? keys : [keys]).map(parse);
 }
 

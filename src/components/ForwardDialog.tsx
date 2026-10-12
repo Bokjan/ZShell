@@ -82,7 +82,11 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
     }
   };
 
-  const listenLabel = { local: "forwards.dialog.listenLocal", remote: "forwards.dialog.listenRemote", dynamic: "forwards.dialog.listenSocks" } as const;
+  const listenLabel = {
+    local: "forwards.dialog.listenLocal",
+    remote: "forwards.dialog.listenRemote",
+    dynamic: "forwards.dialog.listenSocks",
+  } as const;
   const preview = explainRule(t, {
     kind,
     bindHost: host,
@@ -131,9 +135,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
             </label>
           </div>
           {!isLoopback(host) && (
-            <p className="hint warning">
-              {kind === "remote" ? t("forwards.dialog.exposedRemote") : t("forwards.dialog.exposedLocal")}
-            </p>
+            <p className="hint warning">{kind === "remote" ? t("forwards.dialog.exposedRemote") : t("forwards.dialog.exposedLocal")}</p>
           )}
         </fieldset>
 

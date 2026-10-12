@@ -303,11 +303,7 @@ async fn read_block(reader: &mut (impl AsyncRead + Unpin), block: &mut [u8]) -> 
 /// over 4 GiB).
 fn unwrap_pos(wire: u32, near: u64) -> u64 {
     let base = near & !0xffff_ffff;
-    [base.wrapping_sub(1 << 32), base, base + (1 << 32)]
-        .into_iter()
-        .map(|b| b | u64::from(wire))
-        .min_by_key(|p| p.abs_diff(near))
-        .unwrap()
+    [base.wrapping_sub(1 << 32), base, base + (1 << 32)].into_iter().map(|b| b | u64::from(wire)).min_by_key(|p| p.abs_diff(near)).unwrap()
 }
 
 #[cfg(test)]

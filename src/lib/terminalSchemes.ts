@@ -221,11 +221,7 @@ export function resolveScheme(id: string, appearance: "dark" | "light"): Termina
  * The scheme of a session's terminal: the session's own choice over the setting's, with its
  * background color if it has one (see `ProfileAppearance`).
  */
-export function sessionScheme(
-  settingId: string,
-  appearance: "dark" | "light",
-  own: ProfileAppearance | undefined,
-): TerminalScheme {
+export function sessionScheme(settingId: string, appearance: "dark" | "light", own: ProfileAppearance | undefined): TerminalScheme {
   const scheme = resolveScheme(own?.colorScheme ?? settingId, appearance);
   const background = own?.background;
   if (!background) return scheme;

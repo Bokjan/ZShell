@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
-use ts_rs::TS;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use ts_rs::TS;
 
 use super::replace::{LocalTarget, RemoteTarget};
 use super::{file_name, join};
@@ -176,12 +176,7 @@ async fn scan_local_dir(root: &Path, remote_root: String, plan: &mut Plan<PathBu
 
 /// Downloads into `local_dir`; top-level items get a unique name instead of overwriting
 /// existing files. Returns the local paths of the top-level items.
-pub async fn download(
-    sftp: &SftpSession,
-    remote_paths: &[String],
-    local_dir: &Path,
-    reporter: &mut Reporter,
-) -> Result<Vec<PathBuf>> {
+pub async fn download(sftp: &SftpSession, remote_paths: &[String], local_dir: &Path, reporter: &mut Reporter) -> Result<Vec<PathBuf>> {
     let mut items = Vec::with_capacity(remote_paths.len());
     let mut result = Ok(());
     for remote in remote_paths {
@@ -233,12 +228,7 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
 
 /// [`download_to`], keeping in `done` how many of the items, from the first, have arrived
 /// whole.
-async fn download_counting(
-    sftp: &SftpSession,
-    items: &[(String, PathBuf)],
-    reporter: &mut Reporter,
-    done: &mut usize,
-) -> Result<()> {
+async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, done: &mut usize) -> Result<()> {
     let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
     // Where each item's files end in `plan.files`.
     let mut ends = Vec::with_capacity(items.len());

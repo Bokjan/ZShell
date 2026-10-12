@@ -22,8 +22,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
 use serde::Serialize;
-use ts_rs::TS;
 use tokio::sync::{mpsc, oneshot, watch};
+use ts_rs::TS;
 
 use crate::error::Error;
 use crate::session::{SessionEvent, SessionSink};
@@ -80,7 +80,10 @@ enum State {
     /// Watching the output. `tail` is the end of what was scanned, in case a header starts
     /// there and continues in the next chunk; its last `held` bytes look like the start of a
     /// header and are not shown yet.
-    Idle { tail: Vec<u8>, held: usize },
+    Idle {
+        tail: Vec<u8>,
+        held: usize,
+    },
     Active(Active),
 }
 
@@ -326,7 +329,14 @@ impl TerminalReport {
         let (name, done) = (&self.name, format_size(self.done));
         let line = match (self.size, self.direction) {
             (Some(size), Direction::Receive) => {
-                t!("zmodem.receiving", name = name, done = done, total = format_size(size), percent = percent(self.done, size), speed = speed)
+                t!(
+                    "zmodem.receiving",
+                    name = name,
+                    done = done,
+                    total = format_size(size),
+                    percent = percent(self.done, size),
+                    speed = speed
+                )
             }
             (Some(size), Direction::Send) => {
                 t!("zmodem.sending", name = name, done = done, total = format_size(size), percent = percent(self.done, size), speed = speed)

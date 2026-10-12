@@ -9,8 +9,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use ts_rs::TS;
 use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForwardListen, SshConfig};
+use ts_rs::TS;
 
 use crate::config::{local_username, AuthMethod, Connection, EnvVar, Profile, Remote, SshOptions};
 use crate::error::{Error, Result};
@@ -18,14 +18,7 @@ use crate::forward::{ForwardKind, ForwardRule};
 use crate::proxy::{Proxy, ProxyKind};
 
 /// Options that change how `ssh` connects but are not imported, reported per host.
-const NOTABLE_UNSUPPORTED: &[&str] = &[
-    "forwardx11",
-    "remotecommand",
-    "localcommand",
-    "hostkeyalias",
-    "identityagent",
-    "pkcs11provider",
-];
+const NOTABLE_UNSUPPORTED: &[&str] = &["forwardx11", "remotecommand", "localcommand", "hostkeyalias", "identityagent", "pkcs11provider"];
 
 /// A host found in the config, as it would be imported.
 #[derive(Debug, Serialize, TS)]
@@ -143,7 +136,8 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
             keepalive_interval: candidate.keepalive_interval,
             ..Remote::new(candidate.host, candidate.port, candidate.username)
         };
-        let mut ssh = SshOptions { auth: candidate.auth, forward_agent: candidate.forward_agent, env: candidate.env, ..SshOptions::new(remote) };
+        let mut ssh =
+            SshOptions { auth: candidate.auth, forward_agent: candidate.forward_agent, env: candidate.env, ..SshOptions::new(remote) };
         if let Some(command) = candidate.proxy_command {
             let same = |p: &&Proxy| p.kind == ProxyKind::Command && p.command == command;
             ssh.remote.proxy = Some(match proxies.iter().chain(&new_proxies).find(same) {
@@ -164,11 +158,7 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
             });
         }
         // Normalizing fills in the default bind address, as saving from the panel does.
-        ssh.forwards = candidate
-            .forwards
-            .into_iter()
-            .filter_map(|rule| ForwardRule { id: new_id(), ..rule }.normalize().ok())
-            .collect();
+        ssh.forwards = candidate.forwards.into_iter().filter_map(|rule| ForwardRule { id: new_id(), ..rule }.normalize().ok()).collect();
         profiles.push(new_profile(ids[&candidate.alias].clone(), candidate.alias, ssh));
     }
     Ok((new_proxies, profiles))
@@ -295,13 +285,8 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
         Some(path) => AuthMethod::PublicKey { key_path: home_relative(path, std::env::home_dir().as_deref()) },
         None => AuthMethod::Auto,
     };
-    let mut jump_hosts: Vec<String> = params
-        .proxy_jump
-        .clone()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|jump| !jump.eq_ignore_ascii_case("none"))
-        .collect();
+    let mut jump_hosts: Vec<String> =
+        params.proxy_jump.clone().unwrap_or_default().into_iter().filter(|jump| !jump.eq_ignore_ascii_case("none")).collect();
     let keepalive_interval = params.server_alive_interval.map_or(30, |interval| interval.as_secs().try_into().unwrap_or(u32::MAX));
 
     let mut skipped = Vec::new();
@@ -334,12 +319,8 @@ fn candidate(config: &SshConfig, alias: String, existing: &[Profile]) -> Candida
     if params.unsupported_fields.contains_key("sendenv") {
         skipped.push("SendEnv".to_owned());
     }
-    skipped.extend(
-        NOTABLE_UNSUPPORTED
-            .iter()
-            .filter(|field| params.unsupported_fields.contains_key(**field))
-            .map(|field| field.to_string()),
-    );
+    skipped
+        .extend(NOTABLE_UNSUPPORTED.iter().filter(|field| params.unsupported_fields.contains_key(**field)).map(|field| field.to_string()));
 
     // Only SSH sessions: a Telnet session with the same name must not become a jump host.
     let existing = existing
@@ -708,9 +689,15 @@ Host *
         assert_eq!(legacy.skipped, ["SendEnv"]);
         assert_eq!(legacy.proxy_command.as_deref(), Some("nc -X 5 %h %p"));
         // The older way to write ProxyJump becomes a jump host; ProxyJump wins over ProxyCommand.
-        assert_eq!((candidates[4].jump_hosts.as_slice(), candidates[4].proxy_command.as_deref()), (["bastion".to_owned()].as_slice(), None));
+        assert_eq!(
+            (candidates[4].jump_hosts.as_slice(), candidates[4].proxy_command.as_deref()),
+            (["bastion".to_owned()].as_slice(), None)
+        );
         assert_eq!(candidates[5].jump_hosts, ["bastion"]);
-        assert_eq!((candidates[5].proxy_command.as_deref(), candidates[5].skipped.as_slice()), (None, ["ProxyCommand".to_owned()].as_slice()));
+        assert_eq!(
+            (candidates[5].proxy_command.as_deref(), candidates[5].skipped.as_slice()),
+            (None, ["ProxyCommand".to_owned()].as_slice())
+        );
         assert!(legacy.forward_agent && !db.forward_agent);
         let env: Vec<_> = legacy.env.iter().map(|v| (v.name.as_str(), v.value.as_str())).collect();
         assert_eq!(env, [("LANG", "zh_CN.GBK"), ("GREETING", "hello world")]);
@@ -731,7 +718,8 @@ Host *
         assert_eq!(profiles[0].forwards()[0].bind_host, "127.0.0.1");
 
         // An existing profile for the jump host is referenced instead of duplicated.
-        let ssh = SshOptions { auth: AuthMethod::Agent, ..SshOptions::new(Remote::new("bastion.example.com".into(), 2200, "alice".into())) };
+        let ssh =
+            SshOptions { auth: AuthMethod::Agent, ..SshOptions::new(Remote::new("bastion.example.com".into(), 2200, "alice".into())) };
         let bastion = new_profile("existing".into(), "bastion".into(), ssh);
         let (_, profiles) = plan(&path, &["db".to_owned(), "web".to_owned()], std::slice::from_ref(&bastion), &[]).unwrap();
         assert_eq!(plan_ids(&profiles), ["db", "web"]);

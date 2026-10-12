@@ -92,7 +92,8 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
     let mut chain = JumpChain::default();
     let mut transport = None;
     for (index, hop) in jumps.iter().enumerate() {
-        let (next_host, next_port) = jumps.get(index + 1).map_or((host, port), |next| (next.ssh.remote.host.as_str(), next.ssh.remote.port));
+        let (next_host, next_port) =
+            jumps.get(index + 1).map_or((host, port), |next| (next.ssh.remote.host.as_str(), next.ssh.remote.port));
         let proxy = route.proxy.as_ref().filter(|_| index == 0);
         // The agent is only forwarded to the target, where the shell runs.
         let options = HopOptions::jump_host();
@@ -418,10 +419,8 @@ mod tests {
             // The client's version line and key exchange offer.
             read = server.read(&mut buf) => assert!(read.unwrap() > 0),
         }
-        let closed = tokio::time::timeout(Duration::from_secs(5), async {
-            while server.read(&mut buf).await.is_ok_and(|n| n > 0) {}
-        })
-        .await;
+        let closed =
+            tokio::time::timeout(Duration::from_secs(5), async { while server.read(&mut buf).await.is_ok_and(|n| n > 0) {} }).await;
         assert!(closed.is_ok(), "the connection is still open");
     }
 
@@ -458,7 +457,12 @@ mod tests {
             Ok(())
         }
 
-        async fn data(&mut self, _channel: russh::ChannelId, data: &[u8], _session: &mut russh::server::Session) -> Result<(), Self::Error> {
+        async fn data(
+            &mut self,
+            _channel: russh::ChannelId,
+            data: &[u8],
+            _session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
             let _ = self.typed.send(data.to_vec());
             Ok(())
         }
@@ -549,7 +553,11 @@ mod tests {
             .await
             .unwrap_or_else(|_| {
                 let same = got.iter().zip(typed).take_while(|(a, b)| a == b).count();
-                panic!("the connection is stuck: got {} of {} bytes (same up to {same}), size {latest:?}, {shown} bytes shown", got.len(), typed.len())
+                panic!(
+                    "the connection is stuck: got {} of {} bytes (same up to {same}), size {latest:?}, {shown} bytes shown",
+                    got.len(),
+                    typed.len()
+                )
             });
         }
     }

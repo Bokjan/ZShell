@@ -15,7 +15,11 @@ const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400,
 const PARITIES = ["none", "odd", "even"] as const;
 const FLOW_CONTROLS = ["none", "software", "hardware"] as const;
 
-const NAME_PLACEHOLDERS = { ssh: "profile.namePlaceholder", telnet: "profile.namePlaceholderTelnet", serial: "profile.namePlaceholderSerial" } as const;
+const NAME_PLACEHOLDERS = {
+  ssh: "profile.namePlaceholder",
+  telnet: "profile.namePlaceholderTelnet",
+  serial: "profile.namePlaceholderSerial",
+} as const;
 
 interface Props {
   form: ProfileForm;
@@ -172,7 +176,13 @@ export function GeneralPage({ form, set, changeProtocol, profile, password, uses
       <div className="row">
         <label className="grow">
           {t("profile.baudRate")}
-          <input name="baudRate" value={form.baudRate} onChange={(e) => set({ baudRate: e.target.value })} list="profile-baud-rates" inputMode="numeric" />
+          <input
+            name="baudRate"
+            value={form.baudRate}
+            onChange={(e) => set({ baudRate: e.target.value })}
+            list="profile-baud-rates"
+            inputMode="numeric"
+          />
           <datalist id="profile-baud-rates">
             {BAUD_RATES.map((rate) => (
               <option key={rate} value={rate} />

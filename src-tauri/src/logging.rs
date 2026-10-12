@@ -21,13 +21,13 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use chrono::Local;
-use unicode_width::UnicodeWidthChar;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use unicode_width::UnicodeWidthChar;
 
-use crate::persist::{JsonFile, SetAside};
 use crate::error::{Error, Result};
 use crate::local_name::{create_unique_file, local_file_name};
+use crate::persist::{JsonFile, SetAside};
 use crate::settings::{LogFormat, LogSettings};
 
 /// What a session's log is named after.
@@ -513,11 +513,17 @@ impl Logs {
         note: &str,
         after_others: bool,
     ) -> Result<()> {
-        let text = (settings.format == LogFormat::Text)
-            .then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
+        let text =
+            (settings.format == LogFormat::Text).then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
         let failure = Arc::new(Mutex::new(None));
-        let mut writer =
-            LogWriter { file: BufWriter::new(file), text, flushed: Instant::now(), dirty: false, _active: active, failure: failure.clone() };
+        let mut writer = LogWriter {
+            file: BufWriter::new(file),
+            text,
+            flushed: Instant::now(),
+            dirty: false,
+            _active: active,
+            failure: failure.clone(),
+        };
         let (chunks, queued) = sync_channel(QUEUE);
         if after_others {
             let (active, path, note) = (self.active.clone(), path.clone(), note.to_owned());
@@ -624,8 +630,7 @@ fn file_name(template: &str, info: &LogInfo) -> String {
         .replace("{user}", &info.user)
         .replace("{date}", &time.format("%Y-%m-%d").to_string())
         .replace("{time}", &time.format("%H-%M-%S").to_string());
-    let name: String =
-        name.chars().map(|c| if c.is_control() || r#"/\:*?"<>|"#.contains(c) { '_' } else { c }).collect();
+    let name: String = name.chars().map(|c| if c.is_control() || r#"/\:*?"<>|"#.contains(c) { '_' } else { c }).collect();
     local_file_name(name.trim().trim_matches('.')).unwrap_or_else(|| "session.log".to_owned())
 }
 
@@ -757,7 +762,14 @@ mod tests {
         let active = Arc::new(ActiveLogs::default()).add(path.clone());
         // Opened for reading only: writes fail.
         let file = File::open(&path).unwrap();
-        let writer = LogWriter { file: BufWriter::new(file), text: None, flushed: Instant::now(), dirty: false, _active: active, failure: failure.clone() };
+        let writer = LogWriter {
+            file: BufWriter::new(file),
+            text: None,
+            flushed: Instant::now(),
+            dirty: false,
+            _active: active,
+            failure: failure.clone(),
+        };
         let (chunks, queued) = sync_channel(2);
         chunks.send(Chunk::Output(vec![b'x'; 64 << 10])).unwrap();
         writer.run(queued);

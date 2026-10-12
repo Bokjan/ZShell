@@ -222,7 +222,8 @@ pub fn passwords(path: &Path, digest: &str, passphrase: &str) -> Result<BTreeMap
     }
     let file = parse(path, &bytes)?;
     let Some(passwords) = file.passwords else { return Ok(BTreeMap::new()) };
-    let content: Content = serde_json::from_slice(&bytes).map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
+    let content: Content =
+        serde_json::from_slice(&bytes).map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
     let part = |raw: &Option<Box<RawValue>>| raw.as_ref().map_or("", |raw| raw.get()).to_owned();
     let aad = content_aad(&part(&content.folders), &part(&content.profiles), &part(&content.proxies));
     let key = match passwords.cipher == CIPHER {
@@ -238,7 +239,11 @@ pub fn passwords(path: &Path, digest: &str, passphrase: &str) -> Result<BTreeMap
 /// The sessions in `file` (ids) that importing `selected` adds, in the order found: those and
 /// the jump hosts they go through, and theirs, except those that exist here (`existing`),
 /// which are used instead: file id → the existing one's id.
-fn to_import(file: &SessionsFile, selected: impl IntoIterator<Item = String>, existing: &[Profile]) -> (Vec<String>, HashMap<String, String>) {
+fn to_import(
+    file: &SessionsFile,
+    selected: impl IntoIterator<Item = String>,
+    existing: &[Profile],
+) -> (Vec<String>, HashMap<String, String>) {
     let by_id: HashMap<&str, &Profile> = file.profiles.iter().map(|p| (p.id.as_str(), p)).collect();
     let mut imported = Vec::new();
     let mut found: HashMap<String, String> = HashMap::new();
@@ -510,7 +515,10 @@ mod tests {
         ];
         export(&path, Vec::new(), Vec::new(), profiles, None).unwrap();
 
-        let telnet = Profile { connection: Connection::Telnet(Remote::new("10.0.0.1".into(), 23, String::new())), ..profile("t", "router", "", None, &[]) };
+        let telnet = Profile {
+            connection: Connection::Telnet(Remote::new("10.0.0.1".into(), 23, String::new())),
+            ..profile("t", "router", "", None, &[])
+        };
         let Scan { candidates, digest, .. } = scan(&path, std::slice::from_ref(&telnet)).unwrap();
         assert_eq!(candidates[0].existing, None);
         assert_eq!(candidates[1].auto_forwards[0].bind_host, "localhost");

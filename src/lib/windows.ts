@@ -48,9 +48,7 @@ export function useConfigChanged(change: Change, handler: () => void) {
  * What a window is to show: a tab moved out of another window (dropped `at` that many CSS
  * pixels from the left of the page, if dragged there), or a saved session to open.
  */
-export type WindowContent =
-  | { kind: "tab"; tab: TabTransfer; at?: number | null }
-  | { kind: "profile"; profileId: string; title: string };
+export type WindowContent = { kind: "tab"; tab: TabTransfer; at?: number | null } | { kind: "profile"; profileId: string; title: string };
 
 export const windows = {
   /**

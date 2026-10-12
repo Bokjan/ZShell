@@ -39,9 +39,7 @@ export function ProxySection() {
         </div>
         <p className="hint">{t("settings.proxiesHint")}</p>
       </Setting>
-      {editing !== undefined && (
-        <ProxyDialog proxy={editing} onClose={() => setEditing(undefined)} onChanged={refresh} />
-      )}
+      {editing !== undefined && <ProxyDialog proxy={editing} onClose={() => setEditing(undefined)} onChanged={refresh} />}
     </Section>
   );
 }

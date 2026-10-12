@@ -7,8 +7,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::persist::{JsonFile, SetAside};
 use crate::error::Result;
+use crate::persist::{JsonFile, SetAside};
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]

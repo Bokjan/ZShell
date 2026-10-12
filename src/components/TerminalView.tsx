@@ -608,12 +608,7 @@ export function TerminalView({
         </ConfirmDialog>
       )}
       {searchKey > 0 && searchRef.current && (
-        <SearchBar
-          addon={searchRef.current}
-          decorations={searchDecorations(scheme)}
-          focusKey={searchKey}
-          onClose={closeSearch}
-        />
+        <SearchBar addon={searchRef.current} decorations={searchDecorations(scheme)} focusKey={searchKey} onClose={closeSearch} />
       )}
     </div>
   );

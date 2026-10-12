@@ -51,7 +51,11 @@ pub enum Item {
     Separator,
     /// An action of the page, with its label and macOS keys as keymap.ts writes them
     /// (`Cmd+Shift+E`).
-    Action { id: String, label: String, keys: Option<String> },
+    Action {
+        id: String,
+        label: String,
+        keys: Option<String>,
+    },
 }
 
 #[derive(Default)]

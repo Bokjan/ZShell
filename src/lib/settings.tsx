@@ -129,10 +129,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const update = useCallback((next: Settings) => {
     const request = ++latest.current;
     setSettings(next);
-    invoke<Settings>("settings_set", { settings: next }).then(
-      (saved) => request === latest.current && setSettings(saved),
-      console.error,
-    );
+    invoke<Settings>("settings_set", { settings: next }).then((saved) => request === latest.current && setSettings(saved), console.error);
   }, []);
 
   // Wait for the stored settings so terminals start with the right theme and font.

@@ -39,8 +39,7 @@ fn file_name_for(name: &str, windows: bool) -> Option<String> {
 }
 
 fn windows_name(name: &str) -> String {
-    let mut name: String =
-        name.chars().map(|c| if u32::from(c) < 0x20 || WINDOWS_RESERVED_CHARS.contains(c) { '_' } else { c }).collect();
+    let mut name: String = name.chars().map(|c| if u32::from(c) < 0x20 || WINDOWS_RESERVED_CHARS.contains(c) { '_' } else { c }).collect();
     let kept = name.trim_end_matches(['.', ' ']).len();
     let dropped = name.len() - kept;
     name.replace_range(kept.., &"_".repeat(dropped));

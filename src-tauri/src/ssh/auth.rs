@@ -360,7 +360,9 @@ impl<H: Handler> Auth<'_, H> {
         let Ok(encrypted) = PrivateKey::read_openssh_file(path) else {
             return match load_key(path, self.io).await {
                 Ok(key) => self.sign_in_with(key).await,
-                Err(e) if !chosen && e.downcast_ref::<Error>().is_some_and(|e| e.code() == "auth.keyDecryptFailed") => Ok(Outcome::Rejected),
+                Err(e) if !chosen && e.downcast_ref::<Error>().is_some_and(|e| e.code() == "auth.keyDecryptFailed") => {
+                    Ok(Outcome::Rejected)
+                }
                 Err(e) => Err(e),
             };
         };
@@ -397,7 +399,8 @@ impl<H: Handler> Auth<'_, H> {
                 continue;
             }
             let hash_alg = if key.algorithm().is_rsa() { rsa_hash } else { None };
-            let result = self.session.authenticate_publickey_with(&user, key, hash_alg, &mut AgentSigner(&mut agent)).await.map_err(SignError::lost);
+            let result =
+                self.session.authenticate_publickey_with(&user, key, hash_alg, &mut AgentSigner(&mut agent)).await.map_err(SignError::lost);
             match self.answer(result).await?.into() {
                 Outcome::Rejected => {}
                 outcome => return Ok(outcome),
@@ -642,7 +645,11 @@ mod tests {
             response: Option<Response<'a>>,
         ) -> Result<ServerAuth, Self::Error> {
             let Some(mut answers) = response else {
-                return Ok(ServerAuth::Partial { name: "".into(), instructions: "".into(), prompts: vec![(self.prompt.into(), false)].into() });
+                return Ok(ServerAuth::Partial {
+                    name: "".into(),
+                    instructions: "".into(),
+                    prompts: vec![(self.prompt.into(), false)].into(),
+                });
             };
             Ok(match answers.next().as_deref() == Some(self.secret.as_bytes()) {
                 true => self.pass(MethodKind::KeyboardInteractive),
@@ -709,9 +716,14 @@ mod tests {
             }
         });
         let (ended_tx, ended) = watch::channel(None);
-        let mut session = russh::client::connect_stream(Arc::new(russh::client::Config::default()), client_side, Client(ended_tx)).await.unwrap();
+        let mut session =
+            russh::client::connect_stream(Arc::new(russh::client::Config::default()), client_side, Client(ended_tx)).await.unwrap();
 
-        let key_path = std::env::temp_dir().join(format!("zshell-auth-key-{}-{}", std::process::id(), NEXT_FILE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+        let key_path = std::env::temp_dir().join(format!(
+            "zshell-auth-key-{}-{}",
+            std::process::id(),
+            NEXT_FILE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         std::fs::write(&key_path, key_file).unwrap();
         let mut profile = SshProfile::quick("t".into(), Remote::new("example.com".into(), 22, "alice".into()));
         profile.ssh.auth = match auth {
@@ -723,7 +735,14 @@ mod tests {
         for line in typed.split_inclusive('\r') {
             input.send(SessionInput::Data(line.as_bytes().to_vec())).unwrap();
         }
-        let auth = Auth { session: &mut session, profile: &profile, io: &mut io, ended, saved_password: Some(saved.map(Into::into)), tried: Vec::new() };
+        let auth = Auth {
+            session: &mut session,
+            profile: &profile,
+            io: &mut io,
+            ended,
+            saved_password: Some(saved.map(Into::into)),
+            tried: Vec::new(),
+        };
         // A prompt nothing answers would wait for ever.
         let result = tokio::time::timeout(Duration::from_secs(10), auth.run()).await.expect("authentication waits for input");
         let shown = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
@@ -774,7 +793,13 @@ wF5Blj6bR6iFUzJQ==
     /// Google Authenticator): the saved password must not be spent on the code prompt.
     #[tokio::test]
     async fn key_then_verification_code() {
-        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::KeyboardInteractive], passed: 0, prompt: "Verification code: ", secret: "123456", ..Default::default() };
+        let server = Server {
+            steps: vec![MethodKind::PublicKey, MethodKind::KeyboardInteractive],
+            passed: 0,
+            prompt: "Verification code: ",
+            secret: "123456",
+            ..Default::default()
+        };
         let (result, shown) = sign_in(server, &[MethodKind::PublicKey], key_file(), Some("hunter2"), "123456\r").await;
         result.unwrap();
         assert!(shown.contains("Verification code: ") && !shown.contains("Permission denied"), "{shown:?}");
@@ -783,7 +808,13 @@ wF5Blj6bR6iFUzJQ==
     /// `AuthenticationMethods publickey,password`: the saved password answers the second step.
     #[tokio::test]
     async fn key_then_saved_password() {
-        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::Password], passed: 0, prompt: "", secret: "hunter2", ..Default::default() };
+        let server = Server {
+            steps: vec![MethodKind::PublicKey, MethodKind::Password],
+            passed: 0,
+            prompt: "",
+            secret: "hunter2",
+            ..Default::default()
+        };
         let (result, shown) = sign_in(server, &[MethodKind::PublicKey], key_file(), Some("hunter2"), "").await;
         result.unwrap();
         assert!(!shown.contains("password"), "{shown:?}");
@@ -793,7 +824,13 @@ wF5Blj6bR6iFUzJQ==
     /// answers PAM's password prompt.
     #[tokio::test]
     async fn keyboard_interactive_before_password() {
-        let server = Server { steps: vec![MethodKind::KeyboardInteractive], passed: 0, prompt: "Password: ", secret: "hunter2", ..Default::default() };
+        let server = Server {
+            steps: vec![MethodKind::KeyboardInteractive],
+            passed: 0,
+            prompt: "Password: ",
+            secret: "hunter2",
+            ..Default::default()
+        };
         let offered = [MethodKind::Password, MethodKind::KeyboardInteractive];
         let (result, shown) = sign_in(server, &offered, AuthMethod::Password, Some("hunter2"), "").await;
         result.unwrap();
@@ -803,7 +840,8 @@ wF5Blj6bR6iFUzJQ==
     /// A second step we cannot do names what the server requires.
     #[tokio::test]
     async fn reports_methods_it_cannot_use() {
-        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::HostBased], passed: 0, prompt: "", secret: "", ..Default::default() };
+        let server =
+            Server { steps: vec![MethodKind::PublicKey, MethodKind::HostBased], passed: 0, prompt: "", secret: "", ..Default::default() };
         let (result, _) = sign_in(server, &[MethodKind::PublicKey], key_file(), None, "").await;
         let error = Error::from(result.unwrap_err());
         assert_eq!(error.code(), "auth.moreRequired");
@@ -867,7 +905,8 @@ wF5Blj6bR6iFUzJQ==
             }
         });
         let mut agent = AgentClient::connect(client);
-        let key = russh::keys::PublicKey::from_openssh("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIErPvl8mnDbXiALZf/lPNK6oppUWYB4bP5AYBJmvaFkh").unwrap();
+        let key = russh::keys::PublicKey::from_openssh("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIErPvl8mnDbXiALZf/lPNK6oppUWYB4bP5AYBJmvaFkh")
+            .unwrap();
         let identity = AgentIdentity::PublicKey { key, comment: String::new() };
         let signed = AgentSigner(&mut agent).auth_sign(&identity, None, b"data".to_vec()).await.unwrap();
         let mut expected = b"data".to_vec();

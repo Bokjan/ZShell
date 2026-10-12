@@ -136,9 +136,8 @@ async fn connect_with(
             true => Some(Credentials { username: proxy.username.clone(), password: password(proxy, &mut saved, io).await? }),
             false => None,
         };
-        let mut stream = crate::net::tcp(&proxy.host, proxy.port)
-            .await
-            .context(Error::new("proxy.unreachable").param("proxy", &proxy.name))?;
+        let mut stream =
+            crate::net::tcp(&proxy.host, proxy.port).await.context(Error::new("proxy.unreachable").param("proxy", &proxy.name))?;
         if let Some(interval) = keepalive {
             crate::net::set_keepalive(&stream, interval);
         }
@@ -150,9 +149,8 @@ async fn connect_with(
             }
         };
         // The proxy answers once it has reached the target, which has its own time limit.
-        let handshake = tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake)
-            .await
-            .unwrap_or_else(|_| Err(errors.error("proxy.timeout").into()));
+        let handshake =
+            tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake).await.unwrap_or_else(|_| Err(errors.error("proxy.timeout").into()));
         let Err(e) = handshake else {
             return Ok(Box::new(stream));
         };
@@ -329,7 +327,10 @@ mod tests {
         connect_with(&proxy, "db.internal", 22, None, Some("old".into()), &mut io).await.unwrap();
         assert_eq!(count(), 3);
         let shown = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
-        assert!(shown.contains(&t!("terminal.savedProxyPasswordRejected")) && shown.contains(&t!("terminal.proxyPasswordRejected")), "{shown}");
+        assert!(
+            shown.contains(&t!("terminal.savedProxyPasswordRejected")) && shown.contains(&t!("terminal.proxyPasswordRejected")),
+            "{shown}"
+        );
 
         // Three typed ones that are all wrong give up.
         let (mut io, input, _output, _events) = TermIo::detached((80, 24));

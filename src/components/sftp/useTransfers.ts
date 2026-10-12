@@ -75,7 +75,8 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     return sessionId;
   };
 
-  const labelFor = (names: string[]) => (names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 }));
+  const labelFor = (names: string[]) =>
+    names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 });
 
   const run = async (kind: Transfer["kind"], names: string[], work: (id: string) => Promise<string[] | void>) => {
     const id = crypto.randomUUID();
@@ -100,15 +101,16 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     const names =
       remoteDir === cwdRef.current
         ? entries.map((e) => e.name)
-        : await sftp.list(sessionId, remoteDir).then((listing) => listing.entries.map((e) => e.name), () => null);
+        : await sftp.list(sessionId, remoteDir).then(
+            (listing) => listing.entries.map((e) => e.name),
+            () => null,
+          );
     const existing = new Set(names);
     const conflicts = localPaths.map(basename).filter((name) => existing.has(name));
     if (names && conflicts.length === 0) return void start();
     ask({
       title: t("sftp.replaceTitle"),
-      message: names
-        ? t("sftp.replaceMessage", { names: conflicts.join("\n") })
-        : t("sftp.replaceUnknownMessage", { path: remoteDir }),
+      message: names ? t("sftp.replaceMessage", { names: conflicts.join("\n") }) : t("sftp.replaceUnknownMessage", { path: remoteDir }),
       confirmLabel: t("sftp.replace"),
       danger: true,
       action: start,
@@ -121,7 +123,14 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     void run(
       "download",
       targets.map((e) => e.name),
-      async (id) => sftp.download(currentSession(), id, targets.map((e) => e.path), localDir, (progress) => update(id, { progress })),
+      async (id) =>
+        sftp.download(
+          currentSession(),
+          id,
+          targets.map((e) => e.path),
+          localDir,
+          (progress) => update(id, { progress }),
+        ),
     );
   };
 

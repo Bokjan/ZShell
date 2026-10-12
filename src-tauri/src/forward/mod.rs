@@ -26,12 +26,12 @@ use std::time::Duration;
 use russh::client::Msg;
 use russh::Channel;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
 use tokio::time::Instant;
+use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::session::{SessionEvent, SessionId, SessionSink};
@@ -114,7 +114,9 @@ pub enum ForwardState {
         /// Why the most recent connection through this rule failed, if one did.
         last_error: Option<Error>,
     },
-    Failed { error: Error },
+    Failed {
+        error: Error,
+    },
     Stopped,
 }
 

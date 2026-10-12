@@ -11,9 +11,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use ts_rs::TS;
 use serialport::{SerialPort, SerialPortType};
 use tokio::sync::mpsc;
+use ts_rs::TS;
 
 use crate::config::{FlowControl, Parity, SerialOptions};
 use crate::error::{Error, Result};
@@ -336,9 +336,7 @@ mod tests {
         let (mut master, mut slave) = (0, 0);
         // SAFETY: openpty fills in two file descriptors; null name, termios and window size
         // are allowed.
-        let result = unsafe {
-            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
-        };
+        let result = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
         assert_eq!(result, 0);
         // SAFETY: `slave` is an open terminal; ttyname returns a C string or null.
         let name = unsafe { CStr::from_ptr(libc::ttyname(slave)) }.to_string_lossy().into_owned();

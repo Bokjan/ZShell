@@ -197,7 +197,9 @@ mod tests {
         assert_eq!(expand("echo 100%% %x %", "h", 1, "").unwrap(), "echo 100% %x %");
         assert_eq!(expand("nc %h %p", "fe80::1%en0", 22, "").unwrap(), "nc fe80::1%en0 22");
         // Names the shell would interpret are refused, wherever the session came from.
-        for (host, user) in [("db$(curl x|sh)", "a"), ("db;reboot", "a"), ("db", "a`id`"), ("db\nx", "a"), ("-oProxyCommand=x", "a"), ("db", "a b")] {
+        for (host, user) in
+            [("db$(curl x|sh)", "a"), ("db;reboot", "a"), ("db", "a`id`"), ("db\nx", "a"), ("-oProxyCommand=x", "a"), ("db", "a b")]
+        {
             assert_eq!(expand("ssh -W %h:%p %r@jump", host, 22, user).unwrap_err().code(), "proxy.unsafeName", "{host:?} {user:?}");
         }
     }

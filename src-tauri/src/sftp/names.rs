@@ -119,8 +119,9 @@ fn request(body: Vec<u8>, encoding: &'static Encoding) -> Vec<u8> {
     };
     // The paths come right after the type and the request id.
     let (start, paths) = match kind {
-        FXP_OPEN | FXP_LSTAT | FXP_SETSTAT | FXP_OPENDIR | FXP_REMOVE | FXP_MKDIR | FXP_RMDIR | FXP_REALPATH
-        | FXP_STAT | FXP_READLINK => (5, 1),
+        FXP_OPEN | FXP_LSTAT | FXP_SETSTAT | FXP_OPENDIR | FXP_REMOVE | FXP_MKDIR | FXP_RMDIR | FXP_REALPATH | FXP_STAT | FXP_READLINK => {
+            (5, 1)
+        }
         FXP_RENAME | FXP_SYMLINK => (5, 2),
         // After the extension's name.
         FXP_EXTENDED => {

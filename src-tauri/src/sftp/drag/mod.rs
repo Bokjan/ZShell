@@ -16,10 +16,10 @@ use std::time::{Duration, Instant};
 
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::oneshot;
+use ts_rs::TS;
 
 use super::transfer::{self, Progress, Reporter, Transfers};
 use crate::error::{Error, Result};

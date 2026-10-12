@@ -83,8 +83,7 @@ const PERMANENT_PROXY_ERRORS = new Set(["proxy.authRequired", "proxy.authUnsuppo
 
 /** Failures that retrying cannot fix: authentication problems (also with the proxy) and untrusted host keys. */
 const isPermanent = (error: CommandError | null) =>
-  !!error &&
-  (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected" || PERMANENT_PROXY_ERRORS.has(error.code));
+  !!error && (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected" || PERMANENT_PROXY_ERRORS.has(error.code));
 
 /** Acknowledge processed output in batches of this many bytes (see `Session.ack`). */
 const ACK_BATCH = 64 * 1024;

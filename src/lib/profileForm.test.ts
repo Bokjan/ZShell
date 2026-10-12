@@ -23,7 +23,16 @@ const saved: Profile = {
     forwardAgent: true,
     env: [{ name: "LANG", value: "en_US.UTF-8" }],
     forwards: [
-      { id: "r1", kind: "local", bindHost: "localhost", bindPort: 8080, targetHost: "localhost", targetPort: 80, description: "", autoStart: false },
+      {
+        id: "r1",
+        kind: "local",
+        bindHost: "localhost",
+        bindPort: 8080,
+        targetHost: "localhost",
+        targetPort: 80,
+        description: "",
+        autoStart: false,
+      },
     ],
   },
   autoReconnect: false,

@@ -121,8 +121,7 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
     config.label = label.to_owned();
     let builder = WebviewWindowBuilder::from_config(app, &config)?;
     #[cfg(target_os = "macos")]
-    let builder =
-        builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS);
+    let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS);
     #[cfg(windows)]
     let builder = builder.decorations(false);
     // Placed once created, then shown: the builder takes a logical position, which on Windows
@@ -216,8 +215,7 @@ pub struct WindowInfo {
 /// The other windows, in the order they opened.
 #[tauri::command]
 pub fn window_list(app: AppHandle, window: WebviewWindow) -> Vec<WindowInfo> {
-    let mut others: Vec<WebviewWindow> =
-        app.webview_windows().into_values().filter(|w| w.label() != window.label()).collect();
+    let mut others: Vec<WebviewWindow> = app.webview_windows().into_values().filter(|w| w.label() != window.label()).collect();
     others.sort_by_key(|w| order(w.label()));
     others.into_iter().map(|w| WindowInfo { title: w.title().unwrap_or_default(), label: w.label().to_owned() }).collect()
 }
@@ -238,13 +236,7 @@ pub fn window_set_title(app: AppHandle, window: WebviewWindow, title: String) ->
 /// the left), to put it there among the tabs. Fails with `window.notFound` if it has closed or
 /// is closing.
 #[tauri::command]
-pub fn window_send_tab(
-    app: AppHandle,
-    windows: State<'_, Windows>,
-    target: String,
-    tab: serde_json::Value,
-    at: Option<f64>,
-) -> Result<()> {
+pub fn window_send_tab(app: AppHandle, windows: State<'_, Windows>, target: String, tab: serde_json::Value, at: Option<f64>) -> Result<()> {
     let window = app.get_webview_window(&target).ok_or_else(|| Error::new("window.notFound"))?;
     {
         let mut inbox = windows.inbox.lock().unwrap();
@@ -271,11 +263,7 @@ pub fn window_pane_stayed(app: AppHandle, target: String, pane: u32) {
 /// are busy. A window that doesn't answer in time (its page still loading) counts all the
 /// sessions it shows.
 #[tauri::command]
-pub async fn app_busy_count(
-    app: AppHandle,
-    windows: State<'_, Windows>,
-    sessions: State<'_, SessionManager>,
-) -> tauri::Result<u32> {
+pub async fn app_busy_count(app: AppHandle, windows: State<'_, Windows>, sessions: State<'_, SessionManager>) -> tauri::Result<u32> {
     let labels: HashSet<String> = app.webview_windows().into_keys().collect();
     let id = windows.next_query.fetch_add(1, Ordering::Relaxed);
     let (done, answered) = oneshot::channel();
@@ -340,9 +328,8 @@ fn refocus_after_full_screen(window: &WebviewWindow) {
         });
         // SAFETY: `ns_window` is the window's NSWindow, which outlives the observer (both last
         // as long as the app). The center keeps the observer, so the token can go.
-        let _ = unsafe {
-            center.addObserverForName_object_queue_usingBlock(Some(name), Some(&*ns_window.cast::<AnyObject>()), None, &block)
-        };
+        let _ =
+            unsafe { center.addObserverForName_object_queue_usingBlock(Some(name), Some(&*ns_window.cast::<AnyObject>()), None, &block) };
     }
 }
 
@@ -489,19 +476,18 @@ mod win {
     use std::sync::{Mutex, Once, OnceLock};
 
     use tauri::{AppHandle, Emitter, EventTarget};
-    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
     use windows_sys::core::BOOL;
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
     use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
     use windows_sys::Win32::Graphics::Gdi::{GetStockObject, NULL_BRUSH};
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, EnableMenuItem, GetCursorPos, GetParent, GetSystemMenu, IsZoomed, LoadCursorW,
-        PostMessageW, RegisterClassW, SetMenuDefaultItem, SetWindowPos, ShowWindow, TrackPopupMenu, HTMAXBUTTON, HWND_TOP,
-        IDC_ARROW, MA_NOACTIVATE, MF_BYCOMMAND, MF_ENABLED, MF_GRAYED, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_MOVE,
-        SC_RESTORE, SC_SIZE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_MOUSEACTIVATE,
-        WM_DESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE,
-        WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
+        CreateWindowExW, DefWindowProcW, EnableMenuItem, GetCursorPos, GetParent, GetSystemMenu, IsZoomed, LoadCursorW, PostMessageW,
+        RegisterClassW, SetMenuDefaultItem, SetWindowPos, ShowWindow, TrackPopupMenu, HTMAXBUTTON, HWND_TOP, IDC_ARROW, MA_NOACTIVATE,
+        MF_BYCOMMAND, MF_ENABLED, MF_GRAYED, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, SWP_NOACTIVATE,
+        SWP_SHOWWINDOW, SW_HIDE, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_DESTROY, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
+        WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
     };
 
     use super::Rect;
@@ -541,8 +527,7 @@ mod win {
     /// `hwnd` is one of the app's windows.
     pub(super) unsafe fn update_border(hwnd: HWND) {
         let Some(is_window_arranged) = is_window_arranged() else { return };
-        let color =
-            if is_window_arranged(hwnd) != 0 { SNAPPED_BORDER.load(Ordering::Relaxed) } else { DWMWA_COLOR_DEFAULT };
+        let color = if is_window_arranged(hwnd) != 0 { SNAPPED_BORDER.load(Ordering::Relaxed) } else { DWMWA_COLOR_DEFAULT };
         if BORDERS.lock().unwrap().insert(hwnd as isize, color) != Some(color) {
             // Fails on Windows 10, which draws no such border.
             DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, (&color as *const u32).cast(), size_of::<u32>() as u32);
@@ -702,9 +687,8 @@ mod win {
             WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
             // Destroyed with its window, which may be gone before `destroyed` asks its handle.
             WM_DESTROY => {
-                let parent = BUTTONS.with_borrow(|buttons| {
-                    buttons.iter().find(|(_, button)| button.hwnd == hwnd).map(|(parent, _)| *parent)
-                });
+                let parent =
+                    BUTTONS.with_borrow(|buttons| buttons.iter().find(|(_, button)| button.hwnd == hwnd).map(|(parent, _)| *parent));
                 if let Some(parent) = parent {
                     forget(parent);
                 }
@@ -723,9 +707,14 @@ mod win {
         }
         // As the system sets them for a native title bar.
         let maximized = IsZoomed(hwnd) != 0;
-        for (item, enabled) in
-            [(SC_RESTORE, maximized), (SC_MOVE, !maximized), (SC_SIZE, !maximized), (SC_MINIMIZE, true), (SC_MAXIMIZE, !maximized), (SC_CLOSE, true)]
-        {
+        for (item, enabled) in [
+            (SC_RESTORE, maximized),
+            (SC_MOVE, !maximized),
+            (SC_SIZE, !maximized),
+            (SC_MINIMIZE, true),
+            (SC_MAXIMIZE, !maximized),
+            (SC_CLOSE, true),
+        ] {
             EnableMenuItem(menu, item, MF_BYCOMMAND | if enabled { MF_ENABLED } else { MF_GRAYED });
         }
         SetMenuDefaultItem(menu, SC_CLOSE, 0);

@@ -74,9 +74,7 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
           role={matches.length > 0 ? "listbox" : undefined}
           aria-label={t("quick.paletteTitle")}
         >
-          {matches.length === 0 && (
-            <p className="palette-empty">{query ? t("quick.noMatches") : t("quick.noCommands")}</p>
-          )}
+          {matches.length === 0 && <p className="palette-empty">{query ? t("quick.noMatches") : t("quick.noCommands")}</p>}
           {matches.map(({ group, command }, i) => (
             <div
               key={command.id}

@@ -82,7 +82,10 @@ pub enum Target {
     None,
     System,
     /// `password`: the new master password; `None` keeps the current one.
-    Password { password: Option<String>, remember: bool },
+    Password {
+        password: Option<String>,
+        remember: bool,
+    },
 }
 
 /// Why the vault is locked, for the unlock screen.
@@ -674,9 +677,7 @@ impl Vault {
                                 opened = true;
                                 State::Encrypted(Encrypted { header: file.header, key, data })
                             }
-                            Err(_) => {
-                                State::Locked { header: Some(file.header), lock: Lock { reason: LockReason::Damaged, error: None } }
-                            }
+                            Err(_) => State::Locked { header: Some(file.header), lock: Lock { reason: LockReason::Damaged, error: None } },
                         }
                     }
                 };
@@ -1144,7 +1145,12 @@ mod tests {
     fn finds_and_deletes_plain_copies_set_aside() {
         let dir = dir("copies");
         let store = Arc::new(MemoryStore::default());
-        for name in ["passwords.json.bad-20261012-101010", "profiles.json.bad-20261012-101010", "settings.json.bad-20261012-101010", "profiles.json.tmp"] {
+        for name in [
+            "passwords.json.bad-20261012-101010",
+            "profiles.json.bad-20261012-101010",
+            "settings.json.bad-20261012-101010",
+            "profiles.json.tmp",
+        ] {
             fs::write(dir.join(name), "{").unwrap();
         }
         let vault = open(&dir, &store);
@@ -1239,7 +1245,15 @@ mod tests {
         let changed = vault.update(|data| {
             data.folders.push(folder.clone());
             let kind = crate::proxy::ProxyKind::Socks5;
-            data.proxies.push(Proxy { id: "x".into(), name: "corp".into(), kind, host: "proxy.lan".into(), port: 1080, username: String::new(), command: String::new() });
+            data.proxies.push(Proxy {
+                id: "x".into(),
+                name: "corp".into(),
+                kind,
+                host: "proxy.lan".into(),
+                port: 1080,
+                username: String::new(),
+                command: String::new(),
+            });
             data.profiles.push(profile("b", "beta"));
         });
         assert!(changed.is_err());

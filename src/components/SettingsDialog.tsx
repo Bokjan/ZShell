@@ -31,16 +31,7 @@ import { Modal } from "./Modal";
 import { RadioGroup } from "./RadioGroup";
 import { SchemePreview, schemeLabel } from "./SchemePreview";
 import { AboutSection } from "./settings/AboutSection";
-import {
-  filterSettings,
-  LiveTextField,
-  NumberField,
-  Section,
-  SECTION_REACHED,
-  SECTIONS,
-  Setting,
-  type SectionId,
-} from "./settings/common";
+import { filterSettings, LiveTextField, NumberField, Section, SECTION_REACHED, SECTIONS, Setting, type SectionId } from "./settings/common";
 import { FileSection } from "./settings/FileSection";
 import { KnownHostsSection } from "./settings/KnownHostsSection";
 import { LogSection } from "./settings/LogSection";
@@ -60,7 +51,6 @@ const TEXT_SIZES: TextSize[] = ["normal", "large", "larger"];
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
-
 
 export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { t } = useTranslation();
@@ -339,10 +329,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
               <div className="row">
                 <label className="grow">
                   {t("settings.cursorStyle")}
-                  <select
-                    value={terminal.cursorStyle}
-                    onChange={(e) => setTerminal({ cursorStyle: e.target.value as CursorStyle })}
-                  >
+                  <select value={terminal.cursorStyle} onChange={(e) => setTerminal({ cursorStyle: e.target.value as CursorStyle })}>
                     {CURSOR_STYLES.map((style) => (
                       <option key={style} value={style}>
                         {t(`settings.cursorStyles.${style}`)}
@@ -362,11 +349,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 </label>
               </div>
               <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={terminal.cursorBlink}
-                  onChange={(e) => setTerminal({ cursorBlink: e.target.checked })}
-                />
+                <input type="checkbox" checked={terminal.cursorBlink} onChange={(e) => setTerminal({ cursorBlink: e.target.checked })} />
                 {t("settings.cursorBlink")}
               </label>
               <Setting>
@@ -397,11 +380,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 <p className="hint">{t("settings.rightClickHint")}</p>
               </Setting>
               <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={terminal.copyOnSelect}
-                  onChange={(e) => setTerminal({ copyOnSelect: e.target.checked })}
-                />
+                <input type="checkbox" checked={terminal.copyOnSelect} onChange={(e) => setTerminal({ copyOnSelect: e.target.checked })} />
                 {t("settings.copyOnSelect")}
               </label>
               <Setting>
@@ -443,11 +422,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 <p className="hint">{t("settings.followRemoteTitleHint")}</p>
               </Setting>
               <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={settings.tabs.confirmClose}
-                  onChange={(e) => setTabs({ confirmClose: e.target.checked })}
-                />
+                <input type="checkbox" checked={settings.tabs.confirmClose} onChange={(e) => setTabs({ confirmClose: e.target.checked })} />
                 {t("settings.confirmClose")}
               </label>
             </Section>
@@ -475,10 +450,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
               <Setting>
                 <label>
                   {t("settings.zmodemReceive")}
-                  <select
-                    value={settings.zmodem.receive}
-                    onChange={(e) => setZmodem({ receive: e.target.value as ZmodemReceive })}
-                  >
+                  <select value={settings.zmodem.receive} onChange={(e) => setZmodem({ receive: e.target.value as ZmodemReceive })}>
                     {ZMODEM_RECEIVE.map((receive) => (
                       <option key={receive} value={receive}>
                         {t(`settings.zmodemReceiveOptions.${receive}`)}

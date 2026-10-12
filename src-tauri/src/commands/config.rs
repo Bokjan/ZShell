@@ -32,12 +32,7 @@ pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
 
 /// Stores the settings; returns them as validated (e.g. with the font size clamped).
 #[tauri::command]
-pub fn settings_set(
-    app: AppHandle,
-    window: WebviewWindow,
-    store: State<'_, SettingsStore>,
-    settings: Settings,
-) -> Result<Settings> {
+pub fn settings_set(app: AppHandle, window: WebviewWindow, store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {
     let settings = notified(&window, Change::Settings, store.set(settings))?;
     // A shorter retention applies right away; checking every log can take a while.
     let keep_days = settings.logs.keep_days;
@@ -70,11 +65,7 @@ pub fn quick_commands_get(store: State<'_, QuickCommandStore>) -> QuickCommands 
 
 /// Stores the quick commands; returns them as stored (new ones get ids).
 #[tauri::command]
-pub fn quick_commands_set(
-    window: WebviewWindow,
-    store: State<'_, QuickCommandStore>,
-    commands: QuickCommands,
-) -> Result<QuickCommands> {
+pub fn quick_commands_set(window: WebviewWindow, store: State<'_, QuickCommandStore>, commands: QuickCommands) -> Result<QuickCommands> {
     notified(&window, Change::QuickCommands, store.set(commands))
 }
 
@@ -95,12 +86,7 @@ pub struct Saved<T> {
 
 /// `password`: `None` keeps the stored password, `Some("")` clears it.
 #[tauri::command]
-pub async fn profile_save(
-    app: AppHandle,
-    window: WebviewWindow,
-    profile: Profile,
-    password: Option<String>,
-) -> Result<Saved<Profile>> {
+pub async fn profile_save(app: AppHandle, window: WebviewWindow, profile: Profile, password: Option<String>) -> Result<Saved<Profile>> {
     let result = blocking(app, move |app| {
         let profile = app.state::<ProfileStore>().save(profile)?;
         // A session that is no longer SSH has no forwarding rules; running ones stop.
@@ -215,12 +201,7 @@ pub async fn ssh_config_scan(app: AppHandle, path: PathBuf) -> Result<Vec<import
 /// Imports the selected hosts (and the jump hosts and proxy commands they need); returns the
 /// new profiles.
 #[tauri::command]
-pub async fn ssh_config_import(
-    app: AppHandle,
-    window: WebviewWindow,
-    path: PathBuf,
-    aliases: Vec<String>,
-) -> Result<Vec<Profile>> {
+pub async fn ssh_config_import(app: AppHandle, window: WebviewWindow, path: PathBuf, aliases: Vec<String>) -> Result<Vec<Profile>> {
     let result = blocking(app, move |app| {
         app.state::<ProfileStore>().add_all(|here| {
             let (proxies, profiles) = import::plan(&path, &aliases, here.profiles, here.proxies)?;
@@ -253,13 +234,7 @@ pub async fn folder_delete(app: AppHandle, window: WebviewWindow, id: String) ->
 /// Moves a session or folder into `parent` (`None`: top level), before `before` (a session or
 /// folder of the same kind) or at the end.
 #[tauri::command]
-pub async fn tree_move(
-    app: AppHandle,
-    window: WebviewWindow,
-    item: Item,
-    parent: Option<String>,
-    before: Option<String>,
-) -> Result<()> {
+pub async fn tree_move(app: AppHandle, window: WebviewWindow, item: Item, parent: Option<String>, before: Option<String>) -> Result<()> {
     let result = blocking(app, move |app| app.state::<ProfileStore>().move_item(item, parent, before)).await;
     notified(&window, Change::Profiles, result)
 }
@@ -329,7 +304,8 @@ pub async fn sessions_import_scan(app: AppHandle, path: PathBuf) -> Result<backu
 /// the sessions are imported either way.
 #[tauri::command]
 pub async fn sessions_import(
-    app: AppHandle, window: WebviewWindow,
+    app: AppHandle,
+    window: WebviewWindow,
     path: PathBuf,
     ids: Vec<String>,
     digest: String,

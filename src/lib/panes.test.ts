@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { paneWork } from "./panes";
 import { INITIAL_TABS, reduceTabs } from "./tabs";
 
-const pane = reduceTabs(INITIAL_TABS, { type: "open", pane: { target: { kind: "profile", profileId: "a" }, protocol: "ssh", title: "a" } }).tabs[0]
-  .panes[0];
+const pane = reduceTabs(INITIAL_TABS, { type: "open", pane: { target: { kind: "profile", profileId: "a" }, protocol: "ssh", title: "a" } })
+  .tabs[0].panes[0];
 
 describe("paneWork", () => {
   it("is nothing for a pane whose file panel is idle", () => {

@@ -32,7 +32,12 @@ export type CloseRequest = { kind: "tabs"; keys: number[] } | { kind: "pane"; ke
 
 /** How many panes of the window closing it would end. */
 async function busyPanes(store: TabStore): Promise<number> {
-  const reasons = await Promise.all(store.get().tabs.flatMap((tab) => tab.panes).map(busyReason));
+  const reasons = await Promise.all(
+    store
+      .get()
+      .tabs.flatMap((tab) => tab.panes)
+      .map(busyReason),
+  );
   return reasons.filter((reason) => reason !== null).length;
 }
 
@@ -78,7 +83,10 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
     async (request: CloseRequest) => {
       const panes =
         request.kind === "tabs"
-          ? store.get().tabs.filter((t) => request.keys.includes(t.key)).flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })))
+          ? store
+              .get()
+              .tabs.filter((t) => request.keys.includes(t.key))
+              .flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })))
           : [findPane(store.get().tabs, request.key)].filter((found) => found !== null);
       const keys = panes.map(({ pane }) => pane.key);
       // Asking whether to keep the forwarding also asks whether to close.

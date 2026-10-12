@@ -6,15 +6,7 @@ import { announce } from "../lib/announce";
 import { usePressDrag } from "../lib/drag";
 import type { SendResult } from "../lib/compose";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
-import {
-  addGroup,
-  deleteCommand,
-  deleteGroup,
-  groupName,
-  moveCommand,
-  renameGroup,
-  saveCommand,
-} from "../lib/quickCommands";
+import { addGroup, deleteCommand, deleteGroup, groupName, moveCommand, renameGroup, saveCommand } from "../lib/quickCommands";
 import { CommandDialog } from "./CommandDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -107,7 +99,8 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
         { label: t("quick.edit"), onSelect: () => setEditing({ command }) },
         {
           label: t("quick.duplicate"),
-          onSelect: () => onChange(saveCommand(commands, group.id, { ...command, id: "", name: t("quick.copyName", { name: command.name }) })),
+          onSelect: () =>
+            onChange(saveCommand(commands, group.id, { ...command, id: "", name: t("quick.copyName", { name: command.name }) })),
         },
         "separator",
         { label: t("quick.delete"), danger: true, onSelect: () => setDeleting({ kind: "command", command }) },
@@ -151,9 +144,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) listRef.current!.scrollLeft += e.deltaY;
   };
 
-  const shown = order
-    ? order.map((id) => group.commands.find((c) => c.id === id)).filter((c): c is QuickCommand => !!c)
-    : group.commands;
+  const shown = order ? order.map((id) => group.commands.find((c) => c.id === id)).filter((c): c is QuickCommand => !!c) : group.commands;
   const tooltip = (command: QuickCommand) =>
     targets ? `${command.text}\n\n${t("quick.targets", { names: targets.join(", ") })}` : command.text;
 

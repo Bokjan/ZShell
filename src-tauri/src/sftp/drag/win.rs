@@ -13,13 +13,13 @@ use tauri::WebviewWindow;
 use tokio::sync::oneshot;
 use windows::core::{implement, Ref, BOOL, HRESULT};
 use windows::Win32::Foundation::{
-    DATA_S_SAMEFORMATETC, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC, E_FAIL,
-    E_NOTIMPL, HGLOBAL, HWND, OLE_E_ADVISENOTSUPPORTED, POINT, S_OK,
+    DATA_S_SAMEFORMATETC, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC, E_FAIL, E_NOTIMPL, HGLOBAL,
+    HWND, OLE_E_ADVISENOTSUPPORTED, POINT, S_OK,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Com::{
-    IAdviseSink, IBindCtx, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumSTATDATA, DATADIR_GET, DVASPECT_CONTENT,
-    FORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
+    IAdviseSink, IBindCtx, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumSTATDATA, DATADIR_GET, DVASPECT_CONTENT, FORMATETC,
+    STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
 use windows::Win32::System::Ole::{DoDragDrop, IDropSource, IDropSource_Impl, CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE};
@@ -124,13 +124,7 @@ fn is_hdrop(format: &FORMATETC) -> bool {
 }
 
 fn hdrop_format() -> FORMATETC {
-    FORMATETC {
-        cfFormat: CF_HDROP.0,
-        ptd: std::ptr::null_mut(),
-        dwAspect: DVASPECT_CONTENT.0,
-        lindex: -1,
-        tymed: TYMED_HGLOBAL.0 as u32,
-    }
+    FORMATETC { cfFormat: CF_HDROP.0, ptd: std::ptr::null_mut(), dwAspect: DVASPECT_CONTENT.0, lindex: -1, tymed: TYMED_HGLOBAL.0 as u32 }
 }
 
 /// A DROPFILES block listing the local paths of `items`.
@@ -179,11 +173,7 @@ impl IDataObject_Impl for DataObject_Impl {
             return Err(E_FAIL.into());
         }
         let memory = drop_files(&self.shared.items)?;
-        Ok(STGMEDIUM {
-            tymed: TYMED_HGLOBAL.0 as u32,
-            u: STGMEDIUM_0 { hGlobal: memory },
-            pUnkForRelease: ManuallyDrop::new(None),
-        })
+        Ok(STGMEDIUM { tymed: TYMED_HGLOBAL.0 as u32, u: STGMEDIUM_0 { hGlobal: memory }, pUnkForRelease: ManuallyDrop::new(None) })
     }
 
     fn GetDataHere(&self, _format: *const FORMATETC, _medium: *mut STGMEDIUM) -> windows::core::Result<()> {
@@ -276,8 +266,7 @@ impl IDropSource_Impl for DropSource_Impl {
             let inside = GetAncestor(WindowFromPoint(point), GA_ROOT) == window;
             let _ = ScreenToClient(window, &mut point);
             let scale = self.shared.scale;
-            *self.shared.release.lock().unwrap() =
-                Some(Release { inside, x: f64::from(point.x) / scale, y: f64::from(point.y) / scale });
+            *self.shared.release.lock().unwrap() = Some(Release { inside, x: f64::from(point.x) / scale, y: f64::from(point.y) / scale });
             self.shared.dropped.store(!inside, Ordering::Relaxed);
         }
         DRAGDROP_S_DROP
@@ -335,8 +324,7 @@ pub(super) fn start(
     window
         .run_on_main_thread(move || {
             let data: IDataObject =
-                DataObject { shared: shared.clone(), async_mode: AtomicBool::new(true), in_operation: AtomicBool::new(false) }
-                    .into();
+                DataObject { shared: shared.clone(), async_mode: AtomicBool::new(true), in_operation: AtomicBool::new(false) }.into();
             let source: IDropSource = DropSource { shared: shared.clone() }.into();
             let mut effect = DROPEFFECT_NONE;
             let hr = unsafe { DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect) };
@@ -344,9 +332,8 @@ pub(super) fn start(
             // A window that refuses the drop still ends it with DRAGDROP_S_DROP, but with no
             // effect, and never asks for the files (synchronously, in the drop, or by starting
             // an asynchronous operation).
-            let refused = effect == DROPEFFECT_NONE
-                && *shared.fetch.lock().unwrap() == Fetch::Idle
-                && !shared.started.load(Ordering::Relaxed);
+            let refused =
+                effect == DROPEFFECT_NONE && *shared.fetch.lock().unwrap() == Fetch::Idle && !shared.started.load(Ordering::Relaxed);
             let result = match release {
                 Some(Release { inside, x, y }) if hr == DRAGDROP_S_DROP && (inside || !refused) => {
                     DragResult { outcome: if inside { Outcome::Inside } else { Outcome::Outside }, x, y }

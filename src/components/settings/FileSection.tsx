@@ -24,7 +24,11 @@ export function FileSection({ settings, onChange }: { settings: FileSettings; on
 
   const chooseEditor = async () => {
     const picked = await openDialog({
-      filters: [isMac ? { name: t("settings.editorApplications"), extensions: ["app"] } : { name: t("settings.editorPrograms"), extensions: ["exe"] }],
+      filters: [
+        isMac
+          ? { name: t("settings.editorApplications"), extensions: ["app"] }
+          : { name: t("settings.editorPrograms"), extensions: ["exe"] },
+      ],
       defaultPath: isMac ? "/Applications" : undefined,
     }).catch(() => null);
     if (typeof picked === "string") onChange({ editor: picked });

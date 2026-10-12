@@ -76,9 +76,7 @@ export function LogSection({
           onChoose={() => void choose()}
           // Created first: it may not exist until a log is written.
           onShow={() => logs.directory(true).then(revealItemInDir).catch(console.error)}
-          reset={
-            settings.directory ? { label: t("settings.logDefaultDirectory"), onReset: () => onChange({ directory: "" }) } : null
-          }
+          reset={settings.directory ? { label: t("settings.logDefaultDirectory"), onReset: () => onChange({ directory: "" }) } : null}
         />
       </Setting>
       <Setting>
@@ -138,9 +136,7 @@ export function LogSection({
         <p className="hint">{t("settings.logAutoHint")}</p>
       </Setting>
       <div className="row log-summary">
-        <span className="grow">
-          {summary && t("settings.logSummary", { count: summary.count, size: formatSize(summary.bytes) })}
-        </span>
+        <span className="grow">{summary && t("settings.logSummary", { count: summary.count, size: formatSize(summary.bytes) })}</span>
         <button
           type="button"
           className="danger"

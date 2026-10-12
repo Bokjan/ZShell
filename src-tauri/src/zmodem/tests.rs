@@ -4,8 +4,8 @@
 use std::io::{Read, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::task::{ready, Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
@@ -367,7 +367,9 @@ impl AsyncSeek for FailingFile {
 }
 
 /// Opens files for `send::send_with`, `failing` one that can't be read past its first 100 kB.
-fn opening_failing(failing: &Path) -> impl Fn(PathBuf) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<FailingFile>> + Send>> {
+fn opening_failing(
+    failing: &Path,
+) -> impl Fn(PathBuf) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<FailingFile>> + Send>> {
     let failing = failing.to_path_buf();
     move |path| {
         let limit = if path == failing { 100_000 } else { u64::MAX };

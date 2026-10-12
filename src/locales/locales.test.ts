@@ -18,7 +18,7 @@ function keys(value: object, prefix = ""): string[] {
 // i18next picks `key_one`, `key_other`… for `t("key", { count })`.
 const PLURAL = /_(zero|one|two|few|many|other)$/;
 
-const isLiteral = (text: string) => ["\"", "'", "`"].some((quote) => sources.includes(`${quote}${text}${quote}`));
+const isLiteral = (text: string) => ['"', "'", "`"].some((quote) => sources.includes(`${quote}${text}${quote}`));
 
 // `t(`proxy.kinds.${kind}`)`: the start of a key whose end is a value from the sources.
 const dynamicPrefixes = [...sources.matchAll(/`([\w.]+\.)\$\{/g)].map((match) => match[1]);

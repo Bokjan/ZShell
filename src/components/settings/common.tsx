@@ -24,7 +24,6 @@ export function useFieldText(value: string, same?: (text: string, value: string)
   return [text, setText] as const;
 }
 
-
 /** The sections in the order they appear, for the navigation; each is titled `settings.<id>`. */
 export const SECTIONS = [
   "appearance",
@@ -43,10 +42,8 @@ export const SECTIONS = [
 ] as const;
 export type SectionId = (typeof SECTIONS)[number];
 
-
 /** How far below the top of the content a section's title counts as scrolled to. */
 export const SECTION_REACHED = 24;
-
 
 /** A section of the settings, which the navigation scrolls to. */
 export function Section({ id, children }: { id: SectionId; children: ReactNode }) {
@@ -163,7 +160,6 @@ export function LiveTextField({
     />
   );
 }
-
 
 /**
  * A folder setting: the folder in effect (read only), and buttons to choose another (if

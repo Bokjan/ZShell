@@ -74,9 +74,7 @@ export interface Arrival {
 }
 
 /** How a tab's panes are arranged: one pane, or several side by side (`row`) or stacked (`column`). */
-export type Layout =
-  | { kind: "pane"; key: number }
-  | { kind: "split"; direction: "row" | "column"; children: Layout[]; sizes: number[] };
+export type Layout = { kind: "pane"; key: number } | { kind: "split"; direction: "row" | "column"; children: Layout[]; sizes: number[] };
 
 export interface Tab {
   key: number;
@@ -135,8 +133,7 @@ export function paneWork(pane: Pane): PaneWork | null {
 
 export const paneTitle = (pane: Pane, followRemoteTitle: boolean) => (followRemoteTitle && pane.remoteTitle) || pane.title;
 
-export const tabTitle = (tab: Tab, followRemoteTitle: boolean) =>
-  tab.customTitle ?? paneTitle(focusedPane(tab), followRemoteTitle);
+export const tabTitle = (tab: Tab, followRemoteTitle: boolean) => tab.customTitle ?? paneTitle(focusedPane(tab), followRemoteTitle);
 
 /** What a pane is called where panes are listed: its tab's title while it is the tab's only one. */
 export const paneLabel = (tab: Tab, pane: Pane, followRemoteTitle: boolean) =>

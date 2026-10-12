@@ -21,7 +21,17 @@ import { useDialog } from "../lib/dialogs";
 import { rovingTarget } from "../lib/listNavigation";
 import { passwordUpdate } from "../lib/password";
 import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
-import { fromProfile, isChanged, PAGES, toProfile, validate, withProtocol, type Page, type ProfileDefaults, type ProfileForm } from "../lib/profileForm";
+import {
+  fromProfile,
+  isChanged,
+  PAGES,
+  toProfile,
+  validate,
+  withProtocol,
+  type Page,
+  type ProfileDefaults,
+  type ProfileForm,
+} from "../lib/profileForm";
 import { useSubmitting } from "../lib/submitting";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
@@ -177,7 +187,14 @@ export function ProfileDialog({ profile: initial, defaults, profiles, commandGro
       />
     ),
     connection: (
-      <ConnectionPage form={form} set={set} profile={profile} profiles={profiles} proxies={proxies} newProxy={() => setCreatingProxy(true)} />
+      <ConnectionPage
+        form={form}
+        set={set}
+        profile={profile}
+        profiles={profiles}
+        proxies={proxies}
+        newProxy={() => setCreatingProxy(true)}
+      />
     ),
     terminal: <TerminalPage form={form} set={set} commandGroups={commandGroups} shownGroup={shownGroup} />,
     appearance: <AppearancePage form={form} set={set} />,

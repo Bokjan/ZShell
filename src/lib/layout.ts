@@ -134,8 +134,7 @@ export function heirOf(layout: Layout, key: number): number | null {
 }
 
 /** The panes in the layout, left to right and top to bottom. */
-export const paneKeys = (layout: Layout): number[] =>
-  layout.kind === "pane" ? [layout.key] : layout.children.flatMap(paneKeys);
+export const paneKeys = (layout: Layout): number[] => (layout.kind === "pane" ? [layout.key] : layout.children.flatMap(paneKeys));
 
 /** Where each pane is. */
 export function paneRects(layout: Layout, rect = FULL, rects = new Map<number, Rect>()): Map<number, Rect> {
@@ -161,11 +160,7 @@ export function dividers(layout: Layout, path: number[] = [], rect = FULL, list:
 }
 
 /** Replaces the split at `path` with `change(split)`. */
-function updateSplit(
-  layout: Layout,
-  path: number[],
-  change: (split: Extract<Layout, { kind: "split" }>) => Layout,
-): Layout {
+function updateSplit(layout: Layout, path: number[], change: (split: Extract<Layout, { kind: "split" }>) => Layout): Layout {
   if (layout.kind === "pane") return layout;
   if (path.length === 0) return change(layout);
   const [first, ...rest] = path;

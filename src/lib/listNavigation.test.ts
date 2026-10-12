@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { clampIndex, navigateList, rovingTarget } from "./listNavigation";
 
-const key = (name: string) => ({ key: name, keyCode: 0, nativeEvent: { isComposing: false }, preventDefault: vi.fn() }) as unknown as KeyboardEvent;
+const key = (name: string) =>
+  ({ key: name, keyCode: 0, nativeEvent: { isComposing: false }, preventDefault: vi.fn() }) as unknown as KeyboardEvent;
 
 describe("clampIndex", () => {
   it("keeps the index within the list, or -1 for an empty one", () => {

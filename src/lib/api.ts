@@ -305,9 +305,7 @@ export async function adoptSession(
   onOutput: (data: Uint8Array) => void,
   onEvent: (event: SessionEvent) => void,
 ): Promise<{ session: Session; snapshot: Promise<SessionSnapshot | null> }> {
-  snapshotListener ??= listenHere<SessionSnapshot>("session-snapshot", ({ payload }) =>
-    snapshotWaiters.get(payload.moveId)?.(payload),
-  );
+  snapshotListener ??= listenHere<SessionSnapshot>("session-snapshot", ({ payload }) => snapshotWaiters.get(payload.moveId)?.(payload));
   await snapshotListener;
   // A screen handed over late for an earlier move of the session isn't this one's.
   const moveId = crypto.randomUUID();
@@ -382,13 +380,7 @@ export const sftp = {
   rename: (id: SessionId, from: string, to: string) => invoke<void>("sftp_rename", { id, from, to }),
   remove: (id: SessionId, path: string) => invoke<void>("sftp_remove", { id, path }),
   chmod: (id: SessionId, path: string, mode: number) => invoke<void>("sftp_chmod", { id, path, mode }),
-  upload: (
-    id: SessionId,
-    transferId: string,
-    localPaths: string[],
-    remoteDir: string,
-    onProgress: (p: TransferProgress) => void,
-  ) =>
+  upload: (id: SessionId, transferId: string, localPaths: string[], remoteDir: string, onProgress: (p: TransferProgress) => void) =>
     invoke<void>("sftp_upload", { id, transferId, localPaths, remoteDir, onProgress: progressChannel(onProgress) }),
   /** `localDir` null downloads into the Downloads folder. Resolves to the created local paths. */
   download: (
@@ -406,13 +398,7 @@ export const sftp = {
       onProgress: progressChannel(onProgress),
     }),
   /** Downloads one item to `localPath`, replacing what is there. */
-  downloadAs: (
-    id: SessionId,
-    transferId: string,
-    remotePath: string,
-    localPath: string,
-    onProgress: (p: TransferProgress) => void,
-  ) =>
+  downloadAs: (id: SessionId, transferId: string, remotePath: string, localPath: string, onProgress: (p: TransferProgress) => void) =>
     invoke<string>("sftp_download_as", { id, transferId, remotePath, localPath, onProgress: progressChannel(onProgress) }),
   /** The folder downloads go to without asking. */
   downloadsDirectory: () => invoke<string>("downloads_directory"),
@@ -421,13 +407,7 @@ export const sftp = {
    * Downloads a file into a temporary folder and opens it in the editor; `onChanged` is called
    * each time it is saved. `editId` also identifies the download for `cancel`.
    */
-  editOpen: (
-    id: SessionId,
-    editId: string,
-    remotePath: string,
-    onProgress: (p: TransferProgress) => void,
-    onChanged: () => void,
-  ) => {
+  editOpen: (id: SessionId, editId: string, remotePath: string, onProgress: (p: TransferProgress) => void, onChanged: () => void) => {
     const onEvent = new Channel<EditEvent>();
     onEvent.onmessage = onChanged;
     return invoke<string>("sftp_edit_open", { id, editId, remotePath, onProgress: progressChannel(onProgress), onEvent });

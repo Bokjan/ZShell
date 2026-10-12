@@ -140,22 +140,25 @@ function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
     };
   }, []);
 
-  const unlock = useCallback(async (anyway = false) => {
-    if (asking.current) return;
-    asking.current = asked.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      onStatus(await appLock.unlock(anyway));
-    } catch (e) {
-      const code = errorCode(e);
-      if (code === "appLock.gone") setGone(errorMessage(e));
-      else if (code !== "appLock.cancelled" && code !== "appLock.busy") setError(errorMessage(e));
-    } finally {
-      asking.current = false;
-      setBusy(false);
-    }
-  }, [onStatus]);
+  const unlock = useCallback(
+    async (anyway = false) => {
+      if (asking.current) return;
+      asking.current = asked.current = true;
+      setBusy(true);
+      setError(null);
+      try {
+        onStatus(await appLock.unlock(anyway));
+      } catch (e) {
+        const code = errorCode(e);
+        if (code === "appLock.gone") setGone(errorMessage(e));
+        else if (code !== "appLock.cancelled" && code !== "appLock.busy") setError(errorMessage(e));
+      } finally {
+        asking.current = false;
+        setBusy(false);
+      }
+    },
+    [onStatus],
+  );
 
   // The window's focus, not `document.hasFocus()`: WKWebView says the page has it while the
   // app is in the background.

@@ -37,11 +37,7 @@ export function KnownHostsSection() {
           <button type="button" onClick={() => setManaging(true)}>
             {t("settings.knownHostsManage")}
           </button>
-          <button
-            type="button"
-            disabled={!path || !count}
-            onClick={() => path && void revealItemInDir(path).catch(console.error)}
-          >
+          <button type="button" disabled={!path || !count} onClick={() => path && void revealItemInDir(path).catch(console.error)}>
             {t(isMac ? "settings.knownHostsReveal" : "settings.knownHostsRevealWindows")}
           </button>
         </div>

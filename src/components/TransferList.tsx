@@ -57,8 +57,7 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, 
     if (transfer.status === "editing") {
       const save = transfer.save;
       if (!save) return t("transfer.editing");
-      if (save.state === "uploaded")
-        return t("transfer.editUploaded", { time: new Date(save.at).toLocaleTimeString(i18n.language) });
+      if (save.state === "uploaded") return t("transfer.editUploaded", { time: new Date(save.at).toLocaleTimeString(i18n.language) });
       if (save.state === "failed") return t("transfer.editFailed", { message: save.error });
       return t(`transfer.edit.${save.state}`);
     }

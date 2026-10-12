@@ -59,8 +59,7 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
   // A new master password is asked for unless one is kept.
   const newPassword = choice === "password" && (current !== "password" || changePassword);
   const usesStore = choice === "system" || (choice === "password" && remember);
-  const unchanged =
-    choice === current && (choice !== "password" || (!changePassword && remember === status.remember));
+  const unchanged = choice === current && (choice !== "password" || (!changePassword && remember === status.remember));
 
   const apply = async (skipUnreadable: boolean) => {
     setError(null);
@@ -68,9 +67,7 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
     if (newPassword && password !== confirm) return setError(t("protection.passwordsDontMatch"));
     if (unchanged) return onboarding ? onDone(status) : onClose();
     const change: ProtectionChange =
-      choice === "password"
-        ? { protection: "password", password: newPassword ? password : null, remember }
-        : { protection: choice };
+      choice === "password" ? { protection: "password", password: newPassword ? password : null, remember } : { protection: choice };
     setBusy(true);
     try {
       const next = await vault.setProtection(change, current === "password" ? currentPassword : null, skipUnreadable);
@@ -204,12 +201,7 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
         {current === "password" && !unchanged && (
           <label>
             {t("protection.currentPassword")}
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              disabled={busy}
-            />
+            <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} disabled={busy} />
           </label>
         )}
 

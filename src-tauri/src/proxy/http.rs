@@ -30,10 +30,8 @@ pub async fn connect<S: AsyncRead + AsyncWrite + Unpin>(
 
     let head = read_head(stream).await.with_context(|| errors.error("proxy.protocol"))?;
     let status_line = head.lines().next().unwrap_or_default().trim().to_owned();
-    let status = status_line
-        .strip_prefix("HTTP/1.")
-        .and_then(|rest| rest.split_whitespace().nth(1))
-        .and_then(|code| code.parse::<u16>().ok());
+    let status =
+        status_line.strip_prefix("HTTP/1.").and_then(|rest| rest.split_whitespace().nth(1)).and_then(|code| code.parse::<u16>().ok());
     match status {
         Some(200..=299) => Ok(()),
         Some(407) if credentials.is_some() => bail!(errors.error("proxy.authFailed")),

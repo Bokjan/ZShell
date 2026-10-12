@@ -97,8 +97,7 @@ impl Pty {
         #[cfg(windows)]
         let reader = pair.master.try_clone_reader().context(Error::new("pty.openFailed"))?;
         let writer = pair.master.take_writer().context(Error::new("pty.openFailed"))?;
-        let mut child =
-            pair.slave.spawn_command(shell.command).context(Error::new("pty.spawnFailed").param("shell", &shell.program))?;
+        let mut child = pair.slave.spawn_command(shell.command).context(Error::new("pty.spawnFailed").param("shell", &shell.program))?;
         // The shell has its own handles to the terminal; ours would keep it open after the
         // shell exits (and on Windows, keep the pseudo console alive).
         drop(pair.slave);
@@ -254,7 +253,12 @@ fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn Chil
 
 /// Ends the shell if it is still running, the way closing a terminal window does.
 #[cfg(windows)]
-fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn ChildKiller + Send + Sync>, exited: &Exited, _pid: Option<u32>) {
+fn shut_down(
+    master: Option<Box<dyn MasterPty + Send>>,
+    mut killer: Box<dyn ChildKiller + Send + Sync>,
+    exited: &Exited,
+    _pid: Option<u32>,
+) {
     // Closing the pseudo console sends CTRL_CLOSE_EVENT to the processes attached to it,
     // so they can exit cleanly.
     drop(master);
@@ -587,9 +591,7 @@ mod tests {
     async fn reading_stops_once_shut_down() {
         let (mut master, mut slave) = (0, 0);
         // SAFETY: openpty fills in two descriptors; null name, termios and size are allowed.
-        let result = unsafe {
-            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
-        };
+        let result = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
         assert_eq!(result, 0);
         let reader = OutputReader::from_master(master).unwrap();
         let (io, _input, output, _events) = TermIo::detached((80, 24));

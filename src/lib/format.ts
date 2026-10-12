@@ -60,7 +60,12 @@ export function formatMode(mode: number | null, isDir: boolean, isSymlink: boole
 }
 
 export function basename(path: string): string {
-  return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? path;
+  return (
+    path
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .pop() ?? path
+  );
 }
 
 /** `host:port`, bracketing IPv6 literals; port 0 ("pick a free port") is shown as `*`. */

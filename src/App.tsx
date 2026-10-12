@@ -86,9 +86,7 @@ function App() {
   const activate = (key: number | null) => dispatch({ type: "activate", key });
   // The profile dialog: an existing profile, or a new one (null) with defaults; `paneKey` is
   // the quick connection pane being saved as a session.
-  const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; paneKey?: number } | null>(
-    null,
-  );
+  const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; paneKey?: number } | null>(null);
   const [importing, setImporting] = useState(false);
   // Open, scrolled to a section if one is named.
   // A new object each time they are asked for, so that a section asked for while they are
@@ -194,8 +192,9 @@ function App() {
       return;
     }
     const target: SessionTarget = { kind: "profile", profileId: profile.id };
-    const existing = store.get().tabs
-      .flatMap((t) => t.panes)
+    const existing = store
+      .get()
+      .tabs.flatMap((t) => t.panes)
       .find((p) => p.target.kind === "profile" && p.target.profileId === profile.id);
     const active = activeTabOf(store.get());
     if (mode === "connect" && existing) focusPane(existing.key);
@@ -216,10 +215,7 @@ function App() {
 
   // SSH without a user name logs in as the local user.
   const quickConnect = (target: QuickTarget) =>
-    addTab(
-      { kind: "quick", ...target },
-      address({ ...target, username: target.username || (target.protocol === "ssh" ? username : "") }),
-    );
+    addTab({ kind: "quick", ...target }, address({ ...target, username: target.username || (target.protocol === "ssh" ? username : "") }));
 
   const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab]);
 
@@ -259,8 +255,7 @@ function App() {
         // The result shows there.
         openSettings("about");
         checkForUpdates();
-      }
-      else if (matches(e, "releaseNotes")) void openUrl(RELEASES_URL).catch(console.error);
+      } else if (matches(e, "releaseNotes")) void openUrl(RELEASES_URL).catch(console.error);
       else if (matches(e, "reportIssue")) void openUrl(ISSUES_URL).catch(console.error);
       else return false;
       return true;
@@ -410,7 +405,13 @@ function App() {
         onSelect: () => splitPane(pane.key, "column"),
       },
       ...(split
-        ? [{ label: t("tabs.closePane"), shortcut: shortcutLabel("closeTab"), onSelect: () => void requestClose({ kind: "pane", key: pane.key }) }]
+        ? [
+            {
+              label: t("tabs.closePane"),
+              shortcut: shortcutLabel("closeTab"),
+              onSelect: () => void requestClose({ kind: "pane", key: pane.key }),
+            },
+          ]
         : []),
       "separator",
       {
@@ -450,8 +451,7 @@ function App() {
     if (path) revealItemInDir(path).catch(console.error);
   };
 
-  const onProfileChanged = (updated: Profile) =>
-    setProfiles((profiles) => profiles.map((p) => (p.id === updated.id ? updated : p)));
+  const onProfileChanged = (updated: Profile) => setProfiles((profiles) => profiles.map((p) => (p.id === updated.id ? updated : p)));
 
   const handlers = useStableHandlers<PaneHandlers>({
     sessions,
@@ -534,9 +534,7 @@ function App() {
           onDuplicate={duplicateTab}
           onSaveAsSession={(key) => withFocused(key, (pane) => saveAsSession(pane.key))}
           onReconnect={(key) => withFocused(key, (pane) => sessions.reconnect(pane.key))}
-          onBreak={(key) =>
-            withFocused(key, (pane) => pane.sessionId != null && sendBreak(pane.sessionId).catch(console.error))
-          }
+          onBreak={(key) => withFocused(key, (pane) => pane.sessionId != null && sendBreak(pane.sessionId).catch(console.error))}
           onLog={(key, start) => withFocused(key, (pane) => setLogging(pane.key, start))}
           onShowLog={(key) => withFocused(key, (pane) => showLog(pane.key))}
           onTogglePanel={togglePanel}
@@ -601,9 +599,7 @@ function App() {
             targets={composer.targets}
           />
         )}
-        {settings.statusBar.show && activePane && (
-          <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />
-        )}
+        {settings.statusBar.show && activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}
       </main>
       {editing && (
         <ProfileDialog
@@ -641,13 +637,7 @@ function App() {
         />
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
-      {settingsOpen && (
-        <SettingsDialog
-          localAllowed={localAllowed}
-          request={settingsOpen}
-          onClose={closeSettings}
-        />
-      )}
+      {settingsOpen && <SettingsDialog localAllowed={localAllowed} request={settingsOpen} onClose={closeSettings} />}
       {close.dialogs}
       {appMenu.menu}
       {setAside.length > 0 && (

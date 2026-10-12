@@ -67,7 +67,6 @@ export function ImportDialog({ onClose, onImported }: Props) {
     }
   };
 
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -80,7 +79,6 @@ export function ImportDialog({ onClose, onImported }: Props) {
       setBusy(false);
     }
   };
-
 
   return (
     <Modal dialog={dialog}>

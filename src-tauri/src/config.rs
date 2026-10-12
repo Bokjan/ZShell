@@ -510,7 +510,9 @@ pub enum AuthMethod {
     #[default]
     Auto,
     Password,
-    PublicKey { key_path: String },
+    PublicKey {
+        key_path: String,
+    },
     Agent,
 }
 
@@ -637,14 +639,7 @@ impl ProfileStore {
     }
 
     pub fn get(&self, id: &str) -> Result<Profile> {
-        self.state
-            .read()
-            .unwrap()
-            .profiles
-            .iter()
-            .find(|p| p.id == id)
-            .cloned()
-            .ok_or_else(|| Error::new("profile.notFound"))
+        self.state.read().unwrap().profiles.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("profile.notFound"))
     }
 
     /// Inserts or updates a profile and returns it with its id filled in. A new profile goes
@@ -1060,11 +1055,10 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let profile = Profile { id: "p".into(), ..new_profile("p", Some("missing")) };
         fs::write(dir.join("profiles.json"), serde_json::to_vec(&[profile]).unwrap()).unwrap();
-        let loops = [Folder { id: "x".into(), name: "x".into(), parent: Some("y".into()) }, Folder {
-            id: "y".into(),
-            name: "y".into(),
-            parent: Some("x".into()),
-        }];
+        let loops = [
+            Folder { id: "x".into(), name: "x".into(), parent: Some("y".into()) },
+            Folder { id: "y".into(), name: "y".into(), parent: Some("x".into()) },
+        ];
         fs::write(dir.join("folders.json"), serde_json::to_vec(&loops).unwrap()).unwrap();
         let store = load_at(dir.join("profiles.json"), &SetAside::default());
         assert_eq!(store.list()[0].folder.as_deref(), Some("missing"));
@@ -1200,7 +1194,9 @@ mod tests {
         assert_eq!(store.save_proxy(socks).unwrap_err().code(), "proxy.notFound");
 
         // Dangling references (hand-edited files) are kept, and fail to connect.
-        let kept = store.save_proxy(Proxy { id: String::new(), kind: crate::proxy::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() }).unwrap();
+        let kept = store
+            .save_proxy(Proxy { id: String::new(), kind: crate::proxy::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() })
+            .unwrap();
         assert_eq!(kept.name, "nc");
         let dangling = with_remote(Profile { id: "p".into(), ..new_profile("p", None) }, |remote| remote.proxy = Some("gone".into()));
         fs::write(dir.join("profiles.json"), serde_json::to_vec(&[dangling]).unwrap()).unwrap();
@@ -1218,7 +1214,9 @@ mod tests {
         let (_, dir) = store("untidy");
         fs::create_dir_all(&dir).unwrap();
         let connection = r#"{"protocol": "telnet", "host": "router.lan", "port": 23, "username": ""}"#;
-        let profiles = format!(r#"[{{"id": "a", "name": "one", "connection": {connection}}}, {{"id": "a", "name": "two", "connection": {connection}}}, {{"name": "three", "connection": {connection}}}]"#);
+        let profiles = format!(
+            r#"[{{"id": "a", "name": "one", "connection": {connection}}}, {{"id": "a", "name": "two", "connection": {connection}}}, {{"name": "three", "connection": {connection}}}]"#
+        );
         fs::write(dir.join("profiles.json"), profiles).unwrap();
         let set_aside = SetAside::default();
         let store = load_at(dir.join("profiles.json"), &set_aside);
@@ -1237,7 +1235,8 @@ mod tests {
     fn keeps_references_into_files_set_aside() {
         let (_, dir) = store("keep-references");
         fs::create_dir_all(&dir).unwrap();
-        let profile = with_remote(Profile { id: "p".into(), ..new_profile("p", Some("work")) }, |remote| remote.proxy = Some("corp".into()));
+        let profile =
+            with_remote(Profile { id: "p".into(), ..new_profile("p", Some("work")) }, |remote| remote.proxy = Some("corp".into()));
         fs::write(dir.join("profiles.json"), serde_json::to_vec(&[profile]).unwrap()).unwrap();
         fs::write(dir.join("folders.json"), b"[{").unwrap();
         fs::write(dir.join("proxies.json"), br#"[{"id": "corp", "type": "fromTheFuture"}]"#).unwrap();
@@ -1250,7 +1249,9 @@ mod tests {
 
         // Saving something else, and importing, keep them on disk too.
         store.save(new_profile("q", None)).unwrap();
-        store.add_all(|_| Ok(Additions { profiles: vec![Profile { id: "r".into(), ..new_profile("r", None) }], ..Additions::default() })).unwrap();
+        store
+            .add_all(|_| Ok(Additions { profiles: vec![Profile { id: "r".into(), ..new_profile("r", None) }], ..Additions::default() }))
+            .unwrap();
         let reloaded = load_at(dir.join("profiles.json"), &SetAside::default());
         let p = reloaded.get("p").unwrap();
         assert_eq!((p.folder.as_deref(), p.proxy()), (Some("work"), Some("corp")));

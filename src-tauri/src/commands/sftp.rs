@@ -38,9 +38,7 @@ pub async fn sftp_mkdir(connections: State<'_, Connections>, id: SessionId, path
 #[tauri::command]
 pub async fn sftp_rename(connections: State<'_, Connections>, id: SessionId, from: String, to: String) -> Result<()> {
     let sftp = connections.get(id)?.sftp().await?;
-    sftp.rename(&from, &to)
-        .await
-        .map_err(|e| Error::new("sftp.renameFailed").param("from", &from).param("to", &to).detail(e))
+    sftp.rename(&from, &to).await.map_err(|e| Error::new("sftp.renameFailed").param("from", &from).param("to", &to).detail(e))
 }
 
 #[tauri::command]

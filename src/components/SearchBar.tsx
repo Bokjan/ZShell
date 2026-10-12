@@ -41,9 +41,7 @@ export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
   }, [focusKey]);
 
   useEffect(() => {
-    const subscription = addon.onDidChangeResults(({ resultIndex, resultCount }) =>
-      setResult({ index: resultIndex, count: resultCount }),
-    );
+    const subscription = addon.onDidChangeResults(({ resultIndex, resultCount }) => setResult({ index: resultIndex, count: resultCount }));
     return () => {
       subscription.dispose();
       addon.clearDecorations();

@@ -174,11 +174,7 @@ function useScreen(sessions: SessionRegistry, key: number) {
       frame = 0;
       const next = { ...screen.size(), ...screen.cursor() };
       setState((state) =>
-        state &&
-        state.cols === next.cols &&
-        state.rows === next.rows &&
-        state.row === next.row &&
-        state.column === next.column
+        state && state.cols === next.cols && state.rows === next.rows && state.row === next.row && state.column === next.column
           ? state
           : next,
       );

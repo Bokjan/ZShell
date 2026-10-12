@@ -11,7 +11,9 @@ export function useStableHandlers<T extends object>(handlers: T): T {
   const [stable] = useState(() => {
     const entries = Object.entries(handlers).map(([name, value]) => [
       name,
-      typeof value === "function" ? (...args: unknown[]) => (latest.current as Record<string, (...a: unknown[]) => unknown>)[name](...args) : value,
+      typeof value === "function"
+        ? (...args: unknown[]) => (latest.current as Record<string, (...a: unknown[]) => unknown>)[name](...args)
+        : value,
     ]);
     return Object.fromEntries(entries) as T;
   });

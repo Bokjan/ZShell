@@ -17,8 +17,8 @@ use data_encoding::BASE64;
 use hmac::{Hmac, KeyInit, Mac};
 use russh::keys::{Algorithm, HashAlg, PublicKey};
 use serde::Serialize;
-use ts_rs::TS;
 use sha1::Sha1;
+use ts_rs::TS;
 
 use crate::error::{Error, Result};
 
@@ -118,7 +118,11 @@ fn create_ssh_dir(dir: &Path) -> std::io::Result<()> {
 
 /// How a host is recorded: `host`, or `[host]:port` off port 22.
 pub fn host_pattern(host: &str, port: u16) -> String {
-    if port == 22 { host.to_owned() } else { format!("[{host}]:{port}") }
+    if port == 22 {
+        host.to_owned()
+    } else {
+        format!("[{host}]:{port}")
+    }
 }
 
 fn parse_line(line: usize, text: &str) -> Option<Entry> {
@@ -244,9 +248,7 @@ impl Entry {
     /// Whether the line is for `host_port`, as OpenSSH's `match_hostname`: one of its
     /// patterns matches, and none of its negated ones (`!host`) does.
     fn applies_to(&self, host_port: &str) -> bool {
-        let matching = |negated: bool| {
-            self.hosts.iter().any(|host| host.starts_with('!') == negated && host_matches(host, host_port))
-        };
+        let matching = |negated: bool| self.hosts.iter().any(|host| host.starts_with('!') == negated && host_matches(host, host_port));
         matching(false) && !matching(true)
     }
 }
@@ -426,9 +428,7 @@ fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
         fs::rename(&temp, path)?;
         Ok(())
     };
-    write()
-        .context(Error::new("knownHosts.writeFailed").param("path", path.display()))
-        .map_err(Error::from)
+    write().context(Error::new("knownHosts.writeFailed").param("path", path.display())).map_err(Error::from)
 }
 
 /// Removes the entry on `line` if the line still reads `text` (otherwise the file has
@@ -673,9 +673,11 @@ mod tests {
     fn keeps_private_files_private() {
         use std::os::unix::fs::PermissionsExt;
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
-        let path = temp_file(&format!("a ssh-ed25519 {KEY}
+        let path = temp_file(&format!(
+            "a ssh-ed25519 {KEY}
 b ssh-ed25519 {OTHER}
-"));
+"
+        ));
         let old = path.with_file_name("known_hosts.old");
         // One left by an earlier removal, when the file was still readable by others.
         fs::write(&old, "").unwrap();

@@ -227,8 +227,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
     listRef.current?.focus();
   };
 
-  const sortBy = (key: SortKey) =>
-    changeView(view.sort === key ? { descending: !view.descending } : { sort: key, descending: false });
+  const sortBy = (key: SortKey) => changeView(view.sort === key ? { descending: !view.descending } : { sort: key, descending: false });
 
   const isMod = (e: { metaKey: boolean; ctrlKey: boolean }) => (isMac ? e.metaKey : e.ctrlKey);
 
@@ -386,7 +385,12 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
             void load(listing.pathInput.trim() || ".");
           }}
         >
-          <input value={listing.pathInput} onChange={(e) => listing.setPathInput(e.target.value)} spellCheck={false} title={t("sftp.pathHint")} />
+          <input
+            value={listing.pathInput}
+            onChange={(e) => listing.setPathInput(e.target.value)}
+            spellCheck={false}
+            title={t("sftp.pathHint")}
+          />
         </form>
         <IconButton
           className={`icon-button${filter !== null ? " on" : ""}`}
@@ -434,9 +438,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
         </div>
       )}
 
-      {error && (
-        <ErrorBanner onDismiss={() => listing.setError(null)}>{error}</ErrorBanner>
-      )}
+      {error && <ErrorBanner onDismiss={() => listing.setError(null)}>{error}</ErrorBanner>}
       {!connected && <div className="panel-error">{t("sftp.disconnected")}</div>}
 
       {/* A grid for screen readers: the list keeps the focus and points them at the cursor's row. */}
@@ -526,7 +528,9 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
                             setRenaming(null);
                             listRef.current?.focus();
                           }}
-                          onFocus={(e) => e.target.setSelectionRange(0, entry.name.lastIndexOf(".") > 0 ? entry.name.lastIndexOf(".") : entry.name.length)}
+                          onFocus={(e) =>
+                            e.target.setSelectionRange(0, entry.name.lastIndexOf(".") > 0 ? entry.name.lastIndexOf(".") : entry.name.length)
+                          }
                         />
                       </form>
                     ) : (
@@ -546,11 +550,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
         </table>
         {visible.length === 0 && !loading && cwd && (
           <div className="sftp-empty">
-            {filter
-              ? t("sftp.noMatches")
-              : hiddenCount > 0
-                ? t("sftp.onlyHidden", { count: hiddenCount })
-                : t("sftp.emptyFolder")}
+            {filter ? t("sftp.noMatches") : hiddenCount > 0 ? t("sftp.onlyHidden", { count: hiddenCount }) : t("sftp.emptyFolder")}
           </div>
         )}
       </div>
@@ -565,12 +565,12 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
         onStopEditing={transfers.stopEditing}
       />
 
-      {dragOver && (
-        <div className="drop-hint">{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</div>
-      )}
+      {dragOver && <div className="drop-hint">{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</div>}
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
-      {chmodTarget && <ChmodDialog entry={chmodTarget} onSubmit={(mode) => void chmod(chmodTarget, mode)} onClose={() => setChmodTarget(null)} />}
+      {chmodTarget && (
+        <ChmodDialog entry={chmodTarget} onSubmit={(mode) => void chmod(chmodTarget, mode)} onClose={() => setChmodTarget(null)} />
+      )}
       {confirm && (
         <ConfirmDialog
           key={confirm.id}

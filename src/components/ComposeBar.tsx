@@ -90,7 +90,6 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
     else show(t("compose.sent", { count: sent.length }));
   };
 
-
   const recall = (index: number) => {
     if (historyIndex.current === history.length) draft.current = text;
     historyIndex.current = index;
@@ -107,11 +106,7 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
       // Only from the first line, so ↑ still moves between lines of a multi-line text.
       e.preventDefault();
       recall(historyIndex.current - 1);
-    } else if (
-      e.key === "ArrowDown" &&
-      historyIndex.current < history.length &&
-      !input.value.slice(input.selectionEnd).includes("\n")
-    ) {
+    } else if (e.key === "ArrowDown" && historyIndex.current < history.length && !input.value.slice(input.selectionEnd).includes("\n")) {
       e.preventDefault();
       recall(historyIndex.current + 1);
     }

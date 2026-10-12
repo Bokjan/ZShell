@@ -63,7 +63,12 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
     try {
       // Also clears a failed state, so the tab's badge forgets the rule.
       if (live && states[rule.id]) await forwards.stop(sessionId, rule.id);
-      onProfileChanged(await setProfileForwards(profile.id, rules.filter((r) => r.id !== rule.id)));
+      onProfileChanged(
+        await setProfileForwards(
+          profile.id,
+          rules.filter((r) => r.id !== rule.id),
+        ),
+      );
     } catch (e) {
       fail(e);
     }
@@ -83,9 +88,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
           rule.kind === "remote"
             ? t("forwards.status.listeningRemote", { address: state.bound })
             : t("forwards.status.listening", { address: state.bound });
-        return state.connections > 0
-          ? t("forwards.status.listeningWithConnections", { listening, count: state.connections })
-          : listening;
+        return state.connections > 0 ? t("forwards.status.listeningWithConnections", { listening, count: state.connections }) : listening;
       }
     }
   };
@@ -105,9 +108,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
         <button onClick={() => setEditing(null)}>{t("forwards.add")}</button>
       </div>
 
-      {error && (
-        <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>
-      )}
+      {error && <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>}
       {!live && rules.length > 0 && <div className="panel-note">{t("forwards.notConnected")}</div>}
 
       <ul className="forwards-list">
@@ -126,9 +127,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, on
                   <span className="forward-status-text">{status(rule, state)}</span>
                   {rule.autoStart && <span className="forward-tag">{t("forwards.autoStartTag")}</span>}
                 </div>
-                {lastError && (
-                  <div className="forward-last-error">{t("forwards.status.lastError", { error: lastError.message })}</div>
-                )}
+                {lastError && <div className="forward-last-error">{t("forwards.status.lastError", { error: lastError.message })}</div>}
               </div>
               <span className="forward-actions">
                 <IconButton label={t("forwards.editRule", { rule: mapping(rule) })} onClick={() => setEditing(rule)}>

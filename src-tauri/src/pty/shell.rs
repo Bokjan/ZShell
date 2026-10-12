@@ -10,8 +10,7 @@ use portable_pty::CommandBuilder;
 
 /// Variables set by other terminal emulators, inherited when ZShell itself was started from
 /// one; they would mislead shell startup files.
-const FOREIGN_TERMINAL_VARS: &[&str] =
-    &["TERM_SESSION_ID", "ITERM_SESSION_ID", "ITERM_PROFILE", "LC_TERMINAL", "LC_TERMINAL_VERSION"];
+const FOREIGN_TERMINAL_VARS: &[&str] = &["TERM_SESSION_ID", "ITERM_SESSION_ID", "ITERM_PROFILE", "LC_TERMINAL", "LC_TERMINAL_VERSION"];
 
 /// A shell command ready to spawn.
 pub struct Shell {

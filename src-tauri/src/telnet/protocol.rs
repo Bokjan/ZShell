@@ -79,14 +79,7 @@ pub struct Telnet {
 
 impl Telnet {
     pub fn new(term_type: &str, size: (u16, u16)) -> Self {
-        Self {
-            options: [Opt::default(); 256],
-            state: State::Data,
-            sb: Vec::new(),
-            after_cr: false,
-            term_type: term_type.to_owned(),
-            size,
-        }
+        Self { options: [Opt::default(); 256], state: State::Data, sb: Vec::new(), after_cr: false, term_type: term_type.to_owned(), size }
     }
 
     /// What we propose when the connection opens.
@@ -292,9 +285,10 @@ mod tests {
     fn negotiates_what_a_terminal_needs() {
         let mut telnet = Telnet::new("xterm-256color", (80, 24));
         let start = telnet.start();
-        assert_eq!(start, [
-            IAC, DO, BINARY, IAC, DO, ECHO, IAC, DO, SGA, IAC, WILL, BINARY, IAC, WILL, SGA, IAC, WILL, TTYPE, IAC, WILL, NAWS
-        ]);
+        assert_eq!(
+            start,
+            [IAC, DO, BINARY, IAC, DO, ECHO, IAC, DO, SGA, IAC, WILL, BINARY, IAC, WILL, SGA, IAC, WILL, TTYPE, IAC, WILL, NAWS]
+        );
         assert!(!telnet.remote_echoes());
 
         // Answers to our requests need no reply, except the window size once NAWS is on.

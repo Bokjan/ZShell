@@ -5,16 +5,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import type { AppMenuButton } from "../app/useAppMenu";
 import { announce } from "../lib/announce";
-import {
-  deleteProfile,
-  duplicateProfile,
-  errorMessage,
-  logs,
-  tree,
-  type Folder,
-  type Profile,
-  type TreeItem,
-} from "../lib/api";
+import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../lib/api";
 import { dragHorizontally, usePressDrag } from "../lib/drag";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
@@ -569,9 +560,7 @@ export function Sidebar(props: Props) {
           autoCorrect="off"
         />
       </div>
-      {error && (
-        <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>
-      )}
+      {error && <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>}
       <div
         className={`sidebar-list${drag?.drop?.key === null ? " drop-end" : ""}`}
         ref={listRef}
@@ -633,9 +622,7 @@ export function Sidebar(props: Props) {
               </>
             )}
             {rows.map((row) =>
-              row.kind === "folder"
-                ? folderRow(row)
-                : profileRow(row.profile, rowKey(row), row.depth, undefined, dropClass(rowKey(row))),
+              row.kind === "folder" ? folderRow(row) : profileRow(row.profile, rowKey(row), row.depth, undefined, dropClass(rowKey(row))),
             )}
             {profiles.length === 0 && folders.length === 0 && <p className="sidebar-empty">{t("sidebar.empty")}</p>}
           </>

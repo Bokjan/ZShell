@@ -11,12 +11,10 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSDragOperation, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource, NSEvent,
-    NSEventModifierFlags, NSEventType, NSFilePromiseProvider, NSFilePromiseProviderDelegate, NSView, NSWindow, NSWorkspace,
+    NSDragOperation, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource, NSEvent, NSEventModifierFlags, NSEventType,
+    NSFilePromiseProvider, NSFilePromiseProviderDelegate, NSView, NSWindow, NSWorkspace,
 };
-use objc2_foundation::{
-    ns_string, NSArray, NSError, NSNumber, NSOperationQueue, NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSURL,
-};
+use objc2_foundation::{ns_string, NSArray, NSError, NSNumber, NSOperationQueue, NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSURL};
 use tauri::WebviewWindow;
 use tokio::sync::oneshot;
 
@@ -104,15 +102,13 @@ impl PromiseDelegate {
         let index = info.downcast::<NSNumber>().ok()?.unsignedIntegerValue();
         self.ivars().items.get(index)
     }
-
 }
 
 /// Lets go of the promise delegate of a drop that is over (see `RELEASED`).
 pub(super) fn release(download: &DropDownload) {
     let released: Vec<_> = {
         let mut promises = PROMISES.lock().unwrap();
-        let (released, kept) =
-            promises.drain(..).partition(|delegate| std::ptr::eq(Arc::as_ptr(&delegate.ivars().download), download));
+        let (released, kept) = promises.drain(..).partition(|delegate| std::ptr::eq(Arc::as_ptr(&delegate.ivars().download), download));
         *promises = kept;
         released
     };
@@ -222,17 +218,19 @@ pub(super) fn start(
             let in_window = ns_window.convertPointFromScreen(NSEvent::mouseLocation());
             // The press that started the drag was taken by the page, so a drag event is made
             // up for where the mouse is now.
-            let Some(event) = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-                NSEventType::LeftMouseDragged,
-                in_window,
-                NSEventModifierFlags::empty(),
-                NSProcessInfo::processInfo().systemUptime(),
-                ns_window.windowNumber(),
-                None,
-                0,
-                1,
-                1.0,
-            ) else {
+            let Some(event) =
+                NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                    NSEventType::LeftMouseDragged,
+                    in_window,
+                    NSEventModifierFlags::empty(),
+                    NSProcessInfo::processInfo().systemUptime(),
+                    ns_window.windowNumber(),
+                    None,
+                    0,
+                    1,
+                    1.0,
+                )
+            else {
                 return;
             };
 
@@ -255,8 +253,7 @@ pub(super) fn start(
                     );
                     let number = NSNumber::new_usize(index);
                     unsafe { provider.setUserInfo(Some(&number)) };
-                    let dragging =
-                        NSDraggingItem::initWithPasteboardWriter(NSDraggingItem::alloc(), ProtocolObject::from_ref(&*provider));
+                    let dragging = NSDraggingItem::initWithPasteboardWriter(NSDraggingItem::alloc(), ProtocolObject::from_ref(&*provider));
                     // Deprecated for iconForContentType:, which needs the UniformTypeIdentifiers
                     // framework; this one still takes an extension or a type identifier.
                     #[allow(deprecated)]

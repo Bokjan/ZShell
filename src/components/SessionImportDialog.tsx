@@ -43,7 +43,6 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
     );
   }, [path]);
 
-
   const passphraseRef = useRef<HTMLInputElement>(null);
 
   const submit = async (e: FormEvent) => {
@@ -110,14 +109,16 @@ export function SessionImportDialog({ path, onClose, onImported }: Props) {
                     <span>{t("sessionImport.brings", { names: c.brings.map((id) => byId.get(id)?.name ?? id).join(", ") })}</span>
                   )}
                   {/* The first jump host's proxy is the one that connects this session. */}
-                  {c.brings.map((id) => byId.get(id)).map(
-                    (b) =>
-                      b?.proxyCommand && (
-                        <span key={b.id} className="warning">
-                          {t("sessionImport.bringsProxyCommand", { name: b.name, command: b.proxyCommand })}
-                        </span>
-                      ),
-                  )}
+                  {c.brings
+                    .map((id) => byId.get(id))
+                    .map(
+                      (b) =>
+                        b?.proxyCommand && (
+                          <span key={b.id} className="warning">
+                            {t("sessionImport.bringsProxyCommand", { name: b.name, command: b.proxyCommand })}
+                          </span>
+                        ),
+                    )}
                   {c.proxyCommand ? (
                     <span className="warning">{t("sessionImport.proxyCommand", { command: c.proxyCommand })}</span>
                   ) : (

@@ -233,11 +233,8 @@ pub fn screen_position(x: f64, y: f64) -> tauri::Position {
 fn cursor(app: &AppHandle) -> Option<Point> {
     let cursor = app.cursor_position().ok()?;
     // On macOS in the main display's scale.
-    let scale = if cfg!(target_os = "macos") {
-        app.primary_monitor().ok().flatten().map_or(1.0, |monitor| monitor.scale_factor())
-    } else {
-        1.0
-    };
+    let scale =
+        if cfg!(target_os = "macos") { app.primary_monitor().ok().flatten().map_or(1.0, |monitor| monitor.scale_factor()) } else { 1.0 };
     Some(Point { x: screen(cursor.x, scale), y: screen(cursor.y, scale) })
 }
 
@@ -247,10 +244,7 @@ fn page_point(window: &WebviewWindow, point: Point) -> Option<Point> {
     let origin = window.inner_position().ok()?;
     let scale = window.scale_factor().ok()?;
     let per_css = screen_per_css(scale);
-    Some(Point {
-        x: (point.x - screen(f64::from(origin.x), scale)) / per_css,
-        y: (point.y - screen(f64::from(origin.y), scale)) / per_css,
-    })
+    Some(Point { x: (point.x - screen(f64::from(origin.x), scale)) / per_css, y: (point.y - screen(f64::from(origin.y), scale)) / per_css })
 }
 
 /// Where a window the size of `source` opened for a tab dropped outside the windows goes:
@@ -317,8 +311,7 @@ fn window_at_cursor(app: &AppHandle, cursor: Point) -> Option<WebviewWindow> {
     let mut windows: Vec<WebviewWindow> = app.webview_windows().into_values().collect();
     windows.sort_by_key(|window| (!window.is_focused().unwrap_or(false), crate::window::order(window.label())));
     windows.into_iter().find(|window| {
-        let (Some(Point { x, y }), Ok(size), Ok(scale)) = (page_point(window, cursor), window.inner_size(), window.scale_factor())
-        else {
+        let (Some(Point { x, y }), Ok(size), Ok(scale)) = (page_point(window, cursor), window.inner_size(), window.scale_factor()) else {
             return false;
         };
         let size = size.to_logical::<f64>(scale);

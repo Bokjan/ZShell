@@ -174,10 +174,22 @@ fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
 
 /// A session's backend, with what it runs on.
 enum Backend {
-    Ssh { profile: SshProfile, route: Route, connections: Connections, carry: Vec<String> },
-    Shared { connection: Arc<ssh::Connection>, connections: Connections },
+    Ssh {
+        profile: SshProfile,
+        route: Route,
+        connections: Connections,
+        carry: Vec<String>,
+    },
+    Shared {
+        connection: Arc<ssh::Connection>,
+        connections: Connections,
+    },
     /// `password_of`: the saved session whose password answers the login prompt.
-    Telnet { remote: Remote, route: Route, password_of: Option<String> },
+    Telnet {
+        remote: Remote,
+        route: Route,
+        password_of: Option<String>,
+    },
     Serial(SerialOptions),
     Local(pty::Shell),
 }

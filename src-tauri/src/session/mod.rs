@@ -37,10 +37,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
 use serde::Serialize;
-use ts_rs::TS;
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tokio::sync::mpsc;
+use ts_rs::TS;
 use unicode_width::UnicodeWidthChar;
 
 use crate::encoding::Codec;
@@ -59,7 +59,10 @@ pub enum SessionInput {
     /// (X10) encoding, which past column 95 are not UTF-8. Backends treat them as `Data`;
     /// prompts and ZMODEM transfers ignore them.
     Raw(Vec<u8>),
-    Resize { cols: u16, rows: u16 },
+    Resize {
+        cols: u16,
+        rows: u16,
+    },
     /// A break signal: on a serial line, or Telnet's `BRK`. Other backends ignore it.
     Break,
 }
@@ -69,15 +72,29 @@ pub enum SessionInput {
 pub enum SessionEvent {
     Connected,
     /// `status`: the exit status of the shell, if it reported one.
-    Closed { reason: CloseReason, error: Option<Error>, status: Option<u32> },
-    Forward { rule_id: String, state: ForwardState },
+    Closed {
+        reason: CloseReason,
+        error: Option<Error>,
+        status: Option<u32>,
+    },
+    Forward {
+        rule_id: String,
+        state: ForwardState,
+    },
     /// A ZMODEM transfer needs an answer, is running, or has ended.
-    Zmodem { phase: zmodem::Phase },
+    Zmodem {
+        phase: zmodem::Phase,
+    },
     /// The session's log started (`path`), stopped (neither), or couldn't start (`error`).
-    Log { path: Option<String>, error: Option<Error> },
+    Log {
+        path: Option<String>,
+        error: Option<Error>,
+    },
     /// The session moved to another window's tab: the last message on this channel.
     /// `move_id`: what the new tab named the move, to pass back with the screen.
-    Moved { move_id: String },
+    Moved {
+        move_id: String,
+    },
 }
 
 #[derive(Clone, Copy, Serialize, TS)]
@@ -876,21 +893,29 @@ mod tests {
         let (released, released_count) = counter();
         let (dropped, dropped_count) = counter();
         let page = sessions.page(webview);
-        let id = sessions.spawn(&page, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
-            io.on_close(move || {
-                released.fetch_add(1, Ordering::SeqCst);
-            });
-            struct Dropped(Arc<std::sync::atomic::AtomicUsize>);
-            impl Drop for Dropped {
-                fn drop(&mut self) {
-                    self.0.fetch_add(1, Ordering::SeqCst);
-                }
-            }
-            let _dropped = Dropped(dropped);
-            let _io = io;
-            std::future::pending::<()>().await;
-        })
-        .unwrap();
+        let id = sessions
+            .spawn(
+                &page,
+                Channel::new(|_| Ok(())),
+                (80, 24),
+                LogSlot::new(Default::default()),
+                encoding_rs::UTF_8,
+                move |_, io| async move {
+                    io.on_close(move || {
+                        released.fetch_add(1, Ordering::SeqCst);
+                    });
+                    struct Dropped(Arc<std::sync::atomic::AtomicUsize>);
+                    impl Drop for Dropped {
+                        fn drop(&mut self) {
+                            self.0.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                    let _dropped = Dropped(dropped);
+                    let _io = io;
+                    std::future::pending::<()>().await;
+                },
+            )
+            .unwrap();
         (id, released_count, dropped_count)
     }
 
@@ -933,7 +958,8 @@ mod tests {
         let sessions = SessionManager::default();
         let old = sessions.page("main");
         sessions.remove_webview("main");
-        let refused = sessions.spawn(&old, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, |_, _| async {});
+        let refused =
+            sessions.spawn(&old, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, |_, _| async {});
         assert_eq!(refused.unwrap_err().code(), "session.pageGone");
         assert_eq!(sessions.len(), 0);
         let _ = hold(&sessions, "main");
@@ -975,10 +1001,7 @@ mod tests {
         assert_eq!(sessions.owned("main"), 1);
         sessions.adopt(id, &sessions.page("other"), new, "m1".into()).unwrap();
         sink.write(b"after".to_vec());
-        assert_eq!(
-            *old_messages.lock().unwrap(),
-            [b"\0before".to_vec(), b"\x01{\"type\":\"moved\",\"moveId\":\"m1\"}".to_vec()]
-        );
+        assert_eq!(*old_messages.lock().unwrap(), [b"\0before".to_vec(), b"\x01{\"type\":\"moved\",\"moveId\":\"m1\"}".to_vec()]);
         assert_eq!(*new_messages.lock().unwrap(), [b"\0after".to_vec()]);
         assert_eq!(sessions.owner(id).unwrap(), "other");
         assert_eq!((sessions.owned("main"), sessions.owned("other")), (0, 1));

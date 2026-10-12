@@ -10,15 +10,15 @@ use std::time::{Duration, SystemTime};
 
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
-use ts_rs::TS;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
 use tokio::io::AsyncWriteExt;
+use ts_rs::TS;
 
 use super::file_name;
 use super::replace::RemoteTarget;
-use crate::local_name::local_file_name;
 use crate::error::{Error, Result};
+use crate::local_name::local_file_name;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Edit folders left by an earlier run are deleted once untouched for this long; not right
@@ -205,8 +205,7 @@ pub(crate) fn remove_old(root: &Path) {
     let Ok(entries) = std::fs::read_dir(root) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
-        let old = last_modified(&path)
-            .is_some_and(|modified| SystemTime::now().duration_since(modified).is_ok_and(|age| age > KEEP_OLD));
+        let old = last_modified(&path).is_some_and(|modified| SystemTime::now().duration_since(modified).is_ok_and(|age| age > KEEP_OLD));
         if old {
             let _ = std::fs::remove_dir_all(path);
         }

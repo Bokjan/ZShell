@@ -83,8 +83,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
             const strip = tabStrip();
             const index = content.at != null && strip ? tabIndexAt(strip, content.at) : undefined;
             store.dispatch({ type: "insert", tab: content.tab, index });
-          }
-          else openTabRef.current({ kind: "profile", profileId: content.profileId }, content.title);
+          } else openTabRef.current({ kind: "profile", profileId: content.profileId }, content.title);
         }
       }, console.error)
       .finally(() => {
@@ -198,7 +197,8 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   const dropTab = useCallback(
     (key: number, target: DropTarget, grab: Point) => {
       if (target.kind === "window") void moveTab(key, target.label, { at: target.x });
-      else if (target.kind === "elsewhere" && store.get().tabs.length > 1) void moveTab(key, null, { dropped: { cursor: target.cursor, grab } });
+      else if (target.kind === "elsewhere" && store.get().tabs.length > 1)
+        void moveTab(key, null, { dropped: { cursor: target.cursor, grab } });
     },
     [store, moveTab],
   );

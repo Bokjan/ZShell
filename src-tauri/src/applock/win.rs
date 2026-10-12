@@ -49,7 +49,9 @@ impl System for Platform {
                 // The factory initializes the thread for COM if it wasn't.
                 let interop = factory::<UserConsentVerifier, IUserConsentVerifierInterop>().map_err(failed)?;
                 // SAFETY: `hwnd` is the main window, which outlives the dialog.
-                unsafe { interop.RequestVerificationForWindowAsync::<IAsyncOperation<UserConsentVerificationResult>>(HWND(hwnd.0), &message) }
+                unsafe {
+                    interop.RequestVerificationForWindowAsync::<IAsyncOperation<UserConsentVerificationResult>>(HWND(hwnd.0), &message)
+                }
             }
             None => UserConsentVerifier::RequestVerificationAsync(&message),
         };
@@ -95,7 +97,8 @@ pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
     std::thread::spawn(|| unsafe {
         let class: Vec<u16> = "ZShellSystemEvents\0".encode_utf16().collect();
         let instance = GetModuleHandleW(std::ptr::null());
-        let window_class = WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, lpszClassName: class.as_ptr(), ..Default::default() };
+        let window_class =
+            WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, lpszClassName: class.as_ptr(), ..Default::default() };
         RegisterClassW(&window_class);
         // Never shown.
         let hwnd = CreateWindowExW(
