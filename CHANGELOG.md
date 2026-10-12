@@ -2,6 +2,14 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.7.0] - 2026-10-12
+
+### Features
+
+- Sessions, folders, proxies, quick commands and saved passwords can be encrypted on your computer. Under Settings > Security, choose a master password (asked each time ZShell starts, and optionally remembered on this device), a key kept in the macOS Keychain or Windows Credential Manager (ZShell unlocks by itself), or no encryption (passwords then go in `passwords.json` beside the sessions). ZShell asks once which you want; until you choose, everything is kept as before. While the sessions are locked, the window shows only the unlock screen. A forgotten master password can't be recovered: the sessions can only be reset, so export them to keep a copy. Versions before 2.7 can't open encrypted sessions.
+- Exported sessions can include their saved passwords, encrypted with a passphrase you give for the file; importing the file asks for it, or imports the sessions without their passwords. A file changed after it was exported (another host, a proxy command) doesn't give up the passwords.
+- On macOS, the data folder and the files in it can be read only by your user account.
+
 ## [2.6.0] - 2026-10-11
 
 ### Features
