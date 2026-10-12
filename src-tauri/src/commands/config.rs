@@ -1,5 +1,5 @@
 //! Commands for what is saved: settings, quick commands, sessions, folders, proxies,
-//! known hosts, and importing and exporting sessions. The vault's own are in `vault.rs`.
+//! known hosts, and importing and exporting sessions. The vault's own are in `vault/`.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

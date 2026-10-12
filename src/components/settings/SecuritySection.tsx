@@ -13,7 +13,7 @@ import { Section, Setting } from "./common";
 const IDLE_MINUTES = [0, 1, 5, 15, 30, 60];
 
 /**
- * How the sessions and passwords are protected (see `vault.rs`), changed in its own dialog,
+ * How the sessions and passwords are protected (see `vault/`), changed in its own dialog,
  * and the app lock (see `applock/mod.rs`). Neither is in `settings.json`, so "Restore
  * defaults" changes neither.
  */

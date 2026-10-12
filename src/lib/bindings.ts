@@ -508,7 +508,7 @@ id: string, name: string, kind: ProxyKind,
 host: string, port: number, 
 /**
  * SOCKS5 and HTTP: empty for a proxy without authentication. The password is kept with
- * the others (see `vault.rs`).
+ * the others (see `vault/`).
  */
 username: string, 
 /**
@@ -591,7 +591,7 @@ export type RightClick = "menu" | "paste";
 export type Saved<T> = { saved: T, passwordError: CommandError | null, };
 
 /**
- * The protection of the sessions and passwords is the vault's (`vault.rs`); here only
+ * The protection of the sessions and passwords is the vault's (`vault/`); here only
  * whether the user was asked to choose one, once.
  */
 export type SecuritySettings = { prompted: boolean, };

@@ -53,7 +53,7 @@ pub struct StatusBarSettings {
     pub show: bool,
 }
 
-/// The protection of the sessions and passwords is the vault's (`vault.rs`); here only
+/// The protection of the sessions and passwords is the vault's (`vault/`); here only
 /// whether the user was asked to choose one, once.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]

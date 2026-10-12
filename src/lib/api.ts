@@ -138,7 +138,7 @@ export const sessionsFile = {
     invoke<CommandError | null>("sessions_import", { path, ids, digest, passphrase: passphrase ?? null }),
 };
 
-/** Where the sessions and passwords are kept, and how they are protected (see `vault.rs`). */
+/** Where the sessions and passwords are kept, and how they are protected (see `vault/`). */
 export const vault = {
   status: () => invoke<VaultStatus>("vault_status"),
   /** Unlocks with the key in the credential store, reading the file again first. */

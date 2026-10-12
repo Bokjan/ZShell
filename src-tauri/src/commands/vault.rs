@@ -1,4 +1,4 @@
-//! Commands for the vault (see `vault.rs`): its state, unlocking it, resetting it and changing
+//! Commands for the vault (see `vault/`): its state, unlocking it, resetting it and changing
 //! its protection. They wait on the blocking pool: the credential store may ask the user, and
 //! keys are derived from passwords.
 

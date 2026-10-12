@@ -38,7 +38,7 @@ pub struct Proxy {
     #[serde(default)]
     pub port: u16,
     /// SOCKS5 and HTTP: empty for a proxy without authentication. The password is kept with
-    /// the others (see `vault.rs`).
+    /// the others (see `vault/`).
     #[serde(default)]
     pub username: String,
     /// Command proxies: run by the user's shell, with `%h`, `%p`, `%r` and `%%` replaced.

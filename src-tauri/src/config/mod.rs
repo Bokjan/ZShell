@@ -1,5 +1,5 @@
 //! Saved connection profiles, the folders they are organized in and the proxies they use,
-//! kept by the vault (`vault.rs`: in `profiles.json`, `folders.json` and `proxies.json`, or
+//! kept by the vault (`vault/`: in `profiles.json`, `folders.json` and `proxies.json`, or
 //! encrypted in `vault.json`). Their passwords are kept apart; see [`crate::secrets`].
 //!
 //! The order of each list is the order shown: a folder's subfolders and sessions appear in

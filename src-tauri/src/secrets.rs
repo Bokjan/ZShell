@@ -1,7 +1,7 @@
 //! The system's credential store (macOS Keychain, Windows Credential Manager, the Secret
 //! Service on Linux), and the saved passwords as sessions read them.
 //!
-//! Where the passwords are depends on the vault's protection (see `vault.rs`): each in an entry
+//! Where the passwords are depends on the vault's protection (see `vault/`): each in an entry
 //! of its own in the credential store (unset), or in the vault or `passwords.json` with the
 //! rest. The credential store also keeps the vault's key, when the user chose so.
 //!
