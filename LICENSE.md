@@ -11,7 +11,7 @@ ZShell is free to use and its source code is public, but it is source-available 
 
 ## What you may not do
 
-3. You may not distribute, publish, sell, rent or sublicense ZShell's source code or any build of it, modified or not, or otherwise make them available to others. Link to the releases page or the repository instead. This does not limit what the GitHub Terms of Service allow on GitHub itself, such as viewing the repository and forking it there.
+3. You may not distribute, publish, sell, rent or sublicense ZShell's source code or any build of it, modified or not, or otherwise make them available to others. Link to the releases page or the repository instead. This does not limit what the GitHub Terms of Service allow on GitHub itself, such as viewing the repository and forking it there, but pushing your own changes to a fork publishes them and is not allowed.
 4. You may not remove or change the copyright notices, this license, or the notices for third-party software.
 
 ## Feedback and contributions
