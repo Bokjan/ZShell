@@ -2,6 +2,16 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.8.0] - 2026-10-12
+
+### Features
+
+- An app lock covers the window until you unlock it with Touch ID (or the login password) on macOS, or Windows Hello on Windows. Turn it on under Settings > Security. It locks when ZShell starts, after the computer has been idle for a time you choose, when the computer sleeps, locks its screen or switches user, and on demand with ⇧⌘L (Ctrl+Shift+L on Windows) or ZShell > Lock ZShell on macOS. Sessions keep running while it is locked. Its settings are kept with your sessions, so with encrypted sessions it can't be turned off by editing a file; entering the master password when ZShell starts unlocks it too.
+
+### Bug Fixes
+
+- macOS: opening ZShell while it is already running with the same data (another copy of the app, `open -n`, or the executable run directly) brings the running one forward, instead of starting a second instance that would overwrite its sessions and settings.
+
 ## [2.7.0] - 2026-10-12
 
 ### Features
