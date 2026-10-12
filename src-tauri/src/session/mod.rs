@@ -28,7 +28,8 @@
 //! A session belongs to the webview whose tab shows it, and can move to another window's tab
 //! ([`SessionManager::adopt`]): its output goes to the new tab's channel from then on, and the
 //! old tab hears [`SessionEvent::Moved`] after the last output it was sent, which is when it
-//! hands its screen over to the new one.
+//! hands its screen over to the new one. Each move is named by the tab it moves to, so that
+//! a screen handed over late for an earlier move is never taken for this one's.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -75,7 +76,8 @@ pub enum SessionEvent {
     /// The session's log started (`path`), stopped (neither), or couldn't start (`error`).
     Log { path: Option<String>, error: Option<Error> },
     /// The session moved to another window's tab: the last message on this channel.
-    Moved,
+    /// `move_id`: what the new tab named the move, to pass back with the screen.
+    Moved { move_id: String },
 }
 
 #[derive(Clone, Copy, Serialize, TS)]
@@ -326,9 +328,9 @@ impl SessionSink {
     /// Sends what follows to `channel`, another window's tab: the old channel's last message
     /// is [`SessionEvent::Moved`], after all the output it was sent. What the old tab hasn't
     /// acknowledged no longer counts.
-    fn move_to(&self, channel: Channel) {
+    fn move_to(&self, channel: Channel, move_id: String) {
         let mut current = self.channel.lock().unwrap();
-        if let Some(message) = event_message(&SessionEvent::Moved) {
+        if let Some(message) = event_message(&SessionEvent::Moved { move_id }) {
             let _ = current.send(message);
         }
         *current = channel;
@@ -746,8 +748,9 @@ impl SessionManager {
 
     /// Moves a session to a tab on `page` (another window's), which receives its output and
     /// events on `channel` from now on (see [`SessionSink::move_to`]). Not during a ZMODEM
-    /// transfer, whose file dialogs belong to the old tab (`session.busy`).
-    pub fn adopt(&self, id: SessionId, page: &Page, channel: Channel) -> Result<()> {
+    /// transfer, whose file dialogs belong to the old tab (`session.busy`). `move_id` names the
+    /// move for the old tab (see [`SessionEvent::Moved`]).
+    pub fn adopt(&self, id: SessionId, page: &Page, channel: Channel, move_id: String) -> Result<()> {
         let mut sessions = self.sessions.lock().unwrap();
         if self.page(&page.webview).generation != page.generation {
             return Err(Error::new("session.pageGone"));
@@ -757,8 +760,14 @@ impl SessionManager {
             return Err(Error::new("session.busy"));
         }
         entry.webview = page.webview.clone();
-        entry.sink.move_to(channel);
+        entry.sink.move_to(channel, move_id);
         Ok(())
+    }
+
+    /// How many sessions `webview`'s tabs show.
+    pub fn owned(&self, webview: &str) -> u32 {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.values().filter(|entry| entry.webview == webview).count() as u32
     }
 
     /// The webview whose tab shows the session.
@@ -963,11 +972,16 @@ mod tests {
         sink.write(b"before".to_vec());
 
         let (new, new_messages) = recording();
-        sessions.adopt(id, &sessions.page("other"), new).unwrap();
+        assert_eq!(sessions.owned("main"), 1);
+        sessions.adopt(id, &sessions.page("other"), new, "m1".into()).unwrap();
         sink.write(b"after".to_vec());
-        assert_eq!(*old_messages.lock().unwrap(), [b"\0before".to_vec(), b"\x01{\"type\":\"moved\"}".to_vec()]);
+        assert_eq!(
+            *old_messages.lock().unwrap(),
+            [b"\0before".to_vec(), b"\x01{\"type\":\"moved\",\"moveId\":\"m1\"}".to_vec()]
+        );
         assert_eq!(*new_messages.lock().unwrap(), [b"\0after".to_vec()]);
         assert_eq!(sessions.owner(id).unwrap(), "other");
+        assert_eq!((sessions.owned("main"), sessions.owned("other")), (0, 1));
 
         let unacked = || sink.flow().state.lock().unwrap().unacked;
         assert_eq!(unacked(), 5);
@@ -979,7 +993,7 @@ mod tests {
         // Not to a page that has gone away since.
         let gone = sessions.page("third");
         sessions.remove_webview("third");
-        assert_eq!(sessions.adopt(id, &gone, Channel::new(|_| Ok(()))).unwrap_err().code(), "session.pageGone");
+        assert_eq!(sessions.adopt(id, &gone, Channel::new(|_| Ok(())), "m2".into()).unwrap_err().code(), "session.pageGone");
     }
 
     /// Something registered once the session has closed (a task that connected just as its

@@ -611,13 +611,17 @@ autoForwards: Array<ForwardRule>,
  */
 brings: Array<string>, };
 
-export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, } | { "type": "moved" };
+export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, } | { "type": "moved", moveId: string, };
 
 /**
  * What a session's terminal showed in the tab it moved from: written to the new tab's
  * terminal before the output that came since.
  */
 export type SessionSnapshot = { id: number, 
+/**
+ * The move it was taken for (see [`SessionEvent::Moved`]).
+ */
+moveId: string, 
 /**
  * The screen and the scrollback, as escape sequences that draw them again.
  */

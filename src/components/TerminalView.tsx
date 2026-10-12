@@ -22,6 +22,7 @@ import { isMac } from "../lib/platform";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
+import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -189,9 +190,9 @@ export function TerminalView({
           return buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX) ?? "";
         },
         alternateScreen: () => term.buffer.active.type === "alternate",
-        // With the modes programs set (mouse reporting, bracketed paste and so on), though
-        // not the mouse reports' encoding (SGR), which the addon doesn't keep.
-        snapshot: () => ({ data: serialize.serialize(), cols: term.cols, rows: term.rows }),
+        // With the modes programs set (mouse reporting, bracketed paste and so on), and what
+        // the addon doesn't keep.
+        snapshot: () => ({ data: serialize.serialize() + extraModes(term), cols: term.cols, rows: term.rows }),
         // Drawn at the size it was taken at, as the addon advises, then fitted to the pane.
         restore: (snapshot, done) => {
           term.resize(snapshot.cols, snapshot.rows);

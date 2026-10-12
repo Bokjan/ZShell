@@ -52,6 +52,8 @@ export interface SessionEvents {
   retry(at: number | null): void;
   /** The pane that came from another window has started here (see `PaneSession.start`). */
   arrived(): void;
+  /** The pane's session couldn't move here from the other window, which still shows it. */
+  stayed(): void;
   /** The session moved to another window, which this terminal's screen has been handed to. */
   movedAway(): void;
 }
@@ -138,6 +140,7 @@ export class PaneSession {
   /** The login commands not yet typed into the current shell, and the wait for its prompt. */
   private loginPending: string[] = [];
   private loginTimer: ReturnType<typeof setTimeout> | undefined;
+  private arriving = false;
   /** What the terminal has sent and received on the current connection. */
   readonly traffic = new TrafficMeter();
 
@@ -163,6 +166,14 @@ export class PaneSession {
   /** Whether there is no session to type into (it ended, failed or is being replaced). */
   get isClosed() {
     return this.closed;
+  }
+
+  /**
+   * Whether the session is still moving here from another window: until the screen it showed
+   * there is drawn, it can't move on.
+   */
+  get isArriving() {
+    return this.arriving;
   }
 
   /** Whether the shell is up: connected, past the prompts of connecting (passwords, host keys). */
@@ -289,45 +300,71 @@ export class PaneSession {
 
   /**
    * Takes over session `id` from the window this pane moved from: its screen is drawn first,
-   * then the output that came since; the session gets this terminal's size.
+   * then the output that came since; the session gets this terminal's size. The session is
+   * this pane's as soon as it has moved (typing reaches it, closing the pane ends it). If it
+   * can't move, the other window keeps it, and this pane reports `stayed`.
    */
   private adopt(id: SessionId, connected: boolean) {
     this.closed = false;
     this.connected = connected;
-    this.follow(this.config.target(), undefined, connected, async (onOutput, onEvent) => {
-      let waiting: (() => void)[] | null = [];
-      const later = (f: () => void) => (waiting ? waiting.push(f) : f());
-      const adopted = await this.adoptOpen(
-        id,
-        (data) => later(() => onOutput(data)),
-        (event) => later(() => onEvent(event)),
-      );
-      const snapshot = await adopted.snapshot;
-      if (snapshot) await new Promise<void>((done) => this.port.restore(snapshot, done));
-      const pending = waiting;
-      waiting = null;
-      pending.forEach((f) => f());
-      const { cols, rows } = this.port.size();
-      void adopted.session.resize(cols, rows).catch(ignore);
-      return adopted.session;
-    });
+    this.arriving = true;
+    const settled = () => (this.arriving = false);
+    this.follow(
+      this.config.target(),
+      undefined,
+      connected,
+      async (onOutput, onEvent, took) => {
+        let waiting: (() => void)[] | null = [];
+        const later = (f: () => void) => (waiting ? waiting.push(f) : f());
+        const adopted = await this.adoptOpen(
+          id,
+          (data) => later(() => onOutput(data)),
+          (event) => later(() => onEvent(event)),
+        );
+        took(adopted.session);
+        const snapshot = await adopted.snapshot;
+        if (snapshot) await new Promise<void>((done) => this.port.restore(snapshot, done));
+        const pending = waiting;
+        waiting = null;
+        pending.forEach((f) => f());
+        settled();
+        const { cols, rows } = this.port.size();
+        void adopted.session.resize(cols, rows).catch(ignore);
+        return adopted.session;
+      },
+      () => {
+        settled();
+        this.closed = true;
+        this.connected = false;
+        this.events.stayed();
+      },
+    );
   }
 
   /**
    * Follows a session as `start` opens it: passes its output to the terminal with flow
    * control, and acts on its events. `wasConnected`: its shell is already up (adopted).
+   * `start` may say which session it is before it resolves (`took`). `failed`: what to do
+   * instead of reporting an error if `start` fails.
    */
   private follow(
     target: SessionTarget,
     source: SessionId | undefined,
     wasConnected: boolean,
-    start: (onOutput: (data: Uint8Array) => void, onEvent: (event: SessionEvent) => void) => Promise<Session>,
+    start: (
+      onOutput: (data: Uint8Array) => void,
+      onEvent: (event: SessionEvent) => void,
+      took: (session: Session) => void,
+    ) => Promise<Session>,
+    failed?: () => void,
   ) {
     const current = ++this.generation;
     const stale = () => this.disposed || current !== this.generation;
     let ended = false;
     let connected = wasConnected;
     let handle: Session | undefined;
+    // The session is another window's now: never closed from here.
+    let given = false;
     // Output bytes processed by the terminal and not yet acknowledged.
     let processed = 0;
     const acknowledge = () => {
@@ -336,6 +373,19 @@ export class PaneSession {
       processed = 0;
     };
     const { t } = this.config;
+    const took = (s: Session) => {
+      if (handle) return;
+      handle = s;
+      if (stale() || ended) {
+        if (!given) void s.close().catch(ignore);
+        return;
+      }
+      this.session = s;
+      this.events.session(s.id);
+      // Output can arrive before the session id does.
+      acknowledge();
+      this.awaitPrompt();
+    };
     start(
       (data) => {
         if (stale()) return;
@@ -370,12 +420,11 @@ export class PaneSession {
             else if (event.error) this.dim(t("terminal.logFailed", { message: event.error.message }));
             this.events.log(event.path);
             return;
-          case "moved": {
+          case "moved":
             // The last message: the session is now another window's.
-            const id = handle?.id ?? this.session?.id;
-            if (id != null) this.moveAway(id);
+            given = true;
+            if (handle) this.moveAway(handle.id, event.moveId);
             return;
-          }
         }
         ended = true;
         this.dropSession();
@@ -403,19 +452,15 @@ export class PaneSession {
           this.dim(t("terminal.reconnectHint"));
         }
       },
+      took,
     )
-      .then((s) => {
-        handle = s;
-        if (stale() || ended) void s.close().catch(ignore);
-        else {
-          this.session = s;
-          this.events.session(s.id);
-          // Output can arrive before the session id does.
-          acknowledge();
-          this.awaitPrompt();
-        }
-      })
+      .then(took)
       .catch((e) => {
+        // Even for a pane that has closed since: the other window learns it still has the session.
+        if (failed) {
+          failed();
+          return;
+        }
         if (stale()) return;
         // The duplicated tab's connection is gone: connect as usual.
         if (source !== undefined && errorCode(e) === "session.notConnected") {
@@ -435,12 +480,12 @@ export class PaneSession {
    * doesn't end it). The screen is handed over once the terminal has drawn all the output
    * that came before.
    */
-  private moveAway(id: SessionId) {
+  private moveAway(id: SessionId, moveId: string) {
     ++this.generation;
     this.cancelRetry();
     this.dropSession();
     this.port.write("", () => {
-      void handOver({ id, ...this.port.snapshot() }).catch(ignore);
+      void handOver({ id, moveId, ...this.port.snapshot() }).catch(ignore);
       this.events.movedAway();
     });
   }

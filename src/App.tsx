@@ -97,13 +97,14 @@ function App() {
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
   // Set once `useWindows` has run below.
-  const movedAwayRef = useRef<(key: number) => void>(() => {});
+  const windowingRef = useRef<Pick<ReturnType<typeof useWindows>, "movedAway" | "stayed">>(undefined);
   const [sessions] = useState(() =>
     createSessionRegistry(store, {
       profiles: () => profilesRef.current,
       t: i18n.t,
       announce,
-      movedAway: (key) => movedAwayRef.current(key),
+      movedAway: (key) => windowingRef.current?.movedAway(key),
+      stayed: (key, from) => windowingRef.current?.stayed(key, from),
     }),
   );
   const localTitleRef = useRef("");
@@ -168,7 +169,7 @@ function App() {
   );
 
   const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: addTab });
-  movedAwayRef.current = windowing.movedAway;
+  windowingRef.current = windowing;
 
   /** Shows the pane: activates its tab and focuses it there. */
   const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);

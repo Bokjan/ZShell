@@ -34,15 +34,25 @@ export function useConfigChanged(change: Change, handler: () => void) {
 export type WindowContent = { kind: "tab"; tab: TabTransfer } | { kind: "profile"; profileId: string; title: string };
 
 export const windows = {
-  /** Opens a window next to this one, showing `content`. */
-  open: (content: WindowContent) => invoke<void>("window_open", { content }),
-  /** What this window was opened to show; once, and null for the first window. */
-  handoff: () => invoke<WindowContent | null>("window_handoff"),
+  /** Opens a window next to this one, showing `content`; returns its label. */
+  open: (content: WindowContent) => invoke<string>("window_open", { content }),
+  /**
+   * What this window is to show and hasn't taken yet: what it opened for, and the tabs other
+   * windows gave it (`tab-received` says when). Each is taken once.
+   */
+  take: () => invoke<WindowContent[]>("window_take"),
+  /**
+   * Closes this window, which has no tabs left, unless it is the last one or a tab is waiting
+   * for it to take; returns whether it closes.
+   */
+  closeEmpty: () => invoke<boolean>("window_close_empty"),
   /** The other windows, in the order they opened. */
   list: () => invoke<WindowInfo[]>("window_list"),
   setTitle: (title: string) => invoke<void>("window_set_title", { title }),
   /** Gives a tab to another window, which comes forward (`window.notFound` if it has closed). */
   sendTab: (target: string, tab: TabTransfer) => invoke<void>("window_send_tab", { target, tab }),
+  /** Tells the window a tab came from that its pane `pane` couldn't move here (`pane-stayed`). */
+  paneStayed: (target: string, pane: number) => invoke<void>("window_pane_stayed", { target, pane }),
   /** How many tabs in all the windows are busy (connected, running a program), for quitting. */
   busyCount: () => invoke<number>("app_busy_count"),
   /** This window's answer to the `busy-query` event. */

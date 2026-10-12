@@ -5,8 +5,10 @@
 //!
 //! The first window is `main`; the others open for a tab moved out of a window or a session
 //! opened in a new window, and are labelled `window-1`, `window-2` and so on (the capability
-//! grants `window-*`). What a new window shows first is handed to its page through
-//! [`window_handoff`]: a tab, or a session to open, which only the frontend reads.
+//! grants `window-*`). What a window is to show is kept for its page to take ([`window_take`]):
+//! what it opened for (a tab, or a session to open), then tabs other windows give it, which
+//! only the frontend reads. Kept rather than sent, so that a page still loading gets them, and
+//! a window closing once its last tab is gone never takes one with it ([`window_close_empty`]).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -19,6 +21,7 @@ use tokio::sync::oneshot;
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
+use crate::session::SessionManager;
 
 const MAIN: &str = "main";
 const LABEL_PREFIX: &str = "window-";
@@ -37,12 +40,19 @@ const TRAFFIC_LIGHTS: tauri::LogicalPosition<f64> = tauri::LogicalPosition { x: 
 #[derive(Default)]
 pub struct Windows {
     next: AtomicU32,
-    /// What each new window shows first, until its page takes it.
-    handoffs: Mutex<HashMap<String, serde_json::Value>>,
+    inbox: Mutex<Inbox>,
     /// The window that last had the focus, which menu items act on.
     focused: Mutex<String>,
     next_query: AtomicU64,
     busy: Mutex<HashMap<u64, BusyQuery>>,
+}
+
+/// What the windows are to show, until their pages take it.
+#[derive(Default)]
+struct Inbox {
+    pending: HashMap<String, Vec<serde_json::Value>>,
+    /// Windows closing once their last tab has gone, which take nothing more.
+    closing: HashSet<String>,
 }
 
 /// Asking every window how many of its tabs closing would end (see [`app_busy_count`]).
@@ -80,9 +90,16 @@ pub fn focused(window: &tauri::Window) {
     *window.state::<Windows>().focused.lock().unwrap() = window.label().to_owned();
 }
 
-/// After a window is gone: what was kept about it goes, and the other windows hear.
+/// After a window is gone: what was kept about it goes, and the other windows hear
+/// (`window-closed` with its label, besides `windows-changed`).
 pub fn destroyed(window: &tauri::Window) {
-    window.state::<Windows>().handoffs.lock().unwrap().remove(window.label());
+    {
+        let windows = window.state::<Windows>();
+        let mut inbox = windows.inbox.lock().unwrap();
+        inbox.pending.remove(window.label());
+        inbox.closing.remove(window.label());
+    }
+    let _ = window.emit("window-closed", window.label());
     #[cfg(windows)]
     if let Ok(hwnd) = window.hwnd() {
         win::forget(hwnd.0 as isize);
@@ -129,29 +146,47 @@ fn cascade(source: &WebviewWindow) -> tauri::Result<(tauri::LogicalPosition<f64>
     Ok((tauri::LogicalPosition::new(position.x + CASCADE, position.y + CASCADE), size))
 }
 
-/// Opens a window next to this one, which shows `content` first (see [`window_handoff`]).
-/// Async: creating a window from a synchronous command deadlocks on Windows.
+/// Opens a window next to this one, which shows `content` first (see [`window_take`]), and
+/// returns its label. Async: creating a window from a synchronous command deadlocks on
+/// Windows.
 #[tauri::command]
 pub async fn window_open(
     app: AppHandle,
     window: WebviewWindow,
     windows: State<'_, Windows>,
     content: serde_json::Value,
-) -> tauri::Result<()> {
+) -> tauri::Result<String> {
     let label = format!("{LABEL_PREFIX}{}", windows.next.fetch_add(1, Ordering::Relaxed) + 1);
-    windows.handoffs.lock().unwrap().insert(label.clone(), content);
+    windows.inbox.lock().unwrap().pending.insert(label.clone(), vec![content]);
     if let Err(e) = build(&app, &label, cascade(&window).ok()) {
-        windows.handoffs.lock().unwrap().remove(&label);
+        windows.inbox.lock().unwrap().pending.remove(&label);
         return Err(e);
     }
     changed(&app);
-    Ok(())
+    Ok(label)
 }
 
-/// What this window was opened to show, once: `None` for the main window, and after a reload.
+/// What this window is to show and hasn't taken yet: what it opened for, and tabs given to it
+/// ([`window_send_tab`]), in order. Each is taken once.
 #[tauri::command]
-pub fn window_handoff(window: WebviewWindow, windows: State<'_, Windows>) -> Option<serde_json::Value> {
-    windows.handoffs.lock().unwrap().remove(window.label())
+pub fn window_take(window: WebviewWindow, windows: State<'_, Windows>) -> Vec<serde_json::Value> {
+    windows.inbox.lock().unwrap().pending.remove(window.label()).unwrap_or_default()
+}
+
+/// Closes this window, which has no tabs left, unless it is the last one or has been given a
+/// tab it hasn't taken yet; returns whether it closes. From then on it takes no tabs.
+#[tauri::command]
+pub fn window_close_empty(app: AppHandle, window: WebviewWindow, windows: State<'_, Windows>) -> tauri::Result<bool> {
+    let mut inbox = windows.inbox.lock().unwrap();
+    let label = window.label();
+    let given = inbox.pending.get(label).is_some_and(|pending| !pending.is_empty());
+    if given || app.webview_windows().len() < 2 {
+        return Ok(false);
+    }
+    inbox.closing.insert(label.to_owned());
+    drop(inbox);
+    window.destroy()?;
+    Ok(true)
 }
 
 /// Another window, as the tab menu lists it.
@@ -181,21 +216,42 @@ pub fn window_set_title(app: AppHandle, window: WebviewWindow, title: String) ->
     Ok(())
 }
 
-/// Gives a tab to window `target` (the `tab-received` event), which comes forward.
+/// Gives a tab to window `target`, which takes it (see [`window_take`]) when it hears
+/// `tab-received`, and comes forward. Fails with `window.notFound` if it has closed or is
+/// closing.
 #[tauri::command]
-pub fn window_send_tab(app: AppHandle, target: String, tab: serde_json::Value) -> Result<()> {
+pub fn window_send_tab(app: AppHandle, windows: State<'_, Windows>, target: String, tab: serde_json::Value) -> Result<()> {
     let window = app.get_webview_window(&target).ok_or_else(|| Error::new("window.notFound"))?;
-    let _ = app.emit_to(EventTarget::webview_window(target), "tab-received", tab);
+    {
+        let mut inbox = windows.inbox.lock().unwrap();
+        if inbox.closing.contains(&target) {
+            return Err(Error::new("window.notFound"));
+        }
+        inbox.pending.entry(target.clone()).or_default().push(serde_json::json!({ "kind": "tab", "tab": tab }));
+    }
+    let _ = app.emit_to(EventTarget::webview_window(target), "tab-received", ());
     let _ = window.unminimize();
     let _ = window.set_focus();
     Ok(())
 }
 
+/// Tells window `target`, which gave this one a tab, that its pane `pane` couldn't move here
+/// (its session is still there): the `pane-stayed` event.
+#[tauri::command]
+pub fn window_pane_stayed(app: AppHandle, target: String, pane: u32) {
+    let _ = app.emit_to(EventTarget::webview_window(target), "pane-stayed", pane);
+}
+
 /// How many tabs quitting would end, in all the windows: each is asked (the `busy-query`
 /// event, answered with [`window_busy_reply`]), since only its page knows which of its tabs
-/// are busy. A window that doesn't answer in time counts none.
+/// are busy. A window that doesn't answer in time (its page still loading) counts all the
+/// sessions it shows.
 #[tauri::command]
-pub async fn app_busy_count(app: AppHandle, windows: State<'_, Windows>) -> tauri::Result<u32> {
+pub async fn app_busy_count(
+    app: AppHandle,
+    windows: State<'_, Windows>,
+    sessions: State<'_, SessionManager>,
+) -> tauri::Result<u32> {
     let labels: HashSet<String> = app.webview_windows().into_keys().collect();
     let id = windows.next_query.fetch_add(1, Ordering::Relaxed);
     let (done, answered) = oneshot::channel();
@@ -204,7 +260,8 @@ pub async fn app_busy_count(app: AppHandle, windows: State<'_, Windows>) -> taur
         let _ = app.emit_to(EventTarget::webview_window(label), "busy-query", id);
     }
     let _ = tokio::time::timeout(BUSY_TIMEOUT, answered).await;
-    Ok(windows.busy.lock().unwrap().remove(&id).map_or(0, |query| query.count))
+    let Some(query) = windows.busy.lock().unwrap().remove(&id) else { return Ok(0) };
+    Ok(query.count + query.waiting.iter().map(|label| sessions.owned(label)).sum::<u32>())
 }
 
 /// A window's answer to `busy-query`.

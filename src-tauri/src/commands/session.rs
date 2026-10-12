@@ -271,10 +271,16 @@ pub fn session_ack(webview: Webview, sessions: State<'_, SessionManager>, id: Se
 
 /// Moves a session to a tab of this window (see [`SessionManager::adopt`]): its output and
 /// events come on `channel` from now on. The tab that showed it hands over its screen
-/// ([`session_handover`]) once it hears that the session moved.
+/// ([`session_handover`]) once it hears that the session moved, with `move_id`.
 #[tauri::command]
-pub fn session_adopt(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId, channel: Channel) -> Result<()> {
-    sessions.adopt(id, &sessions.page(webview.label()), channel)
+pub fn session_adopt(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    id: SessionId,
+    channel: Channel,
+    move_id: String,
+) -> Result<()> {
+    sessions.adopt(id, &sessions.page(webview.label()), channel, move_id)
 }
 
 /// What a session's terminal showed in the tab it moved from: written to the new tab's
@@ -283,6 +289,8 @@ pub fn session_adopt(webview: Webview, sessions: State<'_, SessionManager>, id: 
 #[serde(rename_all = "camelCase")]
 pub struct SessionSnapshot {
     pub id: SessionId,
+    /// The move it was taken for (see [`SessionEvent::Moved`]).
+    pub move_id: String,
     /// The screen and the scrollback, as escape sequences that draw them again.
     pub data: String,
     /// The size of the terminal it was taken from, which it is written into before fitting.

@@ -284,8 +284,8 @@ const sessionHandle = (id: SessionId): Session => ({
 /** How long a session moving here waits for its old window's screen; it goes on without it. */
 const SNAPSHOT_TIMEOUT_MS = 5000;
 
-/** Who waits for the screen of each session moving to this window. */
-const snapshotWaiters = new Map<SessionId, (snapshot: SessionSnapshot) => void>();
+/** Who waits for the screen of each session moving to this window, by move. */
+const snapshotWaiters = new Map<string, (snapshot: SessionSnapshot) => void>();
 let snapshotListener: Promise<unknown> | undefined;
 
 /**
@@ -299,23 +299,27 @@ export async function adoptSession(
   onOutput: (data: Uint8Array) => void,
   onEvent: (event: SessionEvent) => void,
 ): Promise<{ session: Session; snapshot: Promise<SessionSnapshot | null> }> {
-  snapshotListener ??= listenHere<SessionSnapshot>("session-snapshot", ({ payload }) => snapshotWaiters.get(payload.id)?.(payload));
+  snapshotListener ??= listenHere<SessionSnapshot>("session-snapshot", ({ payload }) =>
+    snapshotWaiters.get(payload.moveId)?.(payload),
+  );
   await snapshotListener;
+  // A screen handed over late for an earlier move of the session isn't this one's.
+  const moveId = crypto.randomUUID();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const snapshot = new Promise<SessionSnapshot | null>((resolve) => {
     const done = (value: SessionSnapshot | null) => {
       clearTimeout(timer);
-      snapshotWaiters.delete(id);
+      snapshotWaiters.delete(moveId);
       resolve(value);
     };
     timer = setTimeout(() => done(null), SNAPSHOT_TIMEOUT_MS);
-    snapshotWaiters.set(id, done);
+    snapshotWaiters.set(moveId, done);
   });
   try {
-    await invoke("session_adopt", { id, channel: sessionChannel(onOutput, onEvent) });
+    await invoke("session_adopt", { id, moveId, channel: sessionChannel(onOutput, onEvent) });
   } catch (e) {
     clearTimeout(timer);
-    snapshotWaiters.delete(id);
+    snapshotWaiters.delete(moveId);
     throw e;
   }
   return { session: sessionHandle(id), snapshot };

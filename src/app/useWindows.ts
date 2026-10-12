@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
 import type { SessionTarget } from "../lib/api";
-import { tabTitle, type Pane, type Tab } from "../lib/panes";
+import { tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { useTabStore, type TabStore, type TabTransfer } from "../lib/tabs";
 import { useWindowEvent, windows, type WindowInfo } from "../lib/windows";
@@ -14,21 +14,33 @@ interface Options {
   openTab(target: SessionTarget, title: string): void;
 }
 
+/** A tab moving out of this window. */
+interface Moving {
+  /** The window it moves to, once known. */
+  target: string | null;
+  /** Its panes whose sessions haven't moved yet. */
+  waiting: Set<number>;
+  /** Its panes whose sessions couldn't move, which stay here. */
+  stayed: Set<number>;
+}
+
 /**
  * This window among the others: its title, the other windows (where tabs can move to), what
- * it was opened to show, tabs moving in and out, and closing it once its last tab is gone
- * while other windows are open.
+ * it is to show (what it opened for, tabs given to it), tabs moving in and out, and closing it
+ * once its last tab is gone while other windows are open.
  *
  * A tab moves out as a `TabTransfer`, and stays here until each of its panes' sessions has
  * moved (`movedAway`, which the session registry calls): its terminals still show their
- * sessions meanwhile, and hand their screens over as the sessions move.
+ * sessions meanwhile, and hand their screens over as the sessions move. A pane whose session
+ * couldn't move (the other window says so, or closes first) stays here, and the rest of the
+ * tab goes.
  */
 export function useWindows(store: TabStore, sessions: SessionRegistry, { followRemoteTitle, openTab }: Options) {
   const { t } = useTranslation();
   const { tabs, activeKey } = useTabStore(store);
   const [others, setOthers] = useState<WindowInfo[]>([]);
-  /** Tabs moving out, by key, with the panes whose sessions haven't moved yet. */
-  const moving = useRef(new Map<number, Set<number>>());
+  /** Tabs moving out, by key. */
+  const moving = useRef(new Map<number, Moving>());
   const openTabRef = useRef(openTab);
   openTabRef.current = openTab;
 
@@ -40,34 +52,43 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   useEffect(refreshOthers, [refreshOthers]);
   useWindowEvent("windows-changed", refreshOthers);
 
-  // Taken once: StrictMode's second run gets nothing.
-  useEffect(() => {
-    void windows.handoff().then((content) => {
-      if (content?.kind === "tab") store.dispatch({ type: "insert", tab: content.tab });
-      else if (content?.kind === "profile") openTabRef.current({ kind: "profile", profileId: content.profileId }, content.title);
-    }, console.error);
-  }, [store]);
-  useWindowEvent<TabTransfer>("tab-received", (tab) => store.dispatch({ type: "insert", tab }));
-
   // Once the last tab has closed or moved away, the window goes too, unless it is the last
-  // one, which stays empty as before.
+  // one, which stays empty as before, or a tab is on its way here: not while taking tabs,
+  // nor if one is waiting to be taken (which the backend knows).
   const hadTabs = useRef(false);
+  const taking = useRef(0);
+  const closeIfEmpty = useCallback(() => {
+    if (!hadTabs.current || taking.current > 0 || store.get().tabs.length > 0) return;
+    void windows.closeEmpty().catch(console.error);
+  }, [store]);
   useEffect(() => {
-    if (tabs.length > 0) {
-      hadTabs.current = true;
-      return;
-    }
-    if (!hadTabs.current) return;
-    hadTabs.current = false;
-    void windows.list().then((list) => {
-      if (list.length > 0) void getCurrentWindow().destroy();
-    }, console.error);
-  }, [tabs.length]);
+    if (tabs.length > 0) hadTabs.current = true;
+    else closeIfEmpty();
+  }, [tabs.length, closeIfEmpty]);
+
+  // Each is taken once: StrictMode's second run gets nothing.
+  const take = useCallback(() => {
+    taking.current++;
+    void windows
+      .take()
+      .then((contents) => {
+        for (const content of contents) {
+          if (content.kind === "tab") store.dispatch({ type: "insert", tab: content.tab });
+          else openTabRef.current({ kind: "profile", profileId: content.profileId }, content.title);
+        }
+      }, console.error)
+      .finally(() => {
+        taking.current--;
+        closeIfEmpty();
+      });
+  }, [store, closeIfEmpty]);
+  useEffect(take, [take]);
+  useWindowEvent("tab-received", take);
 
   /**
    * Whether the tab can move now: not while its file panel transfers files, edits them in a
    * local editor or asks something (those belong to this window's page), nor during a ZMODEM
-   * transfer, nor while a pane opens its session.
+   * transfer, nor while a pane opens its session or its session is still moving here.
    */
   const canMove = useCallback(
     (tab: Tab) =>
@@ -78,18 +99,36 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
           pane.edits === 0 &&
           pane.questions === 0 &&
           !sessions.inZmodem(pane.key) &&
-          !(pane.status === "connecting" && pane.sessionId === null),
+          !(pane.status === "connecting" && pane.sessionId === null) &&
+          pane.arrival === undefined &&
+          !sessions.arriving(pane.key),
       ),
     [sessions],
   );
 
-  const finish = useCallback(
+  /** Every pane of a moving tab has moved or stayed: the tab goes, but for those that stayed. */
+  const settle = useCallback(
     (key: number) => {
+      const move = moving.current.get(key);
+      if (!move) return;
       moving.current.delete(key);
       const tab = store.get().tabs.find((t) => t.key === key);
-      if (tab) store.dispatch({ type: "close", keys: tab.panes.map((pane) => pane.key) });
+      const gone = tab?.panes.filter((pane) => !move.stayed.has(pane.key)).map((pane) => pane.key) ?? [];
+      if (gone.length > 0) store.dispatch({ type: "close", keys: gone });
     },
     [store],
+  );
+
+  /** Pane `paneKey` of a moving tab has moved (or stayed) by now. */
+  const resolve = useCallback(
+    (paneKey: number, stayed: boolean) => {
+      for (const [key, move] of moving.current) {
+        if (!move.waiting.delete(paneKey)) continue;
+        if (stayed) move.stayed.add(paneKey);
+        if (move.waiting.size === 0) settle(key);
+      }
+    },
+    [settle],
   );
 
   /** Moves a tab to window `target`, or to a new window (null). */
@@ -97,6 +136,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
     async (key: number, target: string | null) => {
       const tab = store.get().tabs.find((t) => t.key === key);
       if (!tab || !canMove(tab)) return;
+      const here = getCurrentWindow().label;
       const live = tab.panes.filter((pane) => pane.sessionId !== null).map((pane) => pane.key);
       const panes = tab.panes.map(
         (pane): Pane => ({
@@ -109,6 +149,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
             connected: pane.status === "connected",
             snapshot: pane.sessionId === null ? (sessions.snapshot(pane.key) ?? null) : null,
             reconnect: pane.retryAt !== null,
+            from: { window: here, pane: pane.key },
           },
         }),
       );
@@ -119,28 +160,45 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
         sidePanel: tab.sidePanel,
         panes,
       };
-      moving.current.set(key, new Set(live));
+      const move: Moving = { target, waiting: new Set(live), stayed: new Set() };
+      moving.current.set(key, move);
       try {
-        if (target === null) await windows.open({ kind: "tab", tab: transfer });
+        if (target === null) move.target = await windows.open({ kind: "tab", tab: transfer });
         else await windows.sendTab(target, transfer);
       } catch (e) {
         moving.current.delete(key);
         console.error(e);
         return;
       }
-      if (live.length === 0) finish(key);
+      if (live.length === 0) settle(key);
     },
-    [store, sessions, canMove, finish],
+    [store, sessions, canMove, settle],
   );
 
   /** The pane's session has moved to the other window (see `SessionRegistry`). */
-  const movedAway = useCallback(
-    (paneKey: number) => {
-      for (const [key, waiting] of moving.current) {
-        if (waiting.delete(paneKey) && waiting.size === 0) finish(key);
-      }
+  const movedAway = useCallback((paneKey: number) => resolve(paneKey, false), [resolve]);
+  // The other window couldn't take the pane's session, which is still here.
+  useWindowEvent<number>("pane-stayed", (paneKey) => resolve(paneKey, true));
+  // The window a tab was moving to closed before taking all its sessions: they are still here.
+  useWindowEvent<string>("window-closed", (label) => {
+    for (const [key, move] of moving.current) {
+      if (move.target !== label) continue;
+      move.waiting.forEach((paneKey) => move.stayed.add(paneKey));
+      move.waiting.clear();
+      settle(key);
+    }
+  });
+
+  /**
+   * The session of pane `key`, which came from another window, couldn't move here (it ended,
+   * or a ZMODEM transfer started there): that window keeps it, and the pane goes.
+   */
+  const stayed = useCallback(
+    (key: number, from: Arrival["from"]) => {
+      void windows.paneStayed(from.window, from.pane).catch(console.error);
+      store.dispatch({ type: "close", keys: [key] });
     },
-    [finish],
+    [store],
   );
 
   const openInNewWindow = useCallback(
@@ -148,5 +206,5 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
     [],
   );
 
-  return { others, canMove, moveTab, movedAway, openInNewWindow };
+  return { others, canMove, moveTab, movedAway, stayed, openInNewWindow };
 }

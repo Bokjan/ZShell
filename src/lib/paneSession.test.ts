@@ -101,7 +101,9 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     },
   };
   const adopted: Adopted[] = [];
+  let adoptFailure: unknown = null;
   const adopt = (async (id, onOutput, onEvent) => {
+    if (adoptFailure) throw adoptFailure;
     const session = fakeSession(id);
     let handOver: (snapshot: SessionSnapshot | null) => void = () => {};
     const snapshot = new Promise<SessionSnapshot | null>((resolve) => (handOver = resolve));
@@ -117,6 +119,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     exited: vi.fn(),
     retry: vi.fn(),
     arrived: vi.fn(),
+    stayed: vi.fn(),
     movedAway: vi.fn(),
   } satisfies SessionEvents;
   const pane = new PaneSession(
@@ -139,6 +142,8 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     pane,
     opened,
     adopted,
+    /** The session can't move here: adopting it fails with `error`. */
+    failAdoption: (error: unknown) => (adoptFailure = error),
     events,
     written,
     setLine: (text: string) => (line = text),
@@ -521,6 +526,8 @@ describe("text from elsewhere", () => {
 });
 
 describe("moving to another window", () => {
+  const from = { window: "main", pane: 1 };
+
   it("hands the screen over once the session has moved, and leaves the session open", async () => {
     const { pane, opened, events, written } = setup();
     pane.connect();
@@ -528,8 +535,8 @@ describe("moving to another window", () => {
     await settle();
     opened[0].event({ type: "connected" });
     opened[0].output("$ ");
-    opened[0].event({ type: "moved" });
-    expect(handOver).toHaveBeenLastCalledWith({ id: session.id, data: "<screen>", cols: 80, rows: 24 });
+    opened[0].event({ type: "moved", moveId: "m1" });
+    expect(handOver).toHaveBeenLastCalledWith({ id: session.id, moveId: "m1", data: "<screen>", cols: 80, rows: 24 });
     expect(events.movedAway).toHaveBeenCalledOnce();
     expect(events.session).toHaveBeenLastCalledWith(null);
     // Nothing more goes to it from here, and closing the pane doesn't end it.
@@ -541,7 +548,7 @@ describe("moving to another window", () => {
   });
 
   it("takes the session over: its screen first, then the output that came since", async () => {
-    const arrival: Arrival = { sessionId: 42, connected: true, snapshot: null, reconnect: false };
+    const arrival: Arrival = { sessionId: 42, connected: true, snapshot: null, reconnect: false, from };
     const { pane, adopted, events, screen, opened } = setup({}, undefined, arrival);
     pane.start();
     expect(events.arrived).toHaveBeenCalledOnce();
@@ -549,20 +556,53 @@ describe("moving to another window", () => {
     expect(adopted[0].id).toBe(42);
     adopted[0].output("late");
     expect(screen()).toBe("");
-    adopted[0].handOver({ id: 42, data: "<old>", cols: 100, rows: 30 });
+    // It is this pane's already: typing reaches it, while it can't move on yet.
+    expect(events.session).toHaveBeenLastCalledWith(42);
+    expect(pane.isArriving).toBe(true);
+    expect(pane.send("ls\r")).toBe(true);
+    adopted[0].handOver({ id: 42, moveId: "m1", data: "<old>", cols: 100, rows: 30 });
     await settle();
     expect(screen()).toBe("<restored <old> 100x30>late");
+    expect(pane.isArriving).toBe(false);
     expect(adopted[0].session.sizes).toEqual([[80, 24]]);
-    expect(events.session).toHaveBeenLastCalledWith(42);
-    // Its shell was up: typing goes to it, and nothing connects anew.
-    expect(pane.send("ls\r")).toBe(true);
-    await settle();
+    // Its shell was up: nothing connects anew.
     expect(adopted[0].session.writes).toEqual(["ls\r"]);
     expect(opened).toHaveLength(0);
   });
 
+  it("moves on without closing the session it took over", async () => {
+    const { pane, adopted, events } = setup({}, undefined, { sessionId: 42, connected: true, snapshot: null, reconnect: false, from });
+    pane.start();
+    await settle();
+    adopted[0].handOver(null);
+    await settle();
+    adopted[0].event({ type: "moved", moveId: "m2" });
+    expect(handOver).toHaveBeenLastCalledWith({ id: 42, moveId: "m2", data: "<screen>", cols: 80, rows: 24 });
+    expect(events.movedAway).toHaveBeenCalledOnce();
+    pane.dispose();
+    await settle();
+    expect(adopted[0].session.closed).toBe(false);
+  });
+
+  it("reports a session that couldn't move here, without an error or connecting (the pane closes)", async () => {
+    const { pane, failAdoption, events, screen, opened } = setup({}, undefined, {
+      sessionId: 42,
+      connected: true,
+      snapshot: null,
+      reconnect: false,
+      from,
+    });
+    failAdoption({ code: "session.busy", message: "busy" });
+    pane.start();
+    await settle();
+    expect(events.stayed).toHaveBeenCalledOnce();
+    expect(pane.isArriving).toBe(false);
+    expect(screen()).toBe("");
+    expect(opened).toHaveLength(0);
+  });
+
   it("goes on without the screen if the old window doesn't hand it over", async () => {
-    const arrival: Arrival = { sessionId: 7, connected: true, snapshot: null, reconnect: false };
+    const arrival: Arrival = { sessionId: 7, connected: true, snapshot: null, reconnect: false, from };
     const { pane, adopted, screen } = setup({}, undefined, arrival);
     pane.start();
     await settle();
@@ -574,7 +614,7 @@ describe("moving to another window", () => {
 
   it("shows what a pane without a session showed, and connects on Enter", async () => {
     const snapshot = { data: "<bye>", cols: 80, rows: 24 };
-    const { pane, opened, screen } = setup({}, undefined, { sessionId: null, connected: false, snapshot, reconnect: false });
+    const { pane, opened, screen } = setup({}, undefined, { sessionId: null, connected: false, snapshot, reconnect: false, from });
     pane.start();
     expect(screen()).toBe("<restored <bye> 80x24>");
     expect(pane.isClosed).toBe(true);
@@ -584,7 +624,7 @@ describe("moving to another window", () => {
   });
 
   it("connects at once if it was waiting to reconnect", () => {
-    const { pane, opened } = setup({}, undefined, { sessionId: null, connected: false, snapshot: null, reconnect: true });
+    const { pane, opened } = setup({}, undefined, { sessionId: null, connected: false, snapshot: null, reconnect: true, from });
     pane.start();
     expect(opened).toHaveLength(1);
   });

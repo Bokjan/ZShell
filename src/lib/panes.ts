@@ -55,7 +55,7 @@ export interface Pane {
 }
 
 /** A terminal's content, to draw again in another window (see `SessionSnapshot`). */
-export type Snapshot = Omit<SessionSnapshot, "id">;
+export type Snapshot = Omit<SessionSnapshot, "id" | "moveId">;
 
 /**
  * How a pane that moved from another window goes on: with its session (`sessionId`), whose
@@ -69,6 +69,8 @@ export interface Arrival {
   snapshot: Snapshot | null;
   /** It was waiting to reconnect: it connects at once. */
   reconnect: boolean;
+  /** The window it came from, and its key there, to tell if its session can't move. */
+  from: { window: string; pane: number };
 }
 
 /** How a tab's panes are arranged: one pane, or several side by side (`row`) or stacked (`column`). */
