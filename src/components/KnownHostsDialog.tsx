@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { errorMessage, knownHosts, type KnownHost } from "../lib/api";
 import { useDialog } from "../lib/dialogs";
+import { useWindowFocus } from "../lib/windows";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
@@ -37,6 +38,9 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
     });
   }, []);
   useEffect(reload, [reload]);
+  // Host keys added or removed meanwhile (in another window, or by OpenSSH). Removing an entry
+  // of a list that has changed since fails rather than removing another line.
+  useWindowFocus(reload);
 
   const dialog = useDialog(onClose);
 

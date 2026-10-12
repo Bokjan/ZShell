@@ -4,6 +4,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { knownHosts } from "../../lib/api";
 import { isMac } from "../../lib/platform";
+import { useWindowFocus } from "../../lib/windows";
 import { HelpTip } from "../HelpTip";
 import { KnownHostsDialog } from "../KnownHostsDialog";
 import { Section, Setting } from "./common";
@@ -20,6 +21,8 @@ export function KnownHostsSection() {
     knownHosts.list().then((entries) => setCount(entries.length), console.error);
   }, []);
   useEffect(refresh, [refresh]);
+  // Host keys added or removed meanwhile (in another window, or by OpenSSH).
+  useWindowFocus(refresh);
 
   return (
     <Section id="knownHosts">

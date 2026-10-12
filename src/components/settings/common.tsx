@@ -2,9 +2,27 @@ import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode }
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
+import { nextFieldText } from "../../lib/fieldText";
 import { wholeNumber } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
 import { SpinInput } from "../SpinInput";
+
+/**
+ * The text of a field showing a stored `value`, which can also change in another window: a
+ * new value replaces the text, but not an edit that isn't saved yet (see `nextFieldText`).
+ */
+export function useFieldText(value: string, same?: (text: string, value: string) => boolean) {
+  const [text, setText] = useState(value);
+  const previous = useRef(value);
+  const sameRef = useRef(same);
+  sameRef.current = same;
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = value;
+    setText((current) => nextFieldText(current, before, value, sameRef.current));
+  }, [value]);
+  return [text, setText] as const;
+}
 
 
 /** The sections in the order they appear, for the navigation; each is titled `settings.<id>`. */
@@ -91,13 +109,14 @@ export function NumberField({
   step?: number;
   onChange(n: number): void;
 }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
+  const [text, setText] = useFieldText(String(value));
   const valid = (n: number) => Number.isInteger(n) && n >= min && n <= max;
   const commit = (next: string) => {
     const n = wholeNumber(next);
-    if (next.trim() !== "" && valid(n) && n !== value) onChange(n);
-    else setText(String(value));
+    if (next.trim() !== "" && valid(n) && n !== value) {
+      onChange(n);
+      setText(String(n));
+    } else setText(String(value));
   };
   const commitLatest = useRef(() => {});
   commitLatest.current = () => commit(text);
@@ -124,15 +143,15 @@ export function NumberField({
 
 /**
  * A text field applied as it is typed. The stored value comes back trimmed, which must not
- * replace what is being typed: a space typed before the next word would disappear.
+ * replace what is being typed: a space typed before the next word would disappear; nor does a
+ * value from another window replace a keystroke not saved yet.
  */
 export function LiveTextField({
   value,
   onChange,
   ...rest
 }: { value: string; onChange(text: string): void } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
-  const [text, setText] = useState(value);
-  useEffect(() => setText((current) => (current.trim() === value ? current : value)), [value]);
+  const [text, setText] = useFieldText(value, (text, value) => text.trim() === value);
   return (
     <input
       {...rest}

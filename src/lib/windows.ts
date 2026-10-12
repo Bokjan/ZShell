@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { EventCallback, UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { Change, DropTarget, Dropped, Rect, WindowInfo } from "./bindings";
 import type { TabTransfer } from "./tabs";
@@ -23,6 +24,19 @@ export function useWindowEvent<T>(event: string, handler: (payload: T) => void) 
     const unlisten = listenHere<T>(event, (e) => handlerRef.current(e.payload));
     return () => void unlisten.then((f) => f());
   }, [event]);
+}
+
+/**
+ * Calls `handler` each time this window gets the focus back, while the component is mounted:
+ * to read again what can change while the user is elsewhere (another window, another app).
+ */
+export function useWindowFocus(handler: () => void) {
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => focused && handlerRef.current());
+    return () => void unlisten.then((f) => f());
+  }, []);
 }
 
 /** Calls `handler` when another window saved what this one shows (see `Change`). */

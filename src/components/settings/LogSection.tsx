@@ -8,7 +8,8 @@ import { useConfirmButton } from "../../lib/confirm";
 import { formatSize } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
 import type { LogFormat, LogSettings } from "../../lib/settings";
-import { FolderField, Section, Setting } from "./common";
+import { useWindowFocus } from "../../lib/windows";
+import { FolderField, Section, Setting, useFieldText } from "./common";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
 /** Retention choices, in days; 0 keeps logs. */
@@ -28,13 +29,15 @@ export function LogSection({
   const [directory, setDirectory] = useState("");
   const [summary, setSummary] = useState<{ count: number; bytes: number } | null>(null);
   const deleteButton = useConfirmButton();
-  const [fileName, setFileName] = useState(settings.fileName);
-  useEffect(() => setFileName(settings.fileName), [settings.fileName]);
+  // Saved trimmed, when the field is left.
+  const [fileName, setFileName] = useFieldText(settings.fileName, (text, value) => text.trim() === value);
 
   const refresh = useCallback(() => {
     logs.summary().then(setSummary).catch(console.error);
   }, []);
   useEffect(refresh, [refresh]);
+  // Logs written or deleted meanwhile (in another window, or outside ZShell).
+  useWindowFocus(refresh);
   // The folder in effect (the default one when none is chosen).
   useEffect(() => {
     logs.directory().then(setDirectory).catch(console.error);
