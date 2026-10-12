@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { actionOf, labelsOn, matches, paneSideOf, shortcutRows, tabIndexOf } from "./keymap";
+import { actionEvent, actionOf, appMenu, chosenAction, labelsOn, matches, paneSideOf, shortcutRows, tabIndexOf } from "./keymap";
 
 const key = (code: string, modifiers: { ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {}) =>
   ({
@@ -50,5 +50,25 @@ describe("keymap", () => {
     expect(keys(false)).toMatchObject({ goToTab: "Alt+1 – Alt+8", focusPane: "Ctrl+Alt+← ↑ → ↓", copySelection: "Ctrl+C" });
     expect(keys(true)).not.toHaveProperty("copySelection");
     expect(keys(false)).not.toHaveProperty("closeWindow");
+  });
+
+  it("takes an action chosen from a menu for its keys, and only its", () => {
+    // Node has no key events.
+    vi.stubGlobal("KeyboardEvent", class extends Event {});
+    const e = actionEvent("splitRight");
+    expect(matches(e, "splitRight")).toBe(true);
+    expect(matches(e, "splitDown")).toBe(false);
+    expect(actionOf(e, ["splitDown", "splitRight"])).toBe("splitRight");
+    expect(tabIndexOf(e)).toBe(null);
+    expect(chosenAction(e)).toBe("splitRight");
+    expect(chosenAction(key("KeyF", { ctrl: true, shift: true }))).toBe(null);
+    vi.unstubAllGlobals();
+  });
+
+  it("lists each action once in the app menu", () => {
+    for (const mac of [true, false]) {
+      const actions = appMenu(mac).flatMap(({ items }) => items.filter((item) => item !== "separator"));
+      expect(new Set(actions).size).toBe(actions.length);
+    }
   });
 });

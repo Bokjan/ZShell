@@ -1,20 +1,23 @@
+import type { MenuSection } from "./bindings";
 import { isMac } from "./platform";
 
+export type { MenuSection } from "./bindings";
+
 /**
- * The app's keyboard shortcuts: the keys of each action on macOS and on other platforms
- * (Windows, and Linux, which follows it). Keys are written as on a US keyboard
- * (`Cmd+Shift+E`, `Alt+Shift+=`) and matched by `KeyboardEvent.code`, the physical key, so
- * they stay in place on other layouts. Outside macOS, keys the shell reads (Ctrl+F, Ctrl+T,
- * Ctrl+W…) get Shift added. The first keys of an action are the ones menus and tooltips show;
- * the list of shortcuts in the settings shows all of them.
+ * The app's actions and their keyboard shortcuts: the keys of each action on macOS and on
+ * other platforms (Windows, and Linux, which follows it). Keys are written as on a US
+ * keyboard (`Cmd+Shift+E`, `Alt+Shift+=`) and matched by `KeyboardEvent.code`, the physical
+ * key, so they stay in place on other layouts. Outside macOS, keys the shell reads (Ctrl+F,
+ * Ctrl+T, Ctrl+W…) get Shift added. The first keys of an action are the ones menus and
+ * tooltips show; the list of shortcuts in the settings shows all of them. Some actions have
+ * no keys, and are only chosen from the app menu (`appMenu`).
  *
- * Every shortcut is matched, labeled and listed from this table, so changing one here
- * changes it everywhere, except for the native macOS menu items (`MAC_MENU`), whose keys are
- * also set in lib.rs.
+ * Every shortcut is matched, labeled and listed from this table, and the app menu (the native
+ * one on macOS too) is built from it, so changing one here changes it everywhere.
  */
 const KEYMAP = {
   settings: { mac: "Cmd+,", other: "Ctrl+," },
-  // As in 1Password; on macOS also a native menu item, in the app menu (lib.rs).
+  // As in 1Password.
   lock: { mac: "Cmd+Shift+L", other: "Ctrl+Shift+L" },
   searchSessions: { mac: "Cmd+K", other: "Ctrl+Shift+K" },
   newLocalTerminal: { mac: "Cmd+T", other: "Ctrl+Shift+T" },
@@ -55,12 +58,115 @@ const KEYMAP = {
   forwardsPanel: { mac: "Cmd+Shift+P", other: "Ctrl+Shift+P" },
   // As in iTerm2 on macOS and Windows Terminal elsewhere.
   fullScreen: { mac: "Cmd+Enter", other: "F11" },
+  // Outside macOS, which has the menu bar instead: the menu of the app's icon in the title bar.
+  appMenu: { other: "Ctrl+Shift+M" },
+  // Only in the app menu.
+  newSession: {},
+  importSshConfig: {},
+  importSessions: {},
+  exportSessions: {},
+  releaseNotes: {},
+  reportIssue: {},
+  about: {},
+  // Outside macOS, whose app menu has the system's own Quit (⌘Q).
+  quit: {},
 } satisfies Record<string, { mac?: string | string[]; other?: string | string[] }>;
 
 export type Action = keyof typeof KEYMAP;
 
-/** On macOS these are native menu items (lib.rs), whose keys never reach the web view. */
-const MAC_MENU: readonly Action[] = ["closeTab", "closeWindow", "copy", "paste", "selectAll"];
+/** The actions in the app menu, each labeled by `appMenu.items.<action>`. */
+export type MenuAction = Extract<
+  Action,
+  | "settings"
+  | "lock"
+  | "newLocalTerminal"
+  | "newSession"
+  | "searchSessions"
+  | "importSshConfig"
+  | "importSessions"
+  | "exportSessions"
+  | "closeTab"
+  | "closeWindow"
+  | "copy"
+  | "paste"
+  | "find"
+  | "splitRight"
+  | "splitDown"
+  | "filePanel"
+  | "forwardsPanel"
+  | "composeBar"
+  | "quickCommands"
+  | "fullScreen"
+  | "releaseNotes"
+  | "reportIssue"
+  | "about"
+  | "quit"
+>;
+
+export type MenuEntry = MenuAction | "separator";
+
+/**
+ * The app menu, on macOS (`mac`) and elsewhere. On macOS each section is a menu of the menu
+ * bar, to which menu.rs adds the system's own items (About, Services, Hide and Quit in the app
+ * menu; Undo to Select All in Edit; the Window menu). Elsewhere the menu of the app's icon in
+ * the title bar has the sections as submenus, and the "app" section's items after them.
+ */
+export function appMenu(mac = isMac): { section: MenuSection; items: MenuEntry[] }[] {
+  const file: MenuEntry[] = [
+    "newLocalTerminal",
+    "newSession",
+    "searchSessions",
+    "separator",
+    "importSshConfig",
+    "importSessions",
+    "exportSessions",
+    "separator",
+    "closeTab",
+    "closeWindow",
+  ];
+  const view: MenuEntry[] = [
+    "splitRight",
+    "splitDown",
+    "separator",
+    "filePanel",
+    "forwardsPanel",
+    "composeBar",
+    "quickCommands",
+    "separator",
+    "fullScreen",
+  ];
+  if (mac) {
+    return [
+      { section: "app", items: ["settings", "separator", "lock"] },
+      { section: "file", items: file },
+      { section: "edit", items: ["find"] },
+      { section: "view", items: view },
+      { section: "help", items: ["releaseNotes", "reportIssue"] },
+    ];
+  }
+  return [
+    { section: "file", items: file },
+    { section: "edit", items: ["copy", "paste", "separator", "find"] },
+    { section: "view", items: view },
+    { section: "help", items: ["releaseNotes", "reportIssue", "separator", "about"] },
+    { section: "app", items: ["lock", "settings", "separator", "quit"] },
+  ];
+}
+
+/**
+ * On macOS the items of the menu bar, whose keys go to the menu rather than to the page (the
+ * page runs the action when the menu says so, see `runAction`): the system's Copy, Paste and
+ * Select All, there from the start, and the app menu's once the page has put them there
+ * (`setNativeMenu`). Until then, or if that failed, the page takes their keys itself.
+ */
+const SYSTEM_MENU = new Set<Action>(["copy", "paste", "selectAll"]);
+const APP_MENU = new Set<Action>(appMenu(true).flatMap(({ items }) => items.filter((item) => item !== "separator")));
+let nativeMenu = false;
+
+/** Says that the macOS menu bar has the app menu's items now (see `useNativeMenu`). */
+export function setNativeMenu() {
+  nativeMenu = true;
+}
 
 interface Chord {
   code: string;
@@ -110,9 +216,28 @@ const sameChord = (e: KeyboardEvent, chord: Chord) =>
   e.shiftKey === chord.shift &&
   e.metaKey === chord.meta;
 
-/** Whether `e` is a shortcut of `action` that the web view handles. */
+/** Key events that stand for an action chosen from a menu (see `actionEvent`). */
+const chosen = new WeakMap<KeyboardEvent, Action>();
+
+/**
+ * A key event standing for `action`, chosen from a menu: shortcut handlers take it for one
+ * of the action's keys, so a menu runs an action as its shortcut would, with the same rules
+ * (dialogs, the app lock, which terminal is active).
+ */
+export function actionEvent(action: Action): KeyboardEvent {
+  const e = new KeyboardEvent("keydown");
+  chosen.set(e, action);
+  return e;
+}
+
+/** The action `e` stands for, if it was chosen from a menu rather than typed. */
+export const chosenAction = (e: KeyboardEvent): Action | null => chosen.get(e) ?? null;
+
+/** Whether `e` is a shortcut of `action` that the web view handles, or the action chosen from a menu. */
 export function matches(e: KeyboardEvent, action: Action): boolean {
-  if (isMac && MAC_MENU.includes(action)) return false;
+  const choice = chosen.get(e);
+  if (choice) return choice === action;
+  if (isMac && (SYSTEM_MENU.has(action) || (nativeMenu && APP_MENU.has(action)))) return false;
   return CHORDS.get(action)!.some((chord) => sameChord(e, chord));
 }
 
@@ -193,6 +318,12 @@ export function labelsOn(action: Action, mac: boolean): string[] {
   return chordsOf(action, mac).map((chord) => format(chord, mac));
 }
 
+/** The first macOS keys of `action` as written in the table ("Cmd+Shift+E"), for a native menu item. */
+export function macKeys(action: Action): string | null {
+  const keys: string | string[] | undefined = (KEYMAP[action] as { mac?: string | string[] }).mac;
+  return (Array.isArray(keys) ? keys[0] : keys) ?? null;
+}
+
 /** The keys of `action` on this platform for menus and tooltips: "⇧⌘E", "Ctrl+Shift+E". */
 export function shortcutLabel(action: Action): string | undefined {
   return labelsOn(action, isMac)[0];
@@ -222,7 +353,8 @@ export interface ShortcutRow {
     | "forwardsPanel"
     | "fullScreen"
     | "lock"
-    | "settings";
+    | "settings"
+    | "appMenu";
   /** Only where local terminals can be opened. */
   local?: boolean;
   keys: string;
@@ -261,6 +393,7 @@ export function shortcutRows(mac = isMac): ShortcutRow[] {
     { id: "fullScreen", keys: all("fullScreen") },
     { id: "lock", keys: all("lock") },
     { id: "settings", keys: all("settings") },
+    { id: "appMenu", keys: all("appMenu") },
   ];
   return rows.filter((row) => row.keys);
 }

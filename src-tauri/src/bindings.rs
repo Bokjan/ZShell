@@ -99,6 +99,7 @@ mod tests {
         visitor.visit::<sftp::drag::DragResult>();
         visitor.visit::<sftp::drag::DragEvent>();
         visitor.visit::<window::WindowInfo>();
+        visitor.visit::<menu::Section>();
         visitor.visit::<tab_drag::Rect>();
         visitor.visit::<tab_drag::Point>();
         visitor.visit::<tab_drag::DropTarget>();

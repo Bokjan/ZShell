@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { isAppLocked } from "./appLock";
 import { isDialogOpen, type DialogHandle } from "./dialogs";
+import { actionEvent, type Action } from "./keymap";
 
 /** Handles a key if it is one of its shortcuts, returning whether it did. */
 export type ShortcutHandler = (e: KeyboardEvent) => boolean;
@@ -41,7 +42,21 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-/** Registers app shortcuts while mounted; all of them go through one listener. */
+/**
+ * Runs `action`, chosen from a menu, as if one of its keys were pressed: the first handler
+ * that applies now takes it. Returns whether one did.
+ */
+export function runAction(action: Action): boolean {
+  if (isAppLocked()) return false;
+  const e = actionEvent(action);
+  for (const registration of registrations) if (registration.applies() && registration.handle(e)) return true;
+  return false;
+}
+
+/**
+ * Registers app shortcuts while mounted; all of them go through one listener. The handlers
+ * also get the actions chosen from menus (`runAction`), which `matches` takes for their keys.
+ */
 export function useShortcuts(handle: ShortcutHandler, { when = "tabs", dialog, enabled = true }: Options = {}) {
   const latest = useRef(handle);
   latest.current = handle;

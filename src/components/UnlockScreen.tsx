@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
@@ -6,8 +6,9 @@ import { useTranslation } from "react-i18next";
 import { configDirectory, errorMessage, vault, type VaultStatus } from "../lib/api";
 import { announce } from "../lib/announce";
 import { useDialog } from "../lib/dialogs";
+import { matches } from "../lib/keymap";
 import { isWindows } from "../lib/platform";
-import { listenHere } from "../lib/windows";
+import { useShortcuts } from "../lib/shortcuts";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 import { Modal } from "./Modal";
@@ -39,11 +40,12 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
   const [resetting, setResetting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // No tabs to close: ⌘W (the File menu's Close) closes the window, as it does without tabs.
-  useEffect(() => {
-    const unlisten = listenHere("close-tab", () => void getCurrentWindow().close().catch(console.error));
-    return () => void unlisten.then((f) => f());
-  }, []);
+  // No tabs to close: closing a tab (⌘W, the File menu's Close) closes the window, as it does without tabs.
+  useShortcuts((e) => {
+    if (!matches(e, "closeTab")) return false;
+    void getCurrentWindow().close().catch(console.error);
+    return true;
+  });
 
   const asksPassword = lock.reason === "password" || (lock.reason === "saved" && status.protection === "password");
 

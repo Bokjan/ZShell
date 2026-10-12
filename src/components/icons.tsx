@@ -172,14 +172,25 @@ export function ActivityIcon({ direction, size = 12 }: { direction: "up" | "down
   );
 }
 
+const CHEVRONS = { up: "M3.5 10.5L8 6l4.5 4.5", down: "M3.5 6L8 10.5 12.5 6", right: "M6 3.5L10.5 8 6 12.5" };
+
 /**
  * A chevron: after a label, down on a button that opens a menu, up or down for a sort order
- * (`inline`, centered beside the label); alone in a button, the steps of a number field.
+ * (`inline`, centered beside the label); alone in a button, the steps of a number field;
+ * right on a menu item that opens a submenu.
  */
-export function ChevronIcon({ direction = "down", size = 10, inline = true }: { direction?: "up" | "down"; size?: number; inline?: boolean }) {
+export function ChevronIcon({
+  direction = "down",
+  size = 10,
+  inline = true,
+}: {
+  direction?: keyof typeof CHEVRONS;
+  size?: number;
+  inline?: boolean;
+}) {
   return (
     <Svg size={size} strokeWidth={1.8} className={inline ? "inline-icon" : undefined}>
-      <path d={direction === "up" ? "M3.5 10.5L8 6l4.5 4.5" : "M3.5 6L8 10.5 12.5 6"} />
+      <path d={CHEVRONS[direction]} />
     </Svg>
   );
 }

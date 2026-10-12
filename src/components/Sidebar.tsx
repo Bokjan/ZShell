@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
+import type { AppMenuButton } from "../app/useAppMenu";
 import { announce } from "../lib/announce";
 import {
   deleteProfile,
@@ -17,8 +18,8 @@ import {
 import { dragHorizontally, usePressDrag } from "../lib/drag";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
-import { shortcutLabel } from "../lib/keymap";
-import { isComposing } from "../lib/platform";
+import { matches, shortcutLabel } from "../lib/keymap";
+import { isComposing, isMac } from "../lib/platform";
 import {
   RECENT_LIMIT,
   address,
@@ -33,10 +34,11 @@ import {
   type QuickTarget,
   type Row,
 } from "../lib/sessions";
+import { useShortcuts } from "../lib/shortcuts";
 import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../lib/window";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
-import { DisclosureIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
+import { ChevronIcon, DisclosureIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
@@ -68,6 +70,8 @@ interface Props {
   onChanged(): void;
   onImportSshConfig(): void;
   onSettings(): void;
+  /** The app menu, opened by the app's icon and name outside macOS. */
+  appMenu: AppMenuButton;
 }
 
 const DEFAULT_WIDTH = 260;
@@ -265,6 +269,15 @@ export function Sidebar(props: Props) {
     const path = await openDialog({ title: t("sidebar.importSessions"), filters: fileFilters });
     if (typeof path === "string") setImporting(path);
   };
+
+  // From the app menu.
+  useShortcuts((e) => {
+    if (matches(e, "newSession")) onNew(currentFolder());
+    else if (matches(e, "importSessions")) void importSessions();
+    else if (matches(e, "exportSessions")) setExporting(profiles.length > 0);
+    else return false;
+    return true;
+  });
 
   const importMenu = (e: ReactMouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -477,10 +490,36 @@ export function Sidebar(props: Props) {
       {/* Its part of the window's title bar, beside the traffic lights on macOS; where there are
           none, the app's icon and name take their place, as in a native title bar. */}
       <header className="sidebar-titlebar" {...DRAG_REGION}>
-        <span className="sidebar-brand" aria-hidden="true">
-          <img src={appIcon} alt="" />
-          <span className="sidebar-brand-name">{t("app.name")}</span>
-        </span>
+        {isMac ? (
+          <span className="sidebar-brand" aria-hidden="true">
+            <img src={appIcon} alt="" />
+            <span className="sidebar-brand-name">{t("app.name")}</span>
+          </span>
+        ) : (
+          // Opens the app menu, which macOS has in the menu bar. It keeps the focus where it
+          // was (a terminal), which the menu's actions act on and the focus goes back to.
+          <button
+            ref={props.appMenu.ref}
+            type="button"
+            className="sidebar-brand app-menu-button"
+            aria-label={t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") })}
+            title={t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") })}
+            aria-haspopup="menu"
+            aria-expanded={props.appMenu.open}
+            onMouseDown={(e) => e.preventDefault()}
+            // Opened from the keyboard (Enter, Space) when the click has no pointer position.
+            onClick={(e) => props.appMenu.toggle(e.detail === 0)}
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowDown") return;
+              e.preventDefault();
+              if (!props.appMenu.open) props.appMenu.toggle(true);
+            }}
+          >
+            <img src={appIcon} alt="" />
+            <span className="sidebar-brand-name">{t("app.name")}</span>
+            <ChevronIcon />
+          </button>
+        )}
         <span className="sidebar-actions">
           <IconButton
             className="icon-button"

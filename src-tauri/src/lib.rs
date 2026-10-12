@@ -15,6 +15,7 @@ mod import;
 mod instance;
 mod local_name;
 mod logging;
+mod menu;
 mod net;
 mod persist;
 mod proxy;
@@ -34,7 +35,7 @@ mod zmodem;
 
 use std::sync::Arc;
 
-use tauri::{Emitter, EventTarget, Manager};
+use tauri::{Emitter, Manager};
 
 use applock::AppLock;
 use config::ProfileStore;
@@ -48,85 +49,6 @@ use sftp::transfer::Transfers;
 use ssh::Connections;
 use vault::Vault;
 use window::Windows;
-
-const SETTINGS_MENU_ID: &str = "settings";
-const CLOSE_TAB_MENU_ID: &str = "close-tab";
-const CLOSE_WINDOW_MENU_ID: &str = "close-window";
-const QUIT_MENU_ID: &str = "quit";
-const LOCK_MENU_ID: &str = "lock";
-
-/// The macOS menu: Tauri's default one, with "Settings…" (⌘,) and "Lock ZShell" (⇧⌘L) in the
-/// app menu, where Mac users expect them, and a File menu with "Close" (⌘W: the focused pane
-/// of a split tab, else the tab) and "Close Window" (⇧⌘W), as in iTerm2; the predefined "Close
-/// Window" item would take ⌘W.
-/// These shortcuts have to be menu items: macOS handles them before the web view sees them.
-/// They act on the window that last had the focus. "Quit" asks that window's page, which
-/// asks first when tabs of any window are connected, and then quits. Elsewhere the frontend
-/// handles Ctrl+, and Ctrl+Shift+W itself, and closing the last window quits.
-#[cfg(target_os = "macos")]
-fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID};
-
-    let info = app.package_info();
-    let about = AboutMetadata { name: Some(info.name.clone()), version: Some(info.version.to_string()), ..Default::default() };
-    let separator = || PredefinedMenuItem::separator(app);
-    Menu::with_items(
-        app,
-        &[
-            &Submenu::with_items(
-                app,
-                info.name.clone(),
-                true,
-                &[
-                    &PredefinedMenuItem::about(app, None, Some(about))?,
-                    &separator()?,
-                    &MenuItem::with_id(app, SETTINGS_MENU_ID, t!("menu.settings"), true, Some("CmdOrCtrl+,"))?,
-                    &separator()?,
-                    &MenuItem::with_id(app, LOCK_MENU_ID, t!("menu.lock", name = info.name), true, Some("CmdOrCtrl+Shift+L"))?,
-                    &separator()?,
-                    &PredefinedMenuItem::services(app, None)?,
-                    &separator()?,
-                    &PredefinedMenuItem::hide(app, None)?,
-                    &PredefinedMenuItem::hide_others(app, None)?,
-                    &separator()?,
-                    &MenuItem::with_id(app, QUIT_MENU_ID, t!("menu.quit", name = info.name), true, Some("CmdOrCtrl+Q"))?,
-                ],
-            )?,
-            &Submenu::with_items(
-                app,
-                t!("menu.file"),
-                true,
-                &[
-                    &MenuItem::with_id(app, CLOSE_TAB_MENU_ID, t!("menu.closeTab"), true, Some("CmdOrCtrl+W"))?,
-                    &MenuItem::with_id(app, CLOSE_WINDOW_MENU_ID, t!("menu.closeWindow"), true, Some("CmdOrCtrl+Shift+W"))?,
-                ],
-            )?,
-            &Submenu::with_items(
-                app,
-                t!("menu.edit"),
-                true,
-                &[
-                    &PredefinedMenuItem::undo(app, None)?,
-                    &PredefinedMenuItem::redo(app, None)?,
-                    &separator()?,
-                    &PredefinedMenuItem::cut(app, None)?,
-                    &PredefinedMenuItem::copy(app, None)?,
-                    &PredefinedMenuItem::paste(app, None)?,
-                    &PredefinedMenuItem::select_all(app, None)?,
-                ],
-            )?,
-            &Submenu::with_items(app, t!("menu.view"), true, &[&PredefinedMenuItem::fullscreen(app, None)?])?,
-            &Submenu::with_id_and_items(
-                app,
-                WINDOW_SUBMENU_ID,
-                t!("menu.window"),
-                true,
-                &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?],
-            )?,
-            &Submenu::with_id_and_items(app, HELP_SUBMENU_ID, t!("menu.help"), true, &[])?,
-        ],
-    )
-}
 
 /// Holding a key should repeat it, as in other terminals, rather than open the accent
 /// picker (macOS "press and hold"; arrow keys repeat either way, having no accents). Set as
@@ -175,7 +97,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::show_current(app)));
     // Tauri only gives macOS a default menu; other platforms keep having none.
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(app_menu);
+    let builder = builder.menu(|app| menu::build(app, &[], &Default::default()));
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -221,31 +143,7 @@ pub fn run() {
             window::create_main(app)?;
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            let Some(current) = window::current(app) else {
-                if event.id() == QUIT_MENU_ID {
-                    app.exit(0);
-                }
-                return;
-            };
-            let to_current = |name: &str| {
-                let _ = app.emit_to(EventTarget::webview_window(current.label()), name, ());
-            };
-            if event.id() == SETTINGS_MENU_ID {
-                to_current("open-settings");
-            } else if event.id() == LOCK_MENU_ID {
-                // As the shortcut elsewhere: the frontend says what to do when the lock is off.
-                to_current("lock-app");
-            } else if event.id() == CLOSE_TAB_MENU_ID {
-                // The frontend may ask first, and closes the window when there are no tabs.
-                to_current("close-tab");
-            } else if event.id() == CLOSE_WINDOW_MENU_ID {
-                // The frontend may ask first; the last window closing quits the app.
-                let _ = current.close();
-            } else if event.id() == QUIT_MENU_ID {
-                to_current("quit-requested");
-            }
-        })
+        .on_menu_event(|app, event| menu::chosen(app, event.id().as_ref()))
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => window::update_border(window),
             tauri::WindowEvent::Focused(true) => window::focused(window),
@@ -265,11 +163,14 @@ pub fn run() {
         })
         .manage(SessionManager::default())
         .manage(Windows::default())
+        .manage(menu::NativeMenu::default())
         .manage(tab_drag::TabDrag::default())
         .manage(Connections::default())
         .manage(Transfers::default())
         .invoke_handler(tauri::generate_handler![
             commands::set_locale,
+            menu::app_menu_set,
+            menu::app_menu_set_label,
             commands::config::settings_get,
             commands::config::settings_set,
             commands::config::config_directory,

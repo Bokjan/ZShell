@@ -18,6 +18,40 @@
     "placeholderNoLocal": "Select a session on the left to connect",
     "fullScreenHint": "Press {shortcut} to exit full screen"
   },
+  "appMenu": {
+    "button": "{name} menu ({shortcut})",
+    "file": "File",
+    "edit": "Edit",
+    "view": "View",
+    "help": "Help",
+    "exitFullScreen": "Exit Terminal Full Screen",
+    "items": {
+      "settings": "Settings…",
+      "lock": "Lock ZShell",
+      "newLocalTerminal": "New Local Terminal",
+      "newSession": "New Session…",
+      "searchSessions": "Search Sessions",
+      "importSshConfig": "Import from SSH Config…",
+      "importSessions": "Import Sessions…",
+      "exportSessions": "Export Sessions…",
+      "closeTab": "Close",
+      "closeWindow": "Close Window",
+      "copy": "Copy",
+      "paste": "Paste",
+      "find": "Find…",
+      "splitRight": "Split Right",
+      "splitDown": "Split Down",
+      "filePanel": "File Panel",
+      "forwardsPanel": "Port Forwarding Panel",
+      "composeBar": "Compose Bar",
+      "quickCommands": "Quick Commands…",
+      "fullScreen": "Terminal Full Screen",
+      "releaseNotes": "Release Notes",
+      "reportIssue": "Report an Issue",
+      "about": "About ZShell",
+      "quit": "Exit"
+    }
+  },
   "sidebar": {
     "listLabel": "Sessions",
     "searchLabel": "Search sessions, or connect to an address",
@@ -667,7 +701,8 @@
       "forwardsPanel": "Show or hide the port forwarding panel",
       "fullScreen": "Full screen, showing only the terminals of the tab",
       "settings": "Settings",
-      "lock": "Lock ZShell"
+      "lock": "Lock ZShell",
+      "appMenu": "Open the app menu"
     },
     "about": "About",
     "aboutVersion": "Version {version}",

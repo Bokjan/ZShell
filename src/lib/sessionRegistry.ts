@@ -21,6 +21,8 @@ export interface PaneView {
   session(id: SessionId | null): void;
   /** Gives the terminal the keyboard focus. */
   focus(): void;
+  /** Whether text is selected in the terminal. */
+  hasSelection(): boolean;
 }
 
 export interface SessionRegistry {
@@ -35,6 +37,8 @@ export interface SessionRegistry {
   reconnect(key: number): void;
   /** Gives the pane's terminal the keyboard focus. */
   focus(key: number): void;
+  /** Whether text is selected in the pane's terminal. */
+  hasSelection(key: number): boolean;
   /** What the pane's terminal shows, while it is shown. */
   snapshot(key: number): Snapshot | undefined;
   /** Whether a ZMODEM transfer runs in the pane, or waits for an answer. */
@@ -157,6 +161,7 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce, 
     screen: (key) => views.get(key)?.screen,
     reconnect: (key) => sessions.get(key)?.reconnect(),
     focus: (key) => views.get(key)?.focus(),
+    hasSelection: (key) => views.get(key)?.hasSelection() ?? false,
     snapshot: (key) => views.get(key)?.port.snapshot(),
     inZmodem: (key) => (zmodemPhases.get(key) ?? "idle") !== "idle",
     arriving: (key) => sessions.get(key)?.isArriving ?? false,

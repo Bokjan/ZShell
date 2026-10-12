@@ -6,11 +6,12 @@ import { useAppLock, type PendingClose } from "../components/AppLockGate";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { forwards, sessionForeground, type ForwardRule, type SessionId, type Settings } from "../lib/api";
 import { isAppLocked } from "../lib/appLock";
-import { isDialogOpen } from "../lib/dialogs";
 import { forwardMapping } from "../lib/format";
+import { matches } from "../lib/keymap";
 import { findPane, paneLabel, tabTitle, type Pane } from "../lib/panes";
+import { useShortcuts } from "../lib/shortcuts";
 import { activeTabOf, type TabStore } from "../lib/tabs";
-import { listenHere, useWindowEvent, windows } from "../lib/windows";
+import { useWindowEvent, windows } from "../lib/windows";
 
 /** Why closing a pane needs confirmation: a remote session is connected, or a local program runs. */
 type Busy = { kind: "connected" } | { kind: "process"; name: string } | { kind: "transfers"; count: number };
@@ -127,19 +128,25 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
   // Quitting (⌘Q, from the window that had the focus) asks once for all the windows: each
   // says how many of its panes are busy.
   useWindowEvent<number>("busy-query", (query) => void busyPanes(store).then((count) => windows.busyReply(query, count)));
-  useWindowEvent("quit-requested", async () => {
+  const quit = async () => {
     const busy = await windows.busyCount().catch(() => 0);
     if (busy === 0) void windows.quit();
     else if (isAppLocked()) confirmCloseLocked({ busy, quit: true });
     else setClosingWindow({ busy, quit: true });
-  });
+  };
+  useWindowEvent("quit-requested", () => void quit());
 
-  // From the macOS File menu's "Close" item (⌘W), which closes the window once no tabs are
-  // left, as in Terminal.app.
-  useEffect(() => {
-    const unlisten = listenHere("close-tab", () => !isDialogOpen() && !isAppLocked() && closeFocused());
-    return () => void unlisten.then((f) => f());
-  }, [closeFocused]);
+  // The app menu's items outside macOS, where the backend has them (menu.rs) once the page
+  // has put them in the menu bar.
+  useShortcuts(
+    (e) => {
+      if (matches(e, "closeWindow")) void getCurrentWindow().close();
+      else if (matches(e, "quit")) void quit();
+      else return false;
+      return true;
+    },
+    { when: "always" },
+  );
 
   const confirmClose = (dontAskAgain: boolean) => {
     if (!closing) return;

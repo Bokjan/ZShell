@@ -16,7 +16,7 @@ import "@xterm/xterm/css/xterm.css";
 import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../lib/api";
 import { isAppLocked, whenUnlocked } from "../lib/appLock";
 import { afterDialogs, isDialogOpen } from "../lib/dialogs";
-import { clipboardKeyOf, matches, shortcutLabel } from "../lib/keymap";
+import { chosenAction, clipboardKeyOf, matches, shortcutLabel } from "../lib/keymap";
 import type { PaneSession } from "../lib/paneSession";
 import { isMac } from "../lib/platform";
 import type { SessionRegistry } from "../lib/sessionRegistry";
@@ -217,6 +217,7 @@ export function TerminalView({
       zmodem: (phase) => onZmodemRef.current(phase),
       session: () => setZmodemPhase(null),
       focus: () => term.focus(),
+      hasSelection: () => term.hasSelection(),
     });
     sessionRef.current = session;
 
@@ -422,11 +423,16 @@ export function TerminalView({
     };
   }, [active]);
 
-  // A dialog (settings) above the terminal has the shortcut to itself.
+  // A dialog (settings) above the terminal has the shortcut to itself. Copying and pasting
+  // from the app menu: their keys are the terminal's own (see `clipboardKeyOf`).
   useShortcuts(
     (e) => {
-      if (!matches(e, "find")) return false;
-      setSearchKey((key) => key + 1);
+      const term = termRef.current;
+      if (matches(e, "find")) setSearchKey((key) => key + 1);
+      else if (chosenAction(e) === "copy") {
+        if (term?.hasSelection()) copyText(term.getSelection());
+      } else if (chosenAction(e) === "paste") void readText().then(pasteRef.current, ignore);
+      else return false;
       return true;
     },
     { enabled: active },

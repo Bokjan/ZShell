@@ -221,6 +221,24 @@ button > svg:only-child:not(.inline-icon) {
 :root[data-platform="mac"]:not([data-fullscreen]) .sidebar-brand {
   display: none;
 }
+/* Outside macOS it opens the app menu: the same place, with room for its hover. */
+.app-menu-button {
+  margin-left: 4px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  pointer-events: auto;
+}
+.app-menu-button:hover,
+.app-menu-button[aria-expanded="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.app-menu-button .inline-icon {
+  margin-left: -2px;
+}
 .sidebar-titlebar {
   container-type: inline-size;
 }
@@ -2039,6 +2057,11 @@ body.resizing .terminal-view {
 .context-menu-check {
   width: 10px;
   margin-right: -16px;
+}
+.context-menu-arrow {
+  display: flex;
+  margin-right: -4px;
+  opacity: 0.7;
 }
 .context-menu-item kbd {
   font: inherit;

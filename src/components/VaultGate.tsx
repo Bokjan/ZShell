@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { errorMessage, vault, type VaultStatus } from "../lib/api";
+import { useNativeMenu } from "../lib/appMenu";
 import { useSettings } from "../lib/settings";
 import { useTitleBar } from "../lib/window";
 import { useConfigChanged } from "../lib/windows";
@@ -31,8 +32,10 @@ export function useVault(): VaultContextValue {
  */
 export function VaultGate({ children }: { children: ReactNode }) {
   const { settings, update } = useSettings();
-  // The title bar works on the unlock screen too: moving the window, its buttons.
+  // The title bar works on the unlock screen too: moving the window, its buttons; and so
+  // does the macOS menu bar.
   useTitleBar();
+  useNativeMenu();
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   // Reading the key from the credential store.

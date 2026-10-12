@@ -405,6 +405,18 @@ keepDays: number, };
 
 export type LogSummary = { count: number, bytes: number, };
 
+/**
+ * A menu of the menu bar, or a part of the app menu outside macOS.
+ */
+export type MenuSection = "app" | "file" | "edit" | "view" | "help";
+
+export type NativeMenuItem = { "kind": "separator" } | { "kind": "action", id: string, label: string, keys: string | null, };
+
+/**
+ * The page's items for one menu of the menu bar.
+ */
+export type NativeMenuSection = { section: MenuSection, items: Array<NativeMenuItem>, };
+
 export type Parity = "none" | "odd" | "even";
 
 /**

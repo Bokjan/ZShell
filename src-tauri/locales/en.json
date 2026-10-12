@@ -40,11 +40,7 @@
     "view": "View",
     "window": "Window",
     "help": "Help",
-    "settings": "Settings…",
-    "closeTab": "Close",
-    "closeWindow": "Close Window",
-    "quit": "Quit {name}",
-    "lock": "Lock {name}"
+    "quit": "Quit {name}"
   },
   "log": {
     "started": "=== {session} ({address}), log started {time} ===",
