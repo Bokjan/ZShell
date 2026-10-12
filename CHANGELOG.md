@@ -2,6 +2,12 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.10.0] - 2026-10-12
+
+### Features
+
+- Tabs can be dragged out of their window: dropped on another window's tab bar, the tab joins it where it was dropped (a marker shows where while dragging); dropped anywhere else, it opens in a new window under the pointer. Its connections keep running, as when it moves from the tab's menu. Escape cancels the drag.
+
 ## [2.9.0] - 2026-10-12
 
 ### Features
