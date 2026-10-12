@@ -145,15 +145,17 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
 
   // Editing in a local editor: each save is uploaded through the current connection; saves
   // made while disconnected wait for the reconnection, and saves made during an upload are
-  // uploaded once it ends (by id: whether another save came in meanwhile).
-  const editUploads = useRef(new Map<string, boolean>());
+  // uploaded once it ends (by id: whether another save came in meanwhile, and whether one
+  // of them was told to replace a changed file).
+  const editUploads = useRef(new Map<string, { again: boolean; force: boolean }>());
   const uploadEdit = async (id: string, force = false) => {
     const { sessionId, connected } = sessionRef.current;
     const transfer = transfersRef.current.find((t) => t.id === id);
     if (!transfer || transfer.status !== "editing") return;
     if (sessionId == null || !connected) return update(id, { save: { state: "waiting" } });
-    if (editUploads.current.has(id)) return void editUploads.current.set(id, true);
-    editUploads.current.set(id, false);
+    const queued = editUploads.current.get(id);
+    if (queued) return void editUploads.current.set(id, { again: true, force: queued.force || force });
+    editUploads.current.set(id, { again: false, force: false });
     update(id, { save: { state: "uploading" } });
     try {
       await sftp.editUpload(sessionId, id, force);
@@ -178,9 +180,9 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
         key: `edit:${id}`,
       });
     } finally {
-      const again = editUploads.current.get(id);
+      const queued = editUploads.current.get(id);
       editUploads.current.delete(id);
-      if (again) void uploadEditRef.current(id);
+      if (queued?.again) void uploadEditRef.current(id, queued.force);
     }
   };
   const uploadEditRef = useRef(uploadEdit);
