@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
+import { useAppLock } from "../components/AppLockGate";
 import type { SessionTarget } from "../lib/api";
 import { tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
@@ -46,8 +47,11 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   const openTabRef = useRef(openTab);
   openTabRef.current = openTab;
 
+  // While the app lock covers the window, the title shows no session either: it is in the
+  // Dock, the taskbar and the window switchers.
+  const locked = useAppLock().status.locked;
   const activeTab = tabs.find((tab) => tab.key === activeKey);
-  const title = activeTab ? tabTitle(activeTab, followRemoteTitle) : t("app.name");
+  const title = activeTab && !locked ? tabTitle(activeTab, followRemoteTitle) : t("app.name");
   useEffect(() => void windows.setTitle(title).catch(console.error), [title]);
 
   const refreshOthers = useCallback(() => void windows.list().then(setOthers, console.error), []);
