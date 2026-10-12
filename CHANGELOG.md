@@ -2,6 +2,18 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.11.4] - 2026-10-12
+
+### Bug Fixes
+
+- A session dialog or the proxy settings already open show proxies added or removed in another window, instead of only once opened again.
+
+### Internal
+
+- The saved sessions, folders, proxies and recent sessions are kept in one store per window, which the sidebar, the tabs and the dialogs read directly instead of being handed them by the window. Reading them again ignores a reply older than the latest, which could leave a stale list after quick changes.
+- The encodings offered and the defaults of a new session (terminal type, serial settings, quick command group) are generated from the backend's definitions instead of being written in the frontend as well.
+- The session, saved session and vault code is split into files by part, with the tests in files of their own.
+
 ## [2.11.3] - 2026-10-12
 
 ### Bug Fixes
