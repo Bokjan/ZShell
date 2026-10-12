@@ -113,7 +113,8 @@ async fn accept_v4<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<
     let port = read_u16(stream).await?;
     let mut ip = [0; 4];
     read_exact(stream, &mut ip).await?;
-    let _user = read_cstring(stream).await?;
+    // Not used, and any bytes: only the host name must be text.
+    let _user = read_cbytes(stream).await?;
     // SOCKS4a: an address of 0.0.0.x (x != 0) means a host name follows the user id.
     let host = match ip {
         [0, 0, 0, x] if x != 0 => read_cstring(stream).await?,
@@ -145,6 +146,11 @@ async fn read_u16<S: AsyncRead + Unpin>(stream: &mut S) -> Result<u16> {
 
 /// A NUL-terminated string of at most 255 bytes.
 async fn read_cstring<S: AsyncRead + Unpin>(stream: &mut S) -> Result<String> {
+    String::from_utf8(read_cbytes(stream).await?).map_err(|_| anyhow!(Error::new("forward.socksProtocol")))
+}
+
+/// The bytes of a NUL-terminated string of at most 255 bytes.
+async fn read_cbytes<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     loop {
         match read_u8(stream).await? {
@@ -153,7 +159,7 @@ async fn read_cstring<S: AsyncRead + Unpin>(stream: &mut S) -> Result<String> {
             byte => bytes.push(byte),
         }
     }
-    String::from_utf8(bytes).map_err(|_| anyhow!(Error::new("forward.socksProtocol")))
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -224,6 +230,10 @@ mod tests {
         input.extend_from_slice(b"intranet\0");
         let (result, _) = run(&input).await;
         assert_eq!(result.unwrap().host, "intranet");
+
+        // A user id that isn't UTF-8.
+        let (result, _) = run(&[4, 1, 0, 22, 10, 0, 0, 1, 0xff, 0xfe, 0]).await;
+        assert_eq!(result.unwrap().host, "10.0.0.1");
     }
 
     #[tokio::test]
