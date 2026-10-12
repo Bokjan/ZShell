@@ -2,6 +2,22 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.11.2] - 2026-10-12
+
+### Bug Fixes
+
+- Closing a tab, pane or window, or quitting, asks first when files of its file panel are open in another app or a question waits there, even once disconnected: saves made afterwards, and those waiting for a reconnection, would no longer be uploaded.
+- Uploading or downloading over an existing file no longer writes it in place when its temporary copy can't be created for another reason than permissions (a full disk, a quota), which left the original cut short. Files with very long names are now replaced through a temporary copy too.
+- Change Permissions on a symbolic link starts from the permissions of what it points to, which are the ones that change, instead of the link's own `777`. Downloading over a local file keeps its temporary copy as private as the original.
+- The saved password no longer answers one-time password prompts such as `One-time password (OATH)` or `Password + OTP`; only the account's password prompts get it.
+- On macOS, the app lock no longer unlocks without authenticating when asking the system fails for a passing reason. Where there really is no way to authenticate left, the lock screen says so and unlocks only with Unlock Without Authenticating, rather than on its own.
+- While the app lock is locked, the window title is ZShell rather than the session's name or the title the remote side set.
+- Importing sessions shows which ones forward the SSH agent, type login commands or set environment variables, and the export dialog says that only saved passwords can be encrypted. Importing from the OpenSSH config shows `ForwardAgent yes` where a host has it.
+
+### Internal
+
+- The master password counts as authenticating for the app lock only when it actually opened the vault.
+
 ## [2.11.1] - 2026-10-12
 
 ### Bug Fixes
