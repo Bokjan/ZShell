@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { useAppLock } from "../components/AppLockGate";
 import type { SessionTarget } from "../lib/api";
-import { tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
+import { paneWork, tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import type { Dropped, Point } from "../lib/bindings";
 import { tabIndexAt, tabStrip } from "../lib/tabStrip";
@@ -105,9 +105,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       !moving.current.has(tab.key) &&
       tab.panes.every(
         (pane) =>
-          pane.transfers === 0 &&
-          pane.edits === 0 &&
-          pane.questions === 0 &&
+          paneWork(pane) === null &&
           !sessions.inZmodem(pane.key) &&
           !(pane.status === "connecting" && pane.sessionId === null) &&
           pane.arrival === undefined &&

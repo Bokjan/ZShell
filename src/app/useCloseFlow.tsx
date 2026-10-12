@@ -8,13 +8,16 @@ import { forwards, sessionForeground, type ForwardRule, type SessionId, type Set
 import { isAppLocked } from "../lib/appLock";
 import { forwardMapping } from "../lib/format";
 import { matches } from "../lib/keymap";
-import { findPane, paneLabel, tabTitle, type Pane } from "../lib/panes";
+import { findPane, paneLabel, paneWork, tabTitle, type Pane, type PaneWork } from "../lib/panes";
 import { useShortcuts } from "../lib/shortcuts";
 import { activeTabOf, type TabStore } from "../lib/tabs";
 import { useWindowEvent, windows } from "../lib/windows";
 
-/** Why closing a pane needs confirmation: a remote session is connected, or a local program runs. */
-type Busy = { kind: "connected" } | { kind: "process"; name: string } | { kind: "transfers"; count: number };
+/**
+ * Why closing a pane needs confirmation: its file panel is at work (even disconnected), a
+ * remote session is connected, or a local program runs.
+ */
+type Busy = PaneWork | { kind: "connected" } | { kind: "process"; name: string };
 
 interface Closing {
   panes: number[];
@@ -34,7 +37,8 @@ async function busyPanes(store: TabStore): Promise<number> {
 }
 
 async function busyReason(pane: Pane): Promise<Busy | null> {
-  if (pane.transfers > 0) return { kind: "transfers", count: pane.transfers };
+  const work = paneWork(pane);
+  if (work) return work;
   if (pane.status !== "connected" || pane.sessionId == null) return null;
   if (pane.target.kind !== "local") return { kind: "connected" };
   const name = await sessionForeground(pane.sessionId).catch(() => null);
@@ -173,6 +177,8 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
     const what = tabs === 0 ? "pane" : "tab";
     if (busy.kind === "connected") return t(`closeConfirm.connected.${what}`, { name });
     if (busy.kind === "transfers") return t(`closeConfirm.transfers.${what}`, { count: busy.count, name });
+    if (busy.kind === "edits") return t(`closeConfirm.edits.${what}`, { count: busy.count, name });
+    if (busy.kind === "questions") return t(`closeConfirm.questions.${what}`, { count: busy.count, name });
     return busy.name ? t(`closeConfirm.process.${what}`, { process: busy.name, name }) : t(`closeConfirm.processUnknown.${what}`, { name });
   };
 

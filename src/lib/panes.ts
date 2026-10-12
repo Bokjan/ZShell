@@ -118,6 +118,21 @@ export const focusedPane = (tab: Tab) => tab.panes.find((pane) => pane.key === t
 /** Whether the pane is writing its log now. */
 export const isLogging = (pane: Pane) => pane.logPath !== null && pane.status !== "closed";
 
+/**
+ * What the pane's file panel is doing that closing the pane would end, connected or not, and
+ * that can't move to another window with it: transfers (cancelled), files open in a local
+ * editor (their saves are no longer uploaded, including those waiting for a reconnection),
+ * questions waiting (an edit conflict). Closing and moving both ask this.
+ */
+export type PaneWork = { kind: "transfers"; count: number } | { kind: "edits"; count: number } | { kind: "questions"; count: number };
+
+export function paneWork(pane: Pane): PaneWork | null {
+  if (pane.transfers > 0) return { kind: "transfers", count: pane.transfers };
+  if (pane.edits > 0) return { kind: "edits", count: pane.edits };
+  if (pane.questions > 0) return { kind: "questions", count: pane.questions };
+  return null;
+}
+
 export const paneTitle = (pane: Pane, followRemoteTitle: boolean) => (followRemoteTitle && pane.remoteTitle) || pane.title;
 
 export const tabTitle = (tab: Tab, followRemoteTitle: boolean) =>
