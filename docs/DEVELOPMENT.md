@@ -40,9 +40,10 @@ UPDATE_BINDINGS=1 cargo test bindings
 ## 约定
 
 - **语言**：`docs/` 用中文，其他一切（代码、注释、界面文案、README、提交信息）用英语，见 [I18N.md](I18N.md)「语言约定」。
-- **提交信息**：Conventional Commits（`feat:`、`fix:`、`docs:`、`chore:`、`refactor:`、`ci:`，可带 scope，如 `feat(sftp): …`）；正文不手动折行，每段或每个列表项一行。
+- **提交信息**：Conventional Commits（`feat:`、`fix:`、`docs:`、`chore:`、`refactor:`、`test:`、`ci:`，可带 scope，如 `feat(sftp): …`）；正文不手动折行，每段或每个列表项一行。
 - **版本号**：只在 `src-tauri/Cargo.toml` 维护，由 `scripts/release.sh` 修改（规则见下文「发布」）。`tauri.conf.json` 不写 `version`，Tauri 取 Cargo 包版本；`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
 - **文档分工**：做什么、先后顺序与未实现功能的设计写在 [ROADMAP.md](ROADMAP.md)；跨模块的设计写在 [ARCHITECTURE.md](ARCHITECTURE.md)；模块内的细节（边界情况、库的坑）写在代码注释里。根目录的 `CLAUDE.md`（英语）是给 AI 助手的项目说明，汇总上述约定；约定变化时同步更新。
+- **单元测试**：`src/lib/` 里不依赖 React、DOM 和后端命令的导出函数，在相邻的 `*.test.ts` 里测试；组件不写单元测试，界面上的行为按下文「端到端测试」检查。vitest 没有配置 DOM 环境，测试里不要碰 `localStorage` 和后端命令。
 
 ## 端到端测试
 
