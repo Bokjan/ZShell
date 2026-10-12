@@ -45,6 +45,10 @@ export interface SessionRegistry {
   inZmodem(key: number): boolean;
   /** Whether the pane's session is still moving here from another window. */
   arriving(key: number): boolean;
+  /** The pane (without a session) moves to another window: nothing connects here meanwhile. */
+  suspend(key: number): void;
+  /** The pane couldn't move: it may connect again. */
+  resume(key: number): void;
 }
 
 interface Options {
@@ -165,5 +169,7 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce, 
     snapshot: (key) => views.get(key)?.port.snapshot(),
     inZmodem: (key) => (zmodemPhases.get(key) ?? "idle") !== "idle",
     arriving: (key) => sessions.get(key)?.isArriving ?? false,
+    suspend: (key) => sessions.get(key)?.suspend(),
+    resume: (key) => sessions.get(key)?.resume(),
   };
 }

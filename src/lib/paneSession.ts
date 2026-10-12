@@ -143,6 +143,12 @@ export class PaneSession {
   private loginPending: string[] = [];
   private loginTimer: ReturnType<typeof setTimeout> | undefined;
   private arriving = false;
+  /**
+   * Moving to another window, which connects instead (see `suspend`); and whether something
+   * asked to connect meanwhile.
+   */
+  private suspended = false;
+  private connectWhenResumed = false;
   /** What the terminal has sent and received on the current connection. */
   readonly traffic = new TrafficMeter();
 
@@ -233,6 +239,22 @@ export class PaneSession {
     void this.session?.resize(cols, rows);
   }
 
+  /**
+   * A pane without a session is moving to another window, which reconnects if it was going
+   * to: nothing connects here (a retry, the network coming back, Enter), until `resume`.
+   */
+  suspend() {
+    this.suspended = true;
+  }
+
+  /** The move failed: the pane stays, and connects if asked to meanwhile. */
+  resume() {
+    this.suspended = false;
+    if (!this.connectWhenResumed) return;
+    this.connectWhenResumed = false;
+    this.connect();
+  }
+
   /** Closes the current session and connects again; forwarding rules running on it follow. */
   reconnect() {
     const old = this.session;
@@ -287,6 +309,10 @@ export class PaneSession {
   }
 
   connect() {
+    if (this.suspended) {
+      this.connectWhenResumed = true;
+      return;
+    }
     this.cancelRetry();
     this.stopLoginCommands();
     this.closed = false;

@@ -305,6 +305,26 @@ describe("automatic reconnection", () => {
     expect(opened).toHaveLength(3);
   });
 
+  it("connects nothing while moving to another window, and once back if asked to meanwhile", async () => {
+    const { pane, opened } = setup();
+    pane.connect();
+    opened[0].event({ type: "connected" });
+    opened[0].event(lost());
+    pane.suspend();
+    await vi.advanceTimersByTimeAsync(60_000);
+    window.dispatchEvent(new Event("online"));
+    pane.input("\r");
+    expect(opened).toHaveLength(1);
+    // The move failed.
+    pane.resume();
+    expect(opened).toHaveLength(2);
+    // Nothing was asked for while it was suspended: resuming connects nothing.
+    opened[1].event(failed());
+    pane.suspend();
+    pane.resume();
+    expect(opened).toHaveLength(2);
+  });
+
   it("never retries a local terminal", async () => {
     const { pane, opened, events, screen } = setup({ target: () => ({ kind: "local" }) });
     pane.connect();

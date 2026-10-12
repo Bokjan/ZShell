@@ -174,11 +174,15 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       };
       const move: Moving = { target, waiting: new Set(live), stayed: new Set() };
       moving.current.set(key, move);
+      // The other window reconnects those that were waiting to; one connection is enough.
+      const closed = tab.panes.filter((pane) => pane.sessionId === null).map((pane) => pane.key);
+      closed.forEach((paneKey) => sessions.suspend(paneKey));
       try {
         if (target === null) move.target = await windows.open({ kind: "tab", tab: transfer }, dropped);
         else await windows.sendTab(target, transfer, at);
       } catch (e) {
         moving.current.delete(key);
+        closed.forEach((paneKey) => sessions.resume(paneKey));
         console.error(e);
         return;
       }
