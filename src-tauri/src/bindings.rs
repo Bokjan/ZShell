@@ -85,6 +85,8 @@ mod tests {
         visitor.visit::<backup::Scan>();
         visitor.visit::<vault::VaultStatus>();
         visitor.visit::<vault::Target>();
+        visitor.visit::<applock::AppLockSettings>();
+        visitor.visit::<applock::AppLockStatus>();
         visitor.visit::<logging::LogOpen>();
         visitor.visit::<logging::LogSummary>();
         visitor.visit::<session::SessionEvent>();

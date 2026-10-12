@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { isAppLocked } from "./appLock";
 import { isDialogOpen, type DialogHandle } from "./dialogs";
 
 /** Handles a key if it is one of its shortcuts, returning whether it did. */
@@ -28,9 +29,9 @@ let listening = false;
 // Capture phase, so the terminal never sees an app shortcut. Keys typed while an input
 // method composes are never shortcuts; `isComposing` alone, not `keyCode` 229 (see
 // `isComposing` in platform.ts), which WebKit also gives ⌘, and other keys the input
-// method sees while it is on but not composing.
+// method sees while it is on but not composing. None apply while the app is locked.
 function onKeyDown(e: KeyboardEvent) {
-  if (e.isComposing) return;
+  if (e.isComposing || isAppLocked()) return;
   for (const registration of registrations) {
     if (registration.applies() && registration.handle(e)) {
       e.preventDefault();

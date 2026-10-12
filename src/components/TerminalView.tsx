@@ -13,6 +13,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
 import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../lib/api";
+import { isAppLocked, whenUnlocked } from "../lib/appLock";
 import { afterDialogs, isDialogOpen } from "../lib/dialogs";
 import { clipboardKeyOf, matches, shortcutLabel } from "../lib/keymap";
 import type { PaneSession } from "../lib/paneSession";
@@ -453,14 +454,19 @@ export function TerminalView({
     if (id != null) void zmodem.cancel(id).catch(console.error);
   };
 
+  // A file dialog that `rz` or `sz` opened while the app was locked, waiting to be shown:
+  // shown at once, it would be over the lock screen.
+  const pendingDialogRef = useRef<() => void>(null);
   onZmodemRef.current = (phase) => {
     const id = sessionRef.current?.id;
     if (id == null) return;
     setZmodemPhase(phase === "idle" ? null : phase);
-    if (phase === "chooseFiles") chooseFiles();
+    pendingDialogRef.current?.();
+    pendingDialogRef.current = null;
+    if (phase === "chooseFiles") pendingDialogRef.current = whenUnlocked(chooseFiles);
     else if (phase === "chooseDestination") {
       if (settings.zmodem.receive === "downloads") saveReceived(null);
-      else if (settings.zmodem.receive === "chooseFolder") chooseFolder();
+      else if (settings.zmodem.receive === "chooseFolder") pendingDialogRef.current = whenUnlocked(chooseFolder);
     }
   };
 
@@ -475,6 +481,11 @@ export function TerminalView({
       return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     };
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
+      // Native events, which the lock screen doesn't stop: nothing is dropped while locked.
+      if (isAppLocked()) {
+        setDragOver(false);
+        return;
+      }
       if (payload.type === "leave") setDragOver(false);
       else if (payload.type === "enter" || payload.type === "over") setDragOver(inside(payload.position));
       else if (payload.type === "drop") {

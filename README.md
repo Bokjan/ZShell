@@ -16,8 +16,9 @@ A cross-platform (macOS / Windows) SSH, Telnet and serial terminal, built with T
 - **Sessions**: nested folders, search and quick connect, export and import, and per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login and environment variables.
 - **Terminal and tabs**: local terminals, split panes, tabs in the title bar, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
 - **Many hosts at once**: quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
+- **Security**: sessions and saved passwords encrypted with a master password or a key in the system's credential store, exports protected with a passphrase, and an app lock that covers the window with Touch ID or Windows Hello after a period of inactivity, when the computer locks, or on demand.
 
-Planned next: encrypted storage for sessions and passwords, and locking the app. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: a Simplified Chinese translation, the Microsoft Store, customizable shortcuts and Linux. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 

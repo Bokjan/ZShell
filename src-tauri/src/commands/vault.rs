@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
+use crate::applock::AppLock;
 use crate::config::ProfileStore;
 use crate::error::Result;
 use crate::persist::SetAside;
@@ -36,11 +37,15 @@ pub async fn vault_try_unlock(app: AppHandle) -> Result<VaultStatus> {
     .await
 }
 
-/// Unlocks with the master password; `vault.wrongPassword` if it isn't the one.
+/// Unlocks with the master password; `vault.wrongPassword` if it isn't the one. The app lock
+/// then doesn't ask again.
 #[tauri::command]
 pub async fn vault_unlock(app: AppHandle, password: String) -> Result<VaultStatus> {
     blocking(app, move |app| {
         let status = app.state::<Arc<Vault>>().unlock(&password)?;
+        if status.locked.is_none() {
+            app.state::<Arc<AppLock>>().unlocked_by_password();
+        }
         reload(app);
         Ok(status)
     })

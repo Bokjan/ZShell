@@ -8,11 +8,9 @@ import { configDirectory, errorMessage, vault, type VaultStatus } from "../lib/a
 import { announce } from "../lib/announce";
 import { useDialog } from "../lib/dialogs";
 import { isWindows } from "../lib/platform";
-import { DRAG_REGION } from "../lib/window";
 import { ErrorText } from "./ErrorMessage";
-import { LockIcon } from "./icons";
+import { LockHeading, LockScreen } from "./LockScreen";
 import { Modal } from "./Modal";
-import { WindowControls } from "./WindowControls";
 
 interface Props {
   /** Locked. */
@@ -29,7 +27,7 @@ interface Props {
 /**
  * Covers the window while the sessions are locked (see `VaultGate`): asks for the master
  * password, or says why the key can't be had and what can be done: try again, show the file,
- * or delete everything (reset). M26's app lock is to reuse it.
+ * or delete everything (reset).
  */
 export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: Props) {
   const { t } = useTranslation();
@@ -77,67 +75,59 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
   else message = t(`vault.${lock.reason}`, { store });
 
   return (
-    <div className="unlock-screen">
-      <div className="unlock-titlebar" {...DRAG_REGION}>
-        {isWindows && <WindowControls />}
-      </div>
-      <main className="unlock-body">
-        <form className="unlock-panel" onSubmit={submit}>
-          <span className="unlock-icon">
-            <LockIcon size={36} />
-          </span>
-          <h1>{t("vault.title")}</h1>
-          <p role="status">{message}</p>
-          {lock.reason === "password" && detail && <p className="hint">{t("vault.rememberedFailed", { message: detail })}</p>}
-          {lock.reason !== "password" && detail && <p className="hint">{detail}</p>}
+    <LockScreen>
+      <form className="unlock-panel" onSubmit={submit}>
+        <LockHeading />
+        <p role="status">{message}</p>
+        {lock.reason === "password" && detail && <p className="hint">{t("vault.rememberedFailed", { message: detail })}</p>}
+        {lock.reason !== "password" && detail && <p className="hint">{detail}</p>}
 
-          {asksPassword && (
-            <>
-              <input
-                ref={inputRef}
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                aria-label={t("vault.password")}
-                placeholder={t("vault.password")}
-                autoFocus
-                disabled={busy}
-              />
-              {error && <ErrorText>{error}</ErrorText>}
-              <button type="submit" className="primary" disabled={busy || !password}>
-                {busy ? t("vault.unlocking") : t("vault.unlock")}
+        {asksPassword && (
+          <>
+            <input
+              ref={inputRef}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              aria-label={t("vault.password")}
+              placeholder={t("vault.password")}
+              autoFocus
+              disabled={busy}
+            />
+            {error && <ErrorText>{error}</ErrorText>}
+            <button type="submit" className="primary" disabled={busy || !password}>
+              {busy ? t("vault.unlocking") : t("vault.unlock")}
+            </button>
+            {lock.reason === "password" && (
+              <button type="button" className="link" onClick={() => setResetting(true)}>
+                {t("vault.forgot")}
               </button>
-              {lock.reason === "password" && (
-                <button type="button" className="link" onClick={() => setResetting(true)}>
-                  {t("vault.forgot")}
-                </button>
-              )}
-            </>
-          )}
+            )}
+          </>
+        )}
 
-          {!asksPassword && lock.reason !== "saved" && (
-            <div className="unlock-actions">
-              {(lock.reason === "keyUnavailable" || lock.reason === "unreadable") && (
-                <button type="button" className="primary" onClick={onTryAgain} disabled={trying} autoFocus>
-                  {t("vault.tryAgain")}
-                </button>
-              )}
-              {(lock.reason === "unreadable" || lock.reason === "damaged" || lock.reason === "newer") && (
-                <button type="button" onClick={showFile}>
-                  {t("vault.showFile")}
-                </button>
-              )}
-              {(lock.reason === "keyUnavailable" || lock.reason === "damaged") && (
-                <button type="button" onClick={() => setResetting(true)}>
-                  {t("vault.reset")}
-                </button>
-              )}
-            </div>
-          )}
-        </form>
-      </main>
+        {!asksPassword && lock.reason !== "saved" && (
+          <div className="unlock-actions">
+            {(lock.reason === "keyUnavailable" || lock.reason === "unreadable") && (
+              <button type="button" className="primary" onClick={onTryAgain} disabled={trying} autoFocus>
+                {t("vault.tryAgain")}
+              </button>
+            )}
+            {(lock.reason === "unreadable" || lock.reason === "damaged" || lock.reason === "newer") && (
+              <button type="button" onClick={showFile}>
+                {t("vault.showFile")}
+              </button>
+            )}
+            {(lock.reason === "keyUnavailable" || lock.reason === "damaged") && (
+              <button type="button" onClick={() => setResetting(true)}>
+                {t("vault.reset")}
+              </button>
+            )}
+          </div>
+        )}
+      </form>
       {resetting && <ResetDialog onClose={() => setResetting(false)} onReset={onReset} />}
-    </div>
+    </LockScreen>
   );
 }
 

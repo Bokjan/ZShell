@@ -4,6 +4,7 @@
 // Commands take injected state plus IPC arguments, so long parameter lists are expected.
 #![allow(clippy::too_many_arguments)]
 
+pub mod applock;
 pub mod config;
 pub mod forward;
 pub mod logs;

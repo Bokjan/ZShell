@@ -1,7 +1,10 @@
+import { isAppLocked } from "./appLock";
+
 /**
  * Tells screen readers about something that only shows up briefly or elsewhere in the window
  * (a tab in the background disconnecting, a transfer finishing), once they finish what they
  * are reading. One live region serves the whole app; it is created when first needed.
+ * Nothing is told while the app is locked: it would read out what the lock screen hides.
  */
 let region: HTMLElement | null = null;
 
@@ -9,6 +12,7 @@ let region: HTMLElement | null = null;
 const KEEP_MS = 10_000;
 
 export function announce(message: string) {
+  if (isAppLocked()) return;
   if (!region) {
     region = document.createElement("div");
     region.className = "visually-hidden";

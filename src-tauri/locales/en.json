@@ -43,12 +43,17 @@
     "settings": "Settings…",
     "closeTab": "Close",
     "closeWindow": "Close Window",
-    "quit": "Quit {name}"
+    "quit": "Quit {name}",
+    "lock": "Lock {name}"
   },
   "log": {
     "started": "=== {session} ({address}), log started {time} ===",
     "resumed": "=== Reconnected {time} ===",
     "dropped": "=== {bytes} bytes of output are missing here: the log could not be written fast enough ==="
+  },
+  "appLock": {
+    "reasonMacos": "show your sessions",
+    "reasonWindows": "Verify it's you to unlock ZShell"
   },
   "errors": {
     "unexpected": "Unexpected error",
@@ -223,6 +228,17 @@
       "emptyPassword": "The master password can't be empty",
       "passwordsUnreadable": "The passwords of {names} could not be read from the credential store",
       "leftover": "The protection was changed, but the old files could not all be deleted. ZShell deletes them the next time it unlocks"
+    },
+    "appLock": {
+      "unavailable": "Touch ID and the login password can't be used",
+      "helloNotSetUp": "Windows Hello is not set up. Set up a PIN, fingerprint or face in Windows Settings first",
+      "helloDisabled": "Windows Hello is turned off by your organization",
+      "unsupported": "Locking ZShell is not supported on this system yet",
+      "cancelled": "Authentication was cancelled",
+      "failed": "Authentication failed",
+      "busy": "Authentication is already in progress",
+      "locked": "ZShell is locked. Unlock it first.",
+      "protectionUnset": "Choose how to protect the sessions before turning on the app lock"
     }
   },
   "zmodem": {

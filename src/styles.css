@@ -3103,6 +3103,25 @@ body.resizing .terminal-view {
   justify-content: center;
   gap: 8px;
 }
+/* The app lock's screen: a modal dialog in the top layer, covering the whole window. */
+dialog.app-lock {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: var(--bg);
+  color: var(--text);
+}
+dialog.app-lock::backdrop {
+  background: var(--bg);
+}
+.unlock-panel button.danger-fill {
+  background: var(--danger-fill);
+  border-color: var(--danger);
+}
 .vault-failure {
   margin: calc(var(--titlebar-height) + 16px) 16px;
   color: var(--danger);

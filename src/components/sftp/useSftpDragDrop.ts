@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "re
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { sftp, type FileEntry, type SessionId } from "../../lib/api";
+import { isAppLocked } from "../../lib/appLock";
 import { usePressDrag } from "../../lib/drag";
 import { isMac } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
@@ -108,6 +109,12 @@ export function useSftpDragDrop(options: Options) {
     const scale = isMac ? 1 : window.devicePixelRatio;
     const folderUnder = (pos: { x: number; y: number }) => folderAt(pos.x / scale, pos.y / scale);
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
+      // Native events, which the lock screen doesn't stop: nothing is dropped while locked.
+      if (isAppLocked()) {
+        setDragOver(false);
+        setDropDir(null);
+        return;
+      }
       const dragging = draggingRef.current;
       if (payload.type === "leave") {
         setDragOver(false);

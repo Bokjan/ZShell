@@ -14,6 +14,8 @@ import { isMac } from "./platform";
  */
 const KEYMAP = {
   settings: { mac: "Cmd+,", other: "Ctrl+," },
+  // As in 1Password; on macOS also a native menu item, in the app menu (lib.rs).
+  lock: { mac: "Cmd+Shift+L", other: "Ctrl+Shift+L" },
   searchSessions: { mac: "Cmd+K", other: "Ctrl+Shift+K" },
   newLocalTerminal: { mac: "Cmd+T", other: "Ctrl+Shift+T" },
   // As in browsers, on both platforms.
@@ -219,6 +221,7 @@ export interface ShortcutRow {
     | "filePanel"
     | "forwardsPanel"
     | "fullScreen"
+    | "lock"
     | "settings";
   /** Only where local terminals can be opened. */
   local?: boolean;
@@ -256,6 +259,7 @@ export function shortcutRows(mac = isMac): ShortcutRow[] {
     { id: "filePanel", keys: all("filePanel") },
     { id: "forwardsPanel", keys: all("forwardsPanel") },
     { id: "fullScreen", keys: all("fullScreen") },
+    { id: "lock", keys: all("lock") },
     { id: "settings", keys: all("settings") },
   ];
   return rows.filter((row) => row.keys);

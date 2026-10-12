@@ -3,6 +3,15 @@
 
 /** The `code` of a `CommandError`. */
 export type ErrorCode =
+  | "appLock.busy"
+  | "appLock.cancelled"
+  | "appLock.failed"
+  | "appLock.helloDisabled"
+  | "appLock.helloNotSetUp"
+  | "appLock.locked"
+  | "appLock.protectionUnset"
+  | "appLock.unavailable"
+  | "appLock.unsupported"
   | "auth.agentAllRejected"
   | "auth.agentConnectFailed"
   | "auth.agentEmpty"
@@ -136,6 +145,35 @@ export type ErrorCode =
   | "zmodem.protocol"
   | "zmodem.remoteCancelled"
   | "zmodem.timeout";
+
+/**
+ * How the user unlocks, for the frontend to name it.
+ */
+export type AppLockMethod = "touchId" | "password" | "windowsHello";
+
+export type AppLockSettings = { enabled: boolean, 
+/**
+ * Locks after the system (not only ZShell) has had no input for this long; 0 never.
+ */
+idleMinutes: number, 
+/**
+ * Locks when the system locks its screen, sleeps or switches to another user.
+ */
+onSystemLock: boolean, };
+
+export type AppLockStatus = { locked: boolean, 
+/**
+ * `None` while the vault is locked.
+ */
+settings: AppLockSettings | null, 
+/**
+ * `None` when the system offers no way to authenticate, which `unavailable` explains.
+ */
+method: AppLockMethod | null, unavailable: CommandError | null, 
+/**
+ * Whether the system's idle time can be known, and its locking and sleeping.
+ */
+idle: boolean, systemLock: boolean, };
 
 export type Appearance = "system" | "dark" | "light";
 

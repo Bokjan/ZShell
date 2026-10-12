@@ -3,8 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
+import { useAppLock } from "../components/AppLockGate";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { forwards, sessionForeground, type ForwardRule, type SessionId, type Settings } from "../lib/api";
+import { isAppLocked } from "../lib/appLock";
 import { isDialogOpen } from "../lib/dialogs";
 import { forwardMapping } from "../lib/format";
 import { findPane, paneLabel, tabTitle, type Pane } from "../lib/panes";
@@ -47,6 +49,15 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
   const [keeping, setKeeping] = useState<{ panes: number[]; ids: SessionId[]; rules: ForwardRule[] } | null>(null);
   // The window waiting for the user to confirm closing it (quitting), with how many tabs are busy.
   const [closingWindow, setClosingWindow] = useState<number | null>(null);
+
+  // While the app is locked the dialogs are under the lock screen, which asks instead; a close
+  // still waiting there when it is unlocked is asked again here.
+  const { confirmClose: confirmCloseLocked, pendingClose, clearPendingClose } = useAppLock();
+  useEffect(() => {
+    if (pendingClose === null) return;
+    clearPendingClose();
+    setClosingWindow(pendingClose);
+  }, [pendingClose, clearPendingClose]);
 
   const closePanes = useCallback((keys: number[]) => store.dispatch({ type: "close", keys }), [store]);
 
@@ -100,15 +111,16 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
       const busy = reasons.filter((reason) => reason !== null).length;
       if (busy === 0) return;
       event.preventDefault();
-      setClosingWindow(busy);
+      if (isAppLocked()) confirmCloseLocked(busy);
+      else setClosingWindow(busy);
     });
     return () => void unlisten.then((f) => f());
-  }, [store]);
+  }, [store, confirmCloseLocked]);
 
   // From the macOS File menu's "Close" item (⌘W), which closes the window once no tabs are
   // left, as in Terminal.app.
   useEffect(() => {
-    const unlisten = listen("close-tab", () => !isDialogOpen() && closeFocused());
+    const unlisten = listen("close-tab", () => !isDialogOpen() && !isAppLocked() && closeFocused());
     return () => void unlisten.then((f) => f());
   }, [closeFocused]);
 

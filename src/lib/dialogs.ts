@@ -1,5 +1,6 @@
 import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 
+import { isAppLocked } from "./appLock";
 import { isComposing } from "./platform";
 
 /**
@@ -77,9 +78,10 @@ function trapTab(e: KeyboardEvent, container: HTMLElement) {
 }
 
 // Bubble phase, after the focused element: a control that handles Escape itself (a menu, a
-// field that cancels an edit) prevents the default to keep the dialog open.
+// field that cancels an edit) prevents the default to keep the dialog open. While the app is
+// locked, the lock screen is above every dialog, and Tab moves within it.
 function onKeyDown(e: KeyboardEvent) {
-  if (e.defaultPrevented || isComposing(e) || (e.key !== "Escape" && e.key !== "Tab")) return;
+  if (e.defaultPrevented || isComposing(e) || isAppLocked() || (e.key !== "Escape" && e.key !== "Tab")) return;
   const top = topOrder();
   if (top === null) return;
   const entry = entries.get(top)!;

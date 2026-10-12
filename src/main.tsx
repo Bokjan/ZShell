@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { AppLockGate } from "./components/AppLockGate";
 import { VaultGate } from "./components/VaultGate";
 import { setupI18n } from "./i18n";
 import { applyTheme, SettingsProvider } from "./lib/settings";
@@ -17,7 +18,9 @@ void setupI18n().then(() => {
     <React.StrictMode>
       <SettingsProvider>
         <VaultGate>
-          <App />
+          <AppLockGate>
+            <App />
+          </AppLockGate>
         </VaultGate>
       </SettingsProvider>
     </React.StrictMode>,

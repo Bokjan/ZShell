@@ -9,6 +9,7 @@ import { usePaneActions } from "./app/usePaneActions";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommands } from "./app/useQuickCommands";
 
+import { useAppLock } from "./components/AppLockGate";
 import { CommandPalette } from "./components/CommandPalette";
 import { ComposeBar } from "./components/ComposeBar";
 import type { MenuItem } from "./components/ContextMenu";
@@ -17,6 +18,7 @@ import { ImportDialog } from "./components/ImportDialog";
 import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog";
 import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
+import type { SectionId } from "./components/settings/common";
 import { Sidebar, type OpenMode } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar } from "./components/TabBar";
@@ -45,6 +47,7 @@ import { asTyped } from "./lib/compose";
 import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { addRecent, address, sessionsIn, storedRecent, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
+import { isAppLocked } from "./lib/appLock";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { useSettings } from "./lib/settings";
 import { useShortcuts } from "./lib/shortcuts";
@@ -82,7 +85,8 @@ function App() {
     null,
   );
   const [importing, setImporting] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Open, scrolled to a section if one is named.
+  const [settingsOpen, setSettingsOpen] = useState<boolean | SectionId>(false);
   // Title for local terminal tabs, e.g. "zsh".
   const [shellName, setShellName] = useState<string | null>(null);
   // False on Windows in S mode, which blocks local shells.
@@ -209,11 +213,16 @@ function App() {
   // Opens a panel only for an SSH pane; closes it whatever the pane.
   const togglePanel = useCallback((panel: SidePanel) => dispatch({ type: "togglePanel", panel }), [dispatch]);
 
-  // Settings open over a dialog too.
+  // The "Lock" action: the app lock's settings when it is off, to turn it on.
+  const { lock } = useAppLock();
+  const lockApp = useCallback(() => !lock() && setSettingsOpen("security"), [lock]);
+
+  // Settings open over a dialog too, and the app locks over one.
   useShortcuts(
     (e) => {
-      if (!matches(e, "settings")) return false;
-      setSettingsOpen(true);
+      if (matches(e, "lock")) lockApp();
+      else if (matches(e, "settings")) setSettingsOpen(true);
+      else return false;
       return true;
     },
     { when: "always" },
@@ -276,11 +285,14 @@ function App() {
     return true;
   });
 
-  // From the macOS app menu's "Settings…" item (⌘,).
+  // From the macOS app menu's "Settings…" (⌘,) and "Lock ZShell" (⇧⌘L) items.
   useEffect(() => {
-    const unlisten = listen("open-settings", () => setSettingsOpen(true));
-    return () => void unlisten.then((f) => f());
-  }, []);
+    const unlisteners = [
+      listen("open-settings", () => !isAppLocked() && setSettingsOpen(true)),
+      listen("lock-app", () => !isAppLocked() && lockApp()),
+    ];
+    return () => unlisteners.forEach((unlisten) => void unlisten.then((f) => f()));
+  }, [lockApp]);
 
   const runCommand = (command: QuickCommand) => composer.send(asTyped(command.text, command.enter));
 
@@ -537,7 +549,13 @@ function App() {
         />
       )}
       {importing && <ImportDialog onClose={closeImport} onImported={reloadProfiles} />}
-      {settingsOpen && <SettingsDialog localAllowed={localAllowed} onClose={closeSettings} />}
+      {settingsOpen && (
+        <SettingsDialog
+          localAllowed={localAllowed}
+          section={typeof settingsOpen === "string" ? settingsOpen : undefined}
+          onClose={closeSettings}
+        />
+      )}
       {close.dialogs}
       {setAside.length > 0 && (
         <ConfirmDialog

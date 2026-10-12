@@ -1,6 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type {
+  AppLockSettings,
+  AppLockStatus,
   CommandError,
   DragItem,
   DragOutEvent,
@@ -167,6 +169,17 @@ export const vault = {
     invoke<VaultStatus>("vault_set_protection", { change, current, skipUnreadable }),
   /** Whether the system's credential store can be used; on Linux there may be none. */
   storeAvailable: () => invoke<boolean>("credential_store_available"),
+};
+
+/** The app lock (see `applock/mod.rs`). */
+export const appLock = {
+  status: () => invoke<AppLockStatus>("app_lock_status"),
+  /** Locks now, if the app lock is on. */
+  lock: () => invoke<AppLockStatus>("app_lock_lock"),
+  /** Asks the user to authenticate; fails with `appLock.cancelled` if they don't. */
+  unlock: () => invoke<AppLockStatus>("app_lock_unlock"),
+  /** Turning the lock on asks the user to authenticate first. */
+  configure: (settings: AppLockSettings) => invoke<AppLockStatus>("app_lock_configure", { settings }),
 };
 
 /** The user's home folder, which `~` stands for in key paths. */

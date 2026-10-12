@@ -1,6 +1,7 @@
 #[macro_use]
 mod i18n;
 
+mod applock;
 mod backup;
 mod bindings;
 mod commands;
@@ -32,6 +33,7 @@ use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
 
+use applock::AppLock;
 use config::ProfileStore;
 use logging::Logs;
 use persist::SetAside;
@@ -47,11 +49,12 @@ const SETTINGS_MENU_ID: &str = "settings";
 const CLOSE_TAB_MENU_ID: &str = "close-tab";
 const CLOSE_WINDOW_MENU_ID: &str = "close-window";
 const QUIT_MENU_ID: &str = "quit";
+const LOCK_MENU_ID: &str = "lock";
 
-/// The macOS menu: Tauri's default one, with "Settings…" (⌘,) in the app menu, where Mac
-/// users expect it, and a File menu with "Close" (⌘W: the focused pane of a split tab, else
-/// the tab) and "Close Window" (⇧⌘W), as in iTerm2; the predefined "Close Window" item would
-/// take ⌘W.
+/// The macOS menu: Tauri's default one, with "Settings…" (⌘,) and "Lock ZShell" (⇧⌘L) in the
+/// app menu, where Mac users expect them, and a File menu with "Close" (⌘W: the focused pane
+/// of a split tab, else the tab) and "Close Window" (⇧⌘W), as in iTerm2; the predefined "Close
+/// Window" item would take ⌘W.
 /// These shortcuts have to be menu items: macOS handles them before the web view sees them.
 /// "Quit" closes the window rather than exiting directly, so the frontend can ask first when
 /// tabs are connected. Elsewhere the frontend handles Ctrl+, and Ctrl+Shift+W itself.
@@ -73,6 +76,8 @@ fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri
                     &PredefinedMenuItem::about(app, None, Some(about))?,
                     &separator()?,
                     &MenuItem::with_id(app, SETTINGS_MENU_ID, t!("menu.settings"), true, Some("CmdOrCtrl+,"))?,
+                    &separator()?,
+                    &MenuItem::with_id(app, LOCK_MENU_ID, t!("menu.lock", name = info.name), true, Some("CmdOrCtrl+Shift+L"))?,
                     &separator()?,
                     &PredefinedMenuItem::services(app, None)?,
                     &separator()?,
@@ -180,6 +185,13 @@ pub fn run() {
             vault::install(vault.clone());
             app.manage(ProfileStore::load(vault.clone()));
             app.manage(QuickCommandStore::load(vault.clone()));
+            let handle = app.handle().clone();
+            let app_lock = Arc::new(AppLock::for_platform(vault.clone(), move || {
+                let _ = handle.emit("app-locked", ());
+            }));
+            applock::watch_idle(app_lock.clone());
+            applock::watch_system(app_lock.clone());
+            app.manage(app_lock);
             app.manage(vault);
             app.manage(SettingsStore::load(config_dir.join("settings.json"), &set_aside));
             let documents = app.path().document_dir().unwrap_or_else(|_| config_dir.clone());
@@ -193,6 +205,9 @@ pub fn run() {
         .on_menu_event(|app, event| {
             if event.id() == SETTINGS_MENU_ID {
                 let _ = app.emit("open-settings", ());
+            } else if event.id() == LOCK_MENU_ID {
+                // As the shortcut elsewhere: the frontend says what to do when the lock is off.
+                let _ = app.emit("lock-app", ());
             } else if event.id() == CLOSE_TAB_MENU_ID {
                 // The frontend may ask first, and closes the window when there are no tabs.
                 let _ = app.emit("close-tab", ());
@@ -251,6 +266,10 @@ pub fn run() {
             commands::vault::vault_reset,
             commands::vault::vault_set_protection,
             commands::vault::credential_store_available,
+            commands::applock::app_lock_status,
+            commands::applock::app_lock_lock,
+            commands::applock::app_lock_unlock,
+            commands::applock::app_lock_configure,
             commands::local_username,
             commands::home_directory,
             commands::config::ssh_config_default_path,

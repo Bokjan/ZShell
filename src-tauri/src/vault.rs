@@ -1,5 +1,5 @@
-//! Where the sessions, folders, proxies, quick commands and saved passwords are kept, and how
-//! they are protected. See "加密保险库" in `docs/ARCHITECTURE.md`.
+//! Where the sessions, folders, proxies, quick commands, saved passwords and the app lock's
+//! settings are kept, and how they are protected. See "加密保险库" in `docs/ARCHITECTURE.md`.
 //!
 //! - Unset (as before 2.7): plain JSON files, each password in an entry of its own in the
 //!   system's credential store.
@@ -25,6 +25,7 @@ use serde_json::value::RawValue;
 use ts_rs::TS;
 use zeroize::Zeroizing;
 
+use crate::applock::AppLockSettings;
 use crate::config::{Folder, Profile};
 use crate::crypto::{self, Kdf, Key, Sealed};
 use crate::error::{Error, Result};
@@ -35,8 +36,9 @@ use crate::secrets::{self, CredentialStore, StoreKind};
 
 pub const VAULT_FILE: &str = "vault.json";
 const PASSWORDS_FILE: &str = "passwords.json";
+const APP_LOCK_FILE: &str = "applock.json";
 /// The plain files that the vault replaces, `passwords.json` included.
-const PLAIN_FILES: [&str; 5] = ["profiles.json", "folders.json", "proxies.json", "commands.json", PASSWORDS_FILE];
+const PLAIN_FILES: [&str; 6] = ["profiles.json", "folders.json", "proxies.json", "commands.json", APP_LOCK_FILE, PASSWORDS_FILE];
 const FORMAT: &str = "zshell-vault";
 const VERSION: u32 = 1;
 /// The credential store's entry for the data key.
@@ -58,6 +60,9 @@ pub struct Data {
     /// By account: a session's id, or `proxy:<id>` (see `secrets::proxy_account`). Empty
     /// while unset, when the credential store has them.
     pub passwords: BTreeMap<String, String>,
+    /// Kept with the sessions rather than in `settings.json`, so that it is as protected as
+    /// they are: in the encrypted vault, it can't be turned off by editing a file.
+    pub app_lock: AppLockSettings,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
@@ -243,6 +248,9 @@ struct Plain {
     folders: JsonFile,
     proxies: JsonFile,
     commands: JsonFile,
+    /// `applock.json`. Only written with none protection: unset, the app lock can't be turned
+    /// on (see `AppLock::configure`).
+    app_lock: JsonFile,
     /// None protection: `passwords.json`.
     passwords: Option<JsonFile>,
     data: Data,
@@ -254,6 +262,7 @@ impl Plain {
         let (folders, data_folders) = JsonFile::load(dir.join("folders.json"), set_aside);
         let (proxies, data_proxies) = JsonFile::load(dir.join("proxies.json"), set_aside);
         let (commands, data_commands) = JsonFile::load(dir.join("commands.json"), set_aside);
+        let (app_lock, data_app_lock) = JsonFile::load(dir.join(APP_LOCK_FILE), set_aside);
         let passwords_path = dir.join(PASSWORDS_FILE);
         let (passwords, data_passwords) = match passwords_path.exists() {
             true => {
@@ -268,8 +277,9 @@ impl Plain {
             proxies: data_proxies,
             commands: data_commands,
             passwords: data_passwords,
+            app_lock: data_app_lock,
         };
-        Self { profiles, folders, proxies, commands, passwords, data }
+        Self { profiles, folders, proxies, commands, app_lock, passwords, data }
     }
 
     /// Plain files in `dir` to be written (none protection), holding nothing yet.
@@ -280,6 +290,7 @@ impl Plain {
             folders: file("folders.json"),
             proxies: file("proxies.json"),
             commands: file("commands.json"),
+            app_lock: file(APP_LOCK_FILE),
             passwords: Some(file(PASSWORDS_FILE)),
             data: Data::default(),
         }
@@ -316,6 +327,9 @@ impl Plain {
         if changed(all, &old.commands, &new.commands)? {
             staged.push((self.commands.stage(&new.commands)?, |new, data| data.commands.clone_from(&new.commands)));
         }
+        if changed(all, &old.app_lock, &new.app_lock)? {
+            staged.push((self.app_lock.stage(&new.app_lock)?, |new, data| data.app_lock.clone_from(&new.app_lock)));
+        }
         if let Some(passwords) = &self.passwords {
             if changed(all, &old.passwords, &new.passwords)? {
                 staged.push((passwords.stage(&new.passwords)?, |new, data| data.passwords.clone_from(&new.passwords)));
@@ -331,7 +345,7 @@ impl Plain {
     /// A file that couldn't be read at startup and is left alone: replacing the plain files
     /// would lose what it holds.
     fn left_alone(&self) -> Option<&JsonFile> {
-        [&self.profiles, &self.folders, &self.proxies, &self.commands]
+        [&self.profiles, &self.folders, &self.proxies, &self.commands, &self.app_lock]
             .into_iter()
             .chain(self.passwords.as_ref())
             .find(|file| file.left_alone())
@@ -425,6 +439,15 @@ impl Vault {
             State::Plain(plain) => Ok(plain.data.clone()),
             State::Encrypted(vault) => Ok(vault.data.clone()),
             State::Locked { .. } => Err(locked()),
+        }
+    }
+
+    /// The app lock's settings; `None` while locked.
+    pub fn app_lock(&self) -> Option<AppLockSettings> {
+        match &*self.state.lock().unwrap() {
+            State::Plain(plain) => Some(plain.data.app_lock.clone()),
+            State::Encrypted(vault) => Some(vault.data.app_lock.clone()),
+            State::Locked { .. } => None,
         }
     }
 

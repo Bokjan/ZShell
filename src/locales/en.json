@@ -663,7 +663,8 @@
       "filePanel": "Show or hide the file panel",
       "forwardsPanel": "Show or hide the port forwarding panel",
       "fullScreen": "Full screen, showing only the terminals of the tab",
-      "settings": "Settings"
+      "settings": "Settings",
+      "lock": "Lock ZShell"
     },
     "about": "About",
     "aboutVersion": "Version {version}",
@@ -677,6 +678,7 @@
     "noMatches": "No matching settings",
     "reset": "Restore defaults",
     "resetConfirm": "Click again to restore",
+    "resetHint": "Restores the settings above. How sessions are protected, the app lock and proxies are kept.",
     "security": "Security",
     "protectionState": {
       "unset": "Not encrypted: sessions are saved as plain files, and each password in {store}.",
@@ -686,7 +688,23 @@
       "passwordRemembered": "Encrypted with a master password, remembered in {store}."
     },
     "protectionChange": "Change Protection…",
-    "securityHint": "Covers sessions, folders, proxies, quick commands and saved passwords. Settings and session logs are not encrypted."
+    "securityHint": "Covers sessions, folders, proxies, quick commands and saved passwords. Settings and session logs are not encrypted.",
+    "appLock": {
+      "enable": {
+        "touchId": "Lock ZShell with Touch ID",
+        "password": "Lock ZShell with the login password",
+        "windowsHello": "Lock ZShell with Windows Hello",
+        "unavailable": "Lock ZShell"
+      },
+      "hint": "Covers the window until you unlock it; sessions keep running meanwhile. Lock now with {shortcut}.",
+      "needsProtection": "Choose how to protect the sessions first: the app lock's settings are kept with them.",
+      "plainHint": "The sessions are not encrypted, so anyone who can edit the data folder can turn the app lock off. Encrypt them to prevent that.",
+      "idle": "Lock when the computer has been idle for",
+      "idleNever": "Never",
+      "idleMinutes_one": "{count} minute",
+      "idleMinutes_other": "{count} minutes",
+      "onSystemLock": "Lock when the computer sleeps, locks its screen or switches user"
+    }
   },
   "knownHosts": {
     "title": "Known Hosts",
@@ -852,6 +870,13 @@
       "keychain": "the macOS Keychain",
       "credentialManager": "the Windows Credential Manager",
       "secretService": "the system keyring"
+    }
+  },
+  "appLock": {
+    "prompt": {
+      "touchId": "Use Touch ID or the login password to unlock.",
+      "password": "Enter the login password to unlock.",
+      "windowsHello": "Use Windows Hello to unlock."
     }
   },
   "protection": {

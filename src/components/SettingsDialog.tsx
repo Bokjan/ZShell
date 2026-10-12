@@ -49,6 +49,8 @@ import { SecuritySection } from "./settings/SecuritySection";
 interface Props {
   /** Whether the system allows local terminals (not Windows in S mode). */
   localAllowed: boolean;
+  /** The section to show first. */
+  section?: SectionId;
   onClose(): void;
 }
 
@@ -59,7 +61,7 @@ const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 
 
-export function SettingsDialog({ localAllowed, onClose }: Props) {
+export function SettingsDialog({ localAllowed, section, onClose }: Props) {
   const { t } = useTranslation();
   const { settings, theme, update } = useSettings();
   const terminal = settings.terminal;
@@ -144,6 +146,17 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
     updateActive();
   }, [query, applySearch, updateActive]);
 
+  // Opened at a section: there at once, and back there when a search is cleared.
+  useLayoutEffect(() => {
+    const content = contentRef.current!;
+    const target = section && content.querySelector<HTMLElement>(`section[data-section="${section}"]`);
+    if (!target) return;
+    content.scrollTop = target.offsetTop - parseFloat(getComputedStyle(content).paddingTop);
+    scrollBeforeSearch.current = content.scrollTop;
+    updateActive();
+    // Only as it opens.
+  }, []);
+
   const search = (next: string) => {
     if (!query) scrollBeforeSearch.current = contentRef.current!.scrollTop;
     setQuery(next);
@@ -204,7 +217,7 @@ export function SettingsDialog({ localAllowed, onClose }: Props) {
               ))}
             </ul>
             <footer>
-              <button type="button" ref={resetButton.ref} onClick={reset} onBlur={resetButton.onBlur}>
+              <button type="button" ref={resetButton.ref} onClick={reset} onBlur={resetButton.onBlur} title={t("settings.resetHint")}>
                 {resetButton.armed ? t("settings.resetConfirm") : t("settings.reset")}
               </button>
             </footer>

@@ -1,0 +1,189 @@
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useTranslation } from "react-i18next";
+
+import { appLock, errorCode, errorMessage, type AppLockStatus } from "../lib/api";
+import { setAppLocked } from "../lib/appLock";
+import { ErrorText } from "./ErrorMessage";
+import { LockHeading, LockScreen } from "./LockScreen";
+
+interface AppLockContextValue {
+  status: AppLockStatus;
+  /** After the settings changed. */
+  setStatus(status: AppLockStatus): void;
+  /** The "Lock" action: locks, and returns false if the app lock is off. */
+  lock(): boolean;
+  /** Closing the window while locked would end `busy` sessions: asks on the lock screen. */
+  confirmClose(busy: number): void;
+  /**
+   * A close that was waiting on the lock screen when the app was unlocked (the system's dialog
+   * can be over it): the close flow asks again, as when unlocked.
+   */
+  pendingClose: number | null;
+  clearPendingClose(): void;
+}
+
+const AppLockContext = createContext<AppLockContextValue | null>(null);
+
+export function useAppLock(): AppLockContextValue {
+  const value = useContext(AppLockContext);
+  if (!value) throw new Error("useAppLock outside AppLockGate");
+  return value;
+}
+
+/** Whether the app lock can be used and is on. */
+export const appLockOn = (status: AppLockStatus) => !!status.settings?.enabled && status.method !== null;
+
+/**
+ * Covers the app with the lock screen while the app lock is locked (see `applock/mod.rs`),
+ * keeping it mounted: the sessions keep running. Inside `VaultGate`, since the settings are
+ * in the vault; nothing shows until the backend has said whether it is locked, so the app
+ * never flashes before the lock screen at startup.
+ */
+export function AppLockGate({ children }: { children: ReactNode }) {
+  const [status, setStatus] = useState<AppLockStatus | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  // Sessions that closing the window would end, waiting for confirmation on the lock screen;
+  // left for the close flow once unlocked.
+  const [closing, setClosing] = useState<number | null>(null);
+  const statusRef = useRef(status);
+  statusRef.current = status;
+
+  const refresh = useCallback(() => void appLock.status().then(setStatus, (e) => setFailure(errorMessage(e))), []);
+
+  // Covered at once, then the rest of the status: asking Windows Hello what it offers takes a
+  // moment, which the sessions would show through.
+  const coverNow = useCallback(() => setStatus((current) => current && { ...current, locked: true }), []);
+
+  // Locked by the backend (idle, the system locking or sleeping).
+  useEffect(() => {
+    refresh();
+    const unlisten = listen("app-locked", () => {
+      coverNow();
+      refresh();
+    });
+    return () => void unlisten.then((f) => f());
+  }, [refresh, coverNow]);
+
+  const locked = status?.locked ?? false;
+  useLayoutEffect(() => setAppLocked(locked), [locked]);
+
+  const lock = useCallback(() => {
+    const current = statusRef.current;
+    if (!current || !appLockOn(current)) return false;
+    coverNow();
+    void appLock.lock().then(setStatus, console.error);
+    return true;
+  }, [coverNow]);
+  const confirmClose = useCallback((busy: number) => setClosing(busy), []);
+  const clearPendingClose = useCallback(() => setClosing(null), []);
+
+  if (!status) return failure ? <p className="vault-failure">{failure}</p> : null;
+  return (
+    <AppLockContext.Provider value={{ status, setStatus, lock, confirmClose, pendingClose: locked ? null : closing, clearPendingClose }}>
+      {children}
+      {locked && <AppLockScreen status={status} onStatus={setStatus} closing={closing} onKeepOpen={() => setClosing(null)} />}
+    </AppLockContext.Provider>
+  );
+}
+
+interface ScreenProps {
+  status: AppLockStatus;
+  onStatus(status: AppLockStatus): void;
+  closing: number | null;
+  onKeepOpen(): void;
+}
+
+/**
+ * A modal `<dialog>` in the top layer: above everything, including dialogs, menus and tooltips
+ * rendered at the end of the body, and everything else in the page is inert, for the mouse,
+ * the keyboard and screen readers alike. It has its own title bar, since the window's is
+ * inert.
+ *
+ * It asks the system by itself once, when the window has the focus: locking while the user is
+ * in another app mustn't put the system's dialog in front of them. After they cancel, only the
+ * button asks.
+ */
+function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLDialogElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const asking = useRef(false);
+  const asked = useRef(false);
+
+  useLayoutEffect(() => {
+    const dialog = ref.current!;
+    // Escape would close it: the cancel event is prevented, but a browser may close the
+    // dialog all the same when it is pressed again, so it is opened again.
+    const cancel = (e: Event) => e.preventDefault();
+    const reopen = () => !dialog.open && dialog.showModal();
+    dialog.addEventListener("cancel", cancel);
+    dialog.addEventListener("close", reopen);
+    dialog.showModal();
+    return () => {
+      dialog.removeEventListener("cancel", cancel);
+      dialog.removeEventListener("close", reopen);
+      dialog.close();
+    };
+  }, []);
+
+  const unlock = useCallback(async () => {
+    if (asking.current) return;
+    asking.current = asked.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      onStatus(await appLock.unlock());
+    } catch (e) {
+      const code = errorCode(e);
+      if (code !== "appLock.cancelled" && code !== "appLock.busy") setError(errorMessage(e));
+    } finally {
+      asking.current = false;
+      setBusy(false);
+    }
+  }, [onStatus]);
+
+  // The window's focus, not `document.hasFocus()`: WKWebView says the page has it while the
+  // app is in the background.
+  useEffect(() => {
+    const window = getCurrentWindow();
+    const ask = () => !asked.current && void unlock();
+    void window.isFocused().then((focused) => focused && ask(), console.error);
+    const unlisten = window.onFocusChanged(({ payload: focused }) => focused && ask());
+    return () => void unlisten.then((f) => f());
+  }, [unlock]);
+
+  const message = status.method === "touchId" ? "touchId" : status.method === "windowsHello" ? "windowsHello" : "password";
+
+  return (
+    <dialog ref={ref} className="app-lock" aria-labelledby="app-lock-title" onKeyDown={(e) => e.key === "Escape" && e.preventDefault()}>
+      <LockScreen>
+        {closing === null ? (
+          <div className="unlock-panel">
+            <LockHeading id="app-lock-title" />
+            <p>{t(`appLock.prompt.${message}`)}</p>
+            {error && <ErrorText>{error}</ErrorText>}
+            <button type="button" className="primary" onClick={() => void unlock()} disabled={busy} autoFocus>
+              {busy ? t("vault.unlocking") : t("vault.unlock")}
+            </button>
+          </div>
+        ) : (
+          <div className="unlock-panel" role="alert">
+            <LockHeading id="app-lock-title" />
+            <p>{t("closeConfirm.window", { count: closing })}</p>
+            <div className="unlock-actions">
+              <button type="button" onClick={onKeepOpen} autoFocus>
+                {t("common.cancel")}
+              </button>
+              <button type="button" className="primary danger-fill" onClick={() => void getCurrentWindow().destroy()}>
+                {t("closeConfirm.windowConfirm")}
+              </button>
+            </div>
+          </div>
+        )}
+      </LockScreen>
+    </dialog>
+  );
+}
