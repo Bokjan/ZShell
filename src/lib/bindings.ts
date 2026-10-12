@@ -135,6 +135,7 @@ export type ErrorCode =
   | "vault.notLocked"
   | "vault.passwordRequired"
   | "vault.passwordsUnreadable"
+  | "vault.plainLeft"
   | "vault.readFailed"
   | "vault.verifyFailed"
   | "vault.wrongPassword"
@@ -865,7 +866,12 @@ protection: Protection | null,
 /**
  * With password protection: the data key is also in the credential store.
  */
-remember: boolean, locked: VaultLock | null, store: StoreKind, };
+remember: boolean, locked: VaultLock | null, store: StoreKind, 
+/**
+ * Set by the unlocking that couldn't delete the plain data files left by a change of
+ * protection that stopped part way (`vault.plainLeft`).
+ */
+leftover?: CommandError, };
 
 /**
  * Another window, as the tab menu lists it.

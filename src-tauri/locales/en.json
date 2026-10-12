@@ -229,7 +229,8 @@
       "passwordRequired": "Enter the current master password",
       "emptyPassword": "The master password can't be empty",
       "passwordsUnreadable": "The passwords of {names} could not be read from the credential store",
-      "leftover": "The protection was changed, but the old files could not all be deleted. ZShell deletes them the next time it unlocks"
+      "leftover": "The protection was changed, but the old files could not all be deleted. ZShell deletes them the next time it unlocks",
+      "plainLeft": "Unencrypted copies of the sessions could not be deleted"
     },
     "appLock": {
       "unavailable": "Touch ID and the login password can't be used",

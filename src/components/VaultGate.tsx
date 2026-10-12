@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { errorMessage, vault, type VaultStatus } from "../lib/api";
 import { useNativeMenu } from "../lib/appMenu";
 import { useSettings } from "../lib/settings";
 import { useTitleBar } from "../lib/window";
 import { useConfigChanged } from "../lib/windows";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ProtectionDialog } from "./ProtectionDialog";
 import { UnlockScreen } from "./UnlockScreen";
 
@@ -31,6 +33,7 @@ export function useVault(): VaultContextValue {
  * Asks once, over the app, how to protect the sessions while that hasn't been chosen.
  */
 export function VaultGate({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const { settings, update } = useSettings();
   // The title bar works on the unlock screen too: moving the window, its buttons; and so
   // does the macOS menu bar.
@@ -40,14 +43,21 @@ export function VaultGate({ children }: { children: ReactNode }) {
   const [failure, setFailure] = useState<string | null>(null);
   // Reading the key from the credential store.
   const [trying, setTrying] = useState(false);
+  // Plain data files that unlocking couldn't delete, said once by the window that unlocked.
+  const [leftover, setLeftover] = useState<string | null>(null);
+
+  const unlocked = useCallback((next: VaultStatus) => {
+    setStatus(next);
+    if (next.leftover) setLeftover(errorMessage(next.leftover));
+  }, []);
 
   const tryUnlock = useCallback(() => {
     setTrying(true);
     vault
       .tryUnlock()
-      .then(setStatus, (e) => setFailure(errorMessage(e)))
+      .then(unlocked, (e) => setFailure(errorMessage(e)))
       .finally(() => setTrying(false));
-  }, []);
+  }, [unlocked]);
 
   useEffect(() => {
     vault.status().then(
@@ -70,7 +80,7 @@ export function VaultGate({ children }: { children: ReactNode }) {
 
   if (!status) return failure ? <p className="vault-failure">{failure}</p> : null;
   if (status.locked) {
-    return <UnlockScreen status={status} trying={trying} onTryAgain={tryUnlock} onStatus={setStatus} onReset={onReset} />;
+    return <UnlockScreen status={status} trying={trying} onTryAgain={tryUnlock} onStatus={unlocked} onReset={onReset} />;
   }
   const asking = status.protection === "unset" && !settings.security.prompted;
   const prompted = () => update({ ...settings, security: { ...settings.security, prompted: true } });
@@ -87,6 +97,18 @@ export function VaultGate({ children }: { children: ReactNode }) {
           }}
           onClose={prompted}
         />
+      )}
+      {leftover && (
+        <ConfirmDialog
+          notice
+          title={t("vault.plainLeftTitle")}
+          message={t("vault.plainLeftMessage")}
+          confirmLabel={t("common.close")}
+          onConfirm={() => setLeftover(null)}
+          onCancel={() => setLeftover(null)}
+        >
+          <p className="hint">{leftover}</p>
+        </ConfirmDialog>
       )}
     </VaultContext.Provider>
   );

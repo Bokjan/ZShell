@@ -940,6 +940,8 @@
     "resetWord": "DELETE",
     "resetConfirm": "Delete Everything",
     "unlocked": "Unlocked.",
+    "plainLeftTitle": "Unencrypted Copies Left",
+    "plainLeftMessage": "A change of protection that did not finish left copies of your sessions in the clear, and ZShell could not delete them. It tries again the next time it unlocks; you can also delete them yourself.",
     "store": {
       "keychain": "the macOS Keychain",
       "credentialManager": "the Windows Credential Manager",

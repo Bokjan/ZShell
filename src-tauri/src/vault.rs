@@ -123,6 +123,11 @@ pub struct VaultStatus {
     pub remember: bool,
     pub locked: Option<Lock>,
     pub store: StoreKind,
+    /// Set by the unlocking that couldn't delete the plain data files left by a change of
+    /// protection that stopped part way (`vault.plainLeft`).
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leftover: Option<Error>,
 }
 
 /// The header of `vault.json`, in clear: the encrypted data authenticates it (as associated
@@ -414,15 +419,22 @@ impl Vault {
     pub fn status(&self) -> VaultStatus {
         let store = StoreKind::current();
         match &*self.state.lock().unwrap() {
-            State::Plain(plain) => VaultStatus { protection: Some(plain.protection()), remember: false, locked: None, store },
-            State::Encrypted(vault) => {
-                VaultStatus { protection: Some(vault.header.protection), remember: vault.header.remember, locked: None, store }
+            State::Plain(plain) => {
+                VaultStatus { protection: Some(plain.protection()), remember: false, locked: None, store, leftover: None }
             }
+            State::Encrypted(vault) => VaultStatus {
+                protection: Some(vault.header.protection),
+                remember: vault.header.remember,
+                locked: None,
+                store,
+                leftover: None,
+            },
             State::Locked { header, lock } => VaultStatus {
                 protection: header.as_ref().map(|h| h.protection),
                 remember: header.as_ref().is_some_and(|h| h.remember),
                 locked: Some(lock.clone()),
                 store,
+                leftover: None,
             },
         }
     }
@@ -519,25 +531,27 @@ impl Vault {
     /// read. Blocks while the credential store answers, without holding the state: the master
     /// password may unlock meanwhile.
     pub fn try_unlock(&self) -> VaultStatus {
+        let mut leftover = None;
         if matches!(&*self.state.lock().unwrap(), State::Locked { .. }) {
             let next = self.unlock_saved();
             let mut state = self.state.lock().unwrap();
             if let State::Locked { .. } = &*state {
                 if let State::Encrypted(_) = &next {
-                    self.remove_leftovers();
+                    leftover = self.remove_leftovers();
                 }
                 *state = next;
             }
         }
-        self.status()
+        VaultStatus { leftover, ..self.status() }
     }
 
     /// Deletes plain data files next to an encrypted vault that opened, so that it is known
     /// to be good: left by a change of protection that stopped part way. Until then they may
     /// be all that is left of the sessions, should the vault turn out to be unreadable.
-    /// Failures are left for the next unlock.
-    fn remove_leftovers(&self) {
-        let _ = self.remove_plain();
+    /// Failures are reported (they hold the sessions in the clear), and tried again at the
+    /// next unlock.
+    fn remove_leftovers(&self) -> Option<Error> {
+        self.remove_plain().err().map(|e| Error::new("vault.plainLeft").detail(e))
     }
 
     /// Deletes the plain data files (and temporary ones next to them); the first that can't
@@ -609,6 +623,7 @@ impl Vault {
     /// password: an open vault takes any.
     pub fn unlock(&self, password: &str) -> Result<(VaultStatus, bool)> {
         let mut opened = false;
+        let mut leftover = None;
         {
             let mut state = self.state.lock().unwrap();
             if let State::Locked { .. } = &*state {
@@ -622,7 +637,7 @@ impl Vault {
                         let key = file.header.unwrap_key(password).ok_or_else(|| Error::new("vault.wrongPassword"))?;
                         match file.open(&key) {
                             Ok(data) => {
-                                self.remove_leftovers();
+                                leftover = self.remove_leftovers();
                                 opened = true;
                                 State::Encrypted(Encrypted { header: file.header, key, data })
                             }
@@ -634,7 +649,7 @@ impl Vault {
                 };
             }
         }
-        Ok((self.status(), opened))
+        Ok((VaultStatus { leftover, ..self.status() }, opened))
     }
 
     /// Deletes the vault, whose key is lost (a forgotten master password), with any plain
@@ -1116,9 +1131,15 @@ mod tests {
         fs::write(dir.join("profiles.json"), "[]").unwrap();
         fs::write(dir.join(PASSWORDS_FILE), r#"{"a":"secret"}"#).unwrap();
         fs::write(dir.join("commands.json.tmp"), "{}").unwrap();
+        // One of them can't be deleted: the unlock says so.
+        block(&dir, "folders.json");
         let vault = open(&dir, &store);
         assert!(dir.join(PASSWORDS_FILE).exists());
-        assert!(vault.unlock("master").unwrap().0.locked.is_none());
+        let (status, _) = vault.unlock("master").unwrap();
+        assert!(status.locked.is_none());
+        assert_eq!(status.leftover.map(|e| e.code()), Some("vault.plainLeft"));
+        assert!(vault.status().leftover.is_none());
+        unblock(&dir, "folders.json");
         for name in PLAIN_FILES {
             assert!(!dir.join(name).exists(), "{name}");
         }
