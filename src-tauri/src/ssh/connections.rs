@@ -343,8 +343,10 @@ impl Connections {
                     let _ = task.await;
                 }
             }
+            // A slot that is busy is opening an SFTP session, which may take long (as long as
+            // the server takes to answer): the disconnection ends it anyway.
             for slot in [&connection.sftp, &connection.transfer_sftp] {
-                if let Some((sftp, _)) = slot.lock().await.take() {
+                if let Some((sftp, _)) = slot.try_lock().ok().and_then(|mut slot| slot.take()) {
                     let _ = sftp.close().await;
                 }
             }
@@ -514,8 +516,6 @@ mod tests {
     }
 
     #[test]
-    fn carries_rules_over_a_reconnection_by_the_last_user() {
-    #[test]
     fn finds_the_connections_that_close() {
         let (map, shared, other) = tabs();
         // Tab 2 still uses the shared connection.
@@ -526,6 +526,8 @@ mod tests {
         assert!(Arc::ptr_eq(&both[0], &shared));
     }
 
+    #[test]
+    fn carries_rules_over_a_reconnection_by_the_last_user() {
         let (mut map, _, _) = tabs();
         // Tab 2 still uses the connection: tab 1 reconnecting takes nothing with it.
         assert!(rules_to_carry(&map, 1).is_empty());
