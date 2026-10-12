@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import i18n from "i18next";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { formatAgo } from "./format";
 
 describe("formatAgo", () => {
+  // In the app's language, which tests set: otherwise it is the system's (LANG), and the
+  // test would fail on a Chinese system.
+  beforeAll(() => i18n.init({ lng: "en", resources: {} }));
+
   it("says how long ago in the largest whole unit", () => {
     expect(formatAgo(0)).toBe("0 seconds ago");
     expect(formatAgo(1999)).toBe("1 second ago");
