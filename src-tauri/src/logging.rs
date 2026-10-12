@@ -27,7 +27,7 @@ use ts_rs::TS;
 
 use crate::persist::{JsonFile, SetAside};
 use crate::error::{Error, Result};
-use crate::local_name::create_unique_file;
+use crate::local_name::{create_unique_file, local_file_name};
 use crate::settings::{LogFormat, LogSettings};
 
 /// What a session's log is named after.
@@ -614,7 +614,8 @@ fn now() -> String {
 }
 
 /// The template with the session's details and the time filled in, as a file name: path
-/// separators and characters Windows doesn't allow become `_`.
+/// separators and characters Windows doesn't allow become `_`, and a Windows device name
+/// (`NUL`, `COM1.log`) gets a `_` in front.
 fn file_name(template: &str, info: &LogInfo) -> String {
     let time = Local::now();
     let name = template
@@ -625,12 +626,7 @@ fn file_name(template: &str, info: &LogInfo) -> String {
         .replace("{time}", &time.format("%H-%M-%S").to_string());
     let name: String =
         name.chars().map(|c| if c.is_control() || r#"/\:*?"<>|"#.contains(c) { '_' } else { c }).collect();
-    let name = name.trim().trim_matches('.');
-    if name.is_empty() {
-        "session.log".to_owned()
-    } else {
-        name.to_owned()
-    }
+    local_file_name(name.trim().trim_matches('.')).unwrap_or_else(|| "session.log".to_owned())
 }
 
 #[cfg(test)]
@@ -687,6 +683,8 @@ mod tests {
         let name = file_name("{session}_{user}@{host}.log", &info);
         assert_eq!(name, "web_01_ prod_root@10.0.0.1.log");
         assert_eq!(file_name("..", &info), "session.log");
+        let device = LogInfo { session: "COM1".into(), ..info };
+        assert_eq!(file_name("{session}.log", &device), if cfg!(windows) { "_COM1.log" } else { "COM1.log" });
     }
 
     #[test]
