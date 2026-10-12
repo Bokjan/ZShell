@@ -31,7 +31,7 @@ ZMODEM 的测试除了自己的收发互测，还与 lrzsz 的 `lsz` / `lrz` 对
 
 `cargo test` 中的 `catalog_covers_all_keys_in_sources` 会检查后端源码用到的消息 key 都在英语语言包中（见 [I18N.md](I18N.md)）。
 
-`cargo test` 中的 `bindings_are_up_to_date` 检查 `src/lib/bindings.ts` 与 Rust 类型一致；改了与前端交换的类型或错误码后，在 `src-tauri/` 下重新生成并提交：
+`cargo test` 中的 `bindings_are_up_to_date` 检查 `src/lib/bindings.ts` 与 Rust 类型一致；改了与前端交换的类型、错误码或 `bindings.rs` 里列出的常量后，在 `src-tauri/` 下重新生成并提交：
 
 ```bash
 UPDATE_BINDINGS=1 cargo test bindings

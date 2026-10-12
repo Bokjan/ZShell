@@ -24,7 +24,6 @@ import type {
   Proxy,
   QuickCommands,
   Saved,
-  SerialOptions,
   SerialPortInfo,
   SessionEvent,
   SessionSnapshot,
@@ -37,23 +36,10 @@ import type {
 } from "./bindings";
 
 export type * from "./bindings";
-
-export const DEFAULT_SERIAL: SerialOptions = {
-  device: "",
-  baudRate: 115200,
-  dataBits: 8,
-  parity: "none",
-  stopBits: 1,
-  flowControl: "none",
-};
+export { DEFAULT_GROUP, DEFAULT_SERIAL, DEFAULT_TERM_TYPE, ENCODINGS } from "./bindings";
 
 /** The usual port of each network protocol. */
 export const DEFAULT_PORTS = { ssh: 22, telnet: 23 } as const;
-
-/** The character encodings a session can use (WHATWG labels, as the backend stores them). */
-export const ENCODINGS = ["utf-8", "gb18030", "gbk", "big5", "shift_jis", "euc-jp", "euc-kr", "windows-1252"] as const;
-
-export const DEFAULT_TERM_TYPE = "xterm-256color";
 
 export type SessionId = number;
 
@@ -119,8 +105,6 @@ export const deleteProfile = (id: string) => invoke<CommandError | null>("profil
 
 /** Copies a profile (with its saved password) as `name`, right after it. */
 export const duplicateProfile = (id: string, name: string) => invoke<Saved<Profile>>("profile_duplicate", { id, name });
-
-export const DEFAULT_GROUP = "default";
 
 export const quickCommands = {
   get: () => invoke<QuickCommands>("quick_commands_get"),

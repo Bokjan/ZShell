@@ -4,6 +4,8 @@
 //!
 //! Every type reachable from the roots below is declared, under its `#[ts(rename)]` name.
 //! Error codes become the `ErrorCode` union, from the `errors.*` keys of the English catalog.
+//! A few constants both sides need (the encodings offered, the defaults of a new session) are
+//! written from the backend's definitions too, so that only one side defines them.
 //! `Error` is serialized by hand, so its TypeScript type (`CommandError`) comes from a struct
 //! that mirrors it (see `error.rs`).
 //!
@@ -19,7 +21,7 @@ mod tests {
 
     use ts_rs::{Config, TypeVisitor, TS};
 
-    const HEADER: &str = "// Generated from the Rust types by `cargo test` (src-tauri/src/bindings.rs); do not edit.\n\
+    const HEADER: &str = "// Generated from the Rust types and constants by `cargo test` (src-tauri/src/bindings.rs); do not edit.\n\
         // After changing them, run `UPDATE_BINDINGS=1 cargo test bindings` in src-tauri.\n";
 
     /// Declarations by TypeScript name, with the Rust type each came from.
@@ -62,6 +64,40 @@ mod tests {
         walk("", &catalog["errors"], &mut codes);
         codes.sort();
         codes
+    }
+
+    /// A JavaScript literal for `value`. Object keys are sorted, whatever order serde_json
+    /// keeps them in.
+    fn literal(value: &serde_json::Value) -> String {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut fields: Vec<String> = map.iter().map(|(key, value)| format!("{key}: {}", literal(value))).collect();
+                fields.sort();
+                format!("{{ {} }}", fields.join(", "))
+            }
+            serde_json::Value::Array(items) => format!("[{}]", items.iter().map(literal).collect::<Vec<_>>().join(", ")),
+            _ => value.to_string(),
+        }
+    }
+
+    /// The constants written after the types: a doc comment, the declaration, the value.
+    fn constants() -> String {
+        use crate::*;
+
+        fn js(value: impl serde::Serialize) -> String {
+            literal(&serde_json::to_value(value).unwrap())
+        }
+        let constants = [
+            (
+                "The character encodings a session can use (WHATWG labels, as profiles store them).",
+                "ENCODINGS",
+                format!("{} as const", js(encoding::SUPPORTED)),
+            ),
+            ("The terminal type of a session that doesn't set one.", "DEFAULT_TERM_TYPE", js(config::default_term_type())),
+            ("The settings of a new serial session.", "DEFAULT_SERIAL: SerialOptions", js(config::SerialOptions::default())),
+            ("The quick command group that always exists, first.", "DEFAULT_GROUP", js(quick::DEFAULT_GROUP)),
+        ];
+        constants.iter().map(|(doc, name, value)| format!("\n/** {doc} */\nexport const {name} = {value};\n")).collect()
     }
 
     fn generate() -> String {
@@ -115,6 +151,7 @@ mod tests {
             out.push_str(decl);
             out.push('\n');
         }
+        out.push_str(&constants());
         out
     }
 

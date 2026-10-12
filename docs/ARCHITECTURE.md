@@ -63,7 +63,7 @@
 | `window.rs` | 窗口：按平台创建，新窗口要显示的内容，退出前询问各窗口；macOS 的红绿灯，Windows 的窗口按钮与贴靠边框 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
 | `commands/` | Tauri 命令入口，按领域分文件 |
-| `bindings.rs` | 生成前端的 TypeScript 类型（`src/lib/bindings.ts`） |
+| `bindings.rs` | 生成前端的 TypeScript 类型和共用常量（`src/lib/bindings.ts`） |
 
 前端（`src/`）：
 
@@ -77,7 +77,7 @@
 
 ### 会话与数据流
 
-- **前后端类型**：与前端交换的 Rust 类型派生 ts-rs 的 `TS`，生成一个提交到仓库的 `src/lib/bindings.ts`，`cargo test` 在它过时时失败，只改了一边的类型在 CI 里就会发现。错误码是从英语语言包生成的联合类型 `ErrorCode`，前端按错误码分支由 `tsc` 检查。选 ts-rs 而不是 specta 的理由见 `bindings.rs`。
+- **前后端类型**：与前端交换的 Rust 类型派生 ts-rs 的 `TS`，生成一个提交到仓库的 `src/lib/bindings.ts`，`cargo test` 在它过时时失败，只改了一边的类型在 CI 里就会发现。错误码是从英语语言包生成的联合类型 `ErrorCode`，前端按错误码分支由 `tsc` 检查。两边都要用的少量常量（可选的编码、新会话的默认终端类型和串口设置、默认快速命令分组的 id）也从后端的定义写进这个文件，`api.ts` 转出，前端不再另写一份。选 ts-rs 而不是 specta 的理由见 `bindings.rs`。
 - **打开会话**：只有一个命令 `session_open`，参数是 `SessionSpec`（保存的会话、快速连接、复制标签、本地终端），先解析成后端（`Backend`），日志与会话任务只在一处建立。
 - **会话是一个后台任务**：`SessionManager` 为每个会话创建 `TermIo`（输出 / 事件 Channel、输入队列），后端任务持有它运行；新的后端只需实现同样的任务形态。
 - **会话的关闭**：`SessionManager::remove` 是唯一的入口。任务之外的资源（连接登记、等待回答的 ZMODEM、流控）登记在会话的 `Lifetime` 上，无论是关闭、会话自己结束还是任务被丢弃，都只释放一次，与调用顺序无关（`session/`）。

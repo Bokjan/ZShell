@@ -1,4 +1,4 @@
-// Generated from the Rust types by `cargo test` (src-tauri/src/bindings.rs); do not edit.
+// Generated from the Rust types and constants by `cargo test` (src-tauri/src/bindings.rs); do not edit.
 // After changing them, run `UPDATE_BINDINGS=1 cargo test bindings` in src-tauri.
 
 /** The `code` of a `CommandError`. */
@@ -894,3 +894,15 @@ export type ZmodemSettings = {
  * What happens when `sz` sends files.
  */
 receive: ZmodemReceive, };
+
+/** The character encodings a session can use (WHATWG labels, as profiles store them). */
+export const ENCODINGS = ["utf-8", "gb18030", "gbk", "big5", "shift_jis", "euc-jp", "euc-kr", "windows-1252"] as const;
+
+/** The terminal type of a session that doesn't set one. */
+export const DEFAULT_TERM_TYPE = "xterm-256color";
+
+/** The settings of a new serial session. */
+export const DEFAULT_SERIAL: SerialOptions = { baudRate: 115200, dataBits: 8, device: "", flowControl: "none", parity: "none", stopBits: 1 };
+
+/** The quick command group that always exists, first. */
+export const DEFAULT_GROUP = "default";
