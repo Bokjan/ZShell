@@ -9,6 +9,7 @@ import { useDialog } from "../lib/dialogs";
 import { matches } from "../lib/keymap";
 import { isWindows } from "../lib/platform";
 import { useShortcuts } from "../lib/shortcuts";
+import { useWindowEvent, windows } from "../lib/windows";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 import { Modal } from "./Modal";
@@ -46,6 +47,9 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
     void getCurrentWindow().close().catch(console.error);
     return true;
   });
+
+  // Quitting (⌘Q) asks nothing: until the sessions are unlocked, no window has any.
+  useWindowEvent("quit-requested", () => void windows.quit().catch(console.error));
 
   const asksPassword = lock.reason === "password" || (lock.reason === "saved" && status.protection === "password");
 
