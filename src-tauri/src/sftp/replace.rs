@@ -284,7 +284,7 @@ impl LocalTarget {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
     #[tokio::test]
@@ -336,7 +336,7 @@ mod tests {
 
     /// OpenSSH's `sftp-server` on this computer, if any, as an SFTP session on its stdio.
     #[cfg(unix)]
-    async fn local_sftp_server() -> Option<SftpSession> {
+    pub(in crate::sftp) async fn local_sftp_server() -> Option<SftpSession> {
         let program = ["/usr/libexec/sftp-server", "/usr/lib/openssh/sftp-server", "/usr/lib/ssh/sftp-server"]
             .into_iter()
             .find(|p| Path::new(p).exists())?;

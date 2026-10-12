@@ -193,13 +193,14 @@ pub async fn download(
             }
         }
     }
+    let mut done = 0;
     if result.is_ok() {
-        result = download_to(sftp, &items, reporter).await;
+        result = download_counting(sftp, &items, reporter, &mut done).await;
     }
     if let Err(e) = result {
-        // Give back the names of the items that never arrived; an empty file or folder that
-        // did is taken with them.
-        for (_, local) in &items {
+        // Give back the names of the items that never arrived. Those that did stay, even an
+        // empty file or folder.
+        for (_, local) in &items[done..] {
             let _ = match std::fs::symlink_metadata(local) {
                 Ok(metadata) if metadata.is_dir() => std::fs::remove_dir(local),
                 Ok(metadata) if metadata.len() == 0 => std::fs::remove_file(local),
@@ -227,7 +228,20 @@ async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<Pat
 
 /// Downloads each remote file or directory to the given local path, replacing files there.
 pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter) -> Result<()> {
+    download_counting(sftp, items, reporter, &mut 0).await
+}
+
+/// [`download_to`], keeping in `done` how many of the items, from the first, have arrived
+/// whole.
+async fn download_counting(
+    sftp: &SftpSession,
+    items: &[(String, PathBuf)],
+    reporter: &mut Reporter,
+    done: &mut usize,
+) -> Result<()> {
     let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+    // Where each item's files end in `plan.files`.
+    let mut ends = Vec::with_capacity(items.len());
     for (remote, local) in items {
         let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
         if metadata.file_type().is_dir() {
@@ -236,6 +250,7 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
             reporter.progress.total += metadata.size.unwrap_or(0);
             plan.files.push((remote.clone(), local.clone()));
         }
+        ends.push(plan.files.len());
     }
     // `+=`: the items of a drag are downloaded one call at a time with the same reporter.
     reporter.progress.files_total += plan.files.len();
@@ -246,7 +261,8 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
     for dir in parents.chain(plan.dirs.iter().map(PathBuf::as_path)) {
         tokio::fs::create_dir_all(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
     }
-    for ((remote, local), clashes) in plan.files.iter().zip(clashing(&plan.files)) {
+    for (i, ((remote, local), clashes)) in plan.files.iter().zip(clashing(&plan.files)).enumerate() {
+        *done = ends.partition_point(|&end| end <= i);
         reporter.start_file(file_name(remote).to_owned());
         let mut src = sftp.open(remote).await.context(Error::new("transfer.openFailed").param("path", remote))?;
         // A file that would land where another of this download did (or a folder is) gets a
@@ -272,6 +288,7 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
         }
         reporter.finish_file();
     }
+    *done = items.len();
     Ok(())
 }
 
@@ -382,6 +399,32 @@ mod tests {
         remote.sort();
         assert_eq!(remote, ["/r/sub/a.txt", "/r/sub/link.txt"]);
         assert_eq!(reporter.progress.total, 6);
+    }
+
+    /// A failed download takes back only the names of the items that did not arrive: an
+    /// empty file before the failure stays. Skipped without `sftp-server`.
+    #[tokio::test]
+    async fn a_failed_download_keeps_the_items_that_arrived() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(sftp) = super::super::replace::tests::local_sftp_server().await else { return };
+        let root = std::env::temp_dir().join(format!("zshell-download-{}", uuid::Uuid::new_v4()));
+        let (remote, local) = (root.join("remote"), root.join("local"));
+        std::fs::create_dir_all(&remote).unwrap();
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::write(remote.join("empty"), "").unwrap();
+        std::fs::write(remote.join("secret"), "x").unwrap();
+        std::fs::set_permissions(remote.join("secret"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::fs::write(remote.join("later"), "").unwrap();
+
+        let paths: Vec<String> = ["empty", "secret", "later"].iter().map(|n| remote.join(n).to_str().unwrap().to_owned()).collect();
+        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let result = download(&sftp, &paths, &local, &mut reporter).await;
+        let mut left: Vec<_> = std::fs::read_dir(&local).unwrap().map(|e| e.unwrap().file_name()).collect();
+        left.sort();
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert!(result.is_err());
+        assert_eq!(left, ["empty"]);
     }
 
     #[test]
