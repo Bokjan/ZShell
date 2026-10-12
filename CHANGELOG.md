@@ -2,6 +2,21 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.11.0] - 2026-10-12
+
+### Features
+
+- An app menu on Windows: the ZShell icon and name at the top left of the title bar (or Ctrl+Shift+M) open File, Edit, View and Help menus, with Lock ZShell, Settings and Exit, so what the shortcuts do can also be found and chosen there. Items that don't apply in the window are disabled.
+- A fuller macOS menu bar, with New Local Terminal, New Session, Search Sessions, importing and exporting sessions, Find, splitting, the file and port forwarding panels, the compose bar, quick commands, terminal full screen, Release Notes and Report an Issue.
+- Update check: once a day, ZShell asks GitHub for the number of its latest version, and shows a newer one in Settings › About, where it can be downloaded from its page or skipped; a dot marks the way there. Check for Updates… checks at any time, and the daily check can be turned off in Settings › About. The Microsoft Store version is updated by the Store and doesn't check.
+- On Windows, Ctrl+Shift+W with no tabs left closes the window, as ⌘W does on macOS.
+- In terminal full screen, which hides the session list, the compose bar and the side panels, their keys do nothing.
+
+### Bug Fixes
+
+- ⌘Q quits from the unlock screen, where it did nothing.
+- Lock ZShell with the app lock off shows the Security settings even when Settings is already open.
+
 ## [2.10.1] - 2026-10-12
 
 ### Bug Fixes
