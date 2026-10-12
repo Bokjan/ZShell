@@ -6,6 +6,12 @@ import type { ReactNode } from "react";
  * fails on an `<svg>` outside this file and on such characters in components. An icon is
  * drawn on a 16 × 16 grid with strokes in `currentColor`, so it takes the color of the text
  * around it, and is hidden from screen readers: the button or text it is in names it.
+ *
+ * Alignment: an icon alone in a button is a block the button centers; one after text (a
+ * menu's arrow, a sort arrow) has `inline-icon` in an `inline-flex` button; one in text that
+ * may wrap (a help tip, an external link) sits on the middle of the capitals with
+ * `vertical-align: calc(0.35em - half its height)`. Icons have fixed sizes, except the file
+ * list's folder and file icons (`1em`), which follow the text size.
  */
 
 interface SvgProps {

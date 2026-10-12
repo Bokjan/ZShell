@@ -128,6 +128,8 @@ async fn start(
     let proxy = route.proxy.as_ref();
     let options = HopOptions { forward_agent: profile.ssh.forward_agent, routes: routes.clone(), disconnect: disconnect_tx };
     let mut session = connect(profile, options, transport, proxy, io).await?;
+    // No time limit, unlike connecting: the user may be answering prompts, and the server
+    // has its own (`LoginGraceTime`).
     auth::authenticate(&mut session, profile, io).await?;
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io);

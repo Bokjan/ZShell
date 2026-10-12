@@ -54,6 +54,7 @@ pub async fn connect(
 /// Opens a TCP connection to `host:port`, trying its addresses in turn, each for up to 15
 /// seconds (like OpenSSH's `ConnectTimeout`): a host whose first address doesn't answer (IPv6
 /// broken on this network, a dead server among several) is still reached through the next.
+/// Looking the name up has the same limit.
 pub async fn tcp(host: &str, port: u16) -> Result<TcpStream> {
     let target = host_port(host, port);
     let addresses: Vec<SocketAddr> = tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::lookup_host((host, port)))

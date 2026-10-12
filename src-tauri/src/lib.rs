@@ -160,6 +160,8 @@ pub fn run() {
     // Opening the app again on Windows starts another process, and two would overwrite each
     // other's saved sessions and settings: bring the running one forward instead, as macOS
     // does by itself. Registered first, so that the second process ends before anything else.
+    // Not on macOS: there its lock is a socket in /tmp that doesn't depend on HOME, which would
+    // keep a test instance with another HOME from starting (see DEVELOPMENT.md).
     #[cfg(windows)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::show_main(app)));
     // Tauri only gives macOS a default menu; other platforms keep having none.

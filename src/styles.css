@@ -1,4 +1,7 @@
-/* Theme: dark by default; `data-theme="light"` on <html> (set from the settings) switches. */
+/* Theme: dark by default; `data-theme="light"` on <html> (set from the settings) switches.
+   `color-scheme` makes the system scroll bars follow it: overlay ones on macOS, which is why
+   there are no `::-webkit-scrollbar` rules, and on Windows the Fluent overlay ones that the
+   window's `scrollBarStyle: fluentOverlay` selects (WebView2 125 and later). */
 
 :root {
   /* The window's title bar: the tab bar, and the top row of the sidebar. */
@@ -7,7 +10,9 @@
   --traffic-lights-width: 0px;
   /* The interface text size setting (1, 1.15 or 1.3), set from the settings; font sizes, the
      heights of rows of text and the widths of dialogs and text columns are multiplied by it.
-     Icons and the title bar keep their size. */
+     Icons and the title bar keep their size (the traffic lights and the Windows window
+     buttons would no longer line up with it), and so does the terminal, which has its own
+     font size. */
   --text-scale: 1;
   --bg: #1e1e1e;
   --bg-sidebar: #181818;

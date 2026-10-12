@@ -219,6 +219,9 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
               />
             );
           })}
+          {/* Flat, in the order opened, and placed by the layout's percentages: splitting,
+              closing or resizing never remounts another pane's terminal, which would end its
+              session. */}
           {tab.panes.map((pane) => {
             const profile = h.profileOf(pane);
             const rect = rects.get(pane.key) ?? { x: 0, y: 0, w: 1, h: 1 };

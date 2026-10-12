@@ -130,7 +130,8 @@ export function TabBar({
   const unavailable = !!activePane && activePane.protocol !== "ssh";
 
   // Reorders live while dragging: the tab moves past each neighbor whose middle the pointer
-  // crosses. Pressing doesn't take focus from the terminal.
+  // crosses. Pressing doesn't take focus from the terminal. Mouse events rather than HTML5
+  // drag and drop, which Tauri's file drop handling intercepts on Windows.
   const startDrag = (e: ReactMouseEvent, key: number) => {
     if (e.button !== 0) return;
     e.preventDefault();

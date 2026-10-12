@@ -92,7 +92,8 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
   }, [store, requestClose]);
 
   // Closing the window (the close button, ⌘Q, Alt+F4) quits, ending every session at once,
-  // so it always asks, whatever the setting for closing tabs.
+  // so it always asks, whatever the setting for closing tabs. Quitting from the macOS Dock,
+  // logging out or shutting down ends the app without asking (a known limitation).
   useEffect(() => {
     const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
       const reasons = await Promise.all(store.get().tabs.flatMap((tab) => tab.panes).map(busyReason));

@@ -73,7 +73,9 @@ export function applyTheme(theme: "dark" | "light") {
 
 /**
  * Matches the native window (title bar, background while resizing) to the appearance, after
- * `applyTheme`: the colors are the theme's.
+ * `applyTheme`: the colors are the theme's. `setTheme` also themes the native menus and
+ * dialogs, and on Windows decides WebView2's `prefers-color-scheme`. The first frame, before
+ * this runs, takes its background from the inline style in `index.html`.
  */
 function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
   const window = getCurrentWindow();

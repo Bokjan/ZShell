@@ -69,6 +69,8 @@ const SIZE_SETTLE_MS = 500;
 
 const ignore = () => {};
 
+// Through the clipboard plugin: pasting from a menu can't raise the browser's paste event,
+// and WKWebView's `navigator.clipboard.readText` asks the user with a system "Paste" button.
 const copyText = (text: string) => void writeText(text).catch(console.error);
 
 const lineCount = (text: string) => text.replace(/(\r\n|\r|\n)$/, "").split(/\r\n|\r|\n/).length;

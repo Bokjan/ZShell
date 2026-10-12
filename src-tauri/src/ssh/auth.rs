@@ -514,6 +514,8 @@ async fn connect_agent() -> Result<DynAgent> {
     }
 }
 
+/// `~/…` (or `~\…`) in the home folder: `std::env::home_dir()`, `USERPROFILE` on Windows, the
+/// folder OpenSSH uses too (for `~/.ssh`).
 fn expand_home(path: &str) -> PathBuf {
     match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
         Some(rest) => std::env::home_dir().map(|home| home.join(rest)).unwrap_or_else(|| path.into()),

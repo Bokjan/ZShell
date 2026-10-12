@@ -4,6 +4,12 @@
 //!
 //! Every type reachable from the roots below is declared, under its `#[ts(rename)]` name.
 //! Error codes become the `ErrorCode` union, from the `errors.*` keys of the English catalog.
+//! `Error` is serialized by hand, so its TypeScript type (`CommandError`) comes from a struct
+//! that mirrors it (see `error.rs`).
+//!
+//! ts-rs rather than specta: specta 2.0 is still a release candidate, its
+//! `skip_serializing_if` needs separate input and output types, and every u64 / usize field
+//! needs an annotation.
 
 #[cfg(test)]
 mod tests {

@@ -10,7 +10,12 @@
 //! doesn't parse.
 //!
 //! Characters the encoding cannot represent are sent as `?` (an upload of `😀.txt` to a GBK
-//! server creates `?.txt`).
+//! server creates `?.txt`). The other way, a name on the server that isn't valid in the
+//! session's encoding (UTF-8 or garbage in a GBK directory; with UTF-8, what russh-sftp
+//! replaced) decodes with replacement characters and can't be turned back into its bytes:
+//! such files are listed, but opening, downloading, renaming or deleting them fails, and a
+//! recursive download or delete may stop at them. Passing paths as raw bytes throughout would
+//! need russh-sftp to support it.
 
 use encoding_rs::{Encoding, UTF_8};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};

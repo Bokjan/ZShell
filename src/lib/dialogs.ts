@@ -7,6 +7,9 @@ import { isComposing } from "./platform";
  * so a dialog opened from another (a proxy from the settings) closes alone, and Tab moves
  * the focus only among its controls. Dialogs are ordered by when they first rendered, which
  * puts one opened from another above it even when both appear at once.
+ *
+ * The rest of the page is not made `inert`: the Windows window buttons are in it, and must
+ * work while a dialog is open.
  */
 interface Entry {
   hidden: boolean;
