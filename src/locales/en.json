@@ -934,7 +934,9 @@
       "touchId": "Use Touch ID or the login password to unlock.",
       "password": "Enter the login password to unlock.",
       "windowsHello": "Use Windows Hello to unlock."
-    }
+    },
+    "goneHint": "ZShell can be unlocked without authenticating.",
+    "unlockAnyway": "Unlock Without Authenticating"
   },
   "protection": {
     "onboardingTitle": "Protect Your Sessions and Passwords",

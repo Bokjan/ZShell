@@ -32,11 +32,20 @@ pub async fn app_lock_lock(app: AppHandle, window: WebviewWindow) -> Result<AppL
 }
 
 /// Asks the user to authenticate, over the window that asks; `appLock.cancelled` if they
-/// didn't.
+/// didn't. `anyway`: once told that there is no way to authenticate left (`appLock.gone`),
+/// unlocks without.
 #[tauri::command]
-pub async fn app_lock_unlock(app: AppHandle, window: WebviewWindow) -> Result<AppLockStatus> {
+pub async fn app_lock_unlock(app: AppHandle, window: WebviewWindow, anyway: bool) -> Result<AppLockStatus> {
     let asking = window.clone();
-    let result = blocking(app, move |app| app.state::<Arc<AppLock>>().unlock(Some(&asking))).await;
+    let result = blocking(app, move |app| {
+        let lock = app.state::<Arc<AppLock>>();
+        if anyway {
+            lock.unlock_anyway(Some(&asking))
+        } else {
+            lock.unlock(Some(&asking))
+        }
+    })
+    .await;
     notified(&window, Change::AppLock, result)
 }
 

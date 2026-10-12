@@ -179,8 +179,11 @@ export const appLock = {
   status: () => invoke<AppLockStatus>("app_lock_status"),
   /** Locks now, if the app lock is on. */
   lock: () => invoke<AppLockStatus>("app_lock_lock"),
-  /** Asks the user to authenticate; fails with `appLock.cancelled` if they don't. */
-  unlock: () => invoke<AppLockStatus>("app_lock_unlock"),
+  /**
+   * Asks the user to authenticate; fails with `appLock.cancelled` if they don't, and with
+   * `appLock.gone` if there is no way to left. `anyway` then unlocks without.
+   */
+  unlock: (anyway = false) => invoke<AppLockStatus>("app_lock_unlock", { anyway }),
   /** Turning the lock on asks the user to authenticate first. */
   configure: (settings: AppLockSettings) => invoke<AppLockStatus>("app_lock_configure", { settings }),
 };

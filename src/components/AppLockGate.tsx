@@ -111,13 +111,16 @@ interface ScreenProps {
  *
  * It asks the system by itself once, when the window has the focus: locking while the user is
  * in another app mustn't put the system's dialog in front of them. After they cancel, only the
- * button asks.
+ * button asks. When there is no way to authenticate left (a Windows Hello PIN removed), it says
+ * so, and only a button of its own unlocks without.
  */
 function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Why unlocking can't ask, once the backend said so.
+  const [gone, setGone] = useState<string | null>(null);
   const asking = useRef(false);
   const asked = useRef(false);
 
@@ -137,16 +140,17 @@ function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
     };
   }, []);
 
-  const unlock = useCallback(async () => {
+  const unlock = useCallback(async (anyway = false) => {
     if (asking.current) return;
     asking.current = asked.current = true;
     setBusy(true);
     setError(null);
     try {
-      onStatus(await appLock.unlock());
+      onStatus(await appLock.unlock(anyway));
     } catch (e) {
       const code = errorCode(e);
-      if (code !== "appLock.cancelled" && code !== "appLock.busy") setError(errorMessage(e));
+      if (code === "appLock.gone") setGone(errorMessage(e));
+      else if (code !== "appLock.cancelled" && code !== "appLock.busy") setError(errorMessage(e));
     } finally {
       asking.current = false;
       setBusy(false);
@@ -171,11 +175,26 @@ function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
         {closing === null ? (
           <div className="unlock-panel">
             <LockHeading id="app-lock-title" />
-            <p>{t(`appLock.prompt.${message}`)}</p>
-            {error && <ErrorText>{error}</ErrorText>}
-            <button type="button" className="primary" onClick={() => void unlock()} disabled={busy} autoFocus>
-              {busy ? t("vault.unlocking") : t("vault.unlock")}
-            </button>
+            {gone === null ? (
+              <>
+                <p>{t(`appLock.prompt.${message}`)}</p>
+                {error && <ErrorText>{error}</ErrorText>}
+                <button type="button" className="primary" onClick={() => void unlock()} disabled={busy} autoFocus>
+                  {busy ? t("vault.unlocking") : t("vault.unlock")}
+                </button>
+              </>
+            ) : (
+              <>
+                <div role="alert">
+                  <p>{gone}</p>
+                  <p>{t("appLock.goneHint")}</p>
+                </div>
+                {error && <ErrorText>{error}</ErrorText>}
+                <button type="button" className="primary" onClick={() => void unlock(true)} disabled={busy} autoFocus>
+                  {busy ? t("vault.unlocking") : t("appLock.unlockAnyway")}
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="unlock-panel" role="alert">

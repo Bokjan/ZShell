@@ -242,7 +242,8 @@
       "failed": "Authentication failed",
       "busy": "Authentication is already in progress",
       "locked": "ZShell is locked. Unlock it first.",
-      "protectionUnset": "Choose how to protect the sessions before turning on the app lock"
+      "protectionUnset": "Choose how to protect the sessions before turning on the app lock",
+      "gone": "There is no longer a way to authenticate on this computer"
     }
   },
   "zmodem": {

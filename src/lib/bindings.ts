@@ -6,6 +6,7 @@ export type ErrorCode =
   | "appLock.busy"
   | "appLock.cancelled"
   | "appLock.failed"
+  | "appLock.gone"
   | "appLock.helloDisabled"
   | "appLock.helloNotSetUp"
   | "appLock.locked"

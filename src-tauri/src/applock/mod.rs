@@ -133,7 +133,9 @@ struct State {
 }
 
 /// Whether `error` from [`System::method`] says that there is no way to authenticate (none set
-/// up, turned off, unsupported), rather than that asking failed, which may pass.
+/// up, turned off, unsupported), rather than that asking failed, which may pass. Windows Hello
+/// turned off by policy counts: an administrator did it, and anyone who can could read the
+/// sessions from the app's memory anyway; keeping the lock would shut the user out for good.
 fn gone(error: &Error) -> bool {
     error.code() != "appLock.failed"
 }
@@ -220,14 +222,26 @@ impl AppLock {
 
     /// Asks the user to authenticate, and unlocks if they do. Blocks until they have.
     ///
-    /// If the way to authenticate went away (a Windows Hello PIN removed), it unlocks without
-    /// asking rather than lock the user out: removing it took the account's password, which
-    /// unlocks everything anyway. Asking the system failing is not that: it asks all the same.
+    /// If the way to authenticate went away (a Windows Hello PIN removed), it fails with
+    /// `appLock.gone`, which says why: the user may then unlock without authenticating
+    /// ([`Self::unlock_anyway`]) rather than be locked out. Removing it took the account's
+    /// password, which unlocks everything anyway. Asking the system failing is not that: it
+    /// asks all the same.
     pub fn unlock(&self, window: Option<&WebviewWindow>) -> Result<AppLockStatus> {
+        self.unlock_with(window, false)
+    }
+
+    /// Unlocks, without authenticating if there is no way to (see [`Self::unlock`]).
+    pub fn unlock_anyway(&self, window: Option<&WebviewWindow>) -> Result<AppLockStatus> {
+        self.unlock_with(window, true)
+    }
+
+    fn unlock_with(&self, window: Option<&WebviewWindow>, anyway: bool) -> Result<AppLockStatus> {
         let _asking = self.authenticating.try_lock().map_err(|_| Error::new("appLock.busy"))?;
         if self.is_locked() {
             match self.system.method() {
-                Err(error) if gone(&error) => {}
+                Err(error) if gone(&error) && anyway => {}
+                Err(error) if gone(&error) => return Err(Error::new("appLock.gone").detail(error)),
                 _ => self.system.authenticate(window)?,
             }
         }
@@ -409,7 +423,10 @@ mod tests {
         let status = lock.status();
         assert!(status.locked && status.method.is_none());
         assert_eq!(status.unavailable.unwrap().code(), "appLock.unsupported");
-        assert!(!lock.unlock(None).unwrap().locked);
+        // Says so first, rather than unlock without a word.
+        assert_eq!(lock.unlock(None).unwrap_err().code(), "appLock.gone");
+        assert!(lock.status().locked);
+        assert!(!lock.unlock_anyway(None).unwrap().locked);
         assert_eq!(setup.asked(), 0);
 
         // Locking doesn't ask the system, which may not answer while it suspends.
@@ -420,8 +437,9 @@ mod tests {
         // Asking failing is no reason to let anyone in.
         setup.fake.refuses.store(true, Ordering::Relaxed);
         assert_eq!(lock.unlock(None).unwrap_err().code(), "appLock.cancelled");
+        assert_eq!(lock.unlock_anyway(None).unwrap_err().code(), "appLock.cancelled");
         assert!(lock.status().locked);
-        assert_eq!(setup.asked(), 1);
+        assert_eq!(setup.asked(), 2);
     }
 
     /// Makes the last unlock `seconds` ago.

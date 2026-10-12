@@ -25,9 +25,14 @@ impl System for Platform {
             if context.canEvaluatePolicy_error(LAPolicy::DeviceOwnerAuthenticationWithBiometrics).is_ok() {
                 return Ok(Method::TouchId);
             }
+            // Only a Mac without a login password has no way at all; any other error may pass,
+            // and must not unlock without asking (see `gone`).
             match context.canEvaluatePolicy_error(LAPolicy::DeviceOwnerAuthentication) {
                 Ok(()) => Ok(Method::Password),
-                Err(error) => Err(Error::new("appLock.unavailable").detail(error.localizedDescription())),
+                Err(error) if LAError(error.code()) == LAError::PasscodeNotSet => {
+                    Err(Error::new("appLock.unavailable").detail(error.localizedDescription()))
+                }
+                Err(error) => Err(Error::new("appLock.failed").detail(error.localizedDescription())),
             }
         }
     }
