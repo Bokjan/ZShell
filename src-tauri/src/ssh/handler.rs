@@ -17,9 +17,6 @@ pub struct ClientHandler {
     /// Whether we asked for agent forwarding; agent channels are refused otherwise.
     forward_agent: bool,
     queries: mpsc::Sender<HostKeyQuery>,
-    /// The key accepted during the initial key exchange. Re-keying later in the session must
-    /// present the same key, and is checked without involving the user.
-    verified: Option<PublicKey>,
     routes: RemoteRoutes,
     /// Receives a description of why the connection ended (untranslated technical detail).
     disconnect: watch::Sender<Option<String>>,
@@ -34,27 +31,24 @@ impl ClientHandler {
         routes: RemoteRoutes,
         disconnect: watch::Sender<Option<String>>,
     ) -> Self {
-        Self { host, port, forward_agent, queries, verified: None, routes, disconnect }
+        Self { host, port, forward_agent, queries, routes, disconnect }
     }
 }
 
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
 
+    /// Called for the initial key exchange only: russh 0.64 doesn't ask again when keys are
+    /// exchanged anew later in the session, so a different key then goes unnoticed (see
+    /// docs/TODO.md).
     async fn check_server_key(&mut self, server_key: &PublicKeyOrCertificate) -> Result<bool, Self::Error> {
         let key = match server_key {
             PublicKeyOrCertificate::PublicKey { key, .. } => key.clone(),
             PublicKeyOrCertificate::Certificate(cert) => PublicKey::from(cert.public_key().clone()),
         };
-        if let Some(verified) = &self.verified {
-            return Ok(*verified == key);
-        }
 
         let status = match known_hosts::check(&self.host, self.port, &key) {
-            Ok(Check::Known) => {
-                self.verified = Some(key);
-                return Ok(true);
-            }
+            Ok(Check::Known) => return Ok(true),
             Ok(Check::Unknown) => HostKeyStatus::Unknown { others: Vec::new() },
             Ok(Check::OtherTypesKnown(others)) => HostKeyStatus::Unknown { others },
             Ok(Check::Changed { path, line }) => HostKeyStatus::Changed { path, line },
@@ -63,15 +57,11 @@ impl client::Handler for ClientHandler {
         };
 
         let (reply, answer) = oneshot::channel();
-        let query = HostKeyQuery { key: key.clone(), status, reply };
+        let query = HostKeyQuery { key, status, reply };
         if self.queries.send(query).await.is_err() {
             return Ok(false);
         }
-        let accepted = answer.await.unwrap_or(false);
-        if accepted {
-            self.verified = Some(key);
-        }
-        Ok(accepted)
+        Ok(answer.await.unwrap_or(false))
     }
 
     /// Hands the channel to its rule without waiting: this runs on russh's connection task,
