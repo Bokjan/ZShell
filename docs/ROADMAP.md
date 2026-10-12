@@ -53,16 +53,39 @@
 | **M25 加密保险库与带密码导出** ✅ | 会话与密码可选加密（主密码 / 系统凭据存储 / 不加密），首次引导；导出 / 导入可带密码（口令加密） | |
 | **M26 应用锁** ✅ | 用 Touch ID / Windows Hello 锁定应用：启动、闲置、系统锁屏或睡眠时，以及手动 | |
 | **M27 多窗口** ✅ | 多个窗口各有自己的标签；标签可以从菜单或拖拽移到新窗口或其他窗口，连接不断开 | |
-| **M28 翻译** | 语言设置界面，首批简体中文 | — |
-| **M29 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
-| **M30 自定义快捷键** | 在设置里修改快捷键 | P2 |
-| **M31 Linux** | 支持 Linux 桌面 | P2 |
+| **M28 应用菜单** | Windows 上由标题栏的图标与名称打开应用菜单；菜单与 macOS 原生菜单由同一份定义生成 | |
+| **M29 检查更新** | 定期查询 GitHub Release，有新版本时提示（Store 版不检查） | |
+| **M30 翻译** | 语言设置界面，首批简体中文 | — |
+| **M31 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
+| **M32 自定义快捷键** | 在设置里修改快捷键 | P2 |
+| **M33 Linux** | 支持 Linux 桌面 | P2 |
 
-### M28 翻译
+### M28 应用菜单
+
+Windows 没有菜单栏，应用锁、关闭窗口等只有快捷键能触发，也无从发现。与 M29 一起作为 2.11.0。
+
+- **入口**：侧栏顶部的图标与名称（`sidebar-brand`，只在没有红绿灯的平台显示）改为菜单按钮，名称后加向下的箭头；菜单打开时按钮保持按下的样子。它是真正的按钮（`aria-haspopup="menu"`、`aria-expanded`），可用 Tab 到达，Enter / 空格 / ↓ 打开，不再属于拖拽区。单击不打开系统菜单、双击不关闭窗口（与原生标题栏不同），系统菜单仍由 Alt+Space 与右键标题栏打开。macOS 全屏时也显示品牌区，但那里有原生菜单栏，保持不可点击。
+- **快捷键**：不占用 F10 与单独的 Alt（htop、mc 用 F10 退出，Alt 在 shell 里是 Meta），另加一个 Ctrl+Shift 的快捷键打开菜单，进 `keymap.ts`。终端全屏时侧栏隐藏，菜单从窗口左上角弹出。
+- **样式**：复用 `ContextMenu`，加上子菜单（→ / ← 进出，悬停展开）。
+- **内容**：文件（新建本地终端、快速连接、导入 / 导出会话、关闭标签、关闭窗口、退出）、编辑（复制、粘贴、查找）、视图（分屏、文件面板、转发面板、撰写栏、快速命令、终端全屏）、帮助（检查更新、更新说明、报告问题、关于），以及顶层的锁定 ZShell、设置。macOS 的 View 与 Help 菜单同样补上这些项，锁定与设置仍在 App 菜单。
+- **统一定义**：菜单结构在前端声明，和 `keymap.ts` 放在一起，文字与快捷键都由它得出。Windows 在页面里渲染；macOS 由前端把结构发给后端构建原生菜单，WKWebView 依赖的预定义项（⌘C / ⌘V / ⌘Q、Hide、Services 等）在页面加载前由后端建好，替换时不能让 ⌘W、⌘Q 有空窗期。这样 M32 改快捷键时菜单随之更新。各项的启用状态（没有标签时分屏、面板不可用等）由当前窗口的状态得出，菜单作用于最近有焦点的窗口。
+- 选中菜单项后焦点回到原来的窗格。
+
+### M29 检查更新
+
+只检查并提示，不自动下载安装（updater 需要签名密钥与更新清单，还要分别处理每种安装包）。
+
+- **请求**：`GET https://api.github.com/repos/Bokjan/ZShell/releases/latest`（只返回已发布的正式版），取 `tag_name` 按 semver 与当前版本比较。User-Agent 只写 `ZShell`，不带版本与平台。HTTP 客户端倾向 `reqwest` + 系统原生 TLS（Security.framework / SChannel），加依赖前检查许可证。
+- **时机**：默认开启，设置里可关。启动时一次，之后每 24 小时一次，记下上次检查的时间。自动检查失败时不提示；手动的"检查更新…"（帮助菜单、设置 › 关于）失败时提示。
+- **提示**：不弹对话框。菜单按钮的箭头换成圆点，帮助菜单与其中的"获取 ZShell X…"项带圆点，打开 Release 页面；设置 › 关于里显示新版本与更新说明的链接；用 `announce()` 播报。每个版本只提示一次，可以跳过这个版本。macOS 没有菜单按钮，圆点显示在侧栏的设置按钮上。
+- **Store 版**：有包身份时整个功能隐藏，更新由 Microsoft Store 负责。
+- **隐私**：改 `PRIVACY.md`：开头不再说没有检查更新；Network connections 写明连接 `api.github.com` 及请求带了什么；本机保存的上次检查时间与跳过的版本；Third parties 加上 GitHub；Store 版不检查。
+
+### M30 翻译
 
 语言设置界面，首批简体中文；做法见 [I18N.md](I18N.md)「新增一种语言」。
 
-### M29 Microsoft Store
+### M31 Microsoft Store
 
 已完成：release workflow 打出 x64 与 ARM64 的 `.msixbundle`（见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」）、S 模式下隐藏本地终端、随包附上第三方许可证声明。还剩：
 
@@ -72,16 +95,16 @@
 - 提交：先在 Partner Center 手动上传每个版本的 `.msixbundle`；流程稳定后再考虑用 Store 提交 API（`msstore` CLI，需要把 Entra ID 应用的凭据配成 secret）自动提交。
 - 商店页面：描述、截图、年龄分级在 Partner Center 填写；提交时说明使用 `runFullTrust` 的理由（完整的桌面应用，需要启动本地 shell、访问 SSH agent 等）。隐私政策写明应用不收集数据、配置只保存在本机，放在仓库里，用 GitHub 链接。
 
-### M30 自定义快捷键
+### M32 自定义快捷键
 
 快捷键已集中在 `lib/keymap.ts` 的一张表里（见 [ARCHITECTURE.md](ARCHITECTURE.md)「快捷键、菜单与侧栏」），自定义只是在表上叠加用户的覆盖项：
 
 - `settings.json` 只保存改动过的动作（`"shortcuts": { "find": ["Ctrl+Shift+F"] }`），旧配置照常读取，"恢复默认"即删除覆盖项。
 - 设置里 Keyboard Shortcuts 一节的每行可以录制新按键：显示与其他动作的冲突；在 macOS 以外的平台上占用 shell 需要的键（不带 Shift 的 Ctrl+字母）时提示终端将收不到它。
 - 成组的动作（⌘1–⌘8、方向键切换窗格）只允许改修饰键。
-- macOS 原生菜单项（关闭标签 / 窗口、设置）的按键在 `lib.rs` 里，改它们需要后端按新按键重建菜单。
+- 菜单的文字与按键由 M28 的统一定义得出，改快捷键后 Windows 的菜单与 macOS 的原生菜单都要随之重建。
 
-### M31 Linux
+### M33 Linux
 
 第一阶段的目标是 Debian 与 Fedora 的默认桌面，即 GNOME + Wayland；其他桌面与发行版按需再做。
 
