@@ -92,7 +92,7 @@ pub struct Remote {
     #[ts(optional)]
     pub proxy: Option<String>,
     /// Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
-    /// drop an SSH connection; Telnet uses TCP keepalives.
+    /// drop an SSH connection; Telnet uses TCP keepalives, as does SSH until authenticated.
     #[serde(default = "default_keepalive_interval")]
     pub keepalive_interval: u32,
     /// The terminal type the remote side is told (`TERM`, Telnet's terminal type option).
@@ -148,6 +148,11 @@ impl Remote {
             keepalive_interval: default_keepalive_interval(),
             term_type: default_term_type(),
         }
+    }
+
+    /// The keepalive interval, if keepalives are on.
+    pub fn keepalive(&self) -> Option<std::time::Duration> {
+        (self.keepalive_interval > 0).then(|| std::time::Duration::from_secs(self.keepalive_interval.into()))
     }
 }
 

@@ -24,7 +24,7 @@ use crate::net::Route;
 use crate::proxy::Proxy;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
 pub use connections::{Connection, Connections, SshHandle};
-use handler::ClientHandler;
+use handler::{ClientHandler, EndReason};
 
 /// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
 /// terminal. `carry`: forwarding rules to start besides the automatic ones (those running
@@ -95,8 +95,10 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         let (next_host, next_port) = jumps.get(index + 1).map_or((host, port), |next| (next.ssh.remote.host.as_str(), next.ssh.remote.port));
         let proxy = route.proxy.as_ref().filter(|_| index == 0);
         // The agent is only forwarded to the target, where the shell runs.
-        let mut session = connect(hop, HopOptions::jump_host(), transport.take(), proxy, io).await?;
-        auth::authenticate(&mut session, hop, io).await?;
+        let options = HopOptions::jump_host();
+        let ended = options.disconnect.subscribe();
+        let mut session = connect(hop, options, transport.take(), proxy, io).await?;
+        auth::authenticate(&mut session, hop, io, ended).await?;
         let target = host_port(next_host, next_port);
         let channel = session
             .channel_open_direct_tcpip(next_host.to_owned(), next_port.into(), "127.0.0.1", 0)
@@ -118,7 +120,7 @@ async fn start(
     io: &mut TermIo,
     connections: &Connections,
     carry: &[String],
-) -> Result<(Channel<Msg>, watch::Receiver<Option<String>>)> {
+) -> Result<(Channel<Msg>, watch::Receiver<Option<EndReason>>)> {
     let remote = &profile.ssh.remote;
     let (transport, chain) = match tunnel(route, &remote.host, remote.port, io).await? {
         Some(Tunnel { stream, via, jumps }) => (Some((stream, via)), jumps),
@@ -131,7 +133,7 @@ async fn start(
     let mut session = connect(profile, options, transport, proxy, io).await?;
     // No time limit, unlike connecting: the user may be answering prompts, and the server
     // has its own (`LoginGraceTime`).
-    auth::authenticate(&mut session, profile, io).await?;
+    auth::authenticate(&mut session, profile, io, disconnect.clone()).await?;
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io);
     connections.auto_start(&connection, carry);
@@ -176,7 +178,7 @@ async fn open_shell(session: &SshHandle, profile: &SshProfile, io: &mut TermIo) 
 /// branch would keep the reader and the flow control from being polled for good. One message
 /// is in flight at a time ([`Sending`]); while it is, one keystroke or paste waits, and window
 /// changes are merged into the latest size (dragging the window edge sends many).
-async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::Receiver<Option<String>>) -> Outcome {
+async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::Receiver<Option<EndReason>>) -> Outcome {
     let (mut reader, writer) = channel.split();
     let writer = Arc::new(writer);
     let mut close = CloseOnDrop(Some(writer.clone()));
@@ -244,7 +246,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
     let error = Error::new("net.connectionLost");
     let reason = disconnect.borrow().clone();
     Outcome::Lost(match reason {
-        Some(reason) => error.detail(reason),
+        Some(reason) => error.detail(reason.detail),
         None => error,
     })
 }
@@ -283,8 +285,8 @@ struct HopOptions {
     forward_agent: bool,
     /// Where the channels of remote forwarding rules go.
     routes: RemoteRoutes,
-    /// Receives a description of why the connection ended.
-    disconnect: watch::Sender<Option<String>>,
+    /// Receives why the connection ended.
+    disconnect: watch::Sender<Option<EndReason>>,
 }
 
 impl HopOptions {
@@ -310,8 +312,9 @@ async fn connect(
             None => t!("terminal.connecting", user = user, host = host, port = port),
         };
         io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
-        // SSH keepalives notice a dead connection; TCP ones aren't needed.
-        let stream = crate::net::connect(host, port, user, proxy, None, io).await?;
+        // SSH keepalives notice a dead connection once authenticated (russh sends none
+        // before); TCP ones cover the time until then, as OpenSSH's `TCPKeepAlive` does.
+        let stream = crate::net::connect(host, port, user, proxy, remote.keepalive(), io).await?;
         return handshake(hop, options, stream, io).await;
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);
@@ -334,7 +337,7 @@ where
     let preferred = russh::Preferred::default();
     let key = known_hosts::prefer_known(&preferred.key, &remote.host, remote.port).into();
     let config = Arc::new(client::Config {
-        keepalive_interval: (remote.keepalive_interval > 0).then(|| Duration::from_secs(remote.keepalive_interval.into())),
+        keepalive_interval: remote.keepalive(),
         keepalive_max: 3,
         preferred: russh::Preferred { key, ..preferred },
         ..Default::default()

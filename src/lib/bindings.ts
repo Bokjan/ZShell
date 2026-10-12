@@ -17,6 +17,7 @@ export type ErrorCode =
   | "auth.agentEmpty"
   | "auth.agentListFailed"
   | "auth.cancelled"
+  | "auth.disconnected"
   | "auth.failed"
   | "auth.keyDecryptFailed"
   | "auth.keyReadFailed"
@@ -560,7 +561,7 @@ jumpHosts: Array<string>,
 proxy?: string, 
 /**
  * Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
- * drop an SSH connection; Telnet uses TCP keepalives.
+ * drop an SSH connection; Telnet uses TCP keepalives, as does SSH until authenticated.
  */
 keepaliveInterval: number, 
 /**
@@ -738,7 +739,7 @@ jumpHosts: Array<string>,
 proxy?: string, 
 /**
  * Seconds between keepalive messages; 0 disables them. Three unanswered ones in a row
- * drop an SSH connection; Telnet uses TCP keepalives.
+ * drop an SSH connection; Telnet uses TCP keepalives, as does SSH until authenticated.
  */
 keepaliveInterval: number, 
 /**

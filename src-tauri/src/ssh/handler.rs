@@ -18,8 +18,29 @@ pub struct ClientHandler {
     forward_agent: bool,
     queries: mpsc::Sender<HostKeyQuery>,
     routes: RemoteRoutes,
-    /// Receives a description of why the connection ended (untranslated technical detail).
-    disconnect: watch::Sender<Option<String>>,
+    /// Receives why the connection ended.
+    disconnect: watch::Sender<Option<EndReason>>,
+}
+
+/// Why a connection ended.
+#[derive(Clone, Debug)]
+pub struct EndReason {
+    /// Untranslated technical detail: the server's message, or what failed.
+    pub detail: String,
+    /// The server ended it (`SSH_MSG_DISCONNECT`), rather than the connection failing.
+    pub by_server: bool,
+}
+
+impl EndReason {
+    pub fn of(reason: &DisconnectReason<russh::Error>) -> Self {
+        match reason {
+            DisconnectReason::ReceivedDisconnect(info) => {
+                let detail = if info.message.is_empty() { format!("{:?}", info.reason_code) } else { info.message.clone() };
+                Self { detail, by_server: true }
+            }
+            DisconnectReason::Error(e) => Self { detail: e.to_string(), by_server: false },
+        }
+    }
 }
 
 impl ClientHandler {
@@ -29,7 +50,7 @@ impl ClientHandler {
         forward_agent: bool,
         queries: mpsc::Sender<HostKeyQuery>,
         routes: RemoteRoutes,
-        disconnect: watch::Sender<Option<String>>,
+        disconnect: watch::Sender<Option<EndReason>>,
     ) -> Self {
         Self { host, port, forward_agent, queries, routes, disconnect }
     }
@@ -107,17 +128,11 @@ impl client::Handler for ClientHandler {
     }
 
     async fn disconnected(&mut self, reason: DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
+        self.disconnect.send_replace(Some(EndReason::of(&reason)));
         match reason {
-            DisconnectReason::ReceivedDisconnect(info) => {
-                let message = if info.message.is_empty() { format!("{:?}", info.reason_code) } else { info.message };
-                self.disconnect.send_replace(Some(message));
-                Ok(())
-            }
-            DisconnectReason::Error(e) => {
-                self.disconnect.send_replace(Some(e.to_string()));
-                // Returned so that the connection task ends with it, as russh expects.
-                Err(e)
-            }
+            DisconnectReason::ReceivedDisconnect(_) => Ok(()),
+            // Returned so that the connection task ends with it, as russh expects.
+            DisconnectReason::Error(e) => Err(e),
         }
     }
 }

@@ -129,7 +129,8 @@
       "agentEmpty": "The SSH agent has no keys",
       "agentAllRejected": "The server rejected all SSH agent keys",
       "notOffered": "The server does not accept this authentication method; it accepts {methods}",
-      "moreRequired": "The server requires further authentication ({methods}), which did not succeed"
+      "moreRequired": "The server requires further authentication ({methods}), which did not succeed",
+      "disconnected": "The server closed the connection during authentication"
     },
     "sftp": {
       "unsupported": "The server does not support SFTP",

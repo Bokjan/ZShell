@@ -15,7 +15,7 @@ use russh_sftp::client::{Config as SftpConfig, SftpSession};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::watch;
 
-use super::handler::ClientHandler;
+use super::handler::{ClientHandler, EndReason};
 use super::JumpChain;
 use crate::config::SshProfile;
 use crate::error::{Error, Result};
@@ -50,7 +50,7 @@ pub struct Connection {
     /// user chose so when closing its last tab).
     keep_forwards: AtomicBool,
     /// Why the connection ended, once it has (see `ClientHandler`).
-    disconnect: watch::Receiver<Option<String>>,
+    disconnect: watch::Receiver<Option<EndReason>>,
 }
 
 impl Connection {
@@ -62,7 +62,7 @@ impl Connection {
         &self.profile
     }
 
-    pub fn disconnect_reason(&self) -> watch::Receiver<Option<String>> {
+    pub fn disconnect_reason(&self) -> watch::Receiver<Option<EndReason>> {
         self.disconnect.clone()
     }
 
@@ -269,7 +269,7 @@ impl Connections {
         profile: SshProfile,
         jumps: JumpChain,
         routes: RemoteRoutes,
-        disconnect: watch::Receiver<Option<String>>,
+        disconnect: watch::Receiver<Option<EndReason>>,
         io: &TermIo,
     ) -> Arc<Connection> {
         // Under one lock, so that two tabs of a session connecting at once share a hub.

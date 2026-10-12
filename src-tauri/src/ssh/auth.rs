@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
 use russh::client::{AuthResult, Handle, Handler, KeyboardInteractiveAuthResponse};
@@ -18,7 +19,9 @@ use russh::keys::ssh_key::public::KeyData;
 use russh::keys::ssh_key::Signature;
 use russh::keys::{load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use russh::{MethodKind, MethodSet, Signer};
+use tokio::sync::watch;
 
+use super::handler::EndReason;
 use crate::config::{AuthMethod, SshProfile};
 use crate::error::Error;
 use crate::secrets;
@@ -69,8 +72,15 @@ impl From<AuthResult> for Outcome {
     }
 }
 
-pub async fn authenticate<H: Handler>(session: &mut Handle<H>, profile: &SshProfile, io: &mut TermIo) -> Result<()> {
-    Auth { session, profile, io, saved_password: None, tried: Vec::new() }.run().await
+/// Authenticates as `profile` says. `ended` receives why the connection ended, from its
+/// [`super::handler::ClientHandler`].
+pub async fn authenticate<H: Handler>(
+    session: &mut Handle<H>,
+    profile: &SshProfile,
+    io: &mut TermIo,
+    ended: watch::Receiver<Option<EndReason>>,
+) -> Result<()> {
+    Auth { session, profile, io, ended, saved_password: None, tried: Vec::new() }.run().await
 }
 
 /// One authentication: the connection, the session's settings, and what has been used.
@@ -78,6 +88,7 @@ struct Auth<'a, H: Handler> {
     session: &'a mut Handle<H>,
     profile: &'a SshProfile,
     io: &'a mut TermIo,
+    ended: watch::Receiver<Option<EndReason>>,
     /// The saved password, read from the keychain when first needed (`None` until then);
     /// it answers one prompt only.
     saved_password: Option<Option<String>>,
@@ -91,11 +102,36 @@ impl<H: Handler> Auth<'_, H> {
         &self.profile.ssh.remote.username
     }
 
+    /// What the server answered, unless the connection has ended. russh reports a connection
+    /// that ends while it waits for the answer as a refusal, and one that ended before as an
+    /// error; neither says anything about the credentials, and taking them as a refusal would
+    /// stop reconnecting.
+    async fn answer<T, E: Into<anyhow::Error>>(&mut self, result: std::result::Result<T, E>) -> Result<T> {
+        if self.session.is_closed() {
+            bail!(self.end().await);
+        }
+        result.map_err(Into::into)
+    }
+
+    /// Why the connection ended during authentication. The server ending it (OpenSSH's
+    /// "Too many authentication failures") is an authentication failure, which OpenSSH
+    /// reports and gives up on; anything else is a lost connection.
+    async fn end(&mut self) -> Error {
+        // The handler hears of the end just after russh stops taking requests.
+        let _ = tokio::time::timeout(Duration::from_millis(500), self.ended.wait_for(Option::is_some)).await;
+        match self.ended.borrow().clone() {
+            Some(EndReason { detail, by_server: true }) => Error::new("auth.disconnected").detail(detail),
+            Some(EndReason { detail, by_server: false }) => Error::new("net.connectionLost").detail(detail),
+            None => Error::new("net.connectionLost"),
+        }
+    }
+
     /// The method the session is set to first, then what the server still requires, in
     /// OpenSSH's order.
     async fn run(mut self) -> Result<()> {
         let user = self.user().to_owned();
-        let Some(methods) = (match self.session.authenticate_none(user).await? {
+        let result = self.session.authenticate_none(user).await;
+        let Some(methods) = (match self.answer(result).await? {
             AuthResult::Success => None,
             AuthResult::Failure { remaining_methods, .. } => Some(remaining_methods),
         }) else {
@@ -169,7 +205,7 @@ impl<H: Handler> Auth<'_, H> {
         match self.agent().await {
             Ok(Outcome::Rejected) => {}
             Ok(outcome) => return Ok(outcome),
-            Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code() != "net.connectionLost") => {}
+            Err(e) if e.downcast_ref::<Error>().is_some_and(|e| e.code().starts_with("auth.agent")) => {}
             Err(e) => return Err(e),
         }
         let ssh_dir = std::env::home_dir().unwrap_or_default().join(".ssh");
@@ -217,7 +253,8 @@ impl<H: Handler> Auth<'_, H> {
     async fn password(&mut self) -> Result<Outcome> {
         let user = self.user().to_owned();
         if let Some(password) = self.take_saved_password().await {
-            match self.session.authenticate_password(&user, password).await?.into() {
+            let result = self.session.authenticate_password(&user, password).await;
+            match self.answer(result).await?.into() {
                 Outcome::Rejected => self.io.print(&format!("{}\n", t!("terminal.savedPasswordRejected"))),
                 outcome => return Ok(outcome),
             }
@@ -225,7 +262,8 @@ impl<H: Handler> Auth<'_, H> {
         for _ in 0..MAX_ATTEMPTS {
             self.io.print(&password_prompt(&user, &self.profile.ssh.remote.host));
             let password = self.io.read_line(false).await.context(Error::new("auth.cancelled"))?;
-            match self.session.authenticate_password(&user, password).await?.into() {
+            let result = self.session.authenticate_password(&user, password).await;
+            match self.answer(result).await?.into() {
                 Outcome::Rejected => self.io.print(PERMISSION_DENIED),
                 outcome => return Ok(outcome),
             }
@@ -236,7 +274,8 @@ impl<H: Handler> Auth<'_, H> {
     async fn keyboard_interactive(&mut self) -> Result<Outcome> {
         let user = self.user().to_owned();
         for _ in 0..MAX_ATTEMPTS {
-            let mut response = self.session.authenticate_keyboard_interactive_start(&user, None).await?;
+            let result = self.session.authenticate_keyboard_interactive_start(&user, None).await;
+            let mut response = self.answer(result).await?;
             loop {
                 match response {
                     KeyboardInteractiveAuthResponse::Success => return Ok(Outcome::Success),
@@ -264,7 +303,8 @@ impl<H: Handler> Auth<'_, H> {
                             self.io.print(&prompt.prompt);
                             answers.push(self.io.read_line(prompt.echo).await.context(Error::new("auth.cancelled"))?);
                         }
-                        response = self.session.authenticate_keyboard_interactive_respond(answers).await?;
+                        let result = self.session.authenticate_keyboard_interactive_respond(answers).await;
+                        response = self.answer(result).await?;
                     }
                 }
             }
@@ -283,13 +323,22 @@ impl<H: Handler> Auth<'_, H> {
         true
     }
 
+    async fn rsa_hash(&mut self, key: &PublicKey) -> Result<Option<HashAlg>> {
+        if !key.algorithm().is_rsa() {
+            return Ok(None);
+        }
+        let result = self.session.best_supported_rsa_hash().await;
+        Ok(self.answer(result).await?.flatten())
+    }
+
     async fn sign_in_with(&mut self, key: PrivateKey) -> Result<Outcome> {
         if !self.first_try(key.public_key()) {
             return Ok(Outcome::Rejected);
         }
-        let hash_alg = rsa_hash(self.session, key.public_key()).await?;
+        let hash_alg = self.rsa_hash(key.public_key()).await?;
         let user = self.user().to_owned();
-        Ok(self.session.authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg)).await?.into())
+        let result = self.session.authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg)).await;
+        Ok(self.answer(result).await?.into())
     }
 
     /// Tries one key file: unreadable files and rejected keys are `Rejected`. An encrypted
@@ -319,13 +368,15 @@ impl<H: Handler> Auth<'_, H> {
         if !self.first_try(&public) {
             return Ok(Outcome::Rejected);
         }
-        let hash_alg = rsa_hash(self.session, &public).await?;
+        let hash_alg = self.rsa_hash(&public).await?;
         let user = self.user().to_owned();
         let mut signer = PassphraseSigner { path, key: &encrypted, io: self.io, cancelled: false, decrypt_failed: false };
-        let result = self.session.authenticate_publickey_with(user, public, hash_alg, &mut signer).await.map_err(SignError::lost)?;
+        let result = self.session.authenticate_publickey_with(user, public, hash_alg, &mut signer).await.map_err(SignError::lost);
+        // What happened to the passphrase first: a server may hang up on the invalid
+        // signature sent without it.
         ensure!(!signer.cancelled, Error::new("auth.cancelled"));
         ensure!(!(chosen && signer.decrypt_failed), decrypt_failed());
-        Ok(result.into())
+        Ok(self.answer(result).await?.into())
     }
 
     /// The agent's keys, in its order, skipping those offered before.
@@ -334,7 +385,8 @@ impl<H: Handler> Auth<'_, H> {
         let identities = agent.request_identities().await.context(Error::new("auth.agentListFailed"))?;
         ensure!(!identities.is_empty(), Error::new("auth.agentEmpty"));
 
-        let rsa_hash = self.session.best_supported_rsa_hash().await?.flatten();
+        let result = self.session.best_supported_rsa_hash().await;
+        let rsa_hash = self.answer(result).await?.flatten();
         let user = self.user().to_owned();
         for identity in identities {
             // Certificates need a separate auth flow; skip them for now.
@@ -345,12 +397,8 @@ impl<H: Handler> Auth<'_, H> {
                 continue;
             }
             let hash_alg = if key.algorithm().is_rsa() { rsa_hash } else { None };
-            let result = self
-                .session
-                .authenticate_publickey_with(&user, key, hash_alg, &mut AgentSigner(&mut agent))
-                .await
-                .map_err(SignError::lost)?;
-            match result.into() {
+            let result = self.session.authenticate_publickey_with(&user, key, hash_alg, &mut AgentSigner(&mut agent)).await.map_err(SignError::lost);
+            match self.answer(result).await?.into() {
                 Outcome::Rejected => {}
                 outcome => return Ok(outcome),
             }
@@ -385,10 +433,6 @@ async fn load_key(path: &Path, io: &mut TermIo) -> Result<PrivateKey> {
         }
     }
     bail!(Error::new("auth.keyDecryptFailed").param("path", path.display()))
-}
-
-async fn rsa_hash<H: Handler>(session: &Handle<H>, key: &PublicKey) -> Result<Option<HashAlg>> {
-    Ok(if key.algorithm().is_rsa() { session.best_supported_rsa_hash().await?.flatten() } else { None })
 }
 
 /// Signs with an encrypted key, asking for its passphrase when russh needs the signature,
@@ -534,16 +578,24 @@ mod tests {
     use super::*;
     use crate::config::Remote;
     use crate::session::SessionInput;
+    use crate::ssh::abortable::{abortable, AbortOnDrop};
     // Serves as the host key and the user's key.
     use crate::ssh::TEST_KEY as KEY;
 
     /// A server that requires `steps` in turn, as sshd's `AuthenticationMethods publickey,password`
-    /// does. Keyboard-interactive asks `prompt` (hidden); it and password take `secret`.
+    /// does. Keyboard-interactive asks `prompt` (hidden); it and password take `secret`. With
+    /// `max_attempts`, it disconnects after that many refusals, as sshd does after
+    /// `MaxAuthTries`; with `hangs_up`, the connection drops when a password arrives.
+    #[derive(Default)]
     struct Server {
         steps: Vec<MethodKind>,
         passed: usize,
         prompt: &'static str,
         secret: &'static str,
+        max_attempts: Option<usize>,
+        hangs_up: bool,
+        /// Ends the server's side of the connection, when `hangs_up`.
+        hang_up: Option<AbortOnDrop>,
     }
 
     impl Server {
@@ -572,6 +624,7 @@ mod tests {
         }
 
         async fn auth_password(&mut self, _user: &str, password: &str) -> Result<ServerAuth, Self::Error> {
+            drop(self.hang_up.take());
             Ok(if password == self.secret { self.pass(MethodKind::Password) } else { ServerAuth::reject() })
         }
 
@@ -591,13 +644,22 @@ mod tests {
         }
     }
 
-    struct Client;
+    /// Trusts any host key and reports why the connection ended, as `ClientHandler` does.
+    struct Client(watch::Sender<Option<EndReason>>);
 
     impl russh::client::Handler for Client {
         type Error = russh::Error;
 
         async fn check_server_key(&mut self, _key: &PublicKeyOrCertificate) -> Result<bool, Self::Error> {
             Ok(true)
+        }
+
+        async fn disconnected(&mut self, reason: russh::client::DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
+            self.0.send_replace(Some(EndReason::of(&reason)));
+            match reason {
+                russh::client::DisconnectReason::ReceivedDisconnect(_) => Ok(()),
+                russh::client::DisconnectReason::Error(e) => Err(e),
+            }
         }
     }
 
@@ -617,21 +679,30 @@ mod tests {
         saved: Option<&str>,
         typed: &str,
     ) -> (Result<()>, String) {
+        let mut server = server;
         let key = PrivateKey::from_openssh(KEY).unwrap();
+        let defaults = server::Config::default();
         let config = server::Config {
             methods: MethodSet::from(offered),
             keys: vec![key],
             auth_rejection_time: Duration::ZERO,
             auth_rejection_time_initial: Some(Duration::ZERO),
-            ..Default::default()
+            max_auth_attempts: server.max_attempts.unwrap_or(defaults.max_auth_attempts),
+            ..defaults
         };
         let (client_side, server_side) = tokio::io::duplex(1 << 16);
+        let (server_side, hang_up) = abortable(server_side);
+        match server.hangs_up {
+            true => server.hang_up = Some(hang_up),
+            false => hang_up.disarm(),
+        }
         tokio::spawn(async move {
             if let Ok(session) = server::run_stream(Arc::new(config), server_side, server).await {
                 let _ = session.await;
             }
         });
-        let mut session = russh::client::connect_stream(Arc::new(russh::client::Config::default()), client_side, Client).await.unwrap();
+        let (ended_tx, ended) = watch::channel(None);
+        let mut session = russh::client::connect_stream(Arc::new(russh::client::Config::default()), client_side, Client(ended_tx)).await.unwrap();
 
         let key_path = std::env::temp_dir().join(format!("zshell-auth-key-{}-{}", std::process::id(), NEXT_FILE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
         std::fs::write(&key_path, key_file).unwrap();
@@ -645,7 +716,7 @@ mod tests {
         for line in typed.split_inclusive('\r') {
             input.send(SessionInput::Data(line.as_bytes().to_vec())).unwrap();
         }
-        let auth = Auth { session: &mut session, profile: &profile, io: &mut io, saved_password: Some(saved.map(Into::into)), tried: Vec::new() };
+        let auth = Auth { session: &mut session, profile: &profile, io: &mut io, ended, saved_password: Some(saved.map(Into::into)), tried: Vec::new() };
         // A prompt nothing answers would wait for ever.
         let result = tokio::time::timeout(Duration::from_secs(10), auth.run()).await.expect("authentication waits for input");
         let shown = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
@@ -674,13 +745,13 @@ wF5Blj6bR6iFUzJQ==
     /// accepts it, and wrong ones are an error rather than a rejected key.
     #[tokio::test]
     async fn chosen_encrypted_key_asks_once_accepted() {
-        let refusing = || Server { steps: vec![MethodKind::Password], passed: 0, prompt: "", secret: "" };
+        let refusing = || Server { steps: vec![MethodKind::Password], passed: 0, prompt: "", secret: "", ..Default::default() };
         let offered = [MethodKind::PublicKey, MethodKind::Password];
         let (result, shown) = sign_in_with_key(refusing(), &offered, key_file(), ENCRYPTED_KEY, None, "").await;
         assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyRejected");
         assert!(!shown.contains("passphrase"), "{shown:?}");
 
-        let accepting = || Server { steps: vec![MethodKind::PublicKey], passed: 0, prompt: "", secret: "" };
+        let accepting = || Server { steps: vec![MethodKind::PublicKey], passed: 0, prompt: "", secret: "", ..Default::default() };
         let (result, shown) = sign_in_with_key(accepting(), &offered, key_file(), ENCRYPTED_KEY, None, "testpass\r").await;
         result.unwrap();
         assert!(shown.contains("passphrase"), "{shown:?}");
@@ -696,7 +767,7 @@ wF5Blj6bR6iFUzJQ==
     /// Google Authenticator): the saved password must not be spent on the code prompt.
     #[tokio::test]
     async fn key_then_verification_code() {
-        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::KeyboardInteractive], passed: 0, prompt: "Verification code: ", secret: "123456" };
+        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::KeyboardInteractive], passed: 0, prompt: "Verification code: ", secret: "123456", ..Default::default() };
         let (result, shown) = sign_in(server, &[MethodKind::PublicKey], key_file(), Some("hunter2"), "123456\r").await;
         result.unwrap();
         assert!(shown.contains("Verification code: ") && !shown.contains("Permission denied"), "{shown:?}");
@@ -705,7 +776,7 @@ wF5Blj6bR6iFUzJQ==
     /// `AuthenticationMethods publickey,password`: the saved password answers the second step.
     #[tokio::test]
     async fn key_then_saved_password() {
-        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::Password], passed: 0, prompt: "", secret: "hunter2" };
+        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::Password], passed: 0, prompt: "", secret: "hunter2", ..Default::default() };
         let (result, shown) = sign_in(server, &[MethodKind::PublicKey], key_file(), Some("hunter2"), "").await;
         result.unwrap();
         assert!(!shown.contains("password"), "{shown:?}");
@@ -715,7 +786,7 @@ wF5Blj6bR6iFUzJQ==
     /// answers PAM's password prompt.
     #[tokio::test]
     async fn keyboard_interactive_before_password() {
-        let server = Server { steps: vec![MethodKind::KeyboardInteractive], passed: 0, prompt: "Password: ", secret: "hunter2" };
+        let server = Server { steps: vec![MethodKind::KeyboardInteractive], passed: 0, prompt: "Password: ", secret: "hunter2", ..Default::default() };
         let offered = [MethodKind::Password, MethodKind::KeyboardInteractive];
         let (result, shown) = sign_in(server, &offered, AuthMethod::Password, Some("hunter2"), "").await;
         result.unwrap();
@@ -725,15 +796,38 @@ wF5Blj6bR6iFUzJQ==
     /// A second step we cannot do names what the server requires.
     #[tokio::test]
     async fn reports_methods_it_cannot_use() {
-        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::HostBased], passed: 0, prompt: "", secret: "" };
+        let server = Server { steps: vec![MethodKind::PublicKey, MethodKind::HostBased], passed: 0, prompt: "", secret: "", ..Default::default() };
         let (result, _) = sign_in(server, &[MethodKind::PublicKey], key_file(), None, "").await;
         let error = Error::from(result.unwrap_err());
         assert_eq!(error.code(), "auth.moreRequired");
         assert!(error.to_string().contains("hostbased"), "{error}");
 
-        let server = Server { steps: vec![MethodKind::PublicKey], passed: 0, prompt: "", secret: "" };
+        let server = Server { steps: vec![MethodKind::PublicKey], passed: 0, prompt: "", secret: "", ..Default::default() };
         let (result, _) = sign_in(server, &[MethodKind::PublicKey], AuthMethod::Password, Some("hunter2"), "").await;
         assert_eq!(Error::from(result.unwrap_err()).code(), "auth.notOffered");
+    }
+
+    /// The connection dropping while the server considers a password is a lost connection,
+    /// which reconnecting may get past, not a wrong password; and the terminal doesn't ask
+    /// again on a connection that is gone.
+    #[tokio::test]
+    async fn connection_lost_during_authentication() {
+        let server = Server { steps: vec![MethodKind::Password], secret: "hunter2", hangs_up: true, ..Default::default() };
+        let (result, shown) = sign_in(server, &[MethodKind::Password], AuthMethod::Password, Some("hunter2"), "").await;
+        assert_eq!(Error::from(result.unwrap_err()).code(), "net.connectionLost");
+        assert!(!shown.contains("password"), "{shown:?}");
+    }
+
+    /// The server ending the connection (sshd after `MaxAuthTries`) is an authentication
+    /// failure, with the server's reason, as OpenSSH reports it.
+    #[tokio::test]
+    async fn server_disconnects_during_authentication() {
+        // The probe with no method counts as the first refusal.
+        let server = Server { steps: vec![MethodKind::Password], secret: "hunter2", max_attempts: Some(1), ..Default::default() };
+        let (result, _) = sign_in(server, &[MethodKind::Password], AuthMethod::Password, Some("wrong"), "").await;
+        let error = Error::from(result.unwrap_err());
+        assert_eq!(error.code(), "auth.disconnected");
+        assert!(error.to_string().contains("Too many authentication attempts"), "{error}");
     }
 
     #[test]
