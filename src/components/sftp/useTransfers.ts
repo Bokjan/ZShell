@@ -96,16 +96,19 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
         await sftp.upload(currentSession(), id, localPaths, remoteDir, (progress) => update(id, { progress }));
         if (cwdRef.current === remoteDir) void load(remoteDir);
       });
+    // Null when the folder can't be listed: whether anything would be replaced is unknown.
     const names =
       remoteDir === cwdRef.current
         ? entries.map((e) => e.name)
-        : await sftp.list(sessionId, remoteDir).then((listing) => listing.entries.map((e) => e.name), () => []);
+        : await sftp.list(sessionId, remoteDir).then((listing) => listing.entries.map((e) => e.name), () => null);
     const existing = new Set(names);
     const conflicts = localPaths.map(basename).filter((name) => existing.has(name));
-    if (conflicts.length === 0) return void start();
+    if (names && conflicts.length === 0) return void start();
     ask({
       title: t("sftp.replaceTitle"),
-      message: t("sftp.replaceMessage", { names: conflicts.join("\n") }),
+      message: names
+        ? t("sftp.replaceMessage", { names: conflicts.join("\n") })
+        : t("sftp.replaceUnknownMessage", { path: remoteDir }),
       confirmLabel: t("sftp.replace"),
       danger: true,
       action: start,

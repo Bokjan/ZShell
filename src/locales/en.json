@@ -444,6 +444,7 @@
     "chooseFolders": "Choose folders to upload",
     "replaceTitle": "Replace Files",
     "replaceMessage": "These items already exist and will be replaced:\n{names}",
+    "replaceUnknownMessage": "The contents of {path} could not be listed. Items there with the same names will be replaced.",
     "replace": "Replace",
     "deleteTitle": "Delete",
     "deleteFolderMessage": "Delete the folder \"{name}\" and everything in it? This cannot be undone.",
