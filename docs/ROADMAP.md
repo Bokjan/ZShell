@@ -89,7 +89,7 @@
 - 本地终端用 `$SHELL` 登录 shell；SSH agent 用 `SSH_AUTH_SOCK`，与 macOS 相同。
 - 打包 deb 与 rpm（图标用 `bundle.icon` 里的 PNG），CI 的 matrix 加上 `ubuntu-latest`。不打 AppImage：应用锁的 polkit 策略文件要由包管理器装进系统目录。
 - 应用锁（M26 的接口已按三个平台设计，见 [ARCHITECTURE.md](ARCHITECTURE.md)「应用锁」）：认证用 polkit，自定义一个 `auth_self` 的 action，弹出 GNOME Shell 自带的认证框（登录密码，启用了 fprintd 时也可用指纹），策略文件随 deb / rpm 装进 `/usr/share/polkit-1/actions/`；PAM（在锁定界面输入登录密码，经 `unix_chkpwd` 校验，各发行版的 service 名不同）作为以后没有 polkit 代理时的后备。闲置用 Mutter 的 `org.gnome.Mutter.IdleMonitor`（Wayland 没有通用接口；X11 有 XScreenSaver 扩展，KDE 有 `org.freedesktop.ScreenSaver.GetSessionIdleTime`）。锁屏与睡眠用 logind 的 `PrepareForSleep` 与会话的 `Lock` / `LockedHint`。这些都经 D-Bus，需要 zbus（MIT），它目前不在依赖树里。
-- 只允许一个实例，与 Windows 相同：再次启动时把已有的窗口提到前台，第二个进程立即退出。保险库每次写入是整个文件，两个实例会互相覆盖对方的修改（明文的配置文件同样如此）。single-instance 插件支持 Linux（经 D-Bus），把 `Cargo.toml` 里它的 target 与 `lib.rs` 注册处的 `cfg(windows)` 改为 Windows 与 Linux。
+- 只允许一个实例：配置目录的锁（`instance.rs`，与 macOS 相同）已经让同一份配置的第二个实例退出，但还不能把已有的窗口提到前台（`instance::bring_forward` 在 Linux 上什么都不做）。可以经 D-Bus 请已有实例显示窗口（single-instance 插件的 Linux 实现即如此，但它和 macOS 上一样不按 HOME 区分），或在锁文件旁放一个 Unix socket。
 - 密码与保险库：Secret Service 已经在 keyring 的依赖里，保险库按三个平台设计（见 [ARCHITECTURE.md](ARCHITECTURE.md)「加密保险库」）。没有 Secret Service 时"系统凭据存储"与"记住"不可选、主密码与不加密照常可用；可用性探测与界面文案已按 `secretService` 处理，需要在真机上验证（GNOME Keyring、KWallet、无桌面环境）。Flatpak 沙箱里要经 portal 访问，不在计划内。
 - 许可证：`about.toml` 的 `targets` 加上 Linux；Linux 独有的依赖（GTK / WebKitGTK 绑定、zbus 等）目前都是 MIT / Apache-2.0 / Zlib / ISC，`target-lexicon`（Apache-2.0 WITH LLVM-exception）只是构建依赖。
 

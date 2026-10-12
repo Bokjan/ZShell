@@ -11,6 +11,8 @@ mod encoding;
 mod error;
 mod forward;
 mod import;
+#[cfg(unix)]
+mod instance;
 mod local_name;
 mod logging;
 mod net;
@@ -163,10 +165,9 @@ pub fn run() {
     disable_press_and_hold();
     let builder = tauri::Builder::default();
     // Opening the app again on Windows starts another process, and two would overwrite each
-    // other's saved sessions and settings: bring the running one forward instead, as macOS
-    // does by itself. Registered first, so that the second process ends before anything else.
-    // Not on macOS: there its lock is a socket in /tmp that doesn't depend on HOME, which would
-    // keep a test instance with another HOME from starting (see DEVELOPMENT.md).
+    // other's saved sessions and settings: bring the running one forward instead. Registered
+    // first, so that the second process ends before anything else. Elsewhere the lock is the
+    // configuration folder's (`instance.rs`).
     #[cfg(windows)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::show_main(app)));
     // Tauri only gives macOS a default menu; other platforms keep having none.
@@ -178,6 +179,21 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
+            // Before anything is read or written: another instance may have the folder.
+            #[cfg(unix)]
+            if persist::secure_dir(&config_dir).is_ok() {
+                match instance::claim(&config_dir) {
+                    Ok(instance::Claim::Ours(lock)) => {
+                        app.manage(lock);
+                    }
+                    Ok(instance::Claim::Taken(pid)) => {
+                        // Nothing of this instance starts: it ends once it has handed over.
+                        instance::hand_over(pid);
+                        return Ok(());
+                    }
+                    Err(_) => {}
+                }
+            }
             let set_aside = SetAside::default();
             // Only reads the header of an encrypted vault: unlocking it may wait for the
             // credential store, and the frontend shows the unlock screen meanwhile.

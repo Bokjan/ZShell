@@ -114,6 +114,8 @@ objc2-foundation = { version = "0.3", features = [
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "block2",
+    "libc",
+    "NSApplication",
     "NSDragging",
     "NSDraggingItem",
     "NSDraggingSession",
@@ -123,6 +125,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSImage",
     "NSPasteboard",
     "NSResponder",
+    "NSRunningApplication",
     "NSView",
     "NSWindow",
     "NSWorkspace",
