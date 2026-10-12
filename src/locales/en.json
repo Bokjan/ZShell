@@ -821,16 +821,16 @@
       "pane_one": "A question is waiting in the file panel of “{name}”. Closing the pane dismisses it.",
       "pane_other": "{count} questions are waiting in the file panel of “{name}”. Closing the pane dismisses them."
     },
-    "panes": "Panes of “{name}” are still connected or running a program. Closing the tab ends their sessions.",
-    "many": "Some of these tabs are still connected or running a program.",
+    "panes": "Panes of “{name}” are still connected, running a program or working with files. Closing the tab ends what they are doing.",
+    "many": "Some of these tabs are still connected, running a program or working with files.",
     "confirm": "Close",
     "windowTitle": "Close All Tabs?",
-    "window_one": "{count} tab is still connected or running a program. Closing the window ends it.",
-    "window_other": "{count} tabs are still connected or running a program. Closing the window ends them.",
+    "window_one": "{count} tab is still connected, running a program or working with files. Closing the window ends it.",
+    "window_other": "{count} tabs are still connected, running a program or working with files. Closing the window ends them.",
     "windowConfirm": "Close All",
     "quitTitle": "Quit {name}?",
-    "quit_one": "{count} tab is still connected or running a program. Quitting ends it.",
-    "quit_other": "{count} tabs are still connected or running a program. Quitting ends them.",
+    "quit_one": "{count} tab is still connected, running a program or working with files. Quitting ends it.",
+    "quit_other": "{count} tabs are still connected, running a program or working with files. Quitting ends them.",
     "quitConfirm": "Quit"
   },
   "closeForwards": {
