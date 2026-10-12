@@ -6,7 +6,9 @@
 //! The file is written in place, as before, when replacing it would change more than its
 //! contents: a symbolic link (replacing it would put a file where the link was, instead of
 //! writing where it points), a file owned by another user or group (writable by us, but the
-//! new one would be ours), or a folder we can't create files in. The copy gets the original's
+//! new one would be ours), or a folder we may not create files in. Any other failure to create
+//! the temporary file (a full disk, a quota) fails the transfer rather than write in place: the
+//! original would be cut short first, and likely left so. The copy gets the original's
 //! permissions. Hard links to the original keep its old contents.
 //!
 //! SFTP v3's rename doesn't replace an existing file, and russh-sftp can't send OpenSSH's
@@ -17,16 +19,32 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::File;
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::{FileAttributes, OpenFlags};
+use russh_sftp::protocol::{FileAttributes, OpenFlags, Status, StatusCode};
 use tokio::io::AsyncWriteExt;
 
 use super::{file_name, join};
 use crate::error::Error;
 
+/// The longest file name most file systems take, in bytes.
+const NAME_MAX: usize = 255;
+
+/// A name for a file beside `name`: `.<name>.zshell-<random>`, or `.zshell-<random>` when that
+/// would be too long a name.
 fn temporary_name(name: &str) -> String {
-    format!(".{name}.zshell-{}", &uuid::Uuid::new_v4().simple().to_string()[..8])
+    let random = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    let beside = format!(".{name}.zshell-{random}");
+    if beside.len() <= NAME_MAX {
+        beside
+    } else {
+        short_temporary_name(random)
+    }
+}
+
+fn short_temporary_name(random: &str) -> String {
+    format!(".zshell-{random}")
 }
 
 /// A remote file being written (see the module comment).
@@ -50,7 +68,7 @@ impl RemoteTarget {
         };
         let permissions = original.permissions.map(|mode| mode & 0o7777);
         if original.file_type().is_file() {
-            if let Some((file, temporary)) = create_beside(sftp, path, &original, permissions).await {
+            if let Some((file, temporary)) = create_beside(sftp, path, &original, permissions).await.map_err(created)? {
                 return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed: true, permissions });
             }
         }
@@ -122,28 +140,80 @@ fn parent(path: &str) -> &str {
 }
 
 /// A new file beside `path` that can replace it without changing its owner; `None` if there
-/// can't be one (see the module comment).
+/// can't be one: the folder doesn't let us create files, or the owner would change (see the
+/// module comment).
 async fn create_beside(
     sftp: &SftpSession,
     path: &str,
     original: &FileAttributes,
     permissions: Option<u32>,
-) -> Option<(File, String)> {
-    let temporary = join(parent(path), &temporary_name(file_name(path)));
+) -> Result<Option<(File, String)>, SftpError> {
+    let denied = |e: &SftpError| matches!(e, SftpError::Status(Status { status_code: StatusCode::PermissionDenied, .. }));
     let flags = OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE;
     let attributes = FileAttributes { permissions, ..FileAttributes::empty() };
-    let file = sftp.open_with_flags_and_attributes(&temporary, flags, attributes).await.ok()?;
-    let ours = file.metadata().await.ok();
-    let same_owner = ours.is_some_and(|ours| {
-        let same = |a: Option<u32>, b: Option<u32>| a.is_none() || b.is_none() || a == b;
-        same(original.uid, ours.uid) && same(original.gid, ours.gid)
-    });
-    if !same_owner {
+    let open = |temporary: String| async {
+        let file = sftp.open_with_flags_and_attributes(&temporary, flags, attributes.clone()).await?;
+        Ok::<_, SftpError>((file, temporary))
+    };
+    let named = temporary_name(file_name(path));
+    let (file, temporary) = match open(join(parent(path), &named)).await {
+        Ok(created) => created,
+        Err(e) if denied(&e) => return Ok(None),
+        // Servers that report every failure alike (`SSH_FX_FAILURE`), or that take shorter
+        // names than we guessed: a short name once more.
+        Err(e) => {
+            let short = short_temporary_name(&named[named.len() - 8..]);
+            if short == named {
+                return Err(e);
+            }
+            match open(join(parent(path), &short)).await {
+                Ok(created) => created,
+                Err(e) if denied(&e) => return Ok(None),
+                Err(e) => return Err(e),
+            }
+        }
+    };
+    let ours = match file.metadata().await {
+        Ok(ours) => ours,
+        Err(e) => {
+            drop(file);
+            let _ = sftp.remove_file(&temporary).await;
+            return Err(e);
+        }
+    };
+    let same = |a: Option<u32>, b: Option<u32>| a.is_none() || b.is_none() || a == b;
+    if !(same(original.uid, ours.uid) && same(original.gid, ours.gid)) {
         drop(file);
         let _ = sftp.remove_file(&temporary).await;
-        return None;
+        return Ok(None);
     }
-    Some((file, temporary))
+    Ok(Some((file, temporary)))
+}
+
+/// A new file beside local `path`; `None` if the folder doesn't let us create files.
+async fn create_new_beside(path: &Path) -> std::io::Result<Option<(tokio::fs::File, PathBuf)>> {
+    let open = |temporary: PathBuf| async {
+        let file = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).await?;
+        Ok::<_, std::io::Error>((file, temporary))
+    };
+    let named = temporary_name(&path.file_name().unwrap_or_default().to_string_lossy());
+    let result = match open(path.with_file_name(&named)).await {
+        // A file system that takes shorter names than we guessed.
+        Err(e) if e.kind() != std::io::ErrorKind::PermissionDenied => {
+            let short = short_temporary_name(&named[named.len() - 8..]);
+            if short == named {
+                Err(e)
+            } else {
+                open(path.with_file_name(short)).await
+            }
+        }
+        result => result,
+    };
+    match result {
+        Ok(created) => Ok(Some(created)),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// A local file being written (see the module comment).
@@ -161,9 +231,7 @@ impl LocalTarget {
         let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path.display()));
         let original = tokio::fs::symlink_metadata(path).await.ok();
         if let Some(original) = original.as_ref().filter(|m| m.is_file()) {
-            let temporary = path.with_file_name(temporary_name(&path.file_name().unwrap_or_default().to_string_lossy()));
-            let opened = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).await;
-            if let Ok(file) = opened {
+            if let Some((file, temporary)) = create_new_beside(path).await.map_err(created)? {
                 let permissions = Some(original.permissions());
                 return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed: true, permissions });
             }
@@ -294,6 +362,64 @@ mod tests {
         target.abandon(&sftp).await;
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A name too long to have the usual temporary name beside it still gets one; a folder we
+    /// may not create files in is written in place. Skipped without `sftp-server` (Windows).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn remote_long_names_and_read_only_folders() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(sftp) = local_sftp_server().await else { return };
+        let dir = std::env::temp_dir().join(format!("zshell-replace-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("n".repeat(250));
+        std::fs::write(&path, "old").unwrap();
+        let remote = path.to_str().unwrap();
+
+        let mut target = RemoteTarget::create(&sftp, remote).await.unwrap();
+        assert!(target.temporary.is_some());
+        target.file.write_all(b"new").await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
+        target.finish(&sftp).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let mut target = RemoteTarget::create(&sftp, remote).await.unwrap();
+        assert!(target.temporary.is_none());
+        target.file.write_all(b"in place").await.unwrap();
+        target.finish(&sftp).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "in place");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn local_long_names_and_read_only_folders() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("zshell-replace-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("n".repeat(250));
+        std::fs::write(&path, "old").unwrap();
+
+        let mut target = LocalTarget::create(&path).await.unwrap();
+        assert!(target.temporary.is_some());
+        target.file.write_all(b"new").await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
+        target.finish().await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let mut target = LocalTarget::create(&path).await.unwrap();
+        assert!(target.temporary.is_none());
+        target.file.write_all(b"in place").await.unwrap();
+        target.finish().await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "in place");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
