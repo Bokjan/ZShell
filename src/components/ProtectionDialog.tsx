@@ -48,6 +48,9 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
   // Changed, but the old files couldn't all be deleted (`vault.leftover`): the new status,
   // shown with that error until the dialog is closed.
   const [changed, setChanged] = useState<VaultStatus | null>(null);
+  // Changed to encryption, with unreadable plain files set aside earlier still in the clear:
+  // the new status and their names, until the user deletes or keeps them.
+  const [copies, setCopies] = useState<{ next: VaultStatus; names: string[] } | null>(null);
 
   useEffect(() => {
     vault.storeAvailable().then(setStoreAvailable, () => setStoreAvailable(false));
@@ -72,6 +75,11 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
     try {
       const next = await vault.setProtection(change, current === "password" ? currentPassword : null, skipUnreadable);
       announce(t("protection.changed"));
+      const names = choice === "none" ? [] : await vault.plainCopies().catch(() => []);
+      if (names.length > 0) {
+        setBusy(false);
+        return setCopies({ next, names });
+      }
       onDone(next);
     } catch (err) {
       if (errorCode(err) === "vault.leftover") {
@@ -85,13 +93,53 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
   };
 
   // Once changed, closing passes the new status on.
-  const close = () => (changed ? onDone(changed) : onClose());
+  const close = () => (changed ? onDone(changed) : copies ? onDone(copies.next) : onClose());
+
+  const deleteCopies = async () => {
+    if (!copies) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await vault.deletePlainCopies();
+      onDone(copies.next);
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (changed) close();
+    else if (copies) void deleteCopies();
     else void apply(false);
   };
+
+  if (copies) {
+    return (
+      <Modal dialog={dialog}>
+        <form className="dialog protection-dialog" onSubmit={submit}>
+          <h2>{t("protection.copiesTitle")}</h2>
+          <p className="dialog-message">{t("protection.copiesMessage")}</p>
+          <ul className="set-aside-list">
+            {copies.names.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+          {error && <ErrorText>{error}</ErrorText>}
+          <footer>
+            <span className="grow" />
+            <button type="button" onClick={close} disabled={busy}>
+              {t("protection.copiesKeep")}
+            </button>
+            <button type="submit" className="primary danger-fill" disabled={busy} autoFocus>
+              {t("common.delete")}
+            </button>
+          </footer>
+        </form>
+      </Modal>
+    );
+  }
 
   if (changed) {
     return (

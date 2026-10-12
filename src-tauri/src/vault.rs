@@ -570,6 +570,39 @@ impl Vault {
         result
     }
 
+    /// Plain data files that couldn't be read and were set aside (`<name>.bad-<time>`, see
+    /// `JsonFile::load`). They are the user's to repair or restore, so never deleted
+    /// unasked; but they may hold sessions and passwords in the clear, which encryption
+    /// doesn't cover.
+    pub fn plain_copies(&self) -> Vec<PathBuf> {
+        let Ok(entries) = fs::read_dir(&self.dir) else { return Vec::new() };
+        let mut copies: Vec<PathBuf> = entries
+            .flatten()
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                PLAIN_FILES.iter().any(|plain| name.strip_prefix(plain).is_some_and(|rest| rest.starts_with(".bad-")))
+            })
+            .map(|entry| entry.path())
+            .collect();
+        copies.sort();
+        copies
+    }
+
+    /// Deletes the [plain copies](Self::plain_copies); the first that can't be deleted fails
+    /// it.
+    pub fn delete_plain_copies(&self) -> Result<()> {
+        let mut result = Ok(());
+        for path in self.plain_copies() {
+            if let Err(e) = persist::remove_file(&path) {
+                if result.is_ok() {
+                    result = Err(Error::new("vault.deleteFailed").param("path", path.display()).detail(e));
+                }
+            }
+        }
+        result
+    }
+
     /// The data key in the credential store, if it opens `file`: `vault-key`, else a new key
     /// left in `vault-key-next` by a change that stopped after putting its vault in place,
     /// which then becomes `vault-key`. The error is `vault-key`'s.
@@ -1104,6 +1137,25 @@ mod tests {
         let vault = open(&dir, &store);
         assert_eq!(vault.try_unlock().locked.map(|l| l.reason), Some(LockReason::Password));
         assert!(vault.unlock("master").unwrap().0.locked.is_none());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finds_and_deletes_plain_copies_set_aside() {
+        let dir = dir("copies");
+        let store = Arc::new(MemoryStore::default());
+        for name in ["passwords.json.bad-20261012-101010", "profiles.json.bad-20261012-101010", "settings.json.bad-20261012-101010", "profiles.json.tmp"] {
+            fs::write(dir.join(name), "{").unwrap();
+        }
+        let vault = open(&dir, &store);
+        let names = |vault: &Vault| -> Vec<String> {
+            vault.plain_copies().iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect()
+        };
+        assert_eq!(names(&vault), ["passwords.json.bad-20261012-101010", "profiles.json.bad-20261012-101010"]);
+        vault.delete_plain_copies().unwrap();
+        assert!(names(&vault).is_empty());
+        // Settings aren't the vault's.
+        assert!(dir.join("settings.json.bad-20261012-101010").exists());
         fs::remove_dir_all(&dir).unwrap();
     }
 

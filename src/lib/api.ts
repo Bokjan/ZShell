@@ -170,6 +170,9 @@ export const vault = {
    */
   setProtection: (change: ProtectionChange, current: string | null, skipUnreadable: boolean) =>
     invoke<VaultStatus>("vault_set_protection", { change, current, skipUnreadable }),
+  /** The names of unreadable plain data files set aside earlier, which may hold sessions in the clear. */
+  plainCopies: () => invoke<string[]>("vault_plain_copies"),
+  deletePlainCopies: () => invoke<void>("vault_delete_plain_copies"),
   /** Whether the system's credential store can be used; on Linux there may be none. */
   storeAvailable: () => invoke<boolean>("credential_store_available"),
 };

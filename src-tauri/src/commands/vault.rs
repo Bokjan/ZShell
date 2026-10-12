@@ -76,6 +76,22 @@ pub async fn vault_set_protection(
     notified(&window, Change::Vault, result)
 }
 
+/// The names of the plain data files set aside next to the vault (see `Vault::plain_copies`).
+#[tauri::command]
+pub async fn vault_plain_copies(app: AppHandle) -> Result<Vec<String>> {
+    blocking(app, |app| {
+        let copies = app.state::<Arc<Vault>>().plain_copies();
+        Ok(copies.iter().filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())).collect())
+    })
+    .await
+}
+
+/// Deletes the plain data files set aside next to the vault.
+#[tauri::command]
+pub async fn vault_delete_plain_copies(app: AppHandle) -> Result<()> {
+    blocking(app, |app| app.state::<Arc<Vault>>().delete_plain_copies()).await
+}
+
 /// Whether the system's credential store can be used; on Linux there may be none.
 #[tauri::command]
 pub async fn credential_store_available(app: AppHandle) -> Result<bool> {

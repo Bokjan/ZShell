@@ -202,6 +202,8 @@ pub fn run() {
             commands::vault::vault_unlock,
             commands::vault::vault_reset,
             commands::vault::vault_set_protection,
+            commands::vault::vault_plain_copies,
+            commands::vault::vault_delete_plain_copies,
             commands::vault::credential_store_available,
             commands::applock::app_lock_status,
             commands::applock::app_lock_lock,
