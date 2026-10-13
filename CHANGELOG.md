@@ -2,6 +2,12 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.1.1] - 2026-10-13
+
+### Bug Fixes
+
+- On Windows, text fields in ZShell's dialogs, such as the session editor, no longer show a dropdown of values typed into them before.
+
 ## [3.1.0] - 2026-10-13
 
 ### Features
