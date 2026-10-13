@@ -2,7 +2,9 @@
 //! Telnet protocol ([`protocol`]).
 //!
 //! A saved user name and password are typed at the server's login prompts ([`AutoLogin`]);
-//! otherwise the server asks and the user answers, as with the `telnet` command.
+//! otherwise the server asks and the user answers, as with the `telnet` command. When the
+//! server leaves echoing to ZShell, the password typed at its prompt is not shown, and so
+//! not logged either ([`LocalEcho`]).
 
 mod protocol;
 
@@ -83,6 +85,7 @@ async fn bridge(
     io.on_close(move || writing.abort());
 
     let mut telnet = Telnet::new(term_type, io.size);
+    let mut echo = LocalEcho::default();
     let mut outgoing = telnet.start();
     io.event(SessionEvent::Connected);
     let mut buffer = vec![0; READ_BUFFER];
@@ -101,6 +104,7 @@ async fn bridge(
                     outgoing.extend(received.reply);
                     if !received.data.is_empty() {
                         login.output(&received.data);
+                        echo.output(&received.data);
                         io.output(received.data);
                     }
                 }
@@ -122,13 +126,13 @@ async fn bridge(
                 Some(SessionInput::Data(data)) => {
                     login.typed();
                     if !telnet.remote_echoes() {
-                        let echo = local_echo(&data);
-                        if !echo.is_empty() {
+                        let shown = echo.typed(&data);
+                        if !shown.is_empty() {
                             // Whole characters, decoded on their own: the output's decoder may
                             // hold the first byte of a character the server's output stopped
                             // in the middle of, which a typed `a` would complete as GBK.
                             let sink = io.sink();
-                            sink.write(crate::encoding::decode(sink.encoding(), &echo).into_bytes());
+                            sink.write(crate::encoding::decode(sink.encoding(), &shown).into_bytes());
                         }
                     }
                     outgoing.extend(telnet.encode(&data));
@@ -154,9 +158,40 @@ async fn write_all(mut writer: tokio::io::WriteHalf<Box<dyn Stream>>, mut rx: mp
     let _ = writer.shutdown().await;
 }
 
-/// What the terminal shows of typed input when the server doesn't echo (NVT's default):
-/// printable text, Enter as a new line and Backspace erasing; escape sequences (arrow keys)
-/// show nothing. In the session's encoding, like the input.
+/// Echoes typed input when the server doesn't (NVT's default), except for a line typed at a
+/// password prompt, which would otherwise be on the screen (as `telnet` and PuTTY show it)
+/// and in the session's log. Only the server's output counts as a prompt, so that typing
+/// `password:` hides nothing.
+#[derive(Default)]
+struct LocalEcho {
+    line: LastLine,
+    /// Enter was typed since the server's output last changed: the prompt has its answer.
+    entered: bool,
+}
+
+impl LocalEcho {
+    fn output(&mut self, data: &[u8]) {
+        self.line.push(data);
+        self.entered = false;
+    }
+
+    /// What the terminal shows of `data`, typed.
+    fn typed(&mut self, data: &[u8]) -> Vec<u8> {
+        if self.entered || !self.line.text().ends_with(PASSWORD_PROMPT) {
+            return local_echo(data);
+        }
+        // Hidden up to Enter, which shows as a new line.
+        let Some(at) = data.iter().position(|&b| b == b'\r') else {
+            return Vec::new();
+        };
+        self.entered = true;
+        local_echo(&data[at..])
+    }
+}
+
+/// What the terminal shows of typed input when the server doesn't echo: printable text,
+/// Enter as a new line and Backspace erasing; escape sequences (arrow keys) show nothing. In
+/// the session's encoding, like the input.
 fn local_echo(data: &[u8]) -> Vec<u8> {
     if data.first() == Some(&0x1b) {
         return Vec::new();
@@ -180,6 +215,29 @@ const PROMPT_IDLE: Duration = Duration::from_millis(300);
 const LOGIN_WINDOW: Duration = Duration::from_secs(30);
 /// The end of the output kept for recognizing prompts.
 const TAIL: usize = 128;
+/// How a password prompt ends, in lower case.
+const PASSWORD_PROMPT: &str = "password:";
+
+/// The server's output since the last line break, up to [`TAIL`] bytes: where a prompt is.
+#[derive(Default)]
+struct LastLine(Vec<u8>);
+
+impl LastLine {
+    fn push(&mut self, data: &[u8]) {
+        match data.iter().rposition(|&b| b == b'\n' || b == b'\r') {
+            Some(at) => self.0 = data[at + 1..].to_vec(),
+            None => self.0.extend(data),
+        }
+        if self.0.len() > TAIL {
+            self.0.drain(..self.0.len() - TAIL);
+        }
+    }
+
+    /// The line in lower case, without trailing white space.
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0).trim_end().to_lowercase()
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum Prompt {
@@ -192,8 +250,7 @@ enum Prompt {
 struct AutoLogin<F> {
     user: Option<String>,
     password: Option<F>,
-    /// The output since the last line break, up to [`TAIL`] bytes.
-    tail: Vec<u8>,
+    tail: LastLine,
     /// When to answer the prompt the output ends with.
     due: Option<Instant>,
     until: Instant,
@@ -204,7 +261,7 @@ impl<F: FnOnce() -> Option<String>> AutoLogin<F> {
         Self {
             user: Some(user.to_owned()).filter(|user| !user.is_empty()),
             password: Some(password),
-            tail: Vec::new(),
+            tail: LastLine::default(),
             due: None,
             until: Instant::now() + LOGIN_WINDOW,
         }
@@ -219,23 +276,17 @@ impl<F: FnOnce() -> Option<String>> AutoLogin<F> {
             self.due = None;
             return;
         }
-        match data.iter().rposition(|&b| b == b'\n' || b == b'\r') {
-            Some(at) => self.tail = data[at + 1..].to_vec(),
-            None => self.tail.extend(data),
-        }
-        if self.tail.len() > TAIL {
-            self.tail.drain(..self.tail.len() - TAIL);
-        }
+        self.tail.push(data);
         self.due = self.prompt().map(|_| Instant::now() + PROMPT_IDLE);
     }
 
     /// The prompt the output ends with, if there is something to answer it with.
     fn prompt(&self) -> Option<Prompt> {
-        let text = String::from_utf8_lossy(&self.tail).trim_end().to_lowercase();
+        let text = self.tail.text();
         if self.user.is_some() && ["login:", "username:", "user name:"].iter().any(|p| text.ends_with(p)) {
             return Some(Prompt::User);
         }
-        if self.password.is_some() && text.ends_with("password:") {
+        if self.password.is_some() && text.ends_with(PASSWORD_PROMPT) {
             return Some(Prompt::Password);
         }
         None
@@ -257,7 +308,7 @@ impl<F: FnOnce() -> Option<String>> AutoLogin<F> {
             Prompt::User => self.user.take(),
             Prompt::Password => self.password.take().and_then(|password| password()),
         }?;
-        self.tail.clear();
+        self.tail = LastLine::default();
         let mut bytes = encoding.encode(&answer).0.into_owned();
         bytes.push(b'\r');
         Some(bytes)
@@ -379,6 +430,42 @@ mod tests {
         assert!(events.last().unwrap().contains(r#""reason":"exited""#), "{events:?}");
     }
 
+    /// A server that never offers to echo: the user name typed shows, the password doesn't.
+    #[tokio::test]
+    async fn does_not_show_a_password_typed_without_remote_echo() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut received: Vec<u8> = Vec::new();
+            let mut buffer = [0; 1024];
+            for (prompt, answer) in [(&b"login: "[..], &b"bob\r"[..]), (b"Password: ", b"hunter2\r")] {
+                stream.write_all(prompt).await.unwrap();
+                while !received.windows(answer.len()).any(|w| w == answer) {
+                    let n = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buffer)).await.unwrap().unwrap();
+                    assert_ne!(n, 0);
+                    received.extend(&buffer[..n]);
+                }
+            }
+            stream.write_all(b"\r\n$ ").await.unwrap();
+        });
+
+        let remote = Remote::new("127.0.0.1".into(), port, String::new());
+        let (io, input, output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(run(remote, Route::default(), || None, io));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        input.send(SessionInput::Data(b"bob\r".to_vec())).unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        input.send(SessionInput::Data(b"hunter2\r".to_vec())).unwrap();
+        server.await.unwrap();
+        session.await.unwrap();
+        let text = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
+        assert!(text.contains("login: bob\r\nPassword: \r\n\r\n$ "), "{text:?}");
+        assert!(!text.contains("hunter2"), "{text:?}");
+    }
+
     /// Closing the tab while a write waits for a server that doesn't read closes the
     /// connection all the same.
     #[tokio::test]
@@ -396,6 +483,27 @@ mod tests {
         session.await.unwrap();
         tokio::time::sleep(Duration::from_millis(10)).await;
         assert!(server.write_all(b"y").await.is_err());
+    }
+
+    #[test]
+    fn hides_the_password_typed_at_its_prompt() {
+        let mut echo = LocalEcho::default();
+        echo.output(b"\r\nlogin: ");
+        assert_eq!(echo.typed(b"alice"), b"alice");
+        assert_eq!(echo.typed(b"\r"), b"\r\n");
+        echo.output(b"Password: ");
+        assert_eq!(echo.typed(b"se"), b"");
+        assert_eq!(echo.typed(b"\x7f"), b"");
+        // A paste, Enter and what is typed ahead of the server's answer.
+        assert_eq!(echo.typed(b"cret\rls"), b"\r\nls");
+        assert_eq!(echo.typed(b" -l"), b" -l");
+
+        // The server's output, not the user's typing, makes a prompt.
+        echo.output(b"\r\n$ ");
+        assert_eq!(echo.typed(b"echo Password: "), b"echo Password: ");
+        assert_eq!(echo.typed(b"x"), b"x");
+        echo.output(b"\r\nOld password:\r\nNew password:  ");
+        assert_eq!(echo.typed(b"x"), b"");
     }
 
     #[test]
