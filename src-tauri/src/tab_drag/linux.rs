@@ -61,6 +61,9 @@ pub fn start(app: &AppHandle, source: &str, id: String) -> bool {
         return true;
     }
     let Some(gtk_window) = app.get_webview_window(source).and_then(|window| window.gtk_window().ok()) else { return false };
+    if !button_down(&gtk_window) {
+        return false;
+    }
     let drag = Rc::new(Drag {
         id,
         source: source.to_owned(),
@@ -91,6 +94,15 @@ pub fn start(app: &AppHandle, source: &str, id: String) -> bool {
     context.drag_set_icon_name("window-new", 0, 0);
     CURRENT.with(|current| *current.borrow_mut() = Some(drag));
     true
+}
+
+/// Whether the mouse button is still down. The page asks for the drag (`tab_drag_move`) before
+/// it hears the button go up: released by then, on this thread where GTK takes the release,
+/// the page ends the drag itself, and the system's would start without the press it comes from.
+fn button_down(window: &gtk::ApplicationWindow) -> bool {
+    let Some(gdk_window) = window.window() else { return false };
+    let Some(pointer) = window.display().default_seat().and_then(|seat| seat.pointer()) else { return false };
+    gdk_window.device_position(&pointer).3.contains(gtk::gdk::ModifierType::BUTTON1_MASK)
 }
 
 /// Lets `window`'s web view take the drag. Returning true from its handlers keeps WebKit out

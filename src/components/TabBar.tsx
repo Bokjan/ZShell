@@ -251,9 +251,6 @@ export function TabBar({
     const goNative = () => {
       if (native || ended) return;
       native = true;
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      window.removeEventListener("keydown", keyDown, true);
       const unlisten = listenHere<TabDragNativeEnd>("tab-drag-native-end", ({ payload }) => {
         if (payload.id !== id) return;
         void unlisten.then((f) => f());
@@ -261,6 +258,9 @@ export function TabBar({
         if (!payload.dropped && moved) onMove(key, startIndex);
         finish(payload.dropped);
       });
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      window.removeEventListener("keydown", keyDown, true);
     };
     const finish = (dropped: boolean) => {
       if (ended) return;
