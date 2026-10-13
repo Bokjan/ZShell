@@ -4,8 +4,8 @@
 #   GitHub release with the packages attached and, as its notes, the sections of
 #   CHANGELOG.md for every version since the previous published release
 #   (scripts/release-notes.sh); publish it by hand after checking it.
-# - Run on a branch, it only builds, and attaches the packages to the run as workflow
-#   artifacts.
+# - Run on a branch, it only builds.
+# Either way, the packages are also attached to the run as workflow artifacts.
 # The Microsoft Store bundle is never attached to the release: it is unsigned, and only the
 # Store, which signs it on submission, can install it. It is always a workflow artifact,
 # uploaded to Partner Center by hand. "Microsoft Store only" skips the other packages, and
@@ -102,7 +102,7 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: --target universal-apple-darwin
-          uploadWorkflowArtifacts: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          uploadWorkflowArtifacts: true
 
   # The deb and rpm packages (tauri.linux.conf.json), x64. Built on the oldest Ubuntu runner,
   # since the executable needs at least the glibc it was built with: 2.35, older than Debian
@@ -140,7 +140,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          uploadWorkflowArtifacts: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          uploadWorkflowArtifacts: true
 
   # Every Windows package but the Store bundle, from one x64 build whose executable is also
   # the one in the Store bundle:
@@ -204,7 +204,7 @@ jobs:
           PACKAGES: ${{ runner.temp }}/packages
         run: gh release upload "$env:GITHUB_REF_NAME" (Get-ChildItem $env:PACKAGES)
       - uses: actions/upload-artifact@v7
-        if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.store_only }}
+        if: ${{ !inputs.store_only }}
         with:
           name: Windows
           path: ${{ runner.temp }}/packages/*
