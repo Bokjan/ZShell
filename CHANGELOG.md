@@ -2,6 +2,12 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.13.0] - 2026-10-13
+
+### Features
+
+- Sessions and settings are saved in a folder named after the app: `~/Library/Application Support/ZShell` on macOS, `%APPDATA%\ZShell` on Windows and `~/.config/ZShell` on Linux, instead of `org.boyin.zshell`. Nothing is moved from the old folder; to keep using it, quit ZShell and rename it.
+
 ## [2.12.2] - 2026-10-13
 
 ### Bug Fixes
