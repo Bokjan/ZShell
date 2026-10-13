@@ -114,12 +114,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return () => query.removeEventListener("change", onChange);
   }, []);
 
+  const loaded = settings !== null;
   const appearance = settings?.appearance ?? "system";
   const theme = appearance === "system" ? system : appearance;
+  // Once the stored settings load: "system" before then would turn the window to the
+  // system's appearance for a moment, where another one is chosen.
   useEffect(() => {
+    if (!loaded) return;
     applyTheme(theme);
     applyWindowTheme(appearance, theme);
-  }, [appearance, theme]);
+  }, [loaded, appearance, theme]);
 
   // Before painting, so the first frame already has the text size.
   const textSize = settings?.textSize ?? "normal";
