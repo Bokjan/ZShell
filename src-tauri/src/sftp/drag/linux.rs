@@ -188,10 +188,15 @@ fn begin(window: &WebviewWindow, shared: Arc<Shared>, icon: &'static str, finish
     let drag_ = drag.clone();
     let id = gtk_window.connect_drag_end(move |_, _| {
         drag_.disconnect();
-        let result = drag_.result();
-        // Files asked for by an application the drag then wasn't dropped on.
-        if result.outcome != Outcome::Outside && shared.fetch.load(Ordering::Acquire) == FETCH_RUNNING {
+        let mut result = drag_.result();
+        // Still downloading (the drag ended in the main loop `fetch` runs): files asked for by
+        // an application the drag then wasn't dropped on, and none has them, as each waits for
+        // them before it is done with a drop.
+        if shared.fetch.load(Ordering::Acquire) == FETCH_RUNNING {
             shared.download.cancelled.store(true, Ordering::Relaxed);
+            if result.outcome == Outcome::Outside {
+                result = DragResult::cancelled();
+            }
         }
         finish(result);
     });
