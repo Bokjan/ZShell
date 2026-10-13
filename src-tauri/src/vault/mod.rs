@@ -1,8 +1,8 @@
 //! Where the sessions, folders, proxies, quick commands, saved passwords and the app lock's
 //! settings are kept, and how they are protected. See "加密保险库" in `docs/ARCHITECTURE.md`.
 //!
-//! - Unset (as before 2.7): plain JSON files, each password in an entry of its own in the
-//!   system's credential store.
+//! - Unset (until the user chooses): plain JSON files, each password in an entry of its own in
+//!   the system's credential store.
 //! - None: plain JSON files, the passwords in `passwords.json`.
 //! - System or Password: everything in `vault.json`, encrypted with a random data key that the
 //!   credential store keeps (System), or that is encrypted with a key from the master password

@@ -1,7 +1,7 @@
 //! Exporting sessions (with their folders and proxies) to a JSON file and importing them
 //! back, for backups and for moving to another computer. Their saved passwords can come along,
-//! encrypted with a passphrase given for the file (`passwords`): files without them, and
-//! versions before 2.7, which ignore them, import the rest.
+//! encrypted with a passphrase given for the file (`passwords`); files without them import the
+//! rest.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::Path;

@@ -238,10 +238,6 @@ export function ProtectionDialog({ onboarding, status, onDone, onClose }: Props)
           </>
         )}
 
-        {!unchanged && choice !== "none" && current !== "system" && current !== "password" && (
-          <p className="hint">{t("protection.olderVersions")}</p>
-        )}
-        {!unchanged && choice === "none" && <p className="hint">{t("protection.olderVersionsNone")}</p>}
         {usesStore && storeAvailable === false && <p className="hint warning">{t("protection.systemUnavailable", { store })}</p>}
 
         {error && <ErrorText>{error}</ErrorText>}

@@ -986,8 +986,6 @@
     "passwordsDontMatch": "The master passwords don't match.",
     "remember": "Remember on this device",
     "rememberHint": "The key is also kept in {store} and ZShell unlocks by itself, so anyone who can use your account can open your sessions.",
-    "olderVersions": "ZShell versions before 2.7 cannot open encrypted sessions.",
-    "olderVersionsNone": "ZShell versions before 2.7 open these sessions without the passwords in passwords.json.",
     "later": "Later",
     "apply": "Apply",
     "applying": "Applying…",
