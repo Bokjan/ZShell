@@ -293,8 +293,21 @@ const OTHER_KEY_LABELS: Record<string, string> = {
   ArrowDown: "↓",
 };
 
+/** Keys whose names, outside macOS, are written in the interface's language ("Strg" in German). */
+export const KEY_NAMES = ["ctrl", "alt", "shift", "tab", "enter", "insert"] as const;
+export type KeyName = (typeof KEY_NAMES)[number];
+
+let keyNames: Record<KeyName, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", tab: "Tab", enter: "Enter", insert: "Insert" };
+
+/** The names of keys in the interface's language, as its keyboards and Windows write them. */
+export function setKeyNames(names: Record<KeyName, string>) {
+  keyNames = names;
+}
+
+const NAMED_CODES: Record<string, KeyName> = { Tab: "tab", Enter: "enter", Insert: "insert" };
+
 function keyLabel(code: string, mac: boolean): string {
-  const named = (mac ? MAC_KEY_LABELS : OTHER_KEY_LABELS)[code];
+  const named = mac ? MAC_KEY_LABELS[code] : (OTHER_KEY_LABELS[code] ?? (NAMED_CODES[code] && keyNames[NAMED_CODES[code]]));
   if (named) return named;
   const letterOrDigit = /^(?:Key|Digit)(.)$/.exec(code);
   if (letterOrDigit) return letterOrDigit[1];
@@ -308,7 +321,7 @@ function parts(chord: Chord, mac: boolean): { modifiers: string; key: string } {
     const modifiers = `${chord.ctrl ? "⌃" : ""}${chord.alt ? "⌥" : ""}${chord.shift ? "⇧" : ""}${chord.meta ? "⌘" : ""}`;
     return { modifiers, key };
   }
-  const modifiers = [chord.ctrl && "Ctrl", chord.alt && "Alt", chord.shift && "Shift"].filter(Boolean).join("+");
+  const modifiers = [chord.ctrl && keyNames.ctrl, chord.alt && keyNames.alt, chord.shift && keyNames.shift].filter(Boolean).join("+");
   return { modifiers, key };
 }
 

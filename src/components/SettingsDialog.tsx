@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { currentCjk, systemLanguage } from "../i18n";
+import { LANGUAGES } from "../lib/bindings";
 import { useConfirmButton } from "../lib/confirm";
 import { useDialog } from "../lib/dialogs";
+import { languageName } from "../lib/format";
 import { matches, shortcutRows } from "../lib/keymap";
 import { isMac } from "../lib/platform";
 import {
@@ -175,7 +178,8 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
       return;
     }
     resetButton.setArmed(false);
-    update(DEFAULT_SETTINGS);
+    // Except the language: whoever chose one may not read the default.
+    update({ ...DEFAULT_SETTINGS, language: settings.language });
   };
 
   const schemeName = (scheme: TerminalScheme) => schemeLabel(scheme, t);
@@ -265,6 +269,20 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 </label>
                 <p className="hint">{t("settings.showStatusBarHint")}</p>
               </Setting>
+              <Setting>
+                <label className="field">
+                  {t("settings.language")}
+                  <select value={settings.language} onChange={(e) => update({ ...settings, language: e.target.value })}>
+                    <option value="system">{t("settings.languageSystem", { language: languageName(systemLanguage()) })}</option>
+                    {LANGUAGES.map((language) => (
+                      <option key={language} value={language} lang={language}>
+                        {languageName(language)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="hint">{t("settings.languageHint")}</p>
+              </Setting>
             </Section>
 
             <Section id="terminal">
@@ -311,7 +329,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                           ? t("settings.fontFamilyPlaceholderSystem", { font: systemFontFamilies().replace(/"/g, "") })
                           : t("settings.fontFamilyPlaceholder")
                       }
-                      title={defaultFontStack()}
+                      title={defaultFontStack(currentCjk())}
                       spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"

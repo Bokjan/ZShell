@@ -12,6 +12,7 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
+import { currentCjk } from "../i18n";
 import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../lib/api";
 import { isAppLocked, whenUnlocked } from "../lib/appLock";
 import { afterDialogs, isDialogOpen } from "../lib/dialogs";
@@ -142,7 +143,7 @@ export function TerminalView({
     minimumContrastRatio: moreContrast ? 4.5 : 1,
     // A tree of the screen's lines for screen readers, and announcements of new output.
     screenReaderMode: settings.terminal.screenReader,
-    fontFamily: fontStack(appearance?.fontFamily ?? settings.terminal.fontFamily),
+    fontFamily: fontStack(appearance?.fontFamily ?? settings.terminal.fontFamily, currentCjk()),
     fontSize: appearance?.fontSize ?? settings.terminal.fontSize,
     cursorStyle: settings.terminal.cursorStyle,
     cursorBlink: settings.terminal.cursorBlink,

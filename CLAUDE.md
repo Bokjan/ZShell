@@ -19,6 +19,7 @@ When a feature lands: mark its milestone ✅ in ROADMAP.md, move cross-module de
 - Files under `docs/` are written in Chinese. Everything else is English: code, comments, UI text, terminal prompts and error messages from the backend, README, CHANGELOG, commit messages.
 - The maintainer talks to you in Chinese; reply in Chinese.
 - Never hard-code user-visible text. Frontend: add keys to `src/locales/en.json` and use `t()` (keys are type-checked by `tsc`). Backend: use `t!("key")` / `Error::new("code")` with keys in `src-tauri/locales/en.json` (`cargo test` checks coverage). Use full sentences with `{name}` parameters, never concatenated fragments, and branch on error codes, never on message text.
+- English is the source language; the other catalogs (`src/locales/<lang>.json`, `src-tauri/locales/<lang>.json`) are complete translations. When English text is added or changed, update every language in the same commit, following the style rules and glossary in `docs/I18N.md`; tests fail on missing keys or mismatched placeholders.
 
 ## Commands
 

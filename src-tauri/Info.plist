@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The languages of src-tauri/locales (checked by i18n.rs's tests). Without them macOS
+	     takes the app for English only: the menu items and dialogs it provides would stay in
+	     English, and System Settings wouldn't offer a language for the app. -->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+	</array>
+</dict>
+</plist>

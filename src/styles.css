@@ -60,15 +60,38 @@
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239a9a9a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   color: var(--text);
+  /* The system's fonts first: CJK fonts have Latin and Cyrillic letters too, in their own style. */
   font:
     calc(13px * var(--text-scale)) / 1.4 -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
-    "PingFang SC",
-    "Microsoft YaHei",
     system-ui,
+    var(--font-cjk),
     sans-serif;
   color-scheme: dark;
+}
+
+/* CJK fonts of macOS, Windows and Linux by the language whose glyphs they draw (`data-cjk`, set
+   in i18n/index.ts): a Han character has different forms in Chinese and Japanese fonts. */
+:root {
+  --font-cjk: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC";
+}
+
+:root[data-cjk="zh-Hant"] {
+  --font-cjk: "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC";
+}
+
+:root[data-cjk="ja"] {
+  --font-cjk: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo UI", "Noto Sans CJK JP";
+}
+
+:root[data-cjk="ko"] {
+  --font-cjk: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR";
+}
+
+/* German's long compound words break where the layout is narrow, rather than overflow. */
+:root:lang(de) {
+  hyphens: auto;
 }
 
 :root[data-theme="light"] {

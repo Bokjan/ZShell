@@ -40,6 +40,7 @@ pub async fn system_monospace_font() -> Option<String> {
 #[tauri::command]
 pub fn settings_set(app: AppHandle, window: WebviewWindow, store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {
     let settings = notified(&window, Change::Settings, store.set(settings))?;
+    crate::i18n::apply(&settings.language);
     // A shorter retention applies right away; checking every log can take a while.
     let keep_days = settings.logs.keep_days;
     tauri::async_runtime::spawn_blocking(move || app.state::<Logs>().clean_up(keep_days));

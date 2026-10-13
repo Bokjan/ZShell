@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { followLanguageSetting } from "../i18n";
 import type { Appearance, Settings, TextSize } from "./bindings";
 import { isWindows } from "./platform";
 import { setSystemFont } from "./terminalSchemes";
@@ -33,6 +34,7 @@ export const FONT_SIZE_MAX = 48;
 export const DEFAULT_LOG_FILE_NAME = "{session}_{date}_{time}.log";
 
 export const DEFAULT_SETTINGS: Settings = {
+  language: "system",
   appearance: "system",
   textSize: "normal",
   statusBar: { show: true },
@@ -123,6 +125,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     applyTheme(theme);
     applyWindowTheme(appearance, theme);
   }, [loaded, appearance, theme]);
+
+  // Changed here or in another window; the page started in the stored one.
+  const language = settings?.language;
+  useEffect(() => {
+    if (language !== undefined) followLanguageSetting(language).catch(console.error);
+  }, [language]);
 
   // Before painting, so the first frame already has the text size.
   const textSize = settings?.textSize ?? "normal";

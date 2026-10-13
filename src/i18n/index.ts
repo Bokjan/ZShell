@@ -2,56 +2,76 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 
+import { LANGUAGES, type Cjk, type Locales } from "../lib/bindings";
+import { KEY_NAMES, setKeyNames, type KeyName } from "../lib/keymap";
 import en from "../locales/en.json";
 
-/** UI catalogs. English is the source language and the fallback for missing keys. */
+export type Language = (typeof LANGUAGES)[number];
+
+/** UI catalogs, one for each of the backend's. English is the source language and the fallback for missing keys. */
 export const resources = {
   en: { translation: en },
-} as const;
+} as const satisfies Record<Language, { translation: object }>;
 
-export type Language = keyof typeof resources;
+export const isLanguage = (value: string): value is Language => (LANGUAGES as readonly string[]).includes(value);
 
-const supported = Object.keys(resources) as Language[];
+/** The system's language and CJK language (see `Locales` in i18n.rs), read once. */
+let system: Locales = { current: "en", system: "en", cjk: "zh-Hans" };
 
-/** Best supported match for the user's preferred languages: "zh-Hans-CN" → "zh-Hans" → "zh" → "en". */
-function detectLanguage(): Language {
-  for (const tag of navigator.languages ?? [navigator.language]) {
-    const parts = tag.split(/[-_]/);
-    while (parts.length > 0) {
-      const candidate = parts.join("-").toLowerCase();
-      const match = supported.find((lang) => lang.toLowerCase() === candidate);
-      if (match) return match;
-      parts.pop();
-    }
-  }
-  return "en";
-}
+/** The language the `language` setting chooses: its own, or the system's. */
+export const languageFor = (setting: string): Language =>
+  isLanguage(setting) ? setting : isLanguage(system.system) ? system.system : "en";
 
+/** The system's language, which the "system" setting chooses. */
+export const systemLanguage = () => languageFor("system");
+
+/** Starts in the language the backend chose from the settings. */
 export async function setupI18n() {
+  system = await invoke<Locales>("locale_get").catch((e) => {
+    console.error("failed to get the locales", e);
+    return system;
+  });
+  const language = isLanguage(system.current) ? system.current : "en";
   await i18n.use(initReactI18next).init({
     resources,
-    lng: detectLanguage(),
+    lng: language,
     fallbackLng: "en",
-    supportedLngs: supported,
+    supportedLngs: LANGUAGES,
     // Same placeholder syntax as the backend catalogs in src-tauri/locales.
     interpolation: { escapeValue: false, prefix: "{", suffix: "}" },
   });
-  await applyLanguage(i18n.language);
+  applyLanguage(language);
 }
 
-export async function changeLanguage(language: Language) {
+/**
+ * Switches to the language the `language` setting chooses, once it changes here or in another
+ * window. The backend switches itself when the settings are saved.
+ */
+export async function followLanguageSetting(setting: string) {
+  const language = languageFor(setting);
+  if (language === i18n.language) return;
+  applyLanguage(language);
   await i18n.changeLanguage(language);
-  await applyLanguage(language);
 }
 
-/** Keeps the document and the backend (terminal prompts, error messages) in the same language. */
-async function applyLanguage(language: string) {
-  document.documentElement.lang = language;
-  try {
-    await invoke("set_locale", { locale: language });
-  } catch (e) {
-    console.error("failed to set backend locale", e);
-  }
+/**
+ * The document's language, which selects hyphenation and localized glyphs; the CJK fonts that
+ * come first (`data-cjk`, see styles.css): the interface's if it is in one, otherwise the
+ * system's first; and the names of keys in shortcuts. Before the page renders in it.
+ */
+function applyLanguage(language: Language) {
+  const root = document.documentElement;
+  root.lang = language;
+  root.dataset.cjk = cjkFor(language);
+  const t = i18n.getFixedT(language);
+  setKeyNames(Object.fromEntries(KEY_NAMES.map((name) => [name, t(`keys.${name}`)])) as Record<KeyName, string>);
 }
+
+const CJK: readonly string[] = ["zh-Hans", "zh-Hant", "ja", "ko"] satisfies Cjk[];
+
+const cjkFor = (language: string): Cjk => (CJK.includes(language) ? (language as Cjk) : system.cjk);
+
+/** The CJK language whose fonts come first, as `applyLanguage` sets it. */
+export const currentCjk = () => cjkFor(i18n.language);
 
 export default i18n;

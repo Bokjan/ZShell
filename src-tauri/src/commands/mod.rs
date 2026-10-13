@@ -22,10 +22,10 @@ use ts_rs::TS;
 use crate::error::Result;
 use crate::i18n;
 
-/// Selects the language for backend text; returns the locale actually used.
+/// The languages in effect: the backend's follows the `language` setting.
 #[tauri::command]
-pub fn set_locale(locale: String) -> &'static str {
-    i18n::set_locale(&locale)
+pub fn locale_get() -> i18n::Locales {
+    i18n::locales()
 }
 
 /// Runs a command's blocking work (files, the keychain, the system's device list) on the

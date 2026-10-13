@@ -189,6 +189,8 @@ export type AuthMethod = { "type": "auto" } | { "type": "password" } | { "type":
  */
 export type Change = "settings" | "profiles" | "quickCommands" | "vault" | "appLock";
 
+export type Cjk = "zh-Hans" | "zh-Hant" | "ja" | "ko";
+
 export type CloseReason = "exited" | "lost" | "failed";
 
 /**
@@ -376,6 +378,25 @@ export type Listing = {
  * Canonical path of the listed directory.
  */
 path: string, entries: Array<FileEntry>, };
+
+/**
+ * The languages in effect, for the frontend.
+ */
+export type Locales = { 
+/**
+ * The language of the interface.
+ */
+current: string, 
+/**
+ * What the `system` setting chooses.
+ */
+system: string, 
+/**
+ * The first CJK language among the system's preferred ones, whose fonts come first when
+ * the interface isn't in one: the same code point has different glyphs in Chinese and
+ * Japanese fonts.
+ */
+cjk: Cjk, };
 
 /**
  * Why the vault is locked, for the unlock screen.
@@ -697,7 +718,13 @@ export type SetAsideFile = { path: string,
  */
 movedTo: string | null, error: string, };
 
-export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
+export type Settings = { 
+/**
+ * A language there is a catalog for, or "system" for the system's preferred languages
+ * (see `i18n.rs`). A string, so that an unknown one (from a newer version) falls back
+ * rather than making the whole file unreadable.
+ */
+language: string, appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
 
 export type SidebarSettings = { 
 /**
@@ -899,3 +926,6 @@ export const DEFAULT_SERIAL: SerialOptions = { baudRate: 115200, dataBits: 8, de
 
 /** The quick command group that always exists, first. */
 export const DEFAULT_GROUP = "default";
+
+/** The languages with a catalog, English first. */
+export const LANGUAGES = ["en"] as const;

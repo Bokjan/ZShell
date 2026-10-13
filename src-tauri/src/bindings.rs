@@ -96,6 +96,7 @@ mod tests {
             ("The terminal type of a session that doesn't set one.", "DEFAULT_TERM_TYPE", js(config::default_term_type())),
             ("The settings of a new serial session.", "DEFAULT_SERIAL: SerialOptions", js(config::SerialOptions::default())),
             ("The quick command group that always exists, first.", "DEFAULT_GROUP", js(quick::DEFAULT_GROUP)),
+            ("The languages with a catalog, English first.", "LANGUAGES", format!("{} as const", js(i18n::languages()))),
         ];
         constants.iter().map(|(doc, name, value)| format!("\n/** {doc} */\nexport const {name} = {value};\n")).collect()
     }
@@ -138,6 +139,7 @@ mod tests {
         visitor.visit::<window::WindowButton>();
         visitor.visit::<menu::Section>();
         visitor.visit::<update::Status>();
+        visitor.visit::<i18n::Locales>();
         visitor.visit::<tab_drag::Rect>();
         visitor.visit::<tab_drag::Point>();
         visitor.visit::<tab_drag::DropTarget>();

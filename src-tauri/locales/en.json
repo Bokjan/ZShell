@@ -40,7 +40,19 @@
     "view": "View",
     "window": "Window",
     "help": "Help",
-    "quit": "Quit {name}"
+    "quit": "Quit {name}",
+    "about": "About {name}",
+    "services": "Services",
+    "hide": "Hide {name}",
+    "hideOthers": "Hide Others",
+    "undo": "Undo",
+    "redo": "Redo",
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All",
+    "minimize": "Minimize",
+    "zoom": "Zoom"
   },
   "log": {
     "started": "=== {session} ({address}), log started {time} ===",

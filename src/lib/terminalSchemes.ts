@@ -1,6 +1,7 @@
 import type { ITheme } from "@xterm/xterm";
 
 import type { ProfileAppearance } from "./api";
+import type { Cjk } from "./bindings";
 
 export interface TerminalScheme {
   id: string;
@@ -11,8 +12,18 @@ export interface TerminalScheme {
 }
 
 /** Fonts used after the user's preferred font: the monospace fonts of macOS, Windows and Linux, then CJK ones. */
-const BUILT_IN_FONTS =
-  'Menlo, "Cascadia Mono", Consolas, "DejaVu Sans Mono", "PingFang SC", "Microsoft YaHei", "Noto Sans Mono CJK SC", monospace';
+const BUILT_IN_FONTS = 'Menlo, "Cascadia Mono", Consolas, "DejaVu Sans Mono"';
+
+/**
+ * The CJK fonts of macOS, Windows and Linux, by the language whose glyphs they draw (see
+ * `currentCjk`): a Han character has different forms in Chinese and Japanese fonts.
+ */
+const CJK_FONTS: Record<Cjk, string> = {
+  "zh-Hans": '"PingFang SC", "Microsoft YaHei", "Noto Sans Mono CJK SC"',
+  "zh-Hant": '"PingFang TC", "Microsoft JhengHei", "Noto Sans Mono CJK TC"',
+  ja: '"Hiragino Sans", "Yu Gothic", "Noto Sans Mono CJK JP"',
+  ko: '"Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans Mono CJK KR"',
+};
 
 let systemFont = "";
 
@@ -32,10 +43,10 @@ export function setSystemFont(families: string) {
 /** The desktop's monospace font as set by `setSystemFont` (quoted families), or "". */
 export const systemFontFamilies = () => systemFont;
 
-/** Font stack used when the user has no preferred font. */
-export const defaultFontStack = () => (systemFont ? `${systemFont}, ${BUILT_IN_FONTS}` : BUILT_IN_FONTS);
+/** Font stack used when the user has no preferred font, with the CJK fonts of `cjk`. */
+export const defaultFontStack = (cjk: Cjk) => [systemFont, BUILT_IN_FONTS, CJK_FONTS[cjk], "monospace"].filter(Boolean).join(", ");
 
-export const fontStack = (preferred: string) => (preferred ? `${preferred}, ${defaultFontStack()}` : defaultFontStack());
+export const fontStack = (preferred: string, cjk: Cjk) => (preferred ? `${preferred}, ` : "") + defaultFontStack(cjk);
 
 const solarizedAnsi = {
   black: "#073642",

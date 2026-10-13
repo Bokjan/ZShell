@@ -1,5 +1,6 @@
-//! App-wide preferences (appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs, updates), persisted as `settings.json` next to
-//! `vault.json`. Only the frontend interprets them; the backend stores and validates.
+//! App-wide preferences (language, appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs, updates), persisted as `settings.json` next to
+//! `vault.json`. The frontend interprets them, but for the language, which backend text uses
+//! too; the backend stores and validates.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -13,6 +14,10 @@ use crate::persist::{JsonFile, SetAside};
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    /// A language there is a catalog for, or "system" for the system's preferred languages
+    /// (see `i18n.rs`). A string, so that an unknown one (from a newer version) falls back
+    /// rather than making the whole file unreadable.
+    pub language: String,
     pub appearance: Appearance,
     pub text_size: TextSize,
     pub status_bar: StatusBarSettings,
@@ -240,6 +245,7 @@ pub enum LogFormat {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            language: crate::i18n::SYSTEM.to_owned(),
             appearance: Appearance::System,
             text_size: TextSize::Normal,
             status_bar: StatusBarSettings::default(),
@@ -280,6 +286,9 @@ impl Default for TabSettings {
 
 impl Settings {
     fn normalize(mut self) -> Self {
+        if !crate::i18n::is_setting(&self.language) {
+            self.language = crate::i18n::SYSTEM.to_owned();
+        }
         let terminal = &mut self.terminal;
         terminal.font_family = terminal.font_family.trim().to_owned();
         terminal.font_size = terminal.font_size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
@@ -342,6 +351,14 @@ mod tests {
         assert_eq!(settings.terminal.scrollback, 5000);
         assert!(settings.terminal.confirm_multiline_paste && settings.tabs.confirm_close);
         assert!(settings.status_bar.show);
+        assert_eq!(settings.language, "system");
+    }
+
+    #[test]
+    fn unknown_languages_follow_the_system() {
+        let language = |json: &str| serde_json::from_str::<Settings>(json).unwrap().normalize().language;
+        assert_eq!(language(r#"{"language":"en"}"#), "en");
+        assert_eq!(language(r#"{"language":"xx"}"#), "system");
     }
 
     #[test]

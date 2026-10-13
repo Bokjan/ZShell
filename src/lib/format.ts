@@ -51,6 +51,15 @@ export function formatAgo(ms: number): string {
   return format.format(-Math.floor(seconds / 86400), "day");
 }
 
+/**
+ * A language's name in that language ("Deutsch", "日本語"), capitalized as a list item: French
+ * writes "français" in a sentence.
+ */
+export function languageName(language: string): string {
+  const name = new Intl.DisplayNames([language], { type: "language" }).of(language) ?? language;
+  return name.charAt(0).toLocaleUpperCase(language) + name.slice(1);
+}
+
 /** `ls -l` style mode string, e.g. "drwxr-xr-x". */
 export function formatMode(mode: number | null, isDir: boolean, isSymlink: boolean): string {
   if (mode == null) return "";

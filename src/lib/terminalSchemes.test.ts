@@ -44,12 +44,17 @@ describe("tabMark", () => {
 
 describe("fontStack", () => {
   it("puts the preferred font first, then the desktop's monospace font", () => {
-    expect(fontStack("")).toMatch(/^Menlo, /);
-    expect(fontStack("Fira Code")).toMatch(/^Fira Code, Menlo, /);
+    expect(fontStack("", "zh-Hans")).toMatch(/^Menlo, /);
+    expect(fontStack("Fira Code", "zh-Hans")).toMatch(/^Fira Code, Menlo, /);
     setSystemFont('Ubuntu Sans Mono, Noto "Mono"');
     expect(systemFontFamilies()).toBe('"Ubuntu Sans Mono", "Noto Mono"');
-    expect(fontStack("")).toMatch(/^"Ubuntu Sans Mono", "Noto Mono", Menlo, /);
-    expect(fontStack("Fira Code")).toMatch(/^Fira Code, "Ubuntu Sans Mono", "Noto Mono", Menlo, /);
-    expect(fontStack("")).toMatch(/, monospace$/);
+    expect(fontStack("", "zh-Hans")).toMatch(/^"Ubuntu Sans Mono", "Noto Mono", Menlo, /);
+    expect(fontStack("Fira Code", "zh-Hans")).toMatch(/^Fira Code, "Ubuntu Sans Mono", "Noto Mono", Menlo, /);
+    expect(fontStack("", "zh-Hans")).toMatch(/, monospace$/);
+  });
+
+  it("puts the CJK fonts of the language last", () => {
+    expect(fontStack("", "zh-Hans")).toMatch(/"Noto Sans Mono CJK SC", monospace$/);
+    expect(fontStack("", "ja")).toMatch(/"Hiragino Sans", "Yu Gothic", "Noto Sans Mono CJK JP", monospace$/);
   });
 });

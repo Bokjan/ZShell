@@ -154,6 +154,13 @@ pub fn run() {
                 }
             }
             let set_aside = SetAside::default();
+            // First, so that backend text is in the chosen language from the start.
+            let settings = SettingsStore::load(config_dir.join("settings.json"), &set_aside);
+            i18n::apply(&settings.get().language);
+            app.manage(settings);
+            // The one built before the language was known.
+            #[cfg(target_os = "macos")]
+            app.set_menu(menu::build(app.handle(), &[], &Default::default())?)?;
             // Only reads the header of an encrypted vault, and doesn't make a missing one:
             // that may wait for the credential store, and the frontend shows the unlock screen
             // meanwhile.
@@ -169,7 +176,6 @@ pub fn run() {
             applock::watch_system(app_lock.clone());
             app.manage(app_lock);
             app.manage(vault);
-            app.manage(SettingsStore::load(config_dir.join("settings.json"), &set_aside));
             let documents = app.path().document_dir().unwrap_or_else(|_| config_dir.clone());
             app.manage(Logs::load(config_dir.join("logs.json"), documents.join("ZShellLogs"), &set_aside));
             app.manage(set_aside);
@@ -210,7 +216,7 @@ pub fn run() {
         .manage(Connections::default())
         .manage(Transfers::default())
         .invoke_handler(tauri::generate_handler![
-            commands::set_locale,
+            commands::locale_get,
             menu::app_menu_set,
             menu::app_menu_set_label,
             update::update_status,

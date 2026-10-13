@@ -587,6 +587,9 @@
   },
   "settings": {
     "title": "Settings",
+    "language": "Language",
+    "languageSystem": "System ({language})",
+    "languageHint": "Text from servers and the system, such as server messages and file dialogs, keeps its own language.",
     "appearance": "Appearance",
     "appearances": {
       "system": "System",
@@ -730,7 +733,7 @@
     "noMatches": "No matching settings",
     "reset": "Restore defaults",
     "resetConfirm": "Click again to restore",
-    "resetHint": "Restores the settings above. How sessions are protected, the app lock and proxies are kept.",
+    "resetHint": "Restores the settings above. The language, how sessions are protected, the app lock and proxies are kept.",
     "security": "Security",
     "protectionState": {
       "none": "Not encrypted: sessions and passwords are saved as they are.",
@@ -991,5 +994,13 @@
     "passphrasesDontMatch": "The passphrases don't match.",
     "export": "Export…",
     "done": "Sessions exported."
+  },
+  "keys": {
+    "ctrl": "Ctrl",
+    "alt": "Alt",
+    "shift": "Shift",
+    "tab": "Tab",
+    "enter": "Enter",
+    "insert": "Insert"
   }
 }

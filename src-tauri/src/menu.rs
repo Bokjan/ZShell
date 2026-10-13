@@ -121,30 +121,37 @@ pub fn build<R: tauri::Runtime>(
     let about = AboutMetadata { name: Some(info.name.clone()), version: Some(info.version.to_string()), ..Default::default() };
     let predefined = |item: tauri::Result<PredefinedMenuItem<R>>| item.map(MenuItemKind::Predefined);
 
-    let mut app_menu = after(vec![predefined(PredefinedMenuItem::about(app, None, Some(about)))?], separator, page(SectionKind::App)?)?;
+    let mut app_menu = after(
+        vec![predefined(PredefinedMenuItem::about(app, Some(&t!("menu.about", name = info.name)), Some(about)))?],
+        separator,
+        page(SectionKind::App)?,
+    )?;
     app_menu.extend([
         separator()?,
-        predefined(PredefinedMenuItem::services(app, None))?,
+        predefined(PredefinedMenuItem::services(app, Some(&t!("menu.services"))))?,
         separator()?,
-        predefined(PredefinedMenuItem::hide(app, None))?,
-        predefined(PredefinedMenuItem::hide_others(app, None))?,
+        predefined(PredefinedMenuItem::hide(app, Some(&t!("menu.hide", name = info.name))))?,
+        predefined(PredefinedMenuItem::hide_others(app, Some(&t!("menu.hideOthers"))))?,
         separator()?,
         MenuItemKind::MenuItem(MenuItem::with_id(app, QUIT, t!("menu.quit", name = info.name), true, Some("Cmd+Q"))?),
     ]);
     let edit = after(
         vec![
-            predefined(PredefinedMenuItem::undo(app, None))?,
-            predefined(PredefinedMenuItem::redo(app, None))?,
+            predefined(PredefinedMenuItem::undo(app, Some(&t!("menu.undo"))))?,
+            predefined(PredefinedMenuItem::redo(app, Some(&t!("menu.redo"))))?,
             separator()?,
-            predefined(PredefinedMenuItem::cut(app, None))?,
-            predefined(PredefinedMenuItem::copy(app, None))?,
-            predefined(PredefinedMenuItem::paste(app, None))?,
-            predefined(PredefinedMenuItem::select_all(app, None))?,
+            predefined(PredefinedMenuItem::cut(app, Some(&t!("menu.cut"))))?,
+            predefined(PredefinedMenuItem::copy(app, Some(&t!("menu.copy"))))?,
+            predefined(PredefinedMenuItem::paste(app, Some(&t!("menu.paste"))))?,
+            predefined(PredefinedMenuItem::select_all(app, Some(&t!("menu.selectAll"))))?,
         ],
         separator,
         page(SectionKind::Edit)?,
     )?;
-    let window = vec![predefined(PredefinedMenuItem::minimize(app, None))?, predefined(PredefinedMenuItem::maximize(app, None))?];
+    let window = vec![
+        predefined(PredefinedMenuItem::minimize(app, Some(&t!("menu.minimize"))))?,
+        predefined(PredefinedMenuItem::maximize(app, Some(&t!("menu.zoom"))))?,
+    ];
 
     let mut menus = vec![submenu(None, info.name.clone(), app_menu)?];
     let file = page(SectionKind::File)?;
@@ -153,7 +160,8 @@ pub fn build<R: tauri::Runtime>(
     }
     menus.push(submenu(None, t!("menu.edit"), edit)?);
     // The window's own full screen (⌃⌘F), besides the page's terminal full screen; without
-    // it, AppKit adds one with another key.
+    // it, AppKit adds one with another key. AppKit names it (Enter / Exit Full Screen) in the
+    // system's language, like the items it adds itself.
     let mut view = page(SectionKind::View)?;
     if !view.is_empty() {
         view.push(separator()?);
