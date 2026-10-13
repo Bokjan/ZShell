@@ -157,9 +157,14 @@ pub fn keep_activation_token() {
 /// (see [`listen`]).
 #[cfg(target_os = "linux")]
 pub fn hand_over(dir: &Path, _pid: Option<i32>) {
-    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket_path(dir)) {
-        let token = ACTIVATION_TOKEN.get().map(String::as_str).unwrap_or_default();
-        let _ = stream.write_all(token.as_bytes());
+    let path = socket_path(dir);
+    match std::os::unix::net::UnixStream::connect(&path) {
+        Ok(mut stream) => {
+            let token = ACTIVATION_TOKEN.get().map(String::as_str).unwrap_or_default();
+            let _ = stream.write_all(token.as_bytes());
+        }
+        // It still has the folder, so this one can't run either.
+        Err(error) => eprintln!("ZShell is already running, but can't be reached at {}: {error}", path.display()),
     }
     std::process::exit(0);
 }
@@ -171,7 +176,13 @@ pub fn hand_over(dir: &Path, _pid: Option<i32>) {
 pub fn listen(dir: &Path, come_forward: impl Fn(String) + Send + 'static) {
     let path = socket_path(dir);
     let _ = std::fs::remove_file(&path);
-    let Ok(listener) = std::os::unix::net::UnixListener::bind(&path) else { return };
+    let listener = match std::os::unix::net::UnixListener::bind(&path) {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!("can't listen for later instances at {}: {error}", path.display());
+            return;
+        }
+    };
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             // A stuck client doesn't hold up the next.
