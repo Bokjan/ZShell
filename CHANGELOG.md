@@ -2,6 +2,13 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.1.0] - 2026-10-13
+
+### Features
+
+- ZShell is translated into Simplified Chinese, Japanese, German and French: the interface, the messages written to the terminal, error messages and the macOS menu bar. It follows the system's preferred languages, or the language chosen in Settings → Appearance, which applies at once to every window.
+- Han characters in the interface and the terminal are drawn with Japanese fonts in Japanese and with Chinese fonts in Chinese; with another interface language, the first Chinese, Japanese or Korean language among the system's preferred ones decides.
+
 ## [3.0.2] - 2026-10-13
 
 ### Bug Fixes
