@@ -142,7 +142,7 @@
 
 ### 配置与设置
 
-- **存储**：配置目录（macOS `~/Library/Application Support/org.boyin.zshell/`，Windows `%APPDATA%\org.boyin.zshell\`，Linux `~/.config/org.boyin.zshell/`）。会话、文件夹、代理、快速命令与密码由保险库管理（见「加密保险库」）；`settings.json` 与 `logs.json` 总是明文。unix 上目录为 0700，文件创建时即为 0600。保存会话或代理时密码写入失败不算保存失败（`Saved`），对话框改为编辑这一项，再次保存不会新增一份。
+- **存储**：配置目录（macOS `~/Library/Application Support/ZShell/`，Windows `%APPDATA%\ZShell\`，Linux `~/.config/ZShell/`），以应用名命名，不用 Tauri 默认的 bundle identifier（`lib.rs` 的 `config_dir`）；凭据存储的 service、缓存与 WebView 数据仍用 identifier。会话、文件夹、代理、快速命令与密码由保险库管理（见「加密保险库」）；`settings.json` 与 `logs.json` 总是明文。unix 上目录为 0700，文件创建时即为 0600。保存会话或代理时密码写入失败不算保存失败（`Saved`），对话框改为编辑这一项，再次保存不会新增一份。
 - **单实例**：两个进程会互相覆盖配置。Windows 用 single-instance 插件；macOS 与 Linux 按配置目录加锁（`instance.rs`，`flock`），第二个实例把已有的提到前台后退出。macOS 只在打开同一个 `.app` 时复用已有实例（另一个副本、`open -n`、直接运行可执行文件都会再开一个）；插件在 macOS 上的锁与 HOME 无关，会挡住端到端测试的隔离实例（GTK 的 application id 同理，所以不启用）。Linux 上一个进程不能把另一个的窗口提到前台：持有锁的实例监听一个 Unix socket（在 `$XDG_RUNTIME_DIR` 下，按配置目录命名，路径短且只属于用户），第二个实例把桌面启动它时给的激活令牌（`XDG_ACTIVATION_TOKEN`，GTK 初始化前先取出）交过去，已有实例带着令牌 present，Wayland 才让它获得焦点；没有令牌时 GNOME 只提示"已就绪"。
 - **读不出的文件**：配置文件都经 `JsonFile`（`persist.rs`）读写。内容读不出的改名保留，从空开始；文件本身读不出的留在原处、本次运行不再写它。应用不因此无法启动，之后的保存也不覆盖原文件，前端启动后列出这些文件。写入是临时文件加改名，几个文件先全部写好再依次改名。
 - **设置**：前端 `SettingsProvider` 启动时读取，修改即时生效并保存，后端校验。界面文字大小经 CSS 变量 `--text-scale` 缩放，标题栏、图标与终端不变。主题经 `<html data-theme>` 选择 CSS 变量组，原生窗口同步跟随（`window_set_theme`）。Linux 上 tao 把"跟随系统"当作浅色（关掉 GTK 的 prefer-dark，WebKitGTK 的 `prefers-color-scheme` 随之变浅），所以后端从设置 portal 读桌面的配色方案再设给窗口，之后的变化由 tao 跟随。但 tao 每次创建窗口和桌面配色变化时都会无条件把 prefer-dark（整个进程共用）改成桌面的配色，所以后端监听这个属性，设置里选了固定的浅色或深色时就改回来（`window/linux.rs`）。

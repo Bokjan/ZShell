@@ -55,7 +55,7 @@ pub fn settings_set(app: AppHandle, window: WebviewWindow, store: State<'_, Sett
 #[tauri::command]
 pub async fn config_directory(app: AppHandle) -> Result<PathBuf> {
     blocking(app, |app| {
-        let dir = app.path().app_config_dir()?;
+        let dir = crate::config_dir(app)?;
         let _ = std::fs::create_dir_all(&dir);
         Ok(dir)
     })

@@ -86,6 +86,14 @@ fn clean_up_logs(app: tauri::AppHandle) {
     });
 }
 
+/// The folder the sessions and settings are saved in: `ZShell` in the system's configuration
+/// folder (`~/Library/Application Support`, `%APPDATA%`, `~/.config`), named after the app as
+/// people expect there, rather than after the bundle identifier as Tauri's `app_config_dir`.
+/// The credential store's service, the caches and the web view's data keep the identifier.
+pub(crate) fn config_dir(app: &tauri::AppHandle) -> tauri::Result<std::path::PathBuf> {
+    Ok(app.path().config_dir()?.join("ZShell"))
+}
+
 /// Where downloaded files wait for another application to take them (editing in a local
 /// editor, dragging out): the system's temporary folder, which is the user's own on macOS and
 /// Windows. On Linux `/tmp` is shared by all users, so it is the app's cache folder there,
@@ -123,7 +131,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
-            let config_dir = app.path().app_config_dir()?;
+            let config_dir = config_dir(app.handle())?;
             // Before anything is read or written: another instance may have the folder.
             #[cfg(unix)]
             if persist::secure_dir(&config_dir).is_ok() {

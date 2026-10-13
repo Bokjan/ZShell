@@ -64,9 +64,9 @@ UPDATE_BINDINGS=1 cargo test bindings
 HOME=$T/home src-tauri/target/debug/bundle/macos/ZShell.app/Contents/MacOS/zshell
 ```
 
-会话配置写在 `$T/home/Library/Application Support/org.boyin.zshell/profiles.json`。注意 WKWebView 的 localStorage（如侧栏宽度）可能不跟随 HOME，会写进正式应用的 WebKit 数据。
+会话配置写在 `$T/home/Library/Application Support/ZShell/profiles.json`。注意 WKWebView 的 localStorage（如侧栏宽度）可能不跟随 HOME，会写进正式应用的 WebKit 数据。
 
-Linux 上运行 `src-tauri/target/debug/zshell`，配置在 `$T/home/.config/org.boyin.zshell/`，WebKitGTK 的数据也跟随 HOME（前提是没有设置 `XDG_CONFIG_HOME` 等变量，有则一并指到 `$T`）。HOME 要用绝对路径：相对路径下缓存目录也是相对的，拖出给其他应用的文件 URI 与"显示"的位置都会出错。系统钥匙串（Secret Service）、polkit 与 logind 是真实会话的，没有隔离：测试保险库时不要选"系统凭据存储"，以免在自己的钥匙串里留下条目；应用锁要先装上策略文件（`sudo install -m 644 src-tauri/linux/org.boyin.zshell.policy /usr/share/polkit-1/actions/`）。
+Linux 上运行 `src-tauri/target/debug/zshell`，配置在 `$T/home/.config/ZShell/`，WebKitGTK 的数据也跟随 HOME（前提是没有设置 `XDG_CONFIG_HOME` 等变量，有则一并指到 `$T`）。HOME 要用绝对路径：相对路径下缓存目录也是相对的，拖出给其他应用的文件 URI 与"显示"的位置都会出错。系统钥匙串（Secret Service）、polkit 与 logind 是真实会话的，没有隔离：测试保险库时不要选"系统凭据存储"，以免在自己的钥匙串里留下条目；应用锁要先装上策略文件（`sudo install -m 644 src-tauri/linux/org.boyin.zshell.policy /usr/share/polkit-1/actions/`）。
 
 **临时 sshd**：用 `ssh-keygen -t ed25519 -N '' -f $T/host_key` 生成主机密钥，配置文件示例：
 
