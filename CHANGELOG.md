@@ -2,6 +2,15 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.0.1] - 2026-10-13
+
+### Bug Fixes
+
+- The saved SSH password is no longer filled in at a prompt that asks for another account's password, such as `Password for root:` while connecting as another user, where it only used up an attempt.
+- On a Telnet server that leaves echoing to ZShell, a password typed at its prompt is no longer shown on the screen or written to the session's log.
+- The file browser no longer lists entries whose names a server sent with a `/` or a NUL in them, and dragging out an item whose name can't be a local file name (`..`) fails at once, on macOS too, rather than leaving the name to Finder.
+- The app lock now stays locked if it is asked to unlock before the sessions are unlocked, which ZShell's own screens never did.
+
 ## [3.0.0] - 2026-10-13
 
 ### Breaking Changes
