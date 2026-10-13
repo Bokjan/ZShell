@@ -53,6 +53,9 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   // Sessions that closing the window would end, waiting for confirmation on the lock screen;
   // left for the close flow once unlocked.
   const [closing, setClosing] = useState<PendingClose | null>(null);
+  // Locked by the user in this window: they are about to leave, so the system isn't asked
+  // until the window comes back.
+  const [byHand, setByHand] = useState(false);
   const statusRef = useRef(status);
   statusRef.current = status;
 
@@ -76,10 +79,14 @@ export function AppLockGate({ children }: { children: ReactNode }) {
 
   const locked = status?.locked ?? false;
   useLayoutEffect(() => setAppLocked(locked), [locked]);
+  useEffect(() => {
+    if (!locked) setByHand(false);
+  }, [locked]);
 
   const lock = useCallback(() => {
     const current = statusRef.current;
     if (!current || !appLockOn(current)) return false;
+    setByHand(true);
     coverNow();
     void appLock.lock().then(setStatus, console.error);
     return true;
@@ -91,13 +98,17 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   return (
     <AppLockContext.Provider value={{ status, setStatus, lock, confirmClose, pendingClose: locked ? null : closing, clearPendingClose }}>
       {children}
-      {locked && <AppLockScreen status={status} onStatus={setStatus} closing={closing} onKeepOpen={() => setClosing(null)} />}
+      {locked && (
+        <AppLockScreen status={status} byHand={byHand} onStatus={setStatus} closing={closing} onKeepOpen={() => setClosing(null)} />
+      )}
     </AppLockContext.Provider>
   );
 }
 
 interface ScreenProps {
   status: AppLockStatus;
+  /** Locked with the Lock action in this window: the system is asked once the window comes back. */
+  byHand: boolean;
   onStatus(status: AppLockStatus): void;
   closing: PendingClose | null;
   onKeepOpen(): void;
@@ -110,11 +121,12 @@ interface ScreenProps {
  * inert.
  *
  * It asks the system by itself once, when the window has the focus: locking while the user is
- * in another app mustn't put the system's dialog in front of them. After they cancel, only the
+ * in another app mustn't put the system's dialog in front of them. Locked by hand, it waits for
+ * the window to get the focus again, since the user is leaving. After they cancel, only the
  * button asks. When there is no way to authenticate left (a Windows Hello PIN removed), it says
  * so, and only a button of its own unlocks without.
  */
-function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
+function AppLockScreen({ status, byHand, onStatus, closing, onKeepOpen }: ScreenProps) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
@@ -133,6 +145,10 @@ function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
     dialog.addEventListener("cancel", cancel);
     dialog.addEventListener("close", reopen);
     dialog.showModal();
+    // React focuses an `autoFocus` element before this effect, while the dialog is still
+    // closed, so that fails; and `showModal` focuses the first button inside, the window's
+    // minimize button on Windows and Linux. The panel's first button is the one to focus.
+    dialog.querySelector<HTMLElement>(".unlock-panel button")?.focus();
     return () => {
       dialog.removeEventListener("cancel", cancel);
       dialog.removeEventListener("close", reopen);
@@ -162,10 +178,12 @@ function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
 
   // The window's focus, not `document.hasFocus()`: WKWebView says the page has it while the
   // app is in the background.
+  // Read once: the lock screen asks at once or waits from the start.
+  const waitForFocus = useRef(byHand);
   useEffect(() => {
     const window = getCurrentWindow();
     const ask = () => !asked.current && void unlock();
-    void window.isFocused().then((focused) => focused && ask(), console.error);
+    if (!waitForFocus.current) void window.isFocused().then((focused) => focused && ask(), console.error);
     const unlisten = window.onFocusChanged(({ payload: focused }) => focused && ask());
     return () => void unlisten.then((f) => f());
   }, [unlock]);
