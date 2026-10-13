@@ -54,11 +54,13 @@ pub enum DropTarget {
     Elsewhere { cursor: Point },
     /// Out of its window on Wayland: the system's drag has taken over, and where the tab goes
     /// comes when it ends (`tab-drag-native-end`, then [`tab_drag_end`]).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Native,
 }
 
 /// The end of a system drag of a tab (`tab-drag-native-end`, to the window it came from).
 #[derive(Clone, Serialize, TS)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct TabDragNativeEnd {
     pub id: String,
     pub dropped: bool,

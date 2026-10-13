@@ -446,6 +446,7 @@ pub fn window_system_menu(window: WebviewWindow) -> tauri::Result<()> {
 /// A window button the frontend draws.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub enum WindowButton {
     Minimize,
     Maximize,
