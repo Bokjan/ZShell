@@ -1,0 +1,268 @@
+{
+  "terminal": {
+    "connecting": "{user}@{host}:{port}に接続しています...",
+    "closed": "[接続が閉じられました]",
+    "closedWithStatus": "[接続が閉じられました。終了ステータス：{status}]",
+    "savedPasswordRejected": "保存されたパスワードはサーバーに拒否されました。",
+    "incorrectPassphrase": "パスフレーズが正しくありません。",
+    "connectingVia": "{jump}経由で{user}@{host}:{port}に接続しています...",
+    "processExited": "[プロセスが終了しました]",
+    "processExitedWithCode": "[プロセスが終了しました。終了コード：{code}]",
+    "processSignaled": "[プロセスがシグナルで終了しました：{signal}]",
+    "connectingTo": "{host}:{port}に接続しています...",
+    "connectingToVia": "{jump}経由で{host}:{port}に接続しています...",
+    "serialOpened": "{device}（{settings}）を開きました。",
+    "connectingViaProxy": "プロキシ{proxy}経由で{user}@{host}:{port}に接続しています...",
+    "connectingToViaProxy": "プロキシ{proxy}経由で{host}:{port}に接続しています...",
+    "proxyPassword": "プロキシ{proxy}のユーザー{user}のパスワード：",
+    "savedProxyPasswordRejected": "保存されたプロキシのパスワードは拒否されました。",
+    "proxyPasswordRejected": "プロキシにパスワードを拒否されました。もう一度入力してください。"
+  },
+  "hostKey": {
+    "unknown": "ホスト「{host}」の真正性を確認できません。\n{algorithm}鍵のフィンガープリントは{fingerprint}です。\n接続を続行しますか",
+    "unknownOtherTypes": "ホスト「{host}」の真正性を確認できません。\nただし、このホストについては別の種類の鍵がすでに登録されています。\n{algorithm}鍵のフィンガープリントは{fingerprint}です。\n接続を続行しますか",
+    "otherTypeFound": "警告：ホスト{host}の{kind}鍵が\n{path}:{line}にあります。\n{kind}鍵のフィンガープリントは{fingerprint}です。",
+    "typeYesOrNo": "yesまたはnoを入力してください：",
+    "added": "「{host}」（{algorithm}）を既知のホストの一覧に永続的に追加しました。",
+    "saveFailed": "known_hostsに書き込めませんでした：{error}",
+    "revokedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@       WARNING: REVOKED HOST KEY DETECTED!               @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "revokedDetails": "{host}の{algorithm}ホスト鍵は、{path}で失効済みとしてマークされています。\n盗まれた鍵を使って、何者かがこのホストになりすましている可能性があります。",
+    "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "changedDetails": "今まさに何者かが通信を盗聴している可能性があります（中間者攻撃）！\nホスト鍵が変更されただけという可能性もあります。\nリモートホストから送られた{algorithm}鍵のフィンガープリントは次のとおりです：\n  {fingerprint}\nこれは{path}の{line}行目と一致しません。\n鍵の変更が想定どおりであれば、「設定」>「既知のホスト」で古い鍵を削除するか、次のコマンドを実行してください：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nその後、もう一度接続してください。",
+    "changedDetailsElsewhere": "今まさに何者かが通信を盗聴している可能性があります（中間者攻撃）！\nホスト鍵が変更されただけという可能性もあります。\nリモートホストから送られた{algorithm}鍵のフィンガープリントは次のとおりです：\n  {fingerprint}\nこれは{path}の{line}行目と一致しません。\n鍵の変更が想定どおりであれば、そのファイルから古い鍵を削除してください。例：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nその後、もう一度接続してください。"
+  },
+  "forward": {
+    "autoStartFailed": "ポートフォワーディング{forward}を開始できませんでした：{error}"
+  },
+  "menu": {
+    "file": "ファイル",
+    "edit": "編集",
+    "view": "表示",
+    "window": "ウインドウ",
+    "help": "ヘルプ",
+    "quit": "{name}を終了",
+    "about": "{name}について",
+    "services": "サービス",
+    "hide": "{name}を非表示",
+    "hideOthers": "ほかを非表示",
+    "undo": "取り消す",
+    "redo": "やり直す",
+    "cut": "カット",
+    "copy": "コピー",
+    "paste": "ペースト",
+    "selectAll": "すべてを選択",
+    "minimize": "しまう",
+    "zoom": "拡大／縮小"
+  },
+  "log": {
+    "started": "=== {session}（{address}）、ログ開始：{time} ===",
+    "resumed": "=== 再接続：{time} ===",
+    "dropped": "=== ここで{bytes}バイトの出力が欠落しています：ログの書き込みが間に合いませんでした ==="
+  },
+  "appLock": {
+    "reasonMacos": "セッションを表示",
+    "reasonWindows": "ZShellのロックを解除するには、本人確認を行ってください"
+  },
+  "errors": {
+    "unexpected": "予期しないエラーが発生しました",
+    "knownHosts": {
+      "noHome": "known_hostsがあるホームフォルダーが見つかりません",
+      "readFailed": "{path}を読み込めませんでした",
+      "writeFailed": "{path}に書き込めませんでした",
+      "changed": "一覧の表示後にknown_hostsが変更されました。一覧をもう一度確認してください。"
+    },
+    "log": {
+      "createFailed": "セッションログ{path}に書き込めませんでした",
+      "writeFailed": "セッションログが停止しました：{path}に書き込めませんでした"
+    },
+    "credentialStore": "資格情報ストアでエラーが発生しました",
+    "session": {
+      "notFound": "セッションが見つかりません",
+      "notConnected": "セッションはまだSSHで接続されていません",
+      "pageGone": "セッションを開いている間にウィンドウが再読み込みされました",
+      "busy": "セッションはZMODEMでファイルを転送中です"
+    },
+    "window": {
+      "notFound": "ウィンドウは閉じられました"
+    },
+    "update": {
+      "failed": "アップデートを確認できませんでした"
+    },
+    "pty": {
+      "openFailed": "疑似端末を作成できません",
+      "spawnFailed": "シェル{shell}を起動できません"
+    },
+    "net": {
+      "connectTimeout": "{target}への接続がタイムアウトしました",
+      "connectFailed": "{target}に接続できません",
+      "connectionLost": "接続が切れました"
+    },
+    "serial": {
+      "openFailed": "{device}を開けません",
+      "disconnected": "{device}が切断されました"
+    },
+    "config": {
+      "writeFailed": "{path}を保存できません",
+      "unreadable": "変更を保存できません：ZShellの起動時に{name}を読み込めなかったため、内容が失われないようにそのまま残しています。もう一度読み込むにはZShellを再起動してください。"
+    },
+    "profile": {
+      "notFound": "セッションのプロファイルが見つかりません",
+      "missingFields": "ホスト、ポート、ユーザー名は必須です",
+      "invalidHost": "ホストには空白、制御文字、および , * ? ! [ ] のいずれも使用できません",
+      "invalidUser": "ユーザー名には制御文字を使用できません",
+      "invalidJumpHost": "踏み台ホストが、存在しないセッション、SSH以外のセッション、またはこのセッション自身を指しています",
+      "usedAsJumpHost": "このセッションは{names}の踏み台ホストです。先にそちらから削除してください",
+      "invalidEncoding": "サポートされていない文字エンコーディングです：{encoding}",
+      "invalidTermType": "ターミナルの種類には空白や特殊文字を使用できません",
+      "invalidEnvName": "環境変数の名前が無効です：「{name}」",
+      "missingHost": "ホストとポートは必須です",
+      "missingDevice": "シリアルデバイスを選択してください",
+      "invalidSerialSettings": "シリアルの設定が無効です：データビットは5～8、ストップビットは1または2にしてください",
+      "jumpHostNotSsh": "このセッションは{names}の踏み台ホストなので、SSHセッションのままにする必要があります",
+      "invalidProxy": "このセッションのプロキシはもう存在しません。別のプロキシを選択してください",
+      "forwardsNeedSsh": "ポートフォワーディングを使用できるのはSSHセッションのみです"
+    },
+    "ssh": {
+      "handshakeFailed": "SSHハンドシェイクに失敗しました",
+      "handshakeTimeout": "{target}は接続を受け付けましたが、SSHハンドシェイクが時間内に完了しませんでした",
+      "hostKeyRejected": "ホスト鍵が信頼されていないため、接続を中止しました",
+      "channelFailed": "セッションチャネルを開けません",
+      "jumpFailed": "踏み台ホスト{jump}から{target}に接続できません"
+    },
+    "auth": {
+      "cancelled": "キャンセルされました",
+      "passwordFailed": "パスワード認証に失敗しました",
+      "failed": "認証に失敗しました",
+      "keyRejected": "サーバーが秘密鍵{path}を拒否しました",
+      "keyReadFailed": "秘密鍵{path}を読み込めません",
+      "keyDecryptFailed": "秘密鍵{path}を復号できません",
+      "agentConnectFailed": "SSHエージェントに接続できません",
+      "agentListFailed": "SSHエージェントの鍵を一覧表示できません",
+      "agentEmpty": "SSHエージェントに鍵がありません",
+      "agentAllRejected": "サーバーがSSHエージェントのすべての鍵を拒否しました",
+      "notOffered": "サーバーはこの認証方法を受け付けません。受け付けるのは{methods}です",
+      "moreRequired": "サーバーが追加の認証（{methods}）を要求しましたが、成功しませんでした",
+      "disconnected": "認証中にサーバーが接続を閉じました"
+    },
+    "sftp": {
+      "unsupported": "サーバーはSFTPに対応していません",
+      "listFailed": "{path}を一覧表示できません",
+      "mkdirFailed": "フォルダー{path}を作成できません",
+      "renameFailed": "{from}の名前を{to}に変更できません",
+      "removeFailed": "{path}を削除できません",
+      "chmodFailed": "{path}のアクセス権を変更できません"
+    },
+    "transfer": {
+      "cancelled": "キャンセルされました",
+      "invalidPath": "ローカルのパス{path}は無効です",
+      "invalidName": "{name}は、このコンピューターではその名前で保存できません",
+      "readFailed": "{path}を読み込めません",
+      "openFailed": "{path}を開けません",
+      "createFailed": "{path}を作成できません",
+      "createDirFailed": "フォルダー{path}を作成できません",
+      "uploadFailed": "{path}をアップロードできませんでした",
+      "downloadFailed": "{path}をダウンロードできませんでした",
+      "replaceFailed": "{path}をアップロードしましたが、所定の場所に配置できませんでした。新しい内容は{temporary}にあります",
+      "replaceInterrupted": "{path}をアップロードしましたが、所定の場所に配置できませんでした。新しい内容は{temporary}に、元の内容は{original}にあります"
+    },
+    "forward": {
+      "missingTarget": "ローカルフォワードとリモートフォワードには宛先のホストとポートが必要です",
+      "bindFailed": "{address}で待ち受けできません",
+      "acceptFailed": "接続を受け付けられません",
+      "remoteRefused": "サーバーが{address}での待ち受けを拒否しました",
+      "channelFailed": "サーバーから{target}に接続できませんでした",
+      "socksVersion": "サポートされていないSOCKSバージョンです：{version}",
+      "socksAuth": "SOCKSクライアントが認証を要求していますが、認証には対応していません",
+      "socksCommand": "サポートされていないSOCKSコマンドです：{command}。対応しているのはCONNECTのみです",
+      "socksAddressType": "サポートされていないSOCKSアドレスの種類です：{type}",
+      "socksProtocol": "SOCKSリクエストが無効です"
+    },
+    "import": {
+      "readFailed": "{path}を読み込めません",
+      "parseFailed": "{path}を解析できません",
+      "notSessionsFile": "{path}はZShellのセッションファイルではありません",
+      "unsupportedVersion": "{path}は、このバージョンでは読み込めない形式のZShellでエクスポートされています",
+      "invalidSession": "ファイル内のセッション{name}は無効です",
+      "invalidProxy": "ファイル内のプロキシ{name}は無効です",
+      "fileChanged": "{path}は開いた後に変更されたため、インポートされる内容が表示された内容と異なる可能性があります。もう一度開いて確認してください。",
+      "includeTooDeep": "{path}のIncludeの入れ子が深すぎます。ファイルが自分自身を読み込んでいる可能性があります",
+      "wrongPassphrase": "パスフレーズがエクスポート時のものと異なるか、エクスポート後にファイルが変更されています",
+      "passphraseRequired": "ファイルは暗号化されています。エクスポート時のパスフレーズを入力してください",
+      "unsupportedEncryption": "{path}は、このバージョンのZShellでは読み込めない方式で暗号化されています"
+    },
+    "zmodem": {
+      "cancelled": "転送がキャンセルされました",
+      "remoteCancelled": "相手側が転送をキャンセルしました",
+      "timeout": "相手側が応答しなくなりました",
+      "protocol": "転送に失敗しました：相手側から予期しないデータを受信しました",
+      "corrupt": "転送に失敗しました：受信したデータが繰り返し破損していました",
+      "incomplete": "{name}を最後まで受信できませんでした：送信側が次のファイルに進みました",
+      "notStarted": "ZMODEM転送ではありません",
+      "invalidName": "{name}という名前のファイルは保存できません",
+      "notFile": "{path}はファイルではありません。送信できるのはファイルのみです"
+    },
+    "folder": {
+      "notFound": "フォルダーが見つかりません",
+      "emptyName": "フォルダーの名前を入力してください",
+      "invalidMove": "フォルダーをそれ自身の中に移動することはできません"
+    },
+    "export": {
+      "writeFailed": "{path}に書き込めません"
+    },
+    "edit": {
+      "notFound": "このファイルはもう編集中ではありません",
+      "conflict": "{name}は、開いた後にサーバー上で変更されました",
+      "openFailed": "{path}をエディターで開けません"
+    },
+    "proxy": {
+      "notFound": "プロキシが見つかりません",
+      "inUse": "このプロキシは{names}で使用されています。先にそちらで別のプロキシを選択してください",
+      "missingAddress": "ホストとポートは必須です",
+      "missingCommand": "実行するコマンドを入力してください",
+      "unreachable": "プロキシ{proxy}に接続できません",
+      "authRequired": "プロキシ{proxy}にはユーザー名とパスワードが必要です",
+      "authUnsupported": "プロキシ{proxy}はユーザー名とパスワードによる認証を受け付けません",
+      "authFailed": "プロキシ{proxy}がユーザー名またはパスワードを拒否しました",
+      "refused": "プロキシ{proxy}から{target}に接続できませんでした",
+      "protocol": "プロキシ{proxy}から予期しない応答がありました",
+      "timeout": "{target}への接続中に、プロキシ{proxy}が時間内に応答しませんでした",
+      "unsafeName": "「{name}」には、プロキシコマンドに渡せない文字が含まれています",
+      "hostTooLong": "ホスト名がSOCKSプロキシには長すぎます",
+      "commandFailed": "プロキシコマンド{command}を実行できません"
+    },
+    "vault": {
+      "locked": "セッションはロックされています。先にロックを解除してください。",
+      "readFailed": "セッションファイルを読み込めません",
+      "parseFailed": "セッションファイルが無効です",
+      "verifyFailed": "{path}に書き込んだセッションを読み戻せなかったため、何も変更していません",
+      "deleteFailed": "{path}を削除できません",
+      "notLocked": "セッションはロックされていません",
+      "keyMissing": "鍵が資格情報ストアにありません",
+      "keyMismatch": "資格情報ストアの鍵ではセッションファイルを開けません",
+      "wrongPassword": "マスターパスワードが正しくありません",
+      "passwordRequired": "現在のマスターパスワードを入力してください",
+      "emptyPassword": "マスターパスワードを空にすることはできません"
+    },
+    "appLock": {
+      "unavailable": "Touch IDもログインパスワードも使用できません",
+      "helloNotSetUp": "Windows Helloが設定されていません。先にWindowsの設定でPIN、指紋認証、または顔認識を設定してください",
+      "helloDisabled": "Windows Helloは組織によって無効にされています",
+      "unsupported": "このシステムではZShellのロックにまだ対応していません",
+      "polkitMissing": "パスワードを尋ねるpolkitが、このシステムでは使用できません",
+      "policyMissing": "ZShellのpolkitポリシーがインストールされていません。.debまたは.rpmパッケージからZShellをインストールしてください",
+      "cancelled": "認証がキャンセルされました",
+      "failed": "認証に失敗しました",
+      "busy": "認証はすでに進行中です",
+      "locked": "ZShellはロックされています。先にロックを解除してください。",
+      "gone": "このコンピューターで認証する方法がなくなりました"
+    }
+  },
+  "zmodem": {
+    "receiving": "{name}を受信中：{done} / {total}（{percent}%）、{speed}/s",
+    "receivingUnknownSize": "{name}を受信中：{done}、{speed}/s",
+    "sending": "{name}を送信中：{done} / {total}（{percent}%）、{speed}/s",
+    "received": "{name}（{size}）を受信しました：{path}",
+    "sent": "{name}（{size}）を送信しました",
+    "skipped": "{name}をスキップしました：受信側が拒否しました。受信側にすでに存在する場合は、rz -yで上書き、rz -Eで両方を保持できます。"
+  }
+}

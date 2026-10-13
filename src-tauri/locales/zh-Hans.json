@@ -1,0 +1,268 @@
+{
+  "terminal": {
+    "connecting": "正在连接 {user}@{host}:{port}…",
+    "closed": "[连接已关闭]",
+    "closedWithStatus": "[连接已关闭，退出状态 {status}]",
+    "savedPasswordRejected": "服务器拒绝了已保存的密码。",
+    "incorrectPassphrase": "口令不正确。",
+    "connectingVia": "正在经由 {jump} 连接 {user}@{host}:{port}…",
+    "processExited": "[进程已退出]",
+    "processExitedWithCode": "[进程已退出，退出码 {code}]",
+    "processSignaled": "[进程被信号终止：{signal}]",
+    "connectingTo": "正在连接 {host}:{port}…",
+    "connectingToVia": "正在经由 {jump} 连接 {host}:{port}…",
+    "serialOpened": "已打开 {device}（{settings}）。",
+    "connectingViaProxy": "正在经由代理 {proxy} 连接 {user}@{host}:{port}…",
+    "connectingToViaProxy": "正在经由代理 {proxy} 连接 {host}:{port}…",
+    "proxyPassword": "代理 {proxy} 上 {user} 的密码：",
+    "savedProxyPasswordRejected": "代理拒绝了已保存的密码。",
+    "proxyPasswordRejected": "代理拒绝了该密码，请重试。"
+  },
+  "hostKey": {
+    "unknown": "无法确认主机“{host}”的真实性。\n{algorithm} 密钥指纹为 {fingerprint}。\n确定要继续连接吗",
+    "unknownOtherTypes": "无法确认主机“{host}”的真实性，\n但已知该主机有其他类型的密钥。\n{algorithm} 密钥指纹为 {fingerprint}。\n确定要继续连接吗",
+    "otherTypeFound": "警告：找到主机 {host} 的 {kind} 密钥，\n位于 {path}:{line}\n{kind} 密钥指纹为 {fingerprint}。",
+    "typeYesOrNo": "请输入“yes”或“no”：",
+    "added": "已将“{host}”（{algorithm}）永久添加到已知主机列表。",
+    "saveFailed": "无法写入 known_hosts：{error}",
+    "revokedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@       WARNING: REVOKED HOST KEY DETECTED!               @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "revokedDetails": "{path} 中将 {host} 的 {algorithm} 主机密钥标记为已吊销。\n这可能意味着有人正在使用被盗的密钥冒充此主机。",
+    "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "changedDetails": "有人可能正在窃听你的连接（中间人攻击）！\n也可能是主机密钥刚刚更换过。\n远程主机发送的 {algorithm} 密钥指纹为：\n  {fingerprint}\n它与 {path} 第 {line} 行的记录不符。\n如果密钥变更在预期之中，请在“设置 › 已知主机”中移除旧密钥，或执行：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\n然后重新连接。",
+    "changedDetailsElsewhere": "有人可能正在窃听你的连接（中间人攻击）！\n也可能是主机密钥刚刚更换过。\n远程主机发送的 {algorithm} 密钥指纹为：\n  {fingerprint}\n它与 {path} 第 {line} 行的记录不符。\n如果密钥变更在预期之中，请从该文件中移除旧密钥，例如执行：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\n然后重新连接。"
+  },
+  "forward": {
+    "autoStartFailed": "无法启动端口转发 {forward}：{error}"
+  },
+  "menu": {
+    "file": "文件",
+    "edit": "编辑",
+    "view": "显示",
+    "window": "窗口",
+    "help": "帮助",
+    "quit": "退出 {name}",
+    "about": "关于 {name}",
+    "services": "服务",
+    "hide": "隐藏 {name}",
+    "hideOthers": "隐藏其他",
+    "undo": "撤销",
+    "redo": "重做",
+    "cut": "剪切",
+    "copy": "拷贝",
+    "paste": "粘贴",
+    "selectAll": "全选",
+    "minimize": "最小化",
+    "zoom": "缩放"
+  },
+  "log": {
+    "started": "=== {session}（{address}），日志开始于 {time} ===",
+    "resumed": "=== 已于 {time} 重新连接 ===",
+    "dropped": "=== 此处缺失 {bytes} 字节的输出：日志写入速度跟不上 ==="
+  },
+  "appLock": {
+    "reasonMacos": "显示你的会话",
+    "reasonWindows": "请验证你的身份以解锁 ZShell"
+  },
+  "errors": {
+    "unexpected": "意外错误",
+    "knownHosts": {
+      "noHome": "找不到 known_hosts 所在的主文件夹",
+      "readFailed": "无法读取 {path}",
+      "writeFailed": "无法写入 {path}",
+      "changed": "known_hosts 在列出后已被更改。请重新检查列表。"
+    },
+    "log": {
+      "createFailed": "无法写入会话日志 {path}",
+      "writeFailed": "会话日志已停止：无法写入 {path}"
+    },
+    "credentialStore": "凭据存储错误",
+    "session": {
+      "notFound": "未找到会话",
+      "notConnected": "会话尚未建立 SSH 连接",
+      "pageGone": "会话打开期间窗口重新加载了",
+      "busy": "会话正在通过 ZMODEM 传输文件"
+    },
+    "window": {
+      "notFound": "窗口已关闭"
+    },
+    "update": {
+      "failed": "无法检查更新"
+    },
+    "pty": {
+      "openFailed": "无法创建伪终端",
+      "spawnFailed": "无法启动 shell {shell}"
+    },
+    "net": {
+      "connectTimeout": "连接 {target} 超时",
+      "connectFailed": "无法连接到 {target}",
+      "connectionLost": "连接已断开"
+    },
+    "serial": {
+      "openFailed": "无法打开 {device}",
+      "disconnected": "{device} 已断开连接"
+    },
+    "config": {
+      "writeFailed": "无法保存 {path}",
+      "unreadable": "无法保存更改：ZShell 启动时无法读取 {name}，为避免丢失其中的内容，该文件保持原样。重新启动 ZShell 以再次读取。"
+    },
+    "profile": {
+      "notFound": "未找到会话配置",
+      "missingFields": "主机、端口和用户名为必填项",
+      "invalidHost": "主机不能包含空格、控制字符或 , * ? ! [ ] 中的任何字符",
+      "invalidUser": "用户名不能包含控制字符",
+      "invalidJumpHost": "某个跳板机指向的会话不存在、不是 SSH 会话，或就是此会话本身",
+      "usedAsJumpHost": "此会话是 {names} 的跳板机；请先在那里将其移除",
+      "invalidEncoding": "不支持的字符编码：{encoding}",
+      "invalidTermType": "终端类型不能包含空格或特殊字符",
+      "invalidEnvName": "无效的环境变量名：“{name}”",
+      "missingHost": "主机和端口为必填项",
+      "missingDevice": "请选择串口设备",
+      "invalidSerialSettings": "无效的串口设置：数据位必须为 5 到 8，停止位必须为 1 或 2",
+      "jumpHostNotSsh": "此会话是 {names} 的跳板机，因此必须保持为 SSH 会话",
+      "invalidProxy": "此会话的代理已不存在；请选择其他代理",
+      "forwardsNeedSsh": "只有 SSH 会话可以转发端口"
+    },
+    "ssh": {
+      "handshakeFailed": "SSH 握手失败",
+      "handshakeTimeout": "{target} 接受了连接，但未能及时完成 SSH 握手",
+      "hostKeyRejected": "主机密钥不受信任，已中止连接",
+      "channelFailed": "无法打开会话通道",
+      "jumpFailed": "跳板机 {jump} 无法连接到 {target}"
+    },
+    "auth": {
+      "cancelled": "已取消",
+      "passwordFailed": "密码验证失败",
+      "failed": "身份验证失败",
+      "keyRejected": "服务器拒绝了私钥 {path}",
+      "keyReadFailed": "无法读取私钥 {path}",
+      "keyDecryptFailed": "无法解密私钥 {path}",
+      "agentConnectFailed": "无法连接到 SSH agent",
+      "agentListFailed": "无法列出 SSH agent 中的密钥",
+      "agentEmpty": "SSH agent 中没有密钥",
+      "agentAllRejected": "服务器拒绝了 SSH agent 中的所有密钥",
+      "notOffered": "服务器不接受此身份验证方式；它接受的是 {methods}",
+      "moreRequired": "服务器要求进一步的身份验证（{methods}），但未能成功",
+      "disconnected": "服务器在身份验证期间关闭了连接"
+    },
+    "sftp": {
+      "unsupported": "服务器不支持 SFTP",
+      "listFailed": "无法列出 {path}",
+      "mkdirFailed": "无法创建文件夹 {path}",
+      "renameFailed": "无法将 {from} 重命名为 {to}",
+      "removeFailed": "无法删除 {path}",
+      "chmodFailed": "无法更改 {path} 的权限"
+    },
+    "transfer": {
+      "cancelled": "已取消",
+      "invalidPath": "无效的本地路径 {path}",
+      "invalidName": "无法在此电脑上以原名保存 {name}",
+      "readFailed": "无法读取 {path}",
+      "openFailed": "无法打开 {path}",
+      "createFailed": "无法创建 {path}",
+      "createDirFailed": "无法创建文件夹 {path}",
+      "uploadFailed": "上传 {path} 失败",
+      "downloadFailed": "下载 {path} 失败",
+      "replaceFailed": "已上传 {path}，但无法将其替换到位；新内容在 {temporary} 中",
+      "replaceInterrupted": "已上传 {path}，但无法将其替换到位；新内容在 {temporary} 中，旧内容在 {original} 中"
+    },
+    "forward": {
+      "missingTarget": "本地转发和远程转发需要目标主机和端口",
+      "bindFailed": "无法监听 {address}",
+      "acceptFailed": "无法接受连接",
+      "remoteRefused": "服务器拒绝监听 {address}",
+      "channelFailed": "服务器无法连接到 {target}",
+      "socksVersion": "不支持的 SOCKS 版本 {version}",
+      "socksAuth": "SOCKS 客户端要求身份验证，但不支持身份验证",
+      "socksCommand": "不支持的 SOCKS 命令 {command}；仅支持 CONNECT",
+      "socksAddressType": "不支持的 SOCKS 地址类型 {type}",
+      "socksProtocol": "无效的 SOCKS 请求"
+    },
+    "import": {
+      "readFailed": "无法读取 {path}",
+      "parseFailed": "无法解析 {path}",
+      "notSessionsFile": "{path} 不是 ZShell 会话文件",
+      "unsupportedVersion": "{path} 由另一个版本的 ZShell 导出，此版本无法读取",
+      "invalidSession": "文件中的会话 {name} 无效",
+      "invalidProxy": "文件中的代理 {name} 无效",
+      "fileChanged": "{path} 在打开后已被更改，因此要导入的内容可能与显示的不同。请重新打开以检查。",
+      "includeTooDeep": "{path} 中的 Include 行嵌套过深；可能有文件包含了自身",
+      "wrongPassphrase": "口令与导出文件时使用的不同，或文件在导出后被更改过",
+      "passphraseRequired": "文件已加密。请输入导出时使用的口令",
+      "unsupportedEncryption": "此版本的 ZShell 无法读取 {path} 所用的加密方式"
+    },
+    "zmodem": {
+      "cancelled": "传输已取消",
+      "remoteCancelled": "传输被对方取消",
+      "timeout": "对方停止了响应",
+      "protocol": "传输失败：收到对方发来的意外数据",
+      "corrupt": "传输失败：接收到的数据反复损坏",
+      "incomplete": "{name} 未完整接收：发送方已转到下一个文件",
+      "notStarted": "不是 ZMODEM 传输",
+      "invalidName": "无法保存名为 {name} 的文件",
+      "notFile": "{path} 不是文件；只能发送文件"
+    },
+    "folder": {
+      "notFound": "未找到文件夹",
+      "emptyName": "文件夹需要名称",
+      "invalidMove": "文件夹不能移入自身"
+    },
+    "export": {
+      "writeFailed": "无法写入 {path}"
+    },
+    "edit": {
+      "notFound": "该文件已不在编辑中",
+      "conflict": "{name} 在你打开后已在服务器上被修改",
+      "openFailed": "无法在编辑器中打开 {path}"
+    },
+    "proxy": {
+      "notFound": "未找到代理",
+      "inUse": "{names} 正在使用此代理；请先在那里选择其他代理",
+      "missingAddress": "主机和端口为必填项",
+      "missingCommand": "请输入要运行的命令",
+      "unreachable": "无法连接到代理 {proxy}",
+      "authRequired": "代理 {proxy} 需要用户名和密码",
+      "authUnsupported": "代理 {proxy} 不接受用户名和密码验证",
+      "authFailed": "代理 {proxy} 拒绝了用户名或密码",
+      "refused": "代理 {proxy} 无法连接到 {target}",
+      "protocol": "代理 {proxy} 返回了意外的响应",
+      "timeout": "代理 {proxy} 在连接 {target} 时未及时响应",
+      "unsafeName": "“{name}”包含无法传给代理命令的字符",
+      "hostTooLong": "主机名太长，无法用于 SOCKS 代理",
+      "commandFailed": "无法运行代理命令 {command}"
+    },
+    "vault": {
+      "locked": "会话已锁定。请先解锁。",
+      "readFailed": "无法读取会话文件",
+      "parseFailed": "会话文件无效",
+      "verifyFailed": "写入 {path} 的会话无法读回，因此未做任何更改",
+      "deleteFailed": "无法删除 {path}",
+      "notLocked": "会话未锁定",
+      "keyMissing": "凭据存储中没有该密钥",
+      "keyMismatch": "凭据存储中的密钥无法打开会话文件",
+      "wrongPassword": "主密码不正确",
+      "passwordRequired": "请输入当前主密码",
+      "emptyPassword": "主密码不能为空"
+    },
+    "appLock": {
+      "unavailable": "无法使用 Touch ID 和登录密码",
+      "helloNotSetUp": "尚未设置 Windows Hello。请先在 Windows 设置中设置 PIN、指纹或人脸",
+      "helloDisabled": "你的组织已关闭 Windows Hello",
+      "unsupported": "此系统尚不支持锁定 ZShell",
+      "polkitMissing": "此系统上没有用于询问密码的 polkit",
+      "policyMissing": "未安装 ZShell 的 polkit 策略。请通过 .deb 或 .rpm 软件包安装 ZShell",
+      "cancelled": "身份验证已取消",
+      "failed": "身份验证失败",
+      "busy": "身份验证正在进行中",
+      "locked": "ZShell 已锁定。请先解锁。",
+      "gone": "此电脑上已没有可用的身份验证方式"
+    }
+  },
+  "zmodem": {
+    "receiving": "正在接收 {name}：{done} / {total}（{percent}%），{speed}/s",
+    "receivingUnknownSize": "正在接收 {name}：{done}，{speed}/s",
+    "sending": "正在发送 {name}：{done} / {total}（{percent}%），{speed}/s",
+    "received": "已接收 {name}（{size}）：{path}",
+    "sent": "已发送 {name}（{size}）",
+    "skipped": "已跳过 {name}：接收方拒绝了该文件。如果对方已有该文件，rz -y 会覆盖它，rz -E 会保留两者。"
+  }
+}

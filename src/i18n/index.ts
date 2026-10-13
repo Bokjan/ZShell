@@ -4,13 +4,21 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { LANGUAGES, type Cjk, type Locales } from "../lib/bindings";
 import { KEY_NAMES, setKeyNames, type KeyName } from "../lib/keymap";
+import de from "../locales/de.json";
 import en from "../locales/en.json";
+import fr from "../locales/fr.json";
+import ja from "../locales/ja.json";
+import zhHans from "../locales/zh-Hans.json";
 
 export type Language = (typeof LANGUAGES)[number];
 
 /** UI catalogs, one for each of the backend's. English is the source language and the fallback for missing keys. */
 export const resources = {
   en: { translation: en },
+  "zh-Hans": { translation: zhHans },
+  ja: { translation: ja },
+  de: { translation: de },
+  fr: { translation: fr },
 } as const satisfies Record<Language, { translation: object }>;
 
 export const isLanguage = (value: string): value is Language => (LANGUAGES as readonly string[]).includes(value);

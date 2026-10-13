@@ -138,18 +138,23 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
   );
 }
 
+/**
+ * The word typed to confirm deleting the vault, the same in every language: one keyboard
+ * layout and no input method needed, like the `yes` / `no` answers to host key prompts.
+ */
+const RESET_WORD = "DELETE";
+
 /** Deleting the vault, once its typed confirmation matches. */
 function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: VaultStatus): void }) {
   const { t } = useTranslation();
   const dialog = useDialog(onClose);
-  const word = t("vault.resetWord");
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (typed.trim() !== word) return;
+    if (typed.trim() !== RESET_WORD) return;
     setBusy(true);
     try {
       onReset(await vault.reset());
@@ -165,7 +170,7 @@ function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: Va
         <h2>{t("vault.resetTitle")}</h2>
         <p className="dialog-message">{t("vault.resetMessage")}</p>
         <label>
-          {t("vault.resetWordLabel", { word })}
+          {t("vault.resetWordLabel", { word: RESET_WORD })}
           <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus autoComplete="off" spellCheck={false} />
         </label>
         {error && <ErrorText>{error}</ErrorText>}
@@ -174,7 +179,7 @@ function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: Va
           <button type="button" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button type="submit" className="primary danger-fill" disabled={busy || typed.trim() !== word}>
+          <button type="submit" className="primary danger-fill" disabled={busy || typed.trim() !== RESET_WORD}>
             {t("vault.resetConfirm")}
           </button>
         </footer>

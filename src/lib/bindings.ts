@@ -928,4 +928,4 @@ export const DEFAULT_SERIAL: SerialOptions = { baudRate: 115200, dataBits: 8, de
 export const DEFAULT_GROUP = "default";
 
 /** The languages with a catalog, English first. */
-export const LANGUAGES = ["en"] as const;
+export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;

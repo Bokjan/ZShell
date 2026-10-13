@@ -18,7 +18,13 @@ pub const FALLBACK: &str = "en";
 pub const SYSTEM: &str = "system";
 
 /// The catalogs by language tag, English first. The frontend has one for each (`src/locales`).
-const SOURCES: &[(&str, &str)] = &[("en", include_str!("../locales/en.json"))];
+const SOURCES: &[(&str, &str)] = &[
+    ("en", include_str!("../locales/en.json")),
+    ("zh-Hans", include_str!("../locales/zh-Hans.json")),
+    ("ja", include_str!("../locales/ja.json")),
+    ("de", include_str!("../locales/de.json")),
+    ("fr", include_str!("../locales/fr.json")),
+];
 
 type Catalog = HashMap<String, String>;
 

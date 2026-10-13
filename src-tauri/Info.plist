@@ -8,6 +8,10 @@
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
+		<string>zh-Hans</string>
+		<string>ja</string>
+		<string>de</string>
+		<string>fr</string>
 	</array>
 </dict>
 </plist>

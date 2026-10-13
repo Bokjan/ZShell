@@ -1,0 +1,268 @@
+{
+  "terminal": {
+    "connecting": "Connexion à {user}@{host}:{port} ...",
+    "closed": "[Connexion fermée]",
+    "closedWithStatus": "[Connexion fermée, code de sortie {status}]",
+    "savedPasswordRejected": "Le mot de passe enregistré a été refusé par le serveur.",
+    "incorrectPassphrase": "Phrase secrète incorrecte.",
+    "connectingVia": "Connexion à {user}@{host}:{port} via {jump} ...",
+    "processExited": "[Processus terminé]",
+    "processExitedWithCode": "[Processus terminé avec le code {code}]",
+    "processSignaled": "[Processus terminé par le signal : {signal}]",
+    "connectingTo": "Connexion à {host}:{port} ...",
+    "connectingToVia": "Connexion à {host}:{port} via {jump} ...",
+    "serialOpened": "{device} ouvert ({settings}).",
+    "connectingViaProxy": "Connexion à {user}@{host}:{port} via le proxy {proxy} ...",
+    "connectingToViaProxy": "Connexion à {host}:{port} via le proxy {proxy} ...",
+    "proxyPassword": "Mot de passe de {user} pour le proxy {proxy} : ",
+    "savedProxyPasswordRejected": "Le mot de passe enregistré du proxy a été refusé.",
+    "proxyPasswordRejected": "Le proxy a refusé le mot de passe, veuillez réessayer."
+  },
+  "hostKey": {
+    "unknown": "L’authenticité de l’hôte « {host} » ne peut pas être établie.\nL’empreinte de la clé {algorithm} est {fingerprint}.\nVoulez-vous vraiment continuer la connexion",
+    "unknownOtherTypes": "L’authenticité de l’hôte « {host} » ne peut pas être établie,\nmais des clés d’un autre type sont déjà connues pour cet hôte.\nL’empreinte de la clé {algorithm} est {fingerprint}.\nVoulez-vous vraiment continuer la connexion",
+    "otherTypeFound": "AVERTISSEMENT : clé {kind} trouvée pour l’hôte {host}\ndans {path}:{line}\nEmpreinte de la clé {kind} : {fingerprint}.",
+    "typeYesOrNo": "Veuillez taper « yes » ou « no » :",
+    "added": "« {host} » ({algorithm}) a été ajouté définitivement à la liste des hôtes connus.",
+    "saveFailed": "Impossible d’écrire dans known_hosts : {error}",
+    "revokedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@       WARNING: REVOKED HOST KEY DETECTED!               @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "revokedDetails": "La clé d’hôte {algorithm} de {host} est marquée comme révoquée dans {path}.\nIl se peut qu’une clé volée soit utilisée pour usurper l’identité de cet hôte.",
+    "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+    "changedDetails": "Quelqu’un est peut-être en train de vous espionner (attaque de l’homme du milieu) !\nIl est aussi possible que la clé d’hôte vienne d’être changée.\nL’empreinte de la clé {algorithm} envoyée par l’hôte distant est :\n  {fingerprint}\nElle ne correspond pas à la ligne {line} de {path}.\nSi ce changement de clé est attendu, supprimez l’ancienne clé dans Paramètres › Hôtes connus, ou avec :\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nPuis reconnectez-vous.",
+    "changedDetailsElsewhere": "Quelqu’un est peut-être en train de vous espionner (attaque de l’homme du milieu) !\nIl est aussi possible que la clé d’hôte vienne d’être changée.\nL’empreinte de la clé {algorithm} envoyée par l’hôte distant est :\n  {fingerprint}\nElle ne correspond pas à la ligne {line} de {path}.\nSi ce changement de clé est attendu, supprimez l’ancienne clé de ce fichier, par exemple avec :\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nPuis reconnectez-vous."
+  },
+  "forward": {
+    "autoStartFailed": "La redirection de port {forward} n’a pas pu démarrer : {error}"
+  },
+  "menu": {
+    "file": "Fichier",
+    "edit": "Édition",
+    "view": "Présentation",
+    "window": "Fenêtre",
+    "help": "Aide",
+    "quit": "Quitter {name}",
+    "about": "À propos de {name}",
+    "services": "Services",
+    "hide": "Masquer {name}",
+    "hideOthers": "Masquer les autres",
+    "undo": "Annuler",
+    "redo": "Rétablir",
+    "cut": "Couper",
+    "copy": "Copier",
+    "paste": "Coller",
+    "selectAll": "Tout sélectionner",
+    "minimize": "Placer dans le Dock",
+    "zoom": "Réduire/agrandir"
+  },
+  "log": {
+    "started": "=== {session} ({address}), journal démarré le {time} ===",
+    "resumed": "=== Reconnecté le {time} ===",
+    "dropped": "=== {bytes} octets de sortie manquent ici : le journal n’a pas pu être écrit assez vite ==="
+  },
+  "appLock": {
+    "reasonMacos": "afficher vos sessions",
+    "reasonWindows": "Confirmez votre identité pour déverrouiller ZShell"
+  },
+  "errors": {
+    "unexpected": "Erreur inattendue",
+    "knownHosts": {
+      "noHome": "Le dossier personnel, où se trouve known_hosts, est introuvable",
+      "readFailed": "Impossible de lire {path}",
+      "writeFailed": "Impossible d’écrire dans {path}",
+      "changed": "known_hosts a changé depuis l’affichage de la liste. Vérifiez de nouveau la liste."
+    },
+    "log": {
+      "createFailed": "Impossible d’écrire le journal de session {path}",
+      "writeFailed": "Le journal de session s’est arrêté : impossible d’écrire dans {path}"
+    },
+    "credentialStore": "Erreur du magasin d’identifiants",
+    "session": {
+      "notFound": "Session introuvable",
+      "notConnected": "La session n’a pas encore de connexion SSH",
+      "pageGone": "La fenêtre a été rechargée pendant l’ouverture de la session",
+      "busy": "La session est en train de transférer des fichiers avec ZMODEM"
+    },
+    "window": {
+      "notFound": "La fenêtre a été fermée"
+    },
+    "update": {
+      "failed": "Impossible de rechercher les mises à jour"
+    },
+    "pty": {
+      "openFailed": "Impossible de créer un pseudo-terminal",
+      "spawnFailed": "Impossible de démarrer le shell {shell}"
+    },
+    "net": {
+      "connectTimeout": "Le délai de connexion à {target} a expiré",
+      "connectFailed": "Impossible de se connecter à {target}",
+      "connectionLost": "La connexion a été perdue"
+    },
+    "serial": {
+      "openFailed": "Impossible d’ouvrir {device}",
+      "disconnected": "{device} a été déconnecté"
+    },
+    "config": {
+      "writeFailed": "Impossible d’enregistrer {path}",
+      "unreadable": "Impossible d’enregistrer les modifications : {name} n’a pas pu être lu au démarrage de ZShell et reste tel quel pour que rien de son contenu ne soit perdu. Redémarrez ZShell pour le relire."
+    },
+    "profile": {
+      "notFound": "Profil de session introuvable",
+      "missingFields": "L’hôte, le port et le nom d’utilisateur sont obligatoires",
+      "invalidHost": "L’hôte ne peut contenir ni espaces, ni caractères de contrôle, ni aucun des caractères , * ? ! [ ]",
+      "invalidUser": "Le nom d’utilisateur ne peut pas contenir de caractères de contrôle",
+      "invalidJumpHost": "Un hôte de rebond désigne une session manquante, une session qui n’est pas SSH ou cette session elle-même",
+      "usedAsJumpHost": "Cette session est un hôte de rebond pour {names} ; retirez-la d’abord de leurs hôtes de rebond",
+      "invalidEncoding": "Encodage de caractères non pris en charge : {encoding}",
+      "invalidTermType": "Le type de terminal ne peut contenir ni espaces ni caractères spéciaux",
+      "invalidEnvName": "Nom de variable d’environnement non valide : « {name} »",
+      "missingHost": "L’hôte et le port sont obligatoires",
+      "missingDevice": "Choisissez un périphérique série",
+      "invalidSerialSettings": "Paramètres série non valides : les bits de données doivent être compris entre 5 et 8, et les bits d’arrêt valoir 1 ou 2",
+      "jumpHostNotSsh": "Cette session est un hôte de rebond pour {names} : elle doit donc rester une session SSH",
+      "invalidProxy": "Le proxy de cette session n’existe plus ; choisissez-en un autre",
+      "forwardsNeedSsh": "Seules les sessions SSH peuvent rediriger des ports"
+    },
+    "ssh": {
+      "handshakeFailed": "Échec de la négociation SSH",
+      "handshakeTimeout": "{target} a accepté la connexion mais n’a pas terminé la négociation SSH à temps",
+      "hostKeyRejected": "Clé d’hôte non approuvée, connexion interrompue",
+      "channelFailed": "Impossible d’ouvrir un canal de session",
+      "jumpFailed": "L’hôte de rebond {jump} ne peut pas se connecter à {target}"
+    },
+    "auth": {
+      "cancelled": "Annulé",
+      "passwordFailed": "Échec de l’authentification par mot de passe",
+      "failed": "Échec de l’authentification",
+      "keyRejected": "Le serveur a refusé la clé privée {path}",
+      "keyReadFailed": "Impossible de lire la clé privée {path}",
+      "keyDecryptFailed": "Impossible de déchiffrer la clé privée {path}",
+      "agentConnectFailed": "Impossible de se connecter à l’agent SSH",
+      "agentListFailed": "Impossible de lister les clés de l’agent SSH",
+      "agentEmpty": "L’agent SSH ne contient aucune clé",
+      "agentAllRejected": "Le serveur a refusé toutes les clés de l’agent SSH",
+      "notOffered": "Le serveur n’accepte pas cette méthode d’authentification ; il accepte {methods}",
+      "moreRequired": "Le serveur exige une authentification supplémentaire ({methods}), qui n’a pas abouti",
+      "disconnected": "Le serveur a fermé la connexion pendant l’authentification"
+    },
+    "sftp": {
+      "unsupported": "Le serveur ne prend pas en charge SFTP",
+      "listFailed": "Impossible de lister {path}",
+      "mkdirFailed": "Impossible de créer le dossier {path}",
+      "renameFailed": "Impossible de renommer {from} en {to}",
+      "removeFailed": "Impossible de supprimer {path}",
+      "chmodFailed": "Impossible de modifier les autorisations de {path}"
+    },
+    "transfer": {
+      "cancelled": "Annulé",
+      "invalidPath": "Chemin local non valide : {path}",
+      "invalidName": "Impossible d’enregistrer {name} sous ce nom sur cet ordinateur",
+      "readFailed": "Impossible de lire {path}",
+      "openFailed": "Impossible d’ouvrir {path}",
+      "createFailed": "Impossible de créer {path}",
+      "createDirFailed": "Impossible de créer le dossier {path}",
+      "uploadFailed": "Échec du téléversement de {path}",
+      "downloadFailed": "Échec du téléchargement de {path}",
+      "replaceFailed": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary}",
+      "replaceInterrupted": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary} et l’ancien dans {original}"
+    },
+    "forward": {
+      "missingTarget": "Les redirections locales et distantes nécessitent un hôte et un port de destination",
+      "bindFailed": "Impossible d’écouter sur {address}",
+      "acceptFailed": "Impossible d’accepter une connexion",
+      "remoteRefused": "Le serveur a refusé d’écouter sur {address}",
+      "channelFailed": "Le serveur n’a pas pu se connecter à {target}",
+      "socksVersion": "Version SOCKS non prise en charge : {version}",
+      "socksAuth": "Le client SOCKS exige une authentification, qui n’est pas prise en charge",
+      "socksCommand": "Commande SOCKS non prise en charge : {command} ; seule la commande CONNECT est prise en charge",
+      "socksAddressType": "Type d’adresse SOCKS non pris en charge : {type}",
+      "socksProtocol": "Requête SOCKS non valide"
+    },
+    "import": {
+      "readFailed": "Impossible de lire {path}",
+      "parseFailed": "Impossible d’analyser {path}",
+      "notSessionsFile": "{path} n’est pas un fichier de sessions ZShell",
+      "unsupportedVersion": "{path} a été exporté par une version de ZShell dont cette version ne peut pas lire les fichiers",
+      "invalidSession": "La session {name} du fichier n’est pas valide",
+      "invalidProxy": "Le proxy {name} du fichier n’est pas valide",
+      "fileChanged": "{path} a changé après son ouverture : ce qui serait importé pourrait différer de ce qui a été affiché. Ouvrez-le de nouveau pour le vérifier.",
+      "includeTooDeep": "Les lignes Include de {path} sont imbriquées trop profondément ; un fichier s’inclut peut-être lui-même",
+      "wrongPassphrase": "Ce n’est pas la phrase secrète utilisée lors de l’exportation du fichier, ou le fichier a été modifié après son exportation",
+      "passphraseRequired": "Le fichier est chiffré. Saisissez la phrase secrète utilisée lors de son exportation",
+      "unsupportedEncryption": "{path} est chiffré d’une manière que cette version de ZShell ne sait pas lire"
+    },
+    "zmodem": {
+      "cancelled": "Transfert annulé",
+      "remoteCancelled": "Le transfert a été annulé par l’autre partie",
+      "timeout": "L’autre partie ne répond plus",
+      "protocol": "Échec du transfert : données inattendues de l’autre partie",
+      "corrupt": "Échec du transfert : les données arrivaient sans cesse endommagées",
+      "incomplete": "{name} n’a pas été reçu en entier : l’expéditeur est passé à un autre fichier",
+      "notStarted": "Ce n’est pas un transfert ZMODEM",
+      "invalidName": "Impossible d’enregistrer un fichier nommé {name}",
+      "notFile": "{path} n’est pas un fichier ; seuls des fichiers peuvent être envoyés"
+    },
+    "folder": {
+      "notFound": "Dossier introuvable",
+      "emptyName": "Le dossier doit avoir un nom",
+      "invalidMove": "Un dossier ne peut pas être déplacé dans lui-même"
+    },
+    "export": {
+      "writeFailed": "Impossible d’écrire {path}"
+    },
+    "edit": {
+      "notFound": "Le fichier n’est plus en cours de modification",
+      "conflict": "{name} a été modifié sur le serveur après que vous l’avez ouvert",
+      "openFailed": "Impossible d’ouvrir {path} dans l’éditeur"
+    },
+    "proxy": {
+      "notFound": "Proxy introuvable",
+      "inUse": "Ce proxy est utilisé par {names} ; choisissez d’abord un autre proxy dans ces sessions",
+      "missingAddress": "L’hôte et le port sont obligatoires",
+      "missingCommand": "Saisissez la commande à exécuter",
+      "unreachable": "Impossible de se connecter au proxy {proxy}",
+      "authRequired": "Le proxy {proxy} exige un nom d’utilisateur et un mot de passe",
+      "authUnsupported": "Le proxy {proxy} n’accepte pas l’authentification par nom d’utilisateur et mot de passe",
+      "authFailed": "Le proxy {proxy} a refusé le nom d’utilisateur ou le mot de passe",
+      "refused": "Le proxy {proxy} n’a pas pu se connecter à {target}",
+      "protocol": "Réponse inattendue du proxy {proxy}",
+      "timeout": "Le proxy {proxy} n’a pas répondu à temps lors de la connexion à {target}",
+      "unsafeName": "« {name} » contient des caractères qui ne peuvent pas être transmis à une commande de proxy",
+      "hostTooLong": "Le nom d’hôte est trop long pour un proxy SOCKS",
+      "commandFailed": "Impossible d’exécuter la commande de proxy {command}"
+    },
+    "vault": {
+      "locked": "Les sessions sont verrouillées. Déverrouillez-les d’abord.",
+      "readFailed": "Impossible de lire le fichier des sessions",
+      "parseFailed": "Le fichier des sessions n’est pas valide",
+      "verifyFailed": "Les sessions écrites dans {path} n’ont pas pu être relues ; rien n’a donc été modifié",
+      "deleteFailed": "Impossible de supprimer {path}",
+      "notLocked": "Les sessions ne sont pas verrouillées",
+      "keyMissing": "La clé ne se trouve pas dans le magasin d’identifiants",
+      "keyMismatch": "La clé du magasin d’identifiants n’ouvre pas le fichier des sessions",
+      "wrongPassword": "Mot de passe principal incorrect",
+      "passwordRequired": "Saisissez le mot de passe principal actuel",
+      "emptyPassword": "Le mot de passe principal ne peut pas être vide"
+    },
+    "appLock": {
+      "unavailable": "Ni Touch ID ni le mot de passe de session ne peuvent être utilisés",
+      "helloNotSetUp": "Windows Hello n’est pas configuré. Configurez d’abord un code PIN, une empreinte digitale ou la reconnaissance faciale dans les Paramètres Windows",
+      "helloDisabled": "Windows Hello a été désactivé par votre organisation",
+      "unsupported": "Le verrouillage de ZShell n’est pas encore pris en charge sur ce système",
+      "polkitMissing": "polkit, qui demande le mot de passe, n’est pas disponible sur ce système",
+      "policyMissing": "La stratégie polkit de ZShell n’est pas installée. Installez ZShell à partir de son paquet .deb ou .rpm",
+      "cancelled": "L’authentification a été annulée",
+      "failed": "Échec de l’authentification",
+      "busy": "Une authentification est déjà en cours",
+      "locked": "ZShell est verrouillé. Déverrouillez-le d’abord.",
+      "gone": "Il n’y a plus aucun moyen de s’authentifier sur cet ordinateur"
+    }
+  },
+  "zmodem": {
+    "receiving": "Réception de {name} : {done} sur {total} ({percent} %), {speed}/s",
+    "receivingUnknownSize": "Réception de {name} : {done}, {speed}/s",
+    "sending": "Envoi de {name} : {done} sur {total} ({percent} %), {speed}/s",
+    "received": "{name} reçu ({size}) : {path}",
+    "sent": "{name} envoyé ({size})",
+    "skipped": "{name} ignoré : le destinataire l’a refusé. S’il existe déjà de son côté, rz -y l’écrase et rz -E conserve les deux."
+  }
+}

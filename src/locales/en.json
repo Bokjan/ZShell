@@ -936,7 +936,6 @@
     "resetTitle": "Delete All Sessions?",
     "resetMessage": "Resetting deletes the file with your sessions: every session, folder, proxy, quick command and saved password in it is lost for good. Settings and session logs are kept.",
     "resetWordLabel": "Type {word} to confirm",
-    "resetWord": "DELETE",
     "resetConfirm": "Delete Everything",
     "unlocked": "Unlocked.",
     "store": {

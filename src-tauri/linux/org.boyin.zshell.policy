@@ -2,12 +2,22 @@
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
   "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <!-- The app lock: ZShell asks for this action to unlock its window (see src/applock/linux.rs).
-     Installed by the deb and rpm packages into /usr/share/polkit-1/actions/. -->
+     Installed by the deb and rpm packages into /usr/share/polkit-1/actions/. The polkit agent
+     shows the text in its session's language: one per catalog in src-tauri/locales (checked by
+     i18n.rs's tests). -->
 <policyconfig>
   <vendor>ZShell</vendor>
   <action id="org.boyin.zshell.unlock">
     <description>Unlock ZShell</description>
+    <description xml:lang="zh_CN">解锁 ZShell</description>
+    <description xml:lang="ja">ZShellのロックを解除</description>
+    <description xml:lang="de">ZShell entsperren</description>
+    <description xml:lang="fr">Déverrouiller ZShell</description>
     <message>Authentication is required to unlock ZShell.</message>
+    <message xml:lang="zh_CN">需要认证才能解锁 ZShell。</message>
+    <message xml:lang="ja">ZShellのロックを解除するには認証が必要です。</message>
+    <message xml:lang="de">Zum Entsperren von ZShell ist eine Authentifizierung erforderlich.</message>
+    <message xml:lang="fr">Une authentification est requise pour déverrouiller ZShell.</message>
     <icon_name>zshell</icon_name>
     <defaults>
       <allow_any>auth_self</allow_any>
