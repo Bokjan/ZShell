@@ -547,12 +547,13 @@ body.dragging-row {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* A square around the icon, its hover background as tall as the other icon buttons'. */
 .tab-close {
+  flex-shrink: 0;
   border: none;
   background: none;
-  padding: 0 4px;
-  border-radius: 3px;
-  font-size: 15px;
+  padding: 4px;
+  border-radius: 4px;
   visibility: hidden;
 }
 .tab:hover .tab-close,
