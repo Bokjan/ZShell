@@ -2,6 +2,16 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.12.2] - 2026-10-13
+
+### Bug Fixes
+
+- Locking ZShell by hand no longer brings up Touch ID or Windows Hello at once: the lock screen asks when the window gets the focus again, or when Unlock is pressed.
+- On Windows and Linux, the lock screen focuses its Unlock button when it opens, instead of the window's minimize button.
+- The Check Now, Download and Skip buttons under Settings › About look like the other buttons in the settings.
+- The hover background of a tab's close button is as tall as the other small buttons', instead of a thin strip.
+- On Linux, the app icon is also installed as an SVG, so the desktop draws it sharp at any size.
+
 ## [2.12.1] - 2026-10-13
 
 ### Bug Fixes
