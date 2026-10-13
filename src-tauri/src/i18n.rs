@@ -290,16 +290,20 @@ mod tests {
         assert!(wrong.is_empty(), "catalogs differing from locales/en.json:\n{}", wrong.join("\n"));
     }
 
-    /// The files outside the catalogs that list the languages: macOS's localizations, and the
-    /// polkit action's text (POSIX names: polkit drops the region only after trying it, and
-    /// Chinese needs one to tell the script).
+    /// The files outside the catalogs that list the languages: macOS's localizations, the
+    /// Microsoft Store package's languages (English as en-us, its default), and the polkit
+    /// action's text (POSIX names: polkit drops the region only after trying it, and Chinese
+    /// needs one to tell the script).
     #[test]
     fn packages_declare_every_language() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let plist = std::fs::read_to_string(root.join("Info.plist")).unwrap();
         let policy = std::fs::read_to_string(root.join("linux/org.boyin.zshell.policy")).unwrap();
+        let msix = std::fs::read_to_string(root.join("msix/AppxManifest.xml")).unwrap();
         for (locale, _) in SOURCES {
             assert!(plist.contains(&format!("<string>{locale}</string>")), "Info.plist lacks {locale}");
+            let resource = if *locale == FALLBACK { "en-us" } else { locale };
+            assert!(msix.contains(&format!("<Resource Language=\"{resource}\" />")), "AppxManifest.xml lacks {resource}");
             if *locale != FALLBACK {
                 let posix = if *locale == "zh-Hans" { "zh_CN" } else { locale };
                 for element in ["description", "message"] {

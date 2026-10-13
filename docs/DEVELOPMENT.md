@@ -171,6 +171,14 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 
 **Microsoft Store**：以 full trust 桌面应用（`runFullTrust`，不进 AppContainer）的 MSIX 上架，由 Store 用微软的证书重新签名，不需要自己的代码签名证书，安装与更新由 Store 负责（应用本身没有自动更新）。不走 EXE / MSI 上架：那条路要求安装包用受信任 CA 的证书签名，且 Store 不负责更新。GitHub Release 的各个包照旧，可以与 Store 版同时安装。`.msixbundle` 不放进 GitHub Release：它没有签名，Windows 不允许安装（只有开发者模式下用 `Add-AppxPackage -Register` 注册解包后的目录可以，见 `package-msix.ps1` 的注释）；自己签名也不可行，签名证书的 subject 必须与清单里 Partner Center 分配的 `Publisher`（`CN=<GUID>`）一致，CA 不会签发这样的证书，换 Publisher 又成了与 Store 版不同的另一个应用。要 MSIX 的用户从 Store 安装。文件系统虚拟化保持 MSIX 的默认行为：应用在 `AppData` 下新建的文件写到包的私有目录（`%LOCALAPPDATA%\Packages\BoyinChen.ZShell_0mrn21pkbrd8j\LocalCache`），卸载时删除，已有的文件原地读写；所以机器上已有 GitHub 版的配置时 Store 版直接沿用，全新安装的配置只有 Store 版看得到（关闭虚拟化要用只给特定游戏的受限能力 `unvirtualizedResources`，不考虑）。清单的身份、版本号与最低系统版本见 `src-tauri/msix/AppxManifest.xml` 的注释。
 
+**Microsoft Store 提交**：Partner Center 里要填的文字都在 `src-tauri/msix/listing.md`（英语，各节对应 Partner Center 的各个字段），改功能介绍时与 README 一起更新。
+- 商店页面只有 English (United States)。清单声明了五种语言（`AppxManifest.xml` 的 `<Resources>`，测试保证与语言包一致），上传包后 Partner Center 会在 "Languages supported by your packages" 里列出另外四种：点 Remove 移除，只是不为它们提供商店页面。
+- 定价与可用性：免费，所有市场。属性：类别 Developer tools，隐私政策、网站与支持联系方式按 `listing.md`。
+- 年龄分级（IARC 问卷）：类别选工具 / 效率类应用；没有暴力、性、赌博等内容，用户之间不能交流或分享内容，不分享位置，没有数字购买，不是网页浏览器（链接在系统浏览器里打开），预期结果为最低分级（3+ / Everyone）。
+- "What's new in this version"：上次提交到 Store 之后各版本在 `CHANGELOG.md` 里的条目，超过 1500 字时缩写。
+- 提交选项：`listing.md` 的 "Notes for certification" 整段填入给认证人员的说明，其中 `runFullTrust` 一段也用作受限能力的理由。
+- 截图在 Windows 上用英语界面截，1366 × 768 以上的 PNG。
+
 **依赖的许可证**：ZShell 不开源、免费分发，依赖的许可证必须允许闭源分发，只要求附上声明。可以接受的列在 `src-tauri/about.toml` 的 `accepted` 里（MIT、Apache-2.0、BSD、ISC、Zlib、BSL-1.0、Unicode-3.0、MPL-2.0），`pnpm licenses:generate` 对 crate 与 npm 包都按这份列表检查，不在列表里的会让生成失败（release workflow 也随之失败）。引入新依赖前先看它（及其新带来的间接依赖）的许可证：
 - GPL、LGPL、AGPL 等 copyleft 许可证不接受：GPL / AGPL 要求整个程序以同样的许可证开源；LGPL 要求用户能替换该库，Rust 静态链接做不到。只有在多许可证（`MIT OR GPL-3.0`）里能选宽松的一个时才可用。
 - MPL-2.0 是文件级 copyleft：原样使用没有问题（声明里附有主页，说明源码在哪里），但修改了 MPL 文件（`[patch]`、vendoring）就要以 MPL 公开修改后的这些文件。

@@ -32,6 +32,12 @@ if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 $packages = Join-Path $OutDir "packages"
 New-Item -ItemType Directory -Path $packages | Out-Null
 
+# The manifest's languages, the first being the default: the resource index has to declare
+# the same ones.
+$languages = ([xml](Get-Content src-tauri/msix/AppxManifest.xml -Raw)).Package.Resources.Resource |
+  ForEach-Object { $_.Language }
+if (-not $languages) { throw "no languages in src-tauri/msix/AppxManifest.xml" }
+
 $targets = [ordered]@{ x64 = "x86_64-pc-windows-msvc"; arm64 = "aarch64-pc-windows-msvc" }
 foreach ($arch in $targets.Keys) {
   $exe = "src-tauri/target/$($targets[$arch])/release/zshell.exe"
@@ -48,7 +54,7 @@ foreach ($arch in $targets.Keys) {
   # The images carry scale and size qualifiers (Square44x44Logo.scale-200.png), which
   # Windows finds through the resource index, for the names in the manifest without them.
   $priconfig = Join-Path $OutDir "priconfig-$arch.xml"
-  & $makepri createconfig /cf $priconfig /dq en-US /pv 10.0.0 /o
+  & $makepri createconfig /cf $priconfig /dq ($languages -join "_") /pv 10.0.0 /o
   if ($LASTEXITCODE -ne 0) { throw "makepri createconfig failed for $arch" }
   & $makepri new /pr $layout /cf $priconfig /mn (Join-Path $layout "AppxManifest.xml") /of (Join-Path $layout "resources.pri") /o
   if ($LASTEXITCODE -ne 0) { throw "makepri new failed for $arch" }

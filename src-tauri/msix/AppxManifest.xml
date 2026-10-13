@@ -27,8 +27,15 @@
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
 
+  <!-- The languages of src-tauri/locales, English first as the default (checked by i18n.rs's
+       tests); the Store lists them as the app's languages. package-msix.ps1 indexes the
+       resources for the same ones. -->
   <Resources>
     <Resource Language="en-us" />
+    <Resource Language="zh-Hans" />
+    <Resource Language="ja" />
+    <Resource Language="de" />
+    <Resource Language="fr" />
   </Resources>
 
   <Applications>
