@@ -2,6 +2,22 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.12.0] - 2026-10-13
+
+### Features
+
+- ZShell runs on Linux, made for GNOME on Wayland, the default desktop of Debian, Ubuntu and Fedora, with `.deb` and `.rpm` packages for x64:
+  - The tab bar takes the place of the title bar, with the desktop's own window frame and its window buttons; double-clicking and right-clicking the tab bar do what they do on a title bar.
+  - The appearance follows the desktop's light or dark style, and terminals default to the desktop's monospace font.
+  - Remote files can be dragged out of the file panel into Files or onto the desktop, and tabs between windows.
+  - The app lock asks for the account password (or a fingerprint, where set up) in the desktop's own dialog, and locks after the computer has been idle, when the screen locks, or before it sleeps.
+  - Saved passwords and the vault's key go to the system keyring (GNOME Keyring, KWallet), and local terminals start the login shell.
+  - Opening ZShell again brings its window forward.
+
+### Internal
+
+- The window and tab drag code is split into files by platform.
+
 ## [2.11.4] - 2026-10-12
 
 ### Bug Fixes
