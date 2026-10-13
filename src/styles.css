@@ -2704,7 +2704,8 @@ body.resizing .terminal-view {
 .settings-dialog .row button.danger {
   color: var(--danger);
 }
-.settings-dialog .row button:disabled {
+.settings-dialog .row button:disabled,
+.settings-dialog .row button[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
 }
@@ -2778,9 +2779,7 @@ body.resizing .terminal-view {
   margin: 0;
 }
 .about-update-buttons {
-  display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   margin: 6px 0 10px;
 }
 .settings-nav-list .dot-icon {

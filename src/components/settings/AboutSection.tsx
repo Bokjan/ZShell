@@ -68,7 +68,7 @@ export function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
                     : ""}
             </p>
             {!updates.checking && updates.result?.kind === "failed" && <ErrorText>{updates.result.message}</ErrorText>}
-            <div className="about-update-buttons">
+            <div className="row about-update-buttons">
               {updates.newer && (
                 <button type="button" onClick={() => void openUrl(updates.newer!.url).catch(console.error)}>
                   {t("updates.download")}
