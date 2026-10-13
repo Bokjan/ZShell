@@ -30,10 +30,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WindowFromPoint, GA_ROOT, MSG, PM_REMOVE, QS_ALLINPUT, WM_QUIT,
 };
 
-use super::{DragResult, DropDownload, Item, Outcome};
+use super::{placeholders, DragResult, DropDownload, Item, Outcome};
 use crate::error::{Error, Result};
-use crate::local_name::{create_unique, create_unique_file, local_file_name};
-use crate::sftp::edit::remove_old;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Fetch {
@@ -287,30 +285,7 @@ pub(super) fn start(
 ) -> Result<()> {
     let hwnd = window.hwnd().map_err(Error::from)?.0 as isize;
     let scale = window.scale_factor().map_err(Error::from)?;
-    let root = std::env::temp_dir().join("ZShell-drag");
-    remove_old(&root);
-    if download.transfer_id.contains(['/', '\\', '.']) {
-        return Err(Error::new("transfer.invalidPath").param("path", &download.transfer_id));
-    }
-    let dir = root.join(&download.transfer_id);
-    std::fs::create_dir_all(&dir).map_err(|e| Error::new("transfer.createDirFailed").param("path", dir.display()).detail(e))?;
-    // Placeholders, in case the application dragged over looks at the files before the drop.
-    // Each takes a free name: items the file system can't tell apart (`README` and `readme`,
-    // or `a:b` and `a_b`, both `a_b` here) would otherwise land on one file.
-    let items = items
-        .iter()
-        .map(|item| {
-            let name = local_file_name(item.name()).ok_or_else(|| Error::new("transfer.invalidName").param("name", &item.path))?;
-            let path = dir.join(name);
-            let created = if item.is_dir {
-                create_unique(&path, |path| std::fs::create_dir(path))
-            } else {
-                create_unique_file(&path).map(|(path, _)| (path, ()))
-            };
-            let (local, ()) = created.map_err(|e| Error::new("transfer.createFailed").param("path", path.display()).detail(e))?;
-            Ok((item.path.clone(), local))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let items = placeholders(&std::env::temp_dir().join("ZShell-drag"), &download.transfer_id, &items)?;
     let shared = Arc::new(Shared {
         items,
         download,

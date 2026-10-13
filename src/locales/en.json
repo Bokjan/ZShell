@@ -614,6 +614,7 @@
     "schemeDefaultLight": "Default Light",
     "fontFamily": "Font",
     "fontFamilyPlaceholder": "Default (Menlo / Cascadia Mono)",
+    "fontFamilyPlaceholderSystem": "Default ({font})",
     "fontSize": "Size",
     "fontHint": "Missing characters, such as Chinese, fall back to system fonts.",
     "cursorStyle": "Cursor",
@@ -694,6 +695,7 @@
     "knownHostsManage": "Manage…",
     "knownHostsReveal": "Show in Finder",
     "knownHostsRevealWindows": "Show in File Explorer",
+    "knownHostsRevealLinux": "Show in File Manager",
     "knownHostsHint": "Shared with OpenSSH. A host's key is added when you accept it on the first connection, and checked on every connection after that.",
     "shortcuts": "Keyboard Shortcuts",
     "shortcutActions": {
@@ -749,6 +751,7 @@
         "touchId": "Lock ZShell with Touch ID",
         "password": "Lock ZShell with the login password",
         "windowsHello": "Lock ZShell with Windows Hello",
+        "polkit": "Lock ZShell with the account password",
         "unavailable": "Lock ZShell"
       },
       "hint": "Covers the window until you unlock it; sessions keep running meanwhile. Lock now with {shortcut}.",
@@ -952,7 +955,8 @@
     "prompt": {
       "touchId": "Use Touch ID or the login password to unlock.",
       "password": "Enter the login password to unlock.",
-      "windowsHello": "Use Windows Hello to unlock."
+      "windowsHello": "Use Windows Hello to unlock.",
+      "polkit": "Authenticate with the account password to unlock."
     },
     "goneHint": "ZShell can be unlocked without authenticating.",
     "unlockAnyway": "Unlock Without Authenticating"

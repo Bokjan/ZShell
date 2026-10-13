@@ -1,9 +1,11 @@
 //! Dragging remote files out of the window. Nothing is downloaded unless the items are
 //! dropped on another application: macOS then asks for each through a file promise, with the
-//! folder it was dropped in (`macos.rs`); on Windows they are downloaded into a temporary
-//! folder when the mouse button is released and the application they were dropped on copies
-//! them from there (`win.rs`).
+//! folder it was dropped in (`macos.rs`); on Windows and Linux they are downloaded into a
+//! temporary folder once they have been dropped and the application they were dropped on asks
+//! for them, and it copies them from there (`win.rs`, `linux.rs`).
 
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(windows)]
@@ -240,6 +242,37 @@ impl DropDownload {
     }
 }
 
+/// Makes the folder of a drop in `root` (`root/<transfer id>`, after deleting old ones) with
+/// a placeholder for each item, in case the application dragged over looks at the files before
+/// the drop; returns each remote item with where it goes. Each takes a free name: items the
+/// file system can't tell apart (`README` and `readme` on Windows, or `a:b` and `a_b`, both
+/// `a_b` there) would otherwise land on one file.
+#[cfg(any(windows, target_os = "linux"))]
+fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Result<Vec<(String, PathBuf)>> {
+    use crate::local_name::{create_unique, create_unique_file, local_file_name};
+
+    super::edit::remove_old(root);
+    if transfer_id.contains(['/', '\\', '.']) {
+        return Err(Error::new("transfer.invalidPath").param("path", transfer_id));
+    }
+    let dir = root.join(transfer_id);
+    std::fs::create_dir_all(&dir).map_err(|e| Error::new("transfer.createDirFailed").param("path", dir.display()).detail(e))?;
+    items
+        .iter()
+        .map(|item| {
+            let name = local_file_name(item.name()).ok_or_else(|| Error::new("transfer.invalidName").param("name", &item.path))?;
+            let path = dir.join(name);
+            let created = if item.is_dir {
+                create_unique(&path, |path| std::fs::create_dir(path))
+            } else {
+                create_unique_file(&path).map(|(path, _)| (path, ()))
+            };
+            let (local, ()) = created.map_err(|e| Error::new("transfer.createFailed").param("path", path.display()).detail(e))?;
+            Ok((item.path.clone(), local))
+        })
+        .collect()
+}
+
 /// Starts dragging `items` out of `window` (the mouse button must be down) and waits for the
 /// drag to end.
 pub async fn drag_out(
@@ -258,8 +291,8 @@ pub async fn drag_out(
     macos::start(window, items, download.clone(), done)?;
     #[cfg(windows)]
     win::start(window, items, download.clone(), done)?;
-    #[cfg(not(any(target_os = "macos", windows)))]
-    drop((items, done));
+    #[cfg(target_os = "linux")]
+    linux::start(window, items, download.clone(), done)?;
     let result = result.await.unwrap_or_else(|_| DragResult::cancelled());
     if result.outcome == Outcome::Outside {
         download.state.lock().unwrap().last_activity = Instant::now();

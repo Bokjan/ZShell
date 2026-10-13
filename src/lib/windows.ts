@@ -80,15 +80,16 @@ export const windows = {
   quit: () => invoke<void>("app_quit"),
 };
 
-/** Dragging a tab out of its window (see `tab_drag.rs`). */
+/** Dragging a tab out of its window (see `tab_drag/`). */
 export const tabDrag = {
   /** Where this window's tab bar is, for tabs dragged from the other windows. */
   setTabBar: (rect: Rect) => invoke<void>("window_set_tab_bar", { rect }),
   /**
    * Where the tab of drag `id` from this window would go now; the window it would go into
-   * shows where (`tab-drag-over`) while the drag goes on.
+   * shows where (`tab-drag-over`) while the drag goes on. `outside`: the pointer is outside
+   * this page, which is all the backend goes by where it can't read the pointer (Wayland).
    */
-  move: (id: string) => invoke<DropTarget>("tab_drag_move", { id }),
+  move: (id: string, outside: boolean) => invoke<DropTarget>("tab_drag_move", { id, outside }),
   /** Ends drag `id`: where the tab goes if `dropped`, or null. */
-  end: (id: string, dropped: boolean) => invoke<DropTarget | null>("tab_drag_end", { id, dropped }),
+  end: (id: string, dropped: boolean, outside: boolean) => invoke<DropTarget | null>("tab_drag_end", { id, dropped, outside }),
 };

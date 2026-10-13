@@ -237,6 +237,8 @@
       "helloNotSetUp": "Windows Hello is not set up. Set up a PIN, fingerprint or face in Windows Settings first",
       "helloDisabled": "Windows Hello is turned off by your organization",
       "unsupported": "Locking ZShell is not supported on this system yet",
+      "polkitMissing": "polkit, which asks for the password, is not available on this system",
+      "policyMissing": "ZShell's polkit policy is not installed. Install ZShell from its .deb or .rpm package",
       "cancelled": "Authentication was cancelled",
       "failed": "Authentication failed",
       "busy": "Authentication is already in progress",

@@ -7,7 +7,9 @@
 //! named after the bundle identifier, so an instance with another HOME (end-to-end tests, see
 //! DEVELOPMENT.md) couldn't start. This lock is a file in the configuration folder, locked
 //! with `flock`, which the system releases when the process ends however it ends; the file
-//! holds the owner's pid, to bring it forward.
+//! holds the owner's pid, to bring it forward on macOS. On Linux a process can't bring
+//! another forward, so the owner listens on a socket of the folder's, and a second instance
+//! asks it there ([`listen`]).
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, Write};
@@ -65,7 +67,7 @@ fn owner(file: &mut File) -> Option<i32> {
     }
 }
 
-/// Leaves the folder to the instance `pid` and ends this process, bringing that instance
+/// Leaves the folder `dir` to the instance `pid` and ends this process, bringing that instance
 /// forward as opening the app again does when it is running. On the main thread, from the
 /// app's setup; it may return before the process ends, and nothing else must start then.
 ///
@@ -74,7 +76,7 @@ fn owner(file: &mut File) -> Option<i32> {
 /// yet when the setup runs, so it waits for that for a moment. Opened in the background
 /// (`open -g`, a script) it doesn't become active, and the other instance stays where it is.
 #[cfg(target_os = "macos")]
-pub fn hand_over(pid: Option<i32>) {
+pub fn hand_over(_dir: &Path, pid: Option<i32>) {
     use std::ptr::NonNull;
 
     use block2::RcBlock;
@@ -117,10 +119,71 @@ pub fn hand_over(pid: Option<i32>) {
     });
 }
 
-/// Linux has no way to ask another process to come forward yet (see M33 in ROADMAP.md).
-#[cfg(not(target_os = "macos"))]
-pub fn hand_over(_pid: Option<i32>) {
+/// Where the owner of the folder `dir` listens (Linux): in the user's runtime folder (private
+/// to the user, and short enough for a socket's path, which a deep HOME isn't), named after
+/// the folder; beside the lock without one.
+#[cfg(target_os = "linux")]
+fn socket_path(dir: &Path) -> std::path::PathBuf {
+    use sha2::{Digest, Sha256};
+
+    match std::env::var_os("XDG_RUNTIME_DIR").filter(|runtime| !runtime.is_empty()) {
+        Some(runtime) => {
+            let hash = Sha256::digest(dir.as_os_str().as_encoded_bytes());
+            let name: String = hash[..8].iter().map(|byte| format!("{byte:02x}")).collect();
+            Path::new(&runtime).join(format!("zshell-{name}.sock"))
+        }
+        None => dir.join("zshell.sock"),
+    }
+}
+/// The longest activation token taken.
+#[cfg(target_os = "linux")]
+const MAX_TOKEN: u64 = 1024;
+
+/// The token the desktop started this process with (`XDG_ACTIVATION_TOKEN` on Wayland,
+/// `DESKTOP_STARTUP_ID` on X11): Wayland only lets a window take the focus with one.
+#[cfg(target_os = "linux")]
+static ACTIVATION_TOKEN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Keeps the activation token, before GTK starts and takes it from the environment.
+#[cfg(target_os = "linux")]
+pub fn keep_activation_token() {
+    let token = std::env::var("XDG_ACTIVATION_TOKEN").or_else(|_| std::env::var("DESKTOP_STARTUP_ID"));
+    if let Ok(token) = token {
+        let _ = ACTIVATION_TOKEN.set(token);
+    }
+}
+
+/// Linux: hands this process's activation token to the owner, which comes forward with it
+/// (see [`listen`]).
+#[cfg(target_os = "linux")]
+pub fn hand_over(dir: &Path, _pid: Option<i32>) {
+    if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket_path(dir)) {
+        let token = ACTIVATION_TOKEN.get().map(String::as_str).unwrap_or_default();
+        let _ = stream.write_all(token.as_bytes());
+    }
     std::process::exit(0);
+}
+
+/// Linux: listens on the socket of the folder `dir` (which this instance holds) for as long
+/// as the app runs, and calls `come_forward` with the activation token each later instance
+/// hands over (empty without one). A socket left by an instance that has ended is replaced.
+#[cfg(target_os = "linux")]
+pub fn listen(dir: &Path, come_forward: impl Fn(String) + Send + 'static) {
+    let path = socket_path(dir);
+    let _ = std::fs::remove_file(&path);
+    let Ok(listener) = std::os::unix::net::UnixListener::bind(&path) else { return };
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            // A stuck client doesn't hold up the next.
+            let _ = stream.set_read_timeout(Some(PID_WAIT));
+            let mut token = String::new();
+            let _ = stream.take(MAX_TOKEN).read_to_string(&mut token);
+            // Printable ASCII, as the protocol's tokens are; anything else is dropped.
+            let token = token.trim();
+            let token = if token.bytes().all(|b| b.is_ascii_graphic()) { token } else { "" };
+            come_forward(token.to_owned());
+        }
+    });
 }
 
 #[cfg(test)]
@@ -143,6 +206,24 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         let _held = claim(&dir).unwrap();
         assert!(matches!(claim(&other).unwrap(), Claim::Ours(_)), "another folder is another configuration");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_later_instance_hands_over_its_token() {
+        let dir = std::env::temp_dir().join(format!("zshell-forward-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        listen(&dir, move |token| sender.send(token).unwrap());
+        for (sent, received) in [("gnome-shell/ZShell/1234-5-host_TIME42", "gnome-shell/ZShell/1234-5-host_TIME42"), ("", ""), ("a\nb", "")]
+        {
+            let mut stream = std::os::unix::net::UnixStream::connect(socket_path(&dir)).unwrap();
+            stream.write_all(sent.as_bytes()).unwrap();
+            drop(stream);
+            assert_eq!(receiver.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), received);
+        }
+        let _ = std::fs::remove_file(socket_path(&dir));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

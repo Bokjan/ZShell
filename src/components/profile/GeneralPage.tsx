@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 
 import type { Profile, Protocol, SerialPortInfo } from "../../lib/api";
 import { expandHome, startsWithHome } from "../../lib/paths";
-import { isWindows } from "../../lib/platform";
+import { isMac, isWindows } from "../../lib/platform";
 import type { ProfileForm } from "../../lib/profileForm";
 import { HelpTip } from "../HelpTip";
 import { IconButton } from "../IconButton";
@@ -154,7 +154,7 @@ export function GeneralPage({ form, set, changeProtocol, profile, password, uses
             value={form.device}
             onChange={(e) => set({ device: e.target.value })}
             list="profile-serial-ports"
-            placeholder={isWindows ? "COM3" : "/dev/cu.usbserial-1410"}
+            placeholder={isWindows ? "COM3" : isMac ? "/dev/cu.usbserial-1410" : "/dev/ttyUSB0"}
             autoFocus
             autoCapitalize="off"
             autoCorrect="off"

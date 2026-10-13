@@ -58,6 +58,34 @@ export function CloseIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** A line at the bottom, for minimizing the window (Linux; Windows uses its own font's glyphs). */
+export function MinimizeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <path d="M4 11h8" />
+    </Svg>
+  );
+}
+
+/** A square, for maximizing the window. */
+export function MaximizeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <rect x="4" y="4" width="8" height="8" rx="1" />
+    </Svg>
+  );
+}
+
+/** A smaller square with another behind it, for restoring a maximized window. */
+export function RestoreIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <rect x="4" y="6" width="6" height="6" rx="1" />
+      <path d="M6.5 4H11a1 1 0 0 1 1 1v4.5" />
+    </Svg>
+  );
+}
+
 /** A line of text with a send arrow, for the compose bar. */
 export function ComposeIcon({ size = 14 }: { size?: number }) {
   return (

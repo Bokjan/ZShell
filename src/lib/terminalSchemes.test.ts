@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveScheme, sessionScheme, tabMark } from "./terminalSchemes";
+import { fontStack, resolveScheme, sessionScheme, setSystemFont, systemFontFamilies, tabMark } from "./terminalSchemes";
 
 describe("resolveScheme", () => {
   it("finds a scheme by id, and follows the appearance for auto or an unknown id", () => {
@@ -39,5 +39,17 @@ describe("tabMark", () => {
   it("gives a faint color at least half saturation, and leaves grays gray", () => {
     expect(tabMark("#806060")).toBe("hsl(0 50% 55%)");
     expect(tabMark("#808080")).toBe("hsl(0 0% 55%)");
+  });
+});
+
+describe("fontStack", () => {
+  it("puts the preferred font first, then the desktop's monospace font", () => {
+    expect(fontStack("")).toMatch(/^Menlo, /);
+    expect(fontStack("Fira Code")).toMatch(/^Fira Code, Menlo, /);
+    setSystemFont('Ubuntu Sans Mono, Noto "Mono"');
+    expect(systemFontFamilies()).toBe('"Ubuntu Sans Mono", "Noto Mono"');
+    expect(fontStack("")).toMatch(/^"Ubuntu Sans Mono", "Noto Mono", Menlo, /);
+    expect(fontStack("Fira Code")).toMatch(/^Fira Code, "Ubuntu Sans Mono", "Noto Mono", Menlo, /);
+    expect(fontStack("")).toMatch(/, monospace$/);
   });
 });

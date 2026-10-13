@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { Appearance, Settings, TextSize } from "./bindings";
 import { isWindows } from "./platform";
+import { setSystemFont } from "./terminalSchemes";
 import { useConfigChanged } from "./windows";
 
 export type {
@@ -75,15 +76,16 @@ export function applyTheme(theme: "dark" | "light") {
 
 /**
  * Matches the native window (title bar, background while resizing) to the appearance, after
- * `applyTheme`: the colors are the theme's. `setTheme` also themes the native menus and
- * dialogs, and on Windows decides WebView2's `prefers-color-scheme`. The first frame, before
- * this runs, takes its background from the inline style in `index.html`.
+ * `applyTheme`: the colors are the theme's. The window's theme also themes the native menus
+ * and dialogs, and on Windows and Linux decides the web view's `prefers-color-scheme`. The
+ * first frame, before this runs, takes its background from the inline style in `index.html`.
  */
 function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
   const window = getCurrentWindow();
   const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  // null follows the system, so the title bar keeps tracking it in "system" mode.
-  window.setTheme(appearance === "system" ? null : theme).catch(console.error);
+  // null follows the system, so the title bar keeps tracking it in "system" mode. Through the
+  // backend, which on Linux reads the desktop's color scheme (see `window_set_theme`).
+  invoke("window_set_theme", { theme: appearance === "system" ? null : theme }).catch(console.error);
   window.setBackgroundColor(color("--bg")).catch(console.error);
   // Windows: the border around a snapped window, which blends in with the title bar.
   if (isWindows) {
@@ -96,9 +98,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [system, setSystem] = useState<"dark" | "light">(systemTheme);
 
   useEffect(() => {
-    invoke<Settings>("settings_get").then(setSettings, (e) => {
+    // With the desktop's monospace font (Linux), which terminals default to.
+    const font = invoke<string | null>("system_monospace_font").catch(() => null);
+    const stored = invoke<Settings>("settings_get").catch((e) => {
       console.error(e);
-      setSettings(DEFAULT_SETTINGS);
+      return DEFAULT_SETTINGS;
+    });
+    void Promise.all([stored, font]).then(([stored, font]) => {
+      if (font) setSystemFont(font);
+      setSettings(stored);
     });
     const query = window.matchMedia("(prefers-color-scheme: light)");
     const onChange = () => setSystem(systemTheme());

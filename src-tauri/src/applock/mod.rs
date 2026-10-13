@@ -1,5 +1,5 @@
 //! The app lock (M26): covers the window until the user authenticates with the system (Touch
-//! ID or the login password on macOS, Windows Hello), at startup, after the system has been
+//! ID or the login password on macOS, Windows Hello, polkit on Linux), at startup, after the system has been
 //! idle for a while, when the system locks or sleeps, and on demand. Only the window is
 //! locked: the sessions keep running, and the data stays decrypted in memory.
 //!
@@ -9,17 +9,17 @@
 //! protected as the sessions: in an encrypted vault they can't be turned off by editing a
 //! file, which would otherwise get past the lock at the next start.
 
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(not(any(target_os = "macos", windows)))]
-mod other;
 #[cfg(windows)]
 mod win;
 
+#[cfg(target_os = "linux")]
+use linux as platform;
 #[cfg(target_os = "macos")]
 use macos as platform;
-#[cfg(not(any(target_os = "macos", windows)))]
-use other as platform;
 #[cfg(windows)]
 use win as platform;
 
@@ -75,6 +75,8 @@ pub enum Method {
     /// macOS without Touch ID (or with it locked out): the login password.
     Password,
     WindowsHello,
+    /// Linux: the desktop's authentication dialog (the account's password, or a fingerprint).
+    Polkit,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

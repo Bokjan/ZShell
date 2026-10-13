@@ -1,7 +1,8 @@
 //! The app's windows, whose title bar the frontend draws: the tab bar takes its place (see
 //! ARCHITECTURE.md). macOS keeps the traffic lights over the web view; on Windows the window
 //! has no decorations and the frontend draws the window buttons, helped by the commands here
-//! for what a web page can't do natively.
+//! for what a web page can't do natively (`win.rs`); on Linux GTK draws the window's frame
+//! around an empty title bar and the frontend draws the buttons (`linux.rs`).
 //!
 //! The first window is `main`; the others open for a tab moved out of a window or a session
 //! opened in a new window, and are labelled `window-1`, `window-2` and so on (the capability
@@ -24,6 +25,10 @@ use crate::error::{Error, Result};
 use crate::session::SessionManager;
 use crate::tab_drag::{self, Dropped};
 
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+pub use linux::{watch_buttons, web_view};
 #[cfg(windows)]
 mod win;
 
@@ -127,14 +132,32 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS);
     #[cfg(windows)]
     let builder = builder.decorations(false);
+    // In the appearance it will have, rather than light until the page sets it.
+    #[cfg(target_os = "linux")]
+    let builder = builder.theme(Some(match app.state::<crate::settings::SettingsStore>().get().appearance {
+        crate::settings::Appearance::System => linux::system_theme(),
+        crate::settings::Appearance::Dark => tauri::Theme::Dark,
+        crate::settings::Appearance::Light => tauri::Theme::Light,
+    }));
     // Placed once created, then shown: the builder takes a logical position, which on Windows
-    // means a different place on each display.
-    let builder = if place.is_some() { builder.visible(false) } else { builder };
+    // means a different place on each display. On Linux the title bar is replaced before the
+    // window is shown.
+    let hidden = place.is_some() || cfg!(target_os = "linux");
+    let builder = if hidden { builder.visible(false) } else { builder };
     let window = builder.build()?;
+    #[cfg(target_os = "linux")]
+    {
+        let window = window.clone();
+        app.run_on_main_thread(move || {
+            let _ = linux::prepare(&window);
+        })?;
+    }
     if let Some((position, size)) = place {
         window.set_position(position)?;
         // After moving: on another display the size is in that display's scale.
         window.set_size(size)?;
+    }
+    if hidden {
         window.show()?;
     }
     #[cfg(target_os = "macos")]
@@ -346,8 +369,22 @@ pub fn show_current(app: &AppHandle) {
     }
 }
 
-/// A double click on the title bar: on macOS what the system setting says ("Double-click a
-/// window's title bar to"), elsewhere maximize or restore.
+/// Brings the current window (see [`current`]) forward for an instance started later, with
+/// the activation token it was started with (see `instance::listen`). Linux only.
+#[cfg(target_os = "linux")]
+pub fn come_forward(app: &AppHandle, token: String) {
+    let app_ = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = current(&app_) {
+            let _ = window.unminimize();
+            let _ = window.show();
+            linux::present(&window, &token);
+        }
+    });
+}
+
+/// A double click on the title bar: on macOS and Linux what the system setting says
+/// ("Double-click a window's title bar to"), on Windows maximize or restore.
 #[tauri::command]
 pub fn window_title_double_click(window: WebviewWindow) -> tauri::Result<()> {
     match double_click_action() {
@@ -358,8 +395,8 @@ pub fn window_title_double_click(window: WebviewWindow) -> tauri::Result<()> {
     }
 }
 
-// Elsewhere than macOS the double click always zooms.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+// On Windows the double click always zooms.
+#[cfg_attr(windows, allow(dead_code))]
 enum DoubleClick {
     Zoom,
     Minimize,
@@ -382,13 +419,16 @@ fn double_click_action() -> DoubleClick {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+use linux::double_click_action;
+
+#[cfg(windows)]
 fn double_click_action() -> DoubleClick {
     DoubleClick::Zoom
 }
 
 /// Shows the window's system menu (Restore, Move, Size, Minimize, Maximize, Close) at the
-/// pointer, as a right click on a native title bar does. Windows only.
+/// pointer, as a right click on a native title bar does. Windows and Linux.
 #[tauri::command]
 pub fn window_system_menu(window: WebviewWindow) -> tauri::Result<()> {
     #[cfg(windows)]
@@ -396,9 +436,42 @@ pub fn window_system_menu(window: WebviewWindow) -> tauri::Result<()> {
         let hwnd = window.hwnd()?.0 as isize;
         window.run_on_main_thread(move || unsafe { win::show_system_menu(hwnd as _) })?;
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    window.clone().run_on_main_thread(move || linux::show_window_menu(&window))?;
+    #[cfg(target_os = "macos")]
     let _ = window;
     Ok(())
+}
+
+/// A window button the frontend draws.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowButton {
+    Minimize,
+    Maximize,
+    Close,
+}
+
+/// The window buttons the frontend draws, in order: none on macOS (the traffic lights), all
+/// three on Windows, and on Linux those the desktop's layout has, which may change
+/// (`window-buttons-changed`).
+#[tauri::command]
+pub fn window_buttons() -> Vec<WindowButton> {
+    #[cfg(target_os = "linux")]
+    return linux::buttons();
+    #[cfg(windows)]
+    return vec![WindowButton::Minimize, WindowButton::Maximize, WindowButton::Close];
+    #[cfg(target_os = "macos")]
+    return Vec::new();
+}
+
+/// Sets the window's appearance (all windows' on Linux, where it is GTK's); `None` follows
+/// the system's. Off the main thread: on Linux it may ask the settings portal.
+#[tauri::command]
+pub async fn window_set_theme(window: WebviewWindow, theme: Option<tauri::Theme>) -> tauri::Result<()> {
+    #[cfg(target_os = "linux")]
+    let theme = Some(theme.unwrap_or_else(linux::system_theme));
+    window.set_theme(theme)
 }
 
 /// The title bar's color (`#rrggbb`), for the window's border while it is snapped (see

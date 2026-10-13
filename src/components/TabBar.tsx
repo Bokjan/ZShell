@@ -13,11 +13,11 @@ import { focusedPane, isLogging, tabId, tabPanelId, tabTitle, type SidePanel, ty
 import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { shortcutLabel } from "../lib/keymap";
-import { isComposing, isWindows } from "../lib/platform";
-import type { Point } from "../lib/bindings";
+import { isComposing, isMac } from "../lib/platform";
+import type { Point, TabDragNativeEnd } from "../lib/bindings";
 import { tabIndexAt } from "../lib/tabStrip";
 import { DRAG_REGION } from "../lib/window";
-import { tabDrag, useWindowEvent, type DropTarget, type WindowInfo } from "../lib/windows";
+import { listenHere, tabDrag, useWindowEvent, type DropTarget, type WindowInfo } from "../lib/windows";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
@@ -141,7 +141,7 @@ export function TabBar({
     }
   }, [activeKey, tabs.length]);
 
-  // Where the tab bar is, for tabs dragged from other windows (see `tab_drag.rs`).
+  // Where the tab bar is, for tabs dragged from other windows (see `tab_drag/`).
   useEffect(() => {
     const bar = barRef.current!;
     const report = () => {
@@ -189,6 +189,13 @@ export function TabBar({
     let asking = false;
     let askAgain = false;
     let ended = false;
+    // Where the pointer last was: outside the page or not.
+    let outside = false;
+    // The system's drag took over (Wayland): the page hears no more of the mouse, and waits
+    // for the end of that drag.
+    let native = false;
+    const isOutside = (ev: MouseEvent) =>
+      ev.clientX < 0 || ev.clientY < 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight;
     const ask = () => {
       if (asking) {
         askAgain = true;
@@ -196,10 +203,11 @@ export function TabBar({
       }
       asking = true;
       void tabDrag
-        .move(id)
+        .move(id, outside)
         .then((target) => {
+          if (target.kind === "native") goNative();
           // A window's only tab has nowhere new to go.
-          const leaves = target.kind === "window" || (target.kind === "elsewhere" && tabsRef.current.length > 1);
+          const leaves = target.kind === "window" || (target.kind !== "here" && tabsRef.current.length > 1);
           if (!ended) setLeaving(leaves);
         }, console.error)
         .finally(() => {
@@ -211,6 +219,7 @@ export function TabBar({
         });
     };
     const move = (ev: MouseEvent) => {
+      outside = isOutside(ev);
       // Released where the page didn't hear it.
       if (ev.buttons === 0) {
         finish(true);
@@ -224,8 +233,7 @@ export function TabBar({
         setDragging(key);
       }
       if (movable) ask();
-      const inside = ev.clientX >= 0 && ev.clientY >= 0 && ev.clientX < window.innerWidth && ev.clientY < window.innerHeight;
-      if (!inside) return;
+      if (outside) return;
       const strip = stripRef.current!;
       const bounds = strip.getBoundingClientRect();
       if (ev.clientX < bounds.left + DRAG_SCROLL_EDGE) strip.scrollLeft -= DRAG_SCROLL_STEP;
@@ -240,7 +248,22 @@ export function TabBar({
       if (moved) onMove(key, startIndex);
       finish(false);
     };
+    const goNative = () => {
+      if (native || ended) return;
+      native = true;
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      window.removeEventListener("keydown", keyDown, true);
+      const unlisten = listenHere<TabDragNativeEnd>("tab-drag-native-end", ({ payload }) => {
+        if (payload.id !== id) return;
+        void unlisten.then((f) => f());
+        // Cancelled (Escape): back where it was, as in the page.
+        if (!payload.dropped && moved) onMove(key, startIndex);
+        finish(payload.dropped);
+      });
+    };
     const finish = (dropped: boolean) => {
+      if (ended) return;
       ended = true;
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
@@ -248,9 +271,12 @@ export function TabBar({
       setDragging(null);
       setLeaving(false);
       if (!movable) return;
-      void tabDrag.end(id, dropped).then((target) => target && onDropOut(key, target, grab), console.error);
+      void tabDrag.end(id, dropped, outside).then((target) => target && onDropOut(key, target, grab), console.error);
     };
-    const up = () => finish(true);
+    const up = (ev: MouseEvent) => {
+      outside = isOutside(ev);
+      finish(true);
+    };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
     window.addEventListener("keydown", keyDown, true);
@@ -517,7 +543,7 @@ export function TabBar({
           )}
         </div>
       )}
-      {isWindows && <WindowControls />}
+      {!isMac && <WindowControls />}
     </nav>
   );
 }

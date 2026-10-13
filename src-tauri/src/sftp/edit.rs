@@ -189,8 +189,15 @@ pub fn open_in_editor(app: &AppHandle, editor: &str, path: &Path) -> Result<()> 
         }
         Ok(())
     }
-    #[cfg(not(target_os = "macos"))]
-    std::process::Command::new(editor).arg(path).spawn().map(drop).map_err(|e| failed(&e))
+    #[cfg(windows)]
+    return std::process::Command::new(editor).arg(path).spawn().map(drop).map_err(|e| failed(&e));
+    // Waited for, so that it doesn't stay a zombie once it exits.
+    #[cfg(target_os = "linux")]
+    {
+        let mut child = std::process::Command::new(editor).arg(path).spawn().map_err(|e| failed(&e))?;
+        std::thread::spawn(move || child.wait());
+        Ok(())
+    }
 }
 
 /// The newest modification time of a folder and what is directly in it.

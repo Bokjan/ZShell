@@ -30,6 +30,16 @@ pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
     store.get()
 }
 
+/// The desktop's monospace font, which terminals use before the built-in defaults: GNOME's on
+/// Linux, `None` elsewhere. It may ask the settings portal, so off the async threads.
+#[tauri::command]
+pub async fn system_monospace_font() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    return tauri::async_runtime::spawn_blocking(crate::desktop::monospace_font).await.ok().flatten();
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
 /// Stores the settings; returns them as validated (e.g. with the font size clamped).
 #[tauri::command]
 pub fn settings_set(app: AppHandle, window: WebviewWindow, store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {

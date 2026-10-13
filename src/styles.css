@@ -52,6 +52,10 @@
   --caption-close: #c42b1c;
   --caption-close-pressed: #b3281a;
   --on-caption-close: #ffffff;
+  /* Window buttons on Linux, as GTK's Adwaita theme draws them. */
+  --titlebutton: rgb(255 255 255 / 0.1);
+  --titlebutton-hover: rgb(255 255 255 / 0.15);
+  --titlebutton-pressed: rgb(255 255 255 / 0.3);
   /* Chevron for <select>, in --text-muted (SVG data URIs cannot use variables). */
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239a9a9a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
@@ -62,6 +66,7 @@
     "Segoe UI",
     "PingFang SC",
     "Microsoft YaHei",
+    system-ui,
     sans-serif;
   color-scheme: dark;
 }
@@ -99,6 +104,9 @@
   --shadow: rgb(0 0 0 / 0.18);
   --caption-hover: rgb(0 0 0 / 0.04);
   --caption-pressed: rgb(0 0 0 / 0.02);
+  --titlebutton: rgb(0 0 0 / 0.1);
+  --titlebutton-hover: rgb(0 0 0 / 0.15);
+  --titlebutton-pressed: rgb(0 0 0 / 0.3);
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235f5f5f' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   color-scheme: light;
@@ -1010,7 +1018,7 @@ body.dragging-row {
   white-space: nowrap;
 }
 
-/* Window buttons on Windows; above dialog backdrops, so the window can always be closed. */
+/* Window buttons on Windows and Linux; above dialog backdrops, so the window can always be closed. */
 .window-controls {
   position: relative;
   z-index: 11;
@@ -1044,6 +1052,34 @@ body.dragging-row {
 .window-controls button.close:active {
   background: var(--caption-close-pressed);
   color: var(--on-caption-close);
+}
+/* Linux: round buttons, as GTK draws them; Close has no color of its own. */
+:root[data-platform="linux"] .window-controls {
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px 0 4px;
+}
+:root[data-platform="linux"] .window-controls button {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--titlebutton);
+  color: var(--text);
+}
+:root[data-platform="linux"] .window-controls button:hover {
+  background: var(--titlebutton-hover);
+  color: var(--text);
+}
+:root[data-platform="linux"] .window-controls button:active {
+  background: var(--titlebutton-pressed);
+  color: var(--text);
+}
+:root[data-platform="linux"][data-window-inactive] .window-controls button {
+  color: var(--text-muted);
 }
 .status-dot {
   width: 7px;

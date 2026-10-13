@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { isMac, isWindows } from "./platform";
+import { isLinux, isMac, isWindows } from "./platform";
 
 /** Marks an element as part of the title bar that moves the window (only the element itself, not its children). */
 export const DRAG_REGION = { "data-window-drag": "" };
@@ -42,17 +42,18 @@ const titleBarDoubleClick = () => invoke("window_title_double_click").catch(cons
  * The title bar the app draws in place of the native one (see ARCHITECTURE.md): moving the
  * window from its empty parts, double-clicking them (on macOS as the system setting says,
  * so after the second press is released without moving, as natively), the system menu on a
- * right click on Windows, and the window state that styles it (`data-platform`,
+ * right click on Windows and Linux, and the window state that styles it (`data-platform`,
  * `data-fullscreen` and `data-window-inactive` on the root element).
  *
  * Done here rather than with Tauri's `data-tauri-drag-region`, since double-clicks and
  * right clicks go to the backend. A press calls `startDragging()`, so Windows snapping and
- * dragging a maximized window back to its size are the system's own.
+ * dragging a maximized window back to its size are the system's own. Linux does as Windows,
+ * with the window menu of the desktop (GNOME's) on a right click.
  */
 export function useTitleBar() {
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.platform = isMac ? "mac" : isWindows ? "windows" : "other";
+    root.dataset.platform = isMac ? "mac" : isWindows ? "windows" : isLinux ? "linux" : "other";
     const window_ = getCurrentWindow();
 
     // Pressed for a double click on macOS, which acts on release.
@@ -76,7 +77,7 @@ export function useTitleBar() {
       if (!onTitleBar(e.target, e.clientY)) return;
       e.preventDefault();
       e.stopPropagation();
-      if (isWindows) void invoke("window_system_menu").catch(console.error);
+      if (isWindows || isLinux) void invoke("window_system_menu").catch(console.error);
     };
     // Capture phase: before the backdrop's own handler, which closes its dialog.
     window.addEventListener("mousedown", onMouseDown, true);

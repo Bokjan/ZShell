@@ -4,7 +4,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { sftp } from "../../lib/api";
 import { basename } from "../../lib/format";
-import { isMac } from "../../lib/platform";
+import { isMac, isWindows } from "../../lib/platform";
 import type { FileSettings } from "../../lib/settings";
 import { FolderField, Section, Setting } from "./common";
 
@@ -23,13 +23,14 @@ export function FileSection({ settings, onChange }: { settings: FileSettings; on
   };
 
   const chooseEditor = async () => {
+    // Linux programs have no extension to filter on.
     const picked = await openDialog({
-      filters: [
-        isMac
-          ? { name: t("settings.editorApplications"), extensions: ["app"] }
-          : { name: t("settings.editorPrograms"), extensions: ["exe"] },
-      ],
-      defaultPath: isMac ? "/Applications" : undefined,
+      filters: isMac
+        ? [{ name: t("settings.editorApplications"), extensions: ["app"] }]
+        : isWindows
+          ? [{ name: t("settings.editorPrograms"), extensions: ["exe"] }]
+          : undefined,
+      defaultPath: isMac ? "/Applications" : isWindows ? undefined : "/usr/bin",
     }).catch(() => null);
     if (typeof picked === "string") onChange({ editor: picked });
   };

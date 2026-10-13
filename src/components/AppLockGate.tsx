@@ -170,7 +170,7 @@ function AppLockScreen({ status, onStatus, closing, onKeepOpen }: ScreenProps) {
     return () => void unlisten.then((f) => f());
   }, [unlock]);
 
-  const message = status.method === "touchId" ? "touchId" : status.method === "windowsHello" ? "windowsHello" : "password";
+  const message = status.method ?? "password";
 
   return (
     <dialog ref={ref} className="app-lock" aria-labelledby="app-lock-title" onKeyDown={(e) => e.key === "Escape" && e.preventDefault()}>

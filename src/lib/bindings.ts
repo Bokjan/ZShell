@@ -10,6 +10,8 @@ export type ErrorCode =
   | "appLock.helloDisabled"
   | "appLock.helloNotSetUp"
   | "appLock.locked"
+  | "appLock.policyMissing"
+  | "appLock.polkitMissing"
   | "appLock.protectionUnset"
   | "appLock.unavailable"
   | "appLock.unsupported"
@@ -153,7 +155,7 @@ export type ErrorCode =
 /**
  * How the user unlocks, for the frontend to name it.
  */
-export type AppLockMethod = "touchId" | "password" | "windowsHello";
+export type AppLockMethod = "touchId" | "password" | "windowsHello" | "polkit";
 
 export type AppLockSettings = { enabled: boolean, 
 /**
@@ -230,7 +232,7 @@ export type DragResult = { outcome: DragOutcome, x: number, y: number, };
 /**
  * Where a dragged tab would go if released now.
  */
-export type DropTarget = { "kind": "here" } | { "kind": "window", label: string, x: number, } | { "kind": "elsewhere", cursor: Point, };
+export type DropTarget = { "kind": "here" } | { "kind": "window", label: string, x: number, } | { "kind": "elsewhere", cursor: Point, } | { "kind": "native" };
 
 /**
  * A tab dropped outside the windows: the cursor in screen coordinates (from [`DropTarget`]),
@@ -772,6 +774,11 @@ export type StatusBarSettings = { show: boolean, };
  */
 export type StoreKind = "keychain" | "credentialManager" | "secretService";
 
+/**
+ * The end of a system drag of a tab (`tab-drag-native-end`, to the window it came from).
+ */
+export type TabDragNativeEnd = { id: string, dropped: boolean, };
+
 export type TabSettings = { 
 /**
  * Show the title set by the shell (OSC 0 / 2) instead of the session name.
@@ -872,6 +879,11 @@ remember: boolean, locked: VaultLock | null, store: StoreKind,
  * protection that stopped part way (`vault.plainLeft`).
  */
 leftover?: CommandError, };
+
+/**
+ * A window button the frontend draws.
+ */
+export type WindowButton = "minimize" | "maximize" | "close";
 
 /**
  * Another window, as the tab menu lists it.

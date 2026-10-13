@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { knownHosts } from "../../lib/api";
-import { isMac } from "../../lib/platform";
+import { isMac, isWindows } from "../../lib/platform";
 import { useWindowFocus } from "../../lib/windows";
 import { HelpTip } from "../HelpTip";
 import { KnownHostsDialog } from "../KnownHostsDialog";
@@ -38,7 +38,7 @@ export function KnownHostsSection() {
             {t("settings.knownHostsManage")}
           </button>
           <button type="button" disabled={!path || !count} onClick={() => path && void revealItemInDir(path).catch(console.error)}>
-            {t(isMac ? "settings.knownHostsReveal" : "settings.knownHostsRevealWindows")}
+            {t(isMac ? "settings.knownHostsReveal" : isWindows ? "settings.knownHostsRevealWindows" : "settings.knownHostsRevealLinux")}
           </button>
         </div>
         <p className="hint">{t("settings.knownHostsHint")}</p>

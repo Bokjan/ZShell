@@ -4,7 +4,12 @@
 //! reorders tabs, and asks here where the tab would go ([`tab_drag_move`]): the window under
 //! the cursor is the one the system shows on top there, which only native code can tell, and
 //! the cursor is read here in screen coordinates (see [`screen`]), which the page's `screenX`
-//! doesn't give reliably across displays with different scales.
+//! doesn't give reliably across displays with different scales. Wayland gives neither the
+//! cursor nor the windows' places, so there the tab leaves its window with the system's drag
+//! (`linux.rs`).
+
+#[cfg(target_os = "linux")]
+mod linux;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -47,6 +52,16 @@ pub enum DropTarget {
     /// Anywhere else (outside the windows, or over another window but not its tab bar), with
     /// the cursor in screen coordinates, for the window it would open in.
     Elsewhere { cursor: Point },
+    /// Out of its window on Wayland: the system's drag has taken over, and where the tab goes
+    /// comes when it ends (`tab-drag-native-end`, then [`tab_drag_end`]).
+    Native,
+}
+
+/// The end of a system drag of a tab (`tab-drag-native-end`, to the window it came from).
+#[derive(Clone, Serialize, TS)]
+pub struct TabDragNativeEnd {
+    pub id: String,
+    pub dropped: bool,
 }
 
 /// A tab dropped outside the windows: the cursor in screen coordinates (from [`DropTarget`]),
@@ -62,6 +77,10 @@ pub struct TabDrag {
     /// Where each window's tab bar is (see [`window_set_tab_bar`]).
     tab_bars: Mutex<HashMap<String, Rect>>,
     drags: Mutex<Drags>,
+    /// Where the system drag of a tab went: the drag's id, and the target (`None` when
+    /// cancelled). Linux only.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    native_ended: Mutex<Option<(String, Option<DropTarget>)>>,
 }
 
 /// The drag going on, if any. Each drag is named by the page; the questions it asks are
@@ -137,11 +156,12 @@ pub fn window_set_tab_bar(window: WebviewWindow, drag: State<'_, TabDrag>, rect:
 }
 
 /// Where the tab of drag `id` from this window would go if released now; the window it would
-/// go into shows where, while the drag goes on.
+/// go into shows where, while the drag goes on. `outside`: the page saw the pointer outside
+/// it (see [`target_at_cursor`]).
 #[tauri::command]
-pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow, id: String) -> tauri::Result<DropTarget> {
+pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow, id: String, outside: bool) -> tauri::Result<DropTarget> {
     let source = window.label().to_owned();
-    let target = drop_target(&app, source.clone()).await?;
+    let target = drop_target(&app, source.clone(), outside, Some(id.clone())).await?;
     let drag = app.state::<TabDrag>();
     let mut drags = drag.drags.lock().unwrap();
     if drags.is_current(&id, &source) {
@@ -158,26 +178,45 @@ pub async fn tab_drag_end(
     drag: State<'_, TabDrag>,
     id: String,
     dropped: bool,
+    outside: bool,
 ) -> tauri::Result<Option<DropTarget>> {
-    drag.drags.lock().unwrap().end(&app, id);
+    drag.drags.lock().unwrap().end(&app, id.clone());
+    let native = drag.native_ended.lock().unwrap().take_if(|(ended, _)| *ended == id);
+    if let Some((_, target)) = native {
+        return Ok(target);
+    }
     if !dropped {
         return Ok(None);
     }
-    drop_target(&app, window.label().to_owned()).await.map(Some)
+    drop_target(&app, window.label().to_owned(), outside, None).await.map(Some)
 }
 
 /// Where a tab dragged from window `source` would go, on the main thread (where AppKit is
 /// asked).
-async fn drop_target(app: &AppHandle, source: String) -> tauri::Result<DropTarget> {
+async fn drop_target(app: &AppHandle, source: String, outside: bool, id: Option<String>) -> tauri::Result<DropTarget> {
     let (done, result) = oneshot::channel();
     let handle = app.clone();
     app.run_on_main_thread(move || {
-        let _ = done.send(target_at_cursor(&handle, &source));
+        let _ = done.send(target_at_cursor(&handle, &source, outside, id));
     })?;
     result.await.map_err(|_| tauri::Error::FailedToReceiveMessage)
 }
 
-fn target_at_cursor(app: &AppHandle, source: &str) -> DropTarget {
+/// Where a tab dragged from window `source` would go, from the cursor and the windows under
+/// it. Wayland tells an app neither where the cursor is on the screen nor where its windows
+/// are: there, once the page saw the cursor `outside` it during drag `id`, the system's drag
+/// takes over (`linux.rs`), or failing that the tab goes into a window of its own, which the
+/// compositor places.
+fn target_at_cursor(app: &AppHandle, source: &str, outside: bool, id: Option<String>) -> DropTarget {
+    #[cfg(target_os = "linux")]
+    if gtk::gdk::Display::default().is_some_and(|display| gtk::gdk::prelude::DisplayExtManual::backend(&display).is_wayland()) {
+        return match (outside, id) {
+            (false, _) => DropTarget::Here,
+            (true, Some(id)) if linux::start(app, source, id.clone()) => DropTarget::Native,
+            (true, _) => DropTarget::Elsewhere { cursor: Point { x: 0.0, y: 0.0 } },
+        };
+    }
+    let _ = (outside, id);
     // Nowhere new if the cursor can't be read.
     let Some(cursor) = cursor(app) else { return DropTarget::Here };
     let Some(window) = window_at_cursor(app, cursor) else { return DropTarget::Elsewhere { cursor } };

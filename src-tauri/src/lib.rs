@@ -7,6 +7,8 @@ mod bindings;
 mod commands;
 mod config;
 mod crypto;
+#[cfg(target_os = "linux")]
+mod desktop;
 mod encoding;
 mod error;
 mod forward;
@@ -84,8 +86,25 @@ fn clean_up_logs(app: tauri::AppHandle) {
     });
 }
 
+/// Where downloaded files wait for another application to take them (editing in a local
+/// editor, dragging out): the system's temporary folder, which is the user's own on macOS and
+/// Windows. On Linux `/tmp` is shared by all users, so it is the app's cache folder there,
+/// readable by the user only.
+pub(crate) fn scratch_dir(app: &tauri::AppHandle) -> tauri::Result<std::path::PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        let dir = app.path().app_cache_dir()?;
+        persist::secure_dir(&dir)?;
+        Ok(dir)
+    }
+    #[cfg(not(target_os = "linux"))]
+    app.path().temp_dir()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    instance::keep_activation_token();
     // Before AppKit reads it.
     #[cfg(target_os = "macos")]
     disable_press_and_hold();
@@ -111,10 +130,15 @@ pub fn run() {
                 match instance::claim(&config_dir) {
                     Ok(instance::Claim::Ours(lock)) => {
                         app.manage(lock);
+                        #[cfg(target_os = "linux")]
+                        {
+                            let handle = app.handle().clone();
+                            instance::listen(&config_dir, move |token| window::come_forward(&handle, token));
+                        }
                     }
                     Ok(instance::Claim::Taken(pid)) => {
                         // Nothing of this instance starts: it ends once it has handed over.
-                        instance::hand_over(pid);
+                        instance::hand_over(&config_dir, pid);
                         return Ok(());
                     }
                     Err(_) => {}
@@ -142,7 +166,9 @@ pub fn run() {
             clean_up_logs(app.handle().clone());
             app.manage(update::Updates::load(config_dir.join("update.json")));
             update::watch(app.handle().clone());
-            app.manage(Edits::new(app.path().temp_dir()?.join("ZShell-edit")));
+            app.manage(Edits::new(scratch_dir(app.handle())?.join("ZShell-edit")));
+            #[cfg(target_os = "linux")]
+            window::watch_buttons(app.handle());
             window::create_main(app)?;
             Ok(())
         })
@@ -177,6 +203,7 @@ pub fn run() {
             update::update_status,
             update::update_check,
             commands::config::settings_get,
+            commands::config::system_monospace_font,
             commands::config::settings_set,
             commands::config::config_directory,
             commands::config::config_set_aside,
@@ -275,6 +302,8 @@ pub fn run() {
             window::app_quit,
             window::window_title_double_click,
             window::window_system_menu,
+            window::window_buttons,
+            window::window_set_theme,
             window::window_set_maximize_button,
             window::window_set_snapped_border_color,
         ])

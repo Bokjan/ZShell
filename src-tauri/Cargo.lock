@@ -7189,6 +7189,7 @@ dependencies = [
  "data-encoding",
  "encoding_rs",
  "glob",
+ "gtk",
  "hmac",
  "keyring",
  "libc",
@@ -7225,6 +7226,7 @@ dependencies = [
  "windows-core",
  "windows-future",
  "windows-sys 0.61.2",
+ "zbus",
  "zeroize",
 ]
 

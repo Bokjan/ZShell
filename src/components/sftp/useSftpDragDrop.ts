@@ -4,7 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { sftp, type FileEntry, type SessionId } from "../../lib/api";
 import { isAppLocked } from "../../lib/appLock";
 import { usePressDrag } from "../../lib/drag";
-import { isMac } from "../../lib/platform";
+import { isWindows } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
 import { parentPath } from "./useTransfers";
 
@@ -111,8 +111,9 @@ export function useSftpDragDrop(options: Options) {
   const { active } = options;
   useEffect(() => {
     if (!active) return;
-    // Physical pixels on Windows; on macOS wry passes points despite the type.
-    const scale = isMac ? 1 : window.devicePixelRatio;
+    // Physical pixels on Windows; on macOS (points) and Linux (GTK's logical pixels) wry
+    // passes CSS pixels despite the type.
+    const scale = isWindows ? window.devicePixelRatio : 1;
     const folderUnder = (pos: { x: number; y: number }) => folderAt(pos.x / scale, pos.y / scale);
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
       // Native events, which the lock screen doesn't stop: nothing is dropped while locked.

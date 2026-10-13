@@ -13,13 +13,14 @@ accepted = [
     "MPL-2.0",
     "Unicode-3.0",
 ]
-# Every target a release is built for, so that macOS-only and Windows-only crates are
-# all listed.
+# Every target a release is built for, so that the crates only one platform uses are all
+# listed.
 targets = [
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",
     "x86_64-pc-windows-msvc",
     "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
 ]
 ignore-build-dependencies = true
 ignore-dev-dependencies = true

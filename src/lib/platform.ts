@@ -12,3 +12,5 @@ export function isComposing(e: KeyboardEvent | { nativeEvent: KeyboardEvent }): 
 }
 /** Windows draws its own window buttons (see `WindowControls`). */
 export const isWindows = navigator.userAgent.includes("Windows");
+/** Linux (WebKitGTK): the window buttons are drawn too, as the desktop's layout says. */
+export const isLinux = !isMac && !isWindows && navigator.userAgent.includes("Linux");

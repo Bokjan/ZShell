@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- The app lock: ZShell asks for this action to unlock its window (see src/applock/linux.rs).
+     Installed by the deb and rpm packages into /usr/share/polkit-1/actions/. -->
+<policyconfig>
+  <vendor>ZShell</vendor>
+  <action id="org.boyin.zshell.unlock">
+    <description>Unlock ZShell</description>
+    <message>Authentication is required to unlock ZShell.</message>
+    <icon_name>zshell</icon_name>
+    <defaults>
+      <allow_any>auth_self</allow_any>
+      <allow_inactive>auth_self</allow_inactive>
+      <allow_active>auth_self</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

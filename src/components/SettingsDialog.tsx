@@ -23,7 +23,7 @@ import {
   type ZmodemSettings,
 } from "../lib/settings";
 import { useShortcuts } from "../lib/shortcuts";
-import { DEFAULT_FONT_STACK, TERMINAL_SCHEMES, resolveScheme, type TerminalScheme } from "../lib/terminalSchemes";
+import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies, type TerminalScheme } from "../lib/terminalSchemes";
 import { useUpdates } from "../lib/updates";
 import { CloseIcon, DotIcon } from "./icons";
 import { LicensesDialog } from "./LicensesDialog";
@@ -306,8 +306,12 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                     <LiveTextField
                       value={terminal.fontFamily}
                       onChange={(fontFamily) => setTerminal({ fontFamily })}
-                      placeholder={t("settings.fontFamilyPlaceholder")}
-                      title={DEFAULT_FONT_STACK}
+                      placeholder={
+                        systemFontFamilies()
+                          ? t("settings.fontFamilyPlaceholderSystem", { font: systemFontFamilies().replace(/"/g, "") })
+                          : t("settings.fontFamilyPlaceholder")
+                      }
+                      title={defaultFontStack()}
                       spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"

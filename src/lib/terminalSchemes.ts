@@ -10,10 +10,32 @@ export interface TerminalScheme {
   theme: ITheme;
 }
 
-/** Font stack used after the user's preferred font, covering macOS, Windows and CJK. */
-export const DEFAULT_FONT_STACK = 'Menlo, "Cascadia Mono", Consolas, "PingFang SC", "Microsoft YaHei", monospace';
+/** Fonts used after the user's preferred font: the monospace fonts of macOS, Windows and Linux, then CJK ones. */
+const BUILT_IN_FONTS =
+  'Menlo, "Cascadia Mono", Consolas, "DejaVu Sans Mono", "PingFang SC", "Microsoft YaHei", "Noto Sans Mono CJK SC", monospace';
 
-export const fontStack = (preferred: string) => (preferred ? `${preferred}, ${DEFAULT_FONT_STACK}` : DEFAULT_FONT_STACK);
+let systemFont = "";
+
+/**
+ * Sets the desktop's monospace font (GNOME's, on Linux: comma-separated families), which goes
+ * before the built-in fonts, as terminal apps there default to it. Once, before terminals open.
+ */
+export function setSystemFont(families: string) {
+  systemFont = families
+    .split(",")
+    .map((family) => family.trim().replace(/["\\]/g, ""))
+    .filter(Boolean)
+    .map((family) => `"${family}"`)
+    .join(", ");
+}
+
+/** The desktop's monospace font as set by `setSystemFont` (quoted families), or "". */
+export const systemFontFamilies = () => systemFont;
+
+/** Font stack used when the user has no preferred font. */
+export const defaultFontStack = () => (systemFont ? `${systemFont}, ${BUILT_IN_FONTS}` : BUILT_IN_FONTS);
+
+export const fontStack = (preferred: string) => (preferred ? `${preferred}, ${defaultFontStack()}` : defaultFontStack());
 
 const solarizedAnsi = {
   black: "#073642",
