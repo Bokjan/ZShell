@@ -2,6 +2,17 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [2.12.1] - 2026-10-13
+
+### Bug Fixes
+
+- On Linux, a light or dark appearance chosen in the settings stays when the desktop's style changes, instead of the window frame and the page's own controls following the desktop; opening a new window no longer turns the others to the desktop's style for a moment.
+- A window no longer shows the system's appearance for a moment as it opens, when another one is chosen in the settings.
+- On Linux, the window buttons of a desktop that puts them on the left (`close,minimize,maximize:`) are mirrored at the right end of the tab bar, so the close button stays at the window's edge.
+- On Linux, files dragged out of the file panel are never counted as delivered when the drag ends before they finish downloading.
+- On Wayland, a tab released just as it leaves its window no longer starts a system drag after it has already been dropped.
+- On Linux, when the running instance can't be reached, opening ZShell again says why on the terminal instead of exiting silently.
+
 ## [2.12.0] - 2026-10-13
 
 ### Features
