@@ -1,5 +1,5 @@
-//! Commands for the vault (see `vault/`): its state, unlocking it, resetting it and changing
-//! its protection. They wait on the blocking pool: the credential store may ask the user, and
+//! Commands for the vault (see `vault/`): its state, unlocking (or making) it, resetting it
+//! and changing its protection. They wait on the blocking pool: the credential store may ask the user, and
 //! keys are derived from passwords.
 
 use std::sync::Arc;
@@ -9,7 +9,6 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use crate::applock::AppLock;
 use crate::config::ProfileStore;
 use crate::error::Result;
-use crate::persist::SetAside;
 use crate::quick::QuickCommandStore;
 use crate::vault::{Target, Vault, VaultStatus};
 
@@ -26,7 +25,8 @@ pub async fn vault_status(app: AppHandle) -> Result<VaultStatus> {
     blocking(app, |app| Ok(app.state::<Arc<Vault>>().status())).await
 }
 
-/// Unlocks with the key in the credential store, reading the file again first.
+/// Unlocks with the key in the credential store, or makes a vault if there is none, reading
+/// the file again first.
 #[tauri::command]
 pub async fn vault_try_unlock(app: AppHandle) -> Result<VaultStatus> {
     blocking(app, |app| {
@@ -52,44 +52,17 @@ pub async fn vault_unlock(app: AppHandle, password: String) -> Result<VaultStatu
     .await
 }
 
-/// Deletes the locked vault and everything in it.
+/// Deletes the locked vault and everything in it; `vault_try_unlock` then makes a new one.
 #[tauri::command]
 pub async fn vault_reset(app: AppHandle) -> Result<VaultStatus> {
-    blocking(app, |app| {
-        let status = app.state::<Arc<Vault>>().reset(&app.state::<SetAside>())?;
-        reload(app);
-        Ok(status)
-    })
-    .await
+    blocking(app, |app| app.state::<Arc<Vault>>().reset()).await
 }
 
 /// Changes the protection (see `Vault::set_protection`).
 #[tauri::command]
-pub async fn vault_set_protection(
-    app: AppHandle,
-    window: WebviewWindow,
-    change: Target,
-    current: Option<String>,
-    skip_unreadable: bool,
-) -> Result<VaultStatus> {
-    let result = blocking(app, move |app| app.state::<Arc<Vault>>().set_protection(change, current.as_deref(), skip_unreadable)).await;
+pub async fn vault_set_protection(app: AppHandle, window: WebviewWindow, change: Target, current: Option<String>) -> Result<VaultStatus> {
+    let result = blocking(app, move |app| app.state::<Arc<Vault>>().set_protection(change, current.as_deref())).await;
     notified(&window, Change::Vault, result)
-}
-
-/// The names of the plain data files set aside next to the vault (see `Vault::plain_copies`).
-#[tauri::command]
-pub async fn vault_plain_copies(app: AppHandle) -> Result<Vec<String>> {
-    blocking(app, |app| {
-        let copies = app.state::<Arc<Vault>>().plain_copies();
-        Ok(copies.iter().filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())).collect())
-    })
-    .await
-}
-
-/// Deletes the plain data files set aside next to the vault.
-#[tauri::command]
-pub async fn vault_delete_plain_copies(app: AppHandle) -> Result<()> {
-    blocking(app, |app| app.state::<Arc<Vault>>().delete_plain_copies()).await
 }
 
 /// Whether the system's credential store can be used; on Linux there may be none.

@@ -22,14 +22,14 @@ interface Props {
   /** Reads the file and the key in the credential store again. */
   onTryAgain(): void;
   onStatus(status: VaultStatus): void;
-  /** After the vault was deleted. */
+  /** After the vault was deleted: a new one is to be made. */
   onReset(status: VaultStatus): void;
 }
 
 /**
  * Covers the window while the sessions are locked (see `VaultGate`): asks for the master
  * password, or says why the key can't be had and what can be done: try again, show the file,
- * or delete everything (reset).
+ * or delete everything (reset). Also shown while a new vault is made, and if that fails.
  */
 export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: Props) {
   const { t } = useTranslation();
@@ -75,10 +75,11 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
       .catch(console.error);
 
   const detail = lock.error ? errorMessage(lock.error) : null;
-  let message: string;
-  if (lock.reason === "saved") message = t("vault.waiting", { store });
-  else if (lock.reason === "password") message = t("vault.passwordPrompt");
-  else message = t(`vault.${lock.reason}`, { store });
+  // Waiting for the credential store, unless making the vault failed.
+  const waiting = lock.reason === "saved" || (lock.reason === "new" && !lock.error);
+  let message = t("vault.waiting", { store });
+  if (lock.reason === "password") message = t("vault.passwordPrompt");
+  else if (lock.reason !== "saved" && !waiting) message = t(`vault.${lock.reason}`, { store });
 
   return (
     <LockScreen>
@@ -112,9 +113,9 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
           </>
         )}
 
-        {!asksPassword && lock.reason !== "saved" && (
+        {!asksPassword && !waiting && (
           <div className="unlock-actions">
-            {(lock.reason === "keyUnavailable" || lock.reason === "unreadable") && (
+            {(lock.reason === "keyUnavailable" || lock.reason === "unreadable" || lock.reason === "damaged" || lock.reason === "new") && (
               <button type="button" className="primary" onClick={onTryAgain} disabled={trying} autoFocus>
                 {t("vault.tryAgain")}
               </button>

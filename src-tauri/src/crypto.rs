@@ -1,4 +1,4 @@
-//! The encryption of the vault and of the passwords in exported files (ring): AES-256-GCM
+//! The encryption of the vault and of exported files (ring): AES-256-GCM
 //! with a random nonce for each message, and keys from passphrases by PBKDF2-HMAC-SHA256.
 //! Binary values are base64 in the files.
 

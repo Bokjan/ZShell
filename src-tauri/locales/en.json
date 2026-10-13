@@ -175,7 +175,8 @@
       "fileChanged": "{path} changed after it was opened, so what it would import may not be what was shown. Open it again to review it.",
       "includeTooDeep": "The Include lines in {path} nest too deeply; a file may be including itself",
       "wrongPassphrase": "The passphrase is not the one the file was exported with, or the file was changed after it was exported",
-      "unsupportedPasswords": "The passwords in {path} are encrypted in a way this version of ZShell cannot read"
+      "passphraseRequired": "The file is encrypted. Enter the passphrase it was exported with",
+      "unsupportedEncryption": "{path} is encrypted in a way this version of ZShell cannot read"
     },
     "zmodem": {
       "cancelled": "Transfer cancelled",
@@ -219,18 +220,16 @@
     },
     "vault": {
       "locked": "The sessions are locked. Unlock them first.",
-      "readFailed": "Cannot read the encrypted sessions file",
-      "verifyFailed": "The encrypted sessions written to {path} could not be read back, so nothing was changed",
+      "readFailed": "Cannot read the sessions file",
+      "parseFailed": "The sessions file is not valid",
+      "verifyFailed": "The sessions written to {path} could not be read back, so nothing was changed",
       "deleteFailed": "Cannot delete {path}",
       "notLocked": "The sessions are not locked",
       "keyMissing": "The key is not in the credential store",
-      "keyMismatch": "The key in the credential store belongs to another encrypted sessions file",
+      "keyMismatch": "The key in the credential store does not open the sessions file",
       "wrongPassword": "Incorrect master password",
       "passwordRequired": "Enter the current master password",
-      "emptyPassword": "The master password can't be empty",
-      "passwordsUnreadable": "The passwords of {names} could not be read from the credential store",
-      "leftover": "The protection was changed, but the old files could not all be deleted. ZShell deletes them the next time it unlocks",
-      "plainLeft": "Unencrypted copies of the sessions could not be deleted"
+      "emptyPassword": "The master password can't be empty"
     },
     "appLock": {
       "unavailable": "Touch ID and the login password can't be used",
@@ -243,7 +242,6 @@
       "failed": "Authentication failed",
       "busy": "Authentication is already in progress",
       "locked": "ZShell is locked. Unlock it first.",
-      "protectionUnset": "Choose how to protect the sessions before turning on the app lock",
       "gone": "There is no longer a way to authenticate on this computer"
     }
   },

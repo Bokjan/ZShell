@@ -31,7 +31,7 @@ use tauri::WebviewWindow;
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
-use crate::vault::{Protection, Vault};
+use crate::vault::Vault;
 
 /// The idle times that can be chosen, in minutes; 0 never locks.
 const IDLE_MINUTES: [u32; 6] = [0, 1, 5, 15, 30, 60];
@@ -252,7 +252,7 @@ impl AppLock {
     }
 
     /// Saves the settings. Turning the lock on takes an authentication, which shows that it
-    /// works; unset protection can't have it, having no file to keep its settings in.
+    /// works.
     pub fn configure(&self, settings: AppLockSettings, window: Option<&WebviewWindow>) -> Result<AppLockStatus> {
         let settings = settings.normalize();
         let current = self.vault.app_lock().ok_or_else(|| Error::new("vault.locked"))?;
@@ -260,15 +260,15 @@ impl AppLock {
             return Err(Error::new("appLock.locked"));
         }
         if settings.enabled && !current.enabled {
-            if self.vault.status().protection == Some(Protection::Unset) {
-                return Err(Error::new("appLock.protectionUnset"));
-            }
             self.system.method()?;
             let _asking = self.authenticating.try_lock().map_err(|_| Error::new("appLock.busy"))?;
             self.system.authenticate(window)?;
             self.unlocked();
         }
-        self.vault.update(|data| data.app_lock = settings)?;
+        self.vault.update(|data| {
+            data.app_lock = settings;
+            Ok(())
+        })?;
         Ok(self.status())
     }
 }
@@ -302,7 +302,6 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
     use super::*;
-    use crate::persist::SetAside;
     use crate::secrets::MemoryStore;
     use crate::vault::Target;
 
@@ -352,15 +351,14 @@ mod tests {
     }
 
     impl Setup {
-        /// A vault in `name`'s directory, with the given protection (`None` leaves it unset).
-        fn new(name: &str, protection: Option<Target>) -> Self {
+        /// A new vault in `name`'s directory, with the given protection.
+        fn new(name: &str, protection: Target) -> Self {
             let dir = std::env::temp_dir().join(format!("zshell-applock-{name}-{}", std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
-            let vault = Arc::new(Vault::open(dir.clone(), Arc::new(MemoryStore::default()), &SetAside::default()));
-            if let Some(target) = protection {
-                vault.set_protection(target, None, false).unwrap();
-            }
+            let vault = Arc::new(Vault::open(dir.clone(), Arc::new(MemoryStore::default())));
+            assert!(vault.try_unlock().locked.is_none());
+            vault.set_protection(protection, None).unwrap();
             Self { fake: Arc::default(), vault, notified: Arc::default(), dir }
         }
 
@@ -373,7 +371,13 @@ mod tests {
         }
 
         fn enable(&self, settings: AppLockSettings) {
-            self.vault.update(|data| data.app_lock = AppLockSettings { enabled: true, ..settings }).unwrap();
+            let enabled = AppLockSettings { enabled: true, ..settings };
+            self.vault
+                .update(|data| {
+                    data.app_lock = enabled;
+                    Ok(())
+                })
+                .unwrap();
         }
 
         fn asked(&self) -> usize {
@@ -389,7 +393,7 @@ mod tests {
 
     #[test]
     fn starts_locked_when_on_and_unlocks_only_by_authenticating() {
-        let setup = Setup::new("start", Some(Target::None));
+        let setup = Setup::new("start", Target::None);
         assert!(!setup.start().status().locked, "off: not locked");
         setup.enable(AppLockSettings::default());
 
@@ -409,7 +413,7 @@ mod tests {
 
     #[test]
     fn the_master_password_counts_as_authenticating() {
-        let setup = Setup::new("password", Some(Target::None));
+        let setup = Setup::new("password", Target::None);
         setup.enable(AppLockSettings::default());
         let lock = setup.start();
         lock.unlocked_by_password();
@@ -418,7 +422,7 @@ mod tests {
 
     #[test]
     fn a_way_to_authenticate_that_went_away_doesnt_lock_the_user_out() {
-        let setup = Setup::new("unavailable", Some(Target::None));
+        let setup = Setup::new("unavailable", Target::None);
         setup.enable(AppLockSettings::default());
         setup.fake.unavailable.store(true, Ordering::Relaxed);
         let lock = setup.start();
@@ -451,7 +455,7 @@ mod tests {
 
     #[test]
     fn locks_after_the_idle_time_and_on_system_events_as_set() {
-        let setup = Setup::new("triggers", Some(Target::None));
+        let setup = Setup::new("triggers", Target::None);
         setup.enable(AppLockSettings { idle_minutes: 5, on_system_lock: false, ..Default::default() });
         let lock = setup.start();
 
@@ -495,14 +499,10 @@ mod tests {
     }
 
     #[test]
-    fn turning_on_takes_an_authentication_and_a_protection() {
+    fn turning_on_takes_an_authentication() {
         let on = AppLockSettings { enabled: true, ..Default::default() };
 
-        let unset = Setup::new("unset", None);
-        let lock = unset.start();
-        assert_eq!(lock.configure(on.clone(), None).unwrap_err().code(), "appLock.protectionUnset");
-
-        let setup = Setup::new("configure", Some(Target::System));
+        let setup = Setup::new("configure", Target::System);
         let lock = setup.start();
         setup.fake.refuses.store(true, Ordering::Relaxed);
         assert_eq!(lock.configure(on.clone(), None).unwrap_err().code(), "appLock.cancelled");
@@ -527,15 +527,13 @@ mod tests {
 
     #[test]
     fn the_settings_are_kept_with_the_sessions() {
-        let setup = Setup::new("kept", Some(Target::None));
+        let setup = Setup::new("kept", Target::None);
         setup.enable(AppLockSettings::default());
-        assert!(setup.dir.join("applock.json").exists());
-        let reopened = Vault::open(setup.dir.clone(), Arc::new(MemoryStore::default()), &SetAside::default());
+        let reopened = Vault::open(setup.dir.clone(), Arc::new(MemoryStore::default()));
         assert!(reopened.app_lock().unwrap().enabled);
 
-        // Moving to the encrypted vault takes them along, and leaves no plain copy.
-        setup.vault.set_protection(Target::System, None, false).unwrap();
-        assert!(!setup.dir.join("applock.json").exists());
+        // Changing the protection takes them along.
+        setup.vault.set_protection(Target::System, None).unwrap();
         assert!(setup.vault.app_lock().unwrap().enabled);
     }
 }

@@ -12,7 +12,6 @@ export type ErrorCode =
   | "appLock.locked"
   | "appLock.policyMissing"
   | "appLock.polkitMissing"
-  | "appLock.protectionUnset"
   | "appLock.unavailable"
   | "appLock.unsupported"
   | "auth.agentAllRejected"
@@ -54,8 +53,9 @@ export type ErrorCode =
   | "import.invalidSession"
   | "import.notSessionsFile"
   | "import.parseFailed"
+  | "import.passphraseRequired"
   | "import.readFailed"
-  | "import.unsupportedPasswords"
+  | "import.unsupportedEncryption"
   | "import.unsupportedVersion"
   | "import.wrongPassphrase"
   | "knownHosts.changed"
@@ -132,12 +132,10 @@ export type ErrorCode =
   | "vault.emptyPassword"
   | "vault.keyMismatch"
   | "vault.keyMissing"
-  | "vault.leftover"
   | "vault.locked"
   | "vault.notLocked"
+  | "vault.parseFailed"
   | "vault.passwordRequired"
-  | "vault.passwordsUnreadable"
-  | "vault.plainLeft"
   | "vault.readFailed"
   | "vault.verifyFailed"
   | "vault.wrongPassword"
@@ -382,7 +380,7 @@ path: string, entries: Array<FileEntry>, };
 /**
  * Why the vault is locked, for the unlock screen.
  */
-export type LockReason = "saved" | "password" | "keyUnavailable" | "unreadable" | "damaged" | "newer";
+export type LockReason = "new" | "saved" | "password" | "keyUnavailable" | "unreadable" | "damaged" | "newer";
 
 export type LogFormat = "text" | "raw";
 
@@ -490,7 +488,7 @@ colorScheme?: string,
  */
 background?: string, fontFamily?: string, fontSize?: number, };
 
-export type Protection = "unset" | "none" | "system" | "password";
+export type Protection = "none" | "system" | "password";
 
 /**
  * What the protection changes to (see `Vault::set_protection`).
@@ -584,19 +582,6 @@ termType: string, };
  * What right-clicking the terminal does.
  */
 export type RightClick = "menu" | "paste";
-
-/**
- * A saved session or proxy, with the error storing its password gave, if any. It is saved
- * either way: the dialog then goes on editing it, so that saving again doesn't add another.
- * (Only likely while the passwords are in the credential store, apart from the sessions.)
- */
-export type Saved<T> = { saved: T, passwordError: CommandError | null, };
-
-/**
- * The protection of the sessions and passwords is the vault's (`vault/`); here only
- * whether the user was asked to choose one, once.
- */
-export type SecuritySettings = { prompted: boolean, };
 
 /**
  * A serial line's settings: 115200 8N1 without flow control unless set otherwise.
@@ -704,11 +689,7 @@ export type SessionSpec = { "kind": "profile", profileId: string, carry: Array<s
  * What a sessions file holds, as it would be imported, and a digest of the file: importing
  * checks that the file is still what was shown.
  */
-export type SessionsScan = { candidates: Array<SessionCandidate>, digest: string, 
-/**
- * The file has saved passwords, which need its passphrase.
- */
-hasPasswords: boolean, };
+export type SessionsScan = { candidates: Array<SessionCandidate>, digest: string, };
 
 export type SetAsideFile = { path: string, 
 /**
@@ -716,7 +697,7 @@ export type SetAsideFile = { path: string,
  */
 movedTo: string | null, error: string, };
 
-export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, security: SecuritySettings, updates: UpdateSettings, };
+export type Settings = { appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
 
 export type SidebarSettings = { 
 /**
@@ -867,7 +848,7 @@ error: CommandError | null, };
 
 export type VaultStatus = { 
 /**
- * `None` when locked by a file whose header can't be read.
+ * `None` when locked with no vault, or one whose header can't be read.
  */
 protection: Protection | null, 
 /**
@@ -875,10 +856,10 @@ protection: Protection | null,
  */
 remember: boolean, locked: VaultLock | null, store: StoreKind, 
 /**
- * Set by the unlocking that couldn't delete the plain data files left by a change of
- * protection that stopped part way (`vault.plainLeft`).
+ * Set by the [`Vault::try_unlock`] that made the vault, which chose its protection
+ * without asking: the frontend says how it is protected, and offers to change it, once.
  */
-leftover?: CommandError, };
+created: boolean, };
 
 /**
  * A window button the frontend draws.

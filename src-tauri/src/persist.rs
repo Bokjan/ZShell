@@ -1,4 +1,4 @@
-//! The app's JSON files (sessions, settings, quick commands, the log index): read at startup
+//! The app's JSON files (settings, the log index): read at startup
 //! without failing on a damaged or unreadable file, and written so that a crash or a full disk
 //! never leaves one half written. See "读不出的文件" in `docs/ARCHITECTURE.md`.
 
@@ -35,21 +35,6 @@ const READ_ATTEMPTS: u32 = 3;
 const READ_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
 impl JsonFile {
-    /// The file at `path`, not read: one that is about to be written (a store moving from
-    /// the vault back to plain files).
-    pub fn at(path: PathBuf) -> Self {
-        Self { path, found: Found::Read }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// Whether the file couldn't be read at startup and is left alone (see [`Found::LeftAlone`]).
-    pub fn left_alone(&self) -> bool {
-        self.found == Found::LeftAlone
-    }
-
     /// Reads the file at `path`, or gives the default if it doesn't exist yet.
     ///
     /// A file that can be read but not as `T` (cut short by a crash, edited by hand, or
@@ -142,6 +127,11 @@ pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> std::io::Result
     stage_json(path, value)?.put_in_place()
 }
 
+/// Writes `bytes` as [`write_json_atomic`] does.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    stage_bytes(path, bytes)?.put_in_place()
+}
+
 fn write_failed(path: &Path, error: std::io::Error) -> Error {
     Error::new("config.writeFailed").param("path", path.display()).detail(error)
 }
@@ -204,11 +194,6 @@ pub fn remove_file(path: &Path) -> std::io::Result<()> {
 }
 
 impl Staged {
-    /// The temporary file, to read back what was written before putting it in place.
-    pub fn written(&self) -> &Path {
-        &self.tmp
-    }
-
     /// Puts the file in place; `config.writeFailed` if it can't be.
     pub fn commit(self) -> Result<()> {
         let path = self.path.clone();

@@ -9,7 +9,6 @@ import { directory } from "../lib/directory";
 import { hostPort, parsePort } from "../lib/format";
 import { passwordUpdate } from "../lib/password";
 import { useSubmitting } from "../lib/submitting";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordField } from "./PasswordField";
@@ -35,10 +34,8 @@ export function proxySummary(t: TFunction, proxy: Proxy) {
 }
 
 /** Creates, edits or deletes a proxy. */
-export function ProxyDialog({ proxy: initial, onClose, onSaved }: Props) {
+export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
   const { t } = useTranslation();
-  // A new proxy becomes the saved one when only its password failed (see ProfileDialog).
-  const [proxy, setProxy] = useState(initial);
   const [name, setName] = useState(proxy?.name ?? "");
   const [kind, setKind] = useState<ProxyKind>(proxy?.kind ?? "socks5");
   const [host, setHost] = useState(proxy?.host ?? "");
@@ -49,8 +46,6 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved }: Props) {
   const [command, setCommand] = useState(proxy?.command ?? "");
   const deleteButton = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
-  // Why the deleted proxy's saved password couldn't be deleted.
-  const [passwordLeft, setPasswordLeft] = useState<string | null>(null);
   // Saving and deleting, one at a time.
   const saving = useSubmitting();
   const server = kind !== "command";
@@ -83,7 +78,7 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved }: Props) {
     const update = passwordUpdate({ keeps: server && !!username.trim(), existed: false, clear: clearPassword, password });
     await saving.submit(async () => {
       try {
-        const { saved, passwordError } = await proxies.save(
+        const saved = await proxies.save(
           {
             id: proxy?.id ?? "",
             name,
@@ -97,11 +92,6 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved }: Props) {
         );
         void directory.reload();
         onSaved?.(saved);
-        if (passwordError) {
-          setProxy(saved);
-          setError(t("proxy.passwordNotSaved", { message: passwordError.message }));
-          return;
-        }
         onClose();
       } catch (err) {
         setError(errorMessage(err));
@@ -117,10 +107,9 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved }: Props) {
     }
     await saving.submit(async () => {
       try {
-        const passwordError = await proxies.delete(proxy.id);
+        await proxies.delete(proxy.id);
         void directory.reload();
-        if (passwordError) setPasswordLeft(passwordError.message);
-        else onClose();
+        onClose();
       } catch (err) {
         deleteButton.setArmed(false);
         setError(errorMessage(err));
@@ -242,16 +231,6 @@ export function ProxyDialog({ proxy: initial, onClose, onSaved }: Props) {
           </button>
         </footer>
       </form>
-      {passwordLeft !== null && proxy && (
-        <ConfirmDialog
-          title={t("common.passwordLeftTitle")}
-          message={t("proxy.passwordNotDeleted", { name: proxy.name, message: passwordLeft })}
-          confirmLabel={t("common.ok")}
-          notice
-          onConfirm={onClose}
-          onCancel={onClose}
-        />
-      )}
     </Modal>
   );
 }

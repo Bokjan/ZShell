@@ -15,13 +15,13 @@ use crate::vault::Vault;
 /// name is shown translated, so it is stored empty.
 pub const DEFAULT_GROUP: &str = "default";
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct QuickCommands {
     pub groups: Vec<CommandGroup>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandGroup {
     #[serde(default)]
@@ -32,7 +32,7 @@ pub struct CommandGroup {
     pub commands: Vec<QuickCommand>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct QuickCommand {
     #[serde(default)]
@@ -115,7 +115,10 @@ impl QuickCommandStore {
     pub fn set(&self, commands: QuickCommands) -> Result<QuickCommands> {
         let commands = commands.normalize();
         let mut current = self.commands.lock().unwrap();
-        self.vault.update(|data| data.commands.clone_from(&commands))?;
+        self.vault.update(|data| {
+            data.commands.clone_from(&commands);
+            Ok(())
+        })?;
         *current = commands.clone();
         Ok(commands)
     }

@@ -11,7 +11,7 @@ use crate::forward::ForwardRule;
 use crate::net::Route;
 
 /// A saved session: what it connects to (by protocol), and how its tabs behave.
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
     /// Empty when creating a new profile; assigned on save.
@@ -48,7 +48,7 @@ pub struct Profile {
 }
 
 /// What a session connects to, with the settings of its protocol.
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "protocol", rename_all = "camelCase")]
 pub enum Connection {
     Ssh(SshOptions),
@@ -66,7 +66,7 @@ pub enum Protocol {
 
 /// What SSH and Telnet sessions have in common: where they connect, through what, and the
 /// terminal type the remote side is told.
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Remote {
     pub host: String,
@@ -93,7 +93,7 @@ pub struct Remote {
     pub term_type: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SshOptions {
     #[serde(flatten)]
@@ -496,7 +496,7 @@ pub fn default_term_type() -> String {
     "xterm-256color".to_owned()
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum AuthMethod {
     /// Agent keys, default key files, then keyboard-interactive / password, like OpenSSH.

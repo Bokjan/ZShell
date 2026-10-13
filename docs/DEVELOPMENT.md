@@ -56,7 +56,7 @@ UPDATE_BINDINGS=1 cargo test bindings
 
 ## 端到端测试
 
-需要真实 SSH 服务器的功能，用隔离的 HOME 和临时 sshd 测试，不碰自己的 `profiles.json`、`settings.json` 和 `~/.ssh`（known_hosts、config、默认私钥）。
+需要真实 SSH 服务器的功能，用隔离的 HOME 和临时 sshd 测试，不碰自己的 `vault.json`、`settings.json` 和 `~/.ssh`（known_hosts、config、默认私钥）。
 
 **隔离的 HOME**：在一个临时目录 `$T` 下运行 debug 包里的可执行文件：
 
@@ -64,9 +64,9 @@ UPDATE_BINDINGS=1 cargo test bindings
 HOME=$T/home src-tauri/target/debug/bundle/macos/ZShell.app/Contents/MacOS/zshell
 ```
 
-会话配置写在 `$T/home/Library/Application Support/ZShell/profiles.json`。注意 WKWebView 的 localStorage（如侧栏宽度）可能不跟随 HOME，会写进正式应用的 WebKit 数据。
+会话配置写在 `$T/home/Library/Application Support/ZShell/vault.json`。隔离的 HOME 里没有钥匙串，新建的保险库不加密，可以直接读写。注意 WKWebView 的 localStorage（如侧栏宽度）可能不跟随 HOME，会写进正式应用的 WebKit 数据。
 
-Linux 上运行 `src-tauri/target/debug/zshell`，配置在 `$T/home/.config/ZShell/`，WebKitGTK 的数据也跟随 HOME（前提是没有设置 `XDG_CONFIG_HOME` 等变量，有则一并指到 `$T`）。HOME 要用绝对路径：相对路径下缓存目录也是相对的，拖出给其他应用的文件 URI 与"显示"的位置都会出错。系统钥匙串（Secret Service）、polkit 与 logind 是真实会话的，没有隔离：测试保险库时不要选"系统凭据存储"，以免在自己的钥匙串里留下条目；应用锁要先装上策略文件（`sudo install -m 644 src-tauri/linux/org.boyin.zshell.policy /usr/share/polkit-1/actions/`）。
+Linux 上运行 `src-tauri/target/debug/zshell`，配置在 `$T/home/.config/ZShell/`，WebKitGTK 的数据也跟随 HOME（前提是没有设置 `XDG_CONFIG_HOME` 等变量，有则一并指到 `$T`）。HOME 要用绝对路径：相对路径下缓存目录也是相对的，拖出给其他应用的文件 URI 与"显示"的位置都会出错。系统钥匙串（Secret Service）、polkit 与 logind 是真实会话的，没有隔离：新建的保险库会把密钥存进自己的钥匙串，debug 构建的条目在 service `org.boyin.zshell.dev` 下，不会碰到正式应用的，测试后可以删掉；应用锁要先装上策略文件（`sudo install -m 644 src-tauri/linux/org.boyin.zshell.policy /usr/share/polkit-1/actions/`）。
 
 **临时 sshd**：用 `ssh-keygen -t ed25519 -N '' -f $T/host_key` 生成主机密钥，配置文件示例：
 
@@ -103,7 +103,7 @@ python3 scripts/e2e/proxy.py socks5 1081
 python3 scripts/e2e/proxy.py http 8081 --user alice --password secret
 ```
 
-ProxyCommand 用 macOS 自带的 `nc %h %p`，或一个不存在的命令看 stderr 是否显示在终端里。隔离的 HOME 里没有钥匙串，带用户名的代理每次连接都会在终端里问密码，正好测内联询问与重试。会话与代理可以直接写进 `profiles.json` 与 `proxies.json`；预先写好 `$T/home/.ssh/known_hosts`（`[localhost]:2222 <主机公钥>`）可以省去主机密钥确认。
+ProxyCommand 用 macOS 自带的 `nc %h %p`，或一个不存在的命令看 stderr 是否显示在终端里。隔离的 HOME 里没有钥匙串，带用户名的代理每次连接都会在终端里问密码，正好测内联询问与重试。会话与代理可以直接写进不加密的 `vault.json`（`{"header":{"format":"zshell-vault","version":2,"protection":"none"},"data":{"profiles":[…],"proxies":[…]}}`）；预先写好 `$T/home/.ssh/known_hosts`（`[localhost]:2222 <主机公钥>`）可以省去主机密钥确认。
 
 **串口**：`scripts/e2e/fakeserial.py $T/vserial --home $T/work` 创建一对伪终端，另一端运行 `/bin/sh`（像开发板的串口控制台），设备路径是指向 `/dev/ttysNNN` 的符号链接；会话的设备填 `$T/vserial`。结束脚本相当于拔出设备，再次运行（同一路径）相当于插回，用来测断线重连。伪终端没有波特率，ZShell 对它们不设速率；真实 USB 串口适配器只能在真机上测。
 
@@ -150,7 +150,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 **版本号**：语义化版本 `X.Y.Z`，从 1.0.0 开始。
 - 按语义化版本选择升哪一位：功能里程碑或新功能升 minor（1.1.0、1.2.0…），修复和小改进升 patch（1.3.1、1.3.2…）。
 - 不按提交升版本。规划涉及 `src/`（前端）或 `src-tauri/`（后端）代码的修改时，先定版本号方案（升到哪个版本、包含哪些修改），确定后再动手；一个版本可以包含多个提交。只改文档、CI 或脚本不需要新版本。
-- `profiles.json`、`settings.json` 等配置保持向后兼容：新字段加默认值，旧文件照常读取。放弃兼容要先与维护者商定，升 major，并在更新日志里标为破坏性变更。
+- `vault.json`、`settings.json` 等配置保持向后兼容：新字段加默认值，旧文件照常读取。放弃兼容要先与维护者商定，升 major，并在更新日志里标为破坏性变更。
 - 不用预发布后缀（`-beta.1` 之类）：Windows 的 MSI 只接受数字版本号。
 
 **升版本号与发布分开**：每个版本都打 tag，但不一定发布。git-cliff 以 tag 划分版本，所以没发布的版本也要打 tag 并推送，否则下一版的更新日志会把这一版的提交再算一遍；推送 tag 不会触发构建，要发布时再单独运行 release workflow，之前任何一个已推送的版本都可以补发。

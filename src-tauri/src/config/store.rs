@@ -8,7 +8,7 @@ use crate::forward::ForwardRule;
 use crate::net::Route;
 use crate::persist::unique_ids;
 use crate::proxy::Proxy;
-use crate::vault::Vault;
+use crate::vault::{Account, Passwords, Vault};
 
 pub struct ProfileStore {
     /// Where they are kept; empty while it is locked, and loaded again once unlocked.
@@ -33,9 +33,8 @@ pub struct Additions {
     pub folders: Vec<Folder>,
     pub proxies: Vec<Proxy>,
     pub profiles: Vec<Profile>,
-    /// The accounts of the new sessions and proxies (see `secrets::proxy_account`), from those
-    /// in the file imported: where its passwords go.
-    pub accounts: Vec<(String, String)>,
+    /// The saved passwords of the new sessions and proxies.
+    pub passwords: Passwords,
 }
 
 #[derive(Clone, Default)]
@@ -137,12 +136,13 @@ impl ProfileStore {
     }
 
     /// Inserts or updates a profile and returns it with its id filled in. A new profile goes
-    /// into `profile.folder`; an existing one stays where it is.
-    pub fn save(&self, mut profile: Profile) -> Result<Profile> {
+    /// into `profile.folder`; an existing one stays where it is. `password`: `None` keeps the
+    /// saved password, `Some("")` deletes it.
+    pub fn save(&self, mut profile: Profile, password: Option<&str>) -> Result<Profile> {
         profile.normalize_target()?;
         profile.normalize_session_options()?;
 
-        self.update(|state| {
+        self.update(|state, passwords| {
             let mut seen = std::collections::HashSet::new();
             for jump in profile.jump_hosts() {
                 let ssh = state.profiles.iter().any(|p| p.id == *jump && p.protocol() == Protocol::Ssh);
@@ -181,6 +181,9 @@ impl ProfileStore {
                     state.profiles.push(profile.clone());
                 }
             }
+            if let Some(password) = password {
+                passwords.set(Account::Profile(&profile.id), Some(password).filter(|p| !p.is_empty()));
+            }
             Ok(profile)
         })
     }
@@ -197,7 +200,7 @@ impl ProfileStore {
                 Ok(rule)
             })
             .collect::<Result<Vec<_>>>()?;
-        self.update(|state| {
+        self.update(|state, _| {
             let profile = state.profiles.iter_mut().find(|p| p.id == id).ok_or_else(|| Error::new("profile.notFound"))?;
             match &mut profile.connection {
                 Connection::Ssh(ssh) => ssh.forwards = forwards,
@@ -207,14 +210,17 @@ impl ProfileStore {
         })
     }
 
-    /// A copy of a profile, named `name`, right after it in the same folder.
+    /// A copy of a profile with its saved password, named `name`, right after it in the same
+    /// folder.
     pub fn duplicate(&self, id: &str, name: &str) -> Result<Profile> {
-        self.update(|state| {
+        self.update(|state, passwords| {
             let index = state.profiles.iter().position(|p| p.id == id).ok_or_else(|| Error::new("profile.notFound"))?;
             let mut copy = state.profiles[index].clone();
             copy.id = uuid::Uuid::new_v4().to_string();
             copy.name = name.trim().to_owned();
             state.profiles.insert(index + 1, copy.clone());
+            let password = passwords.get(Account::Profile(id)).map(str::to_owned);
+            passwords.set(Account::Profile(&copy.id), password.as_deref());
             Ok(copy)
         })
     }
@@ -232,16 +238,18 @@ impl ProfileStore {
     }
 
     /// Adds what `plan` makes of the current sessions, folders and proxies in one write (an
-    /// import: new folders, proxies and profiles that already have ids); returns the new
-    /// profiles. Planning while the store is held for writing (queries go on) keeps two
+    /// import: new folders, proxies and profiles that already have ids, and their passwords);
+    /// returns the new profiles. Planning while the store is held for writing (queries go on) keeps two
     /// imports at once from both adding the same thing.
     pub fn add_all(&self, plan: impl FnOnce(&Snapshot) -> Result<Additions>) -> Result<Vec<Profile>> {
-        self.update(|state| {
+        self.update(|state, passwords| {
             let snapshot = Snapshot { profiles: &state.profiles, folders: &state.folders, proxies: &state.proxies };
-            let Additions { folders, proxies, profiles, .. } = plan(&snapshot)?;
+            let Additions { folders, proxies, profiles, passwords: added } = plan(&snapshot)?;
             state.folders.extend(folders);
             state.proxies.extend(proxies);
             state.profiles.extend(profiles.iter().cloned());
+            passwords.profiles.extend(added.profiles);
+            passwords.proxies.extend(added.proxies);
             state.repair();
             Ok(profiles)
         })
@@ -255,10 +263,11 @@ impl ProfileStore {
         self.state.read().unwrap().proxies.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("proxy.notFound"))
     }
 
-    /// Inserts or updates a proxy and returns it with its id filled in.
-    pub fn save_proxy(&self, mut proxy: Proxy) -> Result<Proxy> {
+    /// Inserts or updates a proxy and returns it with its id filled in. `password`: `None`
+    /// keeps the saved password, `Some("")` deletes it; a proxy without a user name keeps none.
+    pub fn save_proxy(&self, mut proxy: Proxy, password: Option<&str>) -> Result<Proxy> {
         proxy.normalize()?;
-        self.update(|state| {
+        self.update(|state, passwords| {
             match state.proxies.iter_mut().find(|p| !proxy.id.is_empty() && p.id == proxy.id) {
                 Some(existing) => *existing = proxy.clone(),
                 None if !proxy.id.is_empty() => return Err(Error::new("proxy.notFound")),
@@ -267,13 +276,16 @@ impl ProfileStore {
                     state.proxies.push(proxy.clone());
                 }
             }
+            if let Some(password) = password {
+                passwords.set(Account::Proxy(&proxy.id), Some(password).filter(|p| !p.is_empty()));
+            }
             Ok(proxy)
         })
     }
 
-    /// Deletes a proxy that no session uses.
+    /// Deletes a proxy that no session uses, with its password.
     pub fn delete_proxy(&self, id: &str) -> Result<()> {
-        self.update(|state| {
+        self.update(|state, _| {
             let users: Vec<&str> = state.profiles.iter().filter(|p| p.proxy() == Some(id)).map(|p| p.name.as_str()).collect();
             if !users.is_empty() {
                 return Err(Error::new("proxy.inUse").param("names", users.join(", ")));
@@ -283,8 +295,9 @@ impl ProfileStore {
         })
     }
 
+    /// Deletes a session, with its password.
     pub fn delete(&self, id: &str) -> Result<()> {
-        self.update(|state| {
+        self.update(|state, _| {
             let users = jump_host_users(state, id);
             if !users.is_empty() {
                 return Err(Error::new("profile.usedAsJumpHost").param("names", users.join(", ")));
@@ -300,7 +313,7 @@ impl ProfileStore {
         if folder.name.is_empty() {
             return Err(Error::new("folder.emptyName"));
         }
-        self.update(|state| {
+        self.update(|state, _| {
             if folder.id.is_empty() {
                 folder.id = uuid::Uuid::new_v4().to_string();
                 if folder.parent.as_ref().is_some_and(|p| !state.folder_exists(p)) {
@@ -317,7 +330,7 @@ impl ProfileStore {
 
     /// Deletes a folder; what it contains moves up into its parent, in its place.
     pub fn delete_folder(&self, id: &str) -> Result<()> {
-        self.update(|state| {
+        self.update(|state, _| {
             let index = state.folders.iter().position(|f| f.id == id).ok_or_else(|| Error::new("folder.notFound"))?;
             let folder = state.folders.remove(index);
             let is_child = |f: &Folder| f.parent.as_deref() == Some(id);
@@ -338,7 +351,7 @@ impl ProfileStore {
     /// Moves a session or folder into `parent` (`None`: the top level), before the session
     /// or folder `before` (of the same kind), or after the others.
     pub fn move_item(&self, item: Item, parent: Option<String>, before: Option<String>) -> Result<()> {
-        self.update(|state| {
+        self.update(|state, _| {
             if parent.as_ref().is_some_and(|p| !state.folder_exists(p)) {
                 return Err(Error::new("folder.notFound"));
             }
@@ -365,27 +378,20 @@ impl ProfileStore {
         })
     }
 
-    /// Applies `change` to a copy of the state and, if it succeeds, saves it and keeps the
-    /// copy.
-    ///
-    /// Plain files are all written before any is put in place, so a failed write (a full
-    /// disk) leaves them as they were. Putting them in place can still fail part way (a file
-    /// held by an antivirus on Windows), leaving some of the change on disk: the state is
-    /// then read back from the vault, which follows the disk, and loading repairs references
-    /// across the files.
-    fn update<T>(&self, change: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
+    /// Applies `change` to a copy of the state and the saved passwords and, if it succeeds,
+    /// saves them in one write and keeps the copy. Passwords whose session or proxy is gone
+    /// (or takes none) go with it.
+    fn update<T>(&self, change: impl FnOnce(&mut State, &mut Passwords) -> Result<T>) -> Result<T> {
         let _writing = self.writing.lock().unwrap();
         let mut updated = self.state.read().unwrap().clone();
-        let value = change(&mut updated)?;
-        let saved = self.vault.update(|data| {
+        let value = self.vault.update(|data| {
+            let value = change(&mut updated, &mut data.passwords)?;
+            data.passwords.retain_owners(&updated.profiles, &updated.proxies);
             data.folders.clone_from(&updated.folders);
             data.proxies.clone_from(&updated.proxies);
             data.profiles.clone_from(&updated.profiles);
-        });
-        if let Err(e) = saved {
-            *self.state.write().unwrap() = Self::read(&self.vault);
-            return Err(e);
-        }
+            Ok(value)
+        })?;
         *self.state.write().unwrap() = updated;
         Ok(value)
     }

@@ -22,7 +22,8 @@ export function SecuritySection() {
   const { status, setStatus } = useVault();
   const [changing, setChanging] = useState(false);
   const store = t(`vault.store.${status.store}`);
-  const protection = status.protection ?? "unset";
+  // Unlocked, so known.
+  const protection = status.protection!;
   const state = protection === "password" && status.remember ? "passwordRemembered" : protection;
 
   return (
@@ -63,7 +64,6 @@ function AppLockSetting() {
   const [error, setError] = useState<string | null>(null);
   // The vault is unlocked while the settings show.
   const settings = status.settings!;
-  const unset = (vault.protection ?? "unset") === "unset";
 
   const save = async (next: AppLockSettings) => {
     setBusy(true);
@@ -79,7 +79,6 @@ function AppLockSetting() {
 
   let hint: string;
   if (status.unavailable) hint = errorMessage(status.unavailable);
-  else if (unset) hint = t("settings.appLock.needsProtection");
   else if (settings.enabled && vault.protection === "none") hint = t("settings.appLock.plainHint");
   else hint = t("settings.appLock.hint", { shortcut: shortcutLabel("lock") });
 
@@ -90,7 +89,7 @@ function AppLockSetting() {
           <input
             type="checkbox"
             checked={settings.enabled}
-            disabled={busy || (!settings.enabled && (status.method === null || unset))}
+            disabled={busy || (!settings.enabled && status.method === null)}
             onChange={(e) => void save({ ...settings, enabled: e.target.checked })}
           />
           {t(`settings.appLock.enable.${status.method ?? "unavailable"}`)}

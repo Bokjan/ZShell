@@ -1,12 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { useTranslation } from "react-i18next";
 
 import { errorMessage, vault, type VaultStatus } from "../lib/api";
 import { useNativeMenu } from "../lib/appMenu";
-import { useSettings } from "../lib/settings";
 import { useTitleBar } from "../lib/window";
 import { useConfigChanged } from "../lib/windows";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { ProtectionDialog } from "./ProtectionDialog";
 import { UnlockScreen } from "./UnlockScreen";
 
@@ -27,88 +24,69 @@ export function useVault(): VaultContextValue {
 /**
  * Shows `children` (the app) once the sessions can be read: until the vault is unlocked, the
  * unlock screen covers the window, and no session or tab exists. The key in the credential
- * store is tried at once; it may take a while (macOS asking for permission, Linux unlocking
- * the keyring), which the screen says.
- *
- * Asks once, over the app, how to protect the sessions while that hasn't been chosen.
+ * store is tried at once, and a missing vault made; it may take a while (macOS asking for
+ * permission, Linux unlocking the keyring), which the screen says. The window that made the
+ * vault then says how it is protected, and offers to change it.
  */
 export function VaultGate({ children }: { children: ReactNode }) {
-  const { t } = useTranslation();
-  const { settings, update } = useSettings();
   // The title bar works on the unlock screen too: moving the window, its buttons; and so
   // does the macOS menu bar.
   useTitleBar();
   useNativeMenu();
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  // Reading the key from the credential store.
+  // Reading the key from the credential store, or making the vault.
   const [trying, setTrying] = useState(false);
-  // Plain data files that unlocking couldn't delete, said once by the window that unlocked.
-  const [leftover, setLeftover] = useState<string | null>(null);
-
-  const unlocked = useCallback((next: VaultStatus) => {
-    setStatus(next);
-    if (next.leftover) setLeftover(errorMessage(next.leftover));
-  }, []);
+  // The vault was just made here, protected without asking: says how, once.
+  const [introducing, setIntroducing] = useState(false);
 
   const tryUnlock = useCallback(() => {
     setTrying(true);
     vault
       .tryUnlock()
-      .then(unlocked, (e) => setFailure(errorMessage(e)))
+      .then(
+        (next) => {
+          setStatus(next);
+          if (next.created) setIntroducing(true);
+        },
+        (e) => setFailure(errorMessage(e)),
+      )
       .finally(() => setTrying(false));
-  }, [unlocked]);
+  }, []);
+
+  // Read at once: a saved key, or no vault yet.
+  const found = useCallback(
+    (next: VaultStatus) => {
+      setStatus(next);
+      if (next.locked?.reason === "saved" || (next.locked?.reason === "new" && !next.locked.error)) tryUnlock();
+    },
+    [tryUnlock],
+  );
 
   useEffect(() => {
-    vault.status().then(
-      (found) => {
-        setStatus(found);
-        if (found.locked?.reason === "saved") tryUnlock();
-      },
-      (e) => setFailure(errorMessage(e)),
-    );
-  }, [tryUnlock]);
+    vault.status().then(found, (e) => setFailure(errorMessage(e)));
+  }, [found]);
 
   // Its protection changed in another window.
   useConfigChanged("vault", () => void vault.status().then(setStatus, console.error));
 
-  // Reset: everything starts again, including the question.
-  const onReset = (next: VaultStatus) => {
-    update({ ...settings, security: { ...settings.security, prompted: false } });
-    setStatus(next);
-  };
-
   if (!status) return failure ? <p className="vault-failure">{failure}</p> : null;
   if (status.locked) {
-    return <UnlockScreen status={status} trying={trying} onTryAgain={tryUnlock} onStatus={unlocked} onReset={onReset} />;
+    return <UnlockScreen status={status} trying={trying} onTryAgain={tryUnlock} onStatus={setStatus} onReset={found} />;
   }
-  const asking = status.protection === "unset" && !settings.security.prompted;
-  const prompted = () => update({ ...settings, security: { ...settings.security, prompted: true } });
   return (
     <VaultContext.Provider value={{ status, setStatus }}>
       {children}
-      {asking && (
+      {introducing && (
         <ProtectionDialog
-          onboarding
+          intro
           status={status}
           onDone={(next) => {
             setStatus(next);
-            prompted();
+            setIntroducing(false);
           }}
-          onClose={prompted}
+          onClose={() => setIntroducing(false)}
         />
-      )}
-      {leftover && (
-        <ConfirmDialog
-          notice
-          title={t("vault.plainLeftTitle")}
-          message={t("vault.plainLeftMessage")}
-          confirmLabel={t("common.close")}
-          onConfirm={() => setLeftover(null)}
-          onCancel={() => setLeftover(null)}
-        >
-          <p className="hint">{leftover}</p>
-        </ConfirmDialog>
       )}
     </VaultContext.Provider>
   );

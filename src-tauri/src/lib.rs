@@ -10,6 +10,7 @@ mod crypto;
 #[cfg(target_os = "linux")]
 mod desktop;
 mod encoding;
+mod envelope;
 mod error;
 mod forward;
 mod import;
@@ -153,9 +154,10 @@ pub fn run() {
                 }
             }
             let set_aside = SetAside::default();
-            // Only reads the header of an encrypted vault: unlocking it may wait for the
-            // credential store, and the frontend shows the unlock screen meanwhile.
-            let vault = Arc::new(Vault::open(config_dir.clone(), Arc::new(secrets::SystemStore), &set_aside));
+            // Only reads the header of an encrypted vault, and doesn't make a missing one:
+            // that may wait for the credential store, and the frontend shows the unlock screen
+            // meanwhile.
+            let vault = Arc::new(Vault::open(config_dir.clone(), Arc::new(secrets::SystemStore)));
             vault::install(vault.clone());
             app.manage(ProfileStore::load(vault.clone()));
             app.manage(QuickCommandStore::load(vault.clone()));
@@ -240,8 +242,6 @@ pub fn run() {
             commands::vault::vault_unlock,
             commands::vault::vault_reset,
             commands::vault::vault_set_protection,
-            commands::vault::vault_plain_copies,
-            commands::vault::vault_delete_plain_copies,
             commands::vault::credential_store_available,
             commands::applock::app_lock_status,
             commands::applock::app_lock_lock,

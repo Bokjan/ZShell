@@ -60,12 +60,9 @@ interface Props {
  * page, with its field focused. Closing with Esc or a click outside asks first if anything
  * was changed.
  */
-export function ProfileDialog({ profile: initial, defaults, commandGroups, onClose, onSaved }: Props) {
+export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSaved }: Props) {
   const { t } = useTranslation();
-  // The profile being edited: a new one becomes the saved one when only its password failed,
-  // so that saving again updates it instead of adding another.
-  const [profile, setProfile] = useState(initial);
-  const [started] = useState(() => fromProfile(initial, defaults));
+  const [started] = useState(() => fromProfile(profile, defaults));
   const [form, setForm] = useState<ProfileForm>(started);
   const set = (patch: Partial<ProfileForm>) => setForm((current) => ({ ...current, ...patch }));
   // Saving and deleting, one at a time.
@@ -78,8 +75,6 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
   const { loaded, profiles, proxies } = useDirectory();
   const [creatingProxy, setCreatingProxy] = useState(false);
   const [discarding, setDiscarding] = useState(false);
-  // Why the deleted session's saved password couldn't be deleted.
-  const [passwordLeft, setPasswordLeft] = useState<string | null>(null);
   const home = useHomeDirectory();
   // The serial ports found here, listed once the serial protocol is chosen.
   const [ports, setPorts] = useState<SerialPortInfo[] | null>(null);
@@ -131,14 +126,9 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
     const update = passwordUpdate({ keeps: usesPassword, existed: !!profile, clear: clearPassword, password });
     await saving.submit(async () => {
       try {
-        const { saved, passwordError } = await saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update);
+        const saved = await saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update);
         void directory.reload();
         onSaved?.(saved);
-        if (passwordError) {
-          setProfile(saved);
-          setError(t("profile.passwordNotSaved", { message: passwordError.message }));
-          return;
-        }
         onClose();
       } catch (err) {
         setError(errorMessage(err));
@@ -154,11 +144,9 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
     }
     await saving.submit(async () => {
       try {
-        const passwordError = await deleteProfile(profile.id);
+        await deleteProfile(profile.id);
         void directory.reload();
-        // Said before closing: nothing else would.
-        if (passwordError) setPasswordLeft(passwordError.message);
-        else onClose();
+        onClose();
       } catch (err) {
         setError(errorMessage(err));
       }
@@ -279,16 +267,6 @@ export function ProfileDialog({ profile: initial, defaults, commandGroups, onClo
           danger
           onConfirm={onClose}
           onCancel={() => setDiscarding(false)}
-        />
-      )}
-      {passwordLeft !== null && profile && (
-        <ConfirmDialog
-          title={t("common.passwordLeftTitle")}
-          message={t("profile.passwordNotDeleted", { name: profile.name, message: passwordLeft })}
-          confirmLabel={t("common.ok")}
-          notice
-          onConfirm={onClose}
-          onCancel={onClose}
         />
       )}
     </>

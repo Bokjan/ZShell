@@ -114,8 +114,6 @@ export function Sidebar(props: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [deleting, setDeleting] = useState<Profile | null>(null);
-  // A deleted or copied session whose password couldn't be changed.
-  const [passwordNotice, setPasswordNotice] = useState<{ title: string; message: string } | null>(null);
   // A session whose logs are about to be deleted, with how many it has.
   const [deletingLogs, setDeletingLogs] = useState<{ profile: Profile; count: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -198,14 +196,9 @@ export function Sidebar(props: Props) {
   };
 
   const duplicate = (profile: Profile) => {
-    duplicateProfile(profile.id, t("sidebar.copyName", { name: profile.name })).then(({ saved, passwordError }) => {
+    duplicateProfile(profile.id, t("sidebar.copyName", { name: profile.name })).then((saved) => {
       void directory.reload();
       setSelected(`p:${saved.id}`);
-      if (passwordError)
-        setPasswordNotice({
-          title: t("sidebar.passwordNotCopiedTitle"),
-          message: t("sidebar.passwordNotCopied", { message: passwordError.message }),
-        });
     }, fail);
   };
 
@@ -645,26 +638,9 @@ export function Sidebar(props: Props) {
           onConfirm={() => {
             const profile = deleting;
             setDeleting(null);
-            deleteProfile(profile.id).then((passwordError) => {
-              void directory.reload();
-              if (passwordError)
-                setPasswordNotice({
-                  title: t("common.passwordLeftTitle"),
-                  message: t("profile.passwordNotDeleted", { name: profile.name, message: passwordError.message }),
-                });
-            }, fail);
+            deleteProfile(profile.id).then(() => void directory.reload(), fail);
           }}
           onCancel={() => setDeleting(null)}
-        />
-      )}
-      {passwordNotice && (
-        <ConfirmDialog
-          title={passwordNotice.title}
-          message={passwordNotice.message}
-          confirmLabel={t("common.ok")}
-          notice
-          onConfirm={() => setPasswordNotice(null)}
-          onCancel={() => setPasswordNotice(null)}
         />
       )}
       {deletingLogs &&

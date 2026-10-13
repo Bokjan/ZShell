@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorCode, errorMessage, sessionsFile, type SessionsScan } from "../lib/api";
@@ -17,8 +17,9 @@ interface Props {
 }
 
 /**
- * Imports sessions from a file exported by ZShell, skipping those that already exist, with
- * the passwords in the file if its passphrase is given.
+ * Imports sessions from a file exported by ZShell, skipping those that already exist. An
+ * encrypted file (exported with its passwords) is opened with its passphrase first; its
+ * passwords come along.
  */
 export function SessionImportDialog({ path, onClose }: Props) {
   const { t } = useTranslation();
@@ -26,41 +27,46 @@ export function SessionImportDialog({ path, onClose }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // For the file's passwords; empty imports the sessions without them.
+  // The file is encrypted: its passphrase opens it, and imports it.
+  const [encrypted, setEncrypted] = useState(false);
   const [passphrase, setPassphrase] = useState("");
-  // Imported, but the passwords couldn't be saved: why.
-  const [passwordsNotSaved, setPasswordsNotSaved] = useState<string | null>(null);
+  const passphraseRef = useRef<HTMLInputElement>(null);
 
   const dialog = useDialog(onClose);
 
-  useEffect(() => {
-    sessionsFile.scan(path).then(
-      (found) => {
+  const read = useCallback(
+    async (passphrase?: string) => {
+      try {
+        const found = await sessionsFile.scan(path, passphrase);
         setScan(found);
         setSelected(new Set(found.candidates.filter((c) => !c.existing).map((c) => c.id)));
-      },
-      (e) => setError(errorMessage(e)),
-    );
-  }, [path]);
+      } catch (e) {
+        if (errorCode(e) === "import.passphraseRequired") return setEncrypted(true);
+        setError(errorMessage(e));
+        if (errorCode(e) === "import.wrongPassphrase") requestAnimationFrame(() => passphraseRef.current?.select());
+      }
+    },
+    [path],
+  );
 
-  const passphraseRef = useRef<HTMLInputElement>(null);
+  useEffect(() => void read(), [read]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (passwordsNotSaved) return onClose();
     setBusy(true);
     setError(null);
+    if (!scan) {
+      // Opening the encrypted file.
+      if (passphrase) await read(passphrase);
+      return setBusy(false);
+    }
     try {
-      const passwordError = await sessionsFile.import(path, [...selected], scan!.digest, passphrase || undefined);
+      await sessionsFile.import(path, [...selected], scan.digest, encrypted ? passphrase : undefined);
       void directory.reload();
-      if (passwordError) {
-        setPasswordsNotSaved(errorMessage(passwordError));
-        setBusy(false);
-      } else onClose();
+      onClose();
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
-      if (errorCode(err) === "import.wrongPassphrase") requestAnimationFrame(() => passphraseRef.current?.select());
     }
   };
 
@@ -145,28 +151,40 @@ export function SessionImportDialog({ path, onClose }: Props) {
           </>
         )}
         {candidates && candidates.length === 0 && <p className="hint">{t("sessionImport.empty")}</p>}
-        {scan?.hasPasswords && candidates && candidates.length > 0 && !passwordsNotSaved && (
+        {encrypted && !scan && (
           <>
+            <p className="dialog-message">{t("sessionImport.encrypted")}</p>
             <label>
               {t("sessionImport.passphrase")}
-              <input ref={passphraseRef} type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
+              <input
+                ref={passphraseRef}
+                type="password"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+                disabled={busy}
+                autoFocus
+              />
             </label>
-            <p className="hint">{t("sessionImport.passphraseHint")}</p>
           </>
         )}
         {error && <ErrorText>{error}</ErrorText>}
-        {passwordsNotSaved && <ErrorText>{t("sessionImport.passwordsNotSaved", { message: passwordsNotSaved })}</ErrorText>}
 
         <footer>
           <span className="grow" />
-          {!passwordsNotSaved && (
-            <button type="button" onClick={onClose}>
-              {t("common.cancel")}
-            </button>
-          )}
-          <button type="submit" className="primary" disabled={busy || (!passwordsNotSaved && selected.size === 0)}>
-            {passwordsNotSaved ? t("common.close") : t("sessionImport.import", { count: importing.size })}
+          <button type="button" onClick={onClose}>
+            {t("common.cancel")}
           </button>
+          {scan ? (
+            <button type="submit" className="primary" disabled={busy || selected.size === 0}>
+              {t("sessionImport.import", { count: importing.size })}
+            </button>
+          ) : (
+            encrypted && (
+              <button type="submit" className="primary" disabled={busy || !passphrase}>
+                {busy ? t("sessionImport.opening") : t("sessionImport.open")}
+              </button>
+            )
+          )}
         </footer>
       </form>
     </Modal>

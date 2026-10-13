@@ -23,7 +23,6 @@ import type {
   ProtectionChange,
   Proxy,
   QuickCommands,
-  Saved,
   SerialPortInfo,
   SessionEvent,
   SessionSnapshot,
@@ -77,11 +76,10 @@ export interface Session {
 
 export const proxies = {
   list: () => invoke<Proxy[]>("proxies_list"),
-  /** `password`: undefined keeps the stored password, "" clears it. */
-  save: (proxy: Proxy, password?: string) => invoke<Saved<Proxy>>("proxy_save", { proxy, password: password ?? null }),
-  /** Fails with `proxy.inUse` while a session uses it. */
-  /** Resolves with the error removing its password gave, if any. */
-  delete: (id: string) => invoke<CommandError | null>("proxy_delete", { id }),
+  /** `password`: undefined keeps the saved password, "" deletes it. */
+  save: (proxy: Proxy, password?: string) => invoke<Proxy>("proxy_save", { proxy, password: password ?? null }),
+  /** With its password. Fails with `proxy.inUse` while a session uses it. */
+  delete: (id: string) => invoke<void>("proxy_delete", { id }),
 };
 
 export const knownHosts = {
@@ -96,15 +94,15 @@ export const knownHosts = {
 
 export const listProfiles = () => invoke<Profile[]>("profiles_list");
 
-/** `password`: undefined keeps the stored password, "" clears it. */
+/** `password`: undefined keeps the saved password, "" deletes it. */
 export const saveProfile = (profile: Profile, password?: string) =>
-  invoke<Saved<Profile>>("profile_save", { profile, password: password ?? null });
+  invoke<Profile>("profile_save", { profile, password: password ?? null });
 
-/** Resolves with the error removing its password gave, if any. */
-export const deleteProfile = (id: string) => invoke<CommandError | null>("profile_delete", { id });
+/** With its saved password. */
+export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id });
 
 /** Copies a profile (with its saved password) as `name`, right after it. */
-export const duplicateProfile = (id: string, name: string) => invoke<Saved<Profile>>("profile_duplicate", { id, name });
+export const duplicateProfile = (id: string, name: string) => invoke<Profile>("profile_duplicate", { id, name });
 
 export const quickCommands = {
   get: () => invoke<QuickCommands>("quick_commands_get"),
@@ -123,40 +121,29 @@ export const tree = {
 };
 
 export const sessionsFile = {
+  /** With `passphrase`, the saved passwords come along, and the whole file is encrypted with it. */
+  export: (path: string, passphrase?: string) => invoke<void>("sessions_export", { path, passphrase: passphrase ?? null }),
   /**
-   * With `passphrase`, the saved passwords come along, encrypted with it. Resolves with the
-   * names of the sessions and proxies whose passwords couldn't be read, which are left out.
+   * An encrypted file takes its `passphrase`: fails with `import.passphraseRequired` without
+   * one, `import.wrongPassphrase` with another one.
    */
-  export: (path: string, passphrase?: string) => invoke<string[]>("sessions_export", { path, passphrase: passphrase ?? null }),
-  scan: (path: string) => invoke<SessionsScan>("sessions_import_scan", { path }),
-  /**
-   * `digest` is the scan's: a file that changed since isn't imported. With the file's
-   * `passphrase`, its passwords are imported too (`import.wrongPassphrase` for another one).
-   * Resolves with the error storing the passwords gave, if any.
-   */
+  scan: (path: string, passphrase?: string) => invoke<SessionsScan>("sessions_import_scan", { path, passphrase: passphrase ?? null }),
+  /** `digest` is the scan's: a file that changed since isn't imported. The passwords in the file come along. */
   import: (path: string, ids: string[], digest: string, passphrase?: string) =>
-    invoke<CommandError | null>("sessions_import", { path, ids, digest, passphrase: passphrase ?? null }),
+    invoke<void>("sessions_import", { path, ids, digest, passphrase: passphrase ?? null }),
 };
 
 /** Where the sessions and passwords are kept, and how they are protected (see `vault/`). */
 export const vault = {
   status: () => invoke<VaultStatus>("vault_status"),
-  /** Unlocks with the key in the credential store, reading the file again first. */
+  /** Unlocks with the key in the credential store, or makes the vault if there is none, reading the file again first. */
   tryUnlock: () => invoke<VaultStatus>("vault_try_unlock"),
   /** Fails with `vault.wrongPassword`. */
   unlock: (password: string) => invoke<VaultStatus>("vault_unlock", { password }),
-  /** Deletes the locked vault: every session and password in it. */
+  /** Deletes the locked vault: every session and password in it. `tryUnlock` then makes a new one. */
   reset: () => invoke<VaultStatus>("vault_reset"),
-  /**
-   * `current`: the master password, to leave or change password protection. Fails with
-   * `vault.passwordsUnreadable` when passwords can't be moved out of the credential store,
-   * unless `skipUnreadable`.
-   */
-  setProtection: (change: ProtectionChange, current: string | null, skipUnreadable: boolean) =>
-    invoke<VaultStatus>("vault_set_protection", { change, current, skipUnreadable }),
-  /** The names of unreadable plain data files set aside earlier, which may hold sessions in the clear. */
-  plainCopies: () => invoke<string[]>("vault_plain_copies"),
-  deletePlainCopies: () => invoke<void>("vault_delete_plain_copies"),
+  /** `current`: the master password, to leave or change password protection. */
+  setProtection: (change: ProtectionChange, current: string | null) => invoke<VaultStatus>("vault_set_protection", { change, current }),
   /** Whether the system's credential store can be used; on Linux there may be none. */
   storeAvailable: () => invoke<boolean>("credential_store_available"),
 };

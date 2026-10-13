@@ -38,7 +38,7 @@ Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src
 
 Exported functions in `src/lib/` that use no React, DOM or backend commands get unit tests in a `*.test.ts` next to the module; components have none and are checked end to end. Vitest has no DOM environment.
 
-Never touch the maintainer's real configuration (`profiles.json`, `settings.json`, `~/.ssh`) during tests. For anything that needs a live SSH server, run the debug app with an isolated `HOME` and a temporary `sshd`, as described in the end-to-end testing section of `docs/DEVELOPMENT.md`. Kill only the processes you started; the maintainer may have their own instance open.
+Never touch the maintainer's real configuration (`vault.json`, `settings.json`, `~/.ssh`) during tests. For anything that needs a live SSH server, run the debug app with an isolated `HOME` and a temporary `sshd`, as described in the end-to-end testing section of `docs/DEVELOPMENT.md`. Kill only the processes you started; the maintainer may have their own instance open.
 
 ## Commits
 

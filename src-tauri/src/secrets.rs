@@ -1,15 +1,10 @@
 //! The system's credential store (macOS Keychain, Windows Credential Manager, the Secret
-//! Service on Linux), and the saved passwords as sessions read them.
-//!
-//! Where the passwords are depends on the vault's protection (see `vault/`): each in an entry
-//! of its own in the credential store (unset), or in the vault or `passwords.json` with the
-//! rest. The credential store also keeps the vault's key, when the user chose so.
+//! Service on Linux), which keeps the vault's key when the user chose so (see `vault/`), and
+//! the saved passwords as sessions read them from the vault.
 //!
 //! The calls block, sometimes for long: after an update the app's signature changes and macOS
-//! asks the user again for every entry, and on Linux the store may first ask to be unlocked.
-//! Async code uses [`password`] and [`proxy_password`], which wait on the blocking pool, so
-//! that the other sessions keep running meanwhile; commands run the rest on the blocking pool
-//! too.
+//! asks the user again, and on Linux the store may first ask to be unlocked. Commands run them
+//! on the blocking pool.
 
 use std::sync::mpsc;
 use std::time::Duration;
@@ -17,10 +12,11 @@ use std::time::Duration;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::vault;
+use crate::vault::{self, Account};
 
-/// Under which name the entries are kept: the app's bundle identifier.
-const SERVICE: &str = "org.boyin.zshell";
+/// Under which name the entries are kept: the app's bundle identifier. Debug builds keep theirs
+/// apart, so that one run for testing never touches the key of the user's own vault.
+const SERVICE: &str = if cfg!(debug_assertions) { "org.boyin.zshell.dev" } else { "org.boyin.zshell" };
 
 /// Which system store the platform has, for the frontend to name it.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
@@ -50,9 +46,9 @@ pub trait CredentialStore: Send + Sync {
     /// Deleting an entry that doesn't exist succeeds.
     fn delete(&self, account: &str) -> keyring::Result<()>;
 
-    /// Whether the store can be used at all. The Keychain and the Credential Manager always
-    /// can; on Linux there may be no Secret Service (no desktop environment, no keyring
-    /// daemon), or no session bus to reach it.
+    /// Whether the store can be used at all. On Linux there may be no Secret Service (no
+    /// desktop environment, no keyring daemon), or no session bus to reach it; on macOS no
+    /// keychain (a `HOME` without one, as in end-to-end tests).
     fn available(&self) -> bool {
         true
     }
@@ -82,11 +78,9 @@ impl CredentialStore for SystemStore {
     }
 
     fn available(&self) -> bool {
-        if StoreKind::current() != StoreKind::SecretService {
-            return true;
-        }
-        // Looking up an entry that doesn't exist: "no entry" means the store answered. On a
-        // thread of its own, which is left behind if the store never answers.
+        // Looking up an entry that doesn't exist, which asks the user nothing: "no entry" means
+        // the store answered. On a thread of its own, which is left behind if the store never
+        // answers.
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let _ = sender.send(matches!(Self.get("availability-check"), Ok(_) | Err(keyring::Error::NoEntry)));
@@ -95,16 +89,10 @@ impl CredentialStore for SystemStore {
     }
 }
 
-/// The entry of a proxy's password: proxies are kept apart from sessions, which use the bare
-/// profile id.
-pub fn proxy_account(proxy_id: &str) -> String {
-    format!("proxy:{proxy_id}")
-}
-
-/// A session's saved password (also Telnet's), blocking. `None` when there is none or it
-/// can't be read.
+/// A session's saved password (also Telnet's), blocking. `None` when there is none or the
+/// vault is locked.
 pub fn get_password(profile_id: &str) -> Option<String> {
-    vault::installed()?.password(profile_id).ok().flatten()
+    vault::installed()?.password(Account::Profile(profile_id)).ok().flatten()
 }
 
 /// [`get_password`] from async code.
@@ -114,7 +102,8 @@ pub async fn password(profile_id: String) -> Option<String> {
 
 /// A proxy's saved password, from async code.
 pub async fn proxy_password(proxy_id: String) -> Option<String> {
-    tauri::async_runtime::spawn_blocking(move || get_password(&proxy_account(&proxy_id))).await.ok().flatten()
+    let read = move || vault::installed()?.password(Account::Proxy(&proxy_id)).ok().flatten();
+    tauri::async_runtime::spawn_blocking(read).await.ok().flatten()
 }
 
 #[cfg(test)]

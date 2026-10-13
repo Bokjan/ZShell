@@ -53,7 +53,7 @@ pub enum ForwardKind {
 }
 
 /// A saved forwarding rule. `target_*` is unused for dynamic rules.
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardRule {
     /// Empty for a new rule; assigned on save.
