@@ -2,6 +2,13 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.0.2] - 2026-10-13
+
+### Bug Fixes
+
+- On Windows, a file dialog opened right after typing, such as the one `rz` opens, no longer hides the mouse pointer when the system's "Hide pointer while typing" setting is on.
+- Dragging files out of the file browser of a ZShell window in the background no longer brings the window to the front, where a maximized window covered the Finder or Explorer window the files were meant for. On macOS the window stays where it is unless the press is released without dragging; on Windows it goes back behind that window as the drag starts.
+
 ## [3.0.1] - 2026-10-13
 
 ### Bug Fixes
