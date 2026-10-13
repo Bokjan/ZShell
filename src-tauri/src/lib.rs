@@ -168,7 +168,10 @@ pub fn run() {
             update::watch(app.handle().clone());
             app.manage(Edits::new(scratch_dir(app.handle())?.join("ZShell-edit")));
             #[cfg(target_os = "linux")]
-            window::watch_buttons(app.handle());
+            {
+                window::watch_buttons(app.handle());
+                window::watch_theme(app.handle());
+            }
             window::create_main(app)?;
             Ok(())
         })

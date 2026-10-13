@@ -28,7 +28,7 @@ use crate::tab_drag::{self, Dropped};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::{watch_buttons, web_view};
+pub use linux::{watch_buttons, watch_theme, web_view};
 #[cfg(windows)]
 mod win;
 
@@ -132,13 +132,6 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS);
     #[cfg(windows)]
     let builder = builder.decorations(false);
-    // In the appearance it will have, rather than light until the page sets it.
-    #[cfg(target_os = "linux")]
-    let builder = builder.theme(Some(match app.state::<crate::settings::SettingsStore>().get().appearance {
-        crate::settings::Appearance::System => linux::system_theme(),
-        crate::settings::Appearance::Dark => tauri::Theme::Dark,
-        crate::settings::Appearance::Light => tauri::Theme::Light,
-    }));
     // Placed once created, then shown: the builder takes a logical position, which on Windows
     // means a different place on each display. On Linux the title bar is replaced before the
     // window is shown.
@@ -471,7 +464,8 @@ pub fn window_buttons() -> Vec<WindowButton> {
 #[tauri::command]
 pub async fn window_set_theme(window: WebviewWindow, theme: Option<tauri::Theme>) -> tauri::Result<()> {
     #[cfg(target_os = "linux")]
-    let theme = Some(theme.unwrap_or_else(linux::system_theme));
+    return linux::set_theme(&window, theme);
+    #[cfg(not(target_os = "linux"))]
     window.set_theme(theme)
 }
 

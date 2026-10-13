@@ -4,16 +4,19 @@
 //! the desktop's layout asks for ([`buttons`]); a double click and a right click on the tab
 //! bar do what the desktop's settings say, as on a native title bar.
 //!
-//! The appearance: tao takes "follow the system" (`None`) as light, by turning GTK's
-//! `gtk-application-prefer-dark-theme` (which WebKitGTK's `prefers-color-scheme` follows) off,
-//! so the desktop's color scheme is read from the settings portal ([`system_theme`]), as GTK 4
-//! and libadwaita apps do; tao follows its changes from then on.
+//! The appearance is GTK's `gtk-application-prefer-dark-theme`, which WebKitGTK's
+//! `prefers-color-scheme` follows, and which is the whole app's. tao takes "follow the system"
+//! (`None`) as light, so the desktop's color scheme is read from the settings portal
+//! ([`system_theme`]), as GTK 4 and libadwaita apps do. tao also sets it to the desktop's
+//! scheme on its own, whenever it creates a window and whenever the scheme changes, however the
+//! app's is set: a theme chosen in the settings is put back each time ([`watch_theme`]).
 
 use std::cell::RefCell;
+use std::sync::Mutex;
 
 use gtk::glib::Propagation;
 use gtk::prelude::*;
-use tauri::{AppHandle, Emitter, Theme, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Theme, WebviewWindow};
 
 use super::{DoubleClick, WindowButton};
 
@@ -117,6 +120,36 @@ pub fn system_theme() -> Theme {
     } else {
         Theme::Light
     }
+}
+
+/// The theme chosen in the settings, or `None` to follow the desktop's.
+static CHOSEN: Mutex<Option<Theme>> = Mutex::new(None);
+
+/// Sets the app's appearance to `theme`, or the desktop's (`None`), through `window`.
+pub fn set_theme(window: &WebviewWindow, theme: Option<Theme>) -> tauri::Result<()> {
+    *CHOSEN.lock().unwrap() = theme;
+    window.set_theme(Some(theme.unwrap_or_else(system_theme)))
+}
+
+/// Keeps GTK in the theme chosen in the settings, which it starts in, when tao sets it to the
+/// desktop's (see the module docs). On the main thread, once, before the first window.
+pub fn watch_theme(app: &AppHandle) {
+    *CHOSEN.lock().unwrap() = match app.state::<crate::settings::SettingsStore>().get().appearance {
+        crate::settings::Appearance::System => None,
+        crate::settings::Appearance::Dark => Some(Theme::Dark),
+        crate::settings::Appearance::Light => Some(Theme::Light),
+    };
+    let Some(settings) = gtk::Settings::default() else { return };
+    settings.connect_gtk_application_prefer_dark_theme_notify(|settings| {
+        // Unlocked before setting it, which notifies again.
+        let chosen = *CHOSEN.lock().unwrap();
+        if let Some(theme) = chosen {
+            let dark = theme == Theme::Dark;
+            if settings.is_gtk_application_prefer_dark_theme() != dark {
+                settings.set_gtk_application_prefer_dark_theme(dark);
+            }
+        }
+    });
 }
 
 #[cfg(test)]
