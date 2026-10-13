@@ -72,18 +72,21 @@ pub fn double_click_action() -> DoubleClick {
     }
 }
 
-/// The buttons the desktop puts on title bars, in order, from its decoration layout
-/// (`appmenu:minimize,maximize,close` on Ubuntu, `appmenu:close` on GNOME's default). They all
-/// go at the right end of the tab bar, even where the layout puts them on the left: the left
-/// end has the sidebar's controls. On the main thread.
+/// The buttons the desktop puts on title bars, from its decoration layout
+/// (`appmenu:minimize,maximize,close` on Ubuntu, `appmenu:close` on GNOME's default), in order
+/// from left to right. They all go at the right end of the tab bar, even where the layout puts
+/// them on the left (the left end has the sidebar's controls): those go in mirror order, so the
+/// one at the window's edge stays at the edge. On the main thread.
 pub fn buttons() -> Vec<WindowButton> {
     let layout = gtk::Settings::default().and_then(|settings| settings.gtk_decoration_layout()).map(|layout| layout.to_string());
     parse_layout(layout.as_deref().unwrap_or(":minimize,maximize,close"))
 }
 
 fn parse_layout(layout: &str) -> Vec<WindowButton> {
+    // Without a colon, all on the left, as GTK reads it.
+    let (left, right) = layout.split_once(':').unwrap_or((layout, ""));
     let mut buttons = Vec::new();
-    for name in layout.split([':', ',']) {
+    for name in right.split(',').chain(left.split(',').rev()) {
         let button = match name.trim() {
             "minimize" => WindowButton::Minimize,
             "maximize" => WindowButton::Maximize,
@@ -125,7 +128,9 @@ mod tests {
         use WindowButton::*;
         assert_eq!(parse_layout("appmenu:minimize,maximize,close"), [Minimize, Maximize, Close]);
         assert_eq!(parse_layout("appmenu:close"), [Close]);
-        assert_eq!(parse_layout("close,minimize,maximize:"), [Close, Minimize, Maximize]);
+        assert_eq!(parse_layout("close,minimize,maximize:"), [Maximize, Minimize, Close]);
+        assert_eq!(parse_layout("close:minimize"), [Minimize, Close]);
+        assert_eq!(parse_layout("minimize,maximize,close"), [Close, Maximize, Minimize]);
         assert_eq!(parse_layout("icon:spacer,close"), [Close]);
         assert!(parse_layout("menu:").is_empty());
     }
