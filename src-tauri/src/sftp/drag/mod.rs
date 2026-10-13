@@ -274,13 +274,16 @@ fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Re
         .collect()
 }
 
-/// Starts dragging `items` out of `window` (the mouse button must be down) and waits for the
-/// drag to end.
+/// Starts dragging `items` out of `window` (the mouse button must be down, pressed at
+/// `pressed`) and waits for the drag to end. On Windows a window in the background that the
+/// press brought forward goes back (`window::keep_behind`), so the drag can reach the window
+/// that was in front of it; on macOS the press doesn't bring it forward (`window::macos`).
 pub async fn drag_out(
     window: &WebviewWindow,
     sftp: Arc<SftpSession>,
     transfer_id: String,
     items: Vec<Item>,
+    pressed: Instant,
     events: Channel<DragEvent>,
 ) -> Result<DragResult> {
     if items.is_empty() {
@@ -296,9 +299,11 @@ pub async fn drag_out(
     #[cfg(target_os = "macos")]
     macos::start(window, items, download.clone(), done)?;
     #[cfg(windows)]
-    win::start(window, items, download.clone(), done)?;
+    win::start(window, items, download.clone(), pressed, done)?;
     #[cfg(target_os = "linux")]
     linux::start(window, items, download.clone(), done)?;
+    #[cfg(not(windows))]
+    let _ = pressed;
     let result = result.await.unwrap_or_else(|_| DragResult::cancelled());
     if result.outcome == Outcome::Outside {
         download.state.lock().unwrap().last_activity = Instant::now();

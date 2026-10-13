@@ -2,6 +2,7 @@
 //! dragging files out.
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
@@ -205,10 +206,13 @@ pub async fn sftp_drag_out(
     id: SessionId,
     transfer_id: String,
     items: Vec<drag::Item>,
+    since_press: u32,
     on_event: Channel<drag::DragEvent>,
 ) -> Result<drag::DragResult> {
+    // Before waiting for the SFTP channel.
+    let pressed = Instant::now().checked_sub(Duration::from_millis(since_press.into())).unwrap_or_else(Instant::now);
     let sftp = connections.get(id)?.transfer_sftp().await?;
-    drag::drag_out(&window, sftp, transfer_id, items, on_event).await
+    drag::drag_out(&window, sftp, transfer_id, items, pressed, on_event).await
 }
 
 #[tauri::command]

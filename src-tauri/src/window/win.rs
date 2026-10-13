@@ -19,13 +19,18 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
 use windows_sys::Win32::Graphics::Gdi::{GetStockObject, NULL_BRUSH};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+use windows_sys::Win32::System::SystemInformation::GetTickCount;
+use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, EnableMenuItem, GetCursorPos, GetParent, GetSystemMenu, IsZoomed, LoadCursorW, PostMessageW,
-    RegisterClassW, SetMenuDefaultItem, SetWindowPos, ShowCursor, ShowWindow, TrackPopupMenu, HTMAXBUTTON, HWND_TOP, IDC_ARROW,
-    MA_NOACTIVATE, MF_BYCOMMAND, MF_ENABLED, MF_GRAYED, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SW_HIDE, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_DESTROY, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
-    WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
+    CreateWindowExW, DefWindowProcW, EnableMenuItem, GetClassNameW, GetCursorPos, GetForegroundWindow, GetParent, GetSystemMenu,
+    GetWindowLongPtrW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, IsZoomed, LoadCursorW, PostMessageW, RegisterClassW,
+    SetMenuDefaultItem, SetWindowPos, ShowCursor, ShowWindow, TrackPopupMenu, EVENT_SYSTEM_FOREGROUND, GWL_EXSTYLE, HTMAXBUTTON, HWND_TOP,
+    IDC_ARROW, MA_NOACTIVATE, MF_BYCOMMAND, MF_ENABLED, MF_GRAYED, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINEVENT_OUTOFCONTEXT, WM_DESTROY,
+    WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND,
+    WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_TOPMOST,
 };
 
 use super::Rect;
@@ -299,4 +304,95 @@ pub(super) fn file_dialog(open: bool) {
         }
     }
     FILE_DIALOGS.set((dialogs, shown));
+}
+
+/// One of the app's windows coming to the foreground: the window, the one in the foreground
+/// before it, and when (`GetTickCount`).
+#[derive(Clone, Copy)]
+struct Activation {
+    window: isize,
+    previous: isize,
+    at: u32,
+}
+
+// Only touched on the main thread, which installs the hook and gets its events.
+thread_local! {
+    /// The foreground window, as last reported.
+    static FOREGROUND: Cell<isize> = const { Cell::new(0) };
+    /// The last time one of the app's windows came to the foreground.
+    static ACTIVATION: Cell<Option<Activation>> = const { Cell::new(None) };
+}
+
+/// How long before the page hears a press the window may have come to the foreground for the
+/// press to count as what brought it there: the system activates the window, then hands the
+/// press to the web view.
+const PRESS_ACTIVATION_SLACK: u32 = 500;
+
+/// Follows the foreground window, for [`keep_behind`]. On the main thread.
+pub(super) fn watch_foreground() {
+    unsafe {
+        FOREGROUND.set(GetForegroundWindow() as isize);
+        SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            std::ptr::null_mut(),
+            Some(foreground_changed),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
+    }
+}
+
+unsafe extern "system" fn foreground_changed(
+    _hook: HWINEVENTHOOK,
+    _event: u32,
+    hwnd: HWND,
+    _object: i32,
+    _child: i32,
+    _thread: u32,
+    time: u32,
+) {
+    let previous = FOREGROUND.replace(hwnd as isize);
+    let mut process = 0;
+    GetWindowThreadProcessId(hwnd, &mut process);
+    if process == GetCurrentProcessId() && previous != hwnd as isize {
+        ACTIVATION.set(Some(Activation { window: hwnd as isize, previous, at: time }));
+    }
+}
+
+/// Called as a drag out of `hwnd` starts, `since_press` milliseconds after the mouse button
+/// was pressed. A press on a window in the background brings it to the foreground before
+/// the page hears of it (WebView2 activates its window on any press, so it can't wait for the
+/// press to become a drag, as Explorer does), and a maximized window then covers the window
+/// the files were probably meant for: the window goes back behind the one that was in the
+/// foreground, keeping the keyboard focus. On the main thread.
+///
+/// # Safety
+/// `hwnd` is one of the app's windows.
+pub unsafe fn keep_behind(hwnd: HWND, since_press: u32) {
+    let Some(activation) = ACTIVATION.get() else { return };
+    let pressed_at = GetTickCount().wrapping_sub(since_press);
+    if activation.window != hwnd as isize || pressed_at.wrapping_sub(activation.at) as i32 > PRESS_ACTIVATION_SLACK as i32 {
+        return;
+    }
+    let previous = activation.previous as HWND;
+    if previous.is_null()
+        || IsWindow(previous) == 0
+        || IsWindowVisible(previous) == 0
+        || IsIconic(previous) != 0
+        // Behind the taskbar or another topmost window, the window would become topmost.
+        || GetWindowLongPtrW(previous, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0
+        // Behind the desktop, it would be out of sight.
+        || matches!(class_name(previous).as_str(), "Progman" | "WorkerW")
+    {
+        return;
+    }
+    SetWindowPos(hwnd, previous, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+fn class_name(hwnd: HWND) -> String {
+    let mut name = [0u16; 64];
+    let length = unsafe { GetClassNameW(hwnd, name.as_mut_ptr(), name.len() as i32) };
+    String::from_utf16_lossy(&name[..length.max(0) as usize])
 }

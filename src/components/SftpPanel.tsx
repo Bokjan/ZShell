@@ -121,6 +121,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
 
   const drag = useSftpDragDrop({
     panelRef,
+    listRef,
     active,
     sessionId,
     connected,

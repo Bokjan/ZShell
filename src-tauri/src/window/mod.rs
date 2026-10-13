@@ -29,8 +29,12 @@ use crate::tab_drag::{self, Dropped};
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{watch_buttons, watch_theme, web_view};
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(windows)]
 mod win;
+#[cfg(windows)]
+pub use win::keep_behind;
 
 const MAIN: &str = "main";
 const LABEL_PREFIX: &str = "window-";
@@ -160,6 +164,8 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
 
 /// Creates the main window.
 pub fn create_main(app: &App) -> tauri::Result<()> {
+    #[cfg(windows)]
+    win::watch_foreground();
     build(app.handle(), MAIN, None).map(drop)
 }
 
@@ -447,6 +453,24 @@ pub fn window_file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()
     Ok(())
 }
 
+/// Where files can be dragged out of the window (the SFTP file list); `None` when there is
+/// none. A press there while the window is in the background doesn't bring the window
+/// forward (the frontend does once it is released without dragging; see `macos.rs`). macOS
+/// only: on Windows the web view always brings it forward, and a drag puts it back
+/// ([`keep_behind`]).
+#[tauri::command]
+pub fn window_set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    window.with_webview(move |webview| {
+        // SAFETY: on macOS the platform webview is a WKWebView, an NSView.
+        let view: &objc2_app_kit::NSView = unsafe { &*(webview.inner() as *const objc2_app_kit::NSView) };
+        macos::set_area(view, rect);
+    })?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, rect);
+    Ok(())
+}
+
 /// A window button the frontend draws.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -497,9 +521,10 @@ pub fn window_set_snapped_border_color(window: WebviewWindow, color: String) -> 
     Ok(())
 }
 
-/// The frontend's maximize button, in CSS pixels from the top left of the window.
+/// A part of the page (the maximize button, the drag area), in CSS pixels from the top left
+/// of the window.
 #[derive(Clone, Copy, serde::Deserialize)]
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub struct Rect {
     x: f64,
     y: f64,

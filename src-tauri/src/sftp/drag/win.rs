@@ -281,6 +281,7 @@ pub(super) fn start(
     window: &WebviewWindow,
     items: Vec<Item>,
     download: Arc<DropDownload>,
+    pressed: std::time::Instant,
     done: oneshot::Sender<DragResult>,
 ) -> Result<()> {
     let hwnd = window.hwnd().map_err(Error::from)?.0 as isize;
@@ -298,6 +299,8 @@ pub(super) fn start(
     });
     window
         .run_on_main_thread(move || {
+            // SAFETY: the window the drag starts from.
+            unsafe { crate::window::keep_behind(hwnd as _, pressed.elapsed().as_millis() as u32) };
             let data: IDataObject =
                 DataObject { shared: shared.clone(), async_mode: AtomicBool::new(true), in_operation: AtomicBool::new(false) }.into();
             let source: IDropSource = DropSource { shared: shared.clone() }.into();

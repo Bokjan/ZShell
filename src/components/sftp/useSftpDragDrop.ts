@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { sftp, type FileEntry, type SessionId } from "../../lib/api";
 import { isAppLocked } from "../../lib/appLock";
 import { usePressDrag } from "../../lib/drag";
-import { isWindows } from "../../lib/platform";
+import { isMac, isWindows } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
 import { parentPath } from "./useTransfers";
 
@@ -16,6 +18,8 @@ const isPointlessMove = (paths: string[], dir: string) =>
 
 interface Options {
   panelRef: RefObject<HTMLDivElement | null>;
+  /** The file list, whose rows are dragged out. */
+  listRef: RefObject<HTMLDivElement | null>;
   /** Whether the panel is in sight: only then does it take files dropped on the window. */
   active: boolean;
   sessionId: SessionId | null;
@@ -56,7 +60,7 @@ export function useSftpDragDrop(options: Options) {
     return element.closest<HTMLElement>("[data-drop-dir]")?.dataset.dropDir ?? null;
   };
 
-  const startDrag = async (items: FileEntry[]) => {
+  const startDrag = async (items: FileEntry[], pressedAt: number) => {
     const { sessionId, connected, transfers, move, fail } = optionsRef.current;
     if (sessionId == null || !connected || items.length === 0) return;
     const id = crypto.randomUUID();
@@ -64,7 +68,7 @@ export function useSftpDragDrop(options: Options) {
     let listed = false;
     draggingRef.current = paths;
     try {
-      const result = await sftp.dragOut(sessionId, id, items, (event) => {
+      const result = await sftp.dragOut(sessionId, id, items, pressedAt, (event) => {
         if (!listed) {
           listed = true;
           transfers.add({
@@ -95,6 +99,7 @@ export function useSftpDragDrop(options: Options) {
 
   /** A press on a row, which drags `items()` out once the pointer moves far enough. */
   const press = (e: MouseEvent, items: () => FileEntry[]) => {
+    const pressedAt = e.timeStamp;
     let started = false;
     pressDrag(e, {
       threshold: DRAG_DISTANCE,
@@ -102,13 +107,49 @@ export function useSftpDragDrop(options: Options) {
         // The system takes the drag over from here.
         if (started) return;
         started = true;
-        void startDrag(items());
+        void startDrag(items(), pressedAt);
       },
       onEnd: () => {},
     });
   };
 
   const { active } = options;
+
+  // On macOS a press on the rows of a window in the background reaches the page without
+  // bringing the window forward, so that they can be dragged to the window in front (see
+  // `window_set_drag_area`); released without dragging, it brings the window forward here.
+  // The area is placed again as the window goes to the background, in case the layout moved
+  // the list without resizing it.
+  useEffect(() => {
+    const list = optionsRef.current.listRef.current;
+    if (!active || !isMac || !list) return;
+    const place = () => {
+      const r = list.getBoundingClientRect();
+      const top = Math.max(r.top, list.querySelector("thead")?.getBoundingClientRect().bottom ?? r.top);
+      const rect = { x: r.left, y: top, width: r.width, height: Math.max(0, r.bottom - top) };
+      invoke("window_set_drag_area", { rect }).catch(console.error);
+    };
+    const onMouseDown = (e: globalThis.MouseEvent) => {
+      if (e.button !== 0 || document.hasFocus()) return;
+      const onMouseUp = () => {
+        window.removeEventListener("mouseup", onMouseUp, true);
+        if (!draggingRef.current) void getCurrentWindow().setFocus().catch(console.error);
+      };
+      window.addEventListener("mouseup", onMouseUp, true);
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(list);
+    window.addEventListener("blur", place);
+    list.addEventListener("mousedown", onMouseDown, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("blur", place);
+      list.removeEventListener("mousedown", onMouseDown, true);
+      invoke("window_set_drag_area", { rect: null }).catch(console.error);
+    };
+  }, [active]);
+
   useEffect(() => {
     if (!active) return;
     // Physical pixels on Windows; on macOS (points) and Linux (GTK's logical pixels) wry

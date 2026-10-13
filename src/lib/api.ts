@@ -388,17 +388,18 @@ export const sftp = {
   editUpload: (id: SessionId, editId: string, force: boolean) => invoke<void>("sftp_edit_upload", { id, editId, force }),
   editStop: (editId: string) => invoke<void>("sftp_edit_stop", { editId }),
   /**
-   * Drags the items out of the window (call while the mouse button is down). Resolves when the
-   * drag ends; items dropped on another application are then downloaded, reported through
-   * `onEvent`.
+   * Drags the items out of the window (call while the mouse button is down, pressed at
+   * `pressedAt`, an event's `timeStamp`). Resolves when the drag ends; items dropped on another
+   * application are then downloaded, reported through `onEvent`.
    */
-  dragOut: (id: SessionId, transferId: string, items: FileEntry[], onEvent: (event: DragOutEvent) => void) => {
+  dragOut: (id: SessionId, transferId: string, items: FileEntry[], pressedAt: number, onEvent: (event: DragOutEvent) => void) => {
     const channel = new Channel<DragOutEvent>();
     channel.onmessage = onEvent;
     return invoke<DragResult>("sftp_drag_out", {
       id,
       transferId,
       items: items.map(({ path, isDir }): DragItem => ({ path, isDir })),
+      sincePress: Math.max(0, Math.round(performance.now() - pressedAt)),
       onEvent: channel,
     });
   },
