@@ -223,6 +223,8 @@ impl AppLock {
     }
 
     /// Asks the user to authenticate, and unlocks if they do. Blocks until they have.
+    /// `vault.locked` while the vault is, which has the settings: until then there is no
+    /// knowing whether to ask, and the lock stays as it started.
     ///
     /// If the way to authenticate went away (a Windows Hello PIN removed), it fails with
     /// `appLock.gone`, which says why: the user may then unlock without authenticating
@@ -240,6 +242,7 @@ impl AppLock {
 
     fn unlock_with(&self, window: Option<&WebviewWindow>, anyway: bool) -> Result<AppLockStatus> {
         let _asking = self.authenticating.try_lock().map_err(|_| Error::new("appLock.busy"))?;
+        self.vault.app_lock().ok_or_else(|| Error::new("vault.locked"))?;
         if self.is_locked() {
             match self.system.method() {
                 Err(error) if gone(&error) && anyway => {}
@@ -345,6 +348,7 @@ mod tests {
 
     struct Setup {
         fake: Arc<Fake>,
+        store: Arc<MemoryStore>,
         vault: Arc<Vault>,
         notified: Arc<AtomicUsize>,
         dir: PathBuf,
@@ -356,10 +360,11 @@ mod tests {
             let dir = std::env::temp_dir().join(format!("zshell-applock-{name}-{}", std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
-            let vault = Arc::new(Vault::open(dir.clone(), Arc::new(MemoryStore::default())));
+            let store = Arc::new(MemoryStore::default());
+            let vault = Arc::new(Vault::open(dir.clone(), store.clone()));
             assert!(vault.try_unlock().locked.is_none());
             vault.set_protection(protection, None).unwrap();
-            Self { fake: Arc::default(), vault, notified: Arc::default(), dir }
+            Self { fake: Arc::default(), store, vault, notified: Arc::default(), dir }
         }
 
         /// The app lock as it is at startup.
@@ -409,6 +414,22 @@ mod tests {
         // Unlocked: nothing to ask.
         lock.unlock(None).unwrap();
         assert_eq!(setup.asked(), 2);
+    }
+
+    #[test]
+    fn stays_locked_until_the_vault_is_open() {
+        let mut setup = Setup::new("vault-locked", Target::System);
+        setup.enable(AppLockSettings::default());
+        // As at startup: the vault's key is still in the credential store.
+        setup.vault = Arc::new(Vault::open(setup.dir.clone(), setup.store.clone()));
+        let lock = setup.start();
+        assert_eq!(lock.unlock(None).unwrap_err().code(), "vault.locked");
+        assert_eq!(lock.unlock_anyway(None).unwrap_err().code(), "vault.locked");
+
+        // Opening the vault with the key doesn't count as authenticating.
+        assert!(setup.vault.try_unlock().locked.is_none());
+        assert!(lock.status().locked);
+        assert_eq!(setup.asked(), 0);
     }
 
     #[test]
