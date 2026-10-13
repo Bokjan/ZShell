@@ -2,6 +2,22 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.0.0] - 2026-10-13
+
+### Breaking Changes
+
+- Sessions, folders, proxies, quick commands, saved passwords and the app lock's settings are saved in a new format, all in `vault.json`, and ZShell 3.0 does not read what earlier versions saved: the session list starts empty, and an encrypted `vault.json` of an earlier version shows as damaged, to be reset. Settings and logs are kept. Files exported by earlier versions cannot be imported either: recreate the sessions, or import them from `~/.ssh/config`.
+- Exported sessions with their saved passwords are now encrypted as a whole, not only the passwords: the passphrase is asked for before the file's sessions are shown.
+
+### Features
+
+- At the first start, the sessions and passwords are encrypted with a key in the system's credential store (the macOS Keychain, the Windows Credential Manager, the Secret Service on Linux), or left unencrypted where there is none, instead of waiting for a choice; a dialog then says which, and offers a master password instead.
+- A session or proxy is saved, copied and deleted with its password in one step, so a password can no longer be left behind or missing.
+
+### Bug Fixes
+
+- Settings › Security no longer offers the credential store on a Mac where the keychain can't be used.
+
 ## [2.13.0] - 2026-10-13
 
 ### Features
