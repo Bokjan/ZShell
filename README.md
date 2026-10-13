@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Bokjan/ZShell)](https://github.com/Bokjan/ZShell/releases/latest)
-![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 
-A cross-platform (macOS / Windows) SSH, Telnet and serial terminal, built with Tauri 2, Rust and xterm.js.
+A cross-platform (macOS / Windows / Linux) SSH, Telnet and serial terminal, built with Tauri 2, Rust and xterm.js.
 
 ## Features
 
@@ -16,9 +16,9 @@ A cross-platform (macOS / Windows) SSH, Telnet and serial terminal, built with T
 - **Sessions**: nested folders, search and quick connect, export and import, and per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login and environment variables.
 - **Terminal and tabs**: local terminals, split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
 - **Many hosts at once**: quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
-- **Security**: sessions and saved passwords encrypted with a master password or a key in the system's credential store, exports protected with a passphrase, and an app lock that covers the window with Touch ID or Windows Hello after a period of inactivity, when the computer locks, or on demand.
+- **Security**: sessions and saved passwords encrypted with a master password or a key in the system's credential store, exports protected with a passphrase, and an app lock that covers the window with Touch ID, Windows Hello or the account password after a period of inactivity, when the computer locks, or on demand.
 
-Planned next: a Simplified Chinese translation, the Microsoft Store, customizable shortcuts and Linux. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: a Simplified Chinese translation, the Microsoft Store and customizable shortcuts. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -29,8 +29,10 @@ Download the latest version from the [releases page](https://github.com/Bokjan/Z
 | macOS (Apple Silicon and Intel) | `ZShell_<version>_universal.dmg` |
 | Windows installer | `ZShell_<version>_x64-setup.exe` or `ZShell_<version>_x64_en-US.msi` |
 | Windows, no installation | `ZShell_<version>_x64_standalone.exe` |
+| Linux (Debian, Ubuntu) | `ZShell_<version>_amd64.deb` |
+| Linux (Fedora) | `ZShell-<version>-1.x86_64.rpm` |
 
-Local terminals on Windows need Windows 10 version 1809 or later. The standalone executable needs the WebView2 runtime, which Windows 11 and up-to-date Windows 10 already include; it still keeps its settings in `%APPDATA%`.
+Local terminals on Windows need Windows 10 version 1809 or later. On Linux, ZShell is made for GNOME on Wayland, the default desktop of Debian, Ubuntu and Fedora; other desktops work, but may lack the idle lock. To open serial ports, add yourself to the group that owns them (`dialout` on most distributions). The standalone executable needs the WebView2 runtime, which Windows 11 and up-to-date Windows 10 already include; it still keeps its settings in `%APPDATA%`.
 
 The builds are not signed with a developer certificate yet, so the system warns on first launch:
 
@@ -46,11 +48,11 @@ The builds are not signed with a developer certificate yet, so the system warns 
 
 Add a session with **+** at the top of the sidebar, or import your SSH config from the menu next to it, then double-click the session to connect. To connect without saving a session, type `user@host[:port]` or `telnet host[:port]` in the search box and press Enter. Host keys, passwords and passphrases are asked in the terminal, as `ssh` does; after a disconnection, press Enter to reconnect. Right-click terminals, tabs and sessions for more, and see Settings → Keyboard Shortcuts for the keys.
 
-Sessions and settings are saved in `~/Library/Application Support/org.boyin.zshell/` on macOS and `%APPDATA%\org.boyin.zshell\` on Windows. Saved passwords go to the macOS Keychain or the Windows Credential Manager, and host keys to `~/.ssh/known_hosts`, shared with OpenSSH. See [PRIVACY.md](PRIVACY.md) for the details.
+Sessions and settings are saved in `~/Library/Application Support/org.boyin.zshell/` on macOS, `%APPDATA%\org.boyin.zshell\` on Windows and `~/.config/org.boyin.zshell/` on Linux. Saved passwords go to the macOS Keychain, the Windows Credential Manager or the system keyring (GNOME Keyring, KWallet), and host keys to `~/.ssh/known_hosts`, shared with OpenSSH. See [PRIVACY.md](PRIVACY.md) for the details.
 
 ## Development
 
-Requirements: Rust (stable), Node.js and pnpm.
+Requirements: Rust (stable), Node.js and pnpm; on Linux, also the system libraries listed in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (in Chinese).
 
 ```bash
 pnpm install

@@ -4,7 +4,7 @@
 
 ## 定位
 
-- 作为 Xshell 的替代，个人使用，macOS 与 Windows 体验一致。
+- 作为 Xshell 的替代，个人使用，macOS、Windows 与 Linux 体验一致。
 - 优先补齐每天高频使用的操作（剪贴板、标签页、会话列表），再补 Xshell 的效率功能；不追求逐项对齐 Xshell。
 - 行为尽量与 OpenSSH 一致（认证顺序、known_hosts、ssh_config 语义），减少"在 ZShell 里能连、命令行不能连"或反过来的情况。
 
@@ -55,16 +55,16 @@
 | **M27 多窗口** ✅ | 多个窗口各有自己的标签；标签可以从菜单或拖拽移到新窗口或其他窗口，连接不断开 | |
 | **M28 应用菜单** ✅ | Windows 上由标题栏的图标与名称打开应用菜单；菜单与 macOS 原生菜单由同一份定义生成 | |
 | **M29 检查更新** ✅ | 定期查询 GitHub Release，有新版本时提示（Store 版不检查） | |
-| **M30 翻译** | 语言设置界面，首批简体中文 | — |
-| **M31 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
-| **M32 自定义快捷键** | 在设置里修改快捷键 | P2 |
-| **M33 Linux** | 支持 Linux 桌面 | P2 |
+| **M30 Linux** ✅ | GNOME + Wayland：自绘标题栏与跟随系统的主题、拖出文件、polkit 应用锁、单实例；deb 与 rpm | |
+| **M31 翻译** | 语言设置界面，首批简体中文 | — |
+| **M32 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
+| **M33 自定义快捷键** | 在设置里修改快捷键 | P2 |
 
-### M30 翻译
+### M31 翻译
 
 语言设置界面，首批简体中文；做法见 [I18N.md](I18N.md)「新增一种语言」。
 
-### M31 Microsoft Store
+### M32 Microsoft Store
 
 已完成：release workflow 打出 x64 与 ARM64 的 `.msixbundle`（见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」）、S 模式下隐藏本地终端、随包附上第三方许可证声明。还剩：
 
@@ -74,7 +74,7 @@
 - 提交：先在 Partner Center 手动上传每个版本的 `.msixbundle`；流程稳定后再考虑用 Store 提交 API（`msstore` CLI，需要把 Entra ID 应用的凭据配成 secret）自动提交。
 - 商店页面：描述、截图、年龄分级在 Partner Center 填写；提交时说明使用 `runFullTrust` 的理由（完整的桌面应用，需要启动本地 shell、访问 SSH agent 等）。隐私政策写明应用不收集数据、配置只保存在本机，放在仓库里，用 GitHub 链接。
 
-### M32 自定义快捷键
+### M33 自定义快捷键
 
 快捷键已集中在 `lib/keymap.ts` 的一张表里（见 [ARCHITECTURE.md](ARCHITECTURE.md)「快捷键、菜单与侧栏」），自定义只是在表上叠加用户的覆盖项：
 
@@ -83,19 +83,6 @@
 - 成组的动作（⌘1–⌘8、方向键切换窗格）只允许改修饰键。
 - 菜单的文字与按键由 M28 的统一定义得出，改快捷键后 Windows 的菜单与 macOS 的原生菜单都要随之重建。
 
-### M33 Linux
-
-第一阶段的目标是 Debian 与 Fedora 的默认桌面，即 GNOME + Wayland；其他桌面与发行版按需再做。
-
-- 快捷键沿用 Windows 的一套（`keymap.ts` 的 `other`），按需单独覆盖。
-- 平台判断改为 `macos` / `windows` / `linux` 三种，检查现有只区分两种的地方：窗口按钮（Linux 用系统标题栏还是自绘）、"在文件管理器中显示"等文案、密码存储（Secret Service）的提示。
-- 本地终端用 `$SHELL` 登录 shell；SSH agent 用 `SSH_AUTH_SOCK`，与 macOS 相同。
-- 打包 deb 与 rpm（图标用 `bundle.icon` 里的 PNG），CI 的 matrix 加上 `ubuntu-latest`。不打 AppImage：应用锁的 polkit 策略文件要由包管理器装进系统目录。
-- 应用锁（M26 的接口已按三个平台设计，见 [ARCHITECTURE.md](ARCHITECTURE.md)「应用锁」）：认证用 polkit，自定义一个 `auth_self` 的 action，弹出 GNOME Shell 自带的认证框（登录密码，启用了 fprintd 时也可用指纹），策略文件随 deb / rpm 装进 `/usr/share/polkit-1/actions/`；PAM（在锁定界面输入登录密码，经 `unix_chkpwd` 校验，各发行版的 service 名不同）作为以后没有 polkit 代理时的后备。闲置用 Mutter 的 `org.gnome.Mutter.IdleMonitor`（Wayland 没有通用接口；X11 有 XScreenSaver 扩展，KDE 有 `org.freedesktop.ScreenSaver.GetSessionIdleTime`）。锁屏与睡眠用 logind 的 `PrepareForSleep` 与会话的 `Lock` / `LockedHint`。这些都经 D-Bus，需要 zbus（MIT），它目前不在依赖树里。
-- 只允许一个实例：配置目录的锁（`instance.rs`，与 macOS 相同）已经让同一份配置的第二个实例退出，但还不能把已有的窗口提到前台（`instance::bring_forward` 在 Linux 上什么都不做）。可以经 D-Bus 请已有实例显示窗口（single-instance 插件的 Linux 实现即如此，但它和 macOS 上一样不按 HOME 区分），或在锁文件旁放一个 Unix socket。
-- 密码与保险库：Secret Service 已经在 keyring 的依赖里，保险库按三个平台设计（见 [ARCHITECTURE.md](ARCHITECTURE.md)「加密保险库」）。没有 Secret Service 时"系统凭据存储"与"记住"不可选、主密码与不加密照常可用；可用性探测与界面文案已按 `secretService` 处理，需要在真机上验证（GNOME Keyring、KWallet、无桌面环境）。Flatpak 沙箱里要经 portal 访问，不在计划内。
-- 许可证：`about.toml` 的 `targets` 加上 Linux；Linux 独有的依赖（GTK / WebKitGTK 绑定、zbus 等）目前都是 MIT / Apache-2.0 / Zlib / ISC，`target-lexicon`（Apache-2.0 WITH LLVM-exception）只是构建依赖。
-
 ## 暂不排期（P2）
 
 有实际需要时再排期：
@@ -103,6 +90,7 @@
 - 关键字高亮（如 `ERROR` 标红）：需在 xterm.js 的渲染层用 decoration 实现，不能往输出流里插入颜色序列（会破坏全屏程序）。
 - X11 转发（macOS 上还要依赖 XQuartz）。
 - 主机证书（`@cert-authority`）：用 CA 管理主机的环境不必逐台确认主机密钥。现在主机证书被当作普通公钥；要先确认 russh 是否支持证书形式的主机密钥，不支持则需要上游补丁。
+- Linux 上 GNOME 以外的桌面：KDE 的闲置时间（`org.freedesktop.ScreenSaver.GetSessionIdleTime`）、X11 的闲置时间（XScreenSaver 扩展）、窗口按钮按各自主题的样式；没有 polkit 认证代理时用 PAM 在锁定界面输入密码。Flatpak 不在计划内（Secret Service 与 polkit 都要经 portal）。
 - macOS 上 VoiceOver 开启时自动打开终端读屏模式：WebView 拿不到这个状态，需要后端查询（`NSWorkspace.isVoiceOverEnabled`）；现在是设置里的手动开关。
 
 ## 不做
