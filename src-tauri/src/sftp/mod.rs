@@ -53,6 +53,13 @@ pub fn file_name(path: &str) -> &str {
     path.trim_end_matches('/').rsplit('/').next().unwrap_or(path)
 }
 
+/// Whether `name`, from a directory listing, names an entry of the directory: not `.` or `..`,
+/// nor what no file system has (`x/..`, a NUL), which a server could send to make a path
+/// that leads elsewhere.
+pub fn is_entry(name: &str) -> bool {
+    !matches!(name, "" | "." | "..") && !name.contains(['/', '\0'])
+}
+
 /// Symlinks whose targets are looked up at once when listing, rather than one round trip
 /// after another (a folder such as `/usr/lib` has hundreds).
 const SYMLINK_LOOKUPS: usize = 16;
@@ -62,7 +69,7 @@ pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
     let mut entries = Vec::new();
     for entry in sftp.read_dir(&path).await? {
         let name = entry.file_name();
-        if name == "." || name == ".." {
+        if !is_entry(&name) {
             continue;
         }
         let metadata = entry.metadata();
@@ -124,7 +131,7 @@ pub async fn remove(sftp: &SftpSession, path: &str) -> Result<()> {
         next += 1;
         for entry in sftp.read_dir(&dir).await? {
             let name = entry.file_name();
-            if name == "." || name == ".." {
+            if !is_entry(&name) {
                 continue;
             }
             let full = join(&dir, &name);
@@ -139,4 +146,17 @@ pub async fn remove(sftp: &SftpSession, path: &str) -> Result<()> {
         sftp.remove_dir(dir).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn listings_name_entries_of_the_directory_only() {
+        assert!(is_entry("notes.txt") && is_entry(".bashrc") && is_entry("a\\b"));
+        for name in ["", ".", "..", "x/..", "/etc", "a\0b"] {
+            assert!(!is_entry(name), "{name:?}");
+        }
+    }
 }

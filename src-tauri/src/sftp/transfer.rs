@@ -14,7 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 
 use super::replace::{LocalTarget, RemoteTarget};
-use super::{file_name, join};
+use super::{file_name, is_entry, join};
 use crate::error::Error;
 use crate::local_name::{create_unique, create_unique_file, local_file_name};
 
@@ -310,7 +310,7 @@ async fn scan_remote_dir(
         plan.dirs.push(local.clone());
         for entry in sftp.read_dir(&remote).await.context(Error::new("transfer.readFailed").param("path", &remote))? {
             let name = entry.file_name();
-            if name == "." || name == ".." {
+            if !is_entry(&name) {
                 continue;
             }
             let child = join(&remote, &name);

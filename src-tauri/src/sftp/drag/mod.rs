@@ -25,6 +25,7 @@ use ts_rs::TS;
 
 use super::transfer::{self, Progress, Reporter, Transfers};
 use crate::error::{Error, Result};
+use crate::local_name::local_file_name;
 
 /// A remote item being dragged.
 #[derive(Clone, Deserialize, TS)]
@@ -249,7 +250,7 @@ impl DropDownload {
 /// `a_b` there) would otherwise land on one file.
 #[cfg(any(windows, target_os = "linux"))]
 fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Result<Vec<(String, PathBuf)>> {
-    use crate::local_name::{create_unique, create_unique_file, local_file_name};
+    use crate::local_name::{create_unique, create_unique_file};
 
     super::edit::remove_old(root);
     if transfer_id.contains(['/', '\\', '.']) {
@@ -284,6 +285,11 @@ pub async fn drag_out(
 ) -> Result<DragResult> {
     if items.is_empty() {
         return Ok(DragResult::cancelled());
+    }
+    // Where it is dropped, an item is named after itself: one that can't name a local file
+    // (`..`) isn't dragged, rather than left to the receiver to make safe (Finder on macOS).
+    if let Some(item) = items.iter().find(|item| local_file_name(item.name()).is_none()) {
+        return Err(Error::new("transfer.invalidName").param("name", &item.path));
     }
     let download = DropDownload::new(window.app_handle(), sftp, transfer_id, items.len(), events);
     let (done, result) = oneshot::channel();

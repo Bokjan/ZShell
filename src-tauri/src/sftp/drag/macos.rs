@@ -60,10 +60,10 @@ define_class!(
     unsafe impl NSFilePromiseProviderDelegate for PromiseDelegate {
         #[unsafe(method_id(filePromiseProvider:fileNameForType:))]
         fn file_name(&self, provider: &NSFilePromiseProvider, _file_type: &NSString) -> Retained<NSString> {
-            // As for every local name (`local_file_name`); an item never has a name it
-            // refuses (`..`, a `/`), and Finder would make it safe anyway.
-            let name = self.item(provider).map_or("", Item::name);
-            NSString::from_str(&local_file_name(name).unwrap_or_else(|| name.to_owned()))
+            // As for every local name (`local_file_name`); `drag_out` doesn't drag an item
+            // whose name it refuses (`..`).
+            let name = self.item(provider).and_then(|item| local_file_name(item.name()));
+            NSString::from_str(&name.unwrap_or_default())
         }
 
         #[unsafe(method(filePromiseProvider:writePromiseToURL:completionHandler:))]
