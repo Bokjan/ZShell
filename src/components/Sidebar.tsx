@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import type { AppMenuButton } from "../app/useAppMenu";
 import { announce } from "../lib/announce";
 import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../lib/api";
 import { directory, recentProfiles as recentOf, useDirectory } from "../lib/directory";
 import { dragHorizontally, usePressDrag } from "../lib/drag";
+import { open as openDialog } from "../lib/fileDialog";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { matches, shortcutLabel } from "../lib/keymap";

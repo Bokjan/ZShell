@@ -1,10 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { open } from "@tauri-apps/plugin-dialog";
 
 import { announce } from "../lib/announce";
 import { notConnected, sftp, type FileEntry, type SessionId } from "../lib/api";
+import { open } from "../lib/fileDialog";
 import { storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";

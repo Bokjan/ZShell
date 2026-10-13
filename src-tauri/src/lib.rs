@@ -313,6 +313,7 @@ pub fn run() {
             window::app_quit,
             window::window_title_double_click,
             window::window_system_menu,
+            window::window_file_dialog,
             window::window_buttons,
             window::window_set_theme,
             window::window_set_maximize_button,

@@ -436,6 +436,17 @@ pub fn window_system_menu(window: WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// A file dialog of the dialog plugin is opening (`open`) or has closed, for showing the
+/// pointer in it on Windows (see `win::file_dialog`).
+#[tauri::command]
+pub fn window_file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()> {
+    #[cfg(windows)]
+    window.run_on_main_thread(move || win::file_dialog(open))?;
+    #[cfg(not(windows))]
+    let _ = (window, open);
+    Ok(())
+}
+
 /// A window button the frontend draws.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

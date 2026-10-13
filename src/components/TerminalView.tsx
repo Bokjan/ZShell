@@ -9,13 +9,13 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
 import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../lib/api";
 import { isAppLocked, whenUnlocked } from "../lib/appLock";
 import { afterDialogs, isDialogOpen } from "../lib/dialogs";
+import { open as openDialog } from "../lib/fileDialog";
 import { chosenAction, clipboardKeyOf, matches, shortcutLabel } from "../lib/keymap";
 import type { PaneSession } from "../lib/paneSession";
 import { isMac } from "../lib/platform";

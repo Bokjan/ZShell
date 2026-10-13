@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { logs } from "../../lib/api";
 import { useConfirmButton } from "../../lib/confirm";
+import { open as openDialog } from "../../lib/fileDialog";
 import { formatSize } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
 import type { LogFormat, LogSettings } from "../../lib/settings";

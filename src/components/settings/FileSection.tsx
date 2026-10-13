@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { sftp } from "../../lib/api";
+import { open as openDialog } from "../../lib/fileDialog";
 import { basename } from "../../lib/format";
 import { isMac, isWindows } from "../../lib/platform";
 import type { FileSettings } from "../../lib/settings";

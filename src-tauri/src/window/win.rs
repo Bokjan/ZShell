@@ -8,7 +8,7 @@
 //! `WS_EX_LAYERED` or `WS_EX_TRANSPARENT` would make the hit test pass through it.
 //! Each window has its own button, kept by the window's handle.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
@@ -22,10 +22,10 @@ use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, EnableMenuItem, GetCursorPos, GetParent, GetSystemMenu, IsZoomed, LoadCursorW, PostMessageW,
-    RegisterClassW, SetMenuDefaultItem, SetWindowPos, ShowWindow, TrackPopupMenu, HTMAXBUTTON, HWND_TOP, IDC_ARROW, MA_NOACTIVATE,
-    MF_BYCOMMAND, MF_ENABLED, MF_GRAYED, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-    SW_HIDE, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_DESTROY, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN,
-    WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
+    RegisterClassW, SetMenuDefaultItem, SetWindowPos, ShowCursor, ShowWindow, TrackPopupMenu, HTMAXBUTTON, HWND_TOP, IDC_ARROW,
+    MA_NOACTIVATE, MF_BYCOMMAND, MF_ENABLED, MF_GRAYED, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, SWP_NOACTIVATE,
+    SWP_SHOWWINDOW, SW_HIDE, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_DESTROY, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
+    WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
 };
 
 use super::Rect;
@@ -261,4 +261,42 @@ pub(super) unsafe fn show_system_menu(hwnd: HWND) {
     if command != 0 {
         PostMessageW(hwnd, WM_SYSCOMMAND, command as WPARAM, 0);
     }
+}
+
+// Only touched on the main thread, whose input queue the web view's and the dialogs' windows share.
+thread_local! {
+    /// The file dialogs open, and how many times the pointer was shown for them.
+    static FILE_DIALOGS: Cell<(u32, u32)> = const { Cell::new((0, 0)) };
+}
+
+/// A file dialog is opening (`open`) or has closed: the pointer shows while one is open.
+///
+/// WebView2 follows the "Hide pointer while typing" mouse setting by lowering the cursor
+/// display count with `ShowCursor(FALSE)`, and raises it again only once the pointer moves
+/// over the web view. The count belongs to the input queue, which the dialogs share, so a
+/// dialog opened right after typing (`rz` in the terminal) had no pointer. Raising the count
+/// to 0 shows it; lowering it as much once the last dialog has closed leaves it where
+/// WebView2 expects it. Chromium stopped calling `ShowCursor` for this in October 2026;
+/// TODO.md says when this can go.
+pub(super) fn file_dialog(open: bool) {
+    let (mut dialogs, mut shown) = FILE_DIALOGS.get();
+    if open {
+        dialogs += 1;
+        // Each call raises the count by one and returns it.
+        loop {
+            shown += 1;
+            if unsafe { ShowCursor(1) } >= 0 {
+                break;
+            }
+        }
+    } else if dialogs > 0 {
+        dialogs -= 1;
+        if dialogs == 0 {
+            for _ in 0..shown {
+                unsafe { ShowCursor(0) };
+            }
+            shown = 0;
+        }
+    }
+    FILE_DIALOGS.set((dialogs, shown));
 }
