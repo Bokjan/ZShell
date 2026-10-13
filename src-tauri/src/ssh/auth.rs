@@ -294,7 +294,7 @@ impl<H: Handler> Auth<'_, H> {
                             // The saved password answers a lone password prompt, once. Other
                             // hidden prompts are a second factor (a verification code), where
                             // a wrong answer may count against the account.
-                            if prompts.len() == 1 && asks_for_password(&prompt.prompt, prompt.echo) {
+                            if prompts.len() == 1 && asks_for_password(&prompt.prompt, prompt.echo, &user) {
                                 if let Some(password) = self.take_saved_password().await {
                                     answers.push(password);
                                     continue;
@@ -410,17 +410,21 @@ impl<H: Handler> Auth<'_, H> {
     }
 }
 
-/// Whether a keyboard-interactive prompt asks for the account's password, in one of the
-/// forms PAM and sshd use (`Password:`, `alice@host's password:`, `Password for alice:`),
-/// rather than for a verification code or the like. Anything else (`One-time password:`,
-/// `Password + OTP:`) is left to the user: a wrong answer may count against the account.
-fn asks_for_password(prompt: &str, echo: bool) -> bool {
+/// Whether a keyboard-interactive prompt asks for `user`'s password, in one of the forms PAM
+/// and sshd use (`Password:`, `alice@host's password:`, `Password for alice:`), rather than
+/// for a verification code, another account's password or the like. Anything else
+/// (`One-time password:`, `Password + OTP:`, `Password for root:` as alice) is left to the
+/// user: a wrong answer may count against the account.
+fn asks_for_password(prompt: &str, echo: bool, user: &str) -> bool {
     let text = prompt.trim().trim_end_matches(':').trim_end().to_lowercase();
-    let one_word = |name: &str| !name.is_empty() && !name.contains(char::is_whitespace);
+    let user = user.to_lowercase();
+    // Only the part before an `@` counts: after it comes a Kerberos realm (`alice@EXAMPLE.COM`)
+    // or the name the server gives itself, which needn't be the one connected to.
+    let names_user = |name: &str| !user.is_empty() && (name == user || name.split_once('@').is_some_and(|(name, _)| name == user));
     !echo
         && (text == "password"
-            || text.strip_suffix("'s password").is_some_and(one_word)
-            || text.strip_prefix("password for ").is_some_and(one_word))
+            || text.strip_suffix("'s password").is_some_and(names_user)
+            || text.strip_prefix("password for ").is_some_and(names_user))
 }
 
 /// The methods as the server names them, for messages: `publickey, keyboard-interactive`.
@@ -877,17 +881,27 @@ wF5Blj6bR6iFUzJQ==
 
     #[test]
     fn tells_password_prompts_from_codes() {
-        assert!(asks_for_password("Password: ", false));
-        assert!(asks_for_password("alice@example.com's password:", false));
-        assert!(!asks_for_password("Verification code: ", false));
-        assert!(!asks_for_password("Passcode or option (1-3): ", false));
-        assert!(!asks_for_password("Password: ", true));
-        assert!(asks_for_password("Password for alice@example.com: ", false));
+        let asks = |prompt| asks_for_password(prompt, false, "alice");
+        assert!(asks("Password: "));
+        assert!(asks("alice@example.com's password:"));
+        assert!(asks("ALICE@other-name's password:"));
+        assert!(!asks("Verification code: "));
+        assert!(!asks("Passcode or option (1-3): "));
+        assert!(!asks_for_password("Password: ", true, "alice"));
+        assert!(asks("Password for alice: "));
+        assert!(asks("Password for alice@EXAMPLE.COM: "));
         // pam_oath, and servers that want the password and a code together.
-        assert!(!asks_for_password("One-time password (OATH) for `alice': ", false));
-        assert!(!asks_for_password("Password + OTP: ", false));
-        assert!(!asks_for_password("Password for alice (and code): ", false));
-        assert!(!asks_for_password("New password: ", false));
+        assert!(!asks("One-time password (OATH) for `alice': "));
+        assert!(!asks("Password + OTP: "));
+        assert!(!asks("Password for alice (and code): "));
+        assert!(!asks("New password: "));
+        // Another account's password, or something that only looks like one.
+        assert!(!asks("Password for root: "));
+        assert!(!asks("root's password: "));
+        assert!(!asks("Password for OTP: "));
+        assert!(!asks("Password for alicex: "));
+        assert!(!asks("Password for root@alice: "));
+        assert!(!asks_for_password("Password for : ", false, ""));
     }
 
     /// An agent that refuses to sign still yields a (useless) signature, since russh waits

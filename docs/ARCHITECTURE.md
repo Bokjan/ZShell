@@ -97,7 +97,7 @@
 - **一个连接多路复用**：认证后连接登记到 `Connections`，SFTP 与端口转发开在同一连接上；批量传输另开一个 SFTP channel，免得列目录排在大文件的读请求后面。
 - **复制标签**：已连接的 SSH 标签复制或分屏时，在源连接上开新的 shell channel，不重新连接认证（类似 ControlMaster）。多个会话可以指向同一连接，最后一个结束时才断开；源连接已断开时照常新建连接。
 - **提示都在终端里**：主机指纹、密码、口令、keyboard-interactive 都经 `TermIo::read_line` 在终端里问，与 OpenSSH 一致，不弹窗。
-- **认证**："自动"按 OpenSSH 的顺序尝试 agent、私钥、keyboard-interactive、密码；加密的私钥只在服务器接受其公钥后才问口令。多因素认证按服务器返回的剩余方法继续；保存的密码只回答一次，验证码类的提示总在终端里问，以免把密码当验证码提交（`ssh/auth.rs`）。
+- **认证**："自动"按 OpenSSH 的顺序尝试 agent、私钥、keyboard-interactive、密码；加密的私钥只在服务器接受其公钥后才问口令。多因素认证按服务器返回的剩余方法继续；保存的密码只回答一次，而且只回答问本账户密码的提示（`Password for root:` 在用户是 alice 时不算），验证码类的提示总在终端里问，以免把密码当验证码提交、白白计入失败次数（`ssh/auth.rs`）。
 - **主机校验**：自己解析 `~/.ssh/known_hosts`（`ssh/known_hosts.rs`），按 OpenSSH 的规则校验与写入，并只读地参考 `known_hosts2` 与系统文件，不用 russh 自带的校验。指纹变化时告警并拒绝连接；只记录了其他类型的密钥时先列出再问，与 OpenSSH 措辞一致。
 - **agent 转发**：只转发给目标主机，只在本连接请求过转发时接受服务器开的 agent 通道。
 - **ProxyJump**：在上一跳连接上开 `direct-tcpip` channel 作为下一跳的传输层，每一跳用被引用会话自己的地址和认证，主机密钥按各跳自己的地址校验。建跳板的部分（`ssh::tunnel`）SSH 与 Telnet 共用。
