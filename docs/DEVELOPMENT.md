@@ -137,6 +137,7 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 - Windows：`icon.ico`（16–256，exe 资源、窗口与任务栏、NSIS 与 MSI）。
 - Microsoft Store：`msix/` 下的 `Square44x44Logo`（开始菜单的应用列表、任务栏）、`Square150x150Logo`（开始菜单磁贴）、`StoreLogo`，各有 100 / 200 / 400 % 三种缩放；`Square44x44Logo` 另有任务栏等处直接使用的 `targetsize-16/24/32/48/256` 及其 `altform-unplated`（不画底板）版本。清单里写不带限定符的文件名，`package-msix.ps1` 用 `makepri` 生成 `resources.pri`，Windows 按它找到合适的那张。
 - PNG（`bundle.icon` 里的 `128x128@2x`、`128x128`、`32x32`）：非 Windows 平台的默认窗口图标取列表里第一个 PNG，Linux 的 deb / rpm 把它们全部装进 `hicolor` 图标主题（名为 `zshell`，polkit 认证框也用它）；README 也用 `128x128.png`。
+- Linux 的矢量图标：deb / rpm 另把母版 `icon.svg` 原样装成 `hicolor/scalable/apps/zshell.svg`（`tauri.linux.conf.json`），桌面在任何尺寸与缩放下都用它，位图只是后备。改母版时注意它要保持自包含（不引用字体与外部文件）。
 
 ## CI
 

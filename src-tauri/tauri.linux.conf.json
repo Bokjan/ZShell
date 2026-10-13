@@ -8,13 +8,15 @@
       "deb": {
         "files": {
           "/usr/share/polkit-1/actions/org.boyin.zshell.policy": "linux/org.boyin.zshell.policy",
-          "/usr/share/icons/hicolor/256x256/apps/zshell.png": "icons/128x128@2x.png"
+          "/usr/share/icons/hicolor/256x256/apps/zshell.png": "icons/128x128@2x.png",
+          "/usr/share/icons/hicolor/scalable/apps/zshell.svg": "icons/source/icon.svg"
         }
       },
       "rpm": {
         "files": {
           "/usr/share/polkit-1/actions/org.boyin.zshell.policy": "linux/org.boyin.zshell.policy",
-          "/usr/share/icons/hicolor/256x256/apps/zshell.png": "icons/128x128@2x.png"
+          "/usr/share/icons/hicolor/256x256/apps/zshell.png": "icons/128x128@2x.png",
+          "/usr/share/icons/hicolor/scalable/apps/zshell.svg": "icons/source/icon.svg"
         }
       }
     }
