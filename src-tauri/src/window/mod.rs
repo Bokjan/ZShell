@@ -131,7 +131,9 @@ type Place = (tauri::Position, tauri::LogicalSize<f64>);
 fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<WebviewWindow> {
     let mut config = app.config().app.windows.iter().find(|w| w.label == MAIN).cloned().unwrap_or_default();
     config.label = label.to_owned();
-    let builder = WebviewWindowBuilder::from_config(app, &config)?;
+    // WebView2 would otherwise offer values typed into earlier forms, and doesn't always honor
+    // `autocomplete="off"`. A no-op on the other platforms, whose web views have no such list.
+    let builder = WebviewWindowBuilder::from_config(app, &config)?.general_autofill_enabled(false);
     #[cfg(target_os = "macos")]
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS);
     #[cfg(windows)]
