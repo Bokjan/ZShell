@@ -4,7 +4,8 @@
 //! until then the menu bar has only the system's items. Its items act on the window that last
 //! had the focus: the page runs the action (`menu-action`), except for Close Window and Quit,
 //! handled here so that they work whatever the page shows. An item that tells that window's
-//! state (terminal full screen) gets its label from it. Elsewhere the page draws the menu.
+//! state (terminal full screen) gets its label from it; the window's own full screen is
+//! labeled here (`show_full_screen`). Elsewhere the page draws the menu.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -20,6 +21,9 @@ use crate::window;
 const QUIT: &str = "quit";
 /// Closed here; the page may ask first, and the last window closing quits.
 const CLOSE_WINDOW: &str = "closeWindow";
+/// The View menu, whose last item is the window's own full screen.
+#[cfg(target_os = "macos")]
+const VIEW_SUBMENU_ID: &str = "view";
 
 /// A menu of the menu bar, or a part of the app menu outside macOS.
 #[derive(Clone, Copy, PartialEq, Deserialize, TS)]
@@ -71,13 +75,14 @@ struct Built {
     labels: HashMap<String, String>,
 }
 
-/// The menu bar with the page's `sections` (none before it has loaded), and the `labels` it
-/// changed.
+/// The menu bar with the page's `sections` (none before it has loaded), the `labels` it
+/// changed, and the window's own full screen item labeled for a window in `full_screen` or not.
 #[cfg(target_os = "macos")]
 pub fn build<R: tauri::Runtime>(
     app: &AppHandle<R>,
     sections: &[Section],
     labels: &HashMap<String, String>,
+    full_screen: bool,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{
         AboutMetadata, IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
@@ -160,14 +165,14 @@ pub fn build<R: tauri::Runtime>(
     }
     menus.push(submenu(None, t!("menu.edit"), edit)?);
     // The window's own full screen (⌃⌘F), besides the page's terminal full screen; without
-    // it, AppKit adds one with another key. AppKit names it (Enter / Exit Full Screen) in the
-    // system's language, like the items it adds itself.
+    // it, AppKit adds one with another key. AppKit doesn't name it: without a label it shows
+    // muda's "Toggle Full Screen".
     let mut view = page(SectionKind::View)?;
     if !view.is_empty() {
         view.push(separator()?);
     }
-    view.push(predefined(PredefinedMenuItem::fullscreen(app, None))?);
-    menus.push(submenu(None, t!("menu.view"), view)?);
+    view.push(predefined(PredefinedMenuItem::fullscreen(app, Some(&full_screen_label(full_screen))))?);
+    menus.push(submenu(Some(VIEW_SUBMENU_ID), t!("menu.view"), view)?);
     menus.push(submenu(Some(WINDOW_SUBMENU_ID), t!("menu.window"), window)?);
     // Its own items, after which macOS adds a search field.
     menus.push(submenu(Some(HELP_SUBMENU_ID), t!("menu.help"), page(SectionKind::Help)?)?);
@@ -183,7 +188,8 @@ pub fn app_menu_set(app: AppHandle, menu: State<NativeMenu>, sections: Vec<Secti
     {
         let mut built = menu.0.lock().unwrap();
         if built.sections.as_ref() != Some(&sections) {
-            app.set_menu(build(&app, &sections, &built.labels)?)?;
+            let full_screen = window::current(&app).is_some_and(|window| window.is_fullscreen().unwrap_or(false));
+            app.set_menu(build(&app, &sections, &built.labels, full_screen)?)?;
             built.sections = Some(sections);
         }
     }
@@ -215,6 +221,30 @@ pub fn app_menu_set_label(app: AppHandle, window: WebviewWindow, menu: State<Nat
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (app, window, menu, id, label);
+}
+
+/// The label of the window's own full screen item.
+#[cfg(target_os = "macos")]
+fn full_screen_label(full_screen: bool) -> String {
+    if full_screen {
+        t!("menu.exitFullScreen")
+    } else {
+        t!("menu.enterFullScreen")
+    }
+}
+
+/// Labels the window's own full screen item (Enter / Exit Full Screen) for the window the menu
+/// acts on (see [`window::current`]): called as a window enters or leaves full screen, and as
+/// one gets the focus.
+#[cfg(target_os = "macos")]
+pub fn show_full_screen(app: &AppHandle) {
+    use tauri::menu::MenuItemKind;
+
+    let full_screen = window::current(app).is_some_and(|window| window.is_fullscreen().unwrap_or(false));
+    let Some(MenuItemKind::Submenu(view)) = app.menu().and_then(|bar| bar.get(VIEW_SUBMENU_ID)) else { return };
+    if let Some(MenuItemKind::Predefined(item)) = view.items().ok().and_then(|items| items.into_iter().last()) {
+        let _ = item.set_text(full_screen_label(full_screen));
+    }
 }
 
 /// An item of the menu bar was chosen.

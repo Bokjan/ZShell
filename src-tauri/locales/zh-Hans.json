@@ -52,7 +52,9 @@
     "paste": "粘贴",
     "selectAll": "全选",
     "minimize": "最小化",
-    "zoom": "缩放"
+    "zoom": "缩放",
+    "enterFullScreen": "进入全屏幕",
+    "exitFullScreen": "退出全屏幕"
   },
   "log": {
     "started": "=== {session}（{address}），日志开始于 {time} ===",

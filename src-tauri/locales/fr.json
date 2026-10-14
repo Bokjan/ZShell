@@ -52,7 +52,9 @@
     "paste": "Coller",
     "selectAll": "Tout sélectionner",
     "minimize": "Placer dans le Dock",
-    "zoom": "Réduire/agrandir"
+    "zoom": "Réduire/agrandir",
+    "enterFullScreen": "Activer le mode plein écran",
+    "exitFullScreen": "Quitter le mode plein écran"
   },
   "log": {
     "started": "=== {session} ({address}), journal démarré le {time} ===",

@@ -52,7 +52,9 @@
     "paste": "ペースト",
     "selectAll": "すべてを選択",
     "minimize": "しまう",
-    "zoom": "拡大／縮小"
+    "zoom": "拡大／縮小",
+    "enterFullScreen": "フルスクリーンにする",
+    "exitFullScreen": "フルスクリーンを解除"
   },
   "log": {
     "started": "=== {session}（{address}）、ログ開始：{time} ===",

@@ -52,7 +52,9 @@
     "paste": "Paste",
     "selectAll": "Select All",
     "minimize": "Minimize",
-    "zoom": "Zoom"
+    "zoom": "Zoom",
+    "enterFullScreen": "Enter Full Screen",
+    "exitFullScreen": "Exit Full Screen"
   },
   "log": {
     "started": "=== {session} ({address}), log started {time} ===",

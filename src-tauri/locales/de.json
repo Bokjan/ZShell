@@ -52,7 +52,9 @@
     "paste": "Einsetzen",
     "selectAll": "Alles auswählen",
     "minimize": "Im Dock ablegen",
-    "zoom": "Zoomen"
+    "zoom": "Zoomen",
+    "enterFullScreen": "Vollbildmodus aktivieren",
+    "exitFullScreen": "Vollbildmodus beenden"
   },
   "log": {
     "started": "=== {session} ({address}), Protokollbeginn {time} ===",

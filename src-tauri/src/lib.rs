@@ -126,7 +126,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::show_current(app)));
     // Tauri only gives macOS a default menu; other platforms keep having none.
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(|app| menu::build(app, &[], &Default::default()));
+    let builder = builder.menu(|app| menu::build(app, &[], &Default::default(), false));
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -166,7 +166,7 @@ pub fn run() {
             app.manage(settings);
             // The one built before the language was known.
             #[cfg(target_os = "macos")]
-            app.set_menu(menu::build(app.handle(), &[], &Default::default())?)?;
+            app.set_menu(menu::build(app.handle(), &[], &Default::default(), false)?)?;
             // Only reads the header of an encrypted vault, and doesn't make a missing one:
             // that may wait for the credential store, and the frontend shows the unlock screen
             // meanwhile.
@@ -200,7 +200,11 @@ pub fn run() {
         .on_menu_event(|app, event| menu::chosen(app, event.id().as_ref()))
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => window::update_border(window),
-            tauri::WindowEvent::Focused(true) => window::focused(window),
+            tauri::WindowEvent::Focused(true) => {
+                window::focused(window);
+                #[cfg(target_os = "macos")]
+                menu::show_full_screen(window.app_handle());
+            }
             tauri::WindowEvent::Destroyed => {
                 // Its webview has the same label.
                 window.state::<SessionManager>().remove_webview(window.label());

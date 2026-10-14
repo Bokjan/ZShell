@@ -160,7 +160,7 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
         window.show()?;
     }
     #[cfg(target_os = "macos")]
-    refocus_after_full_screen(&window);
+    watch_full_screen(&window);
     Ok(window)
 }
 
@@ -345,12 +345,14 @@ pub fn app_quit(app: AppHandle) {
 #[cfg(target_os = "macos")]
 const REFOCUS_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
-/// Once the window has left full screen (its own or the terminals'), the keyboard focus is on
-/// the window rather than the web view, so keys go nowhere until it is clicked: the web view
-/// gets it back shortly after either transition ends, since focusing it right away is undone
-/// by what the window still does as the transition finishes.
+/// As the window enters or leaves full screen (its own or the terminals'): the menu bar's full
+/// screen item says what it now does (`menu::show_full_screen`), and the web view gets the
+/// keyboard focus back. Once the window has left full screen, the focus is on the window
+/// rather than the web view, so keys go nowhere until it is clicked: the web view gets it
+/// back shortly after either transition ends, since focusing it right away is undone by what
+/// the window still does as the transition finishes.
 #[cfg(target_os = "macos")]
-fn refocus_after_full_screen(window: &WebviewWindow) {
+fn watch_full_screen(window: &WebviewWindow) {
     use std::ptr::NonNull;
 
     use block2::RcBlock;
@@ -363,7 +365,9 @@ fn refocus_after_full_screen(window: &WebviewWindow) {
     // SAFETY: the notification names are AppKit's constants.
     for name in unsafe { [NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification] } {
         let webview = window.as_ref().clone();
+        let app = window.app_handle().clone();
         let block = RcBlock::new(move |_: NonNull<NSNotification>| {
+            crate::menu::show_full_screen(&app);
             let webview = webview.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(REFOCUS_DELAY).await;
