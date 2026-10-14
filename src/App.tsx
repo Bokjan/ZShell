@@ -162,9 +162,10 @@ function App() {
   const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);
 
   /**
-   * "connect" switches to a pane the session already has; "newTab" always opens a tab;
-   * "splitRight" and "splitDown" split the focused pane (or open a tab if there is none);
-   * "newWindow" opens a window with a tab for it.
+   * "connect" connects again in the focused pane of the active tab when that is the session's
+   * and its connection is closed (or waiting to reconnect), else opens a tab; "newTab" always
+   * opens a tab; "splitRight" and "splitDown" split the focused pane (or open a tab if there
+   * is none); "newWindow" opens a window with a tab for it.
    */
   const openProfile = (profile: Profile, mode: OpenMode) => {
     directory.opened(profile.id);
@@ -173,13 +174,12 @@ function App() {
       return;
     }
     const target: SessionTarget = { kind: "profile", profileId: profile.id };
-    const existing = store
-      .get()
-      .tabs.flatMap((t) => t.panes)
-      .find((p) => p.target.kind === "profile" && p.target.profileId === profile.id);
     const active = activeTabOf(store.get());
-    if (mode === "connect" && existing) focusPane(existing.key);
-    else if ((mode === "splitRight" || mode === "splitDown") && active) {
+    const here = active?.panes.find((p) => p.key === active.focused);
+    if (mode === "connect" && here?.status === "closed" && here.target.kind === "profile" && here.target.profileId === profile.id) {
+      sessions.reconnect(here.key);
+      focusActiveTerminal();
+    } else if ((mode === "splitRight" || mode === "splitDown") && active) {
       splitPane(active.focused, mode === "splitRight" ? "row" : "column", {
         target,
         protocol: protocolOf(target),

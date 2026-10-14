@@ -205,7 +205,6 @@ export function Sidebar(props: Props) {
 
   const profileMenu = (profile: Profile): MenuItem[] => [
     { label: t("sidebar.connect"), onSelect: () => onOpen(profile, "connect") },
-    { label: t("sidebar.connectNewTab"), onSelect: () => onOpen(profile, "newTab") },
     { label: t("sidebar.connectSplitRight"), onSelect: () => onOpen(profile, "splitRight") },
     { label: t("sidebar.connectSplitDown"), onSelect: () => onOpen(profile, "splitDown") },
     { label: t("sidebar.connectNewWindow"), onSelect: () => onOpen(profile, "newWindow") },
@@ -300,7 +299,7 @@ export function Sidebar(props: Props) {
     else if (e.key === "ArrowLeft" && row) {
       const parent = row.kind === "folder" ? row.folder.parent : row.profile.folder;
       if (parent) setSelected(`f:${parent}`);
-    } else if (e.key === "Enter" && row?.kind === "profile") onOpen(row.profile, "newTab");
+    } else if (e.key === "Enter" && row?.kind === "profile") onOpen(row.profile, "connect");
     else if (e.key === "Enter" && row?.kind === "folder") setFolderCollapsed(row.folder.id, row.expanded);
     else if (isMenuKey(e)) {
       // The selected row's menu, below it; the list's own without one.
@@ -321,7 +320,7 @@ export function Sidebar(props: Props) {
 
   const onSearchKeyDown = (e: KeyboardEvent) => {
     const pick = (index: number) => {
-      if (index < results.length) onOpen(results[index], "newTab");
+      if (index < results.length) onOpen(results[index], "connect");
       else if (quick) onQuickConnect(quick);
       setQuery("");
     };
@@ -433,7 +432,7 @@ export function Sidebar(props: Props) {
         if (key.startsWith("p:")) startDrag(e, { kind: "profile", id: profile.id });
       }}
       onClick={() => setSelected(`p:${profile.id}`)}
-      onDoubleClick={() => firstClickRef.current === key && onOpen(profile, "newTab")}
+      onDoubleClick={() => firstClickRef.current === key && onOpen(profile, "connect")}
       onContextMenu={(e) => {
         setSelected(`p:${profile.id}`);
         openMenu(e, profileMenu(profile));
