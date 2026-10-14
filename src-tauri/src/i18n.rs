@@ -3,9 +3,15 @@
 //! Catalogs are JSON files in `src-tauri/locales/`, embedded at compile time. Keys are dotted
 //! paths into the JSON object and values use `{name}` placeholders, the same syntax as the
 //! frontend catalogs. English is the source language and the fallback for missing keys.
+//!
+//! What is filled in is made [`printable`]: much of it comes from elsewhere (a server's error,
+//! a remote file name, a session name from an import file), and the messages are written to
+//! terminals, where a control sequence in it would act (clear the screen, move the cursor,
+//! set the title, fake a prompt) rather than show.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt::{Display, Write};
+use std::fmt::Display;
 use std::sync::{LazyLock, RwLock};
 
 use serde::Serialize;
@@ -184,7 +190,7 @@ fn interpolate(template: &str, args: &[(&str, &dyn Display)]) -> String {
         let value = after.find('}').and_then(|end| args.iter().find(|(name, _)| *name == &after[..end]).map(|(_, value)| (end, value)));
         match value {
             Some((end, value)) => {
-                let _ = write!(out, "{value}");
+                out.push_str(&printable(&value.to_string()));
                 rest = &after[end + 1..];
             }
             None => {
@@ -195,6 +201,23 @@ fn interpolate(template: &str, args: &[(&str, &dyn Display)]) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// `text` on one line, without control characters: tabs and line breaks become spaces, and
+/// other control characters (escape sequences' start among them) `\u{FFFD}`.
+pub fn printable(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(char::is_control) {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(
+        text.chars()
+            .map(|c| match c {
+                '\t' | '\n' | '\r' => ' ',
+                c if c.is_control() => char::REPLACEMENT_CHARACTER,
+                c => c,
+            })
+            .collect(),
+    )
 }
 
 /// `t!("terminal.connecting", user = name, port = 22)` → the translated, interpolated string.
@@ -259,6 +282,9 @@ mod tests {
     fn interpolates_named_placeholders() {
         let args: [(&str, &dyn Display); 2] = [("name", &"world"), ("n", &3)];
         assert_eq!(interpolate("hello {name}, {n} {unknown} {", &args), "hello world, 3 {unknown} {");
+        // What is filled in can't act on a terminal.
+        let args: [(&str, &dyn Display); 1] = [("name", &"web\x1b[2J\x1b]0;title\x07\r\n$ \u{9b}31m")];
+        assert_eq!(interpolate("{name}!", &args), "web\u{FFFD}[2J\u{FFFD}]0;title\u{FFFD}  $ \u{FFFD}31m!");
     }
 
     /// The `{name}` placeholders of a string.

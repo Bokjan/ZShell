@@ -43,7 +43,8 @@ impl Error {
         let args: Vec<(&str, &dyn fmt::Display)> = self.params.iter().map(|(k, v)| (*k, v as &dyn fmt::Display)).collect();
         let text = i18n::translate(&format!("errors.{}", self.code), &args);
         match &self.detail {
-            Some(detail) => format!("{text}: {detail}"),
+            // Often a server's or a proxy's own words (see `i18n::printable`).
+            Some(detail) => format!("{text}: {}", i18n::printable(detail)),
             None => text,
         }
     }

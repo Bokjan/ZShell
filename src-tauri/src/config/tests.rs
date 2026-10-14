@@ -184,6 +184,18 @@ fn repairs_folder_cycles() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Names are shown in terminals ("Connecting to …"): one from an import file can't carry
+/// control sequences there.
+#[test]
+fn names_are_printable() {
+    let (store, dir) = store("names");
+    let web = store.save(Profile { name: " web\x1b[2J\tprod\n".into(), ..new_profile("web", None) }, None).unwrap();
+    assert_eq!(web.name, "web\u{FFFD}[2J prod");
+    let proxy = store.save_proxy(Proxy { name: "corp\x07".into(), host: "proxy.lan".into(), port: 8080, ..store_proxy() }, None).unwrap();
+    assert_eq!(proxy.name, "corp\u{FFFD}");
+    fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A session keeps the settings of its protocol under `connection`.
 #[test]
 fn keeps_protocol_settings_under_connection() {

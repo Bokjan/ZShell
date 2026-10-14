@@ -385,7 +385,7 @@ impl Profile {
 
     /// Checks and tidies the address, by protocol, and names an unnamed profile after it.
     pub(super) fn normalize_target(&mut self) -> Result<()> {
-        self.name = self.name.trim().to_owned();
+        self.name = crate::i18n::printable(self.name.trim()).trim().to_owned();
         match &mut self.connection {
             Connection::Serial(serial) => {
                 serial.device = serial.device.trim().to_owned();

@@ -58,7 +58,7 @@ impl Proxy {
     /// Checks and tidies the fields of its kind, and names an unnamed proxy after its
     /// address or program.
     pub fn normalize(&mut self) -> crate::error::Result<()> {
-        self.name = self.name.trim().to_owned();
+        self.name = crate::i18n::printable(self.name.trim()).trim().to_owned();
         self.host = self.host.trim().to_owned();
         self.username = self.username.trim().to_owned();
         self.command = self.command.trim().to_owned();
