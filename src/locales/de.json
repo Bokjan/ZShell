@@ -246,6 +246,7 @@
   "announce": {
     "connected": "{name} ist verbunden.",
     "disconnected": "Die Verbindung zu {name} wurde getrennt.",
+    "closed": "{name} wurde geschlossen, weil die Shell beendet wurde.",
     "bell": "Glocke in {name}",
     "transferDone": "{name}: Übertragung abgeschlossen.",
     "transferFailed": "{name}: Übertragung fehlgeschlagen. {error}",
@@ -260,12 +261,12 @@
   "terminal": {
     "inputLabel": "Terminaleingabe",
     "tooMuchOutput": "Zu viel Ausgabe zum Vorlesen. Bewegen Sie sich durch die Zeilen des Terminals, um sie zu lesen.",
-    "reconnectHint": "Drücken Sie die Eingabetaste, um neu zu verbinden",
-    "retryHint": "Drücken Sie die Eingabetaste, um es erneut zu versuchen",
-    "restartHint": "Drücken Sie die Eingabetaste, um eine neue Shell zu starten",
-    "reconnectIn_one": "Neue Verbindung in {count} Sekunde. Drücken Sie die Eingabetaste, um sofort zu verbinden, oder Strg+C, um abzubrechen.",
-    "reconnectIn_other": "Neue Verbindung in {count} Sekunden. Drücken Sie die Eingabetaste, um sofort zu verbinden, oder Strg+C, um abzubrechen.",
-    "reconnectCancelled": "Automatisches Neuverbinden abgebrochen. Drücken Sie die Eingabetaste, um neu zu verbinden.",
+    "reconnectHint": "Drücken Sie die Eingabetaste, um neu zu verbinden, oder Strg+D, um zu schließen",
+    "retryHint": "Drücken Sie die Eingabetaste, um es erneut zu versuchen, oder Strg+D, um zu schließen",
+    "restartHint": "Drücken Sie die Eingabetaste, um eine neue Shell zu starten, oder Strg+D, um zu schließen",
+    "reconnectIn_one": "Neue Verbindung in {count} Sekunde. Drücken Sie die Eingabetaste, um sofort zu verbinden, Strg+C, um abzubrechen, oder Strg+D, um zu schließen.",
+    "reconnectIn_other": "Neue Verbindung in {count} Sekunden. Drücken Sie die Eingabetaste, um sofort zu verbinden, Strg+C, um abzubrechen, oder Strg+D, um zu schließen.",
+    "reconnectCancelled": "Automatisches Neuverbinden abgebrochen. Drücken Sie die Eingabetaste, um neu zu verbinden, oder Strg+D, um zu schließen.",
     "logFailed": "Das Sitzungsprotokoll konnte nicht gestartet werden: {message}",
     "menu": {
       "copy": "Kopieren",

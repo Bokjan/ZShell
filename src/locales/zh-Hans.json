@@ -237,6 +237,7 @@
   "announce": {
     "connected": "{name} 已连接。",
     "disconnected": "{name} 已断开连接。",
+    "closed": "shell 已退出，{name} 已关闭。",
     "bell": "{name} 响铃",
     "transferDone": "{name}：传输已完成。",
     "transferFailed": "{name}：传输失败。{error}",
@@ -251,11 +252,11 @@
   "terminal": {
     "inputLabel": "终端输入",
     "tooMuchOutput": "输出过多，无法朗读。请在终端的各行之间移动来阅读。",
-    "reconnectHint": "按 Enter 重新连接",
-    "retryHint": "按 Enter 重试",
-    "restartHint": "按 Enter 启动新的 shell",
-    "reconnectIn_other": "{count} 秒后重新连接。按 Enter 立即重新连接，或按 Ctrl+C 取消。",
-    "reconnectCancelled": "已取消自动重新连接。按 Enter 重新连接。",
+    "reconnectHint": "按 Enter 重新连接，或按 Ctrl+D 关闭",
+    "retryHint": "按 Enter 重试，或按 Ctrl+D 关闭",
+    "restartHint": "按 Enter 启动新的 shell，或按 Ctrl+D 关闭",
+    "reconnectIn_other": "{count} 秒后重新连接。按 Enter 立即重新连接，按 Ctrl+C 取消，或按 Ctrl+D 关闭。",
+    "reconnectCancelled": "已取消自动重新连接。按 Enter 重新连接，或按 Ctrl+D 关闭。",
     "logFailed": "无法开始记录会话日志：{message}",
     "menu": {
       "copy": "复制",

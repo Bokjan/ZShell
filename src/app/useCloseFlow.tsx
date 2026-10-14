@@ -114,13 +114,23 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
     [store, closePanes],
   );
 
+  /** Closes a pane of a split tab, otherwise the tab. */
+  const closePane = useCallback(
+    (key: number) => {
+      const found = findPane(store.get().tabs, key);
+      if (!found) return;
+      if (found.tab.panes.length > 1) void requestClose({ kind: "pane", key });
+      else void requestClose({ kind: "tabs", keys: [found.tab.key] });
+    },
+    [store, requestClose],
+  );
+
   /** ⌘W / Ctrl+Shift+W: the focused pane of a split tab, otherwise the tab (the window if there is none). */
   const closeFocused = useCallback(() => {
     const tab = activeTabOf(store.get());
     if (!tab) void getCurrentWindow().close();
-    else if (tab.panes.length > 1) void requestClose({ kind: "pane", key: tab.focused });
-    else void requestClose({ kind: "tabs", keys: [tab.key] });
-  }, [store, requestClose]);
+    else closePane(tab.focused);
+  }, [store, closePane]);
 
   // Closing the window (the close button, ⇧⌘W, Alt+F4) ends its sessions at once, so it
   // always asks, whatever the setting for closing tabs; the last window closing quits.
@@ -239,5 +249,5 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
     </>
   );
 
-  return { requestClose, closeFocused, dialogs };
+  return { requestClose, closePane, closeFocused, dialogs };
 }

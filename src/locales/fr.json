@@ -255,6 +255,7 @@
   "announce": {
     "connected": "La session {name} est connectée.",
     "disconnected": "La session {name} est déconnectée.",
+    "closed": "La session {name} a été fermée, car son shell s’est terminé.",
     "bell": "Cloche dans {name}",
     "transferDone": "{name} : transfert terminé.",
     "transferFailed": "{name} : échec du transfert. {error}",
@@ -269,13 +270,13 @@
   "terminal": {
     "inputLabel": "Saisie du terminal",
     "tooMuchOutput": "Trop de sortie pour l’annoncer. Parcourez les lignes du terminal pour la lire.",
-    "reconnectHint": "Appuyez sur Entrée pour vous reconnecter",
-    "retryHint": "Appuyez sur Entrée pour réessayer",
-    "restartHint": "Appuyez sur Entrée pour démarrer un nouveau shell",
-    "reconnectIn_one": "Reconnexion dans {count} seconde. Appuyez sur Entrée pour vous reconnecter maintenant ou sur Ctrl+C pour annuler.",
-    "reconnectIn_many": "Reconnexion dans {count} secondes. Appuyez sur Entrée pour vous reconnecter maintenant ou sur Ctrl+C pour annuler.",
-    "reconnectIn_other": "Reconnexion dans {count} secondes. Appuyez sur Entrée pour vous reconnecter maintenant ou sur Ctrl+C pour annuler.",
-    "reconnectCancelled": "Reconnexion automatique annulée. Appuyez sur Entrée pour vous reconnecter.",
+    "reconnectHint": "Appuyez sur Entrée pour vous reconnecter ou sur Ctrl+D pour fermer",
+    "retryHint": "Appuyez sur Entrée pour réessayer ou sur Ctrl+D pour fermer",
+    "restartHint": "Appuyez sur Entrée pour démarrer un nouveau shell ou sur Ctrl+D pour fermer",
+    "reconnectIn_one": "Reconnexion dans {count} seconde. Appuyez sur Entrée pour vous reconnecter maintenant, sur Ctrl+C pour annuler ou sur Ctrl+D pour fermer.",
+    "reconnectIn_many": "Reconnexion dans {count} secondes. Appuyez sur Entrée pour vous reconnecter maintenant, sur Ctrl+C pour annuler ou sur Ctrl+D pour fermer.",
+    "reconnectIn_other": "Reconnexion dans {count} secondes. Appuyez sur Entrée pour vous reconnecter maintenant, sur Ctrl+C pour annuler ou sur Ctrl+D pour fermer.",
+    "reconnectCancelled": "Reconnexion automatique annulée. Appuyez sur Entrée pour vous reconnecter ou sur Ctrl+D pour fermer.",
     "logFailed": "Impossible de démarrer le journal de session : {message}",
     "menu": {
       "copy": "Copier",

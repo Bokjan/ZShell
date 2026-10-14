@@ -48,8 +48,13 @@ export interface SessionEvents {
   zmodem(phase: ZmodemPhase): void;
   /** The session's log started (its path) or stopped (null). */
   log(path: string | null): void;
-  /** The shell exited (rather than failing to start or losing the connection). */
-  exited(status: number | null): void;
+  /**
+   * The shell exited (rather than failing to start or losing the connection), with whether
+   * the user typed into it. Returns whether the pane closes, which then shows nothing more.
+   */
+  exited(status: number | null, typed: boolean): boolean;
+  /** Ctrl+D in a closed terminal: the user asks to close the pane. */
+  close(): void;
   /** An automatic reconnection is due at this time (`Date.now()`), or none is any more (null). */
   retry(at: number | null): void;
   /** Output came that isn't an answer to typing or resizing (see `ECHO_MS`); often. */
@@ -133,13 +138,15 @@ function resetModes(port: TerminalPort) {
  * A pane's backend sessions, one after another: it connects, reconnects by hand or
  * automatically (with growing delays, sooner when the network comes back), types the login
  * commands, and passes output to the terminal with flow control. Enter in a closed terminal
- * connects again; Ctrl+C cancels a pending retry.
+ * connects again, Ctrl+C cancels a pending retry, and Ctrl+D closes the pane.
  */
 export class PaneSession {
   private session: Session | undefined;
   private closed = false;
   /** Whether the current session's shell is up (past its connection's prompts). */
   private connected = false;
+  /** Whether the user has typed into the current session's shell (not into its prompts). */
+  private typed = false;
   private disposed = false;
   /** Automatic reconnection: the number of attempts so far and the pending one, if any. */
   private attempt = 0;
@@ -217,13 +224,16 @@ export class PaneSession {
 
   /**
    * What the user typed. Returns whether a session got it. Into a closed terminal, Enter
-   * connects again and Ctrl+C cancels a pending retry.
+   * connects again, Ctrl+C cancels a pending retry and Ctrl+D closes the pane.
    */
   input(data: string): boolean {
     if (!this.closed) {
       // The user has taken over: a command typed now would land in what they are typing.
       // The terminal's answers to the shell's queries (fish asks at startup) aren't typing.
-      if (!isTerminalReport(data)) this.stopLoginCommands();
+      if (!isTerminalReport(data)) {
+        this.stopLoginCommands();
+        if (this.connected) this.typed = true;
+      }
       if (!this.session) return false;
       this.nudgedAt = performance.now();
       void this.session.write(data);
@@ -236,7 +246,7 @@ export class PaneSession {
       this.cancelRetry();
       this.attempt = 0;
       this.dim(this.config.t("terminal.reconnectCancelled"));
-    }
+    } else if (data === "\x04") this.events.close();
     return false;
   }
 
@@ -344,6 +354,7 @@ export class PaneSession {
     this.stopLoginCommands();
     this.closed = false;
     this.connected = false;
+    this.typed = false;
     this.traffic.reset();
     this.events.status("connecting");
     const target = this.config.target();
@@ -364,6 +375,8 @@ export class PaneSession {
   private adopt(id: SessionId, connected: boolean) {
     this.closed = false;
     this.connected = connected;
+    // Its typing was in the other window; a shell that is up has likely been used.
+    this.typed = connected;
     this.arriving = true;
     const settled = () => (this.arriving = false);
     this.follow(
@@ -500,8 +513,8 @@ export class PaneSession {
           this.connect();
           return;
         }
+        if (event.reason === "exited" && this.events.exited(event.status, this.typed)) return;
         this.events.status("closed");
-        if (event.reason === "exited") this.events.exited(event.status);
         if (target.kind === "local") {
           this.dim(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
           return;

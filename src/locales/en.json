@@ -246,6 +246,7 @@
   "announce": {
     "connected": "{name} is connected.",
     "disconnected": "{name} is disconnected.",
+    "closed": "{name} closed after its shell exited.",
     "bell": "Bell in {name}",
     "transferDone": "{name}: transfer finished.",
     "transferFailed": "{name}: transfer failed. {error}",
@@ -260,12 +261,12 @@
   "terminal": {
     "inputLabel": "Terminal input",
     "tooMuchOutput": "Too much output to announce. Move through the terminal's lines to read it.",
-    "reconnectHint": "Press Enter to reconnect",
-    "retryHint": "Press Enter to retry",
-    "restartHint": "Press Enter to start a new shell",
-    "reconnectIn_one": "Reconnecting in {count} second. Press Enter to reconnect now or Ctrl+C to cancel.",
-    "reconnectIn_other": "Reconnecting in {count} seconds. Press Enter to reconnect now or Ctrl+C to cancel.",
-    "reconnectCancelled": "Automatic reconnection cancelled. Press Enter to reconnect.",
+    "reconnectHint": "Press Enter to reconnect or Ctrl+D to close",
+    "retryHint": "Press Enter to retry or Ctrl+D to close",
+    "restartHint": "Press Enter to start a new shell or Ctrl+D to close",
+    "reconnectIn_one": "Reconnecting in {count} second. Press Enter to reconnect now, Ctrl+C to cancel or Ctrl+D to close.",
+    "reconnectIn_other": "Reconnecting in {count} seconds. Press Enter to reconnect now, Ctrl+C to cancel or Ctrl+D to close.",
+    "reconnectCancelled": "Automatic reconnection cancelled. Press Enter to reconnect or Ctrl+D to close.",
     "logFailed": "Could not start the session log: {message}",
     "menu": {
       "copy": "Copy",

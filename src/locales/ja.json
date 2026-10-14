@@ -237,6 +237,7 @@
   "announce": {
     "connected": "{name}に接続しました。",
     "disconnected": "{name}の接続が切断されました。",
+    "closed": "シェルが終了したため、{name}を閉じました。",
     "bell": "{name}でベルが鳴りました",
     "transferDone": "{name}：転送が完了しました。",
     "transferFailed": "{name}：転送に失敗しました。{error}",
@@ -251,11 +252,11 @@
   "terminal": {
     "inputLabel": "ターミナル入力",
     "tooMuchOutput": "出力が多すぎるため読み上げられません。ターミナルの行を移動して読んでください。",
-    "reconnectHint": "Enterキーを押すと再接続します",
-    "retryHint": "Enterキーを押すと再試行します",
-    "restartHint": "Enterキーを押すと新しいシェルを起動します",
-    "reconnectIn_other": "{count}秒後に再接続します。今すぐ再接続するにはEnter、キャンセルするにはCtrl+Cを押してください。",
-    "reconnectCancelled": "自動再接続をキャンセルしました。Enterキーを押すと再接続します。",
+    "reconnectHint": "Enterキーを押すと再接続、Ctrl+Dキーを押すと閉じます",
+    "retryHint": "Enterキーを押すと再試行、Ctrl+Dキーを押すと閉じます",
+    "restartHint": "Enterキーを押すと新しいシェルを起動、Ctrl+Dキーを押すと閉じます",
+    "reconnectIn_other": "{count}秒後に再接続します。今すぐ再接続するにはEnter、キャンセルするにはCtrl+C、閉じるにはCtrl+Dを押してください。",
+    "reconnectCancelled": "自動再接続をキャンセルしました。Enterキーを押すと再接続、Ctrl+Dキーを押すと閉じます。",
     "logFailed": "セッションログを開始できませんでした：{message}",
     "menu": {
       "copy": "コピー",

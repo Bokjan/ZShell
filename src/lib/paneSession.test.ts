@@ -139,7 +139,8 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     forward: vi.fn(),
     zmodem: vi.fn(),
     log: vi.fn(),
-    exited: vi.fn(),
+    exited: vi.fn((_status: number | null, _typed: boolean) => false),
+    close: vi.fn(),
     retry: vi.fn(),
     arrived: vi.fn(),
     stayed: vi.fn(),
@@ -340,10 +341,61 @@ describe("automatic reconnection", () => {
     pane.connect();
     opened[0].event({ type: "connected" });
     opened[0].event({ type: "closed", reason: "exited", error: null, status: 0 });
-    expect(events.exited).toHaveBeenCalledWith(0);
+    expect(events.exited).toHaveBeenCalledWith(0, false);
     expect(screen()).toContain("terminal.restartHint");
     await vi.advanceTimersByTimeAsync(60_000);
     expect(opened).toHaveLength(1);
+  });
+});
+
+describe("ending", () => {
+  const exited = (status: number | null): SessionEvent => ({ type: "closed", reason: "exited", error: null, status });
+
+  it("says whether the user typed into the shell, not into the prompts of connecting", async () => {
+    const { pane, opened, events } = setup();
+    pane.connect();
+    opened[0].resolve();
+    await settle();
+    pane.input("password\r");
+    opened[0].event({ type: "connected" });
+    // The terminal's answers to the shell's queries aren't typing.
+    pane.input("\x1b[?1;2c");
+    opened[0].event(exited(1));
+    expect(events.exited).toHaveBeenLastCalledWith(1, false);
+
+    pane.input("\r");
+    opened[1].resolve();
+    await settle();
+    opened[1].event({ type: "connected" });
+    pane.input("exit\r");
+    opened[1].event(exited(null));
+    expect(events.exited).toHaveBeenLastCalledWith(null, true);
+  });
+
+  it("shows nothing more when the pane closes", async () => {
+    const { pane, opened, events, screen } = setup();
+    events.exited.mockReturnValueOnce(true);
+    pane.connect();
+    opened[0].event({ type: "connected" });
+    opened[0].event(exited(0));
+    expect(events.status).not.toHaveBeenCalledWith("closed");
+    expect(screen()).not.toContain("terminal.reconnectHint");
+    expect(pane.isClosed).toBe(true);
+  });
+
+  it("asks to close the pane on Ctrl+D once closed, and only then", async () => {
+    const { pane, opened, events } = setup();
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    pane.input("\x04");
+    await settle();
+    expect(session.writes).toEqual(["\x04"]);
+    expect(events.close).not.toHaveBeenCalled();
+    opened[0].event(lost());
+    pane.input("\x04");
+    expect(events.close).toHaveBeenCalledOnce();
   });
 });
 

@@ -96,6 +96,8 @@ function App() {
   const [username, setUsername] = useState("");
   // Set once `useWindows` has run below.
   const windowingRef = useRef<Pick<ReturnType<typeof useWindows>, "movedAway" | "stayed">>(undefined);
+  // Set once `useCloseFlow` has run below.
+  const closePaneRef = useRef<(key: number) => void>(undefined);
   const [sessions] = useState(() =>
     createSessionRegistry(store, {
       profiles: () => directory.get().profiles,
@@ -103,6 +105,7 @@ function App() {
       announce,
       movedAway: (key) => windowingRef.current?.movedAway(key),
       stayed: (key, from) => windowingRef.current?.stayed(key, from),
+      close: (key) => closePaneRef.current?.(key),
       markOutput: () => settingsRef.current.tabs.markOutput,
       bell: () => settingsRef.current.terminal,
     }),
@@ -133,6 +136,7 @@ function App() {
   const { compose, flashing, inScope } = composer;
   const close = useCloseFlow(store, settings, update);
   const { requestClose, closeFocused } = close;
+  closePaneRef.current = close.closePane;
 
   // Returned only once, so a second call (StrictMode) must not clear the first's result.
   useEffect(() => {

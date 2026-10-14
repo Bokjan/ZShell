@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { paneWork } from "./panes";
+import { closesOnExit, paneWork } from "./panes";
 import { INITIAL_TABS, reduceTabs } from "./tabs";
 
 const pane = reduceTabs(INITIAL_TABS, { type: "open", pane: { target: { kind: "profile", profileId: "a" }, protocol: "ssh", title: "a" } })
@@ -21,5 +21,32 @@ describe("paneWork", () => {
     expect(paneWork({ ...pane, transfers: 1, edits: 1, questions: 1 })?.kind).toBe("transfers");
     expect(paneWork({ ...pane, edits: 1, questions: 1 })?.kind).toBe("edits");
     expect(paneWork({ ...pane, questions: 3 })).toEqual({ kind: "questions", count: 3 });
+  });
+});
+
+describe("closesOnExit", () => {
+  const local = { ...pane, target: { kind: "local" as const } };
+
+  it("closes a pane whose shell the user exited, whatever the status", () => {
+    expect(closesOnExit(pane, 0, true)).toBe(true);
+    expect(closesOnExit(pane, 1, true)).toBe(true);
+    // Telnet servers, and SSH servers that don't send one, report no status.
+    expect(closesOnExit(pane, null, true)).toBe(true);
+    expect(closesOnExit(local, 0, true)).toBe(true);
+    expect(closesOnExit(local, 130, true)).toBe(true);
+  });
+
+  it("keeps it when the user never typed into the shell", () => {
+    expect(closesOnExit(pane, 0, false)).toBe(false);
+    expect(closesOnExit(local, 0, false)).toBe(false);
+  });
+
+  it("keeps a local shell ended by a signal", () => {
+    expect(closesOnExit(local, null, true)).toBe(false);
+  });
+
+  it("keeps it while closing would end work of the file panel", () => {
+    expect(closesOnExit({ ...pane, transfers: 1 }, 0, true)).toBe(false);
+    expect(closesOnExit({ ...pane, edits: 1 }, 0, true)).toBe(false);
   });
 });

@@ -3,7 +3,7 @@ import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { playBell, type LogOpen, type Profile, type SessionId, type ZmodemPhase } from "./api";
 import type { TerminalSettings } from "./bindings";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
-import { findPane, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
+import { closesOnExit, findPane, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
 import { activeTabOf, type TabStore } from "./tabs";
 
 /** A pane's terminal as the status bar shows it. */
@@ -64,6 +64,8 @@ interface Options {
   movedAway(key: number): void;
   /** The session of pane `key`, which came `from` another window, couldn't move here. */
   stayed(key: number, from: Arrival["from"]): void;
+  /** Closes pane `key` (or its tab, if it is the only pane) as the user would, asking if needed. */
+  close(key: number): void;
   /** Whether tabs in the background are marked when they have new output (a setting). */
   markOutput(): boolean;
   /** What a terminal's bell does (settings). */
@@ -76,12 +78,12 @@ const logOpen = (pane: Pane): LogOpen =>
 
 /**
  * The sessions of the panes, by pane key. Each reports its status, backend session,
- * forwarding and log into the tab store; a local shell that exits cleanly (`exit`, Ctrl+D)
- * closes its pane, as in Terminal.app.
+ * forwarding and log into the tab store; a shell that the user exits closes its pane (see
+ * `closesOnExit`).
  */
 export function createSessionRegistry(
   store: TabStore,
-  { profiles, t, announce, movedAway, stayed, markOutput, bell }: Options,
+  { profiles, t, announce, movedAway, stayed, close, markOutput, bell }: Options,
 ): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
@@ -146,9 +148,14 @@ export function createSessionRegistry(
             view.zmodem(phase);
           },
           log: (path) => update({ logPath: path }),
-          exited: (status) => {
-            if (pane().target.kind === "local" && status === 0) store.dispatch({ type: "close", keys: [key] });
+          exited: (status, typed) => {
+            const current = pane();
+            if (!closesOnExit(current, status, typed)) return false;
+            if (activeTabOf(store.get())?.focused !== key) announce(t("announce.closed", { name: current.title }));
+            store.dispatch({ type: "close", keys: [key] });
+            return true;
           },
+          close: () => close(key),
           retry: (at) => update({ retryAt: at }),
           // Often: only a tab in the background that isn't marked yet changes the store.
           output: () => {
