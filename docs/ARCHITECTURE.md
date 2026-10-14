@@ -46,7 +46,7 @@
 | 模块（`src-tauri/src/`） | 职责 |
 |---|---|
 | `session/` | 会话抽象：`TermIo`、`SessionManager`、`SessionSink`、输出流控 `Flow` |
-| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`）、主机密钥确认（`host_key.rs`）、known_hosts（`known_hosts.rs`）、认证（`auth.rs`）、连接注册表（`connections.rs`） |
+| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`）、主机密钥确认（`host_key.rs`）、known_hosts（`known_hosts.rs`）、认证（`auth/`）、连接注册表（`connections.rs`） |
 | `sftp/` | 浏览与文件操作（`mod.rs`）、传输（`transfer.rs`）、本地编辑（`edit.rs`）、拖出（`drag/`）、替换写入（`replace.rs`）、文件名转码（`names.rs`） |
 | `forward/` | 转发规则的运行（`mod.rs`）、`-L` / `-R` / `-D`（`local.rs` / `remote.rs` / `dynamic.rs`）、SOCKS（`socks.rs`） |
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
@@ -54,7 +54,7 @@
 | `serial/` | 串口会话与设备列表（`mod.rs`） |
 | `net.rs` / `proxy/` | 出站连接（直连或经代理）、`Route`；代理：SOCKS5、HTTP CONNECT、ProxyCommand |
 | `zmodem/` | rz / sz：检测与接管、帧格式、收发 |
-| `logging.rs` | 会话日志：写入线程、格式、索引 `logs.json` 与清理 |
+| `logging/` | 会话日志：写入线程、格式、索引 `logs.json` 与清理 |
 | `config/` / `quick.rs` / `settings.rs` | 会话、文件夹与代理；快速命令；应用设置 `settings.json` |
 | `vault/` / `crypto.rs` / `secrets.rs` | 保险库（上面几类数据与密码存在哪里、如何保护）；加密与口令派生；系统凭据存储 |
 | `applock/` | 应用锁：锁定状态、各平台的系统认证、闲置与锁屏检测 |
@@ -97,7 +97,7 @@
 - **一个连接多路复用**：认证后连接登记到 `Connections`，SFTP 与端口转发开在同一连接上；批量传输另开一个 SFTP channel，免得列目录排在大文件的读请求后面。
 - **复制标签**：已连接的 SSH 标签复制或分屏时，在源连接上开新的 shell channel，不重新连接认证（类似 ControlMaster）。多个会话可以指向同一连接，最后一个结束时才断开；源连接已断开时照常新建连接。
 - **提示都在终端里**：主机指纹、密码、口令、keyboard-interactive 都经 `TermIo::read_line` 在终端里问，与 OpenSSH 一致，不弹窗。
-- **认证**："自动"按 OpenSSH 的顺序尝试 agent、私钥、keyboard-interactive、密码；加密的私钥只在服务器接受其公钥后才问口令。多因素认证按服务器返回的剩余方法继续；保存的密码只回答一次，而且只回答问本账户密码的提示（`Password for root:` 在用户是 alice 时不算），验证码类的提示总在终端里问，以免把密码当验证码提交、白白计入失败次数（`ssh/auth.rs`）。
+- **认证**："自动"按 OpenSSH 的顺序尝试 agent、私钥、keyboard-interactive、密码；加密的私钥只在服务器接受其公钥后才问口令。多因素认证按服务器返回的剩余方法继续；保存的密码只回答一次，而且只回答问本账户密码的提示（`Password for root:` 在用户是 alice 时不算），验证码类的提示总在终端里问，以免把密码当验证码提交、白白计入失败次数（`ssh/auth/`）。
 - **主机校验**：自己解析 `~/.ssh/known_hosts`（`ssh/known_hosts.rs`），按 OpenSSH 的规则校验与写入，并只读地参考 `known_hosts2` 与系统文件，不用 russh 自带的校验。指纹变化时告警并拒绝连接；只记录了其他类型的密钥时先列出再问，与 OpenSSH 措辞一致。
 - **agent 转发**：只转发给目标主机，只在本连接请求过转发时接受服务器开的 agent 通道。
 - **ProxyJump**：在上一跳连接上开 `direct-tcpip` channel 作为下一跳的传输层，每一跳用被引用会话自己的地址和认证，主机密钥按各跳自己的地址校验。建跳板的部分（`ssh::tunnel`）SSH 与 Telnet 共用。
@@ -149,7 +149,7 @@
 - **会话与文件夹**：文件中的顺序即显示顺序；拖拽只有一个后端操作 `tree_move`。删除文件夹时内容移到上一级。加载时修正坏引用和循环；指向不存在的文件夹或代理的引用保留（手改的文件），找不到代理的会话报错而不是直连。
 - **导出 / 导入**：与 `vault.json` 同样的信封格式（`format: "zshell-sessions"`、`version: 3`），含文件夹、会话与代理；带密码时整个文件用口令加密，导入时先输口令才能看到内容（见「加密保险库」）。导入时已存在的会话、代理按名称或地址匹配，不重复导入；跳板机与代理随所选会话一并导入；列表里显示导入后会执行的代理命令与会监听的转发规则；文件在显示后变了则拒绝导入，导入的总是显示过的内容。文件可能是别人的，导入的内容经过与保存时相同的校验（`backup.rs`）。
 - **快速连接**：不需要已保存的会话；"另存为会话"改变标签的目标但不重连。
-- **会话日志**：后端在 `SessionSink::write` 里把终端显示的内容交给日志线程，不经过前端，所以不回显的密码不会进日志；日志慢时丢弃放不下的部分并记下缺了多少，不拖住会话。清理只针对 `logs.json` 索引里的文件（`logging.rs`）。
+- **会话日志**：后端在 `SessionSink::write` 里把终端显示的内容交给日志线程，不经过前端，所以不回显的密码不会进日志；日志慢时丢弃放不下的部分并记下缺了多少，不拖住会话。清理只针对 `logs.json` 索引里的文件（`logging/`）。
 - **ssh_config 导入**：一次性复制，之后与 config 无关联。解析库不认识 `Match`、`Include` 也不限层数，所以交给它之前按 OpenSSH 的方式预处理（`import.rs`）。
 - **`~` 与主目录**：私钥路径的 `~` 由后端展开，与 OpenSSH 用同一个目录；主目录下的私钥存成 `~/…`，导出的会话换台电脑也能用。
 - **单会话外观**：会话可以覆盖配色、背景色、字体和字号，只由前端解释，编辑后已打开的标签立即应用。

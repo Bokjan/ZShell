@@ -200,7 +200,7 @@ impl<'de> Deserialize<'de> for ZmodemSettings {
     }
 }
 
-/// Session logs (see `logging.rs`).
+/// Session logs (see `logging/`).
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LogSettings {

@@ -411,7 +411,7 @@ export type LogFormat = "text" | "raw";
 export type LogOpen = { "mode": "auto" } | { "mode": "append", path: string, } | { "mode": "off" };
 
 /**
- * Session logs (see `logging.rs`).
+ * Session logs (see `logging/`).
  */
 export type LogSettings = { 
 /**
