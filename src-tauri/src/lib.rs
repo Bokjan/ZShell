@@ -262,6 +262,8 @@ pub fn run() {
             commands::local_username,
             commands::home_directory,
             commands::config::ssh_config_default_path,
+            commands::config::ssh_default_key_path,
+            commands::config::ssh_key_file_exists,
             commands::config::known_hosts_path,
             commands::config::known_hosts_list,
             commands::config::known_hosts_find,

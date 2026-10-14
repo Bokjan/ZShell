@@ -164,6 +164,13 @@ export const appLock = {
 
 /** The user's home folder, which `~` stands for in key paths. */
 export const homeDirectory = () => invoke<string | null>("home_directory");
+/**
+ * The key file a session set to use one starts with: the first of OpenSSH's default keys
+ * (`~/.ssh/id_ed25519` and so on) that exists here; null if there is none.
+ */
+export const defaultKeyPath = () => invoke<string | null>("ssh_default_key_path");
+/** Whether the key file at `path` (`~/…` included) exists here. */
+export const keyFileExists = (path: string) => invoke<boolean>("ssh_key_file_exists", { path });
 /** The folder the sessions and settings are saved in; created if needed. */
 export const configDirectory = () => invoke<string>("config_directory");
 

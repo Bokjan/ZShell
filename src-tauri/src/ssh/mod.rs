@@ -23,6 +23,7 @@ use crate::forward::{host_port, RemoteRoutes};
 use crate::net::Route;
 use crate::proxy::Proxy;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
+pub use auth::{default_key_path, key_file_exists};
 pub use connections::{Connection, Connections, SshHandle};
 use handler::{ClientHandler, EndReason};
 

@@ -59,6 +59,12 @@ describe("the session form", () => {
     expect([profile.id, profile.folder, profile.commandGroup]).toEqual(["", "f2", undefined]);
   });
 
+  it("names no key file a session doesn't use, which may not exist here", () => {
+    expect(fromProfile(null).keyPath).toBe("");
+    const auto: Profile = { ...saved, connection: { ...saved.connection, auth: { type: "auto" } } as Profile["connection"] };
+    expect(fromProfile(auto).keyPath).toBe("");
+  });
+
   it("says which field can't be saved, on which page", () => {
     const form = fromProfile(saved);
     expect(validate({ ...form, host: " " }, t)).toMatchObject({ page: "general", field: "host" });

@@ -335,6 +335,7 @@
     "chooseKeyButton": "Choisir…",
     "chooseKey": "Choisir une clé privée",
     "keyHint": "Si la clé est protégée par une phrase secrète, celle-ci vous sera demandée dans le terminal à la connexion.",
+    "keyMissing": "Il n’y a aucun fichier à ce chemin sur cet ordinateur.",
     "agentHint": "Utilise les clés chargées dans l’agent SSH du système.",
     "telnetLoginHint": "S’ils sont renseignés, le nom d’utilisateur et le mot de passe sont saisis aux invites de connexion et de mot de passe du serveur ; sinon, le serveur les demande dans le terminal. Les mots de passe sont enregistrés selon le choix fait dans Paramètres › Sécurité.",
     "device": "Périphérique",

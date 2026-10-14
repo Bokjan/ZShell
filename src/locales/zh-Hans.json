@@ -313,6 +313,7 @@
     "chooseKeyButton": "选择…",
     "chooseKey": "选择私钥",
     "keyHint": "如果私钥有口令，连接时会在终端中询问。",
+    "keyMissing": "此电脑上的这个路径没有文件。",
     "agentHint": "使用系统 SSH agent 中已加载的密钥。",
     "telnetLoginHint": "如果填写，用户名和密码会在服务器提示登录和输入密码时自动键入；否则由服务器在终端中询问。密码按“设置 › 安全”中的选择保存。",
     "device": "设备",

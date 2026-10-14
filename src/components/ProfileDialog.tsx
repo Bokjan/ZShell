@@ -4,8 +4,10 @@ import { useTranslation } from "react-i18next";
 import {
   DEFAULT_GROUP,
   DEFAULT_PORTS,
+  defaultKeyPath,
   deleteProfile,
   errorMessage,
+  keyFileExists,
   saveProfile,
   serialPorts,
   type CommandGroup,
@@ -91,6 +93,33 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
   // loaded (or if they couldn't), the profile's stays as it is.
   const shownGroup = !commandGroups || commandGroups.some((group) => group.id === form.commandGroup) ? form.commandGroup : DEFAULT_GROUP;
 
+  // A session set to use a key file starts with a default key found here, as automatic
+  // authentication would use; with none, the field stays empty for the user to choose one.
+  const [defaultKey, setDefaultKey] = useState<string | null>(null);
+  useEffect(() => void defaultKeyPath().then(setDefaultKey, () => {}), []);
+  useEffect(() => {
+    if (ssh && authType === "publicKey" && !form.keyPath && defaultKey) set({ keyPath: defaultKey });
+  }, [ssh, authType, defaultKey]);
+
+  // A key file that isn't here is only pointed out: the session may be for another computer
+  // (exported), or the key may be on a drive not mounted now. Checked once typing pauses.
+  const keyPath = form.keyPath.trim();
+  const [missingKey, setMissingKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!ssh || authType !== "publicKey" || !keyPath) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      void keyFileExists(keyPath).then(
+        (exists) => live && setMissingKey(exists ? null : keyPath),
+        () => {},
+      );
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [ssh, authType, keyPath]);
+
   const refreshPorts = () => void serialPorts().then(setPorts, () => setPorts([]));
   useEffect(() => {
     if (protocol === "serial" && ports === null) refreshPorts();
@@ -164,6 +193,7 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
         usesPassword={usesPassword}
         home={home}
         chooseKey={() => void chooseKey()}
+        keyMissing={missingKey !== null && missingKey === keyPath}
         ports={ports}
         refreshPorts={refreshPorts}
       />

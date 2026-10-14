@@ -16,7 +16,7 @@ use crate::persist::{SetAside, SetAsideFile};
 use crate::proxy::Proxy;
 use crate::quick::{QuickCommandStore, QuickCommands};
 use crate::settings::{Settings, SettingsStore};
-use crate::ssh::{known_hosts, Connections};
+use crate::ssh::{self, known_hosts, Connections};
 use crate::vault::Vault;
 
 use super::{blocking, notified, Change};
@@ -134,6 +134,19 @@ pub async fn proxy_delete(app: AppHandle, window: WebviewWindow, id: String) -> 
 #[tauri::command]
 pub fn ssh_config_default_path() -> Option<PathBuf> {
     import::default_path()
+}
+
+/// The key file a new session set to use one starts with: the first of OpenSSH's default
+/// keys (`~/.ssh/id_ed25519` and so on) that exists; `None` if there is none.
+#[tauri::command]
+pub async fn ssh_default_key_path() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(ssh::default_key_path).await.ok().flatten()
+}
+
+/// Whether the key file at `path` (`~/…` included) exists.
+#[tauri::command]
+pub async fn ssh_key_file_exists(path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || ssh::key_file_exists(&path)).await.unwrap_or(false)
 }
 
 /// `~/.ssh/known_hosts`, whether or not it exists.

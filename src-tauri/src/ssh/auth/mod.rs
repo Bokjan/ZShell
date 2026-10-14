@@ -572,6 +572,18 @@ async fn connect_agent() -> Result<DynAgent> {
     }
 }
 
+/// The first of the key files automatic authentication tries that exists here, as `~/.ssh/…`:
+/// what a session set to use a key file starts with.
+pub fn default_key_path() -> Option<String> {
+    let ssh_dir = std::env::home_dir()?.join(".ssh");
+    DEFAULT_KEYS.iter().find(|name| ssh_dir.join(name).is_file()).map(|name| format!("~/.ssh/{name}"))
+}
+
+/// Whether the key file a session names (`~/…` included) exists here.
+pub fn key_file_exists(path: &str) -> bool {
+    expand_home(path).is_file()
+}
+
 /// `~/…` (or `~\…`) in the home folder: `std::env::home_dir()`, `USERPROFILE` on Windows, the
 /// folder OpenSSH uses too (for `~/.ssh`).
 fn expand_home(path: &str) -> PathBuf {

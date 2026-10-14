@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Profile, Protocol, SerialPortInfo } from "../../lib/api";
@@ -33,14 +34,29 @@ interface Props {
   /** The user's home folder, which `~` stands for in key paths. */
   home: string | null;
   chooseKey(): void;
+  /** Whether the key file named isn't on this computer (saving it is still allowed). */
+  keyMissing: boolean;
   /** The serial ports found here; null until listed. */
   ports: SerialPortInfo[] | null;
   refreshPorts(): void;
 }
 
 /** The session dialog's first page: the name, the protocol, and where and how it connects. */
-export function GeneralPage({ form, set, changeProtocol, profile, password, usesPassword, home, chooseKey, ports, refreshPorts }: Props) {
+export function GeneralPage({
+  form,
+  set,
+  changeProtocol,
+  profile,
+  password,
+  usesPassword,
+  home,
+  chooseKey,
+  keyMissing,
+  ports,
+  refreshPorts,
+}: Props) {
   const { t } = useTranslation();
+  const keyMissingId = useId();
   const { protocol, authType } = form;
   const ssh = protocol === "ssh";
 
@@ -121,12 +137,22 @@ export function GeneralPage({ form, set, changeProtocol, profile, password, uses
               )}
             </span>
             <div className="input-with-button">
-              <input name="keyPath" value={form.keyPath} onChange={(e) => set({ keyPath: e.target.value })} />
+              <input
+                name="keyPath"
+                value={form.keyPath}
+                onChange={(e) => set({ keyPath: e.target.value })}
+                aria-describedby={keyMissing ? keyMissingId : undefined}
+              />
               <button type="button" className="secondary" onClick={chooseKey}>
                 {t("profile.chooseKeyButton")}
               </button>
             </div>
           </label>
+          {keyMissing && (
+            <p className="hint warning" id={keyMissingId}>
+              {t("profile.keyMissing")}
+            </p>
+          )}
           <p className="hint">{t("profile.keyHint")}</p>
         </>
       )}

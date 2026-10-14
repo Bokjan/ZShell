@@ -102,7 +102,8 @@ export function fromProfile(profile: Profile | null, defaults: ProfileDefaults =
     port: String(remote?.port ?? defaults.port ?? 22),
     username: remote?.username ?? defaults.username ?? "",
     authType: ssh?.auth.type ?? "auto",
-    keyPath: ssh?.auth.type === "publicKey" ? ssh.auth.keyPath : "~/.ssh/id_ed25519",
+    // Filled in with a key file found here once a key file is chosen as the method.
+    keyPath: ssh?.auth.type === "publicKey" ? ssh.auth.keyPath : "",
     jumpHosts: remote?.jumpHosts ?? [],
     proxy: remote?.proxy ?? "",
     keepalive: String(remote?.keepaliveInterval ?? 30),
