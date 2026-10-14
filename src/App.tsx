@@ -59,8 +59,6 @@ import { tabMark } from "./lib/terminalSchemes";
 import { checkForUpdates, useUpdates } from "./lib/updates";
 import "./styles.css";
 
-/** Opening more sessions than this at once (a folder) asks first. */
-const OPEN_ALL_CONFIRM = 5;
 /** Quick commands listed in the terminal's menu; the palette has them all. */
 const MENU_COMMANDS = 8;
 /** What terminal full screen hides, whose keys and menu items do nothing meanwhile. */
@@ -193,7 +191,8 @@ function App() {
   const openAll = (folder: Folder) => {
     const { folders, profiles } = directory.get();
     const list = sessionsIn(folder.id, folders, profiles);
-    if (list.length > OPEN_ALL_CONFIRM) setOpeningAll({ folder, profiles: list });
+    // Several tabs (and connections) at once ask first; a single session opens as it would by itself.
+    if (list.length > 1) setOpeningAll({ folder, profiles: list });
     else list.forEach((p) => openProfile(p, "newTab"));
   };
 
