@@ -196,6 +196,17 @@ fn names_are_printable() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Notes keep their lines; blank ones aren't kept, nor written.
+#[test]
+fn keeps_notes_without_trailing_blanks() {
+    let (store, dir) = store("notes");
+    let notes = |notes: &str| store.save(Profile { notes: Some(notes.into()), ..new_profile("web", None) }, None).unwrap().notes;
+    assert_eq!(notes("  Web server\nAsk Bob for root  \n\n").as_deref(), Some("  Web server\nAsk Bob for root"));
+    assert_eq!(notes(" \n\t"), None);
+    assert!(serde_json::to_value(new_profile("web", None)).unwrap().get("notes").is_none());
+    fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A session keeps the settings of its protocol under `connection`.
 #[test]
 fn keeps_protocol_settings_under_connection() {

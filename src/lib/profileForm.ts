@@ -66,6 +66,7 @@ export interface ProfileForm {
   parity: Parity;
   stopBits: number;
   flowControl: FlowControl;
+  notes: string;
 }
 
 export type Field = keyof ProfileForm;
@@ -126,6 +127,7 @@ export function fromProfile(profile: Profile | null, defaults: ProfileDefaults =
     parity: serial.parity,
     stopBits: serial.stopBits,
     flowControl: serial.flowControl,
+    notes: profile?.notes ?? "",
   };
 }
 
@@ -219,6 +221,7 @@ export function toProfile(form: ProfileForm, base: Profile | null, folder: strin
     commandGroup: commandGroup === DEFAULT_GROUP ? undefined : commandGroup,
     // Where a new profile goes; the backend keeps an existing one's folder.
     folder: base?.folder ?? folder,
+    notes: form.notes.trim() ? form.notes : undefined,
   };
 }
 

@@ -16,6 +16,7 @@ import {
   address,
   folderPath,
   isWithin,
+  notesPreview,
   parseQuickConnect,
   rowKey,
   search,
@@ -434,7 +435,9 @@ export function Sidebar(props: Props) {
         setSelected(`p:${profile.id}`);
         openMenu(e, profileMenu(profile));
       }}
-      title={`${profile.name}\n${address(profile.connection)}\n${t("sidebar.openHint")}`}
+      title={[profile.name, address(profile.connection), profile.notes && `\n${notesPreview(profile.notes)}\n`, t("sidebar.openHint")]
+        .filter(Boolean)
+        .join("\n")}
     >
       <span className="tree-icon">
         <ProtocolIcon protocol={profile.connection.protocol} />

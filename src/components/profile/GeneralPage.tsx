@@ -278,6 +278,16 @@ export function GeneralPage({
         </label>
       </div>
       {protocol === "ssh" ? sshFields : protocol === "telnet" ? telnetFields : serialFields}
+      <label>
+        {t("profile.notes")}
+        <textarea
+          rows={3}
+          value={form.notes}
+          onChange={(e) => set({ notes: e.target.value })}
+          placeholder={t("profile.notesPlaceholder")}
+        />
+      </label>
+      <p className="hint">{t("profile.notesHint")}</p>
     </>
   );
 }

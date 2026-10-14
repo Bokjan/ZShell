@@ -494,7 +494,12 @@ commandGroup?: string,
 /**
  * Terminal appearance for this session; unset values follow the settings.
  */
-appearance?: ProfileAppearance, };
+appearance?: ProfileAppearance, 
+/**
+ * What the user notes about the session (what the machine is for, how to get root);
+ * shown with it in the sidebar and found by the search.
+ */
+notes?: string, };
 
 /**
  * Overrides of the terminal settings for one session. Only the frontend interprets them.

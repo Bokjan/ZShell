@@ -41,6 +41,7 @@ const saved: Profile = {
   appearance: { colorScheme: "nord", fontSize: 14 },
   autoLog: true,
   commandGroup: "g1",
+  notes: "Web server\nAsk Bob for root",
 };
 
 describe("the session form", () => {

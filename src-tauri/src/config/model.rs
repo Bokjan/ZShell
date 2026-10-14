@@ -45,6 +45,11 @@ pub struct Profile {
     /// Terminal appearance for this session; unset values follow the settings.
     #[serde(default, skip_serializing_if = "ProfileAppearance::is_empty")]
     pub appearance: ProfileAppearance,
+    /// What the user notes about the session (what the machine is for, how to get root);
+    /// shown with it in the sidebar and found by the search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub notes: Option<String>,
 }
 
 /// What a session connects to, with the settings of its protocol.
@@ -333,6 +338,7 @@ impl Profile {
             auto_log: false,
             command_group: None,
             appearance: ProfileAppearance::default(),
+            notes: None,
         }
     }
 
@@ -425,7 +431,7 @@ impl Profile {
     }
 
     /// Checks and tidies what the user edits beyond the address (encoding, terminal type,
-    /// environment, login commands, appearance).
+    /// environment, login commands, appearance, notes).
     pub(super) fn normalize_session_options(&mut self) -> Result<()> {
         if crate::encoding::lookup(&self.encoding).is_none() {
             return Err(Error::new("profile.invalidEncoding").param("encoding", &self.encoding));
@@ -453,6 +459,7 @@ impl Profile {
             .filter(|command| !command.trim().is_empty())
             .collect();
         self.appearance = std::mem::take(&mut self.appearance).normalize();
+        self.notes = self.notes.take().map(|notes| notes.trim_end().to_owned()).filter(|notes| !notes.trim().is_empty());
         Ok(())
     }
 }

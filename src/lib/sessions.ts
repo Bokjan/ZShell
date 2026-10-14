@@ -81,15 +81,32 @@ export function folderPath(folderId: string | undefined, folders: Folder[]): str
   return path;
 }
 
-/** Sessions whose name, address or user name contain every word of `query`, in tree order. */
+/**
+ * Sessions whose name, address or user name contain every word of `query`, in tree order; then
+ * those found only with their notes, which match more loosely.
+ */
 export function search(query: string, folders: Folder[], profiles: Profile[]): Profile[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const ordered = treeRows(folders, profiles, new Set()).flatMap((row) => (row.kind === "profile" ? [row.profile] : []));
-  return ordered.filter((p) => {
+  const matches = (text: string) => words.every((word) => text.toLowerCase().includes(word));
+  const target = (p: Profile) => {
     const c = p.connection;
-    const text = `${p.name} ${address(c)} ${c.protocol === "serial" ? "" : `${c.username} ${c.host}`}`.toLowerCase();
-    return words.every((word) => text.includes(word));
-  });
+    return `${p.name} ${address(c)} ${c.protocol === "serial" ? "" : `${c.username} ${c.host}`}`;
+  };
+  const byTarget = ordered.filter((p) => matches(target(p)));
+  const byNotes = ordered.filter((p) => !byTarget.includes(p) && p.notes && matches(`${target(p)} ${p.notes}`));
+  return [...byTarget, ...byNotes];
+}
+
+/** Lines of a session's notes shown where it is listed, and characters. */
+const PREVIEW_LINES = 8;
+const PREVIEW_CHARS = 400;
+
+/** The start of a session's notes, for its tooltip: cut at a line or character limit, marked with "…". */
+export function notesPreview(notes: string): string {
+  let preview = notes.split("\n").slice(0, PREVIEW_LINES).join("\n");
+  if (preview.length > PREVIEW_CHARS) preview = preview.slice(0, PREVIEW_CHARS);
+  return preview.length < notes.length ? `${preview.trimEnd()}…` : notes;
 }
 
 export interface QuickTarget {

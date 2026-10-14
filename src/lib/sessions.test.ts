@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Folder, Profile } from "./api";
-import { parseQuickConnect, rowKey, treeRows, withRecent } from "./sessions";
+import { notesPreview, parseQuickConnect, rowKey, search, treeRows, withRecent } from "./sessions";
 
 const folder = (id: string, parent?: string): Folder => ({ id, name: id, parent });
 // Only what the tree looks at.
@@ -48,5 +48,34 @@ describe("withRecent", () => {
     expect(withRecent([], "a")).toEqual(["a"]);
     const full = Array.from({ length: 10 }, (_, i) => `s${i}`);
     expect(withRecent(full, "new")).toEqual(["new", ...full.slice(0, 9)]);
+  });
+});
+
+describe("search", () => {
+  const ssh = (name: string, host: string, notes?: string) =>
+    ({ id: name, name, notes, connection: { protocol: "ssh", host, port: 22, username: "alice" } }) as Profile;
+  const profiles = [ssh("web", "web.lan", "Nginx in front of the db"), ssh("db", "pg.lan"), ssh("cache", "redis.lan", "Next to the DB")];
+
+  it("finds sessions by name, address or user name, every word", () => {
+    expect(search("alice pg", [], profiles).map((p) => p.id)).toEqual(["db"]);
+    expect(search("LAN", [], profiles).map((p) => p.id)).toEqual(["web", "db", "cache"]);
+  });
+
+  it("finds sessions by their notes after the others", () => {
+    expect(search("db", [], profiles).map((p) => p.id)).toEqual(["db", "web", "cache"]);
+    expect(search("nginx web", [], profiles).map((p) => p.id)).toEqual(["web"]);
+  });
+});
+
+describe("notesPreview", () => {
+  it("keeps short notes as they are", () => {
+    expect(notesPreview("Web server\nAsk Bob for root")).toBe("Web server\nAsk Bob for root");
+  });
+
+  it("cuts long notes at a line or character limit", () => {
+    const lines = Array.from({ length: 12 }, (_, i) => `line ${i}`).join("\n");
+    expect(notesPreview(lines).split("\n")).toHaveLength(8);
+    expect(notesPreview(lines).endsWith("line 7…")).toBe(true);
+    expect(notesPreview("x".repeat(1000))).toBe(`${"x".repeat(400)}…`);
   });
 });
