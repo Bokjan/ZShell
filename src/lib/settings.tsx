@@ -147,11 +147,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [textSize]);
 
   // The app font before the default ones (see styles.css), also before painting. A list the
-  // page can't read (a stray quote) is left out: it would take the default ones with it.
+  // page can't read (a stray quote) is left out: it would take the default ones with it. It is
+  // checked as the start of a list, where a value valid alone (`inherit`) may not be.
   const appFont = settings?.appFont ?? "";
   useLayoutEffect(() => {
     const style = document.documentElement.style;
-    if (appFont && CSS.supports("font-family", appFont)) style.setProperty("--app-font", `${appFont},`);
+    if (appFont && CSS.supports("font-family", `${appFont}, sans-serif`)) style.setProperty("--app-font", `${appFont},`);
     else style.removeProperty("--app-font");
   }, [appFont]);
 
