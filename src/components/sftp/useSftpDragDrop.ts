@@ -39,9 +39,10 @@ interface Options {
 
 /**
  * Dragging in and out of the file panel. Files from Finder / Explorer are uploaded into the
- * folder under the pointer, else the one shown. Rows dragged out are downloaded only once
- * dropped on another application (into a folder there, or a temporary one on Windows), and
- * moved when dropped on a folder here.
+ * folder under the pointer, else the one shown; while they are over the panel (`dragOver`),
+ * it shows a drop zone for the one shown, which the list's folders may leave no room for.
+ * Rows dragged out are downloaded only once dropped on another application (into a folder
+ * there, or a temporary one on Windows), and moved when dropped on a folder here.
  */
 export function useSftpDragDrop(options: Options) {
   const [dragOver, setDragOver] = useState(false);

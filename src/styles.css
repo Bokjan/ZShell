@@ -1597,6 +1597,15 @@ body.resizing .terminal-view {
   gap: 2px;
   padding: 6px 8px 4px;
 }
+/* All but the parent folder's button, which the drop zone covers. */
+.sftp-toolbar-rest {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
 .sftp-path {
   position: relative;
   flex: 1;
@@ -1836,15 +1845,33 @@ body.resizing .terminal-view {
   text-align: center;
   color: var(--text-muted);
 }
-.drop-hint {
+/* Over the toolbar but for the parent folder's button while files are dragged over the panel,
+   the same size whatever it says; filled when they would go into the folder shown, as when
+   dropped anywhere on the panel but a folder. */
+.sftp-drop-zone {
   position: absolute;
-  inset: auto 12px 12px;
-  padding: 10px;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px dashed var(--accent);
   border-radius: 6px;
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.sftp-drop-zone span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-drop-zone.drop-target {
+  border-style: solid;
+  border-color: var(--accent-fill);
   background: var(--accent-fill);
   color: var(--on-accent);
-  text-align: center;
-  pointer-events: none;
 }
 
 /* Transfers */

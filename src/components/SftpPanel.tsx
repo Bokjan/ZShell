@@ -407,59 +407,69 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         >
           <ArrowIcon direction="up" />
         </IconButton>
-        <IconButton className="icon-button" label={t("sftp.refresh")} disabled={!cwd} onClick={reload}>
-          <RefreshIcon />
-        </IconButton>
-        <IconButton
-          className="icon-button"
-          label={t("sftp.goToTerminalFolder")}
-          disabled={!connected}
-          onClick={() => void shellFollow.goToShellDir()}
-        >
-          <TerminalIcon />
-        </IconButton>
-        <IconButton
-          className={`icon-button${view.followTerminal ? " on" : ""}`}
-          label={t("sftp.followTerminal")}
-          aria-pressed={view.followTerminal}
-          onClick={() => {
-            const follow = !view.followTerminal;
-            changeView({ followTerminal: follow });
-            if (follow && connected) void shellFollow.goToShellDir();
-          }}
-        >
-          <LinkIcon />
-        </IconButton>
-        <form
-          className="sftp-path"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void load(listing.pathInput.trim() || ".");
-          }}
-        >
-          <PathField
-            sessionId={sessionId}
-            value={listing.pathInput}
-            onChange={listing.setPathInput}
-            onGo={(path) => void load(path)}
-            showHidden={view.showHidden}
-          />
-        </form>
-        <IconButton
-          className={`icon-button${filter !== null ? " on" : ""}`}
-          label={t("sftp.filter")}
-          aria-pressed={filter !== null}
-          onClick={() => (filter === null ? openFilter() : closeFilter())}
-        >
-          <SearchIcon />
-        </IconButton>
-        <IconButton
-          className="icon-button"
-          label={view.showHidden ? t("sftp.hideHiddenFiles") : t("sftp.showHiddenFiles")}
-          onClick={() => changeView({ showHidden: !view.showHidden })}
-        >
-          <EyeIcon crossed={!view.showHidden} />
-        </IconButton>
+        <div className="sftp-toolbar-rest">
+          <IconButton className="icon-button" label={t("sftp.refresh")} disabled={!cwd} onClick={reload}>
+            <RefreshIcon />
+          </IconButton>
+          <IconButton
+            className="icon-button"
+            label={t("sftp.goToTerminalFolder")}
+            disabled={!connected}
+            onClick={() => void shellFollow.goToShellDir()}
+          >
+            <TerminalIcon />
+          </IconButton>
+          <IconButton
+            className={`icon-button${view.followTerminal ? " on" : ""}`}
+            label={t("sftp.followTerminal")}
+            aria-pressed={view.followTerminal}
+            onClick={() => {
+              const follow = !view.followTerminal;
+              changeView({ followTerminal: follow });
+              if (follow && connected) void shellFollow.goToShellDir();
+            }}
+          >
+            <LinkIcon />
+          </IconButton>
+          <form
+            className="sftp-path"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void load(listing.pathInput.trim() || ".");
+            }}
+          >
+            <PathField
+              sessionId={sessionId}
+              value={listing.pathInput}
+              onChange={listing.setPathInput}
+              onGo={(path) => void load(path)}
+              showHidden={view.showHidden}
+            />
+          </form>
+          <IconButton
+            className={`icon-button${filter !== null ? " on" : ""}`}
+            label={t("sftp.filter")}
+            aria-pressed={filter !== null}
+            onClick={() => (filter === null ? openFilter() : closeFilter())}
+          >
+            <SearchIcon />
+          </IconButton>
+          <IconButton
+            className="icon-button"
+            label={view.showHidden ? t("sftp.hideHiddenFiles") : t("sftp.showHiddenFiles")}
+            onClick={() => changeView({ showHidden: !view.showHidden })}
+          >
+            <EyeIcon crossed={!view.showHidden} />
+          </IconButton>
+          {/* Where dragged files go, over the toolbar but for the parent folder's button: a
+            place for the folder shown, which the list's folders may leave none of, that
+            doesn't move the list. */}
+          {dragOver && (
+            <div className={`sftp-drop-zone${dropDir ? "" : " drop-target"}`}>
+              <span>{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</span>
+            </div>
+          )}
+        </div>
       </div>
       <div className="sftp-actions">
         <button
@@ -626,8 +636,6 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         onReopen={(id) => void sftp.editReopen(id).catch(fail)}
         onStopEditing={transfers.stopEditing}
       />
-
-      {dragOver && <div className="drop-hint">{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</div>}
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {uploadMenu && (
