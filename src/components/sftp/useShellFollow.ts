@@ -50,8 +50,7 @@ export function useShellFollow({ paneKey, sessionId, connected, active, follow, 
       setError(t("sftp.shellDirUnknown"));
       return;
     }
-    syncedRef.current = dir;
-    await load(dir);
+    if (await load(dir)) syncedRef.current = dir;
   }, [sessionId, find, load, setError, t]);
 
   const loadRef = useRef(load);
@@ -73,8 +72,11 @@ export function useShellFollow({ paneKey, sessionId, connected, active, follow, 
         const dir = await find(sessionId);
         if (!live) return;
         if (dir && dir !== syncedRef.current) {
-          syncedRef.current = dir;
-          if (dir !== cwdRef.current && (await loadRef.current(dir, true)) && live) {
+          if (dir === cwdRef.current) syncedRef.current = dir;
+          // Only once there: a folder that couldn't be listed (an error, or a reconnection
+          // meanwhile) is tried again the next time the shell may have moved.
+          else if ((await loadRef.current(dir, true)) && live) {
+            syncedRef.current = dir;
             announce(t("sftp.followedTerminal", { path: dir }));
           }
         }
