@@ -290,6 +290,7 @@ pub fn run() {
             commands::session::session_close,
             commands::sftp::sftp_open,
             commands::sftp::sftp_list,
+            commands::sftp::sftp_shell_dir,
             commands::sftp::sftp_mkdir,
             commands::sftp::sftp_rename,
             commands::sftp::sftp_remove,

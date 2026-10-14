@@ -38,6 +38,18 @@ pub async fn sftp_open(
     sftp.canonicalize(".").await.map_err(|e| Error::new("sftp.listFailed").param("path", "~").detail(e))
 }
 
+/// The folder the session's shell is in, where the server lets it be found (Linux); `None`
+/// elsewhere.
+#[tauri::command]
+pub async fn sftp_shell_dir(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    id: SessionId,
+) -> Result<Option<String>> {
+    connection(webview.label(), &sessions, &connections, id)?.shell_dir(id).await.map_err(Error::from)
+}
+
 #[tauri::command]
 pub async fn sftp_list(
     webview: Webview,

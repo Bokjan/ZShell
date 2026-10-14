@@ -21,6 +21,7 @@ use crate::config::SshProfile;
 use crate::error::{Error, Result};
 use crate::forward::{ForwardRule, Forwards, Hub, RemoteRoutes};
 use crate::session::{SessionId, TermIo};
+use crate::sftp::shell_dir::ShellDirs;
 
 pub type SshHandle = client::Handle<ClientHandler>;
 
@@ -51,6 +52,8 @@ pub struct Connection {
     keep_forwards: AtomicBool,
     /// Why the connection ended, once it has (see `ClientHandler`).
     disconnect: watch::Receiver<Option<EndReason>>,
+    /// Its tabs' shells, to find the folder each is in.
+    shell_dirs: Arc<ShellDirs>,
 }
 
 impl Connection {
@@ -64,6 +67,20 @@ impl Connection {
 
     pub fn disconnect_reason(&self) -> watch::Receiver<Option<EndReason>> {
         self.disconnect.clone()
+    }
+
+    /// Notes that session `id` opens its shell now, until the session closes.
+    pub fn shell_opened(&self, id: SessionId, io: &TermIo) {
+        self.shell_dirs.opened(id);
+        let dirs = self.shell_dirs.clone();
+        io.on_close(move || dirs.closed(id));
+    }
+
+    /// The folder session `id`'s shell is in, where the server lets it be found (see
+    /// [`crate::sftp::shell_dir`]).
+    pub async fn shell_dir(&self, id: SessionId) -> anyhow::Result<Option<String>> {
+        let sftp = self.sftp().await?;
+        Ok(self.shell_dirs.find(sftp.as_ref(), id).await)
     }
 
     /// The connection's SFTP session for browsing (and editing), opened on first use.
@@ -288,6 +305,7 @@ impl Connections {
                 forwards: Forwards::new(handle, routes, hub),
                 keep_forwards: AtomicBool::new(false),
                 disconnect,
+                shell_dirs: Arc::default(),
             });
             Self::register(&mut map, id, connection.clone(), io);
             connection

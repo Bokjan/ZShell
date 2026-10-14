@@ -4,9 +4,16 @@ import { errorMessage, sftp, type FileEntry, type SessionId } from "../../lib/ap
 
 /**
  * The folder the file panel shows and its entries. `onNewFolder` runs when another folder is
- * shown (not when the same one is listed again), to start its selection afresh.
+ * shown (not when the same one is listed again), to start its selection afresh. The panel
+ * opens in `startDir` (the terminal's folder), or in the remote home folder without one or if
+ * it can't be listed.
  */
-export function useSftpListing(sessionId: SessionId | null, connected: boolean, onNewFolder: () => void) {
+export function useSftpListing(
+  sessionId: SessionId | null,
+  connected: boolean,
+  onNewFolder: () => void,
+  startDir: (id: SessionId) => Promise<string | null>,
+) {
   const [cwd, setCwd] = useState<string | null>(null);
   const [pathInput, setPathInput] = useState("");
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -18,14 +25,17 @@ export function useSftpListing(sessionId: SessionId | null, connected: boolean, 
   sessionRef.current = sessionId;
   const onNewFolderRef = useRef(onNewFolder);
   onNewFolderRef.current = onNewFolder;
+  const startDirRef = useRef(startDir);
+  startDirRef.current = startDir;
 
   const fail = useCallback((e: unknown) => setError(errorMessage(e)), []);
 
   /** Counts listings asked for: only the latest one's answer is shown. */
   const seqRef = useRef(0);
+  /** Shows the folder at `path`; resolves to whether it did. `quiet`: a failure shows no error. */
   const load = useCallback(
-    async (path: string) => {
-      if (sessionId == null) return;
+    async (path: string, quiet = false) => {
+      if (sessionId == null) return false;
       const seq = ++seqRef.current;
       // A slower answer for a folder opened before, or from the connection before a
       // reconnection, must not replace what came after it.
@@ -33,17 +43,19 @@ export function useSftpListing(sessionId: SessionId | null, connected: boolean, 
       setLoading(true);
       try {
         const listing = await sftp.list(sessionId, path);
-        if (stale()) return;
+        if (stale()) return false;
         // Refreshing keeps the selection; another folder starts afresh.
         if (listing.path !== cwdRef.current) onNewFolderRef.current();
         setCwd(listing.path);
         setPathInput(listing.path);
         setEntries(listing.entries);
         setError(null);
+        return true;
       } catch (e) {
-        if (stale()) return;
+        if (stale() || quiet) return false;
         setPathInput(cwdRef.current ?? "");
         fail(e);
+        return false;
       } finally {
         if (seq === seqRef.current) setLoading(false);
       }
@@ -76,14 +88,14 @@ export function useSftpListing(sessionId: SessionId | null, connected: boolean, 
       return;
     }
     let live = true;
-    sftp.open(sessionId).then(
-      (path) => {
-        if (live) void load(path);
-      },
-      (e) => {
-        if (live) fail(e);
-      },
-    );
+    const open = async () => {
+      const home = await sftp.open(sessionId);
+      const start = live ? await startDirRef.current(sessionId).catch(() => null) : null;
+      if (live && !(start && (await load(start, true))) && live) await load(home);
+    };
+    open().catch((e) => {
+      if (live) fail(e);
+    });
     return () => {
       live = false;
     };

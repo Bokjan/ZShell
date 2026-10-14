@@ -5,12 +5,14 @@ export type SortKey = "name" | "size" | "modified";
 
 export interface FileView {
   showHidden: boolean;
+  /** Whether the panel goes to each folder its terminal's shell goes to. */
+  followTerminal: boolean;
   sort: SortKey;
   descending: boolean;
 }
 
 const VIEW_KEY = "zshell.fileView";
-const DEFAULT_VIEW: FileView = { showHidden: true, sort: "name", descending: false };
+const DEFAULT_VIEW: FileView = { showHidden: true, followTerminal: false, sort: "name", descending: false };
 
 /** How the file panel lists files; layout state, kept per machine like the sidebar width. */
 export function storedView(): FileView {

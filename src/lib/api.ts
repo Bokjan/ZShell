@@ -354,6 +354,8 @@ export const sftp = {
   /** Opens the session's SFTP channel; resolves to the remote home directory. */
   open: (id: SessionId) => invoke<string>("sftp_open", { id }),
   list: (id: SessionId, path: string) => invoke<Listing>("sftp_list", { id, path }),
+  /** The folder the session's shell is in, where the server lets it be found (Linux); null elsewhere. */
+  shellDir: (id: SessionId) => invoke<string | null>("sftp_shell_dir", { id }),
   mkdir: (id: SessionId, path: string) => invoke<void>("sftp_mkdir", { id, path }),
   rename: (id: SessionId, from: string, to: string) => invoke<void>("sftp_rename", { id, from, to }),
   remove: (id: SessionId, path: string) => invoke<void>("sftp_remove", { id, path }),

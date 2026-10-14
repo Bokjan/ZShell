@@ -4,6 +4,7 @@ pub mod drag;
 pub mod edit;
 pub mod names;
 pub mod replace;
+pub mod shell_dir;
 pub mod transfer;
 
 use std::sync::Arc;

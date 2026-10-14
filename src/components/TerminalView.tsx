@@ -23,6 +23,7 @@ import type { PaneSession } from "../lib/paneSession";
 import { isMac } from "../lib/platform";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../lib/settings";
+import { parseOsc7, shellDirs } from "../lib/shellDirs";
 import { useShortcuts } from "../lib/shortcuts";
 import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
@@ -71,6 +72,12 @@ const PASTE_PREVIEW = 4000;
  */
 const SIZE_SHOWN_MS = 1150;
 const SIZE_SETTLE_MS = 500;
+
+/**
+ * How long the output pauses after a command is entered before the shell counts as back at its
+ * prompt, maybe in another folder (which the file panel may follow).
+ */
+const PROMPT_SETTLE_MS = 300;
 
 const ignore = () => {};
 
@@ -329,10 +336,36 @@ export function TerminalView({
       hideSize = setTimeout(() => setSizeShown(null), SIZE_SHOWN_MS);
     };
 
+    // Once a command is entered (Enter, or a paste with a line break), the next pause in the
+    // output tells the file panel that the shell may have changed folders.
+    let entered = false;
+    let promptSettle: ReturnType<typeof setTimeout> | undefined;
+    const waitForPrompt = () => {
+      clearTimeout(promptSettle);
+      promptSettle = setTimeout(() => {
+        entered = false;
+        shellDirs.mayHaveMoved(paneKey);
+      }, PROMPT_SETTLE_MS);
+    };
+
     const subscriptions: IDisposable[] = [
       // Reports are for the program in this pane only, so not synced to other panes.
       term.onData((data) => {
-        if (session.input(data) && !pasting && !isTerminalReport(data)) onInputRef.current(data);
+        const report = isTerminalReport(data);
+        if (!report && data.includes("\r")) {
+          entered = true;
+          waitForPrompt();
+        }
+        if (session.input(data) && !pasting && !report) onInputRef.current(data);
+      }),
+      term.onWriteParsed(() => {
+        if (entered) waitForPrompt();
+      }),
+      // The folder the shell reports, where it is set up to (OSC 7).
+      term.parser.registerOscHandler(7, (data) => {
+        const path = parseOsc7(data);
+        if (path) shellDirs.report(paneKey, path);
+        return true;
       }),
       term.onBinary((data) => session.inputBinary(data)),
       term.onResize(({ cols, rows }) => {
@@ -351,6 +384,8 @@ export function TerminalView({
     return () => {
       clearTimeout(start);
       clearTimeout(hideSize);
+      clearTimeout(promptSettle);
+      shellDirs.forget(paneKey);
       window.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("mousedown", onMouseDown, true);

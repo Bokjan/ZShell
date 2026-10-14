@@ -6,7 +6,13 @@ import { parseMode, visibleEntries, type FileView } from "./fileList";
 // Only what the list looks at.
 const file = (name: string, size = 0, modified: number | null = null) => ({ name, isDir: false, size, modified }) as FileEntry;
 const dir = (name: string, modified: number | null = null) => ({ name, isDir: true, size: 0, modified }) as FileEntry;
-const view = (changes: Partial<FileView> = {}): FileView => ({ showHidden: true, sort: "name", descending: false, ...changes });
+const view = (changes: Partial<FileView> = {}): FileView => ({
+  showHidden: true,
+  followTerminal: false,
+  sort: "name",
+  descending: false,
+  ...changes,
+});
 const names = (entries: FileEntry[]) => entries.map((entry) => entry.name);
 
 describe("visibleEntries", () => {

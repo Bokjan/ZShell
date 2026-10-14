@@ -14,17 +14,20 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
-import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, FileIcon, FolderIcon, RefreshIcon, SearchIcon } from "./icons";
+import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, FileIcon, FolderIcon, LinkIcon, RefreshIcon, SearchIcon, TerminalIcon } from "./icons";
 import { ChmodDialog } from "./sftp/ChmodDialog";
 import { fileMenu, folderMenu, type FileActions } from "./sftp/menus";
 import { PathField } from "./sftp/PathField";
 import { useConfirmQueue } from "./sftp/useConfirmQueue";
 import { useSftpDragDrop } from "./sftp/useSftpDragDrop";
+import { useShellFollow } from "./sftp/useShellFollow";
 import { useSftpListing } from "./sftp/useSftpListing";
 import { parentPath, useTransfers } from "./sftp/useTransfers";
 import { TransferList } from "./TransferList";
 
 interface Props {
+  /** The pane whose connection it shows, and whose terminal it may follow. */
+  paneKey: number;
   sessionId: SessionId | null;
   connected: boolean;
   /** Whether this panel is visible and should receive file drops. */
@@ -49,7 +52,7 @@ const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name 
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
  */
-export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, onQuestions }: Props) {
+export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, onEdits, onQuestions }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<FileView>(storedView);
   /** The name filter; null while the filter field is closed. */
@@ -69,11 +72,29 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
 
-  const listing = useSftpListing(sessionId, connected, () => {
-    setSelection(NO_SELECTION);
-    setFilter(null);
-  });
+  // Set below, once the listing it opens is there.
+  const startDirRef = useRef<(id: SessionId) => Promise<string | null>>(async () => null);
+  const listing = useSftpListing(
+    sessionId,
+    connected,
+    () => {
+      setSelection(NO_SELECTION);
+      setFilter(null);
+    },
+    (id) => startDirRef.current(id),
+  );
   const { cwd, entries, loading, error, fail, load, reload } = listing;
+  const shellFollow = useShellFollow({
+    paneKey,
+    sessionId,
+    connected,
+    active,
+    follow: view.followTerminal,
+    cwdRef: listing.cwdRef,
+    load,
+    setError: listing.setError,
+  });
+  startDirRef.current = shellFollow.startDir;
   const { confirm, count: questions, ask, answered } = useConfirmQueue();
   const onQuestionsRef = useRef(onQuestions);
   onQuestionsRef.current = onQuestions;
@@ -379,6 +400,26 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
         </IconButton>
         <IconButton className="icon-button" label={t("sftp.refresh")} disabled={!cwd} onClick={reload}>
           <RefreshIcon />
+        </IconButton>
+        <IconButton
+          className="icon-button"
+          label={t("sftp.goToTerminalFolder")}
+          disabled={!connected}
+          onClick={() => void shellFollow.goToShellDir()}
+        >
+          <TerminalIcon />
+        </IconButton>
+        <IconButton
+          className={`icon-button${view.followTerminal ? " on" : ""}`}
+          label={t("sftp.followTerminal")}
+          aria-pressed={view.followTerminal}
+          onClick={() => {
+            const follow = !view.followTerminal;
+            changeView({ followTerminal: follow });
+            if (follow && connected) void shellFollow.goToShellDir();
+          }}
+        >
+          <LinkIcon />
         </IconButton>
         <form
           className="sftp-path"

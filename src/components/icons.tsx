@@ -323,3 +323,24 @@ export function FileIcon({ size = "1em" }: { size?: number | string }) {
     </Svg>
   );
 }
+
+/** A terminal window with a prompt, for going to the folder the terminal's shell is in. */
+export function TerminalIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size} strokeWidth={1.3}>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <path d="M4.5 6l2.2 2-2.2 2M8.5 10.5h3" />
+    </Svg>
+  );
+}
+
+/** Two links of a chain, for the file panel following the terminal. */
+export function LinkIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <path d="M6.5 9.5l3-3" />
+      <path d="M7.2 4.3l1-1a2.6 2.6 0 0 1 3.7 3.7l-1 1" />
+      <path d="M8.8 11.7l-1 1a2.6 2.6 0 0 1-3.7-3.7l1-1" />
+    </Svg>
+  );
+}

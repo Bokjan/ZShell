@@ -41,8 +41,8 @@ pub async fn run(profile: SshProfile, route: Route, id: SessionId, mut io: TermI
 /// Session backend for a duplicated tab: a new shell on `connection`, which is already
 /// registered for this session. No prompts, no auto-started forwards: like a second
 /// OpenSSH session through a ControlMaster.
-pub async fn run_shared(connection: Arc<Connection>, mut io: TermIo) {
-    let outcome = match open_shell(connection.handle(), connection.profile(), &mut io).await {
+pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo) {
+    let outcome = match open_shell(&connection, id, &mut io).await {
         Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason()).await,
         Err(e) => Outcome::Failed(e.into()),
     };
@@ -139,15 +139,16 @@ async fn start(
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io);
     connections.auto_start(&connection, carry);
-    let channel = open_shell(&session, profile, io).await?;
+    let channel = open_shell(&connection, id, io).await?;
     Ok((channel, disconnect))
 }
 
 /// Starts an interactive shell in a new channel on an authenticated connection, with the
 /// profile's terminal type, environment and agent forwarding. Like OpenSSH, rejected
 /// environment variables are not reported (the server's `AcceptEnv` decides).
-async fn open_shell(session: &SshHandle, profile: &SshProfile, io: &mut TermIo) -> Result<Channel<Msg>> {
-    let channel = session.channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
+async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> Result<Channel<Msg>> {
+    let profile = connection.profile();
+    let channel = connection.handle().channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
     if profile.ssh.forward_agent {
         channel.agent_forward(false).await?;
     }
@@ -156,6 +157,8 @@ async fn open_shell(session: &SshHandle, profile: &SshProfile, io: &mut TermIo) 
     for var in &profile.ssh.env {
         channel.set_env(false, var.name.clone(), var.value.clone()).await?;
     }
+    // In the order the server starts the shells, which is how their folders are found.
+    connection.shell_opened(id, io);
     channel.request_shell(false).await?;
     io.event(SessionEvent::Connected);
     Ok(channel)

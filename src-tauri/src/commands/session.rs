@@ -208,7 +208,7 @@ impl Backend {
     async fn run(self, id: SessionId, io: TermIo) {
         match self {
             Backend::Ssh { profile, route, connections, carry } => ssh::run(profile, route, id, io, connections, carry).await,
-            Backend::Shared { connection, .. } => ssh::run_shared(connection, io).await,
+            Backend::Shared { connection, .. } => ssh::run_shared(connection, id, io).await,
             Backend::Telnet { remote, route, password_of } => {
                 // Looked up in the session's task when the server asks; `block_in_place` lets
                 // the other tasks move to other threads while the keychain waits.

@@ -23,7 +23,7 @@ interface Options {
   cwdRef: RefObject<string | null>;
   entries: FileEntry[];
   /** Lists `path` again (see `useSftpListing`). */
-  load(path: string): Promise<void>;
+  load(path: string): Promise<unknown>;
   ask(question: Confirm): void;
   fail(e: unknown): void;
   /** How many uploads and downloads are running, each time that changes. */

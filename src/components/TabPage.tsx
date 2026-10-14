@@ -154,6 +154,7 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
           <div className="side-panel-page" style={{ display: shown("files") ? undefined : "none" }}>
             <DialogsHidden.Provider value={!active || !shown("files")}>
               <SftpPanel
+                paneKey={pane.key}
                 sessionId={pane.sessionId}
                 connected={connected}
                 active={active && shown("files")}
