@@ -1,8 +1,8 @@
 # Builds the macOS, Windows and Linux packages; only when run by hand (`scripts/release.sh publish`),
 # since version tags are also pushed for versions that are not released.
-# - Run on a tag vX.Y.Z (matching the version in src-tauri/Cargo.toml), it creates a draft
-#   GitHub release with the packages attached and, as its notes, the sections of
-#   CHANGELOG.md for every version since the previous published release
+# - Run on a tag vX.Y.Z (matching the version in src-tauri/Cargo.toml) whose commit passed
+#   CI, it creates a draft GitHub release with the packages attached and, as its notes, the
+#   sections of CHANGELOG.md for every version since the previous published release
 #   (scripts/release-notes.sh); publish it by hand after checking it.
 # - Run on a branch, it only builds.
 # Either way, the packages are also attached to the run as workflow artifacts.
@@ -10,6 +10,11 @@
 # Store, which signs it on submission, can install it. It is always a workflow artifact,
 # uploaded to Partner Center by hand. "Microsoft Store only" skips the other packages, and
 # so creates no release.
+#
+# Only the last job, which creates the release from the workflow artifacts, can write to
+# the repository: the build jobs run third-party code (actions, build scripts) with a
+# read-only token. Actions are pinned to a commit (Dependabot updates the hash and the
+# version comment), so that a moved tag can't change what runs.
 name: Release
 
 on:
@@ -21,16 +26,21 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  create-release:
+  # Fails early, before the builds, on what would stop the release at the end.
+  check:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.release.outputs.id }}
+    permissions:
+      contents: read
+      # To find the CI run of the tag's commit.
+      actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Check that the tag matches the app version
         run: |
           version=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d '"' -f 2)
@@ -38,109 +48,129 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match version $version in src-tauri/Cargo.toml"
             exit 1
           fi
-      # Every version's section since the previous published release, since not every
-      # version is released.
-      - name: Read the release notes from CHANGELOG.md
+      - name: Check that the release notes can be read from CHANGELOG.md
         if: ${{ !inputs.store_only }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md" || [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+          if ! scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > /dev/null; then
             echo "::error::Could not read the release notes for $GITHUB_REF_NAME from CHANGELOG.md"
             exit 1
           fi
-      # Created once here, so the parallel build jobs upload into the same release instead
-      # of racing to create it.
-      - name: Create a draft release
-        if: ${{ !inputs.store_only }}
-        id: release
+      # The build jobs don't run the tests. The tag's commit is normally pushed to main with
+      # it, which runs CI; waits for that run if it is still going.
+      - name: Check that CI passed on the tag's commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-            -f tag_name="$GITHUB_REF_NAME" -f name="ZShell $GITHUB_REF_NAME" \
-            -f body="$(cat "$RUNNER_TEMP/notes.md")" -F draft=true --jq .id)
-          echo "id=$id" >> "$GITHUB_OUTPUT"
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run" ]; then
+            echo "::error::CI has not run on $GITHUB_SHA; push it to main first: git push origin main $GITHUB_REF_NAME"
+            exit 1
+          fi
+          if ! gh run watch "$run" --repo "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null; then
+            echo "::error::CI failed on $GITHUB_SHA: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+            exit 1
+          fi
 
   macos:
-    needs: create-release
-    # Also runs when create-release was skipped (manual runs).
+    needs: check
+    # Also runs when check was skipped (runs on a branch).
     if: ${{ !failure() && !cancelled() && !inputs.store_only }}
     name: macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
+          toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       # A cache saved on a tag is only visible to runs on that same tag, so never reused.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       # Third-party license notices, which the frontend build embeds; fails without
       # cargo-about rather than leaving out the Rust crates.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-about
       - run: pnpm licenses:generate
       # Universal binary for Apple Silicon and Intel: .app and .dmg.
-      - uses: tauri-apps/tauri-action@v1
+      - run: pnpm tauri build --target universal-apple-darwin
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Ad-hoc signature (no certificate) so that the downloaded bundle is consistently
           # signed; Apple Silicon refuses to run unsigned code.
           APPLE_SIGNING_IDENTITY: '-'
+      # The .app is a directory: archived with tar, since a workflow artifact (a zip) would
+      # lose the executable's permissions and the bundle's symlinks.
+      - name: Collect the packages
+        env:
+          PACKAGES: ${{ runner.temp }}/packages
+        run: |
+          version=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d '"' -f 2)
+          bundle=src-tauri/target/universal-apple-darwin/release/bundle
+          mkdir -p "$PACKAGES"
+          cp "$bundle"/dmg/*.dmg "$PACKAGES"
+          tar -czf "$PACKAGES/ZShell_${version}_universal.app.tar.gz" -C "$bundle/macos" ZShell.app
+          ls "$PACKAGES"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target universal-apple-darwin
-          uploadWorkflowArtifacts: true
+          name: macOS
+          path: ${{ runner.temp }}/packages/*
 
   # The deb and rpm packages (tauri.linux.conf.json), x64. Built on the oldest Ubuntu runner,
   # since the executable needs at least the glibc it was built with: 2.35, older than Debian
   # 12's and Fedora's.
   linux:
-    needs: create-release
+    needs: check
     if: ${{ !failure() && !cancelled() && !inputs.store_only }}
     name: Linux
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Linux libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev libxdo-dev librsvg2-dev libdbus-1-dev
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-about
       - run: pnpm licenses:generate
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm tauri build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          uploadWorkflowArtifacts: true
+          name: Linux
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
 
   # Every Windows package but the Store bundle, from one x64 build whose executable is also
   # the one in the Store bundle:
@@ -148,7 +178,7 @@ jobs:
   # - The bare executable, runnable without installing (needs the WebView2 runtime, which
   #   Windows 11 and up-to-date Windows 10 include).
   windows-x64:
-    needs: create-release
+    needs: check
     if: ${{ !failure() && !cancelled() }}
     name: Windows x64
     runs-on: windows-latest
@@ -156,30 +186,33 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
+          toolchain: stable
           targets: x86_64-pc-windows-msvc
       # A cache saved on a tag is only visible to runs on that same tag, so never reused.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-about
       - run: pnpm licenses:generate
       - run: pnpm tauri build --target x86_64-pc-windows-msvc ${{ inputs.store_only && '--no-bundle' || '' }}
       # For the msix job; only lives as long as the run needs it.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zshell-x64
           path: src-tauri/target/x86_64-pc-windows-msvc/release/zshell.exe
@@ -197,13 +230,7 @@ jobs:
           Copy-Item "$release/bundle/nsis/*-setup.exe", "$release/bundle/msi/*.msi" $env:PACKAGES
           Copy-Item "$release/zshell.exe" "$env:PACKAGES/ZShell_${version}_x64_standalone.exe"
           Get-ChildItem $env:PACKAGES | ForEach-Object Name
-      - name: Upload to the release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.store_only }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PACKAGES: ${{ runner.temp }}/packages
-        run: gh release upload "$env:GITHUB_REF_NAME" (Get-ChildItem $env:PACKAGES)
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !inputs.store_only }}
         with:
           name: Windows
@@ -213,7 +240,7 @@ jobs:
   # compiling it after x64 on one runner doubled the job's time). ring needs clang for
   # ARM64, which the runner image includes.
   windows-arm64:
-    needs: create-release
+    needs: check
     if: ${{ !failure() && !cancelled() }}
     name: Windows ARM64
     runs-on: windows-11-arm
@@ -221,28 +248,31 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
+          toolchain: stable
           targets: aarch64-pc-windows-msvc
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-about
       - run: pnpm licenses:generate
       - run: pnpm tauri build --no-bundle --target aarch64-pc-windows-msvc
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zshell-arm64
           path: src-tauri/target/aarch64-pc-windows-msvc/release/zshell.exe
@@ -251,7 +281,7 @@ jobs:
   # The Microsoft Store bundle (x64 and ARM64), only as a workflow artifact.
   msix:
     needs: [windows-x64, windows-arm64]
-    # A skipped create-release would otherwise skip this job too.
+    # A skipped check would otherwise skip this job too.
     if: ${{ !failure() && !cancelled() }}
     name: Microsoft Store
     runs-on: windows-latest
@@ -259,18 +289,50 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Where scripts/package-msix.ps1 looks for the executables.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: zshell-x64
           path: src-tauri/target/x86_64-pc-windows-msvc/release
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: zshell-arm64
           path: src-tauri/target/aarch64-pc-windows-msvc/release
       - run: scripts/package-msix.ps1
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Microsoft Store
           path: src-tauri/target/msix/*.msixbundle
+
+  # The draft release, with every package from the build jobs' workflow artifacts. The only
+  # job that can write to the repository, and it runs no build tools or third-party actions
+  # besides checkout and download-artifact.
+  release:
+    needs: [check, macos, linux, windows-x64]
+    if: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.store_only }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: '{macOS,Linux,Windows}'
+          path: ${{ runner.temp }}/packages
+          merge-multiple: true
+      # Every version's section since the previous published release, since not every
+      # version is released.
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ runner.temp }}/packages
+        run: |
+          ls "$PACKAGES"
+          scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "ZShell $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" "$PACKAGES"/*
