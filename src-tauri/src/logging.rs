@@ -7,6 +7,10 @@
 //! (a network drive, a sleeping disk) never holds up the session. When the queue is full,
 //! output is left out of the log, and a line in it says how much.
 //!
+//! New log files are readable by their owner only (on Unix), as the other files ZShell
+//! writes are: they can hold what was typed and shown, passwords echoed by mistake
+//! included, in a folder the user may share.
+//!
 //! Logs that ZShell writes are listed in `logs.json`, so cleaning up (by age, for a session,
 //! or all) only ever deletes files it created, never others in the log folder, and finds a
 //! session's logs after it was renamed.
@@ -15,6 +19,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -26,7 +31,7 @@ use ts_rs::TS;
 use unicode_width::UnicodeWidthChar;
 
 use crate::error::{Error, Result};
-use crate::local_name::{create_unique_file, local_file_name};
+use crate::local_name::{create_unique, local_file_name};
 use crate::persist::{JsonFile, SetAside};
 use crate::settings::{LogFormat, LogSettings};
 
@@ -76,6 +81,15 @@ struct Queue {
     path: PathBuf,
     /// Why the writer stopped, if writing failed.
     failure: Arc<Mutex<Option<String>>>,
+    /// Where `dropped` goes when the log stops, for the writer to note at the end.
+    left_out: Arc<AtomicUsize>,
+}
+
+impl Drop for Queue {
+    fn drop(&mut self) {
+        // Before `chunks` is dropped, which ends the writer.
+        self.left_out.store(self.dropped, Ordering::Release);
+    }
 }
 
 /// A session's log, if one is being written; shared by everything that writes to the
@@ -140,6 +154,8 @@ struct LogWriter {
     _active: Active,
     /// Where `run` leaves why writing failed.
     failure: Arc<Mutex<Option<String>>>,
+    /// Output left out after the last chunk, once the log has stopped (see `Queue`).
+    left_out: Arc<AtomicUsize>,
 }
 
 impl LogWriter {
@@ -188,7 +204,14 @@ impl LogWriter {
                 Ok(Chunk::Dropped(bytes)) => self.note(&t!("log.dropped", bytes = bytes)),
                 Err(RecvTimeoutError::Timeout) if self.dirty => self.flush(),
                 Err(RecvTimeoutError::Timeout) => Ok(()),
-                Err(RecvTimeoutError::Disconnected) => return,
+                Err(RecvTimeoutError::Disconnected) => {
+                    // Nothing is told of a failure now: the session may be gone, or stopped
+                    // logging.
+                    if let Err(e) = self.close() {
+                        eprintln!("session log {}: {e}", self._active.path.display());
+                    }
+                    return;
+                }
             };
             if let Err(e) = written {
                 *self.failure.lock().unwrap() = Some(e.to_string());
@@ -196,8 +219,24 @@ impl LogWriter {
             }
         }
     }
+
+    /// Ends the log: notes output left out at the end, and writes out the unfinished line.
+    fn close(&mut self) -> std::io::Result<()> {
+        match self.left_out.load(Ordering::Acquire) {
+            0 => {
+                if let Some((_, line)) = &mut self.text {
+                    line.finish();
+                    self.file.write_all(&line.out)?;
+                    line.out.clear();
+                }
+                self.flush()
+            }
+            bytes => self.note(&t!("log.dropped", bytes = bytes)),
+        }
+    }
 }
 
+/// For a writer that never ran, or stopped on a failure; `close` leaves nothing to do.
 impl Drop for LogWriter {
     fn drop(&mut self) {
         if let Some((_, line)) = &mut self.text {
@@ -458,16 +497,23 @@ impl Logs {
         let dir = self.directory(settings);
         let path = dir.join(file_name(&settings.file_name, &slot.info));
         let (path, file) = std::fs::create_dir_all(&dir)
-            .and_then(|_| create_unique_file(&path))
+            .and_then(|_| create_unique(&path, create_private))
             .map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
         let info = &slot.info;
         let address = if info.user.is_empty() { info.host.clone() } else { format!("{}@{}", info.user, info.host) };
         let header = t!("log.started", session = info.session, address = address, time = now());
-        // Not in the index yet, so no cleanup or deletion can see it.
+        // Counted as written before it is in the index, so no cleanup or deletion can see it.
         let active = self.active.add(path.clone());
-        self.install(slot, path.clone(), file, active, settings, &header, false)?;
-        self.remember(Entry { path: path.clone(), profile: info.profile.clone() });
-        Ok(path)
+        // A log missing from the index would never be cleaned up or deleted with the others:
+        // none is written then.
+        let started = self
+            .remember(Entry { path: path.clone(), profile: info.profile.clone() })
+            .and_then(|()| self.install(slot, path.clone(), file, active, settings, &header, false));
+        if started.is_err() {
+            self.forget(&path);
+            let _ = std::fs::remove_file(&path);
+        }
+        started.map(|()| path)
     }
 
     /// Goes on with `path` after a reconnection, marking where the new connection starts.
@@ -515,7 +561,7 @@ impl Logs {
     ) -> Result<()> {
         let text =
             (settings.format == LogFormat::Text).then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
-        let failure = Arc::new(Mutex::new(None));
+        let (failure, left_out) = (Arc::new(Mutex::new(None)), Arc::new(AtomicUsize::new(0)));
         let mut writer = LogWriter {
             file: BufWriter::new(file),
             text,
@@ -523,6 +569,7 @@ impl Logs {
             dirty: false,
             _active: active,
             failure: failure.clone(),
+            left_out: left_out.clone(),
         };
         let (chunks, queued) = sync_channel(QUEUE);
         if after_others {
@@ -538,7 +585,7 @@ impl Logs {
             writer.note(note).map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
             thread::spawn(move || writer.run(queued));
         }
-        *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0, path, failure });
+        *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0, path, failure, left_out });
         Ok(())
     }
 
@@ -547,13 +594,28 @@ impl Logs {
         slot.queue.lock().unwrap().take();
     }
 
-    fn remember(&self, entry: Entry) {
+    fn remember(&self, entry: Entry) -> Result<()> {
         let mut index = self.index.lock().unwrap();
         index.push(entry);
-        let _ = self.index_file.write(&*index);
+        let written = self.index_file.write(&*index);
+        if written.is_err() {
+            index.pop();
+        }
+        written
     }
 
-    /// The logs that still exist, forgetting the others (deleted by hand).
+    fn forget(&self, path: &Path) {
+        let mut index = self.index.lock().unwrap();
+        let before = index.len();
+        index.retain(|entry| entry.path != path);
+        if index.len() != before {
+            let _ = self.index_file.write(&*index);
+        }
+    }
+
+    /// The logs that still exist, forgetting the others (deleted by hand). Here and after
+    /// deleting, the index is only written for what is gone: if that fails, it is forgotten
+    /// again next time.
     fn existing(&self) -> std::sync::MutexGuard<'_, Vec<Entry>> {
         let mut index = self.index.lock().unwrap();
         let before = index.len();
@@ -609,6 +671,15 @@ impl Logs {
         };
         self.delete(|entry| modified(&entry.path).is_some_and(|time| time < cutoff))
     }
+}
+
+/// A new log file, readable by its owner only.
+fn create_private(path: &Path) -> std::io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options.open(path)
 }
 
 fn modified(path: &Path) -> Option<SystemTime> {
@@ -701,6 +772,8 @@ mod tests {
         let slot = LogSlot::new(LogInfo::default());
         let path = logs.start(&slot, &settings).unwrap();
         let header = std::fs::read(&path).unwrap();
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&path.metadata().unwrap().permissions()) & 0o777, 0o600);
 
         // Not flushed on every chunk, but once the output pauses.
         slot.write(b"one ");
@@ -722,7 +795,7 @@ mod tests {
     fn output_is_left_out_while_the_writer_is_behind() {
         let (chunks, queued) = sync_channel(2);
         let failure = Arc::new(Mutex::new(None));
-        let queue = Queue { chunks, dropped: 0, path: PathBuf::from("web.log"), failure: failure.clone() };
+        let queue = Queue { chunks, dropped: 0, path: PathBuf::from("web.log"), failure: failure.clone(), left_out: Arc::default() };
         let slot = LogSlot { info: LogInfo::default(), queue: Mutex::new(Some(queue)) };
         for chunk in [b"a".as_slice(), b"b", b"cc", b"ddd"] {
             slot.write(chunk);
@@ -753,6 +826,48 @@ mod tests {
         assert!(slot.write(b"g").is_none());
     }
 
+    /// Output left out just before the log stops is noted at its end, not lost with the queue.
+    #[test]
+    fn output_left_out_at_the_end_is_noted() {
+        let path = std::env::temp_dir().join(format!("zshell-log-left-out-{}", std::process::id()));
+        let left_out = Arc::new(AtomicUsize::new(0));
+        let (chunks, queued) = sync_channel(1);
+        let queue = Queue { chunks, dropped: 0, path: path.clone(), failure: Arc::default(), left_out: left_out.clone() };
+        let slot = LogSlot { info: LogInfo::default(), queue: Mutex::new(Some(queue)) };
+        slot.write(b"kept");
+        slot.write(b"lost");
+        let writer = LogWriter {
+            file: BufWriter::new(File::create(&path).unwrap()),
+            text: None,
+            flushed: Instant::now(),
+            dirty: false,
+            _active: Arc::new(ActiveLogs::default()).add(path.clone()),
+            failure: Arc::default(),
+            left_out,
+        };
+        // As `Logs::stop` does.
+        slot.queue.lock().unwrap().take();
+        writer.run(queued);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), format!("kept{}\n", t!("log.dropped", bytes = 4)));
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A log that can't be listed in the index (so would never be cleaned up) isn't written.
+    #[test]
+    fn a_log_is_only_written_once_it_is_in_the_index() {
+        let dir = std::env::temp_dir().join(format!("zshell-logs-index-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // Can't be read, so is never written.
+        std::fs::create_dir_all(dir.join("logs.json")).unwrap();
+        let logs = Logs::load(dir.join("logs.json"), dir.join("Logs"), &SetAside::default());
+        let slot = LogSlot::new(LogInfo::default());
+        assert_eq!(logs.start(&slot, &LogSettings::default()).unwrap_err().code(), "config.unreadable");
+        assert!(slot.queue.lock().unwrap().is_none());
+        assert_eq!(std::fs::read_dir(dir.join("Logs")).unwrap().count(), 0);
+        assert_eq!(logs.summary().count, 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A writer that can't write stops and leaves why.
     #[test]
     fn a_failing_writer_says_why() {
@@ -769,6 +884,7 @@ mod tests {
             dirty: false,
             _active: active,
             failure: failure.clone(),
+            left_out: Arc::default(),
         };
         let (chunks, queued) = sync_channel(2);
         chunks.send(Chunk::Output(vec![b'x'; 64 << 10])).unwrap();
