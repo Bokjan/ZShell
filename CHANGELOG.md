@@ -2,6 +2,32 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.2.0] - 2026-10-14
+
+### Features
+
+- The file panel opens in the folder the terminal's shell is in, has a button to go there at any time, and can follow the shell into each folder it goes to (a toggle in its toolbar, off by default). On Linux servers the folder is read from `/proc` without running anything on the server; elsewhere it is the folder the shell reports (OSC 7).
+- While a path is typed in the file panel's path field, the matching folders are listed below it: Tab completes as a shell does, the arrow keys pick a folder, and Enter goes to it.
+- Sessions have notes, on the General page of the session dialog. They show in the session's tooltip in the sidebar, the search finds sessions by them, and exports carry them.
+- Opening a session from the sidebar while the current pane is that session, disconnected, connects again in that pane instead of opening another tab. The session menu's Connect in New Tab is now Connect.
+- A tab in the background gets a ring on its status light when its terminal has new output, until it is shown. It can be turned off in Settings › Tabs.
+- When a terminal rings its bell, a tab in the background shows a bell, a window in the background asks for attention (the Dock icon bounces, the taskbar button flashes), and the system's alert sound plays. A bell right after typing, such as a failed completion, doesn't count. Settings › Terminal can turn each of these off, and can also flash the terminal.
+- A pane closes when its shell exits after the user typed into it (`exit`, Ctrl+D), as in Xshell. It stays open when the server ended the session before anything was typed, so what it said stays in sight.
+- Links in the terminal open with ⌘-click on macOS and Ctrl+click on Windows and Linux, instead of on any click, and a tooltip says so. Links that programs mark (OSC 8, such as `ls --hyperlink`) open the same way and show their address. The context menu on a link has Open Link and Copy Link Address.
+- Settings › Appearance has an App font field, for the font of the interface's own text.
+- The settings open where they were when last closed, while the app runs.
+
+### Bug Fixes
+
+- A new session set to use a key file no longer starts with `~/.ssh/id_ed25519` when there is no such file, but with the first of OpenSSH's default keys found, and a key file missing from this computer is pointed out under the field.
+- A quick double-click on a folder in the sidebar no longer opens the session that collapsing the folder moved under the pointer. Double-clicking a folder no longer opens all its sessions, and Open All Sessions asks first when there is more than one.
+- Pressing the empty part of the session list clears the selection, so that new sessions and folders go at the top level again.
+- The file panel's buttons no longer break their labels over two lines in Japanese or French: uploading files and uploading a folder are now in the menu of one Upload button.
+- While files are dragged over the file panel, a drop zone over its toolbar takes them into the folder shown, which a folder holding only folders left nowhere to drop them. The list also scrolls while dragging near its top or bottom.
+- On macOS in full screen, the app's name in place of the traffic lights opens the app menu.
+- On macOS, the View menu's full screen item is named in the app's language.
+- On Windows, Han characters in the interface are drawn in the forms of the interface language, not in Japanese forms on a Japanese Windows.
+
 ## [3.1.2] - 2026-10-14
 
 ### Bug Fixes
