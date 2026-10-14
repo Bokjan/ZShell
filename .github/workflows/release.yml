@@ -111,7 +111,7 @@ jobs:
         env:
           # Ad-hoc signature (no certificate) so that the downloaded bundle is consistently
           # signed; Apple Silicon refuses to run unsigned code.
-          APPLE_SIGNING_IDENTITY: '-'
+          APPLE_SIGNING_IDENTITY: "-"
       # The .app is a directory: archived with tar, since a workflow artifact (a zip) would
       # lose the executable's permissions and the bundle's symlinks.
       - name: Collect the packages
@@ -330,7 +330,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: '{macOS,Linux,Windows}'
+          pattern: "{macOS,Linux,Windows}"
           path: ${{ runner.temp }}/packages
           merge-multiple: true
       # Every version's section since the previous published release, since not every

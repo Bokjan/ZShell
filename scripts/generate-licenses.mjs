@@ -47,7 +47,10 @@ const textIndex = new Map();
 /** The index of a license text, adding it if it's new. */
 function addText(text) {
   // Leading blank lines go, the indentation of the first line stays.
-  const normalized = text.replace(/\r\n/g, "\n").replace(/^\s*\n/, "").trimEnd();
+  const normalized = text
+    .replace(/\r\n/g, "\n")
+    .replace(/^\s*\n/, "")
+    .trimEnd();
   let index = textIndex.get(normalized);
   if (index === undefined) {
     index = texts.push(normalized) - 1;
@@ -115,9 +118,11 @@ function rustPackages() {
 
 /** The licenses we can comply with: about.toml's `accepted` list, which cargo-about enforces for crates. */
 const accepted = new Set(
-  [...readFileSync(join(root, "src-tauri", "about.toml"), "utf8").match(/^accepted = \[([^\]]*)\]/m)[1].matchAll(/"([^"]+)"/g)].map(
-    (match) => match[1],
-  ),
+  [
+    ...readFileSync(join(root, "src-tauri", "about.toml"), "utf8")
+      .match(/^accepted = \[([^\]]*)\]/m)[1]
+      .matchAll(/"([^"]+)"/g),
+  ].map((match) => match[1]),
 );
 
 /** Whether an SPDX expression ("MIT", "(MIT OR Apache-2.0) AND BSD-3-Clause") can be met with accepted licenses. */
