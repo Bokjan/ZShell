@@ -1590,8 +1590,46 @@ body.resizing .terminal-view {
   padding: 6px 8px 4px;
 }
 .sftp-path {
+  position: relative;
   flex: 1;
   margin-left: 4px;
+}
+/* Folders offered while a path is typed, below the field. */
+.path-suggestions {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  left: 0;
+  z-index: 12;
+  max-height: calc(240px * var(--text-scale));
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px var(--shadow);
+  list-style: none;
+}
+.path-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: default;
+  white-space: nowrap;
+}
+.path-suggestion span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.path-suggestion:hover {
+  background: var(--bg-hover);
+}
+.path-suggestion.selected {
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 .sftp-path input,
 .sftp-list input {

@@ -417,6 +417,7 @@
     "parentFolder": "親フォルダー",
     "refresh": "更新",
     "pathHint": "パスを入力してEnterキーを押してください",
+    "pathSuggestions": "一致するフォルダー",
     "uploadFiles": "ファイルをアップロード",
     "uploadFolder": "フォルダーをアップロード",
     "newFolder": "新規フォルダー",

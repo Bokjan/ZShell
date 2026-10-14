@@ -439,6 +439,7 @@
     "parentFolder": "Dossier parent",
     "refresh": "Actualiser",
     "pathHint": "Saisissez un chemin et appuyez sur Entrée",
+    "pathSuggestions": "Dossiers correspondants",
     "uploadFiles": "Téléverser des fichiers",
     "uploadFolder": "Téléverser un dossier",
     "newFolder": "Nouveau dossier",

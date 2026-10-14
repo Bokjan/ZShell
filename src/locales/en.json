@@ -428,6 +428,7 @@
     "parentFolder": "Parent folder",
     "refresh": "Refresh",
     "pathHint": "Type a path and press Enter",
+    "pathSuggestions": "Matching folders",
     "uploadFiles": "Upload Files",
     "uploadFolder": "Upload Folder",
     "newFolder": "New Folder",

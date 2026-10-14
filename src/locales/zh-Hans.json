@@ -417,6 +417,7 @@
     "parentFolder": "上级文件夹",
     "refresh": "刷新",
     "pathHint": "输入路径并按 Enter",
+    "pathSuggestions": "匹配的文件夹",
     "uploadFiles": "上传文件",
     "uploadFolder": "上传文件夹",
     "newFolder": "新建文件夹",

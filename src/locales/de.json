@@ -428,6 +428,7 @@
     "parentFolder": "Übergeordneter Ordner",
     "refresh": "Aktualisieren",
     "pathHint": "Pfad eingeben und die Eingabetaste drücken",
+    "pathSuggestions": "Passende Ordner",
     "uploadFiles": "Dateien hochladen",
     "uploadFolder": "Ordner hochladen",
     "newFolder": "Neuer Ordner",

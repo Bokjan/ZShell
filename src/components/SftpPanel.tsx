@@ -17,6 +17,7 @@ import { IconButton } from "./IconButton";
 import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, FileIcon, FolderIcon, RefreshIcon, SearchIcon } from "./icons";
 import { ChmodDialog } from "./sftp/ChmodDialog";
 import { fileMenu, folderMenu, type FileActions } from "./sftp/menus";
+import { PathField } from "./sftp/PathField";
 import { useConfirmQueue } from "./sftp/useConfirmQueue";
 import { useSftpDragDrop } from "./sftp/useSftpDragDrop";
 import { useSftpListing } from "./sftp/useSftpListing";
@@ -386,7 +387,13 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
             void load(listing.pathInput.trim() || ".");
           }}
         >
-          <input value={listing.pathInput} onChange={(e) => listing.setPathInput(e.target.value)} title={t("sftp.pathHint")} />
+          <PathField
+            sessionId={sessionId}
+            value={listing.pathInput}
+            onChange={listing.setPathInput}
+            onGo={(path) => void load(path)}
+            showHidden={view.showHidden}
+          />
         </form>
         <IconButton
           className={`icon-button${filter !== null ? " on" : ""}`}
