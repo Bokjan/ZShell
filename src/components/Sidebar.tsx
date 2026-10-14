@@ -582,6 +582,14 @@ export function Sidebar(props: Props) {
         onMouseDownCapture={(e) => {
           if (e.detail <= 1) firstClickRef.current = null;
         }}
+        // Pressing outside the rows (but not on the scroll bar) clears the selection, as in
+        // Finder and Explorer, so that new sessions and folders go at the top level. On the
+        // press rather than the click: a click ending a drag between rows lands on the list.
+        onMouseDown={(e) => {
+          const list = e.currentTarget;
+          const x = e.clientX - list.getBoundingClientRect().left;
+          if (!(e.target as Element).closest(".tree-row") && x < list.clientLeft + list.clientWidth) setSelected(null);
+        }}
         onContextMenu={(e) => openMenu(e, listMenu())}
       >
         {searching ? (
