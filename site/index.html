@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="ZShell is a cross-platform SSH, Telnet and serial terminal with SFTP, port forwarding, split panes and encrypted sessions."
+    />
+    <meta id="theme-color" name="theme-color" content="#f7f0e6" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="ZShell — Connect once. Do more." />
+    <meta property="og:description" content="A cross-platform SSH, Telnet and serial terminal for macOS, Windows and Linux." />
+    <meta property="og:image" content="./social-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="../src-tauri/icons/source/icon.svg" type="image/svg+xml" />
+    <title>ZShell — SSH, Telnet and serial terminal</title>
+    <script>
+      (() => {
+        const theme = localStorage.getItem("zshell-site-theme");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="ZShell home">
+        <img src="../src-tauri/icons/source/icon.svg" width="36" height="36" alt="" />
+        <span>ZShell</span>
+      </a>
+
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#platforms">Platforms</a>
+        <a href="#privacy">Privacy</a>
+        <a href="https://github.com/Bokjan/ZShell">GitHub</a>
+      </nav>
+
+      <div class="theme-picker" role="group" aria-label="Color theme">
+        <button type="button" data-theme-value="system" aria-label="Use system theme">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <rect x="2.5" y="3.5" width="15" height="10.5" rx="1.5"></rect>
+            <path d="M7 17h6M10 14v3"></path>
+          </svg>
+          <span>Auto</span>
+        </button>
+        <button type="button" data-theme-value="light" aria-label="Use light theme">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="10" cy="10" r="3.25"></circle>
+            <path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6 16 16M16 4l-1.4 1.4M5.4 14.6 4 16"></path>
+          </svg>
+        </button>
+        <button type="button" data-theme-value="dark" aria-label="Use dark theme">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M16.8 12.3A7 7 0 0 1 7.7 3.2 7 7 0 1 0 16.8 12.3Z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Cross-platform remote access</p>
+          <h1>Connect once.<br />Do more.</h1>
+          <p class="hero-lede">
+            ZShell is an SSH, Telnet and serial terminal with SFTP and lightweight tunneling built in. No account, no telemetry—just a
+            dependable connection.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/Bokjan/ZShell/releases/latest">
+              Download latest
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M10 2.5v10M6 9l4 4 4-4M3 16.5h14"></path>
+              </svg>
+            </a>
+            <a class="button button-quiet" href="https://github.com/Bokjan/ZShell">
+              View on GitHub
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M11 3h6v6M17 3l-8 8"></path>
+                <path d="M15 11v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"></path>
+              </svg>
+            </a>
+          </div>
+          <ul class="trust-list" aria-label="Supported platforms and privacy">
+            <li>macOS</li>
+            <li>Windows</li>
+            <li>Linux</li>
+            <li>No account</li>
+            <li>No telemetry</li>
+          </ul>
+        </div>
+
+        <figure class="product-shot">
+          <img
+            src="./assets/zshell-app.png"
+            width="1848"
+            height="1188"
+            alt="ZShell showing saved sessions, an SSH terminal and the SFTP file panel"
+          />
+        </figure>
+      </section>
+
+      <section class="connection-section" id="features" aria-labelledby="connection-title">
+        <div class="section-heading">
+          <p class="eyebrow">One authenticated connection</p>
+          <h2 id="connection-title">Everything in the same place.</h2>
+          <p>
+            The terminal, file browser and forwards share one SSH connection. Duplicate a tab or split a pane and ZShell reuses it, so you
+            authenticate once.
+          </p>
+        </div>
+
+        <div class="connection-flow" aria-label="One server connection shared by ZShell features">
+          <div class="flow-node server-node">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="5" y="4" width="22" height="7" rx="2"></rect>
+              <rect x="5" y="13" width="22" height="7" rx="2"></rect>
+              <rect x="5" y="22" width="22" height="7" rx="2"></rect>
+              <path d="M9 7.5h.01M9 16.5h.01M9 25.5h.01"></path>
+            </svg>
+            <span>Your server</span>
+          </div>
+          <div class="flow-line" aria-hidden="true"></div>
+          <div class="flow-node zshell-node">
+            <img src="../src-tauri/icons/source/icon.svg" width="68" height="68" alt="" />
+            <span>ZShell</span>
+          </div>
+          <div class="flow-line" aria-hidden="true"></div>
+          <div class="flow-features">
+            <div>
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <rect x="4" y="5" width="24" height="22" rx="3"></rect>
+                <path d="m9 12 4 4-4 4M16 21h7"></path>
+              </svg>
+              <span>Terminal</span>
+            </div>
+            <div>
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <path d="M3.5 9.5h10l2.5 3h12.5v13H3.5z"></path>
+                <path d="M3.5 9.5v-3h9l2.5 3"></path>
+              </svg>
+              <span>Files</span>
+            </div>
+            <div>
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <path d="M7 9h17M20 5l4 4-4 4M25 23H8M12 19l-4 4 4 4"></path>
+              </svg>
+              <span>Tunnels</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-section" aria-labelledby="feature-title">
+        <div class="section-heading narrow">
+          <p class="eyebrow">Built for daily work</p>
+          <h2 id="feature-title">From the first prompt to the last file.</h2>
+        </div>
+
+        <div class="feature-layout">
+          <article class="feature-lead">
+            <p class="feature-number">01</p>
+            <h3>SSH that behaves like SSH.</h3>
+            <p>
+              Passwords, private keys, agents and keyboard-interactive authentication in OpenSSH’s order. Host keys live in the same
+              <code>known_hosts</code>, with jump hosts and proxies when you need them.
+            </p>
+            <ul class="detail-list">
+              <li>Automatic reconnection</li>
+              <li>SOCKS5, HTTP and ProxyCommand</li>
+              <li>Import from <code>~/.ssh/config</code></li>
+            </ul>
+          </article>
+
+          <div class="feature-columns">
+            <article>
+              <p class="feature-number">02</p>
+              <h3>Move files without changing tools.</h3>
+              <p>SFTP drag and drop, transfer progress, remote editing and ZMODEM for hosts without SFTP.</p>
+            </article>
+            <article>
+              <p class="feature-number">03</p>
+              <h3>Organize work your way.</h3>
+              <p>Nested sessions, fast search, split panes, movable tabs, quick commands and synchronized input.</p>
+            </article>
+            <article>
+              <p class="feature-number">04</p>
+              <h3>More than SSH.</h3>
+              <p>Telnet and serial consoles for network equipment, plus local terminals on every platform.</p>
+            </article>
+            <article>
+              <p class="feature-number">05</p>
+              <h3>Your connections stay yours.</h3>
+              <p>Encrypt sessions and saved passwords, protect exports, and lock the app with system authentication.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="platform-section" id="platforms" aria-labelledby="platform-title">
+        <div class="platform-copy">
+          <p class="eyebrow">macOS · Windows · Linux</p>
+          <h2 id="platform-title">One app. All your environments.</h2>
+          <p>Download the latest release for Apple Silicon or Intel Macs, Windows x64, Debian, Ubuntu and Fedora.</p>
+          <a class="text-link" href="https://github.com/Bokjan/ZShell/releases/latest">
+            Choose a download
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M12 6l4 4-4 4"></path></svg>
+          </a>
+        </div>
+        <div class="platform-list" aria-label="Supported operating systems">
+          <div><span class="platform-mark">mac</span><strong>macOS</strong><small>Universal DMG</small></div>
+          <div><span class="platform-mark">win</span><strong>Windows</strong><small>Installer or portable</small></div>
+          <div><span class="platform-mark">tux</span><strong>Linux</strong><small>DEB or RPM</small></div>
+        </div>
+        <p class="unsigned-note">
+          Current downloads are not signed with a developer certificate, so macOS and Windows show a warning the first time you open ZShell.
+          Installation steps are on the release page.
+        </p>
+      </section>
+
+      <section class="privacy-section" id="privacy" aria-labelledby="privacy-title">
+        <div>
+          <p class="eyebrow">Private by design</p>
+          <h2 id="privacy-title">No account. No telemetry. No ads.</h2>
+        </div>
+        <div>
+          <p>
+            ZShell runs on your computer and connects only where you tell it to. Your sessions, passwords and logs stay local. There is no
+            analytics, crash reporting or advertising.
+          </p>
+          <a class="text-link" href="https://github.com/Bokjan/ZShell/blob/main/PRIVACY.md">
+            Read the privacy policy
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M12 6l4 4-4 4"></path></svg>
+          </a>
+        </div>
+      </section>
+
+      <section class="final-cta" aria-labelledby="cta-title">
+        <img src="../src-tauri/icons/source/icon.svg" width="72" height="72" alt="" />
+        <div>
+          <h2 id="cta-title">Make the next connection simpler.</h2>
+          <p>Free to use on macOS, Windows and Linux.</p>
+        </div>
+        <a class="button button-primary" href="https://github.com/Bokjan/ZShell/releases/latest">Download ZShell</a>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-brand">
+        <img src="../src-tauri/icons/source/icon.svg" width="28" height="28" alt="" />
+        <strong>ZShell</strong>
+        <span>Free and source-available.</span>
+      </div>
+      <nav aria-label="Footer navigation">
+        <a href="https://github.com/Bokjan/ZShell/releases">Releases</a>
+        <a href="https://github.com/Bokjan/ZShell/issues">Issues</a>
+        <a href="https://github.com/Bokjan/ZShell/blob/main/PRIVACY.md">Privacy</a>
+        <a href="https://github.com/Bokjan/ZShell/blob/main/LICENSE.md">License</a>
+      </nav>
+      <p>Copyright © 2026 Boyin Chen.</p>
+    </footer>
+
+    <script>
+      (() => {
+        const storageKey = "zshell-site-theme";
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        const buttons = document.querySelectorAll("[data-theme-value]");
+        const themeColor = document.querySelector("#theme-color");
+
+        const savedTheme = () => {
+          const saved = localStorage.getItem(storageKey);
+          return saved === "light" || saved === "dark" ? saved : "system";
+        };
+
+        const applyTheme = (theme) => {
+          if (theme === "system") {
+            delete document.documentElement.dataset.theme;
+            localStorage.removeItem(storageKey);
+          } else {
+            document.documentElement.dataset.theme = theme;
+            localStorage.setItem(storageKey, theme);
+          }
+
+          for (const button of buttons) {
+            button.setAttribute("aria-pressed", String(button.dataset.themeValue === theme));
+          }
+
+          const dark = theme === "dark" || (theme === "system" && media.matches);
+          themeColor?.setAttribute("content", dark ? "#141414" : "#f7f0e6");
+        };
+
+        for (const button of buttons) {
+          button.addEventListener("click", () => applyTheme(button.dataset.themeValue));
+        }
+
+        media.addEventListener("change", () => {
+          if (savedTheme() === "system") applyTheme("system");
+        });
+
+        applyTheme(savedTheme());
+      })();
+    </script>
+  </body>
+</html>

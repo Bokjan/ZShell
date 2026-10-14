@@ -9,6 +9,9 @@
     "format": "prettier --write src",
     "format:check": "prettier --check src",
     "preview": "vite preview",
+    "site:dev": "vite --config vite.site.config.ts",
+    "site:build": "vite build --config vite.site.config.ts",
+    "site:preview": "vite preview --config vite.site.config.ts",
     "licenses:generate": "node scripts/generate-licenses.mjs",
     "tauri": "tauri"
   },

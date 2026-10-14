@@ -35,7 +35,7 @@ Entries added to `~/.ssh/known_hosts` are shared with OpenSSH and are not remove
 
 ## Third parties
 
-If you install ZShell from the Microsoft Store, Microsoft handles the download, installation and updates under its own privacy statement. Otherwise the update check above reaches GitHub, which hosts ZShell's releases, under [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement). The system web view that displays the app's interface (WebView2 on Windows, WebKit on macOS) is part of the operating system and follows the operating system's privacy settings. ZShell does not send them any data of its own.
+If you install ZShell from the Microsoft Store, Microsoft handles the download, installation and updates under its own privacy statement. Otherwise the update check above reaches GitHub, which hosts ZShell's releases, under [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement). The ZShell product website is hosted on GitHub Pages; visiting it sends GitHub the information normally included in a web request, such as your IP address and browser headers. The website has no analytics, advertising or other third-party scripts. The system web view that displays the app's interface (WebView2 on Windows, WebKit on macOS) is part of the operating system and follows the operating system's privacy settings. ZShell does not send them any data of its own.
 
 ## Changes and contact
 

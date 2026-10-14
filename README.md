@@ -2,9 +2,12 @@
 
 [![CI](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Bokjan/ZShell)](https://github.com/Bokjan/ZShell/releases/latest)
+[![Website](https://img.shields.io/badge/website-zshell.boyin.org-C8553D)](https://zshell.boyin.org/)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 
 A cross-platform (macOS / Windows / Linux) SSH, Telnet and serial terminal, built with Tauri 2, Rust and xterm.js.
+
+See the [ZShell website](https://zshell.boyin.org/) for an overview, or go straight to the [latest release](https://github.com/Bokjan/ZShell/releases/latest).
 
 ## Features
 
