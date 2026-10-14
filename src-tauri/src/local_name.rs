@@ -66,10 +66,8 @@ fn is_device_name(stem: &str) -> bool {
 /// and taken in one step, so two downloads started together, or `README` and `readme` on a
 /// file system that ignores case, get a name each.
 pub fn create_unique<T>(path: &Path, create: impl Fn(&Path) -> io::Result<T>) -> io::Result<(PathBuf, T)> {
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
     for n in 0u32.. {
-        let candidate = if n == 0 { path.to_path_buf() } else { path.with_file_name(format!("{stem} ({n}){ext}")) };
+        let candidate = numbered(path, n);
         match create(&candidate) {
             Ok(made) => return Ok((candidate, made)),
             // Windows reports a folder in the way of a new file as access denied.
@@ -78,6 +76,16 @@ pub fn create_unique<T>(path: &Path, create: impl Fn(&Path) -> io::Result<T>) ->
         }
     }
     unreachable!()
+}
+
+/// `path` itself for 0, otherwise `name (n).ext`, as [`create_unique`] tries them.
+pub fn numbered(path: &Path, n: u32) -> PathBuf {
+    if n == 0 {
+        return path.to_path_buf();
+    }
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    path.with_file_name(format!("{stem} ({n}){ext}"))
 }
 
 /// A new, empty file at `path` or a free name next to it.

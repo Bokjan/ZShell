@@ -16,7 +16,7 @@ use ts_rs::TS;
 use super::replace::{LocalTarget, RemoteTarget};
 use super::{file_name, is_entry, join};
 use crate::error::Error;
-use crate::local_name::{create_unique, create_unique_file, local_file_name};
+use crate::local_name::{create_unique, create_unique_file, local_file_name, numbered};
 
 const BUFFER_SIZE: usize = 256 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -230,12 +230,14 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
 /// whole.
 async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, done: &mut usize) -> Result<()> {
     let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+    // The items of one download go to one folder, or one disk at least.
+    let mut taken = Taken::new(items.first().is_some_and(|(_, local)| ignores_case(local)));
     // Where each item's files end in `plan.files`.
     let mut ends = Vec::with_capacity(items.len());
     for (remote, local) in items {
         let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
         if metadata.file_type().is_dir() {
-            scan_remote_dir(sftp, remote.clone(), local.clone(), &mut plan, reporter).await?;
+            scan_remote_dir(sftp, remote.clone(), local.clone(), &mut plan, &mut taken, reporter).await?;
         } else {
             reporter.progress.total += metadata.size.unwrap_or(0);
             plan.files.push((remote.clone(), local.clone()));
@@ -251,12 +253,12 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
     for dir in parents.chain(plan.dirs.iter().map(PathBuf::as_path)) {
         tokio::fs::create_dir_all(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
     }
-    for (i, ((remote, local), clashes)) in plan.files.iter().zip(clashing(&plan.files)).enumerate() {
+    for (i, ((remote, local), clashes)) in plan.files.iter().zip(clashing(&plan.files, &mut taken)).enumerate() {
         *done = ends.partition_point(|&end| end <= i);
         reporter.start_file(file_name(remote).to_owned());
         let mut src = sftp.open(remote).await.context(Error::new("transfer.openFailed").param("path", remote))?;
-        // A file that would land where another of this download did (or a folder is) gets a
-        // free name instead.
+        // A file that would land where another of this download (or a folder) did, or where
+        // a folder is, gets a free name instead.
         let local = if clashes || local.is_dir() {
             let (path, _) = create_unique_file(local).context(Error::new("transfer.createFailed").param("path", local.display()))?;
             path
@@ -282,28 +284,68 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
     Ok(())
 }
 
-/// Which of a download's files would land on one before them: names the local file system
-/// takes for the same (`README` and `readme` on macOS and Windows, which ignore case; `a:b`
-/// and `a_b` on Windows, where `local_file_name` makes both `a_b`).
-fn clashing(files: &[(String, PathBuf)]) -> Vec<bool> {
-    let ignores_case = cfg!(any(windows, target_os = "macos"));
-    let mut seen = HashSet::new();
-    files
-        .iter()
-        .map(|(_, local)| {
-            let name = local.to_string_lossy();
-            !seen.insert(if ignores_case { name.to_lowercase() } else { name.into_owned() })
-        })
-        .collect()
+/// The local paths a download has taken, as the local file system tells names apart: two
+/// remote names can land on one (`README` and `readme` where case is ignored; `a:b` and `a?b`
+/// on Windows, where `local_file_name` makes both `a_b`).
+struct Taken {
+    ignores_case: bool,
+    keys: HashSet<String>,
 }
 
+impl Taken {
+    fn new(ignores_case: bool) -> Self {
+        Self { ignores_case, keys: HashSet::new() }
+    }
+
+    /// Takes `path`; false if it was taken already.
+    fn take(&mut self, path: &Path) -> bool {
+        let name = path.to_string_lossy();
+        self.keys.insert(if self.ignores_case { name.to_lowercase() } else { name.into_owned() })
+    }
+
+    /// Takes `path`, or `name (1)`, `name (2)`, … if it is taken.
+    fn take_free(&mut self, path: PathBuf) -> PathBuf {
+        (0..).map(|n| numbered(&path, n)).find(|candidate| self.take(candidate)).unwrap()
+    }
+}
+
+/// Whether the file system `path` is on (or would be on) ignores case: macOS and Windows
+/// disks usually do, but not always, and Linux can mount ones that do (exFAT, NTFS, SMB).
+/// Found out with a file of our own in the nearest existing folder; when that can't be
+/// written, as the system usually is.
+fn ignores_case(path: &Path) -> bool {
+    let usual = cfg!(any(windows, target_os = "macos"));
+    let Some(dir) = path.ancestors().skip(1).find(|dir| dir.is_dir()) else {
+        return usual;
+    };
+    let name = format!(".zshell-case-{}", uuid::Uuid::new_v4().simple());
+    let probe = dir.join(&name);
+    if std::fs::OpenOptions::new().write(true).create_new(true).open(&probe).is_err() {
+        return usual;
+    }
+    let ignores = dir.join(name.to_uppercase()).exists();
+    let _ = std::fs::remove_file(&probe);
+    ignores
+}
+
+/// Which of a download's files would land on a path taken before them, by a folder or a file.
+fn clashing(files: &[(String, PathBuf)], taken: &mut Taken) -> Vec<bool> {
+    files.iter().map(|(_, local)| !taken.take(local)).collect()
+}
+
+/// Lists a remote folder's files and folders, recursively, into `plan`. Two folders that would
+/// land on one local path (see `Taken`) get one each, rather than being merged: the second is
+/// named `name (1)`, and what is in it goes there.
 async fn scan_remote_dir(
     sftp: &SftpSession,
     root: String,
     local_root: PathBuf,
     plan: &mut Plan<String, PathBuf>,
+    taken: &mut Taken,
     reporter: &mut Reporter,
 ) -> Result<()> {
+    // Its name was chosen by the caller.
+    taken.take(&local_root);
     let mut pending = vec![(root, local_root)];
     while let Some((remote, local)) = pending.pop() {
         reporter.check_cancelled()?;
@@ -328,7 +370,7 @@ async fn scan_remote_dir(
                 }
             }
             if metadata.file_type().is_dir() {
-                pending.push((child, local.join(&local_name)));
+                pending.push((child, taken.take_free(local.join(&local_name))));
             } else if metadata.file_type().is_file() {
                 reporter.progress.total += metadata.size.unwrap_or(0);
                 plan.files.push((child, local.join(&local_name)));
@@ -420,8 +462,63 @@ mod tests {
     #[test]
     fn finds_files_that_land_on_the_same_name() {
         let files: Vec<(String, PathBuf)> =
-            ["/d/README", "/d/x", "/d/readme", "/d/README"].iter().map(|&r| (r.to_owned(), PathBuf::from(r))).collect();
-        let ignores_case = cfg!(target_os = "macos");
-        assert_eq!(clashing(&files), [false, false, ignores_case, true]);
+            ["/d/README", "/d/x", "/d/readme", "/d/README", "/d/Sub"].iter().map(|&r| (r.to_owned(), PathBuf::from(r))).collect();
+        for ignores_case in [false, true] {
+            let mut taken = Taken::new(ignores_case);
+            // A folder took it.
+            taken.take(Path::new("/d/sub"));
+            assert_eq!(clashing(&files, &mut taken), [false, false, ignores_case, true, ignores_case]);
+        }
+        let mut taken = Taken::new(true);
+        let dirs = ["/d/Dir", "/d/dir", "/d/DIR", "/d/dir (1)"].map(|d| taken.take_free(PathBuf::from(d)));
+        assert_eq!(dirs.map(|d| d.to_string_lossy().into_owned()), ["/d/Dir", "/d/dir (1)", "/d/DIR (2)", "/d/dir (1) (1)"]);
+    }
+
+    /// The temporary folder's disk is told apart from one that ignores case.
+    #[test]
+    fn finds_whether_a_disk_ignores_case() {
+        let dir = std::env::temp_dir().join(format!("zshell-case-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a"), "").unwrap();
+        let expected = dir.join("A").exists();
+        // A path that doesn't exist yet is on its nearest folder's disk.
+        assert_eq!(ignores_case(&dir.join("new/sub/file")), expected);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Two remote folders that land on one local name each get their own, with what is in
+    /// them. Needs a disk that tells case apart (on the server's side), and `sftp-server`.
+    #[tokio::test]
+    async fn folders_that_land_on_one_name_are_not_merged() {
+        let Some(sftp) = super::super::replace::tests::local_sftp_server().await else { return };
+        let root = std::env::temp_dir().join(format!("zshell-download-dirs-{}", uuid::Uuid::new_v4()));
+        let (remote, local) = (root.join("remote"), root.join("local"));
+        std::fs::create_dir_all(remote.join("Dir")).unwrap();
+        if remote.join("dir").exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+            return;
+        }
+        std::fs::create_dir_all(remote.join("dir")).unwrap();
+        std::fs::write(remote.join("Dir/f"), "upper").unwrap();
+        std::fs::write(remote.join("dir/f"), "lower").unwrap();
+        std::fs::create_dir_all(&local).unwrap();
+
+        let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+        let mut taken = Taken::new(true);
+        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let result =
+            scan_remote_dir(&sftp, remote.to_str().unwrap().to_owned(), local.join("r"), &mut plan, &mut taken, &mut reporter).await;
+        std::fs::remove_dir_all(&root).unwrap();
+        result.unwrap();
+
+        let mut dirs: Vec<_> = plan.dirs.iter().map(|d| d.strip_prefix(&local).unwrap().to_string_lossy().into_owned()).collect();
+        dirs.sort();
+        assert_eq!(dirs[0], "r");
+        assert_eq!(dirs[1..].iter().map(|d| d.to_lowercase()).collect::<Vec<_>>(), ["r/dir", "r/dir (1)"]);
+        // Each file follows its folder, so neither replaces the other.
+        let files: HashSet<_> = plan.files.iter().map(|(_, local)| local.clone()).collect();
+        assert_eq!(files.len(), 2);
+        assert!(clashing(&plan.files, &mut taken).iter().all(|&clashes| !clashes));
     }
 }
