@@ -2,6 +2,28 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.1.2] - 2026-10-14
+
+### Bug Fixes
+
+- config: Don't bring back a session deleted while it was being edited
+- ssh: Don't lose a host key accepted while a known_hosts entry is removed
+- logging: Keep new session logs private, and don't lose track of a log's end
+- sftp: Don't merge remote folders that land on one local name
+- Keep control sequences from names and server replies out of ZShell's terminal messages
+- unix: Check for another instance even when the configuration folder can't be made private
+- unix: Make saved settings and sessions survive a power loss right after saving
+- Undo and report a change to the settings or quick commands that couldn't be saved
+- sftp: Don't let a listing that arrives after a disconnection update the file panel
+- a11y: Open the terminal's context menu with the menu key or Shift+F10
+- Let only the window showing a session act on it
+- Turn off spelling checks in every text field
+- Draw the focused pane's border on every side, including next to a divider
+
+### Internal
+
+- Move the tests of the SSH sign-in and session logs into files of their own
+
 ## [3.1.1] - 2026-10-13
 
 ### Bug Fixes
