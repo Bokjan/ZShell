@@ -135,7 +135,13 @@ pub fn run() {
             let config_dir = config_dir(app.handle())?;
             // Before anything is read or written: another instance may have the folder.
             #[cfg(unix)]
-            if persist::secure_dir(&config_dir).is_ok() {
+            {
+                // Neither stops the app: a file system without permissions (a FAT drive) or
+                // locks (some network ones) is used as it is. The lock is tried whether or
+                // not the folder could be made private.
+                if let Err(e) = persist::secure_dir(&config_dir) {
+                    eprintln!("can't make {} private: {e}", config_dir.display());
+                }
                 match instance::claim(&config_dir) {
                     Ok(instance::Claim::Ours(lock)) => {
                         app.manage(lock);
@@ -150,7 +156,7 @@ pub fn run() {
                         instance::hand_over(&config_dir, pid);
                         return Ok(());
                     }
-                    Err(_) => {}
+                    Err(e) => eprintln!("can't lock {}, so another instance would go unnoticed: {e}", config_dir.display()),
                 }
             }
             let set_aside = SetAside::default();
