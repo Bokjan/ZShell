@@ -54,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
     screenReader: false,
     bellAlert: true,
     bellSound: true,
+    bellFlash: false,
   },
   tabs: { followRemoteTitle: true, confirmClose: true, markOutput: true },
   sidebar: { showRecent: true },

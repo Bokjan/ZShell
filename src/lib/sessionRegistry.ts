@@ -26,6 +26,8 @@ export interface PaneView {
   focus(): void;
   /** Whether text is selected in the terminal. */
   hasSelection(): boolean;
+  /** Flashes the terminal: a visual bell. */
+  flash(): void;
 }
 
 export interface SessionRegistry {
@@ -69,7 +71,7 @@ interface Options {
   /** Whether tabs in the background are marked when they have new output (a setting). */
   markOutput(): boolean;
   /** What a terminal's bell does (settings). */
-  bell(): Pick<TerminalSettings, "bellAlert" | "bellSound">;
+  bell(): Pick<TerminalSettings, "bellAlert" | "bellSound" | "bellFlash">;
 }
 
 /** How a pane's next session starts logging (see `Pane.logPath`). */
@@ -164,10 +166,11 @@ export function createSessionRegistry(
             const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
             if (tab && tab.key !== state.activeKey && !tab.attention) store.dispatch({ type: "attention", key, kind: "output" });
           },
-          // One that answers typing (a failed completion) only sounds: the user is there.
+          // One that answers typing (a failed completion) only sounds and flashes: the user is there.
           bell: (echo) => {
-            const { bellAlert, bellSound } = bell();
+            const { bellAlert, bellSound, bellFlash } = bell();
             if (bellSound) void playBell().catch(console.error);
+            if (bellFlash) view.flash();
             if (!bellAlert || echo) return;
             const state = store.get();
             const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));

@@ -1238,6 +1238,20 @@ body.dragging-row {
     opacity: 0;
   }
 }
+/* A visual bell: the terminal's text color over it for a moment. */
+.bell-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  animation: bell-flash 0.2s ease-out;
+}
+@keyframes bell-flash {
+  from {
+    opacity: 0.2;
+  }
+}
 .terminal-view {
   flex: 1;
   min-width: 0;
@@ -3435,6 +3449,10 @@ dialog.app-lock::backdrop {
     transition-duration: 0s !important;
     animation-duration: 0s !important;
     animation-iteration-count: 1 !important;
+  }
+  /* A visual bell is how the bell is heard, so it still shows: held for a moment, not faded. */
+  .bell-flash {
+    animation: bell-flash 0.15s step-end !important;
   }
 }
 

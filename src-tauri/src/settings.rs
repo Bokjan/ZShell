@@ -114,6 +114,8 @@ pub struct TerminalSettings {
     pub bell_alert: bool,
     /// A bell plays the system's alert sound.
     pub bell_sound: bool,
+    /// A bell flashes its terminal (a visual bell).
+    pub bell_flash: bool,
 }
 
 /// What right-clicking the terminal does.
@@ -287,6 +289,7 @@ impl Default for TerminalSettings {
             screen_reader: false,
             bell_alert: true,
             bell_sound: true,
+            bell_flash: false,
         }
     }
 }

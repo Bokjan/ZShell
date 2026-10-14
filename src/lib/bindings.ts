@@ -850,7 +850,11 @@ bellAlert: boolean,
 /**
  * A bell plays the system's alert sound.
  */
-bellSound: boolean, };
+bellSound: boolean, 
+/**
+ * A bell flashes its terminal (a visual bell).
+ */
+bellFlash: boolean, };
 
 /**
  * The size of the interface's text (not the terminal's, which has its own font size).

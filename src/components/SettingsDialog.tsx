@@ -435,16 +435,23 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 <p className="hint">{t("settings.screenReaderHint")}</p>
               </Setting>
               <Setting>
-                <label className="checkbox">
-                  <input type="checkbox" checked={terminal.bellAlert} onChange={(e) => setTerminal({ bellAlert: e.target.checked })} />
-                  {t("settings.bellAlert")}
-                </label>
-                <p className="hint">{t("settings.bellAlertHint")}</p>
+                <fieldset>
+                  <legend>{t("settings.bell")}</legend>
+                  <label className="checkbox">
+                    <input type="checkbox" checked={terminal.bellAlert} onChange={(e) => setTerminal({ bellAlert: e.target.checked })} />
+                    {t("settings.bellAlert")}
+                  </label>
+                  <p className="hint">{t("settings.bellAlertHint")}</p>
+                  <label className="checkbox">
+                    <input type="checkbox" checked={terminal.bellSound} onChange={(e) => setTerminal({ bellSound: e.target.checked })} />
+                    {t("settings.bellSound")}
+                  </label>
+                  <label className="checkbox">
+                    <input type="checkbox" checked={terminal.bellFlash} onChange={(e) => setTerminal({ bellFlash: e.target.checked })} />
+                    {t("settings.bellFlash")}
+                  </label>
+                </fieldset>
               </Setting>
-              <label className="checkbox">
-                <input type="checkbox" checked={terminal.bellSound} onChange={(e) => setTerminal({ bellSound: e.target.checked })} />
-                {t("settings.bellSound")}
-              </label>
             </Section>
 
             <Section id="mouseAndClipboard">

@@ -146,6 +146,8 @@ export function TerminalView({
   const [dragOver, setDragOver] = useState(false);
   // The size shown while the terminal is resized; `count` starts its fade-out over at each change.
   const [sizeShown, setSizeShown] = useState<{ cols: number; rows: number; count: number } | null>(null);
+  // Counts the visual bells, each a new flash.
+  const [flashes, setFlashes] = useState(0);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -286,6 +288,7 @@ export function TerminalView({
       session: () => setZmodemPhase(null),
       focus: () => term.focus(),
       hasSelection: () => term.hasSelection(),
+      flash: () => setFlashes((count) => count + 1),
     });
     sessionRef.current = session;
     fitRef.current = {
@@ -689,6 +692,7 @@ export function TerminalView({
     // The scheme's background also fills the padding around the terminal.
     <div className="terminal-wrap" ref={wrapRef} style={{ background: scheme.theme.background }}>
       <div className="terminal-view" ref={containerRef} />
+      {flashes > 0 && <div key={flashes} className="bell-flash" aria-hidden="true" style={{ background: scheme.theme.foreground }} />}
       {sizeShown && (
         // The status bar has the size for screen readers.
         <div key={sizeShown.count} className="size-overlay" aria-hidden="true" style={{ fontFamily }}>
