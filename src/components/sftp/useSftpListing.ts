@@ -63,7 +63,14 @@ export function useSftpListing(sessionId: SessionId | null, connected: boolean, 
   // comes after a reconnection is dropped: its listing would make the newer one stale, and
   // its error would show over it.
   useEffect(() => {
-    if (sessionId == null || !connected) return;
+    if (sessionId == null) return;
+    if (!connected) {
+      // A listing still on its way is the lost connection's: it would show the panel as
+      // connected again, or an error over the disconnected notice.
+      seqRef.current++;
+      setLoading(false);
+      return;
+    }
     if (cwdRef.current) {
       void load(cwdRef.current);
       return;
