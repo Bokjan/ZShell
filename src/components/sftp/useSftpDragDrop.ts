@@ -11,6 +11,10 @@ import type { Transfer } from "../TransferList";
 import { parentPath } from "./useTransfers";
 
 const DRAG_DISTANCE = 5;
+/** How near the top or bottom of the list's rows a drag scrolls it, in pixels. */
+const SCROLL_EDGE = 24;
+/** How far it scrolls each frame with the pointer at the very edge, in pixels. */
+const SCROLL_SPEED = 12;
 
 /** Whether moving `paths` into `dir` would do nothing or put a folder inside itself. */
 const isPointlessMove = (paths: string[], dir: string) =>
@@ -42,7 +46,8 @@ interface Options {
  * folder under the pointer, else the one shown; while they are over the panel (`dragOver`),
  * it shows a drop zone for the one shown, which the list's folders may leave no room for.
  * Rows dragged out are downloaded only once dropped on another application (into a folder
- * there, or a temporary one on Windows), and moved when dropped on a folder here.
+ * there, or a temporary one on Windows), and moved when dropped on a folder here. Either drag
+ * scrolls the list near the top or bottom of its rows, to reach the folders out of sight.
  */
 export function useSftpDragDrop(options: Options) {
   const [dragOver, setDragOver] = useState(false);
@@ -156,32 +161,66 @@ export function useSftpDragDrop(options: Options) {
     // Physical pixels on Windows; on macOS (points) and Linux (GTK's logical pixels) wry
     // passes CSS pixels despite the type.
     const scale = isWindows ? window.devicePixelRatio : 1;
-    const folderUnder = (pos: { x: number; y: number }) => folderAt(pos.x / scale, pos.y / scale);
+    /** Where the drag is, in CSS pixels; null once it has left or ended. */
+    let pointer: { x: number; y: number } | null = null;
+    let frame = 0;
+
+    /** Shows where what is dragged would go with the pointer where it is. */
+    const hover = () => {
+      if (!pointer) return;
+      const dragging = draggingRef.current;
+      const folder = folderAt(pointer.x, pointer.y);
+      setDropDir(folder && !(dragging && isPointlessMove(dragging, folder)) ? folder : null);
+      setDragOver(!dragging && folder !== undefined);
+    };
+
+    /** Scrolls the list while the pointer is near the top or bottom of its rows, faster nearer. */
+    const scroll = () => {
+      frame = 0;
+      const list = optionsRef.current.listRef.current;
+      if (!pointer || !list) return;
+      const r = list.getBoundingClientRect();
+      // Below the header, which stays at the top.
+      const top = Math.max(r.top, list.querySelector("thead")?.getBoundingClientRect().bottom ?? r.top);
+      const { x, y } = pointer;
+      if (x < r.left || x > r.right || y < top || y > r.bottom) return;
+      const depth = y < top + SCROLL_EDGE ? y - top - SCROLL_EDGE : y > r.bottom - SCROLL_EDGE ? y - r.bottom + SCROLL_EDGE : 0;
+      if (depth === 0) return;
+      const before = list.scrollTop;
+      list.scrollTop += Math.round((depth / SCROLL_EDGE) * SCROLL_SPEED) || Math.sign(depth);
+      if (list.scrollTop === before) return;
+      hover();
+      frame = requestAnimationFrame(scroll);
+    };
+
+    const end = () => {
+      pointer = null;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      setDragOver(false);
+      setDropDir(null);
+    };
+
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
       // Native events, which the lock screen doesn't stop: nothing is dropped while locked.
-      if (isAppLocked()) {
-        setDragOver(false);
-        setDropDir(null);
-        return;
-      }
-      const dragging = draggingRef.current;
-      if (payload.type === "leave") {
-        setDragOver(false);
-        setDropDir(null);
+      if (isAppLocked() || payload.type === "leave") {
+        end();
       } else if (payload.type === "enter" || payload.type === "over") {
-        const folder = folderUnder(payload.position);
-        setDropDir(folder && !(dragging && isPointlessMove(dragging, folder)) ? folder : null);
-        setDragOver(!dragging && folder !== undefined);
+        pointer = { x: payload.position.x / scale, y: payload.position.y / scale };
+        hover();
+        if (!frame) frame = requestAnimationFrame(scroll);
       } else if (payload.type === "drop") {
-        setDragOver(false);
-        setDropDir(null);
-        if (dragging) return;
-        const folder = folderUnder(payload.position);
+        end();
+        if (draggingRef.current) return;
+        const folder = folderAt(payload.position.x / scale, payload.position.y / scale);
         const dir = folder ?? optionsRef.current.cwdRef.current;
         if (folder !== undefined && dir) void optionsRef.current.upload(payload.paths, dir);
       }
     });
-    return () => void unlisten.then((f) => f());
+    return () => {
+      end();
+      void unlisten.then((f) => f());
+    };
   }, [active]);
 
   return { dragOver, dropDir, press };
