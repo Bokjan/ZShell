@@ -75,7 +75,6 @@
     "settingsUpdate": "Settings ({shortcut}). ZShell {version} is available.",
     "resize": "Resize the session list",
     "resizeHint": "Drag to resize, double-click to reset",
-    "folderHint": "Double-click to open all its sessions",
     "newFolder": "New folder",
     "newFolderName": "New Folder",
     "importExport": "Import and export",

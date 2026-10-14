@@ -75,7 +75,6 @@
     "settingsUpdate": "设置（{shortcut}）。ZShell {version} 已发布。",
     "resize": "调整会话列表的宽度",
     "resizeHint": "拖动以调整宽度，双击恢复默认",
-    "folderHint": "双击打开其中的所有会话",
     "newFolder": "新建文件夹",
     "newFolderName": "新建文件夹",
     "importExport": "导入和导出",

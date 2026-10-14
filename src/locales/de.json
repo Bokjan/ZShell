@@ -75,7 +75,6 @@
     "settingsUpdate": "Einstellungen ({shortcut}). ZShell {version} ist verfügbar.",
     "resize": "Größe der Sitzungsliste ändern",
     "resizeHint": "Ziehen, um die Größe zu ändern; doppelklicken, um sie zurückzusetzen",
-    "folderHint": "Doppelklicken, um alle Sitzungen darin zu öffnen",
     "newFolder": "Neuer Ordner",
     "newFolderName": "Neuer Ordner",
     "importExport": "Importieren und exportieren",

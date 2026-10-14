@@ -394,6 +394,15 @@ export function Sidebar(props: Props) {
     });
   };
 
+  // The row the first click of a double-click was on (null outside the rows). That click may
+  // move the rows (a folder collapsing, the list scrolling back) and put another row under the
+  // pointer: the browser still takes the second click there as a double-click, which mustn't
+  // open that session.
+  const firstClickRef = useRef<string | null>(null);
+  const pressRow = (e: ReactMouseEvent, key: string) => {
+    if (e.detail <= 1) firstClickRef.current = key;
+  };
+
   const dropClass = (key: string) => {
     const drop = drag?.drop;
     return drop && drop.key === key ? ` drop-${drop.position}` : "";
@@ -415,9 +424,12 @@ export function Sidebar(props: Props) {
       data-recent={key.startsWith("recent:") || undefined}
       className={`tree-row session${selected === `p:${profile.id}` ? " selected" : ""}${extra}`}
       style={{ paddingLeft: 8 + depth * INDENT }}
-      onMouseDown={(e) => key.startsWith("p:") && startDrag(e, { kind: "profile", id: profile.id })}
+      onMouseDown={(e) => {
+        pressRow(e, key);
+        if (key.startsWith("p:")) startDrag(e, { kind: "profile", id: profile.id });
+      }}
       onClick={() => setSelected(`p:${profile.id}`)}
-      onDoubleClick={() => onOpen(profile, "newTab")}
+      onDoubleClick={() => firstClickRef.current === key && onOpen(profile, "newTab")}
       onContextMenu={(e) => {
         setSelected(`p:${profile.id}`);
         openMenu(e, profileMenu(profile));
@@ -447,17 +459,18 @@ export function Sidebar(props: Props) {
         data-key={key}
         className={`tree-row folder${selected === key ? " selected" : ""}${dropClass(key)}`}
         style={{ paddingLeft: 8 + depth * INDENT }}
-        onMouseDown={(e) => startDrag(e, { kind: "folder", id: folder.id })}
+        onMouseDown={(e) => {
+          pressRow(e, key);
+          startDrag(e, { kind: "folder", id: folder.id });
+        }}
         onClick={() => {
           setSelected(key);
           setFolderCollapsed(folder.id, expanded);
         }}
-        onDoubleClick={() => count > 0 && onOpenAll(folder)}
         onContextMenu={(e) => {
           setSelected(key);
           openMenu(e, folderMenu(folder, count));
         }}
-        title={t("sidebar.folderHint")}
       >
         <span className="tree-icon">
           <DisclosureIcon open={expanded} />
@@ -563,6 +576,9 @@ export function Sidebar(props: Props) {
         aria-activedescendant={!searching && selected ? rowId(selected) : undefined}
         tabIndex={0}
         onKeyDown={onListKeyDown}
+        onMouseDownCapture={(e) => {
+          if (e.detail <= 1) firstClickRef.current = null;
+        }}
         onContextMenu={(e) => openMenu(e, listMenu())}
       >
         {searching ? (

@@ -75,7 +75,6 @@
     "settingsUpdate": "設定（{shortcut}）。ZShell {version}が利用可能です。",
     "resize": "セッション一覧のサイズを変更",
     "resizeHint": "ドラッグでサイズを変更、ダブルクリックで元に戻します",
-    "folderHint": "ダブルクリックで中のセッションをすべて開きます",
     "newFolder": "新規フォルダー",
     "newFolderName": "新しいフォルダー",
     "importExport": "インポートとエクスポート",
