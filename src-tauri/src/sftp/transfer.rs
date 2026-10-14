@@ -512,10 +512,10 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
         result.unwrap();
 
-        let mut dirs: Vec<_> = plan.dirs.iter().map(|d| d.strip_prefix(&local).unwrap().to_string_lossy().into_owned()).collect();
+        // Which of the two is `dir (1)` depends on the order the server lists them in.
+        let mut dirs: Vec<_> = plan.dirs.iter().map(|d| d.strip_prefix(&local).unwrap().to_string_lossy().to_lowercase()).collect();
         dirs.sort();
-        assert_eq!(dirs[0], "r");
-        assert_eq!(dirs[1..].iter().map(|d| d.to_lowercase()).collect::<Vec<_>>(), ["r/dir", "r/dir (1)"]);
+        assert_eq!(dirs, ["r", "r/dir", "r/dir (1)"]);
         // Each file follows its folder, so neither replaces the other.
         let files: HashSet<_> = plan.files.iter().map(|(_, local)| local.clone()).collect();
         assert_eq!(files.len(), 2);
