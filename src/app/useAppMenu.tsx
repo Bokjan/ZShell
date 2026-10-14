@@ -23,7 +23,8 @@ export interface AppMenuButton {
 /**
  * The app menu outside macOS (see `appMenu` in keymap.ts): opened by the app's icon and name in
  * the title bar (`button`), or by its shortcut, below the button or, while the button is out
- * of sight, in the window's corner. Its items run their actions as their keys would
+ * of sight, in the window's corner. macOS shows the button too, the same menu, in full screen,
+ * where the menu bar is out of sight; the menu has no shortcut there. Its items run their actions as their keys would
  * (`runAction`); `enabled` says which apply now, in this window. A newer version (`update`)
  * is marked on the way to "Check for Updates…"; the Microsoft Store package, which can't
  * check, has no such item.

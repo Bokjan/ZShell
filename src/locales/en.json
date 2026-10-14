@@ -20,6 +20,7 @@
   "appMenu": {
     "button": "{name} menu ({shortcut})",
     "buttonUpdate": "{name} menu ({shortcut}). Version {version} is available.",
+    "buttonNoShortcut": "{name} menu",
     "file": "File",
     "edit": "Edit",
     "view": "View",

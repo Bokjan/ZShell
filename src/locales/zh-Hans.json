@@ -20,6 +20,7 @@
   "appMenu": {
     "button": "{name} 菜单（{shortcut}）",
     "buttonUpdate": "{name} 菜单（{shortcut}）。新版本 {version} 已发布。",
+    "buttonNoShortcut": "{name} 菜单",
     "file": "文件",
     "edit": "编辑",
     "view": "查看",

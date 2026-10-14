@@ -259,7 +259,8 @@ button > svg:only-child:not(.inline-icon) {
 :root[data-platform="mac"]:not([data-fullscreen]) .sidebar-brand {
   display: none;
 }
-/* Outside macOS it opens the app menu: the same place, with room for its hover. */
+/* It opens the app menu (on macOS, shown only in full screen): the same place, with room for
+   its hover. */
 .app-menu-button {
   margin-left: 4px;
   padding: 3px 6px;

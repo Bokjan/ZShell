@@ -254,9 +254,12 @@ export function Sidebar(props: Props) {
     if (typeof path === "string") setImporting(path);
   };
 
-  const menuButtonLabel = update
-    ? t("appMenu.buttonUpdate", { name: t("app.name"), shortcut: shortcutLabel("appMenu"), version: update.version })
-    : t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") });
+  // macOS has no shortcut for it, and marks a newer version on the settings button.
+  const menuButtonLabel = isMac
+    ? t("appMenu.buttonNoShortcut", { name: t("app.name") })
+    : update
+      ? t("appMenu.buttonUpdate", { name: t("app.name"), shortcut: shortcutLabel("appMenu"), version: update.version })
+      : t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") });
 
   // From the app menu.
   useShortcuts((e) => {
@@ -493,36 +496,32 @@ export function Sidebar(props: Props) {
       {/* Its part of the window's title bar, beside the traffic lights on macOS; where there are
           none, the app's icon and name take their place, as in a native title bar. */}
       <header className="sidebar-titlebar" {...DRAG_REGION}>
-        {isMac ? (
-          <span className="sidebar-brand" aria-hidden="true">
-            <img src={appIcon} alt="" />
-            <span className="sidebar-brand-name">{t("app.name")}</span>
-          </span>
-        ) : (
-          // Opens the app menu, which macOS has in the menu bar. It keeps the focus where it
-          // was (a terminal), which the menu's actions act on and the focus goes back to.
-          <button
-            ref={props.appMenu.ref}
-            type="button"
-            className="sidebar-brand app-menu-button"
-            aria-label={menuButtonLabel}
-            title={menuButtonLabel}
-            aria-haspopup="menu"
-            aria-expanded={props.appMenu.open}
-            onMouseDown={(e) => e.preventDefault()}
-            // Opened from the keyboard (Enter, Space) when the click has no pointer position.
-            onClick={(e) => props.appMenu.toggle(e.detail === 0)}
-            onKeyDown={(e) => {
-              if (e.key !== "ArrowDown") return;
-              e.preventDefault();
-              if (!props.appMenu.open) props.appMenu.toggle(true);
-            }}
-          >
-            <img src={appIcon} alt="" />
-            <span className="sidebar-brand-name">{t("app.name")}</span>
-            {update ? <DotIcon /> : <ChevronIcon />}
-          </button>
-        )}
+        {/* Opens the app menu, which macOS has in the menu bar: there it is shown only in full
+            screen, where the traffic lights are hidden and the menu bar is out of sight. It
+            keeps the focus where it was (a terminal), which the menu's actions act on and the
+            focus goes back to. */}
+        <button
+          ref={props.appMenu.ref}
+          type="button"
+          className="sidebar-brand app-menu-button"
+          aria-label={menuButtonLabel}
+          title={menuButtonLabel}
+          aria-haspopup="menu"
+          aria-expanded={props.appMenu.open}
+          onMouseDown={(e) => e.preventDefault()}
+          // Opened from the keyboard (Enter, Space) when the click has no pointer position.
+          onClick={(e) => props.appMenu.toggle(e.detail === 0)}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown") return;
+            e.preventDefault();
+            if (!props.appMenu.open) props.appMenu.toggle(true);
+          }}
+        >
+          <img src={appIcon} alt="" />
+          <span className="sidebar-brand-name">{t("app.name")}</span>
+          {/* On macOS, the settings button has the mark. */}
+          {update && !isMac ? <DotIcon /> : <ChevronIcon />}
+        </button>
         <span className="sidebar-actions">
           <IconButton
             className={`icon-button${isMac && update ? " marked" : ""}`}
