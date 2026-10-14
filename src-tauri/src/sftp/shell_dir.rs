@@ -159,26 +159,32 @@ struct State {
     parent: Option<u32>,
     /// The shells found, by session.
     pids: HashMap<SessionId, u32>,
+    /// Counts the sessions opened and closed, for a search to tell whether its place in `open`
+    /// still holds.
+    changes: u64,
 }
 
 impl ShellDirs {
     /// Session `id` is opening a shell, after those of the sessions open now.
     pub fn opened(&self, id: SessionId) {
-        self.0.lock().unwrap().open.push(id);
+        let mut state = self.0.lock().unwrap();
+        state.open.push(id);
+        state.changes += 1;
     }
 
     pub fn closed(&self, id: SessionId) {
         let mut state = self.0.lock().unwrap();
         state.open.retain(|open| *open != id);
         state.pids.remove(&id);
+        state.changes += 1;
     }
 
     /// The folder the shell of session `id` is in; `None` where it can't be found.
     pub(crate) async fn find(&self, fs: &impl Procfs, id: SessionId) -> Option<String> {
-        let (index, count, parent, known) = {
+        let (index, count, changes, parent, known) = {
             let state = self.0.lock().unwrap();
             let index = state.open.iter().position(|open| *open == id)?;
-            (index, state.open.len(), state.parent, state.pids.get(&id).copied())
+            (index, state.open.len(), state.changes, state.parent, state.pids.get(&id).copied())
         };
         let parent = match parent {
             Some(parent) => parent,
@@ -197,10 +203,12 @@ impl ShellDirs {
         let pid = *shells.get(index).filter(|_| shells.len() == count)?;
         {
             let mut state = self.0.lock().unwrap();
-            // Unless the session closed meanwhile.
-            if state.open.contains(&id) {
-                state.pids.insert(id, pid);
+            // Unless panes opened or closed meanwhile: with one closed and another opened, the
+            // shell at this place, even among as many, may be the other's.
+            if state.changes != changes {
+                return None;
             }
+            state.pids.insert(id, pid);
         }
         folder_of(fs, parent, pid).await
     }
@@ -332,6 +340,55 @@ mod tests {
         fs.process(205, "bash", 299, (34820, 205), 50, "/elsewhere");
         fs.process(207, "bash", 100, (34816, 207), 60, "/opt");
         assert_eq!(dirs.find(&fs, 3).await.as_deref(), Some("/opt"));
+    }
+
+    /// `/proc` as `Fake`, with `meanwhile` done on the first read.
+    struct Racing<'a> {
+        fs: Fake,
+        meanwhile: std::cell::Cell<Option<Box<dyn FnOnce() + 'a>>>,
+    }
+
+    impl Racing<'_> {
+        fn first(&self) {
+            if let Some(meanwhile) = self.meanwhile.take() {
+                meanwhile();
+            }
+        }
+    }
+
+    impl Procfs for Racing<'_> {
+        async fn read_link(&self, path: &str) -> Option<String> {
+            self.first();
+            self.fs.read_link(path).await
+        }
+        async fn read(&self, path: &str) -> Option<String> {
+            self.first();
+            self.fs.read(path).await
+        }
+        async fn list(&self, path: &str) -> Option<Vec<String>> {
+            self.first();
+            self.fs.list(path).await
+        }
+    }
+
+    #[tokio::test]
+    async fn keeps_no_shell_found_while_panes_opened_and_closed() {
+        let dirs = panes(&[1, 2]);
+        // While session 2 looks, session 1 closes and session 3 opens: the second shell is now
+        // session 3's.
+        let mut fs = server();
+        fs.process(205, "bash", 299, (34820, 205), 50, "/elsewhere");
+        fs.process(207, "bash", 100, (34816, 207), 60, "/opt");
+        let racing = Racing {
+            fs,
+            meanwhile: std::cell::Cell::new(Some(Box::new(|| {
+                dirs.closed(1);
+                dirs.opened(3);
+            }))),
+        };
+        assert_eq!(dirs.find(&racing, 2).await, None);
+        assert_eq!(dirs.find(&racing.fs, 2).await.as_deref(), Some("/home/alice/src"));
+        assert_eq!(dirs.find(&racing.fs, 3).await.as_deref(), Some("/opt"));
     }
 
     #[tokio::test]
