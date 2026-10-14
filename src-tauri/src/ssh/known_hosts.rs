@@ -11,6 +11,7 @@
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use anyhow::Context;
 use data_encoding::BASE64;
@@ -76,6 +77,15 @@ pub fn is_plain_host(host: &str) -> bool {
     !host.is_empty() && !host.chars().any(|c| c.is_whitespace() || c.is_control() || ",*?![]".contains(c))
 }
 
+/// Held while ZShell writes known_hosts, so that a removal, which replaces the whole file,
+/// can't lose a key appended by another connection meanwhile. `ssh` and `ssh-keygen` don't
+/// take it: [`remove_at`] checks that the file is unchanged just before replacing it.
+static WRITING: Mutex<()> = Mutex::new(());
+
+fn writing() -> std::sync::MutexGuard<'static, ()> {
+    WRITING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Records `key` for `host:port` at the end of the user's known_hosts, as OpenSSH does when
 /// the user accepts a new key: the host name in lower case, on a line of its own.
 pub fn learn(host: &str, port: u16, key: &PublicKey) -> Result<()> {
@@ -93,6 +103,7 @@ fn learn_at(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<()> {
     if let Some(dir) = path.parent() {
         create_ssh_dir(dir).map_err(write_failed)?;
     }
+    let _writing = writing();
     // Readable by others, as OpenSSH leaves it.
     let mut file = fs::OpenOptions::new().read(true).append(true).create(true).open(path).map_err(write_failed)?;
     // A file that doesn't end with a line break gets one first; an empty one doesn't.
@@ -409,6 +420,13 @@ fn write_new_like(path: &Path, content: &[u8], like: &fs::Metadata) -> std::io::
 }
 
 fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
+    remove_with(path, line, text, || {})
+}
+
+/// [`remove_at`], calling `before_replacing` (for the tests) when about to check that the file
+/// is unchanged.
+fn remove_with(path: &Path, line: usize, text: &str, before_replacing: impl FnOnce()) -> Result<()> {
+    let _writing = writing();
     let content = fs::read(path).map_err(|e| Error::new("knownHosts.readFailed").param("path", path.display()).detail(e))?;
     // Keep each line's own ending, so the rest of the file stays byte for byte.
     let lines: Vec<&[u8]> = content.split_inclusive(|&b| b == b'\n').collect();
@@ -417,7 +435,9 @@ fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
         return Err(Error::new("knownHosts.changed"));
     }
     let rest: Vec<u8> = lines.iter().enumerate().filter(|(i, _)| *i != line - 1).flat_map(|(_, l)| l.iter().copied()).collect();
-    let write = || -> anyhow::Result<()> {
+    // Whether the file was replaced: not when it changed since it was read (`ssh` added a
+    // key), which would be lost.
+    let write = || -> anyhow::Result<bool> {
         let metadata = fs::metadata(path)?;
         // As `ssh-keygen -R` does.
         write_new_like(&path.with_file_name("known_hosts.old"), &content, &metadata).context("known_hosts.old")?;
@@ -425,10 +445,19 @@ fn remove_at(path: &Path, line: usize, text: &str) -> Result<()> {
         let temp = path.with_file_name("known_hosts.zshell-tmp");
         write_new_like(&temp, &rest, &metadata)?;
         fs::set_permissions(&temp, metadata.permissions())?;
+        before_replacing();
+        if fs::read(path)? != content {
+            let _ = fs::remove_file(&temp);
+            return Ok(false);
+        }
         fs::rename(&temp, path)?;
-        Ok(())
+        Ok(true)
     };
-    write().context(Error::new("knownHosts.writeFailed").param("path", path.display())).map_err(Error::from)
+    match write().context(Error::new("knownHosts.writeFailed").param("path", path.display())) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(Error::new("knownHosts.changed")),
+        Err(e) => Err(Error::from(e)),
+    }
 }
 
 /// Removes the entry on `line` if the line still reads `text` (otherwise the file has
@@ -652,6 +681,7 @@ mod tests {
 
     #[test]
     fn removes_a_line_and_keeps_the_rest() {
+        use std::io::Write;
         let content = format!("# keep\r\na ssh-ed25519 {KEY}\r\nb ssh-ed25519 {OTHER}");
         let path = temp_file(&content);
         let entries = list_at(&path).unwrap();
@@ -660,6 +690,13 @@ mod tests {
         // The file changed since it was listed.
         assert_eq!(remove_at(&path, 2, "b").unwrap_err().code(), "knownHosts.changed");
         assert_eq!(remove_at(&path, 9, "b").unwrap_err().code(), "knownHosts.changed");
+
+        // A key added while it was being removed (by `ssh`, which doesn't wait for ZShell)
+        // is kept: the removal fails instead.
+        let append = || fs::OpenOptions::new().append(true).open(&path).unwrap().write_all(b"\nc ssh-ed25519 KEY").unwrap();
+        assert_eq!(remove_with(&path, 2, &entries[0].text, append).unwrap_err().code(), "knownHosts.changed");
+        assert_eq!(fs::read_to_string(&path).unwrap(), format!("{content}\nc ssh-ed25519 KEY"));
+        fs::write(&path, &content).unwrap();
 
         remove_at(&path, 2, &entries[0].text).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), format!("# keep\r\nb ssh-ed25519 {OTHER}"));
