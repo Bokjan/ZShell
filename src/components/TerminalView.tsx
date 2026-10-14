@@ -18,6 +18,7 @@ import { isAppLocked, whenUnlocked } from "../lib/appLock";
 import { afterDialogs, isDialogOpen } from "../lib/dialogs";
 import { open as openDialog } from "../lib/fileDialog";
 import { chosenAction, clipboardKeyOf, matches, shortcutLabel } from "../lib/keymap";
+import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import type { PaneSession } from "../lib/paneSession";
 import { isMac } from "../lib/platform";
 import type { SessionRegistry } from "../lib/sessionRegistry";
@@ -257,6 +258,18 @@ export function TerminalView({
 
     // Ctrl+Shift+C / Ctrl+V and friends outside macOS (see `clipboardKeyOf`).
     term.attachCustomKeyEventHandler((e) => {
+      // The menu key and Shift+F10 open the context menu, at the cursor (where xterm.js keeps
+      // its text field), whatever the program does with the mouse and right-clicks do. The
+      // browser may fire `contextmenu` for them as well, which can't tell them from a click.
+      if (isMenuKey(e)) {
+        if (e.type === "keydown") {
+          e.preventDefault();
+          openedByMenuKey();
+          const at = term.textarea?.getBoundingClientRect() ?? container.getBoundingClientRect();
+          setMenu({ x: at.left, y: at.bottom });
+        }
+        return false;
+      }
       const key = clipboardKeyOf(e);
       if (!key || (key === "copyIfSelected" && !term.hasSelection())) return true;
       if (e.type === "keydown") {
@@ -294,6 +307,7 @@ export function TerminalView({
 
     // After xterm.js's own handler (which may select the word under the pointer).
     const onContextMenu = (e: MouseEvent) => {
+      if (followsMenuKey(e)) return;
       e.preventDefault();
       // Programs using the mouse get the click; Shift+right-click still opens the menu.
       if (term.modes.mouseTrackingMode !== "none" && !e.shiftKey) return;

@@ -1,7 +1,8 @@
-import type { KeyboardEvent, MouseEvent } from "react";
-
-/** Whether a key opens a menu from the keyboard: the menu key, or Shift+F10. */
-export const isMenuKey = (e: KeyboardEvent) => e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey);
+/**
+ * Whether a key opens a menu from the keyboard: the menu key, or Shift+F10. React's events and
+ * the DOM's alike (the terminal handles its keys itself).
+ */
+export const isMenuKey = (e: { key: string; shiftKey: boolean }) => e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey);
 
 /** When a menu was last opened with a menu key. */
 let openedAt = -Infinity;
@@ -17,7 +18,7 @@ export function openedByMenuKey() {
  * row), which would replace that menu with the one for where the pointer is. Such an event is
  * cancelled, and the caller leaves the menu as it is.
  */
-export function followsMenuKey(e: MouseEvent): boolean {
+export function followsMenuKey(e: { preventDefault(): void; stopPropagation(): void }): boolean {
   if (performance.now() - openedAt > 500) return false;
   e.preventDefault();
   e.stopPropagation();
