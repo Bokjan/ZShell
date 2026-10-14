@@ -259,6 +259,8 @@
     "reconnectCancelled": "自動再接続をキャンセルしました。Enterキーを押すと再接続、Ctrl+Dキーを押すと閉じます。",
     "logFailed": "セッションログを開始できませんでした：{message}",
     "menu": {
+      "openLink": "リンクを開く",
+      "copyLink": "リンクのアドレスをコピー",
       "copy": "コピー",
       "paste": "貼り付け",
       "selectAll": "すべて選択",
@@ -267,6 +269,10 @@
       "reset": "ターミナルをリセット",
       "fullScreen": "フルスクリーン",
       "exitFullScreen": "フルスクリーンを終了"
+    },
+    "link": {
+      "openHint": "Ctrl+クリックで開きます",
+      "openHintMac": "⌘+クリックで開きます"
     },
     "size": "{cols} x {rows}"
   },

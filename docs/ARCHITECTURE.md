@@ -226,6 +226,7 @@
 - 读写剪贴板用 `tauri-plugin-clipboard-manager`，因为菜单里的粘贴触发不了浏览器的 paste 事件，WKWebView 的 `readText` 又会弹出系统确认；macOS 的 ⌘C / ⌘V 仍走原生菜单。
 - 所有粘贴走 xterm.js 的 `term.paste()`。多行内容在远端没开 bracketed paste 时先确认，开了则 shell 只插入不执行，无需确认。
 - 远端程序开启鼠标模式时右键交给程序，Shift+右键总是打开菜单；Option 作为 Meta 只在 macOS 上可选。
+- **链接**：文本里的网址（`@xterm/addon-web-links`）和程序标记的 OSC 8 链接，⌘+点击（其他平台 Ctrl+点击）用系统浏览器打开，普通点击只是选择与聚焦；悬停时提示按法，OSC 8 链接的文字可以与地址无关，提示里还显示地址。在链接上打开的右键菜单多出"打开链接"和"复制链接地址"。只认 http 与 https。
 
 ### 标签页
 

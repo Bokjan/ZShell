@@ -31,6 +31,7 @@ import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSche
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
+import { TOOLTIP_DELAY, TooltipPopup } from "./Tooltip";
 import { ZmodemBar } from "./ZmodemBar";
 
 interface Props {
@@ -79,7 +80,16 @@ const SIZE_SETTLE_MS = 500;
  */
 const PROMPT_SETTLE_MS = 300;
 
+/**
+ * How long a link's tooltip stays after the pointer leaves the link: xterm.js leaves and hovers
+ * it again whenever its line is drawn again (the cursor blinking on it, output).
+ */
+const LINK_LEAVE_MS = 100;
+
 const ignore = () => {};
+
+/** Links open with ⌘-click on macOS and Ctrl+click elsewhere, as in other terminals. */
+const opensLink = (e: MouseEvent) => (isMac ? e.metaKey : e.ctrlKey);
 
 // Through the clipboard plugin: pasting from a menu can't raise the browser's paste event,
 // and WKWebView's `navigator.clipboard.readText` asks the user with a system "Paste" button.
@@ -125,7 +135,10 @@ export function TerminalView({
   const onZmodemRef = useRef<(phase: ZmodemPhase) => void>(ignore);
   // Incremented by the find shortcut; 0 means the search bar is closed.
   const [searchKey, setSearchKey] = useState(0);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // `link`: the link the menu was opened on.
+  const [menu, setMenu] = useState<{ x: number; y: number; link?: string } | null>(null);
+  // The tooltip of the link under the pointer; `uri` for links whose text may not say where they go.
+  const [linkHint, setLinkHint] = useState<{ anchor: Pick<Element, "getBoundingClientRect">; uri: string | null } | null>(null);
   // Multi-line text waiting for the user to confirm the paste.
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   // A ZMODEM transfer waiting for files or running; null when there is none.
@@ -184,7 +197,55 @@ export function TerminalView({
     term.loadAddon(serialize);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
-    term.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
+    // Links: addresses in the text, and those programs mark (OSC 8: `ls --hyperlink`, gcc),
+    // whose text may be anything, so their tooltip shows where they go. A plain click only
+    // selects or focuses, as on any other text. xterm.js only gives http and https ones.
+    let link: string | null = null;
+    let hintTimer: ReturnType<typeof setTimeout> | undefined;
+    // The link whose tooltip is shown, and the one whose tooltip was dismissed (until left).
+    let hinted: string | null = null;
+    let dismissed: string | null = null;
+    const activate = (e: MouseEvent, uri: string) => {
+      if (opensLink(e)) void openUrl(uri).catch(console.error);
+    };
+    const hover = (e: MouseEvent, uri: string, marked: boolean) => {
+      clearTimeout(hintTimer);
+      link = uri;
+      if (uri === hinted || uri === dismissed) return;
+      // Below the line the pointer is on.
+      const screen = term.element?.querySelector(".xterm-screen")?.getBoundingClientRect() ?? container.getBoundingClientRect();
+      const height = screen.height / term.rows;
+      const top = screen.top + Math.floor((e.clientY - screen.top) / height) * height;
+      const rect = new DOMRect(e.clientX, top, 0, height);
+      const hint = { anchor: { getBoundingClientRect: () => rect }, uri: marked ? uri : null };
+      hintTimer = setTimeout(
+        () => {
+          hinted = uri;
+          setLinkHint(hint);
+        },
+        hinted === null ? TOOLTIP_DELAY : 0,
+      );
+    };
+    const leave = () => {
+      clearTimeout(hintTimer);
+      link = null;
+      hintTimer = setTimeout(() => {
+        hinted = dismissed = null;
+        setLinkHint(null);
+      }, LINK_LEAVE_MS);
+    };
+    // Clicking or scrolling dismisses it, as other tooltips are.
+    const dismissHint = () => {
+      if (!link) return;
+      clearTimeout(hintTimer);
+      dismissed = link;
+      hinted = null;
+      setLinkHint(null);
+    };
+    term.options.linkHandler = { activate, hover: (e, uri) => hover(e, uri, true), leave };
+    term.loadAddon(new WebLinksAddon(activate, { hover: (e, uri) => hover(e, uri, false), leave }));
+    container.addEventListener("mousedown", dismissHint, true);
+    container.addEventListener("wheel", dismissHint, true);
     term.open(container);
     fit.fit();
     termRef.current = term;
@@ -322,7 +383,7 @@ export function TerminalView({
         readText().then(pasteRef.current, ignore);
         return;
       }
-      setMenu({ x: e.clientX, y: e.clientY });
+      setMenu({ x: e.clientX, y: e.clientY, link: link ?? undefined });
     };
     container.addEventListener("contextmenu", onContextMenu);
 
@@ -386,6 +447,9 @@ export function TerminalView({
       clearTimeout(start);
       clearTimeout(hideSize);
       clearTimeout(promptSettle);
+      clearTimeout(hintTimer);
+      container.removeEventListener("mousedown", dismissHint, true);
+      container.removeEventListener("wheel", dismissHint, true);
       shellDirs.forget(paneKey);
       window.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("paste", onPaste, true);
@@ -577,9 +641,17 @@ export function TerminalView({
     };
   }, [waitingForFiles]);
 
-  const menuItems = (): MenuItem[] => {
+  const menuItems = (link?: string): MenuItem[] => {
     const term = termRef.current!;
+    const linkItems: MenuItem[] = link
+      ? [
+          { label: t("terminal.menu.openLink"), onSelect: () => void openUrl(link).catch(console.error) },
+          { label: t("terminal.menu.copyLink"), onSelect: () => copyText(link) },
+          "separator",
+        ]
+      : [];
     return [
+      ...linkItems,
       {
         label: t("terminal.menu.copy"),
         shortcut: shortcutLabel("copy"),
@@ -637,7 +709,7 @@ export function TerminalView({
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          items={menuItems()}
+          items={menuItems(menu.link)}
           onClose={() => {
             setMenu(null);
             focus();
@@ -657,6 +729,12 @@ export function TerminalView({
             {pendingPaste.length > PASTE_PREVIEW ? `${pendingPaste.slice(0, PASTE_PREVIEW)}…` : pendingPaste}
           </pre>
         </ConfirmDialog>
+      )}
+      {linkHint && (
+        <TooltipPopup
+          anchor={linkHint.anchor}
+          text={[linkHint.uri, t(isMac ? "terminal.link.openHintMac" : "terminal.link.openHint")].filter(Boolean).join("\n")}
+        />
       )}
       {searchKey > 0 && searchRef.current && (
         <SearchBar addon={searchRef.current} decorations={searchDecorations(scheme)} focusKey={searchKey} onClose={closeSearch} />

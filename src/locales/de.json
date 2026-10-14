@@ -269,6 +269,8 @@
     "reconnectCancelled": "Automatisches Neuverbinden abgebrochen. Drücken Sie die Eingabetaste, um neu zu verbinden, oder Strg+D, um zu schließen.",
     "logFailed": "Das Sitzungsprotokoll konnte nicht gestartet werden: {message}",
     "menu": {
+      "openLink": "Link öffnen",
+      "copyLink": "Linkadresse kopieren",
       "copy": "Kopieren",
       "paste": "Einfügen",
       "selectAll": "Alles auswählen",
@@ -277,6 +279,10 @@
       "reset": "Terminal zurücksetzen",
       "fullScreen": "Vollbild",
       "exitFullScreen": "Vollbild beenden"
+    },
+    "link": {
+      "openHint": "Strg+Klick zum Öffnen",
+      "openHintMac": "⌘-Klick zum Öffnen"
     },
     "size": "{cols} x {rows}"
   },

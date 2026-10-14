@@ -279,6 +279,8 @@
     "reconnectCancelled": "Reconnexion automatique annulée. Appuyez sur Entrée pour vous reconnecter ou sur Ctrl+D pour fermer.",
     "logFailed": "Impossible de démarrer le journal de session : {message}",
     "menu": {
+      "openLink": "Ouvrir le lien",
+      "copyLink": "Copier l’adresse du lien",
       "copy": "Copier",
       "paste": "Coller",
       "selectAll": "Tout sélectionner",
@@ -287,6 +289,10 @@
       "reset": "Réinitialiser le terminal",
       "fullScreen": "Plein écran",
       "exitFullScreen": "Quitter le plein écran"
+    },
+    "link": {
+      "openHint": "Ctrl+clic pour ouvrir",
+      "openHintMac": "⌘-clic pour ouvrir"
     },
     "size": "{cols} x {rows}"
   },

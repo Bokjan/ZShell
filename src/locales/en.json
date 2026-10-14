@@ -269,6 +269,8 @@
     "reconnectCancelled": "Automatic reconnection cancelled. Press Enter to reconnect or Ctrl+D to close.",
     "logFailed": "Could not start the session log: {message}",
     "menu": {
+      "openLink": "Open Link",
+      "copyLink": "Copy Link Address",
       "copy": "Copy",
       "paste": "Paste",
       "selectAll": "Select All",
@@ -277,6 +279,10 @@
       "reset": "Reset Terminal",
       "fullScreen": "Full Screen",
       "exitFullScreen": "Exit Full Screen"
+    },
+    "link": {
+      "openHint": "Ctrl+click to open",
+      "openHintMac": "⌘-click to open"
     },
     "size": "{cols} x {rows}"
   },

@@ -4,13 +4,14 @@ import { createPortal } from "react-dom";
 /** Space kept between a tooltip and its element or the window's edges. */
 const MARGIN = 6;
 /** How long the pointer rests on an element before its tooltip shows. */
-const DELAY = 200;
+export const TOOLTIP_DELAY = 200;
 
 /**
- * A tooltip for `anchor`: below it, or above when there is no room, and within the window. It
- * goes on the body, so that a dialog's scrolling area doesn't clip it.
+ * A tooltip for `anchor` (an element, or any area of the window): below it, or above when there
+ * is no room, and within the window. It goes on the body, so that a dialog's scrolling area
+ * doesn't clip it.
  */
-export function TooltipPopup({ anchor, text }: { anchor: Element; text: string }) {
+export function TooltipPopup({ anchor, text }: { anchor: Pick<Element, "getBoundingClientRect">; text: string }) {
   const popup = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -61,7 +62,7 @@ export function Tooltips() {
       current = anchor;
       saved = text;
       anchor.removeAttribute("title");
-      timer = window.setTimeout(() => setShown({ anchor, text }), DELAY);
+      timer = window.setTimeout(() => setShown({ anchor, text }), TOOLTIP_DELAY);
     };
     // Leaving the window.
     const onOut = (e: MouseEvent) => {
