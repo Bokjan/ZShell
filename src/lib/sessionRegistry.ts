@@ -1,4 +1,7 @@
-import type { LogOpen, Profile, SessionId, ZmodemPhase } from "./api";
+import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+
+import { playBell, type LogOpen, type Profile, type SessionId, type ZmodemPhase } from "./api";
+import type { TerminalSettings } from "./bindings";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
 import { findPane, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
 import { activeTabOf, type TabStore } from "./tabs";
@@ -63,6 +66,8 @@ interface Options {
   stayed(key: number, from: Arrival["from"]): void;
   /** Whether tabs in the background are marked when they have new output (a setting). */
   markOutput(): boolean;
+  /** What a terminal's bell does (settings). */
+  bell(): Pick<TerminalSettings, "bellAlert" | "bellSound">;
 }
 
 /** How a pane's next session starts logging (see `Pane.logPath`). */
@@ -74,7 +79,10 @@ const logOpen = (pane: Pane): LogOpen =>
  * forwarding and log into the tab store; a local shell that exits cleanly (`exit`, Ctrl+D)
  * closes its pane, as in Terminal.app.
  */
-export function createSessionRegistry(store: TabStore, { profiles, t, announce, movedAway, stayed, markOutput }: Options): SessionRegistry {
+export function createSessionRegistry(
+  store: TabStore,
+  { profiles, t, announce, movedAway, stayed, markOutput, bell }: Options,
+): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
   const zmodemPhases = new Map<number, ZmodemPhase>();
@@ -148,6 +156,19 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce, 
             const state = store.get();
             const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
             if (tab && tab.key !== state.activeKey && !tab.attention) store.dispatch({ type: "attention", key, kind: "output" });
+          },
+          // One that answers typing (a failed completion) only sounds: the user is there.
+          bell: (echo) => {
+            const { bellAlert, bellSound } = bell();
+            if (bellSound) void playBell().catch(console.error);
+            if (!bellAlert || echo) return;
+            const state = store.get();
+            const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
+            if (tab && tab.key !== state.activeKey && tab.attention !== "bell") {
+              store.dispatch({ type: "attention", key, kind: "bell" });
+              announce(t("announce.bell", { name: pane().title }));
+            }
+            if (!document.hasFocus()) void getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(console.error);
           },
           arrived: () => update({ arrival: undefined }),
           movedAway: () => movedAway(key),

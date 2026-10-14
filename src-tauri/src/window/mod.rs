@@ -335,6 +335,24 @@ pub fn window_busy_reply(window: WebviewWindow, windows: State<'_, Windows>, que
     }
 }
 
+/// Plays the system's alert sound, for a terminal's bell (the bell sound setting).
+#[tauri::command]
+pub fn app_bell(app: AppHandle) {
+    let _ = app.run_on_main_thread(|| {
+        #[cfg(target_os = "macos")]
+        objc2_app_kit::NSBeep();
+        // SAFETY: takes no pointers; `MB_OK` is the default sound.
+        #[cfg(windows)]
+        unsafe {
+            windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(windows_sys::Win32::UI::WindowsAndMessaging::MB_OK);
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(display) = gtk::gdk::Display::default() {
+            display.beep();
+        }
+    });
+}
+
 /// Quits, once the user has confirmed (or nothing was busy).
 #[tauri::command]
 pub fn app_quit(app: AppHandle) {

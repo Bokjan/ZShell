@@ -52,6 +52,8 @@ export const DEFAULT_SETTINGS: Settings = {
     confirmMultilinePaste: true,
     optionAsMeta: false,
     screenReader: false,
+    bellAlert: true,
+    bellSound: false,
   },
   tabs: { followRemoteTitle: true, confirmClose: true, markOutput: true },
   sidebar: { showRecent: true },

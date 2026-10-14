@@ -373,6 +373,7 @@ export function TerminalView({
         showSize(cols, rows);
       }),
       term.onTitleChange((title) => onTitleRef.current(title)),
+      term.onBell(() => session.bell()),
     ];
     const observer = new ResizeObserver(() => fitRef.current?.fit());
     observer.observe(container);

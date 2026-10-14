@@ -330,6 +330,7 @@ pub fn run() {
             window::window_busy_reply,
             window::app_busy_count,
             window::app_quit,
+            window::app_bell,
             window::window_title_double_click,
             window::window_system_menu,
             window::window_file_dialog,

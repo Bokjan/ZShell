@@ -398,6 +398,17 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 </label>
                 <p className="hint">{t("settings.screenReaderHint")}</p>
               </Setting>
+              <Setting>
+                <label className="checkbox">
+                  <input type="checkbox" checked={terminal.bellAlert} onChange={(e) => setTerminal({ bellAlert: e.target.checked })} />
+                  {t("settings.bellAlert")}
+                </label>
+                <p className="hint">{t("settings.bellAlertHint")}</p>
+              </Setting>
+              <label className="checkbox">
+                <input type="checkbox" checked={terminal.bellSound} onChange={(e) => setTerminal({ bellSound: e.target.checked })} />
+                {t("settings.bellSound")}
+              </label>
             </Section>
 
             <Section id="mouseAndClipboard">

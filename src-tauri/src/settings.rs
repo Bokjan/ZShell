@@ -109,6 +109,11 @@ pub struct TerminalSettings {
     /// Let screen readers read the terminal and announce new output (xterm.js's
     /// `screenReaderMode`); off by default, since it slows down terminals with much output.
     pub screen_reader: bool,
+    /// A bell (BEL) not caused by typing marks its tab if in the background, tells screen
+    /// readers, and asks for attention while the window is in the background.
+    pub bell_alert: bool,
+    /// A bell plays the system's alert sound.
+    pub bell_sound: bool,
 }
 
 /// What right-clicking the terminal does.
@@ -280,6 +285,8 @@ impl Default for TerminalSettings {
             confirm_multiline_paste: true,
             option_as_meta: false,
             screen_reader: false,
+            bell_alert: true,
+            bell_sound: false,
         }
     }
 }

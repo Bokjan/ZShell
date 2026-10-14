@@ -554,6 +554,13 @@ body.dragging-row {
   border-radius: 1px;
   background: var(--danger);
 }
+/* A terminal of the tab rang its bell while it was in the background. */
+.tab-bell {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: -2px;
+  color: var(--accent);
+}
 /* A question waiting in the file panel, out of sight. */
 .tab-question {
   width: 6px;

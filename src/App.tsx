@@ -104,6 +104,7 @@ function App() {
       movedAway: (key) => windowingRef.current?.movedAway(key),
       stayed: (key, from) => windowingRef.current?.stayed(key, from),
       markOutput: () => settingsRef.current.tabs.markOutput,
+      bell: () => settingsRef.current.terminal,
     }),
   );
   const localTitleRef = useRef("");
@@ -491,6 +492,7 @@ function App() {
           activeKey={activeKey}
           followRemoteTitle={settings.tabs.followRemoteTitle}
           markOutput={settings.tabs.markOutput}
+          bellAlert={settings.terminal.bellAlert}
           onSelect={activate}
           onNew={localAllowed ? openLocalTab : undefined}
           onClose={(keys) => void requestClose({ kind: "tabs", keys })}

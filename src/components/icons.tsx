@@ -232,6 +232,16 @@ export function DotIcon({ size = 8 }: { size?: number }) {
   );
 }
 
+/** A bell: a terminal in a tab in the background rang its bell. */
+export function BellIcon({ size = 12 }: { size?: number }) {
+  return (
+    <Svg size={size} className="bell-icon">
+      <path d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11z" />
+      <path d="M6.5 14.2a1.5 1.5 0 0 0 3 0" />
+    </Svg>
+  );
+}
+
 /** A chevron pointing right, turned down when `open`: a folder in the session list. */
 export function DisclosureIcon({ open, size = 10 }: { open: boolean; size?: number }) {
   return (

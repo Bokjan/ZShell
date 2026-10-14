@@ -841,7 +841,16 @@ optionAsMeta: boolean,
  * Let screen readers read the terminal and announce new output (xterm.js's
  * `screenReaderMode`); off by default, since it slows down terminals with much output.
  */
-screenReader: boolean, };
+screenReader: boolean, 
+/**
+ * A bell (BEL) not caused by typing marks its tab if in the background, tells screen
+ * readers, and asks for attention while the window is in the background.
+ */
+bellAlert: boolean, 
+/**
+ * A bell plays the system's alert sound.
+ */
+bellSound: boolean, };
 
 /**
  * The size of the interface's text (not the terminal's, which has its own font size).

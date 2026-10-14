@@ -54,6 +54,8 @@ export interface SessionEvents {
   retry(at: number | null): void;
   /** Output came that isn't an answer to typing or resizing (see `ECHO_MS`); often. */
   output(): void;
+  /** The terminal rang its bell, in answer to typing (`echo`, see `ECHO_MS`) or not. */
+  bell(echo: boolean): void;
   /** The pane that came from another window has started here (see `PaneSession.start`). */
   arrived(): void;
   /** The pane's session couldn't move here from the other window, which still shows it. */
@@ -98,6 +100,9 @@ export const LOGIN_COMMAND_IDLE_MS = 300;
  * drawing again at the new size) rather than being news: it doesn't count as `output`.
  */
 export const ECHO_MS = 300;
+
+/** Bells closer together than this ring once. */
+export const BELL_MS = 1000;
 
 /**
  * Whether the text before the cursor looks like a shell prompt: not empty, and not ending
@@ -160,6 +165,8 @@ export class PaneSession {
   readonly traffic = new TrafficMeter();
   /** When the pane was last typed into or resized (`performance.now()`). */
   private nudgedAt = -Infinity;
+  /** When the bell last rang (`performance.now()`). */
+  private bellAt = -Infinity;
 
   constructor(
     private readonly port: TerminalPort,
@@ -242,6 +249,14 @@ export class PaneSession {
     this.nudgedAt = performance.now();
     void this.session.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff));
     this.traffic.addSent(data.length);
+  }
+
+  /** The terminal rang its bell (BEL in the output): reported once for bells in quick succession. */
+  bell() {
+    const now = performance.now();
+    if (now - this.bellAt < BELL_MS) return;
+    this.bellAt = now;
+    this.events.bell(now - this.nudgedAt < ECHO_MS);
   }
 
   /** The terminal's new size. Not while a screen from another window is drawn: at its size. */

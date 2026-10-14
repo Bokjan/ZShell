@@ -164,6 +164,9 @@ export const appLock = {
 
 /** The user's home folder, which `~` stands for in key paths. */
 export const homeDirectory = () => invoke<string | null>("home_directory");
+
+/** Plays the system's alert sound (a terminal's bell). */
+export const playBell = () => invoke<void>("app_bell");
 /**
  * The key file a session set to use one starts with: the first of OpenSSH's default keys
  * (`~/.ssh/id_ed25519` and so on) that exists here; null if there is none.

@@ -13,7 +13,15 @@ import {
   type openSession,
 } from "./api";
 import type { Arrival } from "./panes";
-import { ECHO_MS, LOGIN_COMMAND_IDLE_MS, PaneSession, type SessionConfig, type SessionEvents, type TerminalPort } from "./paneSession";
+import {
+  BELL_MS,
+  ECHO_MS,
+  LOGIN_COMMAND_IDLE_MS,
+  PaneSession,
+  type SessionConfig,
+  type SessionEvents,
+  type TerminalPort,
+} from "./paneSession";
 
 // The forwarding rules running on a connection being replaced (see `reconnect`), and the
 // screen handed over when a session moves to another window.
@@ -137,6 +145,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     stayed: vi.fn(),
     movedAway: vi.fn(),
     output: vi.fn(),
+    bell: vi.fn(),
   } satisfies SessionEvents;
   const pane = new PaneSession(
     port,
@@ -385,6 +394,30 @@ describe("traffic", () => {
     now += 1;
     opened[0].output("news");
     expect(events.output).toHaveBeenCalledTimes(2);
+  });
+
+  it("rings once for bells in quick succession, saying whether they answer typing", async () => {
+    let now = 10_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    onTestFinished(() => clock.mockRestore());
+    const { pane, opened, events } = setup();
+    pane.connect();
+    opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    pane.bell();
+    now += BELL_MS - 1;
+    pane.bell();
+    expect(events.bell.mock.calls).toEqual([[false]]);
+    now += 1;
+    pane.bell();
+    expect(events.bell.mock.calls).toEqual([[false], [false]]);
+    // A failed completion: the bell answers the Tab key.
+    now += BELL_MS;
+    pane.input("\t");
+    now += ECHO_MS - 1;
+    pane.bell();
+    expect(events.bell).toHaveBeenLastCalledWith(true);
   });
 });
 

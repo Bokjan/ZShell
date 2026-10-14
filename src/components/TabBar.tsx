@@ -20,7 +20,7 @@ import { DRAG_REGION } from "../lib/window";
 import { listenHere, tabDrag, useWindowEvent, type DropTarget, type WindowInfo } from "../lib/windows";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
-import { CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
+import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
 
 interface Props {
@@ -29,6 +29,8 @@ interface Props {
   followRemoteTitle: boolean;
   /** Whether tabs in the background with new output are marked (a setting). */
   markOutput: boolean;
+  /** Whether tabs in the background whose terminal rang its bell are marked (a setting). */
+  bellAlert: boolean;
   onSelect(key: number): void;
   /** Opens a local terminal tab ("+"); absent when the system doesn't allow them. */
   onNew?(): void;
@@ -90,6 +92,7 @@ export function TabBar({
   activeKey,
   followRemoteTitle,
   markOutput,
+  bellAlert,
   onSelect,
   onNew,
   onClose,
@@ -393,12 +396,15 @@ export function TabBar({
 
   /** Whether a pane of the tab had output while it was in the background. */
   const newOutput = (tab: Tab) => markOutput && tab.attention === "output";
+  /** Whether a pane of the tab rang its bell while it was in the background. */
+  const bellRang = (tab: Tab) => bellAlert && tab.attention === "bell";
 
   const statusLabel = (tab: Tab) => {
     const pane = focusedPane(tab);
     if (pane.status === "connecting") return t("tabs.status.connecting");
     const parts = [
       pane.status === "closed" && t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed"),
+      bellRang(tab) && t("tabs.bell"),
       newOutput(tab) && t("tabs.newOutput"),
       questionWaiting(tab) && t("tabs.questionWaiting"),
     ].filter(Boolean);
@@ -464,6 +470,11 @@ export function TabBar({
                 className={`status-dot ${pane.status}${newOutput(tab) ? " new-output" : ""}`}
                 title={newOutput(tab) ? t("tabs.newOutput") : undefined}
               />
+              {bellRang(tab) && (
+                <span className="tab-bell" title={t("tabs.bell")}>
+                  <BellIcon />
+                </span>
+              )}
               {isLogging(pane) && <span className="tab-log" title={t("tabs.logging", { path: pane.logPath })} />}
               {questionWaiting(tab) && <span className="tab-question" title={t("tabs.questionWaiting")} />}
               {editing === tab.key ? (
