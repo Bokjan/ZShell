@@ -60,16 +60,22 @@
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239a9a9a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   color: var(--text);
-  /* The app font setting (`--app-font`, with its comma), then the system's fonts: CJK fonts have
-     Latin and Cyrillic letters too, in their own style. */
-  font:
-    calc(13px * var(--text-scale)) / 1.4 var(--app-font,) -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    system-ui,
-    var(--font-cjk),
-    sans-serif;
+  /* The app font setting (`--app-font`, with its comma), then the system's fonts. */
+  font: calc(13px * var(--text-scale)) / 1.4 var(--app-font,) var(--font-ui);
   color-scheme: dark;
+}
+
+/* The system's fonts first: CJK fonts have Latin and Cyrillic letters too, in their own style.
+   macOS's draws Han characters as `<html lang>` says; Linux's have none, so they come from
+   `--font-cjk`. On Windows `system-ui` is the system's own font, Yu Gothic UI on a Japanese
+   Windows, which would draw them in Japanese forms in a Chinese interface: `--font-cjk` goes
+   before it, after Segoe UI, which has no Han characters. */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, var(--font-cjk), sans-serif;
+}
+
+:root[data-platform="windows"] {
+  --font-ui: "Segoe UI", var(--font-cjk), system-ui, sans-serif;
 }
 
 /* CJK fonts of macOS, Windows and Linux by the language whose glyphs they draw (`data-cjk`, set
