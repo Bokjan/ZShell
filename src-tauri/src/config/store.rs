@@ -137,7 +137,9 @@ impl ProfileStore {
 
     /// Inserts or updates a profile and returns it with its id filled in. A new profile goes
     /// into `profile.folder`; an existing one stays where it is. `password`: `None` keeps the
-    /// saved password, `Some("")` deletes it.
+    /// saved password, `Some("")` deletes it. A new profile has an empty id: an unknown one is
+    /// a session deleted since it was opened for editing (in another window), which is not
+    /// brought back.
     pub fn save(&self, mut profile: Profile, password: Option<&str>) -> Result<Profile> {
         profile.normalize_target()?;
         profile.normalize_session_options()?;
@@ -170,6 +172,7 @@ impl ProfileStore {
                     profile.folder = existing.folder.take();
                     *existing = profile.clone();
                 }
+                None if !profile.id.is_empty() => return Err(Error::new("profile.notFound")),
                 None => {
                     profile.id = uuid::Uuid::new_v4().to_string();
                     if let Connection::Ssh(ssh) = &mut profile.connection {

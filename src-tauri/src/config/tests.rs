@@ -138,6 +138,9 @@ fn keeps_passwords_with_their_sessions_and_proxies() {
     assert_eq!(password(Account::Profile(&a.id)), None);
     store.delete(&copy.id).unwrap();
     assert_eq!(password(Account::Profile(&copy.id)), None);
+    // Saving it again (from an editor opened before it was deleted) doesn't bring it back.
+    assert_eq!(store.save(copy.clone(), None).unwrap_err().code(), "profile.notFound");
+    assert!(store.list().iter().all(|p| p.name != "copy"));
 
     let corp = Proxy {
         name: "corp".into(),
