@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PaneSpec, TabsAction, TabsState } from "./tabs";
-import { activeTabOf, createTabStore, INITIAL_TABS, reduceTabs } from "./tabs";
+import { activeTabOf, createTabStore, INITIAL_TABS, reduceTabs, transferSessions } from "./tabs";
 
 const local: PaneSpec = { target: { kind: "local" }, protocol: "local", title: "zsh" };
 const ssh = (profileId: string): PaneSpec => ({ target: { kind: "profile", profileId }, protocol: "ssh", title: profileId });
@@ -59,6 +59,18 @@ describe("insert", () => {
     const next = reduceTabs(state, { type: "open", pane: local });
     expect(keys).not.toContain(next.tabs[2].key);
     expect(keys).not.toContain(next.tabs[2].panes[0].key);
+  });
+
+  it("lists the sessions a moving tab takes over", () => {
+    const there = run({ type: "open", pane: ssh("a") });
+    const [a] = there.tabs[0].panes;
+    const from = { window: "main", pane: a.key };
+    const arriving = (sessionId: number | null) => ({
+      ...a,
+      arrival: { sessionId, connected: true, snapshot: null, reconnect: false, from },
+    });
+    const tab = { ...there.tabs[0], panes: [arriving(7), arriving(null), a, arriving(9)] };
+    expect(transferSessions(tab)).toEqual([7, 9]);
   });
 
   it("puts the tab where it was dropped", () => {

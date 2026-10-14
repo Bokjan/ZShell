@@ -22,7 +22,7 @@ use tokio::sync::oneshot;
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
-use crate::session::SessionManager;
+use crate::session::{SessionId, SessionManager};
 use crate::tab_drag::{self, Dropped};
 
 #[cfg(target_os = "linux")]
@@ -187,23 +187,27 @@ fn cascade(source: &WebviewWindow) -> tauri::Result<Place> {
 
 /// Opens a window the size of this one, which shows `content` first (see [`window_take`]),
 /// and returns its label. It goes next to this one, or where a tab was `dropped` outside the
-/// windows (see [`tab_drag::place_dropped`]). Async: creating a window from a synchronous
-/// command deadlocks on Windows.
+/// windows (see [`tab_drag::place_dropped`]). `sessions`: this window's sessions that a tab in
+/// `content` shows, which the new window may take (see [`SessionManager::offer`]). Async:
+/// creating a window from a synchronous command deadlocks on Windows.
 #[tauri::command]
 pub async fn window_open(
     app: AppHandle,
     window: WebviewWindow,
     windows: State<'_, Windows>,
+    session_manager: State<'_, SessionManager>,
     content: serde_json::Value,
+    sessions: Vec<SessionId>,
     dropped: Option<Dropped>,
-) -> tauri::Result<String> {
+) -> Result<String> {
     let label = format!("{LABEL_PREFIX}{}", windows.next.fetch_add(1, Ordering::Relaxed) + 1);
+    session_manager.offer(window.label(), &sessions, &label)?;
     windows.inbox.lock().unwrap().pending.insert(label.clone(), vec![content]);
     let at_drop = || Some((tab_drag::place_dropped(&app, &window, dropped?)?, size(&window).ok()?));
     let place = at_drop().or_else(|| cascade(&window).ok());
     if let Err(e) = build(&app, &label, place) {
         windows.inbox.lock().unwrap().pending.remove(&label);
-        return Err(e);
+        return Err(e.into());
     }
     changed(&app);
     Ok(label)
@@ -260,16 +264,29 @@ pub fn window_set_title(app: AppHandle, window: WebviewWindow, title: String) ->
 
 /// Gives a tab to window `target`, which takes it (see [`window_take`]) when it hears
 /// `tab-received`, and comes forward. `at`: where in its page it was dropped (CSS pixels from
-/// the left), to put it there among the tabs. Fails with `window.notFound` if it has closed or
-/// is closing.
+/// the left), to put it there among the tabs. `sessions`: this window's sessions that the tab
+/// shows, which `target` may take (see [`SessionManager::offer`]). Fails with
+/// `window.notFound` if it has closed or is closing.
 #[tauri::command]
-pub fn window_send_tab(app: AppHandle, windows: State<'_, Windows>, target: String, tab: serde_json::Value, at: Option<f64>) -> Result<()> {
+#[allow(clippy::too_many_arguments)]
+pub fn window_send_tab(
+    app: AppHandle,
+    window: WebviewWindow,
+    windows: State<'_, Windows>,
+    session_manager: State<'_, SessionManager>,
+    target: String,
+    tab: serde_json::Value,
+    sessions: Vec<SessionId>,
+    at: Option<f64>,
+) -> Result<()> {
+    let source = window.label().to_owned();
     let window = app.get_webview_window(&target).ok_or_else(|| Error::new("window.notFound"))?;
     {
         let mut inbox = windows.inbox.lock().unwrap();
         if inbox.closing.contains(&target) {
             return Err(Error::new("window.notFound"));
         }
+        session_manager.offer(&source, &sessions, &target)?;
         inbox.pending.entry(target.clone()).or_default().push(serde_json::json!({ "kind": "tab", "tab": tab, "at": at }));
     }
     let _ = app.emit_to(EventTarget::webview_window(target), "tab-received", ());

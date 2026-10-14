@@ -4,58 +4,106 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State, WebviewWindow};
+
+use tauri::{AppHandle, Manager, State, Webview, WebviewWindow};
 
 use crate::error::{Error, Result};
-use crate::session::SessionId;
+use crate::session::{SessionId, SessionManager};
 use crate::settings::SettingsStore;
 use crate::sftp::drag;
 use crate::sftp::edit::{self, EditEvent, Edits};
 use crate::sftp::{self, transfer, Listing};
-use crate::ssh::Connections;
+use crate::ssh::{self, Connections};
 
 use super::blocking;
 
+/// Session `id`'s SSH connection, for a file panel of `webview`: its own session's (see
+/// [`SessionManager::check`]).
+fn connection(webview: &str, sessions: &SessionManager, connections: &Connections, id: SessionId) -> Result<Arc<ssh::Connection>> {
+    sessions.check(webview, id)?;
+    connections.get(id)
+}
+
 /// Opens (or reuses) the session's SFTP channel and returns the remote home directory.
 #[tauri::command]
-pub async fn sftp_open(connections: State<'_, Connections>, id: SessionId) -> Result<String> {
-    let sftp = connections.get(id)?.sftp().await?;
+pub async fn sftp_open(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    id: SessionId,
+) -> Result<String> {
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     sftp.canonicalize(".").await.map_err(|e| Error::new("sftp.listFailed").param("path", "~").detail(e))
 }
 
 #[tauri::command]
-pub async fn sftp_list(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<Listing> {
-    let sftp = connections.get(id)?.sftp().await?;
+pub async fn sftp_list(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    id: SessionId,
+    path: String,
+) -> Result<Listing> {
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     sftp::list(&sftp, &path).await.map_err(|e| Error::from(e.context(Error::new("sftp.listFailed").param("path", &path))))
 }
 
 #[tauri::command]
-pub async fn sftp_mkdir(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<()> {
-    let sftp = connections.get(id)?.sftp().await?;
+pub async fn sftp_mkdir(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    id: SessionId,
+    path: String,
+) -> Result<()> {
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     sftp.create_dir(&path).await.map_err(|e| Error::new("sftp.mkdirFailed").param("path", &path).detail(e))
 }
 
 #[tauri::command]
-pub async fn sftp_rename(connections: State<'_, Connections>, id: SessionId, from: String, to: String) -> Result<()> {
-    let sftp = connections.get(id)?.sftp().await?;
+pub async fn sftp_rename(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    id: SessionId,
+    from: String,
+    to: String,
+) -> Result<()> {
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     sftp.rename(&from, &to).await.map_err(|e| Error::new("sftp.renameFailed").param("from", &from).param("to", &to).detail(e))
 }
 
 #[tauri::command]
-pub async fn sftp_remove(connections: State<'_, Connections>, id: SessionId, path: String) -> Result<()> {
-    let sftp = connections.get(id)?.sftp().await?;
+pub async fn sftp_remove(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    id: SessionId,
+    path: String,
+) -> Result<()> {
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     sftp::remove(&sftp, &path).await.map_err(|e| Error::from(e.context(Error::new("sftp.removeFailed").param("path", &path))))
 }
 
 #[tauri::command]
-pub async fn sftp_chmod(connections: State<'_, Connections>, id: SessionId, path: String, mode: u32) -> Result<()> {
-    let sftp = connections.get(id)?.sftp().await?;
+pub async fn sftp_chmod(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    id: SessionId,
+    path: String,
+    mode: u32,
+) -> Result<()> {
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     sftp::chmod(&sftp, &path, mode).await.map_err(|e| Error::from(e.context(Error::new("sftp.chmodFailed").param("path", &path))))
 }
 
 #[tauri::command]
 pub async fn sftp_upload(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     transfers: State<'_, transfer::Transfers>,
     id: SessionId,
@@ -64,7 +112,7 @@ pub async fn sftp_upload(
     remote_dir: String,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<()> {
-    let sftp = connections.get(id)?.transfer_sftp().await?;
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
     let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
     let result = transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await;
     transfers.finish(&transfer_id);
@@ -76,6 +124,8 @@ pub async fn sftp_upload(
 #[tauri::command]
 pub async fn sftp_download(
     app: AppHandle,
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     transfers: State<'_, transfer::Transfers>,
     settings: State<'_, SettingsStore>,
@@ -85,7 +135,7 @@ pub async fn sftp_download(
     local_dir: Option<PathBuf>,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<Vec<PathBuf>> {
-    let sftp = connections.get(id)?.transfer_sftp().await?;
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
     let local_dir = match local_dir {
         Some(dir) => dir,
         None => download_dir(&app, &settings)?,
@@ -99,6 +149,8 @@ pub async fn sftp_download(
 /// Downloads one item to `local_path`, replacing what is there (the save dialog asked).
 #[tauri::command]
 pub async fn sftp_download_as(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     transfers: State<'_, transfer::Transfers>,
     id: SessionId,
@@ -107,7 +159,7 @@ pub async fn sftp_download_as(
     local_path: PathBuf,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<PathBuf> {
-    let sftp = connections.get(id)?.transfer_sftp().await?;
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
     let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
     let result = transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter).await;
     transfers.finish(&transfer_id);
@@ -138,6 +190,8 @@ pub async fn downloads_directory(app: AppHandle) -> Result<PathBuf> {
 #[allow(clippy::too_many_arguments)]
 pub async fn sftp_edit_open(
     app: AppHandle,
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     transfers: State<'_, transfer::Transfers>,
     edits: State<'_, Edits>,
@@ -148,7 +202,7 @@ pub async fn sftp_edit_open(
     on_progress: Channel<transfer::Progress>,
     on_event: Channel<EditEvent>,
 ) -> Result<PathBuf> {
-    let sftp = connections.get(id)?.sftp().await?;
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     let local = edits.local_path(&edit_id, &remote_path)?;
     let remote_stamp = edit::remote_stamp(&sftp, &remote_path).await;
     let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&edit_id));
@@ -181,13 +235,15 @@ async fn open_editor(app: &AppHandle, settings: &SettingsStore, path: PathBuf) -
 /// remote file changed meanwhile.
 #[tauri::command]
 pub async fn sftp_edit_upload(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     edits: State<'_, Edits>,
     id: SessionId,
     edit_id: String,
     force: bool,
 ) -> Result<()> {
-    let sftp = connections.get(id)?.sftp().await?;
+    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     edits.upload(&sftp, &edit_id, force).await
 }
 
@@ -202,6 +258,7 @@ pub fn sftp_edit_stop(edits: State<'_, Edits>, edit_id: String) {
 #[tauri::command]
 pub async fn sftp_drag_out(
     window: WebviewWindow,
+    sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     id: SessionId,
     transfer_id: String,
@@ -211,7 +268,7 @@ pub async fn sftp_drag_out(
 ) -> Result<drag::DragResult> {
     // Before waiting for the SFTP channel.
     let pressed = Instant::now().checked_sub(Duration::from_millis(since_press.into())).unwrap_or_else(Instant::now);
-    let sftp = connections.get(id)?.transfer_sftp().await?;
+    let sftp = connection(window.label(), &sessions, &connections, id)?.transfer_sftp().await?;
     drag::drag_out(&window, sftp, transfer_id, items, pressed, on_event).await
 }
 

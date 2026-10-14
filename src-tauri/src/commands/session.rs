@@ -44,9 +44,9 @@ fn log_info(profile: &Profile) -> LogInfo {
     LogInfo { session: profile.name.clone(), host, user, profile: None }
 }
 
-/// Tells a new session's tab about the log it started with, or why that failed.
-fn report_log(sessions: &SessionManager, id: SessionId, opened: Option<Result<PathBuf>>) {
-    if let (Some(opened), Ok(sink)) = (opened, sessions.sink(id)) {
+/// Tells a new session's tab, in `webview`, about the log it started with, or why that failed.
+fn report_log(sessions: &SessionManager, webview: &str, id: SessionId, opened: Option<Result<PathBuf>>) {
+    if let (Some(opened), Ok(sink)) = (opened, sessions.sink(webview, id)) {
         sink.event(log_event(opened));
     }
 }
@@ -70,7 +70,7 @@ pub enum SessionSpec {
     Quick { protocol: Protocol, username: String, host: String, port: u16 },
     /// Another shell on the SSH connection of session `source` (duplicating its tab), without
     /// connecting or authenticating again. Fails with `session.notConnected` if that session
-    /// has no connection (any more).
+    /// has no connection (any more), and `session.notFound` if it is another window's.
     Shared { source: SessionId },
     /// The user's default shell in a local pseudo terminal.
     Local,
@@ -90,11 +90,11 @@ pub async fn session_open(
     channel: Channel,
 ) -> Result<SessionId> {
     let page = sessions.page(webview.label());
-    let Launch { log_info, auto_log, encoding, backend } = launch(&app, spec)?;
+    let Launch { log_info, auto_log, encoding, backend } = launch(&app, webview.label(), spec)?;
     let slot = LogSlot::new(log_info);
     let opened = open_log(&app, &slot, log, auto_log).await?;
     let id = sessions.spawn(&page, channel, (cols, rows), slot, encoding, |id, io| backend.start(id, io))?;
-    report_log(&sessions, id, opened);
+    report_log(&sessions, webview.label(), id, opened);
     Ok(id)
 }
 
@@ -107,7 +107,8 @@ struct Launch {
     backend: Backend,
 }
 
-fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
+/// What `spec` runs, for a tab of `webview`.
+fn launch(app: &AppHandle, webview: &str, spec: SessionSpec) -> Result<Launch> {
     let connections = app.state::<Connections>().inner().clone();
     let utf8 = encoding_rs::UTF_8;
     match spec {
@@ -151,13 +152,13 @@ fn launch(app: &AppHandle, spec: SessionSpec) -> Result<Launch> {
             Ok(Launch { log_info, auto_log: false, encoding: utf8, backend })
         }
         SessionSpec::Shared { source } => {
+            // Named like the source's log; a log of its own, as a new tab of the session would get.
+            let log_info = app.state::<SessionManager>().sink(webview, source)?.log().info.clone();
             let connection = connections.get(source)?;
             // Ended, but its session hasn't noticed yet (it is about to report it lost).
             if connection.handle().is_closed() {
                 return Err(Error::new("session.notConnected"));
             }
-            // Named like the source's log; a log of its own, as a new tab of the session would get.
-            let log_info = app.state::<SessionManager>().sink(source)?.log().info.clone();
             let store = app.state::<ProfileStore>();
             let auto_log = log_info.profile.as_ref().and_then(|id| store.get(id).ok()).is_some_and(|p| p.auto_log);
             let encoding = encoding::for_profile(&connection.profile().encoding);
@@ -222,9 +223,10 @@ impl Backend {
 
 /// Starts logging a session by hand, in a new file; returns its path.
 #[tauri::command]
-pub async fn session_log_start(app: AppHandle, id: SessionId) -> Result<PathBuf> {
+pub async fn session_log_start(app: AppHandle, webview: Webview, id: SessionId) -> Result<PathBuf> {
+    let webview = webview.label().to_owned();
     blocking(app, move |app| {
-        let sink = app.state::<SessionManager>().sink(id)?;
+        let sink = app.state::<SessionManager>().sink(&webview, id)?;
         let path = app.state::<Logs>().start(sink.log(), &app.state::<SettingsStore>().get().logs)?;
         sink.event(log_event(Ok(path.clone())));
         Ok(path)
@@ -233,8 +235,8 @@ pub async fn session_log_start(app: AppHandle, id: SessionId) -> Result<PathBuf>
 }
 
 #[tauri::command]
-pub fn session_log_stop(sessions: State<'_, SessionManager>, logs: State<'_, Logs>, id: SessionId) -> Result<()> {
-    let sink = sessions.sink(id)?;
+pub fn session_log_stop(webview: Webview, sessions: State<'_, SessionManager>, logs: State<'_, Logs>, id: SessionId) -> Result<()> {
+    let sink = sessions.sink(webview.label(), id)?;
     logs.stop(sink.log());
     sink.event(SessionEvent::Log { path: None, error: None });
     Ok(())
@@ -248,20 +250,20 @@ pub fn local_shell_name() -> Option<String> {
 }
 
 #[tauri::command]
-pub fn session_write(sessions: State<'_, SessionManager>, id: SessionId, data: String) -> Result<()> {
-    sessions.send(id, SessionInput::Data(data.into_bytes()))
+pub fn session_write(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId, data: String) -> Result<()> {
+    sessions.send(webview.label(), id, SessionInput::Data(data.into_bytes()))
 }
 
 /// Sends bytes that are not text (see [`SessionInput::Raw`]).
 #[tauri::command]
-pub fn session_write_bytes(sessions: State<'_, SessionManager>, id: SessionId, data: Vec<u8>) -> Result<()> {
-    sessions.send(id, SessionInput::Raw(data))
+pub fn session_write_bytes(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId, data: Vec<u8>) -> Result<()> {
+    sessions.send(webview.label(), id, SessionInput::Raw(data))
 }
 
 /// Sends a break (serial and Telnet sessions).
 #[tauri::command]
-pub fn session_break(sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
-    sessions.send(id, SessionInput::Break)
+pub fn session_break(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
+    sessions.send(webview.label(), id, SessionInput::Break)
 }
 
 /// The serial ports on this computer.
@@ -271,8 +273,8 @@ pub async fn serial_ports(app: AppHandle) -> Result<Vec<serial::PortInfo>> {
 }
 
 #[tauri::command]
-pub fn session_resize(sessions: State<'_, SessionManager>, id: SessionId, cols: u16, rows: u16) -> Result<()> {
-    sessions.send(id, SessionInput::Resize { cols, rows })
+pub fn session_resize(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId, cols: u16, rows: u16) -> Result<()> {
+    sessions.send(webview.label(), id, SessionInput::Resize { cols, rows })
 }
 
 /// Records that the frontend has processed `bytes` of the session's output.
@@ -281,8 +283,8 @@ pub fn session_ack(webview: Webview, sessions: State<'_, SessionManager>, id: Se
     sessions.ack(webview.label(), id, bytes)
 }
 
-/// Moves a session to a tab of this window (see [`SessionManager::adopt`]): its output and
-/// events come on `channel` from now on. The tab that showed it hands over its screen
+/// Moves a session offered to this window to a tab here (see [`SessionManager::adopt`]): its
+/// output and events come on `channel` from now on. The tab that showed it hands over its screen
 /// ([`session_handover`]) once it hears that the session moved, with `move_id`.
 #[tauri::command]
 pub fn session_adopt(
@@ -310,11 +312,11 @@ pub struct SessionSnapshot {
     pub rows: u16,
 }
 
-/// Passes the screen of a session that moved to the window showing it now, as the
-/// `session-snapshot` event.
+/// Passes the screen of a session that moved away from this window to the window showing it
+/// now, as the `session-snapshot` event.
 #[tauri::command]
-pub fn session_handover(app: AppHandle, sessions: State<'_, SessionManager>, snapshot: SessionSnapshot) -> Result<()> {
-    let owner = sessions.owner(snapshot.id)?;
+pub fn session_handover(app: AppHandle, webview: Webview, sessions: State<'_, SessionManager>, snapshot: SessionSnapshot) -> Result<()> {
+    let owner = sessions.handover(webview.label(), snapshot.id, &snapshot.move_id)?;
     let _ = app.emit_to(EventTarget::webview_window(owner), "session-snapshot", snapshot);
     Ok(())
 }
@@ -322,11 +324,11 @@ pub fn session_handover(app: AppHandle, sessions: State<'_, SessionManager>, sna
 /// The program running in the session's terminal other than the shell (an empty string if
 /// its name is unknown), or `None`. Only local terminals can tell.
 #[tauri::command]
-pub fn session_foreground(sessions: State<'_, SessionManager>, id: SessionId) -> Result<Option<String>> {
-    sessions.foreground(id)
+pub fn session_foreground(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId) -> Result<Option<String>> {
+    sessions.foreground(webview.label(), id)
 }
 
 #[tauri::command]
-pub fn session_close(sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
-    sessions.remove(id)
+pub fn session_close(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId) -> Result<()> {
+    sessions.remove(webview.label(), id)
 }

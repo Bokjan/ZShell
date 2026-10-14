@@ -152,6 +152,9 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       const panes = tab.panes.map(
         (pane): Pane => ({
           ...pane,
+          // The other window's once it has taken it over (see `arrival`): its panels don't use
+          // it before, which the backend would refuse.
+          sessionId: null,
           // Its first shell has long run on that connection; reconnecting makes its own.
           shareFrom: undefined,
           retryAt: null,

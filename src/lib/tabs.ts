@@ -37,6 +37,9 @@ export interface TabTransfer {
   panes: Pane[];
 }
 
+/** The sessions a moving tab's panes take over: the window it goes to is offered them. */
+export const transferSessions = (tab: TabTransfer): SessionId[] => tab.panes.flatMap((pane) => pane.arrival?.sessionId ?? []);
+
 /** A change to a pane: its fields, or a function of the pane and its tab giving them. */
 export type PanePatch = Partial<Pane> | ((pane: Pane, tab: Tab) => Partial<Pane>);
 

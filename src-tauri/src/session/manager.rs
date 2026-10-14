@@ -1,4 +1,10 @@
 //! The open sessions, and the pages they belong to.
+//!
+//! A session belongs to the webview whose tab shows it, and only that webview's commands
+//! reach it: one from another window gets `session.notFound`, as for a session that doesn't
+//! exist. Session ids are counted from 1, so knowing one is no proof of anything. Moving a
+//! session to another window takes the owner's say: it offers the session to that window
+//! ([`SessionManager::offer`]), which can then take it once ([`SessionManager::adopt`]).
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -17,6 +23,11 @@ use crate::zmodem::Zmodem;
 struct SessionEntry {
     /// The webview whose tab shows the session.
     webview: String,
+    /// The webview it is offered to (see [`SessionManager::offer`]).
+    offered_to: Option<String>,
+    /// The webview it last moved from, and the move's id, until that webview has handed its
+    /// screen over (see [`SessionManager::handover`]).
+    moved_from: Option<(String, String)>,
     input: mpsc::UnboundedSender<SessionInput>,
     sink: SessionSink,
     lifetime: Lifetime,
@@ -82,14 +93,35 @@ impl SessionManager {
         let foreground = io.foreground();
         let zmodem = io.sink.zmodem.clone();
         let task = tauri::async_runtime::spawn(backend(id, io));
-        let entry = SessionEntry { webview: page.webview.clone(), input, sink, lifetime, flow, foreground, zmodem, task };
+        let entry = SessionEntry {
+            webview: page.webview.clone(),
+            offered_to: None,
+            moved_from: None,
+            input,
+            sink,
+            lifetime,
+            flow,
+            foreground,
+            zmodem,
+            task,
+        };
         sessions.insert(id, entry);
         Ok(id)
     }
 
-    pub fn send(&self, id: SessionId, input: SessionInput) -> Result<()> {
+    /// Fails with `session.notFound` unless session `id` belongs to `webview`.
+    pub fn check(&self, webview: &str, id: SessionId) -> Result<()> {
+        owned(&self.sessions.lock().unwrap(), webview, id).map(drop)
+    }
+
+    /// Whether session `id` belongs to `webview`.
+    pub fn owns(&self, webview: &str, id: SessionId) -> bool {
+        self.check(webview, id).is_ok()
+    }
+
+    pub fn send(&self, webview: &str, id: SessionId, input: SessionInput) -> Result<()> {
         let sessions = self.sessions.lock().unwrap();
-        let entry = sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?;
+        let entry = owned(&sessions, webview, id)?;
         // A send error means the backend already exited; it will be removed on close.
         let _ = entry.input.send(input);
         Ok(())
@@ -106,22 +138,56 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Moves a session to a tab on `page` (another window's), which receives its output and
-    /// events on `channel` from now on (see [`SessionSink::move_to`]). Not during a ZMODEM
-    /// transfer, whose file dialogs belong to the old tab (`session.busy`). `move_id` names the
-    /// move for the old tab (see [`SessionEvent::Moved`](super::SessionEvent::Moved)).
+    /// Offers the sessions `ids`, which belong to `webview`, to the webview `to`, which a tab
+    /// showing them is given to: it may then take them ([`adopt`](Self::adopt)), once. A later
+    /// offer replaces this one. Offers nothing unless `webview` has all of them.
+    pub fn offer(&self, webview: &str, ids: &[SessionId], to: &str) -> Result<()> {
+        let mut sessions = self.sessions.lock().unwrap();
+        for id in ids {
+            owned(&sessions, webview, *id)?;
+        }
+        for id in ids {
+            if let Some(entry) = sessions.get_mut(id) {
+                entry.offered_to = Some(to.to_owned());
+            }
+        }
+        Ok(())
+    }
+
+    /// Moves a session offered to `page`'s webview ([`offer`](Self::offer)) to a tab there,
+    /// which receives its output and events on `channel` from now on (see
+    /// [`SessionSink::move_to`]). Not during a ZMODEM transfer, whose file dialogs belong to the
+    /// old tab (`session.busy`). `move_id` names the move for the old tab (see
+    /// [`SessionEvent::Moved`](super::SessionEvent::Moved)), which hands its screen over with it.
     pub fn adopt(&self, id: SessionId, page: &Page, channel: Channel, move_id: String) -> Result<()> {
         let mut sessions = self.sessions.lock().unwrap();
         if self.page(&page.webview).generation != page.generation {
             return Err(Error::new("session.pageGone"));
         }
-        let entry = sessions.get_mut(&id).ok_or_else(|| Error::new("session.notFound"))?;
+        let entry = sessions.get_mut(&id).filter(|entry| entry.offered_to.as_ref() == Some(&page.webview));
+        let entry = entry.ok_or_else(|| Error::new("session.notFound"))?;
         if entry.zmodem.is_active() {
             return Err(Error::new("session.busy"));
         }
-        entry.webview = page.webview.clone();
+        entry.offered_to = None;
+        let from = std::mem::replace(&mut entry.webview, page.webview.clone());
+        entry.moved_from = Some((from, move_id.clone()));
         entry.sink.move_to(channel, move_id);
         Ok(())
+    }
+
+    /// The webview a session has moved to, for the screen that `webview`, which it moved from
+    /// with `move_id`, hands over; once.
+    pub fn handover(&self, webview: &str, id: SessionId, move_id: &str) -> Result<String> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let entry = sessions.get_mut(&id).ok_or_else(|| Error::new("session.notFound"))?;
+        match &entry.moved_from {
+            Some((from, moved)) if from == webview && moved == move_id => {
+                entry.moved_from = None;
+                Ok(entry.webview.clone())
+            }
+            _ => Err(Error::new("session.notFound")),
+        }
     }
 
     /// How many sessions `webview`'s tabs show.
@@ -130,58 +196,64 @@ impl SessionManager {
         sessions.values().filter(|entry| entry.webview == webview).count() as u32
     }
 
-    /// The webview whose tab shows the session.
-    pub fn owner(&self, id: SessionId) -> Result<String> {
-        let sessions = self.sessions.lock().unwrap();
-        Ok(sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.webview.clone())
-    }
-
     /// The program running in the session's foreground other than its shell, if any (see
     /// [`ForegroundProbe`](super::ForegroundProbe)); always `None` for sessions that cannot tell.
-    pub fn foreground(&self, id: SessionId) -> Result<Option<String>> {
-        let foreground = {
-            let sessions = self.sessions.lock().unwrap();
-            sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.foreground.clone()
-        };
+    pub fn foreground(&self, webview: &str, id: SessionId) -> Result<Option<String>> {
+        let foreground = owned(&self.sessions.lock().unwrap(), webview, id)?.foreground.clone();
         Ok(foreground.get())
     }
 
     /// The session's output side: its log, and events for its tab.
-    pub fn sink(&self, id: SessionId) -> Result<SessionSink> {
-        let sessions = self.sessions.lock().unwrap();
-        Ok(sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.sink.clone())
+    pub fn sink(&self, webview: &str, id: SessionId) -> Result<SessionSink> {
+        Ok(owned(&self.sessions.lock().unwrap(), webview, id)?.sink.clone())
     }
 
-    pub fn zmodem(&self, id: SessionId) -> Result<Arc<Zmodem>> {
-        let sessions = self.sessions.lock().unwrap();
-        Ok(sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?.zmodem.clone())
+    pub fn zmodem(&self, webview: &str, id: SessionId) -> Result<Arc<Zmodem>> {
+        Ok(owned(&self.sessions.lock().unwrap(), webview, id)?.zmodem.clone())
     }
 
     /// Closes a session: releases what it holds, then aborts its task.
-    pub fn remove(&self, id: SessionId) -> Result<()> {
-        let entry = self.sessions.lock().unwrap().remove(&id).ok_or_else(|| Error::new("session.notFound"))?;
-        entry.lifetime.close();
-        entry.task.abort();
+    pub fn remove(&self, webview: &str, id: SessionId) -> Result<()> {
+        let entry = {
+            let mut sessions = self.sessions.lock().unwrap();
+            owned(&sessions, webview, id)?;
+            sessions.remove(&id)
+        };
+        if let Some(entry) = entry {
+            close(entry);
+        }
         Ok(())
     }
 
     /// Closes the sessions of a webview whose page is going away (reloading, or its window
-    /// closing): nothing would show them or close them any more.
+    /// closing): nothing would show them or close them any more. Sessions offered to it are
+    /// still offered: a new window's page starts loading after it was offered the sessions it
+    /// is to take.
     pub fn remove_webview(&self, webview: &str) {
-        let ids: Vec<SessionId> = {
-            let sessions = self.sessions.lock().unwrap();
+        let entries: Vec<SessionEntry> = {
+            let mut sessions = self.sessions.lock().unwrap();
             *self.pages.lock().unwrap().entry(webview.to_owned()).or_default() += 1;
-            sessions.iter().filter(|(_, entry)| entry.webview == webview).map(|(id, _)| *id).collect()
+            let ids: Vec<SessionId> = sessions.iter().filter(|(_, entry)| entry.webview == webview).map(|(id, _)| *id).collect();
+            ids.iter().filter_map(|id| sessions.remove(id)).collect()
         };
-        for id in ids {
-            let _ = self.remove(id);
-        }
+        entries.into_iter().for_each(close);
     }
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.sessions.lock().unwrap().len()
     }
+}
+
+/// Session `id`, if it belongs to `webview` (see the module's docs).
+fn owned<'a>(sessions: &'a HashMap<SessionId, SessionEntry>, webview: &str, id: SessionId) -> Result<&'a SessionEntry> {
+    sessions.get(&id).filter(|entry| entry.webview == webview).ok_or_else(|| Error::new("session.notFound"))
+}
+
+/// Releases what a session holds, then aborts its task.
+fn close(entry: SessionEntry) {
+    entry.lifetime.close();
+    entry.task.abort();
 }
 
 #[cfg(test)]
@@ -257,7 +329,7 @@ mod tests {
         // Dropping the task's terminal side doesn't release twice.
         assert_eq!((a_released(), b_released()), (1, 1));
 
-        sessions.remove(other).unwrap();
+        sessions.remove("other", other).unwrap();
         assert_eq!((sessions.len(), other_released()), (0, 1));
     }
 
@@ -309,12 +381,18 @@ mod tests {
 
         let (new, new_messages) = recording();
         assert_eq!(sessions.owned("main"), 1);
+        sessions.offer("main", &[id], "other").unwrap();
         sessions.adopt(id, &sessions.page("other"), new, "m1".into()).unwrap();
         sink.write(b"after".to_vec());
         assert_eq!(*old_messages.lock().unwrap(), [b"\0before".to_vec(), b"\x01{\"type\":\"moved\",\"moveId\":\"m1\"}".to_vec()]);
         assert_eq!(*new_messages.lock().unwrap(), [b"\0after".to_vec()]);
-        assert_eq!(sessions.owner(id).unwrap(), "other");
+        assert!(sessions.owns("other", id) && !sessions.owns("main", id));
         assert_eq!((sessions.owned("main"), sessions.owned("other")), (0, 1));
+        // The old window hands its screen over to the new one, once, for that move only.
+        assert_eq!(sessions.handover("other", id, "m1").unwrap_err().code(), "session.notFound");
+        assert_eq!(sessions.handover("main", id, "m0").unwrap_err().code(), "session.notFound");
+        assert_eq!(sessions.handover("main", id, "m1").unwrap(), "other");
+        assert_eq!(sessions.handover("main", id, "m1").unwrap_err().code(), "session.notFound");
 
         let unacked = || sink.flow().unacked();
         assert_eq!(unacked(), 5);
@@ -325,7 +403,46 @@ mod tests {
 
         // Not to a page that has gone away since.
         let gone = sessions.page("third");
+        sessions.offer("other", &[id], "third").unwrap();
         sessions.remove_webview("third");
         assert_eq!(sessions.adopt(id, &gone, Channel::new(|_| Ok(())), "m2".into()).unwrap_err().code(), "session.pageGone");
+        // A new window is offered its sessions before its page starts loading.
+        sessions.offer("other", &[id], "fourth").unwrap();
+        sessions.remove_webview("fourth");
+        sessions.adopt(id, &sessions.page("fourth"), Channel::new(|_| Ok(())), "m3".into()).unwrap();
+        assert!(sessions.owns("fourth", id));
+    }
+
+    /// Only the window showing a session can act on it, or give it to another window.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sessions_answer_only_their_window() {
+        let sessions = SessionManager::default();
+        let (id, released, _) = hold(&sessions, "main");
+        let (theirs, _, _) = hold(&sessions, "other");
+        // The tasks register their releases once running.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let not_found = |result: Result<()>| result.unwrap_err().code();
+        assert_eq!(not_found(sessions.send("other", id, SessionInput::Break)), "session.notFound");
+        assert_eq!(not_found(sessions.sink("other", id).map(drop)), "session.notFound");
+        assert_eq!(not_found(sessions.zmodem("other", id).map(drop)), "session.notFound");
+        assert_eq!(not_found(sessions.foreground("other", id).map(drop)), "session.notFound");
+        assert_eq!(not_found(sessions.remove("other", id)), "session.notFound");
+        assert_eq!(not_found(sessions.check("other", id)), "session.notFound");
+        sessions.send("main", id, SessionInput::Break).unwrap();
+
+        // Taking it needs an offer, from its own window, for this one; it is used up.
+        let take = |webview: &str| sessions.adopt(id, &sessions.page(webview), Channel::new(|_| Ok(())), "m".into());
+        assert_eq!(not_found(take("other")), "session.notFound");
+        assert_eq!(not_found(sessions.offer("other", &[id], "other")), "session.notFound");
+        // Nothing is offered unless all of them are its own.
+        assert_eq!(not_found(sessions.offer("main", &[id, theirs], "third")), "session.notFound");
+        assert_eq!(not_found(take("third")), "session.notFound");
+        sessions.offer("main", &[id], "third").unwrap();
+        assert_eq!(not_found(take("other")), "session.notFound");
+        take("third").unwrap();
+        assert_eq!(not_found(take("third")), "session.notFound");
+        assert!(sessions.owns("third", id));
+        sessions.remove("third", id).unwrap();
+        assert_eq!(released(), 1);
     }
 }

@@ -5,7 +5,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { Change, DropTarget, Dropped, Rect, WindowInfo } from "./bindings";
-import type { TabTransfer } from "./tabs";
+import { transferSessions, type TabTransfer } from "./tabs";
 
 export type { Change, DropTarget, WindowInfo } from "./bindings";
 
@@ -55,7 +55,12 @@ export const windows = {
    * Opens a window showing `content`, and returns its label: next to this one, or where a tab
    * was `dropped` outside the windows.
    */
-  open: (content: WindowContent, dropped?: Dropped) => invoke<string>("window_open", { content, dropped: dropped ?? null }),
+  open: (content: WindowContent, dropped?: Dropped) =>
+    invoke<string>("window_open", {
+      content,
+      sessions: content.kind === "tab" ? transferSessions(content.tab) : [],
+      dropped: dropped ?? null,
+    }),
   /**
    * What this window is to show and hasn't taken yet: what it opened for, and the tabs other
    * windows gave it (`tab-received` says when). Each is taken once.
@@ -69,8 +74,12 @@ export const windows = {
   /** The other windows, in the order they opened. */
   list: () => invoke<WindowInfo[]>("window_list"),
   setTitle: (title: string) => invoke<void>("window_set_title", { title }),
-  /** Gives a tab to another window, which comes forward (`window.notFound` if it has closed). */
-  sendTab: (target: string, tab: TabTransfer, at?: number) => invoke<void>("window_send_tab", { target, tab, at: at ?? null }),
+  /**
+   * Gives a tab to another window, which comes forward (`window.notFound` if it has closed)
+   * and may take the tab's sessions from this one.
+   */
+  sendTab: (target: string, tab: TabTransfer, at?: number) =>
+    invoke<void>("window_send_tab", { target, tab, sessions: transferSessions(tab), at: at ?? null }),
   /** Tells the window a tab came from that its pane `pane` couldn't move here (`pane-stayed`). */
   paneStayed: (target: string, pane: number) => invoke<void>("window_pane_stayed", { target, pane }),
   /** How many tabs in all the windows are busy (connected, running a program), for quitting. */
