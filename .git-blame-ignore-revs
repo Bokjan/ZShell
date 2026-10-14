@@ -3,3 +3,6 @@
 
 # chore: format with rustfmt and Prettier
 b9ac19fac722eeb6d88545557050507f479eb064
+
+# chore: format the scripts, workflows and index.html with Prettier
+f4f851ff1d1af8077d00c9099d1e4f490510339d

@@ -19,7 +19,7 @@ pnpm install
 pnpm tauri dev                          # 开发模式运行
 pnpm build                              # 前端类型检查（tsc）并构建
 pnpm test                               # 前端单元测试（vitest，测试文件与被测模块放在一起：*.test.ts）
-pnpm format                             # 用 Prettier 格式化 src/（检查：pnpm format:check）
+pnpm format                             # 用 Prettier 格式化前端、脚本与配置（检查：pnpm format:check）
 pnpm tauri build --debug --bundles app  # 打包 debug 版 .app，用于端到端测试（macOS）
 pnpm tauri build --debug --no-bundle    # 只编译 debug 版可执行文件 src-tauri/target/debug/zshell（Linux）
 pnpm tauri build                        # 打包 release 版（Linux 上是 deb 与 rpm，见 tauri.linux.conf.json）
@@ -33,7 +33,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-格式由 Prettier（`.prettierrc.json`）和 rustfmt（`src-tauri/rustfmt.toml`）决定，两边都是 140 列，CI 会检查。`src/lib/bindings.ts` 是生成的，不参与格式化。全量格式化的提交记在 `.git-blame-ignore-revs` 里，GitHub 的 blame 会跳过它们；本地运行一次 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 即可同样跳过。
+格式由 Prettier（`.prettierrc.json`）和 rustfmt（`src-tauri/rustfmt.toml`）决定，两边都是 140 列，CI 会检查。Prettier 管 `src-tauri/` 与 Markdown 以外的文件，`src/lib/bindings.ts` 和 `pnpm-lock.yaml` 是生成的，也不参与（见 `.prettierignore`）。全量格式化的提交记在 `.git-blame-ignore-revs` 里，GitHub 的 blame 会跳过它们；本地运行一次 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 即可同样跳过。
 
 ZMODEM 的测试除了自己的收发互测，还与 lrzsz 的 `lsz` / `lrz` 对传（含经由伪终端），未安装 lrzsz 时跳过（`brew install lrzsz`；CI 上没有）。
 
