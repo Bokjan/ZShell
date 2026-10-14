@@ -100,7 +100,6 @@ export function ImportDialog({ onClose }: Props) {
                   if (!busy) void load(path);
                 }
               }}
-              spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
             />

@@ -114,13 +114,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
           <div className="row">
             <label className="grow">
               {t("forwards.dialog.address")}
-              <input
-                value={bindHost}
-                onChange={(e) => setBindHost(e.target.value)}
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-              />
+              <input value={bindHost} onChange={(e) => setBindHost(e.target.value)} autoCapitalize="off" autoCorrect="off" />
             </label>
             <label className="port">
               {t("forwards.dialog.port")}
@@ -145,14 +139,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
             <div className="row">
               <label className="grow">
                 {t("forwards.dialog.address")}
-                <input
-                  value={targetHost}
-                  onChange={(e) => setTargetHost(e.target.value)}
-                  required
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
+                <input value={targetHost} onChange={(e) => setTargetHost(e.target.value)} required autoCapitalize="off" autoCorrect="off" />
               </label>
               <label className="port">
                 {t("forwards.dialog.port")}

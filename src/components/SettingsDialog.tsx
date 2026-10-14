@@ -196,7 +196,6 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
               placeholder={t("settings.search")}
               aria-label={t("settings.search")}
               onChange={(e) => search(e.target.value)}
-              spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
             />
@@ -330,7 +329,6 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                           : t("settings.fontFamilyPlaceholder")
                       }
                       title={defaultFontStack(currentCjk())}
-                      spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"
                     />

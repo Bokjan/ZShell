@@ -61,7 +61,6 @@ export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }
           aria-expanded={matches.length > 0}
           aria-autocomplete="list"
           aria-activedescendant={index < 0 ? undefined : optionId(index)}
-          spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
         />

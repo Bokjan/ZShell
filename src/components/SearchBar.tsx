@@ -112,7 +112,6 @@ export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={onInputKeyDown}
         placeholder={t("search.placeholder")}
-        spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
       />

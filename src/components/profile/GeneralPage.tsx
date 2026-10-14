@@ -56,7 +56,6 @@ export function GeneralPage({ form, set, changeProtocol, profile, password, uses
           autoFocus
           autoCapitalize="off"
           autoCorrect="off"
-          spellCheck={false}
         />
       </label>
       <label className="port">
@@ -76,7 +75,6 @@ export function GeneralPage({ form, set, changeProtocol, profile, password, uses
         placeholder={ssh ? undefined : t("profile.optional")}
         autoCapitalize="off"
         autoCorrect="off"
-        spellCheck={false}
       />
     </label>
   );
@@ -123,7 +121,7 @@ export function GeneralPage({ form, set, changeProtocol, profile, password, uses
               )}
             </span>
             <div className="input-with-button">
-              <input name="keyPath" value={form.keyPath} onChange={(e) => set({ keyPath: e.target.value })} spellCheck={false} />
+              <input name="keyPath" value={form.keyPath} onChange={(e) => set({ keyPath: e.target.value })} />
               <button type="button" className="secondary" onClick={chooseKey}>
                 {t("profile.chooseKeyButton")}
               </button>
@@ -158,7 +156,6 @@ export function GeneralPage({ form, set, changeProtocol, profile, password, uses
             autoFocus
             autoCapitalize="off"
             autoCorrect="off"
-            spellCheck={false}
           />
           <IconButton type="button" className="icon-button" label={t("profile.refreshDevices")} onClick={refreshPorts}>
             <RefreshIcon />

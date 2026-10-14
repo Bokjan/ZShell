@@ -49,7 +49,6 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={t("quick.textPlaceholder")}
-            spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
           />

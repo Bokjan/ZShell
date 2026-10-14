@@ -109,7 +109,6 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
                 aria-expanded={entries.length > 0}
                 aria-autocomplete="list"
                 aria-activedescendant={index < 0 ? undefined : optionId(index)}
-                spellCheck={false}
                 autoCapitalize="off"
                 autoCorrect="off"
               />

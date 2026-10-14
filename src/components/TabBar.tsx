@@ -575,7 +575,6 @@ function TitleEditor({ initial, onDone }: { initial: string; onDone(value: strin
         else if (e.key === "Escape") finish(null);
       }}
       onBlur={(e) => finish(e.target.value.trim())}
-      spellCheck={false}
       autoCapitalize="off"
       autoCorrect="off"
     />

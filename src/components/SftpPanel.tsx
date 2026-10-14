@@ -386,12 +386,7 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
             void load(listing.pathInput.trim() || ".");
           }}
         >
-          <input
-            value={listing.pathInput}
-            onChange={(e) => listing.setPathInput(e.target.value)}
-            spellCheck={false}
-            title={t("sftp.pathHint")}
-          />
+          <input value={listing.pathInput} onChange={(e) => listing.setPathInput(e.target.value)} title={t("sftp.pathHint")} />
         </form>
         <IconButton
           className={`icon-button${filter !== null ? " on" : ""}`}
@@ -429,7 +424,6 @@ export function SftpPanel({ sessionId, connected, active, onTransfers, onEdits, 
             placeholder={t("sftp.filterPlaceholder")}
             onChange={(e) => setFilter(e.target.value)}
             onKeyDown={onFilterKeyDown}
-            spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
           />

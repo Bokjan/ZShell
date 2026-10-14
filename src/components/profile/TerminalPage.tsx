@@ -43,7 +43,6 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
               placeholder={DEFAULT_TERM_TYPE}
               autoCapitalize="off"
               autoCorrect="off"
-              spellCheck={false}
             />
             <datalist id="profile-term-types">
               {TERM_TYPES.map((type) => (
@@ -62,7 +61,6 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
           value={form.loginCommands}
           onChange={(e) => set({ loginCommands: e.target.value })}
           placeholder={t("profile.loginCommandsPlaceholder")}
-          spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
         />
@@ -79,7 +77,6 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
               value={form.env}
               onChange={(e) => set({ env: e.target.value })}
               placeholder={t("profile.envPlaceholder")}
-              spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
             />

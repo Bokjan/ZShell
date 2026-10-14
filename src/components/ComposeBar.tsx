@@ -216,7 +216,6 @@ export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChan
             historyIndex.current = history.length;
           }}
           onKeyDown={onKeyDown}
-          spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
         />

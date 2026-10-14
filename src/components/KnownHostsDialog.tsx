@@ -93,7 +93,6 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
           placeholder={t("knownHosts.search")}
           autoFocus
           onChange={(e) => setQuery(e.target.value)}
-          spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
         />

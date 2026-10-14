@@ -543,7 +543,6 @@ export function Sidebar(props: Props) {
             highlighted < 0 ? undefined : highlighted < results.length ? rowId(`r:${results[highlighted].id}`) : rowId("quick")
           }
           placeholder={t("sidebar.searchPlaceholder", { shortcut: shortcutLabel("searchSessions") })}
-          spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
         />
@@ -694,7 +693,6 @@ function NameEditor({ initial, onDone }: { initial: string; onDone(name: string 
         else if (e.key === "Escape") finish(null);
       }}
       onBlur={(e) => finish(e.target.value.trim() || null)}
-      spellCheck={false}
       autoCapitalize="off"
       autoCorrect="off"
     />

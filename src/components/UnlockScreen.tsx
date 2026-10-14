@@ -171,7 +171,7 @@ function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: Va
         <p className="dialog-message">{t("vault.resetMessage")}</p>
         <label>
           {t("vault.resetWordLabel", { word: RESET_WORD })}
-          <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus autoComplete="off" spellCheck={false} />
+          <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus autoComplete="off" />
         </label>
         {error && <ErrorText>{error}</ErrorText>}
         <footer>

@@ -87,7 +87,6 @@ export function LogSection({
             onChange={(e) => setFileName(e.target.value)}
             onBlur={commitFileName}
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && commitFileName()}
-            spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
           />

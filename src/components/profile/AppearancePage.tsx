@@ -55,7 +55,6 @@ export function AppearancePage({ form, set }: Props) {
             value={form.fontFamily}
             onChange={(e) => set({ fontFamily: e.target.value })}
             placeholder={settings.terminal.fontFamily || t("profile.sameAsSettings")}
-            spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
           />

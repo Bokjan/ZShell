@@ -155,7 +155,6 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
                   autoFocus
                   autoCapitalize="off"
                   autoCorrect="off"
-                  spellCheck={false}
                 />
               </label>
               <label className="port">
@@ -171,7 +170,6 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
                 placeholder={t("proxy.usernamePlaceholder")}
                 autoCapitalize="off"
                 autoCorrect="off"
-                spellCheck={false}
               />
             </label>
             {username.trim() && (
@@ -197,7 +195,6 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
                 onChange={(e) => setCommand(e.target.value)}
                 placeholder="nc -X connect -x proxy.example.com:8080 %h %p"
                 autoFocus
-                spellCheck={false}
                 autoCapitalize="off"
                 autoCorrect="off"
               />
