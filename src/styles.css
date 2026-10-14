@@ -807,13 +807,14 @@ body.dragging-row {
   font-weight: 600;
 }
 /* The focused pane of a split tab, and the terminal whose input is synced to other panes:
-   a layer above the terminal's canvas, which would cover an outline. */
+   a layer above the terminal's canvas, which would cover an outline, and above the dividers,
+   whose line lies on a pane's edge. */
 .pane-area.split .pane.focused::after,
 .pane.syncing::after {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 5;
+  z-index: 7;
   border: 1px solid var(--accent);
   pointer-events: none;
 }
@@ -828,7 +829,7 @@ body.dragging-row {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 5;
+  z-index: 7;
   height: 2px;
   background: var(--accent);
   pointer-events: none;
@@ -852,7 +853,7 @@ body.dragging-row {
 .pane-refused {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  z-index: 8;
   border: 2px solid var(--warn);
   pointer-events: none;
   animation: pane-refused 0.4s ease-out forwards;
