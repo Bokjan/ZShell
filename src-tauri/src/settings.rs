@@ -128,6 +128,8 @@ pub struct TabSettings {
     pub follow_remote_title: bool,
     /// Ask before closing tabs that are connected or running a program.
     pub confirm_close: bool,
+    /// Mark the tabs in the background that have new output, until they are shown.
+    pub mark_output: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, TS)]
@@ -284,7 +286,7 @@ impl Default for TerminalSettings {
 
 impl Default for TabSettings {
     fn default() -> Self {
-        Self { follow_remote_title: true, confirm_close: true }
+        Self { follow_remote_title: true, confirm_close: true, mark_output: true }
     }
 }
 

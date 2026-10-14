@@ -805,7 +805,11 @@ followRemoteTitle: boolean,
 /**
  * Ask before closing tabs that are connected or running a program.
  */
-confirmClose: boolean, };
+confirmClose: boolean, 
+/**
+ * Mark the tabs in the background that have new output, until they are shown.
+ */
+markOutput: boolean, };
 
 export type TerminalSettings = { 
 /**

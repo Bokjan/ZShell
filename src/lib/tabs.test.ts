@@ -214,3 +214,37 @@ describe("store", () => {
     expect(calls).toBe(1);
   });
 });
+
+describe("attention", () => {
+  // Two tabs, the second shown.
+  const twoTabs = () => run({ type: "open", pane: ssh("a") }, { type: "open", pane: ssh("b") });
+  const paneOf = (state: TabsState, index: number) => state.tabs[index].panes[0].key;
+
+  it("marks a tab in the background, not the one shown", () => {
+    let state = twoTabs();
+    state = reduceTabs(state, { type: "attention", key: paneOf(state, 1), kind: "output" });
+    expect(state.tabs[1].attention).toBeUndefined();
+    state = reduceTabs(state, { type: "attention", key: paneOf(state, 0), kind: "output" });
+    expect(state.tabs[0].attention).toBe("output");
+  });
+
+  it("lets a bell outrank output, not the other way round", () => {
+    let state = twoTabs();
+    const key = paneOf(state, 0);
+    state = reduceTabs(state, { type: "attention", key, kind: "output" });
+    state = reduceTabs(state, { type: "attention", key, kind: "bell" });
+    expect(state.tabs[0].attention).toBe("bell");
+    const before = state;
+    state = reduceTabs(state, { type: "attention", key, kind: "output" });
+    expect(state).toBe(before);
+  });
+
+  it("clears the mark once the tab is shown, however it comes to be", () => {
+    let state = twoTabs();
+    state = reduceTabs(state, { type: "attention", key: paneOf(state, 0), kind: "bell" });
+    expect(reduceTabs(state, { type: "activate", key: state.tabs[0].key }).tabs[0].attention).toBeUndefined();
+    expect(reduceTabs(state, { type: "focusPane", key: paneOf(state, 0) }).tabs[0].attention).toBeUndefined();
+    // Closing the tab shown shows the one left.
+    expect(reduceTabs(state, { type: "close", keys: [paneOf(state, 1)] }).tabs[0].attention).toBeUndefined();
+  });
+});

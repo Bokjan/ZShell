@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 import type { SessionId, SessionTarget } from "./api";
 import { heirOf, mapLayout, removeFromLayout, splitLayout, type Direction } from "./layout";
-import { focusedPane, type Layout, type Pane, type SidePanel, type Tab, type TabProtocol } from "./panes";
+import { focusedPane, type Attention, type Layout, type Pane, type SidePanel, type Tab, type TabProtocol } from "./panes";
 
 /** The tabs of the window, and which one is shown. */
 export interface TabsState {
@@ -65,7 +65,9 @@ export type TabsAction =
    * and the protocol and terminal type are the target's current ones. The side panel closes
    * when the focused pane is no longer SSH.
    */
-  | { type: "connecting"; key: number; protocol: TabProtocol; termType: string | null };
+  | { type: "connecting"; key: number; protocol: TabProtocol; termType: string | null }
+  /** Something happened in pane `key`: its tab is marked if it is in the background. */
+  | { type: "attention"; key: number; kind: Attention };
 
 const newPane = (key: number, spec: PaneSpec): Pane => ({
   key,
@@ -117,7 +119,17 @@ function close(state: TabsState, keys: number[]): TabsState {
   return { ...state, tabs, activeKey };
 }
 
+/** The tab shown has nothing to ask for: what marked it is in sight now. */
+function seen(state: TabsState): TabsState {
+  const active = activeTabOf(state);
+  return active?.attention ? mapTab(state, active.key, ({ attention: _, ...tab }) => tab) : state;
+}
+
 export function reduceTabs(state: TabsState, action: TabsAction): TabsState {
+  return seen(reduce(state, action));
+}
+
+function reduce(state: TabsState, action: TabsAction): TabsState {
   switch (action.type) {
     case "open": {
       const pane = newPane(state.nextKey, action.pane);
@@ -212,6 +224,11 @@ export function reduceTabs(state: TabsState, action: TabsAction): TabsState {
         const sidePanel = t.focused === action.key && action.protocol !== "ssh" ? null : t.sidePanel;
         return { ...t, panes, sidePanel };
       });
+    }
+    case "attention": {
+      const tab = tabOf(state.tabs, action.key);
+      if (!tab || tab.key === state.activeKey || tab.attention === "bell" || tab.attention === action.kind) return state;
+      return mapTab(state, tab.key, (t) => ({ ...t, attention: action.kind }));
     }
   }
 }

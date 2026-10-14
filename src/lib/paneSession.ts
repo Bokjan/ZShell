@@ -52,6 +52,8 @@ export interface SessionEvents {
   exited(status: number | null): void;
   /** An automatic reconnection is due at this time (`Date.now()`), or none is any more (null). */
   retry(at: number | null): void;
+  /** Output came that isn't an answer to typing or resizing (see `ECHO_MS`); often. */
+  output(): void;
   /** The pane that came from another window has started here (see `PaneSession.start`). */
   arrived(): void;
   /** The pane's session couldn't move here from the other window, which still shows it. */
@@ -90,6 +92,12 @@ const ACK_BATCH = 64 * 1024;
 
 /** How long the output must pause before the next login command is typed. */
 export const LOGIN_COMMAND_IDLE_MS = 300;
+
+/**
+ * Output this soon after the pane was typed into or resized answers that (an echo, a program
+ * drawing again at the new size) rather than being news: it doesn't count as `output`.
+ */
+export const ECHO_MS = 300;
 
 /**
  * Whether the text before the cursor looks like a shell prompt: not empty, and not ending
@@ -150,6 +158,8 @@ export class PaneSession {
   private connectWhenResumed = false;
   /** What the terminal has sent and received on the current connection. */
   readonly traffic = new TrafficMeter();
+  /** When the pane was last typed into or resized (`performance.now()`). */
+  private nudgedAt = -Infinity;
 
   constructor(
     private readonly port: TerminalPort,
@@ -208,6 +218,7 @@ export class PaneSession {
       // The terminal's answers to the shell's queries (fish asks at startup) aren't typing.
       if (!isTerminalReport(data)) this.stopLoginCommands();
       if (!this.session) return false;
+      this.nudgedAt = performance.now();
       void this.session.write(data);
       this.traffic.addSent(utf8Length(data));
       return true;
@@ -228,6 +239,7 @@ export class PaneSession {
    */
   inputBinary(data: string) {
     if (this.closed || !this.session) return;
+    this.nudgedAt = performance.now();
     void this.session.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff));
     this.traffic.addSent(data.length);
   }
@@ -235,6 +247,7 @@ export class PaneSession {
   /** The terminal's new size. Not while a screen from another window is drawn: at its size. */
   resize(cols: number, rows: number) {
     if (this.arriving) return;
+    this.nudgedAt = performance.now();
     void this.session?.resize(cols, rows);
   }
 
@@ -426,6 +439,7 @@ export class PaneSession {
       (data) => {
         if (stale()) return;
         this.traffic.addReceived(data.byteLength);
+        if (performance.now() - this.nudgedAt >= ECHO_MS) this.events.output();
         this.port.write(data, () => {
           processed += data.byteLength;
           acknowledge();

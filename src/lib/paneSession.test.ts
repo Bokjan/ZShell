@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import {
   forwards,
@@ -13,7 +13,7 @@ import {
   type openSession,
 } from "./api";
 import type { Arrival } from "./panes";
-import { LOGIN_COMMAND_IDLE_MS, PaneSession, type SessionConfig, type SessionEvents, type TerminalPort } from "./paneSession";
+import { ECHO_MS, LOGIN_COMMAND_IDLE_MS, PaneSession, type SessionConfig, type SessionEvents, type TerminalPort } from "./paneSession";
 
 // The forwarding rules running on a connection being replaced (see `reconnect`), and the
 // screen handed over when a session moves to another window.
@@ -136,6 +136,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     arrived: vi.fn(),
     stayed: vi.fn(),
     movedAway: vi.fn(),
+    output: vi.fn(),
   } satisfies SessionEvents;
   const pane = new PaneSession(
     port,
@@ -358,6 +359,32 @@ describe("traffic", () => {
     opened[0].event(lost());
     await vi.advanceTimersByTimeAsync(2000);
     expect(pane.traffic).toMatchObject({ sent: 0, received: 0, lastSent: null, lastReceived: null });
+  });
+
+  it("reports output, but not what answers typing or resizing", async () => {
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    onTestFinished(() => clock.mockRestore());
+    const { pane, opened, events } = setup();
+    pane.connect();
+    opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    opened[0].output("banner");
+    expect(events.output).toHaveBeenCalledTimes(1);
+    // The echo of what was typed, and a program drawing again at the new size.
+    now = 1000;
+    pane.input("l");
+    now += ECHO_MS - 1;
+    opened[0].output("l");
+    now = 2000;
+    pane.resize(100, 30);
+    now += ECHO_MS - 1;
+    opened[0].output("redrawn");
+    expect(events.output).toHaveBeenCalledTimes(1);
+    now += 1;
+    opened[0].output("news");
+    expect(events.output).toHaveBeenCalledTimes(2);
   });
 });
 

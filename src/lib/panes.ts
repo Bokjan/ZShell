@@ -76,6 +76,9 @@ export interface Arrival {
 /** How a tab's panes are arranged: one pane, or several side by side (`row`) or stacked (`column`). */
 export type Layout = { kind: "pane"; key: number } | { kind: "split"; direction: "row" | "column"; children: Layout[]; sizes: number[] };
 
+/** Why a tab in the background asks to be looked at, until it is shown. */
+export type Attention = "output" | "bell";
+
 export interface Tab {
   key: number;
   layout: Layout;
@@ -87,6 +90,8 @@ export interface Tab {
   customTitle: string | null;
   /** The side panel shown next to the panes, if any; it shows the focused pane's connection. */
   sidePanel: SidePanel | null;
+  /** Something happened in a pane while the tab was in the background (a bell outranks output). */
+  attention?: Attention;
 }
 
 /** What a pane's next session will be: a saved session's protocol may have been changed. */

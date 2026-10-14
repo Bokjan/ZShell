@@ -61,6 +61,8 @@ interface Options {
   movedAway(key: number): void;
   /** The session of pane `key`, which came `from` another window, couldn't move here. */
   stayed(key: number, from: Arrival["from"]): void;
+  /** Whether tabs in the background are marked when they have new output (a setting). */
+  markOutput(): boolean;
 }
 
 /** How a pane's next session starts logging (see `Pane.logPath`). */
@@ -72,7 +74,7 @@ const logOpen = (pane: Pane): LogOpen =>
  * forwarding and log into the tab store; a local shell that exits cleanly (`exit`, Ctrl+D)
  * closes its pane, as in Terminal.app.
  */
-export function createSessionRegistry(store: TabStore, { profiles, t, announce, movedAway, stayed }: Options): SessionRegistry {
+export function createSessionRegistry(store: TabStore, { profiles, t, announce, movedAway, stayed, markOutput }: Options): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
   const zmodemPhases = new Map<number, ZmodemPhase>();
@@ -140,6 +142,13 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce, 
             if (pane().target.kind === "local" && status === 0) store.dispatch({ type: "close", keys: [key] });
           },
           retry: (at) => update({ retryAt: at }),
+          // Often: only a tab in the background that isn't marked yet changes the store.
+          output: () => {
+            if (!markOutput()) return;
+            const state = store.get();
+            const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
+            if (tab && tab.key !== state.activeKey && !tab.attention) store.dispatch({ type: "attention", key, kind: "output" });
+          },
           arrived: () => update({ arrival: undefined }),
           movedAway: () => movedAway(key),
           stayed: () => {

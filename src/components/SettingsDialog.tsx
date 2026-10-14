@@ -460,6 +460,13 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 <input type="checkbox" checked={settings.tabs.confirmClose} onChange={(e) => setTabs({ confirmClose: e.target.checked })} />
                 {t("settings.confirmClose")}
               </label>
+              <Setting>
+                <label className="checkbox">
+                  <input type="checkbox" checked={settings.tabs.markOutput} onChange={(e) => setTabs({ markOutput: e.target.checked })} />
+                  {t("settings.markOutput")}
+                </label>
+                <p className="hint">{t("settings.markOutputHint")}</p>
+              </Setting>
             </Section>
 
             <Section id="sidebar">

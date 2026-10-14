@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
     optionAsMeta: false,
     screenReader: false,
   },
-  tabs: { followRemoteTitle: true, confirmClose: true },
+  tabs: { followRemoteTitle: true, confirmClose: true, markOutput: true },
   sidebar: { showRecent: true },
   files: { downloadDirectory: "", editor: "" },
   zmodem: { receive: "ask" },

@@ -1130,6 +1130,11 @@ body.dragging-row {
 .status-dot.closed {
   background: var(--text-muted);
 }
+/* A tab in the background that had output: a ring around its status, which stays readable. */
+.status-dot.new-output {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1.5px;
+}
 
 /* Session panes: all stay mounted at full size; only the active one is visible. */
 

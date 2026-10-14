@@ -27,6 +27,8 @@ interface Props {
   tabs: Tab[];
   activeKey: number | null;
   followRemoteTitle: boolean;
+  /** Whether tabs in the background with new output are marked (a setting). */
+  markOutput: boolean;
   onSelect(key: number): void;
   /** Opens a local terminal tab ("+"); absent when the system doesn't allow them. */
   onNew?(): void;
@@ -87,6 +89,7 @@ export function TabBar({
   tabs,
   activeKey,
   followRemoteTitle,
+  markOutput,
   onSelect,
   onNew,
   onClose,
@@ -388,13 +391,18 @@ export function TabBar({
   const questionWaiting = (tab: Tab) =>
     tab.panes.some((p) => p.questions > 0 && !(tab.key === activeKey && tab.focused === p.key && tab.sidePanel === "files"));
 
+  /** Whether a pane of the tab had output while it was in the background. */
+  const newOutput = (tab: Tab) => markOutput && tab.attention === "output";
+
   const statusLabel = (tab: Tab) => {
     const pane = focusedPane(tab);
-    const question = questionWaiting(tab) ? t("tabs.questionWaiting") : null;
     if (pane.status === "connecting") return t("tabs.status.connecting");
-    if (pane.status !== "closed") return question;
-    const closed = t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed");
-    return question ? `${closed}. ${question}` : closed;
+    const parts = [
+      pane.status === "closed" && t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed"),
+      newOutput(tab) && t("tabs.newOutput"),
+      questionWaiting(tab) && t("tabs.questionWaiting"),
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(". ") : null;
   };
 
   const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
@@ -452,7 +460,10 @@ export function TabBar({
               title={editing === tab.key ? undefined : [title, where, t("tabs.renameHint")].filter(Boolean).join("\n")}
             >
               {color && <span className="tab-color" style={{ background: color }} />}
-              <span className={`status-dot ${pane.status}`} />
+              <span
+                className={`status-dot ${pane.status}${newOutput(tab) ? " new-output" : ""}`}
+                title={newOutput(tab) ? t("tabs.newOutput") : undefined}
+              />
               {isLogging(pane) && <span className="tab-log" title={t("tabs.logging", { path: pane.logPath })} />}
               {questionWaiting(tab) && <span className="tab-question" title={t("tabs.questionWaiting")} />}
               {editing === tab.key ? (
