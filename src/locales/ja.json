@@ -422,6 +422,7 @@
     "followedTerminal": "ターミナルに追従して{path}に移動しました",
     "pathHint": "パスを入力してEnterキーを押してください",
     "pathSuggestions": "一致するフォルダー",
+    "upload": "アップロード",
     "uploadFiles": "ファイルをアップロード",
     "uploadFolder": "フォルダーをアップロード",
     "newFolder": "新規フォルダー",

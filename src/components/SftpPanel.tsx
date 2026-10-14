@@ -155,6 +155,15 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
   });
   const { dragOver, dropDir } = drag;
 
+  // Uploading files or a folder, from the menu of the Upload button: one button rather than
+  // two keeps the row on one line in languages with longer words.
+  const uploadButtonRef = useRef<HTMLButtonElement>(null);
+  const [uploadMenu, setUploadMenu] = useState<{ x: number; y: number; fromKeyboard: boolean } | null>(null);
+  const toggleUploadMenu = (fromKeyboard: boolean) => {
+    const rect = uploadButtonRef.current?.getBoundingClientRect();
+    setUploadMenu(uploadMenu || !rect ? null : { x: rect.left, y: rect.bottom + 2, fromKeyboard });
+  };
+
   const pickAndUpload = async (directory: boolean) => {
     if (!cwd) return;
     const picked = await open({ multiple: true, directory, title: directory ? t("sftp.chooseFolders") : t("sftp.chooseFiles") });
@@ -453,11 +462,21 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         </IconButton>
       </div>
       <div className="sftp-actions">
-        <button disabled={!connected || !cwd} onClick={() => pickAndUpload(false)}>
-          {t("sftp.uploadFiles")}
-        </button>
-        <button disabled={!connected || !cwd} onClick={() => pickAndUpload(true)}>
-          {t("sftp.uploadFolder")}
+        <button
+          ref={uploadButtonRef}
+          disabled={!connected || !cwd}
+          aria-haspopup="menu"
+          aria-expanded={uploadMenu !== null}
+          // Opened from the keyboard (Enter, Space) when the click has no pointer position.
+          onClick={(e) => toggleUploadMenu(e.detail === 0)}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" || uploadMenu) return;
+            e.preventDefault();
+            toggleUploadMenu(true);
+          }}
+        >
+          {t("sftp.upload")}
+          <ChevronIcon />
         </button>
         <button disabled={!connected || !cwd} onClick={() => setNewFolder("")}>
           {t("sftp.newFolder")}
@@ -611,6 +630,19 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
       {dragOver && <div className="drop-hint">{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</div>}
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {uploadMenu && (
+        <ContextMenu
+          x={uploadMenu.x}
+          y={uploadMenu.y}
+          items={[
+            { label: t("sftp.uploadFiles"), onSelect: () => void pickAndUpload(false) },
+            { label: t("sftp.uploadFolder"), onSelect: () => void pickAndUpload(true) },
+          ]}
+          anchor={uploadButtonRef.current}
+          highlightFirst={uploadMenu.fromKeyboard}
+          onClose={() => setUploadMenu(null)}
+        />
+      )}
       {chmodTarget && (
         <ChmodDialog entry={chmodTarget} onSubmit={(mode) => void chmod(chmodTarget, mode)} onClose={() => setChmodTarget(null)} />
       )}

@@ -433,6 +433,7 @@
     "followedTerminal": "Followed the terminal to {path}",
     "pathHint": "Type a path and press Enter",
     "pathSuggestions": "Matching folders",
+    "upload": "Upload",
     "uploadFiles": "Upload Files",
     "uploadFolder": "Upload Folder",
     "newFolder": "New Folder",

@@ -1649,12 +1649,16 @@ body.resizing .terminal-view {
 }
 .sftp-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 2px 8px 8px;
   border-bottom: 1px solid var(--border);
 }
 .sftp-actions button {
+  display: inline-flex;
+  align-items: center;
   padding: 3px 10px;
+  white-space: nowrap;
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg-active);

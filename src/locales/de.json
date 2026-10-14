@@ -433,6 +433,7 @@
     "followedTerminal": "Dem Terminal gefolgt: {path}",
     "pathHint": "Pfad eingeben und die Eingabetaste drücken",
     "pathSuggestions": "Passende Ordner",
+    "upload": "Hochladen",
     "uploadFiles": "Dateien hochladen",
     "uploadFolder": "Ordner hochladen",
     "newFolder": "Neuer Ordner",

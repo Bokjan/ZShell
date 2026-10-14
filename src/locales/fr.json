@@ -444,6 +444,7 @@
     "followedTerminal": "Dossier du terminal suivi : {path}",
     "pathHint": "Saisissez un chemin et appuyez sur Entrée",
     "pathSuggestions": "Dossiers correspondants",
+    "upload": "Téléverser",
     "uploadFiles": "Téléverser des fichiers",
     "uploadFolder": "Téléverser un dossier",
     "newFolder": "Nouveau dossier",
