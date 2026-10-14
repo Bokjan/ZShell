@@ -1,4 +1,4 @@
-//! App-wide preferences (language, appearance, text size, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs, updates), persisted as `settings.json` next to
+//! App-wide preferences (language, appearance, text size, app font, status bar, terminal, tabs, sidebar, files, ZMODEM, session logs, updates), persisted as `settings.json` next to
 //! `vault.json`. The frontend interprets them, but for the language, which backend text uses
 //! too; the backend stores and validates.
 
@@ -20,6 +20,9 @@ pub struct Settings {
     pub language: String,
     pub appearance: Appearance,
     pub text_size: TextSize,
+    /// The interface's font, a CSS font family list put before the default ones; empty for
+    /// the default (the terminal's is `terminal.font_family`).
+    pub app_font: String,
     pub status_bar: StatusBarSettings,
     pub terminal: TerminalSettings,
     pub tabs: TabSettings,
@@ -248,6 +251,7 @@ impl Default for Settings {
             language: crate::i18n::SYSTEM.to_owned(),
             appearance: Appearance::System,
             text_size: TextSize::Normal,
+            app_font: String::new(),
             status_bar: StatusBarSettings::default(),
             terminal: TerminalSettings::default(),
             tabs: TabSettings::default(),
@@ -289,6 +293,7 @@ impl Settings {
         if !crate::i18n::is_setting(&self.language) {
             self.language = crate::i18n::SYSTEM.to_owned();
         }
+        self.app_font = self.app_font.trim().to_owned();
         let terminal = &mut self.terminal;
         terminal.font_family = terminal.font_family.trim().to_owned();
         terminal.font_size = terminal.font_size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);

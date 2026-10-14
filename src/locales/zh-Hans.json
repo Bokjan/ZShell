@@ -594,6 +594,9 @@
       "larger": "更大"
     },
     "textSizeHint": "用于应用自身的文字。终端的字号在“终端”中设置。",
+    "appFont": "应用字体",
+    "appFontPlaceholder": "默认（系统字体）",
+    "appFontHint": "用于应用自身的文字。字体中缺少的字符会使用默认字体显示。终端的字体在“终端”中设置。",
     "showStatusBar": "显示状态栏",
     "showStatusBarHint": "位于终端下方，显示连接、收发的数据量、终端类型、终端尺寸和光标位置。",
     "terminal": "终端",

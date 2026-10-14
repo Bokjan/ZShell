@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   language: "system",
   appearance: "system",
   textSize: "normal",
+  appFont: "",
   statusBar: { show: true },
   terminal: {
     colorScheme: "auto",
@@ -141,6 +142,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALES[textSize] ?? 1));
   }, [textSize]);
+
+  // The app font before the default ones (see styles.css), also before painting. A list the
+  // page can't read (a stray quote) is left out: it would take the default ones with it.
+  const appFont = settings?.appFont ?? "";
+  useLayoutEffect(() => {
+    const style = document.documentElement.style;
+    if (appFont && CSS.supports("font-family", appFont)) style.setProperty("--app-font", `${appFont},`);
+    else style.removeProperty("--app-font");
+  }, [appFont]);
 
   // Applied immediately; the backend's validated copy replaces it once saved (see
   // `latestSave`).

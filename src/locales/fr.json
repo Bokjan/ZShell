@@ -632,6 +632,9 @@
       "larger": "Plus grande"
     },
     "textSizeHint": "Pour le texte de l’application elle-même. La taille de police du terminal se règle dans la section Terminal.",
+    "appFont": "Police de l’application",
+    "appFontPlaceholder": "Par défaut (police du système)",
+    "appFontHint": "Pour le texte de l’application elle-même. Les caractères absents de la police sont pris dans les polices par défaut. La police du terminal se règle dans la section Terminal.",
     "showStatusBar": "Afficher la barre d’état",
     "showStatusBarHint": "Sous les terminaux : la connexion, les données envoyées et reçues, le type de terminal, la taille du terminal et la position du curseur.",
     "terminal": "Terminal",

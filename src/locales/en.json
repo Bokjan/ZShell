@@ -613,6 +613,9 @@
       "larger": "Larger"
     },
     "textSizeHint": "For the app's own text. The terminal's font size is set under Terminal.",
+    "appFont": "App font",
+    "appFontPlaceholder": "Default (system font)",
+    "appFontHint": "For the app's own text. Missing characters fall back to the default fonts. The terminal's font is set under Terminal.",
     "showStatusBar": "Show the status bar",
     "showStatusBarHint": "Below the terminals: the connection, data sent and received, the terminal type, the terminal's size and the cursor's position.",
     "terminal": "Terminal",

@@ -729,7 +729,12 @@ export type Settings = {
  * (see `i18n.rs`). A string, so that an unknown one (from a newer version) falls back
  * rather than making the whole file unreadable.
  */
-language: string, appearance: Appearance, textSize: TextSize, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
+language: string, appearance: Appearance, textSize: TextSize, 
+/**
+ * The interface's font, a CSS font family list put before the default ones; empty for
+ * the default (the terminal's is `terminal.font_family`).
+ */
+appFont: string, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
 
 export type SidebarSettings = { 
 /**

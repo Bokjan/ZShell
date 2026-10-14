@@ -613,6 +613,9 @@
       "larger": "Größer"
     },
     "textSizeHint": "Für den Text der App selbst. Die Schriftgröße des Terminals wird unter „Terminal“ festgelegt.",
+    "appFont": "Schrift der App",
+    "appFontPlaceholder": "Standard (Systemschrift)",
+    "appFontHint": "Für den Text der App selbst. Fehlende Zeichen werden mit den Standardschriften dargestellt. Die Schrift des Terminals wird unter „Terminal“ festgelegt.",
     "showStatusBar": "Statusleiste anzeigen",
     "showStatusBarHint": "Unter den Terminals: die Verbindung, gesendete und empfangene Daten, der Terminaltyp, die Größe des Terminals und die Position des Cursors.",
     "terminal": "Terminal",

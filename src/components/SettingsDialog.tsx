@@ -258,6 +258,21 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 <p className="hint">{t("settings.textSizeHint")}</p>
               </Setting>
               <Setting>
+                <div className="row">
+                  <label className="grow">
+                    {t("settings.appFont")}
+                    <LiveTextField
+                      value={settings.appFont}
+                      onChange={(appFont) => update({ ...settings, appFont })}
+                      placeholder={t("settings.appFontPlaceholder")}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                    />
+                  </label>
+                </div>
+                <p className="hint">{t("settings.appFontHint")}</p>
+              </Setting>
+              <Setting>
                 <label className="checkbox">
                   <input
                     type="checkbox"
