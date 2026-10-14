@@ -810,6 +810,11 @@
     "notMoved": "{name} a été laissé tel quel, et les modifications de son contenu ne sont pas enregistrées tant que ZShell ne peut pas le lire. Redémarrez ZShell pour réessayer.",
     "show": "Afficher les fichiers"
   },
+  "saveFailed": {
+    "title": "Modifications non enregistrées",
+    "settings": "Les paramètres n’ont pas pu être enregistrés, votre modification a donc été annulée : {error}",
+    "quickCommands": "Les commandes rapides n’ont pas pu être enregistrées, votre modification a donc été annulée : {error}"
+  },
   "closeConfirm": {
     "title": "Fermer l’onglet ?",
     "titleMany_one": "Fermer {count} onglet ?",

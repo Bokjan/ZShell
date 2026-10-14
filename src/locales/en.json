@@ -786,6 +786,11 @@
     "notMoved": "{name} was left as it is, and changes to what it holds aren't saved until ZShell can read it. Restart ZShell to try again.",
     "show": "Show Files"
   },
+  "saveFailed": {
+    "title": "Changes Not Saved",
+    "settings": "The settings could not be saved, so your change was undone: {error}",
+    "quickCommands": "The quick commands could not be saved, so your change was undone: {error}"
+  },
   "closeConfirm": {
     "title": "Close Tab?",
     "titleMany_one": "Close {count} Tab?",

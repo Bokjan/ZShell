@@ -29,6 +29,7 @@ import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n";
 import {
   configSetAside,
+  errorMessage,
   localShellName,
   localUsername,
   sendBreak,
@@ -67,7 +68,7 @@ const HIDDEN_IN_FULL_SCREEN = ["searchSessions", "composeBar", "filePanel", "for
 
 function App() {
   const { t } = useTranslation();
-  const { settings, update } = useSettings();
+  const { settings, update, saveError: settingsSaveError, dismissSaveError: dismissSettingsSaveError } = useSettings();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   useDirectorySync();
@@ -635,6 +636,27 @@ function App() {
             ))}
           </ul>
         </ConfirmDialog>
+      )}
+      {/* A change that couldn't be saved was undone, maybe after its dialog closed. */}
+      {settingsSaveError !== null && (
+        <ConfirmDialog
+          notice
+          title={t("saveFailed.title")}
+          message={t("saveFailed.settings", { error: errorMessage(settingsSaveError) })}
+          confirmLabel={t("common.ok")}
+          onConfirm={dismissSettingsSaveError}
+          onCancel={dismissSettingsSaveError}
+        />
+      )}
+      {quick.saveError !== null && (
+        <ConfirmDialog
+          notice
+          title={t("saveFailed.title")}
+          message={t("saveFailed.quickCommands", { error: errorMessage(quick.saveError) })}
+          confirmLabel={t("common.ok")}
+          onConfirm={quick.dismissSaveError}
+          onCancel={quick.dismissSaveError}
+        />
       )}
       <Tooltips />
     </div>

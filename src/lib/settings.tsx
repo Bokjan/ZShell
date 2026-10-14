@@ -1,9 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { followLanguageSetting } from "../i18n";
 import type { Appearance, Settings, TextSize } from "./bindings";
+import { latestSave } from "./latestSave";
 import { isWindows } from "./platform";
 import { setSystemFont } from "./terminalSchemes";
 import { useConfigChanged } from "./windows";
@@ -64,6 +65,9 @@ interface SettingsContextValue {
   /** The appearance in effect, with "system" resolved. */
   theme: "dark" | "light";
   update(settings: Settings): void;
+  /** Why the last change couldn't be saved (it was undone), until dismissed. */
+  saveError: unknown;
+  dismissSaveError(): void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -138,22 +142,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALES[textSize] ?? 1));
   }, [textSize]);
 
-  // Applied immediately; the backend's validated copy replaces it once saved, unless a
-  // newer change was made in the meantime (here, or in another window).
-  const latest = useRef(0);
-  useConfigChanged("settings", () => {
-    const request = ++latest.current;
-    invoke<Settings>("settings_get").then((saved) => request === latest.current && setSettings(saved), console.error);
-  });
-  const update = useCallback((next: Settings) => {
-    const request = ++latest.current;
-    setSettings(next);
-    invoke<Settings>("settings_set", { settings: next }).then((saved) => request === latest.current && setSettings(saved), console.error);
-  }, []);
+  // Applied immediately; the backend's validated copy replaces it once saved (see
+  // `latestSave`).
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const saver = useMemo(
+    () =>
+      latestSave<Settings>({
+        show: setSettings,
+        store: (settings) => invoke<Settings>("settings_set", { settings }),
+        load: () => invoke<Settings>("settings_get"),
+        failed: (e) => setSaveError(() => e),
+      }),
+    [],
+  );
+  useConfigChanged("settings", saver.reload);
 
   // Wait for the stored settings so terminals start with the right theme and font.
   if (!settings) return null;
-  return <SettingsContext.Provider value={{ settings, theme, update }}>{children}</SettingsContext.Provider>;
+  const value = { settings, theme, update: saver.save, saveError, dismissSaveError: () => setSaveError(null) };
+  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
 
 /** Whether a media query (a system preference such as more contrast) matches, as it changes. */

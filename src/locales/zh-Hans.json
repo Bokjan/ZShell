@@ -762,6 +762,11 @@
     "notMoved": "{name} 保持原样；在 ZShell 能读取它之前，对其中内容的更改不会保存。重新启动 ZShell 以重试。",
     "show": "显示文件"
   },
+  "saveFailed": {
+    "title": "更改未保存",
+    "settings": "无法保存设置，你的更改已撤销：{error}",
+    "quickCommands": "无法保存快速命令，你的更改已撤销：{error}"
+  },
   "closeConfirm": {
     "title": "关闭标签页？",
     "titleMany_other": "关闭 {count} 个标签页？",

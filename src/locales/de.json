@@ -786,6 +786,11 @@
     "notMoved": "{name} wurde unverändert gelassen. Änderungen an ihrem Inhalt werden erst gespeichert, wenn ZShell die Datei lesen kann. Starten Sie ZShell neu, um es erneut zu versuchen.",
     "show": "Dateien anzeigen"
   },
+  "saveFailed": {
+    "title": "Änderungen nicht gespeichert",
+    "settings": "Die Einstellungen konnten nicht gespeichert werden, daher wurde Ihre Änderung rückgängig gemacht: {error}",
+    "quickCommands": "Die Schnellbefehle konnten nicht gespeichert werden, daher wurde Ihre Änderung rückgängig gemacht: {error}"
+  },
   "closeConfirm": {
     "title": "Tab schließen?",
     "titleMany_one": "{count} Tab schließen?",

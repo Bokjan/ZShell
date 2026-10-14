@@ -762,6 +762,11 @@
     "notMoved": "{name}はそのまま残しています。ZShellが読み込めるようになるまで、その内容への変更は保存されません。もう一度試すには、ZShellを再起動してください。",
     "show": "ファイルを表示"
   },
+  "saveFailed": {
+    "title": "変更を保存できませんでした",
+    "settings": "設定を保存できなかったため、変更を元に戻しました：{error}",
+    "quickCommands": "クイックコマンドを保存できなかったため、変更を元に戻しました：{error}"
+  },
   "closeConfirm": {
     "title": "タブを閉じますか？",
     "titleMany_other": "{count}個のタブを閉じますか？",
