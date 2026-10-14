@@ -203,6 +203,13 @@ impl Staged {
     fn put_in_place(mut self) -> std::io::Result<()> {
         fs::rename(&self.tmp, &self.path)?;
         self.committed = true;
+        // The rename is in the folder, which a power loss could otherwise undo after the
+        // data reached the disk. Some file systems can't sync a folder: the file is in place
+        // all the same.
+        #[cfg(unix)]
+        if let Some(dir) = self.path.parent() {
+            let _ = fs::File::open(dir).and_then(|dir| dir.sync_all());
+        }
         Ok(())
     }
 }
