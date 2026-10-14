@@ -20,7 +20,7 @@
 
 ## 里程碑
 
-按计划顺序排列。上架 Store 与其他里程碑没有依赖，可以随时提前。M17、M19、M21、M22 来自 2026-10 代码审查的设计层面观察，属于内部结构调整，用户可见的变化很少。
+按计划顺序排列。M17、M19、M21、M22 来自 2026-10 代码审查的设计层面观察，属于内部结构调整，用户可见的变化很少。
 
 | 阶段 | 内容 | 优先级 |
 |---|---|---|
@@ -57,15 +57,8 @@
 | **M29 检查更新** ✅ | 定期查询 GitHub Release，有新版本时提示（Store 版不检查） | |
 | **M30 Linux** ✅ | GNOME + Wayland：自绘标题栏与跟随系统的主题、拖出文件、polkit 应用锁、单实例；deb 与 rpm | |
 | **M31 翻译** ✅ | 语言设置；简体中文、日语、德语、法语；CJK 字体按语言选择 | |
-| **M32 Microsoft Store** | 打包 MSIX 上架 Microsoft Store | — |
+| **M32 Microsoft Store** ✅ | x64 与 ARM64 的 MSIX 上架 [Microsoft Store](https://apps.microsoft.com/detail/9n502tzg8hk8)；S 模式下隐藏本地终端 | |
 | **M33 自定义快捷键** | 在设置里修改快捷键 | P2 |
-
-### M32 Microsoft Store
-
-已完成：release workflow 打出 x64 与 ARM64 的 `.msixbundle`（见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」）、S 模式下隐藏本地终端、随包附上第三方许可证声明；打包后在 Windows 上实测过；仓库已公开；清单声明了 M31 的五种语言；商店文案（只有英语）在 `src-tauri/msix/listing.md`。还剩：
-
-- 截图：在 Windows 上截 3–5 张（1366 × 768 以上的 PNG），英语界面。
-- 首次提交：在 Partner Center 按 [DEVELOPMENT.md](DEVELOPMENT.md)「Microsoft Store 提交」填写并上传 `.msixbundle`；之后每个发布的版本照此提交。流程稳定后再考虑用 Store 提交 API（`msstore` CLI，需要把 Entra ID 应用的凭据配成 secret）自动提交。
 
 ### M33 自定义快捷键
 
@@ -80,6 +73,7 @@
 
 有实际需要时再排期：
 
+- Microsoft Store 自动提交：现在每个版本在 Partner Center 手动上传（见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」）。可以用 Store 提交 API（`msstore` CLI）在 release workflow 里提交，需要把 Entra ID 应用的凭据配成 secret。
 - 关键字高亮（如 `ERROR` 标红）：需在 xterm.js 的渲染层用 decoration 实现，不能往输出流里插入颜色序列（会破坏全屏程序）。
 - X11 转发（macOS 上还要依赖 XQuartz）。
 - 主机证书（`@cert-authority`）：用 CA 管理主机的环境不必逐台确认主机密钥。现在主机证书被当作普通公钥；要先确认 russh 是否支持证书形式的主机密钥，不支持则需要上游补丁。

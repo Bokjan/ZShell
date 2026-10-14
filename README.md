@@ -3,6 +3,7 @@
 [![CI](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Bokjan/ZShell)](https://github.com/Bokjan/ZShell/releases/latest)
 [![Website](https://img.shields.io/badge/website-zshell.boyin.org-C8553D)](https://zshell.boyin.org/)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-ZShell-0078D4)](https://apps.microsoft.com/detail/9n502tzg8hk8)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 
 A cross-platform (macOS / Windows / Linux) SSH, Telnet and serial terminal, built with Tauri 2, Rust and xterm.js.
@@ -22,11 +23,13 @@ See the [ZShell website](https://zshell.boyin.org/) for an overview, or go strai
 - **Security**: sessions and saved passwords encrypted with a master password or a key in the system's credential store, exports protected with a passphrase, and an app lock that covers the window with Touch ID, Windows Hello or the account password after a period of inactivity, when the computer locks, or on demand.
 - **Languages**: English, Simplified Chinese, Japanese, German and French, following the system or chosen in Settings → Appearance. The Japanese, German and French translations have not been reviewed by native speakers yet: corrections are welcome as [issues](https://github.com/Bokjan/ZShell/issues).
 
-Planned next: the Microsoft Store and customizable shortcuts. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Planned next: customizable shortcuts. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
-Download the latest version from the [releases page](https://github.com/Bokjan/ZShell/releases):
+On Windows (x64 and ARM64), the easiest way is the [Microsoft Store](https://apps.microsoft.com/detail/9n502tzg8hk8), which installs and updates ZShell for you without the warning below.
+
+Otherwise, download the latest version from the [releases page](https://github.com/Bokjan/ZShell/releases):
 
 | Platform | File |
 |---|---|
@@ -38,7 +41,7 @@ Download the latest version from the [releases page](https://github.com/Bokjan/Z
 
 Local terminals on Windows need Windows 10 version 1809 or later. On Linux, ZShell is made for GNOME on Wayland, the default desktop of Debian, Ubuntu and Fedora; other desktops work, but may lack the idle lock. To open serial ports, add yourself to the group that owns them (`dialout` on most distributions). The standalone executable needs the WebView2 runtime, which Windows 11 and up-to-date Windows 10 already include; it still keeps its settings in `%APPDATA%`.
 
-The builds are not signed with a developer certificate yet, so the system warns on first launch:
+The builds on the releases page are not signed with a developer certificate yet, so the system warns on first launch:
 
 - **macOS**: after moving ZShell to Applications, open it once; when macOS refuses, go to System Settings → Privacy & Security and click "Open Anyway". Alternatively, remove the quarantine flag in Terminal:
 

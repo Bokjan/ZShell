@@ -315,6 +315,22 @@ h1 {
   border-color: var(--muted);
 }
 
+.hero-store {
+  margin: -0.6rem 0 1.65rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.hero-store a {
+  color: var(--brand);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.hero-store a:hover {
+  text-decoration: underline;
+}
+
 .trust-list {
   display: flex;
   flex-wrap: wrap;
@@ -559,6 +575,12 @@ code {
 
 .text-link:hover {
   text-decoration: underline;
+}
+
+.platform-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.75rem;
 }
 
 .platform-list {
