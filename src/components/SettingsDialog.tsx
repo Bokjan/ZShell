@@ -55,6 +55,15 @@ const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
 
+/** A place in the content: a section, and how far its top is scrolled past. */
+interface Place {
+  section: SectionId;
+  offset: number;
+}
+
+/** Where the content was scrolled to when the settings were last closed, while the app runs (in this window). */
+let lastPlace: Place | null = null;
+
 export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { t } = useTranslation();
   const { settings, theme, update } = useSettings();
@@ -82,6 +91,9 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const chosen = useRef(false);
   // Where the content was scrolled to before searching; clearing the search goes back there.
   const scrollBeforeSearch = useRef(0);
+  // The place the content was opened at, kept there while settings that load later (known hosts,
+  // the version) move it, until the user scrolls.
+  const restoring = useRef<Place | null>(null);
 
   // Focus starts in the content, so the keyboard scrolls it and never reaches a terminal.
   useEffect(() => contentRef.current?.focus({ preventScroll: true }), []);
@@ -126,12 +138,25 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
     setShown((prev) => (prev.join() === next.join() ? prev : next));
   }, []);
 
+  const restore = useCallback(() => {
+    const content = contentRef.current!;
+    const place = restoring.current;
+    const section = place && content.querySelector<HTMLElement>(`section[data-section="${place.section}"]`);
+    if (!section) return;
+    content.scrollTop = section.offsetTop - parseFloat(getComputedStyle(content).paddingTop) + place.offset;
+    scrollBeforeSearch.current = content.scrollTop;
+    updateActive();
+  }, [updateActive]);
+
   // Settings that appear later (the proxies once loaded, a "use the default" link) are filtered too.
   useEffect(() => {
-    const observer = new MutationObserver(applySearch);
+    const observer = new MutationObserver(() => {
+      applySearch();
+      if (!queryRef.current) restore();
+    });
     observer.observe(contentRef.current!, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
-  }, [applySearch]);
+  }, [applySearch, restore]);
 
   useLayoutEffect(() => {
     applySearch();
@@ -142,21 +167,30 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   }, [query, applySearch, updateActive]);
 
   // Opened at a section, or asked for one while open: there at once, and back there when a
-  // search is cleared.
+  // search is cleared. Opened without one: where it was last closed.
   useLayoutEffect(() => {
     const { section } = request;
-    const content = contentRef.current!;
-    const target = section && content.querySelector<HTMLElement>(`section[data-section="${section}"]`);
     // A search may hide it, and moves the content itself.
-    if (!target || queryRef.current) return;
-    content.scrollTop = target.offsetTop - parseFloat(getComputedStyle(content).paddingTop);
-    scrollBeforeSearch.current = content.scrollTop;
-    updateActive();
+    if (queryRef.current) return;
+    restoring.current = section ? { section, offset: 0 } : lastPlace;
+    restore();
     // Only for a new request.
   }, [request]);
 
+  /** Remembers the place scrolled to, unless it is being restored or the content is filtered. */
+  const scrolled = () => {
+    updateActive();
+    const content = contentRef.current!;
+    if (restoring.current || queryRef.current) return;
+    const top = content.scrollTop + parseFloat(getComputedStyle(content).paddingTop);
+    let reached: HTMLElement | undefined;
+    for (const section of content.querySelectorAll<HTMLElement>("section[data-section]")) if (section.offsetTop <= top) reached = section;
+    if (reached) lastPlace = { section: reached.dataset.section as SectionId, offset: top - reached.offsetTop };
+  };
+
   const search = (next: string) => {
     if (!query) scrollBeforeSearch.current = contentRef.current!.scrollTop;
+    restoring.current = null;
     setQuery(next);
   };
 
@@ -165,11 +199,13 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
     const section = content.querySelector<HTMLElement>(`section[data-section="${id}"]`);
     if (!section) return;
     chosen.current = true;
+    restoring.current = null;
     setActive(id);
     content.scrollTo({ top: section.offsetTop - parseFloat(getComputedStyle(content).paddingTop), behavior: "smooth" });
   };
   const release = () => {
     chosen.current = false;
+    restoring.current = null;
   };
 
   const reset = () => {
@@ -231,7 +267,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
             className="settings-content"
             ref={contentRef}
             tabIndex={-1}
-            onScroll={updateActive}
+            onScroll={scrolled}
             onWheel={release}
             onPointerDown={release}
             onKeyDown={release}
