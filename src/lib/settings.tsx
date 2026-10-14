@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
     optionAsMeta: false,
     screenReader: false,
     bellAlert: true,
-    bellSound: false,
+    bellSound: true,
   },
   tabs: { followRemoteTitle: true, confirmClose: true, markOutput: true },
   sidebar: { showRecent: true },

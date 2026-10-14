@@ -286,7 +286,7 @@ impl Default for TerminalSettings {
             option_as_meta: false,
             screen_reader: false,
             bell_alert: true,
-            bell_sound: false,
+            bell_sound: true,
         }
     }
 }
