@@ -6,10 +6,10 @@
 //!
 //! The first window is `main`; the others open for a tab moved out of a window or a session
 //! opened in a new window, and are labelled `window-1`, `window-2` and so on (the capability
-//! grants `window-*`). What a window is to show is kept for its page to take ([`window_take`]):
+//! grants `window-*`). What a window is to show is kept for its page to take ([`take`]):
 //! what it opened for (a tab, or a session to open), then tabs other windows give it, which
 //! only the frontend reads. Kept rather than sent, so that a page still loading gets them, and
-//! a window closing once its last tab is gone never takes one with it ([`window_close_empty`]).
+//! a window closing once its last tab is gone never takes one with it ([`close_empty`]).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -17,7 +17,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{App, AppHandle, Emitter, EventTarget, Manager, State, WebviewWindow, WebviewWindowBuilder};
+use tauri::{App, AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 use ts_rs::TS;
 
@@ -68,7 +68,7 @@ struct Inbox {
     closing: HashSet<String>,
 }
 
-/// Asking every window how many of its tabs closing would end (see [`app_busy_count`]).
+/// Asking every window how many of its tabs closing would end (see [`busy_count`]).
 struct BusyQuery {
     waiting: HashSet<String>,
     count: u32,
@@ -185,17 +185,16 @@ fn cascade(source: &WebviewWindow) -> tauri::Result<Place> {
     Ok((tab_drag::screen_position(x, y), size(source)?))
 }
 
-/// Opens a window the size of this one, which shows `content` first (see [`window_take`]),
+/// Opens a window the size of this one, which shows `content` first (see [`take`]),
 /// and returns its label. It goes next to this one, or where a tab was `dropped` outside the
 /// windows (see [`tab_drag::place_dropped`]). `sessions`: this window's sessions that a tab in
 /// `content` shows, which the new window may take (see [`SessionManager::offer`]). Async:
 /// creating a window from a synchronous command deadlocks on Windows.
-#[tauri::command]
-pub async fn window_open(
+pub async fn open(
     app: AppHandle,
     window: WebviewWindow,
-    windows: State<'_, Windows>,
-    session_manager: State<'_, SessionManager>,
+    windows: &Windows,
+    session_manager: &SessionManager,
     content: serde_json::Value,
     sessions: Vec<SessionId>,
     dropped: Option<Dropped>,
@@ -214,16 +213,14 @@ pub async fn window_open(
 }
 
 /// What this window is to show and hasn't taken yet: what it opened for, and tabs given to it
-/// ([`window_send_tab`]), in order. Each is taken once.
-#[tauri::command]
-pub fn window_take(window: WebviewWindow, windows: State<'_, Windows>) -> Vec<serde_json::Value> {
+/// ([`send_tab`]), in order. Each is taken once.
+pub fn take(window: WebviewWindow, windows: &Windows) -> Vec<serde_json::Value> {
     windows.inbox.lock().unwrap().pending.remove(window.label()).unwrap_or_default()
 }
 
 /// Closes this window, which has no tabs left, unless it is the last one or has been given a
 /// tab it hasn't taken yet; returns whether it closes. From then on it takes no tabs.
-#[tauri::command]
-pub fn window_close_empty(app: AppHandle, window: WebviewWindow, windows: State<'_, Windows>) -> tauri::Result<bool> {
+pub fn close_empty(app: AppHandle, window: WebviewWindow, windows: &Windows) -> tauri::Result<bool> {
     let mut inbox = windows.inbox.lock().unwrap();
     let label = window.label();
     let given = inbox.pending.get(label).is_some_and(|pending| !pending.is_empty());
@@ -244,8 +241,7 @@ pub struct WindowInfo {
 }
 
 /// The other windows, in the order they opened.
-#[tauri::command]
-pub fn window_list(app: AppHandle, window: WebviewWindow) -> Vec<WindowInfo> {
+pub fn list(app: AppHandle, window: WebviewWindow) -> Vec<WindowInfo> {
     let mut others: Vec<WebviewWindow> = app.webview_windows().into_values().filter(|w| w.label() != window.label()).collect();
     others.sort_by_key(|w| order(w.label()));
     others.into_iter().map(|w| WindowInfo { title: w.title().unwrap_or_default(), label: w.label().to_owned() }).collect()
@@ -253,8 +249,7 @@ pub fn window_list(app: AppHandle, window: WebviewWindow) -> Vec<WindowInfo> {
 
 /// Names the window after its tab (the Window menu, the taskbar, and the tab menus of the
 /// other windows show it).
-#[tauri::command]
-pub fn window_set_title(app: AppHandle, window: WebviewWindow, title: String) -> tauri::Result<()> {
+pub fn set_title(app: AppHandle, window: WebviewWindow, title: String) -> tauri::Result<()> {
     if window.title()? != title {
         window.set_title(&title)?;
         changed(&app);
@@ -262,18 +257,17 @@ pub fn window_set_title(app: AppHandle, window: WebviewWindow, title: String) ->
     Ok(())
 }
 
-/// Gives a tab to window `target`, which takes it (see [`window_take`]) when it hears
+/// Gives a tab to window `target`, which takes it (see [`take`]) when it hears
 /// `tab-received`, and comes forward. `at`: where in its page it was dropped (CSS pixels from
 /// the left), to put it there among the tabs. `sessions`: this window's sessions that the tab
 /// shows, which `target` may take (see [`SessionManager::offer`]). Fails with
 /// `window.notFound` if it has closed or is closing.
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn window_send_tab(
+pub fn send_tab(
     app: AppHandle,
     window: WebviewWindow,
-    windows: State<'_, Windows>,
-    session_manager: State<'_, SessionManager>,
+    windows: &Windows,
+    session_manager: &SessionManager,
     target: String,
     tab: serde_json::Value,
     sessions: Vec<SessionId>,
@@ -297,17 +291,15 @@ pub fn window_send_tab(
 
 /// Tells window `target`, which gave this one a tab, that its pane `pane` couldn't move here
 /// (its session is still there): the `pane-stayed` event.
-#[tauri::command]
-pub fn window_pane_stayed(app: AppHandle, target: String, pane: u32) {
+pub fn pane_stayed(app: AppHandle, target: String, pane: u32) {
     let _ = app.emit_to(EventTarget::webview_window(target), "pane-stayed", pane);
 }
 
 /// How many tabs quitting would end, in all the windows: each is asked (the `busy-query`
-/// event, answered with [`window_busy_reply`]), since only its page knows which of its tabs
+/// event, answered with [`busy_reply`]), since only its page knows which of its tabs
 /// are busy. A window that doesn't answer in time (its page still loading) counts all the
 /// sessions it shows.
-#[tauri::command]
-pub async fn app_busy_count(app: AppHandle, windows: State<'_, Windows>, sessions: State<'_, SessionManager>) -> tauri::Result<u32> {
+pub async fn busy_count(app: AppHandle, windows: &Windows, sessions: &SessionManager) -> tauri::Result<u32> {
     let labels: HashSet<String> = app.webview_windows().into_keys().collect();
     let id = windows.next_query.fetch_add(1, Ordering::Relaxed);
     let (done, answered) = oneshot::channel();
@@ -321,8 +313,7 @@ pub async fn app_busy_count(app: AppHandle, windows: State<'_, Windows>, session
 }
 
 /// A window's answer to `busy-query`.
-#[tauri::command]
-pub fn window_busy_reply(window: WebviewWindow, windows: State<'_, Windows>, query: u64, count: u32) {
+pub fn busy_reply(window: WebviewWindow, windows: &Windows, query: u64, count: u32) {
     let mut queries = windows.busy.lock().unwrap();
     let Some(query) = queries.get_mut(&query) else { return };
     if query.waiting.remove(window.label()) {
@@ -336,8 +327,7 @@ pub fn window_busy_reply(window: WebviewWindow, windows: State<'_, Windows>, que
 }
 
 /// Plays the system's alert sound, for a terminal's bell (the bell sound setting).
-#[tauri::command]
-pub fn app_bell(app: AppHandle) {
+pub fn bell(app: AppHandle) {
     let _ = app.run_on_main_thread(|| {
         #[cfg(target_os = "macos")]
         objc2_app_kit::NSBeep();
@@ -354,8 +344,7 @@ pub fn app_bell(app: AppHandle) {
 }
 
 /// Quits, once the user has confirmed (or nothing was busy).
-#[tauri::command]
-pub fn app_quit(app: AppHandle) {
+pub fn quit(app: AppHandle) {
     app.exit(0);
 }
 
@@ -425,8 +414,7 @@ pub fn come_forward(app: &AppHandle, token: String) {
 
 /// A double click on the title bar: on macOS and Linux what the system setting says
 /// ("Double-click a window's title bar to"), on Windows maximize or restore.
-#[tauri::command]
-pub fn window_title_double_click(window: WebviewWindow) -> tauri::Result<()> {
+pub fn title_double_click(window: WebviewWindow) -> tauri::Result<()> {
     match double_click_action() {
         DoubleClick::Zoom if window.is_maximized()? => window.unmaximize(),
         DoubleClick::Zoom => window.maximize(),
@@ -469,8 +457,7 @@ fn double_click_action() -> DoubleClick {
 
 /// Shows the window's system menu (Restore, Move, Size, Minimize, Maximize, Close) at the
 /// pointer, as a right click on a native title bar does. Windows and Linux.
-#[tauri::command]
-pub fn window_system_menu(window: WebviewWindow) -> tauri::Result<()> {
+pub fn system_menu(window: WebviewWindow) -> tauri::Result<()> {
     #[cfg(windows)]
     {
         let hwnd = window.hwnd()?.0 as isize;
@@ -485,8 +472,7 @@ pub fn window_system_menu(window: WebviewWindow) -> tauri::Result<()> {
 
 /// A file dialog of the dialog plugin is opening (`open`) or has closed, for showing the
 /// pointer in it on Windows (see `win::file_dialog`).
-#[tauri::command]
-pub fn window_file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()> {
+pub fn file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()> {
     #[cfg(windows)]
     window.run_on_main_thread(move || win::file_dialog(open))?;
     #[cfg(not(windows))]
@@ -499,8 +485,7 @@ pub fn window_file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()
 /// forward (the frontend does once it is released without dragging; see `macos.rs`). macOS
 /// only: on Windows the web view always brings it forward, and a drag puts it back
 /// ([`keep_behind`]).
-#[tauri::command]
-pub fn window_set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
+pub fn set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     window.with_webview(move |webview| {
         // SAFETY: on macOS the platform webview is a WKWebView, an NSView.
@@ -525,8 +510,7 @@ pub enum WindowButton {
 /// The window buttons the frontend draws, in order: none on macOS (the traffic lights), all
 /// three on Windows, and on Linux those the desktop's layout has, which may change
 /// (`window-buttons-changed`).
-#[tauri::command]
-pub fn window_buttons() -> Vec<WindowButton> {
+pub fn buttons() -> Vec<WindowButton> {
     #[cfg(target_os = "linux")]
     return linux::buttons();
     #[cfg(windows)]
@@ -537,8 +521,7 @@ pub fn window_buttons() -> Vec<WindowButton> {
 
 /// Sets the window's appearance (all windows' on Linux, where it is GTK's); `None` follows
 /// the system's. Off the main thread: on Linux it may ask the settings portal.
-#[tauri::command]
-pub async fn window_set_theme(window: WebviewWindow, theme: Option<tauri::Theme>) -> tauri::Result<()> {
+pub async fn set_theme(window: WebviewWindow, theme: Option<tauri::Theme>) -> tauri::Result<()> {
     #[cfg(target_os = "linux")]
     return linux::set_theme(&window, theme);
     #[cfg(not(target_os = "linux"))]
@@ -547,8 +530,7 @@ pub async fn window_set_theme(window: WebviewWindow, theme: Option<tauri::Theme>
 
 /// The title bar's color (`#rrggbb`), for the window's border while it is snapped (see
 /// [`update_border`]); set with the theme. Windows only.
-#[tauri::command]
-pub fn window_set_snapped_border_color(window: WebviewWindow, color: String) -> tauri::Result<()> {
+pub fn set_snapped_border_color(window: WebviewWindow, color: String) -> tauri::Result<()> {
     #[cfg(windows)]
     {
         if let Some(color) = win::colorref(&color) {
@@ -575,8 +557,7 @@ pub struct Rect {
 
 /// Places the native window that makes the frontend's maximize button behave like a native
 /// one (the Windows 11 snap layouts), over `rect`; `None` hides it. Windows only.
-#[tauri::command]
-pub fn window_set_maximize_button(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
+pub fn set_maximize_button(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
     #[cfg(windows)]
     {
         win::APP.get_or_init(|| window.app_handle().clone());

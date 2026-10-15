@@ -164,14 +164,12 @@ pub fn watch(app: AppHandle) {
     });
 }
 
-#[tauri::command]
-pub fn update_status(updates: tauri::State<Updates>) -> Status {
+pub fn status(updates: &Updates) -> Status {
     updates.status()
 }
 
 /// Checks now, as the user asked.
-#[tauri::command]
-pub async fn update_check(app: AppHandle) -> Result<Status> {
+pub async fn check(app: AppHandle) -> Result<Status> {
     if !supported() {
         return Ok(app.state::<Updates>().status());
     }

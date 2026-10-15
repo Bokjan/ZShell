@@ -66,7 +66,7 @@
 | `window/` | 窗口：按平台创建，新窗口要显示的内容，退出前询问各窗口；macOS 的红绿灯，Windows 的窗口按钮与贴靠边框，Linux 的空标题栏、窗口菜单与主题 |
 | `desktop.rs` | Linux 桌面的设置（配色方案、等宽字体），经设置 portal 读取 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
-| `commands/` | Tauri 命令入口，按领域分文件 |
+| `commands/` | Tauri 命令入口，按领域分文件：前端能调用的全部命令都在这里（也只在这里），只做检查调用方、交给所属模块、通知其他窗口；逻辑在各模块里 |
 | `bindings.rs` | 生成前端的 TypeScript 类型和共用常量（`src/lib/bindings.ts`） |
 
 前端（`src/`）：

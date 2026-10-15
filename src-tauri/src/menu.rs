@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter, EventTarget, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, EventTarget, WebviewWindow};
 use ts_rs::TS;
 
 use crate::window;
@@ -182,8 +182,7 @@ pub fn build<R: tauri::Runtime>(
 
 /// Puts the app menu the page declares into the menu bar; every window's page sends the same
 /// one. Only macOS has a menu bar.
-#[tauri::command]
-pub fn app_menu_set(app: AppHandle, menu: State<NativeMenu>, sections: Vec<Section>) -> tauri::Result<()> {
+pub fn set(app: AppHandle, menu: &NativeMenu, sections: Vec<Section>) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     {
         let mut built = menu.0.lock().unwrap();
@@ -200,8 +199,7 @@ pub fn app_menu_set(app: AppHandle, menu: State<NativeMenu>, sections: Vec<Secti
 
 /// Changes the label of one of the page's items: one that tells the state of the window that
 /// last had the focus, which sends it as that state changes and when it gets the focus.
-#[tauri::command]
-pub fn app_menu_set_label(app: AppHandle, window: WebviewWindow, menu: State<NativeMenu>, id: String, label: String) {
+pub fn set_label(app: AppHandle, window: WebviewWindow, menu: &NativeMenu, id: String, label: String) {
     #[cfg(target_os = "macos")]
     {
         use tauri::menu::MenuItemKind;

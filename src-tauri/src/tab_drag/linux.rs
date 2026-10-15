@@ -4,7 +4,7 @@
 //! views take the drag: over another window's tab bar it shows where the tab would go, and a
 //! drop there puts it there. Dropped where no window takes it, the tab opens in a window of
 //! its own; Escape cancels. The page that dragged the tab hears the end
-//! (`tab-drag-native-end`) and asks where it went ([`super::tab_drag_end`]).
+//! (`tab-drag-native-end`) and asks where it went ([`super::end`]).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

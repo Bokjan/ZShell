@@ -1,7 +1,7 @@
 //! Dragging a tab out of its window (see ARCHITECTURE.md, "多窗口"): released over another
 //! window's tab bar, the tab moves there; released anywhere else outside its window, it opens
 //! in a window of its own under the cursor. The page drags with mouse events, as when it
-//! reorders tabs, and asks here where the tab would go ([`tab_drag_move`]): the window under
+//! reorders tabs, and asks here where the tab would go ([`pointer_moved`]): the window under
 //! the cursor is the one the system shows on top there, which only native code can tell, and
 //! the cursor is read here in screen coordinates (see [`screen`]), which the page's `screenX`
 //! doesn't give reliably across displays with different scales. Wayland gives neither the
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, EventTarget, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
 use tokio::sync::oneshot;
 use ts_rs::TS;
 
@@ -53,7 +53,7 @@ pub enum DropTarget {
     /// the cursor in screen coordinates, for the window it would open in.
     Elsewhere { cursor: Point },
     /// Out of its window on Wayland: the system's drag has taken over, and where the tab goes
-    /// comes when it ends (`tab-drag-native-end`, then [`tab_drag_end`]).
+    /// comes when it ends (`tab-drag-native-end`, then [`end`]).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Native,
 }
@@ -76,7 +76,7 @@ pub struct Dropped {
 
 #[derive(Default)]
 pub struct TabDrag {
-    /// Where each window's tab bar is (see [`window_set_tab_bar`]).
+    /// Where each window's tab bar is (see [`set_tab_bar`]).
     tab_bars: Mutex<HashMap<String, Rect>>,
     drags: Mutex<Drags>,
     /// Where the system drag of a tab went: the drag's id, and the target (`None` when
@@ -152,16 +152,14 @@ pub fn forget(app: &AppHandle, label: &str) {
 }
 
 /// Records where this window's tab bar is, for tabs dragged from other windows.
-#[tauri::command]
-pub fn window_set_tab_bar(window: WebviewWindow, drag: State<'_, TabDrag>, rect: Rect) {
+pub fn set_tab_bar(window: WebviewWindow, drag: &TabDrag, rect: Rect) {
     drag.tab_bars.lock().unwrap().insert(window.label().to_owned(), rect);
 }
 
 /// Where the tab of drag `id` from this window would go if released now; the window it would
 /// go into shows where, while the drag goes on. `outside`: the page saw the pointer outside
 /// it (see [`target_at_cursor`]).
-#[tauri::command]
-pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow, id: String, outside: bool) -> tauri::Result<DropTarget> {
+pub async fn pointer_moved(app: AppHandle, window: WebviewWindow, id: String, outside: bool) -> tauri::Result<DropTarget> {
     let source = window.label().to_owned();
     let target = drop_target(&app, source.clone(), outside, Some(id.clone())).await?;
     let drag = app.state::<TabDrag>();
@@ -173,11 +171,10 @@ pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow, id: String, ou
 }
 
 /// Ends drag `id` from this window: where the tab goes if `dropped` (rather than cancelled).
-#[tauri::command]
-pub async fn tab_drag_end(
+pub async fn end(
     app: AppHandle,
     window: WebviewWindow,
-    drag: State<'_, TabDrag>,
+    drag: &TabDrag,
     id: String,
     dropped: bool,
     outside: bool,

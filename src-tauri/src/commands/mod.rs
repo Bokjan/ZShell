@@ -1,16 +1,30 @@
-//! Tauri commands, by area. What the commands share: running blocking work off the main
-//! thread, and the few that belong to no area.
+//! Tauri commands, by area: every command the frontend can call is here, and only here, so
+//! that the IPC surface can be read in one place (and `lib.rs` registers it). A command is a
+//! thin entry point: it checks who calls (the session's window), passes the work to its
+//! module, and tells the other windows what changed. What the commands share: running
+//! blocking work off the main thread, and the few that belong to no area.
+//!
+//! State: a command takes the managed state it uses as `State` parameters; work moved to the
+//! blocking pool (see [`blocking`]), which may outlive the call, reaches it through the
+//! `AppHandle` instead.
 
 // Commands take injected state plus IPC arguments, so long parameter lists are expected.
 #![allow(clippy::too_many_arguments)]
 
 pub mod applock;
-pub mod config;
+pub mod backup;
 pub mod forward;
 pub mod logs;
+pub mod menu;
+pub mod profiles;
 pub mod session;
+pub mod settings;
 pub mod sftp;
+pub mod ssh_files;
+pub mod tab_drag;
+pub mod update;
 pub mod vault;
+pub mod window;
 pub mod zmodem;
 
 use std::path::PathBuf;
