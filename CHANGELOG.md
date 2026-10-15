@@ -2,6 +2,23 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.3.0] - 2026-10-15
+
+### Features
+
+- Sessions and folders can be arranged in any order in the session list, mixed together: a session can go above a folder, and a folder below a session. Dragging a row onto the top or bottom edge of another places it before or after it, onto the middle of a folder puts it inside. The list looks as before until something is moved, exported sessions files keep the order, and imported sessions follow it.
+
+### Bug Fixes
+
+- The notes field in the session dialog looks like the other fields instead of a plain grey box.
+- In Japanese and German, the fields of the session dialog no longer run past its right edge: a long encoding name on the Terminal page made every page too wide.
+- The Windows executable's file properties and the macOS app's information show the copyright.
+- The Windows executable's file properties and the Windows installers name the publisher as Boyin Chen instead of "boyin". If ZShell was installed in a folder of your own choosing with the Windows installer, this update may not find it and install into the default folder instead; uninstalling the old copy first avoids having two.
+
+### Performance
+
+- Typing a font name in Settings no longer saves the settings file on each key: the font still changes as it is typed, and is saved after a short pause or when the field is left.
+
 ## [3.2.0] - 2026-10-14
 
 ### Features
