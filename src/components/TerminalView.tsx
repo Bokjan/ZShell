@@ -6,7 +6,6 @@ import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -28,6 +27,7 @@ import { useShortcuts } from "../lib/shortcuts";
 import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
+import { drawWithWebgl } from "../lib/webgl";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
@@ -131,7 +131,6 @@ export function TerminalView({
   const pasteAllRef = useRef<(text: string) => void>(ignore);
   /** The pane's session, for answering ZMODEM transfers. */
   const sessionRef = useRef<PaneSession | null>(null);
-  const webglRef = useRef<WebglAddon | null>(null);
   const onZmodemRef = useRef<(phase: ZmodemPhase) => void>(ignore);
   // Incremented by the find shortcut; 0 means the search bar is closed.
   const [searchKey, setSearchKey] = useState(0);
@@ -505,30 +504,7 @@ export function TerminalView({
   useEffect(() => {
     const term = termRef.current;
     if (!term || !visible) return;
-    // The canvas the addon draws on, while its context is there to release.
-    let canvas: HTMLCanvasElement | undefined;
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        canvas = undefined;
-        webgl.dispose();
-        if (webglRef.current === webgl) webglRef.current = null;
-      });
-      const before = new Set(term.element?.querySelectorAll("canvas"));
-      term.loadAddon(webgl);
-      canvas = [...(term.element?.querySelectorAll("canvas") ?? [])].find((c) => !before.has(c));
-      webglRef.current = webgl;
-    } catch (e) {
-      console.warn("WebGL renderer unavailable, using DOM renderer", e);
-    }
-    return () => {
-      // A disposed terminal (unmounting) has disposed its addons itself.
-      if (termRef.current) webglRef.current?.dispose();
-      webglRef.current = null;
-      // The addon leaves its context to the garbage collector, which keeps the context's
-      // memory (and its place among the web view's contexts) until it runs.
-      canvas?.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
-    };
+    return drawWithWebgl(term);
   }, [visible]);
 
   useEffect(() => {
