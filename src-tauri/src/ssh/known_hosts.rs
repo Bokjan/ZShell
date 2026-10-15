@@ -66,9 +66,49 @@ fn other_paths(user: &Path) -> Vec<PathBuf> {
     };
     let mut paths = vec![user.with_file_name("known_hosts2")];
     if let Some(global) = global {
-        paths.extend([global.join("ssh_known_hosts"), global.join("ssh_known_hosts2")]);
+        let files = [global.join("ssh_known_hosts"), global.join("ssh_known_hosts2")];
+        // Any user may create folders in `%ProgramData%`: where OpenSSH's `ssh` folder
+        // doesn't exist, another user could make it and trust a key of theirs for every host.
+        #[cfg(windows)]
+        let files = files.into_iter().filter(|file| owned_by_the_system(&global) && owned_by_the_system(file));
+        paths.extend(files);
     }
     paths
+}
+
+/// Whether `path` belongs to the Administrators group or the system, as the files Windows'
+/// OpenSSH installs do; not when it can't be told (a file that isn't there).
+#[cfg(windows)]
+fn owned_by_the_system(path: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{LocalFree, ERROR_SUCCESS};
+    use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
+    use windows_sys::Win32::Security::{
+        IsWellKnownSid, WinBuiltinAdministratorsSid, WinLocalSystemSid, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+    };
+
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut owner: PSID = std::ptr::null_mut();
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    // SAFETY: the name is NUL-terminated; `owner` points into `descriptor`, freed after use.
+    unsafe {
+        let status = GetNamedSecurityInfoW(
+            wide.as_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut descriptor,
+        );
+        if status != ERROR_SUCCESS {
+            return false;
+        }
+        let owned = IsWellKnownSid(owner, WinBuiltinAdministratorsSid) != 0 || IsWellKnownSid(owner, WinLocalSystemSid) != 0;
+        LocalFree(descriptor);
+        owned
+    }
 }
 
 /// Whether `host` is a plain host name or address, which known_hosts can't read as a pattern
