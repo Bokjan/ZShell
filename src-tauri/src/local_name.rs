@@ -65,7 +65,7 @@ fn is_device_name(stem: &str) -> bool {
 /// which must fail for a name that exists (`create_new`, `create_dir`). The name is chosen
 /// and taken in one step, so two downloads started together, or `README` and `readme` on a
 /// file system that ignores case, get a name each.
-pub fn create_unique<T>(path: &Path, create: impl Fn(&Path) -> io::Result<T>) -> io::Result<(PathBuf, T)> {
+pub fn create_unique<T>(path: &Path, mut create: impl FnMut(&Path) -> io::Result<T>) -> io::Result<(PathBuf, T)> {
     for n in 0u32.. {
         let candidate = numbered(path, n);
         match create(&candidate) {

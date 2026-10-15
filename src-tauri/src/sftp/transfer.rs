@@ -260,7 +260,7 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
         // A file that would land where another of this download (or a folder) did, or where
         // a folder is, gets a free name instead.
         let local = if clashes || local.is_dir() {
-            let (path, _) = create_unique_file(local).context(Error::new("transfer.createFailed").param("path", local.display()))?;
+            let (path, _) = taken.create_free_file(local).context(Error::new("transfer.createFailed").param("path", local.display()))?;
             path
         } else {
             local.clone()
@@ -306,6 +306,16 @@ impl Taken {
     /// Takes `path`, or `name (1)`, `name (2)`, … if it is taken.
     fn take_free(&mut self, path: PathBuf) -> PathBuf {
         (0..).map(|n| numbered(&path, n)).find(|candidate| self.take(candidate)).unwrap()
+    }
+
+    /// Creates an empty file at `path`, or at `name (1)`, `name (2)`, …, taking a name that
+    /// neither a file on disk nor another of this download's files has: a later file may be
+    /// called `name (1)` on the server, and would replace this one.
+    fn create_free_file(&mut self, path: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
+        create_unique(path, |candidate| match self.take(candidate) {
+            true => std::fs::OpenOptions::new().write(true).create_new(true).open(candidate),
+            false => Err(std::io::ErrorKind::AlreadyExists.into()),
+        })
     }
 }
 
@@ -472,6 +482,21 @@ mod tests {
         let mut taken = Taken::new(true);
         let dirs = ["/d/Dir", "/d/dir", "/d/DIR", "/d/dir (1)"].map(|d| taken.take_free(PathBuf::from(d)));
         assert_eq!(dirs.map(|d| d.to_string_lossy().into_owned()), ["/d/Dir", "/d/dir (1)", "/d/DIR (2)", "/d/dir (1) (1)"]);
+    }
+
+    /// A file renamed because its name clashed doesn't take a name that a later file of the
+    /// download has on the server (`README`, `readme`, `readme (1)` where case is ignored).
+    #[test]
+    fn renamed_files_keep_clear_of_the_others() {
+        let dir = std::env::temp_dir().join(format!("zshell-clash-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let files: Vec<(String, PathBuf)> = ["README", "readme", "readme (1)"].iter().map(|&n| (n.to_owned(), dir.join(n))).collect();
+        let mut taken = Taken::new(true);
+        assert_eq!(clashing(&files, &mut taken), [false, true, false]);
+        std::fs::write(&files[0].1, "").unwrap();
+        let (renamed, _) = taken.create_free_file(&files[1].1).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(renamed, dir.join("readme (2)"));
     }
 
     /// The temporary folder's disk is told apart from one that ignores case.
