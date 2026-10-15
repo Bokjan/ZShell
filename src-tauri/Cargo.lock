@@ -7188,6 +7188,7 @@ dependencies = [
  "chrono",
  "data-encoding",
  "encoding_rs",
+ "futures-util",
  "glob",
  "gtk",
  "hmac",

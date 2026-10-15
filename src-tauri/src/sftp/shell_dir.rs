@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use futures_util::{stream, StreamExt};
 use russh_sftp::client::SftpSession;
 use tokio::io::AsyncReadExt;
 
@@ -108,6 +109,13 @@ async fn connection_process(fs: &impl Procfs) -> Option<u32> {
     Some(parent)
 }
 
+/// Processes looked at together, each a round trip or two to the server.
+const STAT_LOOKUPS: usize = 64;
+
+/// Beyond this many processes on the server, the shells aren't looked for among all of them
+/// (where the kernel doesn't list children): over a slow connection that takes minutes.
+const MAX_PROCESSES: usize = 4096;
+
 /// The shells of the connection's process `parent`: its children with a terminal, oldest first.
 async fn shells(fs: &impl Procfs, parent: u32) -> Vec<u32> {
     // Listed by the kernel where it keeps the list (most do); otherwise among all processes,
@@ -116,12 +124,15 @@ async fn shells(fs: &impl Procfs, parent: u32) -> Vec<u32> {
         Some(list) => list.split_whitespace().filter_map(|pid| pid.parse().ok()).collect(),
         None => fs.list("/proc").await.unwrap_or_default().iter().filter_map(|name| name.parse().ok()).collect(),
     };
-    let mut found = Vec::new();
-    for pid in children {
-        if let Some(stat) = stat(fs, pid).await.filter(|stat| stat.ppid == parent && stat.tty != 0) {
-            found.push((stat.start, pid));
-        }
+    if children.len() > MAX_PROCESSES {
+        return Vec::new();
     }
+    let stats: Vec<(u32, Option<Stat>)> =
+        stream::iter(children).map(|pid| async move { (pid, stat(fs, pid).await) }).buffer_unordered(STAT_LOOKUPS).collect().await;
+    let mut found: Vec<(u64, u32)> = stats
+        .into_iter()
+        .filter_map(|(pid, stat)| stat.filter(|stat| stat.ppid == parent && stat.tty != 0).map(|stat| (stat.start, pid)))
+        .collect();
     found.sort();
     found.into_iter().map(|(_, pid)| pid).collect()
 }
@@ -293,6 +304,13 @@ mod tests {
         fs.0.insert("/proc/100/task/100/children".into(), "110 201 205".into());
         fs.0.remove("/proc/300/stat");
         assert_eq!(panes(&[1, 2]).find(&fs, 2).await.as_deref(), Some("/home/alice/src"));
+
+        // Too many processes to go through.
+        let mut fs = server();
+        for pid in 1000..1000 + MAX_PROCESSES as u32 {
+            fs.process(pid, "worker", 1, (0, -1), 40, "/");
+        }
+        assert_eq!(panes(&[1, 2]).find(&fs, 2).await, None);
     }
 
     #[tokio::test]

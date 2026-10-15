@@ -37,6 +37,7 @@ tauri-plugin-clipboard-manager = "2"
 # Without `std`, the parser keeps at most 1 KiB of an OSC sequence; with it, an OSC that
 # never ends (`printf '\e]'; yes`) grows a buffer without limit in every text log.
 vte = { version = "0.15", default-features = false }
+futures-util = "0.3"
 chrono = "0.4"
 encoding_rs = "0.8"
 serialport = { version = "4.10", default-features = false }
