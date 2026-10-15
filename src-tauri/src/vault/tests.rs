@@ -312,3 +312,28 @@ fn keeps_only_the_passwords_of_what_exists() {
     passwords.set(Account::Proxy("x"), None);
     assert!(passwords.is_empty());
 }
+
+/// A reset while the credential store is still answering an unlock (the system asking the
+/// user) stays: the old vault, read before, doesn't come back.
+#[test]
+fn a_reset_during_an_unlock_stays() {
+    let dir = dir("reset-while-unlocking");
+    let store = Arc::new(MemoryStore::default());
+    add(&create(&dir, &store), "a", "web", None);
+
+    let vault = Arc::new(open(&dir, &store));
+    store.get_delay_ms.store(500, Ordering::Relaxed);
+    let unlocking = std::thread::spawn({
+        let vault = vault.clone();
+        move || vault.try_unlock()
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(vault.reset().unwrap().locked.map(|l| l.reason), Some(LockReason::New));
+    assert!(unlocking.join().unwrap().locked.is_some());
+    assert!(vault.data().is_err());
+
+    store.get_delay_ms.store(0, Ordering::Relaxed);
+    assert!(vault.try_unlock().locked.is_none());
+    assert!(names(&vault).is_empty());
+    fs::remove_dir_all(&dir).unwrap();
+}

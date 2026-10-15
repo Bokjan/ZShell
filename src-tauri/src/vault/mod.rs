@@ -278,6 +278,9 @@ pub struct Vault {
     /// Held by [`Vault::try_unlock`], so that two windows starting together don't both make
     /// a vault.
     trying: Mutex<()>,
+    /// Counts [`Vault::reset`]s: what [`Vault::try_unlock`] read before one is the deleted
+    /// vault's, and must not come back.
+    resets: std::sync::atomic::AtomicU64,
 }
 
 static INSTALLED: OnceLock<Arc<Vault>> = OnceLock::new();
@@ -306,7 +309,13 @@ impl Vault {
     /// or take long to answer.
     pub fn open(dir: PathBuf, store: Arc<dyn CredentialStore>) -> Self {
         let _ = persist::secure_dir(&dir);
-        let vault = Self { dir, store, state: Mutex::new(State::locked(None, LockReason::New, None)), trying: Mutex::new(()) };
+        let vault = Self {
+            dir,
+            store,
+            state: Mutex::new(State::locked(None, LockReason::New, None)),
+            trying: Mutex::new(()),
+            resets: Default::default(),
+        };
         *vault.state.lock().unwrap() = vault.load(false).0;
         vault
     }
@@ -514,12 +523,15 @@ impl Vault {
     /// also "try again" after it couldn't be read. Blocks while the credential store answers,
     /// without holding the state: the master password may unlock meanwhile.
     pub fn try_unlock(&self) -> VaultStatus {
+        use std::sync::atomic::Ordering;
+
         let _trying = self.trying.lock().unwrap();
         let mut created = false;
+        let resets = self.resets.load(Ordering::SeqCst);
         if matches!(&*self.state.lock().unwrap(), State::Locked { .. }) {
             let (next, made) = self.load(true);
             let mut state = self.state.lock().unwrap();
-            if let State::Locked { .. } = &*state {
+            if matches!(&*state, State::Locked { .. }) && self.resets.load(Ordering::SeqCst) == resets {
                 *state = next;
                 created = made;
             }
@@ -570,6 +582,7 @@ impl Vault {
                 let _ = self.store.delete(&account);
             }
             *state = State::locked(None, LockReason::New, None);
+            self.resets.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
         Ok(self.status())
     }
