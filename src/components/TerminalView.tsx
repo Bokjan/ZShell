@@ -505,13 +505,18 @@ export function TerminalView({
   useEffect(() => {
     const term = termRef.current;
     if (!term || !visible) return;
+    // The canvas the addon draws on, while its context is there to release.
+    let canvas: HTMLCanvasElement | undefined;
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
+        canvas = undefined;
         webgl.dispose();
         if (webglRef.current === webgl) webglRef.current = null;
       });
+      const before = new Set(term.element?.querySelectorAll("canvas"));
       term.loadAddon(webgl);
+      canvas = [...(term.element?.querySelectorAll("canvas") ?? [])].find((c) => !before.has(c));
       webglRef.current = webgl;
     } catch (e) {
       console.warn("WebGL renderer unavailable, using DOM renderer", e);
@@ -520,6 +525,9 @@ export function TerminalView({
       // A disposed terminal (unmounting) has disposed its addons itself.
       if (termRef.current) webglRef.current?.dispose();
       webglRef.current = null;
+      // The addon leaves its context to the garbage collector, which keeps the context's
+      // memory (and its place among the web view's contexts) until it runs.
+      canvas?.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
     };
   }, [visible]);
 
