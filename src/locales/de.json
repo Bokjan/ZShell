@@ -1018,7 +1018,7 @@
   },
   "exportDialog": {
     "title": "Sitzungen exportieren",
-    "message": "Alle Sitzungen werden mit ihren Ordnern und Proxys in einer Datei Ihrer Wahl gespeichert. Ohne die gespeicherten Passwörter wird die Datei nicht verschlüsselt: Jeder, der sie hat, kann Adressen, Benutzernamen, Anmeldebefehle und Umgebungsvariablen lesen.",
+    "message": "Alle Sitzungen werden mit ihren Ordnern und Proxys in einer Datei Ihrer Wahl gespeichert. Ohne die gespeicherten Passwörter wird die Datei nicht verschlüsselt: Jeder, der sie hat, kann Adressen, Benutzernamen, Anmeldebefehle, Umgebungsvariablen und Notizen lesen.",
     "includePasswords": "Gespeicherte Passwörter einschließen und die Datei verschlüsseln",
     "passphrase": "Passphrase für die Datei",
     "confirmPassphrase": "Passphrase bestätigen",

@@ -1054,7 +1054,7 @@
   },
   "exportDialog": {
     "title": "Exporter les sessions",
-    "message": "Toutes les sessions, avec leurs dossiers et leurs proxys, sont enregistrées dans un fichier de votre choix. Sans les mots de passe enregistrés, le fichier n’est pas chiffré : toute personne qui le possède peut lire les adresses, noms d’utilisateur, commandes après la connexion et variables d’environnement.",
+    "message": "Toutes les sessions, avec leurs dossiers et leurs proxys, sont enregistrées dans un fichier de votre choix. Sans les mots de passe enregistrés, le fichier n’est pas chiffré : toute personne qui le possède peut lire les adresses, noms d’utilisateur, commandes après la connexion, variables d’environnement et notes.",
     "includePasswords": "Inclure les mots de passe enregistrés et chiffrer le fichier",
     "passphrase": "Phrase secrète du fichier",
     "confirmPassphrase": "Confirmer la phrase secrète",

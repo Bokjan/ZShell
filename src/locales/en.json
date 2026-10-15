@@ -1018,7 +1018,7 @@
   },
   "exportDialog": {
     "title": "Export Sessions",
-    "message": "All sessions, with their folders and proxies, are saved to a file you choose. Without the saved passwords the file is not encrypted: anyone who has it can read the addresses, user names, login commands and environment variables.",
+    "message": "All sessions, with their folders and proxies, are saved to a file you choose. Without the saved passwords the file is not encrypted: anyone who has it can read the addresses, user names, login commands, environment variables and notes.",
     "includePasswords": "Include saved passwords, and encrypt the file",
     "passphrase": "Passphrase for the file",
     "confirmPassphrase": "Confirm the passphrase",
