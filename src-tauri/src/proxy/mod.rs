@@ -16,20 +16,21 @@ use anyhow::{bail, Context, Result};
 use crate::error::Error;
 use crate::model::{host_port, Proxy, ProxyKind};
 use crate::net::Stream;
-use crate::secrets;
 use crate::session::TermIo;
+use crate::vault::SavedPasswords;
 
 /// Password attempts after the saved one, as for SSH.
 const MAX_ATTEMPTS: usize = 3;
 
 /// Connects to `host:port` through `proxy`. `user` is what a command's `%r` stands for;
 /// `keepalive` turns on TCP keepalives on the connection to a SOCKS or HTTP proxy. A
-/// password the proxy needs and that isn't saved is asked in the terminal.
+/// password the proxy needs and that isn't saved (in `passwords`) is asked in the terminal.
 pub async fn connect(
     proxy: &Proxy,
     host: &str,
     port: u16,
     user: &str,
+    passwords: &SavedPasswords,
     keepalive: Option<Duration>,
     io: &mut TermIo,
 ) -> Result<Box<dyn Stream>> {
@@ -37,7 +38,7 @@ pub async fn connect(
         return command::spawn(proxy, host, port, user, io.sink()).await;
     }
     let saved = match proxy.uses_password() {
-        true => secrets::proxy_password(proxy.id.clone()).await,
+        true => passwords.proxy(&proxy.id).await,
         false => None,
     };
     connect_with(proxy, host, port, keepalive, saved, io).await
@@ -191,7 +192,7 @@ mod tests {
 
         let proxy = Proxy { port: proxy_port, host: "127.0.0.1".into(), ..proxy(ProxyKind::Socks5) };
         let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
-        let mut stream = connect(&proxy, "echo.internal", echo_port, "", None, &mut io).await.unwrap();
+        let mut stream = connect(&proxy, "echo.internal", echo_port, "", &SavedPasswords::default(), None, &mut io).await.unwrap();
         stream.write_all(b"ping").await.unwrap();
         let mut reply = [0; 4];
         stream.read_exact(&mut reply).await.unwrap();
@@ -200,7 +201,7 @@ mod tests {
         assert_eq!(requested.await.unwrap(), "echo.internal");
 
         // Nothing listens on the proxy's port any more.
-        let error = connect(&proxy, "echo.internal", echo_port, "", None, &mut io).await.err().unwrap();
+        let error = connect(&proxy, "echo.internal", echo_port, "", &SavedPasswords::default(), None, &mut io).await.err().unwrap();
         let error = Error::from(error);
         assert_eq!(error.code(), "proxy.unreachable");
         assert!(error.to_string().contains(&format!("127.0.0.1:{proxy_port}")), "{error}");

@@ -1,6 +1,5 @@
 //! The system's credential store (macOS Keychain, Windows Credential Manager, the Secret
-//! Service on Linux), which keeps the vault's key when the user chose so (see `vault/`), and
-//! the saved passwords as sessions read them from the vault.
+//! Service on Linux), which keeps the vault's key when the user chose so (see `vault/`).
 //!
 //! The calls block, sometimes for long: after an update the app's signature changes and macOS
 //! asks the user again, and on Linux the store may first ask to be unlocked. Commands run them
@@ -11,8 +10,6 @@ use std::time::Duration;
 
 use serde::Serialize;
 use ts_rs::TS;
-
-use crate::vault::{self, Account};
 
 /// Under which name the entries are kept: the app's bundle identifier. Debug builds keep theirs
 /// apart, so that one run for testing never touches the key of the user's own vault.
@@ -87,23 +84,6 @@ impl CredentialStore for SystemStore {
         });
         receiver.recv_timeout(PROBE_TIMEOUT).unwrap_or(false)
     }
-}
-
-/// A session's saved password (also Telnet's), blocking. `None` when there is none or the
-/// vault is locked.
-pub fn get_password(profile_id: &str) -> Option<String> {
-    vault::installed()?.password(Account::Profile(profile_id)).ok().flatten()
-}
-
-/// [`get_password`] from async code.
-pub async fn password(profile_id: String) -> Option<String> {
-    tauri::async_runtime::spawn_blocking(move || get_password(&profile_id)).await.ok().flatten()
-}
-
-/// A proxy's saved password, from async code.
-pub async fn proxy_password(proxy_id: String) -> Option<String> {
-    let read = move || vault::installed()?.password(Account::Proxy(&proxy_id)).ok().flatten();
-    tauri::async_runtime::spawn_blocking(read).await.ok().flatten()
 }
 
 #[cfg(test)]

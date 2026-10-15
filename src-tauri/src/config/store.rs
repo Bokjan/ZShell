@@ -9,7 +9,7 @@ use crate::model::Proxy;
 use crate::model::{Connection, Folder, Item, Profile, Protocol, Remote};
 use crate::net::Route;
 use crate::persist::unique_ids;
-use crate::vault::{Account, Passwords, Vault};
+use crate::vault::{Account, Passwords, SavedPasswords, Vault};
 
 pub struct ProfileStore {
     /// Where they are kept; empty while it is locked, and loaded again once unlocked.
@@ -287,7 +287,7 @@ impl ProfileStore {
             .collect::<Result<Vec<_>>>()?;
         let first = jumps.first().map_or(remote, |jump| &jump.ssh.remote);
         let proxy = first.proxy.as_ref().map(|id| self.proxy(id).map_err(|_| Error::new("profile.invalidProxy"))).transpose()?;
-        Ok(Route { jumps, proxy })
+        Ok(Route { jumps, proxy, passwords: SavedPasswords::new(self.vault.clone()) })
     }
 
     /// Adds what `plan` makes of the current sessions, folders and proxies in one write (an

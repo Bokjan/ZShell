@@ -14,6 +14,7 @@ use crate::model::host_port;
 use crate::model::Proxy;
 use crate::model::SshProfile;
 use crate::session::TermIo;
+use crate::vault::SavedPasswords;
 
 /// A connection to a server, whatever carries it (TCP, a channel through a jump host).
 pub trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -25,24 +26,29 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// How a session reaches its host: through its jump hosts, first hop first, and the proxy
 /// of the first connection. That proxy is the first jump host's own, else the session's, like
 /// OpenSSH, where `ProxyJump` connects to the jump host with that host's `ProxyCommand`.
+/// `passwords`: where the saved passwords of the session, its jump hosts and its proxy are
+/// read; a quick connection's route has none.
 #[derive(Default)]
 pub struct Route {
     pub jumps: Vec<SshProfile>,
     pub proxy: Option<Proxy>,
+    pub passwords: SavedPasswords,
 }
 
-/// Connects to `host:port` directly or through `proxy`. `user` is the user name for a proxy
-/// command's `%r`; `keepalive`, TCP keepalives on the connection to the host or the proxy.
+/// Connects to `host:port` directly or through `proxy`, whose saved password is in
+/// `passwords`. `user` is the user name for a proxy command's `%r`; `keepalive`, TCP
+/// keepalives on the connection to the host or the proxy.
 pub async fn connect(
     host: &str,
     port: u16,
     user: &str,
     proxy: Option<&Proxy>,
+    passwords: &SavedPasswords,
     keepalive: Option<Duration>,
     io: &mut TermIo,
 ) -> Result<Box<dyn Stream>> {
     if let Some(proxy) = proxy {
-        return crate::proxy::connect(proxy, host, port, user, keepalive, io).await;
+        return crate::proxy::connect(proxy, host, port, user, passwords, keepalive, io).await;
     }
     let stream = tcp(host, port).await?;
     if let Some(interval) = keepalive {

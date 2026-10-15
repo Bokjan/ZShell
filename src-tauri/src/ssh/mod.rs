@@ -24,6 +24,7 @@ use crate::model::Proxy;
 use crate::model::SshProfile;
 use crate::net::Route;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
+use crate::vault::SavedPasswords;
 pub use auth::{default_key_path, key_file_exists};
 pub use connections::{Connection, Connections, SshHandle};
 use handler::{ClientHandler, EndReason};
@@ -101,8 +102,8 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         // The agent is only forwarded to the target, where the shell runs.
         let options = HopOptions::jump_host();
         let ended = options.disconnect.subscribe();
-        let mut session = connect(hop, options, transport.take(), proxy, io).await?;
-        auth::authenticate(&mut session, hop, io, ended).await?;
+        let mut session = connect(hop, options, transport.take(), proxy, &route.passwords, io).await?;
+        auth::authenticate(&mut session, hop, &route.passwords, io, ended).await?;
         let target = host_port(next_host, next_port);
         let channel = session
             .channel_open_direct_tcpip(next_host.to_owned(), next_port.into(), "127.0.0.1", 0)
@@ -134,10 +135,10 @@ async fn start(
     let (disconnect_tx, disconnect) = watch::channel(None);
     let proxy = route.proxy.as_ref();
     let options = HopOptions { forward_agent: profile.ssh.forward_agent, routes: routes.clone(), disconnect: disconnect_tx };
-    let mut session = connect(profile, options, transport, proxy, io).await?;
+    let mut session = connect(profile, options, transport, proxy, &route.passwords, io).await?;
     // No time limit, unlike connecting: the user may be answering prompts, and the server
     // has its own (`LoginGraceTime`).
-    auth::authenticate(&mut session, profile, io, disconnect.clone()).await?;
+    auth::authenticate(&mut session, profile, &route.passwords, io, disconnect.clone()).await?;
     let session = Arc::new(session);
     let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io);
     connections.auto_start(&connection, carry);
@@ -332,13 +333,15 @@ impl HopOptions {
     }
 }
 
-/// Connects to one hop: over TCP (through `proxy`, if any), or through `via` (a channel from
-/// the previous jump host, with that host's name), then performs the SSH handshake.
+/// Connects to one hop: over TCP (through `proxy`, if any, with its saved password in
+/// `passwords`), or through `via` (a channel from the previous jump host, with that host's
+/// name), then performs the SSH handshake.
 async fn connect(
     hop: &SshProfile,
     options: HopOptions,
     via: Option<(ChannelStream<Msg>, String)>,
     proxy: Option<&Proxy>,
+    passwords: &SavedPasswords,
     io: &mut TermIo,
 ) -> Result<SshHandle> {
     let remote = &hop.ssh.remote;
@@ -351,7 +354,7 @@ async fn connect(
         io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
         // SSH keepalives notice a dead connection once authenticated (russh sends none
         // before); TCP ones cover the time until then, as OpenSSH's `TCPKeepAlive` does.
-        let stream = crate::net::connect(host, port, user, proxy, remote.keepalive(), io).await?;
+        let stream = crate::net::connect(host, port, user, proxy, passwords, remote.keepalive(), io).await?;
         return handshake(hop, options, stream, io).await;
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);

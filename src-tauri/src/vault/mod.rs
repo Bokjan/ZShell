@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -283,15 +283,35 @@ pub struct Vault {
     resets: std::sync::atomic::AtomicU64,
 }
 
-static INSTALLED: OnceLock<Arc<Vault>> = OnceLock::new();
+/// The saved passwords a session may use (its own, its jump hosts' and its proxy's), read
+/// from the vault when a server or a proxy asks for one. Whoever opens the session hands it
+/// down with the session's route (`net::Route`), so that what a session reads shows in what
+/// it is given. Quick connections have none.
+#[derive(Clone, Default)]
+pub struct SavedPasswords(Option<Arc<Vault>>);
 
-/// Makes `vault` the one sessions read their passwords from (see `secrets::password`).
-pub fn install(vault: Arc<Vault>) {
-    let _ = INSTALLED.set(vault);
-}
+impl SavedPasswords {
+    pub fn new(vault: Arc<Vault>) -> Self {
+        Self(Some(vault))
+    }
 
-pub fn installed() -> Option<&'static Arc<Vault>> {
-    INSTALLED.get()
+    /// The password of `account`; `None` when there is none or the vault is locked. Blocks
+    /// while the vault is being written.
+    pub fn get(&self, account: Account) -> Option<String> {
+        self.0.as_ref()?.password(account).ok().flatten()
+    }
+
+    /// A session's saved password (also Telnet's), from async code.
+    pub async fn profile(&self, id: &str) -> Option<String> {
+        let (this, id) = (self.clone(), id.to_owned());
+        tauri::async_runtime::spawn_blocking(move || this.get(Account::Profile(&id))).await.ok().flatten()
+    }
+
+    /// A proxy's saved password, from async code.
+    pub async fn proxy(&self, id: &str) -> Option<String> {
+        let (this, id) = (self.clone(), id.to_owned());
+        tauri::async_runtime::spawn_blocking(move || this.get(Account::Proxy(&id))).await.ok().flatten()
+    }
 }
 
 fn locked() -> Error {

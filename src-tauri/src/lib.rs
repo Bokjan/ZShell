@@ -173,7 +173,6 @@ pub fn run() {
             // that may wait for the credential store, and the frontend shows the unlock screen
             // meanwhile.
             let vault = Arc::new(Vault::open(config_dir.clone(), Arc::new(secrets::SystemStore)));
-            vault::install(vault.clone());
             app.manage(ProfileStore::load(vault.clone()));
             app.manage(QuickCommandStore::load(vault.clone()));
             let handle = app.handle().clone();

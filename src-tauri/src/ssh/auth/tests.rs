@@ -153,6 +153,7 @@ async fn sign_in_with_key(
     let auth = Auth {
         session: &mut session,
         profile: &profile,
+        passwords: &SavedPasswords::default(),
         io: &mut io,
         ended,
         saved_password: Some(saved.map(Into::into)),

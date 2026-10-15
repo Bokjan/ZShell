@@ -25,8 +25,8 @@ use super::handler::EndReason;
 use crate::error::Error;
 use crate::i18n::printable_lines;
 use crate::model::{AuthMethod, SshProfile};
-use crate::secrets;
 use crate::session::TermIo;
+use crate::vault::SavedPasswords;
 
 const MAX_ATTEMPTS: usize = 3;
 
@@ -78,19 +78,22 @@ impl From<AuthResult> for Outcome {
 pub async fn authenticate<H: Handler>(
     session: &mut Handle<H>,
     profile: &SshProfile,
+    passwords: &SavedPasswords,
     io: &mut TermIo,
     ended: watch::Receiver<Option<EndReason>>,
 ) -> Result<()> {
-    Auth { session, profile, io, ended, saved_password: None, tried: Vec::new() }.run().await
+    Auth { session, profile, passwords, io, ended, saved_password: None, tried: Vec::new() }.run().await
 }
 
 /// One authentication: the connection, the session's settings, and what has been used.
 struct Auth<'a, H: Handler> {
     session: &'a mut Handle<H>,
     profile: &'a SshProfile,
+    /// Where the profile's saved password is.
+    passwords: &'a SavedPasswords,
     io: &'a mut TermIo,
     ended: watch::Receiver<Option<EndReason>>,
-    /// The saved password, read from the keychain when first needed (`None` until then);
+    /// The saved password, read from the vault when first needed (`None` until then);
     /// it answers one prompt only.
     saved_password: Option<Option<String>>,
     /// Keys offered so far, accepted or not; later rounds skip them (a server may require
@@ -246,7 +249,7 @@ impl<H: Handler> Auth<'_, H> {
         if self.saved_password.is_none() {
             let saved = match self.profile.id.as_str() {
                 "" => None,
-                id => secrets::password(id.to_owned()).await,
+                id => self.passwords.profile(id).await,
             };
             self.saved_password = Some(saved);
         }

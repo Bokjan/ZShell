@@ -18,12 +18,12 @@ use crate::logging::{LogInfo, LogOpen, LogSlot, Logs};
 use crate::model::{Connection, Profile, Protocol, Remote, SerialOptions, SshOptions, SshProfile};
 use crate::net::Route;
 use crate::pty;
-use crate::secrets;
 use crate::serial;
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager, TermIo};
 use crate::settings::SettingsStore;
 use crate::ssh::{self, Connections};
 use crate::telnet;
+use crate::vault::Account;
 
 use super::{blocking, local_username};
 
@@ -213,8 +213,9 @@ impl Backend {
             Backend::Shared { connection, .. } => ssh::run_shared(connection, id, io).await,
             Backend::Telnet { remote, route, password_of } => {
                 // Looked up in the session's task when the server asks; `block_in_place` lets
-                // the other tasks move to other threads while the keychain waits.
-                let password = move || password_of.and_then(|id| tokio::task::block_in_place(|| secrets::get_password(&id)));
+                // the other tasks move to other threads while the vault is being written.
+                let passwords = route.passwords.clone();
+                let password = move || password_of.and_then(|id| tokio::task::block_in_place(|| passwords.get(Account::Profile(&id))));
                 telnet::run(remote, route, password, io).await
             }
             Backend::Serial(options) => serial::run(options, io).await,
