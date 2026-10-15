@@ -2,6 +2,18 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.5.0] - 2026-10-15
+
+The same app for users as 3.4.1: this version restructures the code, and saved sessions and settings are read and written as before.
+
+### Internal
+
+- The saved data (sessions, folders, proxies, forwarding rules, quick commands and settings) has a module of its own, which the vault, import and export and the features depend on rather than the other way round.
+- Sessions get the saved passwords of their server, jump hosts and proxy with their route, instead of reading them from a global vault, and the stores read their part of the vault again by themselves once it is unlocked.
+- The registry of live SSH connections, with their SFTP channels and forwarding rules, moves out of the SSH module, which now only makes the connection.
+- Every command the frontend can call is in one place, and the names of the commands and of the events, with their payloads, are generated for the frontend and checked there.
+- The frontend's code is split into logic, the calls to the backend and shared React hooks, and the stylesheet into parts by area, in the same order (the built stylesheet is unchanged).
+
 ## [3.4.1] - 2026-10-15
 
 The same app as 3.4.0, which was not released because its Windows packages failed to build.
