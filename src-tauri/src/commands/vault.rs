@@ -7,18 +7,10 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::applock::AppLock;
-use crate::config::ProfileStore;
 use crate::error::Result;
-use crate::quick::QuickCommandStore;
 use crate::vault::{Target, Vault, VaultStatus};
 
 use super::{blocking, notified, Change};
-
-/// The stores take what the vault has, once it is unlocked or reset.
-fn reload(app: &AppHandle) {
-    app.state::<ProfileStore>().reload();
-    app.state::<QuickCommandStore>().reload();
-}
 
 #[tauri::command]
 pub async fn vault_status(app: AppHandle) -> Result<VaultStatus> {
@@ -29,12 +21,7 @@ pub async fn vault_status(app: AppHandle) -> Result<VaultStatus> {
 /// the file again first.
 #[tauri::command]
 pub async fn vault_try_unlock(app: AppHandle) -> Result<VaultStatus> {
-    blocking(app, |app| {
-        let status = app.state::<Arc<Vault>>().try_unlock();
-        reload(app);
-        Ok(status)
-    })
-    .await
+    blocking(app, |app| Ok(app.state::<Arc<Vault>>().try_unlock())).await
 }
 
 /// Unlocks with the master password; `vault.wrongPassword` if it isn't the one. The app lock
@@ -46,7 +33,6 @@ pub async fn vault_unlock(app: AppHandle, password: String) -> Result<VaultStatu
         if opened {
             app.state::<Arc<AppLock>>().unlocked_by_password();
         }
-        reload(app);
         Ok(status)
     })
     .await

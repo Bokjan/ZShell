@@ -12,8 +12,11 @@
 //! puts the new file in place, then deletes the old key, and stopping anywhere in between
 //! leaves at most an entry that opens nothing. Each change uses a new key.
 //!
-//! The stores (`ProfileStore`, `QuickCommandStore`) keep their own copy to answer queries
-//! without waiting, and write through [`Vault::update`], which writes the whole file.
+//! The stores (`ProfileStore`, `QuickCommandStore`) keep a copy of their part ([`Part`]) to
+//! answer queries without waiting, read again by itself once the vault is unlocked or reset,
+//! and write through [`Vault::update`], which writes the whole file.
+
+mod part;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -32,6 +35,7 @@ use crate::model::QuickCommands;
 use crate::model::{Folder, Item, Profile};
 use crate::persist;
 use crate::secrets::{CredentialStore, StoreKind};
+pub use part::Part;
 
 pub const VAULT_FILE: &str = "vault.json";
 const FORMAT: &str = "zshell-vault";
@@ -281,6 +285,8 @@ pub struct Vault {
     /// Counts [`Vault::reset`]s: what [`Vault::try_unlock`] read before one is the deleted
     /// vault's, and must not come back.
     resets: std::sync::atomic::AtomicU64,
+    /// Counts the times the data was replaced as a whole (see [`Vault::generation`]).
+    generation: std::sync::atomic::AtomicU64,
 }
 
 /// The saved passwords a session may use (its own, its jump hosts' and its proxy's), read
@@ -335,6 +341,7 @@ impl Vault {
             state: Mutex::new(State::locked(None, LockReason::New, None)),
             trying: Mutex::new(()),
             resets: Default::default(),
+            generation: Default::default(),
         };
         *vault.state.lock().unwrap() = vault.load(false).0;
         vault
@@ -368,6 +375,19 @@ impl Vault {
     /// for up to seconds on Linux.
     pub fn store_available(&self) -> bool {
         self.store.available()
+    }
+
+    /// Counts the times the data has been replaced as a whole: unlocked (or made) and reset.
+    /// The stores' copies ([`Part`]) are read again once it has moved; changes written through
+    /// [`Vault::update`] don't move it.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Puts `next` in place of the state, as a new generation of the data.
+    fn replace(&self, state: &mut State, next: State) {
+        *state = next;
+        self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// A copy of everything, `vault.locked` while locked.
@@ -552,7 +572,7 @@ impl Vault {
             let (next, made) = self.load(true);
             let mut state = self.state.lock().unwrap();
             if matches!(&*state, State::Locked { .. }) && self.resets.load(Ordering::SeqCst) == resets {
-                *state = next;
+                self.replace(&mut state, next);
                 created = made;
             }
         }
@@ -567,7 +587,7 @@ impl Vault {
         {
             let mut state = self.state.lock().unwrap();
             if let State::Locked { .. } = &*state {
-                *state = match self.read() {
+                let next = match self.read() {
                     Found::Missing => State::locked(None, LockReason::New, None),
                     // Shown on the unlock screen instead.
                     Found::Unusable(lock) => State::Locked { sealing: None, lock },
@@ -583,6 +603,7 @@ impl Vault {
                         }
                     }
                 };
+                self.replace(&mut state, next);
             }
         }
         Ok((self.status(), opened))
@@ -601,7 +622,7 @@ impl Vault {
             if let Some(account) = account {
                 let _ = self.store.delete(&account);
             }
-            *state = State::locked(None, LockReason::New, None);
+            self.replace(&mut state, State::locked(None, LockReason::New, None));
             self.resets.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
         Ok(self.status())

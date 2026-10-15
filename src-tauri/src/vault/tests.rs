@@ -337,3 +337,32 @@ fn a_reset_during_an_unlock_stays() {
     assert!(names(&vault).is_empty());
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn copies_follow_the_vault_being_unlocked_and_reset() {
+    let dir = dir("part");
+    let store = Arc::new(MemoryStore::default());
+    let vault = create(&dir, &store);
+    add(&vault, "a", "alpha", None);
+    vault.set_protection(password(Some("master"), false), None).unwrap();
+
+    // Made while the vault is locked, as at startup: empty.
+    let vault = Arc::new(open(&dir, &store));
+    let part = Part::new(vault.clone(), |data| data.profiles.iter().map(|p| p.name.clone()).collect::<Vec<_>>());
+    assert!(part.read().is_empty());
+    let generation = vault.generation();
+    vault.unlock("master").unwrap();
+    assert_eq!(*part.read(), ["alpha"]);
+    // Changes written by others don't make it read again: the store replaces its copy.
+    add(&vault, "b", "beta", None);
+    assert_eq!(vault.generation(), generation + 1);
+    assert_eq!(*part.read(), ["alpha"]);
+
+    let vault = Arc::new(open(&dir, &store));
+    let part = Part::new(vault.clone(), |data| data.profiles.len());
+    vault.reset().unwrap();
+    assert_eq!(*part.read(), 0);
+    vault.try_unlock();
+    assert_eq!(*part.read(), 0);
+    fs::remove_dir_all(&dir).unwrap();
+}

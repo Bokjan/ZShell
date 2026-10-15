@@ -1,7 +1,7 @@
 //! The store of the sessions, folders and proxies: queries and changes, saved through the vault.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, Result};
 use crate::model::ForwardRule;
@@ -9,14 +9,13 @@ use crate::model::Proxy;
 use crate::model::{Connection, Folder, Item, Profile, Protocol, Remote};
 use crate::net::Route;
 use crate::persist::unique_ids;
-use crate::vault::{Account, Passwords, SavedPasswords, Vault};
+use crate::vault::{Account, Data, Part, Passwords, SavedPasswords, Vault};
 
 pub struct ProfileStore {
-    /// Where they are kept; empty while it is locked, and loaded again once unlocked.
-    vault: Arc<Vault>,
     /// Read briefly by every query; replaced once a change is saved, so that queries (some
-    /// on the main thread) never wait for the files to be written.
-    state: RwLock<State>,
+    /// on the main thread) never wait for the files to be written. Empty while the vault is
+    /// locked, and read again once it is unlocked.
+    state: Part<State>,
     /// Held by a change from reading the state to replacing it: one change at a time.
     writing: Mutex<()>,
 }
@@ -137,18 +136,10 @@ fn sort_by_rank<T>(list: &mut Vec<T>, rank: Vec<usize>) {
 
 impl ProfileStore {
     pub fn load(vault: Arc<Vault>) -> Self {
-        let state = Self::read(&vault);
-        Self { vault, state: RwLock::new(state), writing: Mutex::new(()) }
+        Self { state: Part::new(vault, Self::read), writing: Mutex::new(()) }
     }
 
-    /// Takes what the vault has again, once it is unlocked or reset.
-    pub fn reload(&self) {
-        let _writing = self.writing.lock().unwrap();
-        *self.state.write().unwrap() = Self::read(&self.vault);
-    }
-
-    fn read(vault: &Vault) -> State {
-        let data = vault.data().unwrap_or_default();
+    fn read(data: Data) -> State {
         let mut state = State { profiles: data.profiles, folders: data.folders, proxies: data.proxies, order: data.order };
         unique_ids(state.profiles.iter_mut().map(|p| &mut p.id));
         unique_ids(state.folders.iter_mut().map(|f| &mut f.id));
@@ -159,28 +150,28 @@ impl ProfileStore {
     }
 
     pub fn list(&self) -> Vec<Profile> {
-        self.state.read().unwrap().profiles.clone()
+        self.state.read().profiles.clone()
     }
 
     /// The sessions, folders and proxies, and the order of the first two, as one consistent
     /// copy (for exporting them).
     pub fn snapshot(&self) -> (Vec<Profile>, Vec<Folder>, Vec<Proxy>, Vec<Item>) {
-        let state = self.state.read().unwrap();
+        let state = self.state.read();
         (state.profiles.clone(), state.folders.clone(), state.proxies.clone(), state.order.clone())
     }
 
     pub fn folders(&self) -> Vec<Folder> {
-        self.state.read().unwrap().folders.clone()
+        self.state.read().folders.clone()
     }
 
     /// The order the sessions and folders are shown in: each folder's contents, sessions and
     /// subfolders mixed, appear in this order.
     pub fn order(&self) -> Vec<Item> {
-        self.state.read().unwrap().order.clone()
+        self.state.read().order.clone()
     }
 
     pub fn get(&self, id: &str) -> Result<Profile> {
-        self.state.read().unwrap().profiles.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("profile.notFound"))
+        self.state.read().profiles.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("profile.notFound"))
     }
 
     /// Inserts or updates a profile and returns it with its id filled in. A new profile goes
@@ -287,7 +278,7 @@ impl ProfileStore {
             .collect::<Result<Vec<_>>>()?;
         let first = jumps.first().map_or(remote, |jump| &jump.ssh.remote);
         let proxy = first.proxy.as_ref().map(|id| self.proxy(id).map_err(|_| Error::new("profile.invalidProxy"))).transpose()?;
-        Ok(Route { jumps, proxy, passwords: SavedPasswords::new(self.vault.clone()) })
+        Ok(Route { jumps, proxy, passwords: SavedPasswords::new(self.state.vault().clone()) })
     }
 
     /// Adds what `plan` makes of the current sessions, folders and proxies in one write (an
@@ -310,11 +301,11 @@ impl ProfileStore {
     }
 
     pub fn proxies(&self) -> Vec<Proxy> {
-        self.state.read().unwrap().proxies.clone()
+        self.state.read().proxies.clone()
     }
 
     pub fn proxy(&self, id: &str) -> Result<Proxy> {
-        self.state.read().unwrap().proxies.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("proxy.notFound"))
+        self.state.read().proxies.iter().find(|p| p.id == id).cloned().ok_or_else(|| Error::new("proxy.notFound"))
     }
 
     /// Inserts or updates a proxy and returns it with its id filled in. `password`: `None`
@@ -439,8 +430,8 @@ impl ProfileStore {
     /// (or takes none) go with it.
     fn update<T>(&self, change: impl FnOnce(&mut State, &mut Passwords) -> Result<T>) -> Result<T> {
         let _writing = self.writing.lock().unwrap();
-        let mut updated = self.state.read().unwrap().clone();
-        let value = self.vault.update(|data| {
+        let mut updated = self.state.read().clone();
+        let value = self.state.vault().update(|data| {
             let value = change(&mut updated, &mut data.passwords)?;
             updated.arrange();
             data.passwords.retain_owners(&updated.profiles, &updated.proxies);
@@ -450,7 +441,7 @@ impl ProfileStore {
             data.order.clone_from(&updated.order);
             Ok(value)
         })?;
-        *self.state.write().unwrap() = updated;
+        self.state.replace(updated);
         Ok(value)
     }
 }
