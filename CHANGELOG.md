@@ -2,6 +2,42 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.4.0] - 2026-10-15
+
+### Features
+
+- Host certificates: a server whose host key is certified by a certificate authority that `~/.ssh/known_hosts` trusts with an `@cert-authority` line (for example `@cert-authority *.example.com ssh-ed25519 AAAA…`) is trusted without confirming each host's key. As in OpenSSH, a certificate is asked for only from hosts with such a line. One that has expired, isn't valid yet or isn't for the host is reported in the terminal, and the key in it is checked as a plain host key instead; one whose key or authority is marked `@revoked`, or whose signature is invalid, is refused.
+- Screen reader support in Settings › Terminal is now Automatic, On or Off. Automatic, the new default, turns it on while VoiceOver (macOS), Narrator, NVDA or JAWS (Windows) or Orca (Linux) is running, and off again when it stops, without restarting ZShell. If it was turned on before, it stays on, also after going back to an earlier version; if it was off, it becomes Automatic.
+
+### Bug Fixes
+
+- A server can no longer open channels toward ZShell that it wasn't asked for (a shell session, direct TCP/IP, X11, Unix sockets), each of which stayed open: they are refused, as OpenSSH does.
+- During keyboard-interactive login, control characters in what the server shows are displayed as "�" (line breaks and tabs are kept), so a server can no longer clear the screen or fake a local prompt before you are logged in.
+- On Windows, the host keys in `%ProgramData%\ssh\ssh_known_hosts` are trusted only when the file and its folder belong to the Administrators group or the system. Where only the OpenSSH client is installed, another user of the computer could create that folder with keys of their own and intercept connections unnoticed.
+- Importing a sessions file refuses a session whose key file is on a network path (`\\server\share\…`), naming it. On Windows, merely editing or connecting such a session made Windows sign in to that server with your account.
+- A key file is read only when it is a regular file of at most 1 MiB, so a key path pointing at a device or a pipe no longer fills memory or hangs. Reading and decrypting keys no longer holds up other tabs.
+- With no editor chosen, Open in Editor no longer runs remote files that the system would run rather than open (`.cmd`, `.lnk` or `.url` on Windows, `.command` or `.terminal` on macOS): they open in the system's text editor. On Linux, ZShell asks for an editor to be chosen in Settings.
+- Saving a file always creates its temporary copy as a new file, so a link planted in its place (when exporting sessions to a folder other users can write to, such as `/tmp`) can no longer make the save overwrite another of your files.
+- Output that starts an OSC sequence and never ends it no longer fills memory while a text session log is written.
+- A Telnet server that keeps sending option negotiation without reading the answers no longer makes them pile up in memory.
+- A pane whose remote shell is killed by a signal (the OOM killer, an administrator's `kill`) stays open with its last output and says which signal it was, as for a local shell, instead of closing.
+- The file panel's path field keeps what is being typed when the list refreshes by itself (after an upload, a save from the editor, or when following the terminal's folder).
+- Ctrl+right-click and Ctrl+middle-click on a link in the terminal no longer open it in the browser.
+- In a download with files that land on one local name (`README` and `readme` where case is ignored), a third file can no longer replace the renamed one.
+- Resetting the vault while an unlock with the credential store was still waiting no longer leaves a vault that can't be opened on the next start.
+- The export dialog lists session notes among what anyone can read in a file exported without the saved passwords.
+
+### Performance
+
+- A hidden terminal gives back its WebGL context at once, instead of keeping its memory in the web view until a garbage collection, and the glyph atlases of terminals drawing with WebGL start over once they pass about 64 MB: they keep every glyph in every color, so colorful Chinese text made them grow without end.
+- On servers whose kernel doesn't list a process's children, the file panel finds the terminal's shell much faster over a slow connection, and doesn't look for it on servers with more than 4096 processes (the shell can still report its folder).
+
+### Internal
+
+- Reading and writing known_hosts no longer holds up other connections' work.
+- The temporary folders of edited and dragged remote files are named only by ids of letters, digits and dashes.
+- The tests of known_hosts and of the ssh_config import moved into files of their own.
+
 ## [3.3.0] - 2026-10-15
 
 ### Features
