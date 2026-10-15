@@ -41,6 +41,7 @@
     "active": true,
     "targets": "all",
     "copyright": "Copyright © 2026 Boyin Chen.",
+    "publisher": "Boyin Chen",
     "icon": [
       "icons/128x128@2x.png",
       "icons/128x128.png",
