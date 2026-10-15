@@ -49,8 +49,8 @@
 
 - **现象**：Dependabot 报 `src-tauri/Cargo.lock` 里的 `glib` 0.18.5 不安全（[警告 #1](https://github.com/Bokjan/ZShell/security/dependabot/1)），要求 0.20.0 以上。问题出在 `glib::VariantStrIter` 的 `Iterator` / `DoubleEndedIterator` 实现，只有调用 `Variant::array_iter_str` 才会碰到。
 - **原因**：glib 是 Tauri 在 Linux 上用的 GTK3 绑定（`gtk` 0.18、`webkit2gtk` 2.0，经 tao、wry、muda 引入）的底层，固定在 0.18。gtk-rs 的 GTK3 绑定已经停在 0.18 并归档，不会有兼容 glib 0.20 的版本；0.18 到 0.20 也是不兼容升级，`cargo update` 升不上去。
-- **影响**：macOS 和 Windows 的包不编译这些 crate。2026-10-11 核对过，依赖树里引用 glib 的 21 个 crate 都没有调用 `array_iter_str`。该警告已在 GitHub 上以“代码未用到”关闭。
-- **处理**：Tauri 把 Linux 后端迁到 GTK4 后，glib 会跟着升到 0.20 以上。支持 Linux 之前再确认一次：依赖树里还是 0.18 的话，重新检查有没有 crate 调用 `array_iter_str`。
+- **影响**：macOS 和 Windows 的包不编译这些 crate。2026-10-16 在 Linux 已发布之后（3.3.0 的依赖树）重新核对：Linux 目标下依赖 glib 的 22 个 crate（tauri 2.12.3、wry 0.57.0、tao 0.37.1、muda 0.20.0、webkit2gtk 2.0.2 等）和 ZShell 自己都没有调用 `array_iter_str`。该警告已在 GitHub 上以“代码未用到”关闭。
+- **处理**：Tauri 把 Linux 后端迁到 GTK4 后，glib 会跟着升到 0.20 以上。在那之前，每次升级 Tauri 或 GTK 相关依赖后重新检查：`cargo tree -i glib@0.18.5 --target x86_64-unknown-linux-gnu` 列出的 crate 源码里有没有 `array_iter_str`。
 - **登记**：2026-10-11。
 
 ### Windows：windows-rs 0.100 只发了一部分

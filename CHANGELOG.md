@@ -49,23 +49,23 @@ Changes in each release, generated from the commit history with [git-cliff](http
 
 ### Bug Fixes
 
-- config: Don't bring back a session deleted while it was being edited
-- ssh: Don't lose a host key accepted while a known_hosts entry is removed
-- logging: Keep new session logs private, and don't lose track of a log's end
-- sftp: Don't merge remote folders that land on one local name
-- Keep control sequences from names and server replies out of ZShell's terminal messages
-- unix: Check for another instance even when the configuration folder can't be made private
-- unix: Make saved settings and sessions survive a power loss right after saving
-- Undo and report a change to the settings or quick commands that couldn't be saved
-- sftp: Don't let a listing that arrives after a disconnection update the file panel
-- a11y: Open the terminal's context menu with the menu key or Shift+F10
-- Let only the window showing a session act on it
-- Turn off spelling checks in every text field
-- Draw the focused pane's border on every side, including next to a divider
+- Saving a session that another window deleted while it was being edited no longer brings it back under a new id, without its saved password and forwarding rules: the save fails with "Session profile not found".
+- A host key that another connection (or `ssh`) added while an entry was being removed in Settings › Known Hosts is no longer lost; if known_hosts changed meanwhile, the removal says so instead.
+- On macOS and Linux, new session logs can be read by your user account only, as ZShell's other files. Output left out of a log just before it stopped is noted at its end, and the last line of a log is no longer lost when it ends.
+- Downloading a folder with two subfolders that the local disk takes for one name (`Dir` and `dir` where case is ignored, `a:b` and `a?b` on Windows) no longer merges them: the second gets a name of its own. Whether a disk ignores case is found out on the disk itself, so a case-sensitive macOS volume no longer renames files needlessly.
+- Session and proxy names, remote file names and the replies of servers and HTTP proxies can no longer clear the screen, set the title or fake a prompt through ZShell's own messages in the terminal: their control characters are shown as "�". Output from the remote shell is not touched.
+- On macOS and Linux, ZShell checks for an instance already running even when its configuration folder can't be made private, so that two can't overwrite each other's settings and sessions.
+- On macOS and Linux, settings and sessions saved just before a power loss or system crash are no longer replaced by the previous version.
+- A change to the settings or quick commands that can't be saved (a full disk, a read-only configuration folder) is undone, and a dialog says why, instead of seeming saved until the next start.
+- A folder listing that arrives after the connection dropped no longer shows the file panel as connected or covers the disconnected notice.
+- The terminal's context menu opens with the menu key or Shift+F10.
+- Only the window that shows a session can act on it; moving a tab hands its sessions over to the window it goes to.
+- Spell checking is off in every text field, such as a session's name, which underlined words and offered corrections on macOS.
+- The focused pane's border is drawn on every side, also where it meets a divider.
 
 ### Internal
 
-- Move the tests of the SSH sign-in and session logs into files of their own
+- The tests of the SSH sign-in and of the session logs moved into files of their own.
 
 ## [3.1.1] - 2026-10-13
 

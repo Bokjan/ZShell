@@ -21,9 +21,9 @@ See the [ZShell website](https://zshell.boyin.org/) for an overview, or go strai
 - **Terminal and tabs**: local terminals, split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
 - **Many hosts at once**: quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 - **Security**: sessions and saved passwords encrypted with a master password or a key in the system's credential store, exports protected with a passphrase, and an app lock that covers the window with Touch ID, Windows Hello or the account password after a period of inactivity, when the computer locks, or on demand.
-- **Languages**: English, Simplified Chinese, Japanese, German and French, following the system or chosen in Settings → Appearance. The Japanese, German and French translations have not been reviewed by native speakers yet: corrections are welcome as [issues](https://github.com/Bokjan/ZShell/issues).
+- **Languages**: English, Simplified Chinese, Japanese, German and French, following the system or chosen in Settings › Appearance. The Japanese, German and French translations have not been reviewed by native speakers yet: corrections are welcome as [issues](https://github.com/Bokjan/ZShell/issues).
 
-Planned next: customizable shortcuts. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+Customizable shortcuts are planned, without a date yet. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -43,7 +43,7 @@ Local terminals on Windows need Windows 10 version 1809 or later. On Linux, ZShe
 
 The builds on the releases page are not signed with a developer certificate yet, so the system warns on first launch:
 
-- **macOS**: after moving ZShell to Applications, open it once; when macOS refuses, go to System Settings → Privacy & Security and click "Open Anyway". Alternatively, remove the quarantine flag in Terminal:
+- **macOS**: after moving ZShell to Applications, open it once; when macOS refuses, go to System Settings › Privacy & Security and click "Open Anyway". Alternatively, remove the quarantine flag in Terminal:
 
   ```bash
   xattr -dr com.apple.quarantine /Applications/ZShell.app
@@ -53,7 +53,7 @@ The builds on the releases page are not signed with a developer certificate yet,
 
 ## Getting started
 
-Add a session with **+** at the top of the sidebar, or import your SSH config from the menu next to it, then double-click the session to connect. To connect without saving a session, type `user@host[:port]` or `telnet host[:port]` in the search box and press Enter. Host keys, passwords and passphrases are asked in the terminal, as `ssh` does; after a disconnection, press Enter to reconnect. Right-click terminals, tabs and sessions for more, and see Settings → Keyboard Shortcuts for the keys.
+Add a session with **+** at the top of the sidebar, or import your SSH config from the menu next to it, then double-click the session to connect. To connect without saving a session, type `user@host[:port]` or `telnet host[:port]` in the search box and press Enter. Host keys, passwords and passphrases are asked in the terminal, as `ssh` does; after a disconnection, press Enter to reconnect. Right-click terminals, tabs and sessions for more, and see Settings › Keyboard Shortcuts for the keys.
 
 Sessions and settings are saved in `~/Library/Application Support/ZShell/` on macOS, `%APPDATA%\ZShell\` on Windows and `~/.config/ZShell/` on Linux. Sessions and saved passwords are kept together in `vault.json` there, encrypted with a key kept in the macOS Keychain, the Windows Credential Manager or the system keyring (GNOME Keyring, KWallet), or with a master password, as you choose in Settings › Security. Host keys go to `~/.ssh/known_hosts`, shared with OpenSSH. See [PRIVACY.md](PRIVACY.md) for the details.
 
@@ -64,7 +64,7 @@ Requirements: Rust (stable), Node.js and pnpm; on Linux, also the system librari
 ```bash
 pnpm install
 pnpm tauri dev            # run in development mode
-pnpm licenses:generate    # third-party license notices shown in Settings > About (needs cargo-about)
+pnpm licenses:generate    # third-party license notices shown in Settings › About (needs cargo-about)
 pnpm tauri build          # build release bundles
 ```
 
