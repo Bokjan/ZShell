@@ -17,11 +17,12 @@ use russh::{Channel, ChannelMsg, ChannelStream, ChannelWriteHalf, Disconnect};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 
-use crate::config::SshProfile;
 use crate::error::Error;
-use crate::forward::{host_port, RemoteRoutes};
+use crate::forward::RemoteRoutes;
+use crate::model::host_port;
+use crate::model::Proxy;
+use crate::model::SshProfile;
 use crate::net::Route;
-use crate::proxy::Proxy;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
 pub use auth::{default_key_path, key_file_exists};
 pub use connections::{Connection, Connections, SshHandle};
@@ -438,7 +439,7 @@ c3quriUWwPm5IHAEQK9AAAAAAAECAwQF
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Remote;
+    use crate::model::Remote;
 
     /// A server that accepts the connection but never speaks SSH.
     #[tokio::test(start_paused = true)]

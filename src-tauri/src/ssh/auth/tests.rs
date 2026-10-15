@@ -5,7 +5,7 @@ use russh::server::{self, Auth as ServerAuth, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
-use crate::config::Remote;
+use crate::model::Remote;
 use crate::session::SessionInput;
 use crate::ssh::abortable::{abortable, AbortOnDrop};
 // Serves as the host key and the user's key.

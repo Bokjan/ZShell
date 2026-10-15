@@ -23,6 +23,7 @@ use sha1::Sha1;
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
+use crate::model::is_plain_host;
 
 mod certificate;
 
@@ -114,12 +115,6 @@ fn owned_by_the_system(path: &Path) -> bool {
         LocalFree(descriptor);
         owned
     }
-}
-
-/// Whether `host` is a plain host name or address, which known_hosts can't read as a pattern
-/// or a list: a key recorded for `*` would be trusted for every host.
-pub fn is_plain_host(host: &str) -> bool {
-    !host.is_empty() && !host.chars().any(|c| c.is_whitespace() || c.is_control() || ",*?![]".contains(c))
 }
 
 /// Held while ZShell writes known_hosts, so that a removal, which replaces the whole file,

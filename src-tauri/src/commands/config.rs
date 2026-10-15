@@ -7,15 +7,18 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::backup;
-use crate::config::{Additions, Folder, Item, Profile, ProfileStore};
+use crate::config::{Additions, ProfileStore};
 use crate::error::Result;
-use crate::forward::ForwardRule;
 use crate::import;
 use crate::logging::Logs;
+use crate::model::ForwardRule;
+use crate::model::Proxy;
+use crate::model::QuickCommands;
+use crate::model::Settings;
+use crate::model::{Folder, Item, Profile};
 use crate::persist::{SetAside, SetAsideFile};
-use crate::proxy::Proxy;
-use crate::quick::{QuickCommandStore, QuickCommands};
-use crate::settings::{Settings, SettingsStore};
+use crate::quick::QuickCommandStore;
+use crate::settings::SettingsStore;
 use crate::ssh::{self, known_hosts, Connections};
 use crate::vault::Vault;
 

@@ -93,9 +93,9 @@ mod tests {
                 "ENCODINGS",
                 format!("{} as const", js(encoding::SUPPORTED)),
             ),
-            ("The terminal type of a session that doesn't set one.", "DEFAULT_TERM_TYPE", js(config::default_term_type())),
-            ("The settings of a new serial session.", "DEFAULT_SERIAL: SerialOptions", js(config::SerialOptions::default())),
-            ("The quick command group that always exists, first.", "DEFAULT_GROUP", js(quick::DEFAULT_GROUP)),
+            ("The terminal type of a session that doesn't set one.", "DEFAULT_TERM_TYPE", js(model::default_term_type())),
+            ("The settings of a new serial session.", "DEFAULT_SERIAL: SerialOptions", js(model::SerialOptions::default())),
+            ("The quick command group that always exists, first.", "DEFAULT_GROUP", js(model::DEFAULT_GROUP)),
             ("The languages with a catalog, English first.", "LANGUAGES", format!("{} as const", js(i18n::languages()))),
         ];
         constants.iter().map(|(doc, name, value)| format!("\n/** {doc} */\nexport const {name} = {value};\n")).collect()
@@ -110,20 +110,20 @@ mod tests {
         visitor.visit::<error::Error>();
         visitor.visit::<commands::session::SessionSpec>();
         visitor.visit::<commands::session::SessionSnapshot>();
-        visitor.visit::<config::Folder>();
-        visitor.visit::<config::Item>();
-        visitor.visit::<config::Profile>();
+        visitor.visit::<model::Folder>();
+        visitor.visit::<model::Item>();
+        visitor.visit::<model::Profile>();
         visitor.visit::<persist::SetAsideFile>();
-        visitor.visit::<proxy::Proxy>();
-        visitor.visit::<quick::QuickCommands>();
-        visitor.visit::<settings::Settings>();
+        visitor.visit::<model::Proxy>();
+        visitor.visit::<model::QuickCommands>();
+        visitor.visit::<model::Settings>();
         visitor.visit::<ssh::known_hosts::Entry>();
         visitor.visit::<import::Candidate>();
         visitor.visit::<backup::Candidate>();
         visitor.visit::<backup::Scan>();
         visitor.visit::<vault::VaultStatus>();
         visitor.visit::<vault::Target>();
-        visitor.visit::<applock::AppLockSettings>();
+        visitor.visit::<model::AppLockSettings>();
         visitor.visit::<applock::AppLockStatus>();
         visitor.visit::<logging::LogOpen>();
         visitor.visit::<logging::LogSummary>();

@@ -309,6 +309,9 @@ id: string, kind: ForwardKind, bindHost: string,
  */
 bindPort: number, targetHost: string, targetPort: number, description: string, autoStart: boolean, };
 
+/**
+ * The state of a port forwarding rule, as reported to the tabs of its session.
+ */
 export type ForwardState = { "type": "starting" } | { "type": "active", 
 /**
  * The address actually listened on (with the real port when 0 was requested).

@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::*;
-use crate::forward::ForwardRule;
-use crate::proxy::Proxy;
+use crate::model::*;
 use crate::vault::{Account, Vault};
 
 /// The vault in `dir`, in clear (made if there is none), unlocked.
@@ -202,7 +201,7 @@ fn keeps_passwords_with_their_sessions_and_proxies() {
 
     let corp = Proxy {
         name: "corp".into(),
-        kind: crate::proxy::ProxyKind::Socks5,
+        kind: crate::model::ProxyKind::Socks5,
         host: "proxy.lan".into(),
         port: 1080,
         username: "u".into(),
@@ -322,7 +321,7 @@ fn keeps_forwarding_rules_of_ssh_sessions() {
     let web = store.save(new_profile("web", None), None).unwrap();
     let rule = ForwardRule {
         id: String::new(),
-        kind: crate::forward::ForwardKind::Local,
+        kind: crate::model::ForwardKind::Local,
         bind_host: String::new(),
         bind_port: 8080,
         target_host: "localhost".into(),
@@ -350,7 +349,7 @@ fn keeps_proxies_and_routes_through_them() {
     let socks = Proxy {
         id: String::new(),
         name: "corp".into(),
-        kind: crate::proxy::ProxyKind::Socks5,
+        kind: crate::model::ProxyKind::Socks5,
         host: "proxy.lan".into(),
         port: 1080,
         username: String::new(),
@@ -383,7 +382,7 @@ fn keeps_proxies_and_routes_through_them() {
 
     // Dangling references (hand-edited files) are kept, and fail to connect.
     let kept = store
-        .save_proxy(Proxy { id: String::new(), kind: crate::proxy::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() }, None)
+        .save_proxy(Proxy { id: String::new(), kind: crate::model::ProxyKind::Command, command: "nc %h %p".into(), ..store_proxy() }, None)
         .unwrap();
     assert_eq!(kept.name, "nc");
     let dangling = with_remote(Profile { id: "p".into(), ..new_profile("p", None) }, |remote| remote.proxy = Some("gone".into()));
@@ -418,7 +417,7 @@ fn store_proxy() -> Proxy {
     Proxy {
         id: String::new(),
         name: String::new(),
-        kind: crate::proxy::ProxyKind::Http,
+        kind: crate::model::ProxyKind::Http,
         host: String::new(),
         port: 0,
         username: String::new(),

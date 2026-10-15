@@ -15,8 +15,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
-use crate::config::Remote;
 use crate::error::Error;
+use crate::model::Remote;
 use crate::net::{Route, Stream};
 use crate::session::{Outcome, SessionEvent, SessionInput, TermIo};
 use crate::ssh::{self, JumpChain};

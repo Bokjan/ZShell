@@ -22,9 +22,9 @@ use russh::{MethodKind, MethodSet, Signer};
 use tokio::sync::watch;
 
 use super::handler::EndReason;
-use crate::config::{AuthMethod, SshProfile};
 use crate::error::Error;
 use crate::i18n::printable_lines;
+use crate::model::{AuthMethod, SshProfile};
 use crate::secrets;
 use crate::session::TermIo;
 

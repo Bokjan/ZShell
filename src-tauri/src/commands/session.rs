@@ -10,10 +10,12 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, EventTarget, Manager, State, Webview};
 use ts_rs::TS;
 
-use crate::config::{Connection, Profile, ProfileStore, Protocol, Remote, SerialOptions, SshOptions, SshProfile};
+use crate::config::ProfileStore;
+
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::logging::{LogInfo, LogOpen, LogSlot, Logs};
+use crate::model::{Connection, Profile, Protocol, Remote, SerialOptions, SshOptions, SshProfile};
 use crate::net::Route;
 use crate::pty;
 use crate::secrets;
@@ -139,7 +141,7 @@ fn launch(app: &AppHandle, webview: &str, spec: SessionSpec) -> Result<Launch> {
                 Protocol::Ssh if username.is_empty() => return Err(Error::new("profile.missingFields")),
                 Protocol::Serial => return Err(Error::new("profile.missingDevice")),
                 _ if host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
-                _ if !crate::ssh::known_hosts::is_plain_host(&host) => return Err(Error::new("profile.invalidHost")),
+                _ if !crate::model::is_plain_host(&host) => return Err(Error::new("profile.invalidHost")),
                 _ => {}
             }
             let log_info = LogInfo { session: name.clone(), host: host.clone(), user: username.clone(), profile: None };

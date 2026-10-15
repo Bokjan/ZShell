@@ -32,8 +32,8 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::error::{Error, Result};
 use crate::local_name::{create_unique, local_file_name};
+use crate::model::{LogFormat, LogSettings};
 use crate::persist::{JsonFile, SetAside};
-use crate::settings::{LogFormat, LogSettings};
 
 /// What a session's log is named after.
 #[derive(Clone, Debug, Default)]

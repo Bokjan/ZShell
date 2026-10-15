@@ -1,12 +1,13 @@
-//! The sessions and folders as they are stored.
+//! The sessions and folders as they are stored (see `crate::config` for their store).
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::settings::{FONT_SIZE_MAX, FONT_SIZE_MIN};
+use super::ForwardRule;
 #[cfg(doc)]
-use super::ProfileStore;
+use crate::config::ProfileStore;
 use crate::error::{Error, Result};
-use crate::forward::ForwardRule;
 #[cfg(doc)]
 use crate::net::Route;
 
@@ -164,7 +165,7 @@ impl Remote {
         let is_ipv6 = |h: &str| h.split('%').next().is_some_and(|address| address.parse::<std::net::Ipv6Addr>().is_ok());
         self.host = unbracketed.filter(|h| is_ipv6(h)).unwrap_or(host).to_owned();
         self.username = self.username.trim().to_owned();
-        if !self.host.is_empty() && !crate::ssh::known_hosts::is_plain_host(&self.host) {
+        if !self.host.is_empty() && !is_plain_host(&self.host) {
             return Err(Error::new("profile.invalidHost"));
         }
         if self.username.chars().any(char::is_control) {
@@ -315,9 +316,15 @@ impl ProfileAppearance {
         self.color_scheme = trimmed(self.color_scheme);
         self.font_family = trimmed(self.font_family);
         self.background = trimmed(self.background).filter(|color| is_hex_color(color)).map(|c| c.to_ascii_lowercase());
-        self.font_size = self.font_size.filter(|size| (crate::settings::FONT_SIZE_MIN..=crate::settings::FONT_SIZE_MAX).contains(size));
+        self.font_size = self.font_size.filter(|size| (FONT_SIZE_MIN..=FONT_SIZE_MAX).contains(size));
         self
     }
+}
+
+/// Whether `host` is a plain host name or address, which known_hosts can't read as a pattern
+/// or a list: a key recorded for `*` would be trusted for every host.
+pub fn is_plain_host(host: &str) -> bool {
+    !host.is_empty() && !host.chars().any(|c| c.is_whitespace() || c.is_control() || ",*?![]".contains(c))
 }
 
 /// Whether a path names a file on another computer (`\\server\share`, `//server/share`) or
@@ -397,7 +404,7 @@ impl Profile {
     }
 
     /// Checks and tidies the address, by protocol, and names an unnamed profile after it.
-    pub(super) fn normalize_target(&mut self) -> Result<()> {
+    pub(crate) fn normalize_target(&mut self) -> Result<()> {
         self.name = crate::i18n::printable(self.name.trim()).trim().to_owned();
         match &mut self.connection {
             Connection::Serial(serial) => {
@@ -447,7 +454,7 @@ impl Profile {
 
     /// Checks and tidies what the user edits beyond the address (encoding, terminal type,
     /// environment, login commands, appearance, notes).
-    pub(super) fn normalize_session_options(&mut self) -> Result<()> {
+    pub(crate) fn normalize_session_options(&mut self) -> Result<()> {
         if crate::encoding::lookup(&self.encoding).is_none() {
             return Err(Error::new("profile.invalidEncoding").param("encoding", &self.encoding));
         }

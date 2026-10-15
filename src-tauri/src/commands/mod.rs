@@ -76,5 +76,5 @@ pub fn home_directory() -> Option<PathBuf> {
 /// The user name `ssh` uses when none is given.
 #[tauri::command]
 pub fn local_username() -> String {
-    crate::config::local_username()
+    crate::model::local_username()
 }

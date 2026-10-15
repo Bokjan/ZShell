@@ -55,7 +55,8 @@
 | `net.rs` / `proxy/` | 出站连接（直连或经代理）、`Route`；代理：SOCKS5、HTTP CONNECT、ProxyCommand |
 | `zmodem/` | rz / sz：检测与接管、帧格式、收发 |
 | `logging/` | 会话日志：写入线程、格式、索引 `logs.json` 与清理 |
-| `config/` / `quick.rs` / `settings.rs` | 会话、文件夹与代理；快速命令；应用设置 `settings.json` |
+| `model/` | 保存下来的数据类型及其保存、导入时的校验：会话、文件夹、代理、转发规则、快速命令、应用锁设置、应用设置。只依赖 serde、ts-rs 与基础工具（错误、编码），存储、导入导出和运行它们的功能模块依赖它，反之不然 |
+| `config/` / `quick.rs` / `settings.rs` | 会话、文件夹与代理的存储；快速命令的存储；应用设置 `settings.json` 的存储 |
 | `vault/` / `crypto.rs` / `secrets.rs` | 保险库（上面几类数据与密码存在哪里、如何保护）；加密与口令派生；系统凭据存储 |
 | `applock/` | 应用锁：锁定状态、各平台的系统认证、闲置与锁屏检测 |
 | `persist.rs` | JSON 文件的读写：读不出的文件、原子写入、手写文件的 id |

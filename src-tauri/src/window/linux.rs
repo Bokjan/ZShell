@@ -135,9 +135,9 @@ pub fn set_theme(window: &WebviewWindow, theme: Option<Theme>) -> tauri::Result<
 /// desktop's (see the module docs). On the main thread, once, before the first window.
 pub fn watch_theme(app: &AppHandle) {
     *CHOSEN.lock().unwrap() = match app.state::<crate::settings::SettingsStore>().get().appearance {
-        crate::settings::Appearance::System => None,
-        crate::settings::Appearance::Dark => Some(Theme::Dark),
-        crate::settings::Appearance::Light => Some(Theme::Light),
+        crate::model::Appearance::System => None,
+        crate::model::Appearance::Dark => Some(Theme::Dark),
+        crate::model::Appearance::Light => Some(Theme::Light),
     };
     let Some(settings) = gtk::Settings::default() else { return };
     settings.connect_gtk_application_prefer_dark_theme_notify(|settings| {

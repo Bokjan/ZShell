@@ -17,9 +17,10 @@ use tokio::sync::watch;
 
 use super::handler::{ClientHandler, EndReason};
 use super::JumpChain;
-use crate::config::SshProfile;
 use crate::error::{Error, Result};
-use crate::forward::{ForwardRule, Forwards, Hub, RemoteRoutes};
+use crate::forward::{Forwards, Hub, RemoteRoutes};
+use crate::model::ForwardRule;
+use crate::model::SshProfile;
 use crate::session::{SessionId, TermIo};
 use crate::sftp::shell_dir::ShellDirs;
 
@@ -460,7 +461,7 @@ impl Connections {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forward::ForwardKind;
+    use crate::model::ForwardKind;
 
     /// A connection of saved session `session` running `running`.
     struct Fake {

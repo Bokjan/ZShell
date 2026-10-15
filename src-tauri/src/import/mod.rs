@@ -12,10 +12,10 @@ use serde::Serialize;
 use ssh2_config::{HostParams, ParseRule, RemoteForwardDestination, RemoteForwardListen, SshConfig};
 use ts_rs::TS;
 
-use crate::config::{local_username, AuthMethod, Connection, EnvVar, Profile, Remote, SshOptions};
 use crate::error::{Error, Result};
-use crate::forward::{ForwardKind, ForwardRule};
-use crate::proxy::{Proxy, ProxyKind};
+use crate::model::{local_username, AuthMethod, Connection, EnvVar, Profile, Remote, SshOptions};
+use crate::model::{ForwardKind, ForwardRule};
+use crate::model::{Proxy, ProxyKind};
 
 /// Options that change how `ssh` connects but are not imported, reported per host.
 const NOTABLE_UNSUPPORTED: &[&str] = &["forwardx11", "remotecommand", "localcommand", "hostkeyalias", "identityagent", "pkcs11provider"];
@@ -501,7 +501,7 @@ fn stdio_forward_host(command: &str) -> Option<String> {
         None => (user, host),
     };
     let address = match port {
-        Some(port) => crate::forward::host_port(host, port),
+        Some(port) => crate::model::host_port(host, port),
         // An IPv6 address in brackets, as a ProxyJump entry writes it.
         None if host.contains(':') => format!("[{host}]"),
         None => host.to_owned(),

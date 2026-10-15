@@ -19,6 +19,7 @@ mod instance;
 mod local_name;
 mod logging;
 mod menu;
+mod model;
 mod net;
 mod persist;
 mod proxy;

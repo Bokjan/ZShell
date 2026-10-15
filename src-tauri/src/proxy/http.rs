@@ -5,7 +5,7 @@ use anyhow::{bail, Context, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{Credentials, Errors};
-use crate::forward::host_port;
+use crate::model::host_port;
 
 /// The most a response head may take before the proxy is considered broken.
 const MAX_HEAD: usize = 16 << 10;

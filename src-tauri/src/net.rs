@@ -9,10 +9,10 @@ use anyhow::{Context, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
-use crate::config::SshProfile;
 use crate::error::Error;
-use crate::forward::host_port;
-use crate::proxy::Proxy;
+use crate::model::host_port;
+use crate::model::Proxy;
+use crate::model::SshProfile;
 use crate::session::TermIo;
 
 /// A connection to a server, whatever carries it (TCP, a channel through a jump host).

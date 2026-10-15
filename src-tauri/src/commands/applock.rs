@@ -5,8 +5,10 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-use crate::applock::{AppLock, AppLockSettings, AppLockStatus, Trigger};
+use crate::applock::{AppLock, AppLockStatus, Trigger};
+
 use crate::error::Result;
+use crate::model::AppLockSettings;
 
 use super::{blocking, notified, tell_others, Change};
 

@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use super::*;
-use crate::config::{Connection, Remote, SshOptions};
+use crate::model::{Connection, Remote, SshOptions};
 use crate::secrets::MemoryStore;
 
 fn dir(name: &str) -> PathBuf {
@@ -296,7 +296,7 @@ fn keeps_only_the_passwords_of_what_exists() {
     let proxy = |id: &str, username: &str| Proxy {
         id: id.into(),
         name: id.into(),
-        kind: crate::proxy::ProxyKind::Socks5,
+        kind: crate::model::ProxyKind::Socks5,
         host: "proxy.lan".into(),
         port: 1080,
         username: username.into(),

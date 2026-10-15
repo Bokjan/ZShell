@@ -41,7 +41,6 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use crate::error::Error;
-use crate::forward::ForwardState;
 use crate::zmodem;
 pub use flow::Flow;
 pub use lifetime::Lifetime;
@@ -97,6 +96,24 @@ pub enum SessionEvent {
     Moved {
         move_id: String,
     },
+}
+
+/// The state of a port forwarding rule, as reported to the tabs of its session.
+#[derive(Clone, Serialize, TS)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ForwardState {
+    Starting,
+    Active {
+        /// The address actually listened on (with the real port when 0 was requested).
+        bound: String,
+        connections: usize,
+        /// Why the most recent connection through this rule failed, if one did.
+        last_error: Option<Error>,
+    },
+    Failed {
+        error: Error,
+    },
+    Stopped,
 }
 
 #[derive(Clone, Copy, Serialize, TS)]

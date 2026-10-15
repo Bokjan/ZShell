@@ -9,13 +9,15 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{Additions, Connection, Folder, Item, Profile, Snapshot};
+use crate::config::{Additions, Snapshot};
+
 use crate::crypto::Kdf;
 use crate::envelope::{self, Envelope, Invalid, Unopened};
 use crate::error::{Error, Result};
-use crate::forward::ForwardRule;
+use crate::model::ForwardRule;
+use crate::model::{Connection, Folder, Item, Profile};
+use crate::model::{Proxy, ProxyKind};
 use crate::persist::{unique_ids, write_atomic};
-use crate::proxy::{Proxy, ProxyKind};
 use crate::vault::{Account, Passwords};
 
 const FORMAT: &str = "zshell-sessions";
@@ -389,7 +391,7 @@ fn free_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AuthMethod, Remote, SshOptions};
+    use crate::model::{AuthMethod, Remote, SshOptions};
 
     fn profile(id: &str, name: &str, host: &str, folder: Option<&str>, jumps: &[&str]) -> Profile {
         let remote = Remote { jump_hosts: jumps.iter().map(|j| j.to_string()).collect(), ..Remote::new(host.into(), 22, "alice".into()) };
@@ -478,7 +480,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("zshell-sessions-untidy-{}.json", std::process::id()));
         let forward = ForwardRule {
             id: String::new(),
-            kind: crate::forward::ForwardKind::Remote,
+            kind: crate::model::ForwardKind::Remote,
             bind_host: String::new(),
             bind_port: 9000,
             target_host: "localhost".into(),

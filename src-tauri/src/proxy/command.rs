@@ -17,8 +17,10 @@ use anyhow::{Context, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
-use super::Proxy;
 use crate::error::Error;
+#[cfg(windows)]
+use crate::model::split_program;
+use crate::model::Proxy;
 use crate::net::Stream;
 use crate::session::SessionSink;
 
@@ -38,13 +40,6 @@ pub async fn spawn(proxy: &Proxy, host: &str, port: u16, user: &str, sink: Sessi
         }
     });
     Ok(Box::new(CommandStream { _child: child, stdin: Some(stdin), stdout }))
-}
-
-/// The name of the program a command runs, without its directory and extension.
-pub fn program_name(command: &str) -> String {
-    let program = split_program(command).0;
-    let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
-    name.strip_suffix(".exe").unwrap_or(name).to_owned()
 }
 
 /// Characters a host or user name put into the command must not contain, besides whitespace
@@ -83,15 +78,6 @@ fn expand(command: &str, host: &str, port: u16, user: &str) -> Result<String, Er
         }
     }
     Ok(line)
-}
-
-/// The program and the rest of a command line; the program may be in double quotes.
-fn split_program(command: &str) -> (&str, &str) {
-    let command = command.trim_start();
-    match command.strip_prefix('"') {
-        Some(rest) => rest.split_once('"').unwrap_or((rest, "")),
-        None => command.split_once(char::is_whitespace).unwrap_or((command, "")),
-    }
 }
 
 #[cfg(unix)]
@@ -202,14 +188,6 @@ mod tests {
         {
             assert_eq!(expand("ssh -W %h:%p %r@jump", host, 22, user).unwrap_err().code(), "proxy.unsafeName", "{host:?} {user:?}");
         }
-    }
-
-    #[test]
-    fn names_programs() {
-        assert_eq!(program_name("/opt/homebrew/bin/cloudflared access ssh --hostname %h"), "cloudflared");
-        assert_eq!(program_name(r#""C:\Program Files\Git\usr\bin\connect.exe" -S proxy:1080 %h %p"#), "connect");
-        assert_eq!(split_program(r#""C:\a b\nc.exe" -x p %h"#), (r"C:\a b\nc.exe", " -x p %h"));
-        assert_eq!(split_program("nc"), ("nc", ""));
     }
 
     #[cfg(unix)]

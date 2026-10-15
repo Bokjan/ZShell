@@ -3,12 +3,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 
-use super::{Connection, Folder, Item, Profile, Protocol, Remote};
 use crate::error::{Error, Result};
-use crate::forward::ForwardRule;
+use crate::model::ForwardRule;
+use crate::model::Proxy;
+use crate::model::{Connection, Folder, Item, Profile, Protocol, Remote};
 use crate::net::Route;
 use crate::persist::unique_ids;
-use crate::proxy::Proxy;
 use crate::vault::{Account, Passwords, Vault};
 
 pub struct ProfileStore {

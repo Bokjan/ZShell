@@ -15,8 +15,8 @@ use serialport::{SerialPort, SerialPortType};
 use tokio::sync::mpsc;
 use ts_rs::TS;
 
-use crate::config::{FlowControl, Parity, SerialOptions};
 use crate::error::{Error, Result};
+use crate::model::{FlowControl, Parity, SerialOptions};
 use crate::session::{Outcome, SessionEvent, SessionInput, SessionSink, TermIo};
 
 /// How long a read waits for data before checking whether the session has closed. On

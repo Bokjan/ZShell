@@ -23,14 +23,14 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::applock::AppLockSettings;
-use crate::config::{Folder, Item, Profile};
 use crate::crypto::{self, Kdf, Key, Sealed};
 use crate::envelope::{self, Envelope, Invalid, Unopened};
 use crate::error::{Error, Result};
+use crate::model::AppLockSettings;
+use crate::model::Proxy;
+use crate::model::QuickCommands;
+use crate::model::{Folder, Item, Profile};
 use crate::persist;
-use crate::proxy::Proxy;
-use crate::quick::QuickCommands;
 use crate::secrets::{CredentialStore, StoreKind};
 
 pub const VAULT_FILE: &str = "vault.json";

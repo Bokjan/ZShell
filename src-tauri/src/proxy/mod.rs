@@ -2,8 +2,8 @@
 //! ([`http`]), or a local command whose stdin and stdout carry the connection, like
 //! OpenSSH's `ProxyCommand` ([`command`]).
 //!
-//! Proxies are saved by name in `proxies.json` and chosen per session (see
-//! [`crate::config::ProfileStore`]); their passwords are in the keychain.
+//! Proxies ([`crate::model::Proxy`]) are saved by name in the vault and chosen per session
+//! (see [`crate::config::ProfileStore`]), with their passwords.
 
 mod command;
 mod http;
@@ -12,87 +12,15 @@ mod socks;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::error::Error;
-use crate::forward::host_port;
+use crate::model::{host_port, Proxy, ProxyKind};
 use crate::net::Stream;
 use crate::secrets;
 use crate::session::TermIo;
 
 /// Password attempts after the saved one, as for SSH.
 const MAX_ATTEMPTS: usize = 3;
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct Proxy {
-    /// Empty when creating a new proxy; assigned on save.
-    #[serde(default)]
-    pub id: String,
-    pub name: String,
-    pub kind: ProxyKind,
-    /// SOCKS5 and HTTP: the proxy server. Kept, unused, by command proxies.
-    #[serde(default)]
-    pub host: String,
-    #[serde(default)]
-    pub port: u16,
-    /// SOCKS5 and HTTP: empty for a proxy without authentication. The password is kept with
-    /// the others (see `vault/`).
-    #[serde(default)]
-    pub username: String,
-    /// Command proxies: run by the user's shell, with `%h`, `%p`, `%r` and `%%` replaced.
-    #[serde(default)]
-    pub command: String,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum ProxyKind {
-    Socks5,
-    Http,
-    Command,
-}
-
-impl Proxy {
-    /// Checks and tidies the fields of its kind, and names an unnamed proxy after its
-    /// address or program.
-    pub fn normalize(&mut self) -> crate::error::Result<()> {
-        self.name = crate::i18n::printable(self.name.trim()).trim().to_owned();
-        self.host = self.host.trim().to_owned();
-        self.username = self.username.trim().to_owned();
-        self.command = self.command.trim().to_owned();
-        match self.kind {
-            ProxyKind::Command if self.command.is_empty() => return Err(Error::new("proxy.missingCommand")),
-            ProxyKind::Socks5 | ProxyKind::Http if self.host.is_empty() || self.port == 0 => {
-                return Err(Error::new("proxy.missingAddress"))
-            }
-            _ => {}
-        }
-        if self.name.is_empty() {
-            self.name = match self.kind {
-                ProxyKind::Command => command::program_name(&self.command),
-                _ => host_port(&self.host, self.port),
-            };
-        }
-        Ok(())
-    }
-
-    /// Whether `other` is the same proxy under any name: the same server and user, or the
-    /// same command.
-    pub fn same_as(&self, other: &Proxy) -> bool {
-        self.kind == other.kind
-            && match self.kind {
-                ProxyKind::Command => self.command == other.command,
-                _ => self.host == other.host && self.port == other.port && self.username == other.username,
-            }
-    }
-
-    /// Whether it needs a password from the keychain (or the user).
-    pub fn uses_password(&self) -> bool {
-        self.kind != ProxyKind::Command && !self.username.is_empty()
-    }
-}
 
 /// Connects to `host:port` through `proxy`. `user` is what a command's `%r` stands for;
 /// `keepalive` turns on TCP keepalives on the connection to a SOCKS or HTTP proxy. A

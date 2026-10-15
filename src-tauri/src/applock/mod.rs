@@ -26,43 +26,16 @@ use win as platform;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::WebviewWindow;
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
+use crate::model::AppLockSettings;
 use crate::vault::Vault;
 
-/// The idle times that can be chosen, in minutes; 0 never locks.
-const IDLE_MINUTES: [u32; 6] = [0, 1, 5, 15, 30, 60];
-const DEFAULT_IDLE_MINUTES: u32 = 15;
 /// How often the system's idle time is checked: the lock comes at most this late.
 const IDLE_CHECK: Duration = Duration::from_secs(5);
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase", default)]
-pub struct AppLockSettings {
-    pub enabled: bool,
-    /// Locks after the system (not only ZShell) has had no input for this long; 0 never.
-    pub idle_minutes: u32,
-    /// Locks when the system locks its screen, sleeps or switches to another user.
-    pub on_system_lock: bool,
-}
-
-impl Default for AppLockSettings {
-    fn default() -> Self {
-        Self { enabled: false, idle_minutes: DEFAULT_IDLE_MINUTES, on_system_lock: true }
-    }
-}
-
-impl AppLockSettings {
-    fn normalize(mut self) -> Self {
-        if !IDLE_MINUTES.contains(&self.idle_minutes) {
-            self.idle_minutes = DEFAULT_IDLE_MINUTES;
-        }
-        self
-    }
-}
 
 /// How the user unlocks, for the frontend to name it.
 // Each platform makes its own.
@@ -305,6 +278,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
     use super::*;
+    use crate::model::DEFAULT_IDLE_MINUTES;
     use crate::secrets::MemoryStore;
     use crate::vault::Target;
 

@@ -3,7 +3,7 @@
 use tauri::{State, Webview};
 
 use crate::error::Result;
-use crate::forward::ForwardRule;
+use crate::model::ForwardRule;
 use crate::session::{SessionId, SessionManager};
 use crate::ssh::Connections;
 
