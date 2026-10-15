@@ -60,6 +60,27 @@
 | **M32 Microsoft Store** ✅ | x64 与 ARM64 的 MSIX 上架 [Microsoft Store](https://apps.microsoft.com/detail/9n502tzg8hk8)；S 模式下隐藏本地终端 | |
 | **M34 文件面板跟随终端** ✅ | 文件面板在终端所在的文件夹打开，可跟随 shell 切换文件夹；路径栏补全；会话备注 | |
 | **M35 终端与会话细节** ✅ | 响铃（提示音、后台标签与窗口提醒、可选闪屏）；后台标签的新输出标记；⌘ / Ctrl+点击打开链接与 OSC 8；用户退出 shell 后关闭窗格；断开的会话在原窗格重连；界面字体；会话列表中会话与文件夹混排（3.2.0–3.3.0） | |
+| **M36 自动读屏模式** | 系统的读屏软件开启时自动打开终端读屏模式（macOS、Windows、Linux） | |
+| **M37 主机证书** | 按 known_hosts 的 `@cert-authority` 接受 CA 签发的主机证书，不必逐台确认主机密钥 | |
+
+### M36 自动读屏模式
+
+WebView 拿不到读屏软件是否开启，由后端查询系统并在变化时广播给所有窗口，前端由设置与系统状态算出 xterm.js 实际的 `screenReaderMode`（已打开的终端随选项更新）。
+
+- 设置"读屏支持"从开关改为"自动 / 开 / 关"（与 VS Code 的 `accessibilitySupport` 相同），默认"自动"。`settings.json` 中旧的 `true` 读作"开"、`false` 读作"自动"，配置向后兼容。"关"留给偶尔开读屏、不想承担性能开销的人。
+- macOS：`NSWorkspace.isVoiceOverEnabled`（objc2-app-kit 的 `NSAccessibility` feature）。它没有对应的通知，变化要用 KVO 观察 `voiceOverEnabled`（`define_class!` 定义观察者，与 `sftp/drag/macos.rs` 同样的写法）；不能只在应用激活时查询，在 ZShell 里按 ⌘F5 开关 VoiceOver 时应用不会重新激活。
+- Windows：`SystemParametersInfoW(SPI_GETSCREENREADER)`，讲述人、NVDA、JAWS 都会设置；变化时系统广播 `WM_SETTINGCHANGE`（`wParam` 为 `SPI_SETSCREENREADER`），需要一个窗口接收。
+- Linux：AT-SPI 总线的 `org.a11y.Status.ScreenReaderEnabled`（会话总线上的 `org.a11y.Bus`，`/org/a11y/bus`），Orca 会设置它，与桌面无关；变化由 `PropertiesChanged` 得知。拿不到时当作未开启。
+
+### M37 主机证书
+
+russh 0.64 已支持证书形式的主机密钥：客户端在 `Preferred::host_key_certificates` 中列出要接受的证书算法（默认为空，所以现在从不会收到证书），协商出证书后 russh 用证书里的公钥验证密钥交换的签名，再把整张证书经 `check_server_key` 交给我们；CA 的签名由我们检查。按 OpenSSH 的 `check_host_key` / `check_host_cert`：
+
+- 只在 known_hosts 中有对这台主机生效的 `@cert-authority` 行时才请求证书，算法为这些 CA 能签的类型。OpenSSH 默认总是先请求证书，但没有匹配的 CA 时会退回按普通公钥检查，结果相同；只在有 CA 时请求，对没有 CA 的用户行为完全不变。
+- 证书要满足：类型为 Host；签发它的 CA 在与主机匹配的 `@cert-authority` 行里；签名有效且在有效期内（ssh-key 的 `Certificate::validate_at`）；principals 包含主机名；没有 critical options；CA 与证书都没有被 `@revoked`。
+- 有匹配的 CA 但证书无效（过期、主机名不符等）时拒绝连接并说明原因，不退回逐台确认；没有匹配的 CA 时取出证书里的公钥，按现在的流程检查或询问。
+- 实现时对照 OpenSSH 源码确认：principals 为空的证书是否接受、principals 中的通配符、是否默认拒绝 SHA-1（`ssh-rsa`）签名的 CA（`CASignatureAlgorithms`）、非 22 端口时 CA 行按 `[host]:port` 还是主机名匹配。
+- `known_hosts.rs` 加上这些会超过 800 行，拆成目录模块，测试放进 `tests.rs`。端到端测试用临时 sshd 的 `HostCertificate` 与 `ssh-keygen -s ca -h -n localhost` 签的证书。
 
 ## 暂不排期（P2）
 
@@ -69,9 +90,7 @@
 - Microsoft Store 自动提交：现在每个版本在 Partner Center 手动上传（见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」）。可以用 Store 提交 API（`msstore` CLI）在 release workflow 里提交，需要把 Entra ID 应用的凭据配成 secret。
 - 关键字高亮（如 `ERROR` 标红）：需在 xterm.js 的渲染层用 decoration 实现，不能往输出流里插入颜色序列（会破坏全屏程序）。
 - X11 转发（macOS 上还要依赖 XQuartz）。
-- 主机证书（`@cert-authority`）：用 CA 管理主机的环境不必逐台确认主机密钥。现在主机证书被当作普通公钥；要先确认 russh 是否支持证书形式的主机密钥，不支持则需要上游补丁。
 - Linux 上 GNOME 以外的桌面：KDE 的闲置时间（`org.freedesktop.ScreenSaver.GetSessionIdleTime`）、X11 的闲置时间（XScreenSaver 扩展）、窗口按钮按各自主题的样式；没有 polkit 认证代理时用 PAM 在锁定界面输入密码。Flatpak 不在计划内（Secret Service 与 polkit 都要经 portal）。
-- macOS 上 VoiceOver 开启时自动打开终端读屏模式：WebView 拿不到这个状态，需要后端查询（`NSWorkspace.isVoiceOverEnabled`）；现在是设置里的手动开关。
 
 ## 不做
 
