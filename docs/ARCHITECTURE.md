@@ -46,7 +46,7 @@
 | 模块（`src-tauri/src/`） | 职责 |
 |---|---|
 | `session/` | 会话抽象：`TermIo`、`SessionManager`、`SessionSink`、输出流控 `Flow` |
-| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`）、主机密钥确认（`host_key.rs`）、known_hosts（`known_hosts.rs`）、认证（`auth/`）、连接注册表（`connections.rs`） |
+| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`）、主机密钥确认（`host_key.rs`）、known_hosts 与主机证书（`known_hosts/`）、认证（`auth/`）、连接注册表（`connections.rs`） |
 | `sftp/` | 浏览与文件操作（`mod.rs`）、传输（`transfer.rs`）、本地编辑（`edit.rs`）、拖出（`drag/`）、替换写入（`replace.rs`）、文件名转码（`names.rs`） |
 | `forward/` | 转发规则的运行（`mod.rs`）、`-L` / `-R` / `-D`（`local.rs` / `remote.rs` / `dynamic.rs`）、SOCKS（`socks.rs`） |
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
@@ -99,7 +99,8 @@
 - **复制标签**：已连接的 SSH 标签复制或分屏时，在源连接上开新的 shell channel，不重新连接认证（类似 ControlMaster）。多个会话可以指向同一连接，最后一个结束时才断开；源连接已断开时照常新建连接。
 - **提示都在终端里**：主机指纹、密码、口令、keyboard-interactive 都经 `TermIo::read_line` 在终端里问，与 OpenSSH 一致，不弹窗。
 - **认证**："自动"按 OpenSSH 的顺序尝试 agent、私钥、keyboard-interactive、密码；加密的私钥只在服务器接受其公钥后才问口令。多因素认证按服务器返回的剩余方法继续；保存的密码只回答一次，而且只回答问本账户密码的提示（`Password for root:` 在用户是 alice 时不算），验证码类的提示总在终端里问，以免把密码当验证码提交、白白计入失败次数（`ssh/auth/`）。
-- **主机校验**：自己解析 `~/.ssh/known_hosts`（`ssh/known_hosts.rs`），按 OpenSSH 的规则校验与写入，并只读地参考 `known_hosts2` 与系统文件，不用 russh 自带的校验。指纹变化时告警并拒绝连接；只记录了其他类型的密钥时先列出再问，与 OpenSSH 措辞一致。
+- **主机校验**：自己解析 `~/.ssh/known_hosts`（`ssh/known_hosts/`），按 OpenSSH 的规则校验与写入，并只读地参考 `known_hosts2` 与系统文件，不用 russh 自带的校验。指纹变化时告警并拒绝连接；只记录了其他类型的密钥时先列出再问，与 OpenSSH 措辞一致。
+- **主机证书**：known_hosts 里有对这台主机生效的 `@cert-authority` 行时，才向服务器请求证书形式的主机密钥（russh 的 `Preferred::host_key_certificates`，不含 SHA-1 的 RSA），没有时行为与以前完全相同。russh 用证书里的公钥验证密钥交换，证书本身由我们按 OpenSSH 的 `check_host_key` 检查：由受信任的 CA 签发、有效时直接接受，不再询问；证书或其 CA 被 `@revoked` 时拒绝；CA 可信但签名无效时拒绝；其他情况（CA 不可信、过期、主机名不符等）给出警告后把证书里的公钥当普通主机密钥校验，与 OpenSSH 一样。警告经 `HostKeyMessage::Warning` 交给会话任务显示。
 - **agent 转发**：只转发给目标主机，只在本连接请求过转发时接受服务器开的 agent 通道。
 - **ProxyJump**：在上一跳连接上开 `direct-tcpip` channel 作为下一跳的传输层，每一跳用被引用会话自己的地址和认证，主机密钥按各跳自己的地址校验。建跳板的部分（`ssh::tunnel`）SSH 与 Telnet 共用。
 - **keepalive 与重连**：连续 3 次 keepalive 无响应判定断线（`lost`），前端按退避间隔一直重连到标签关闭，认证或主机密钥被拒绝时停止。russh 认证完成后才发 SSH keepalive，之前靠同样间隔的 TCP keepalive（直连和 SOCKS / HTTP 代理）。认证途中连接断开算断线（`net.connectionLost`），会继续重连；服务器主动断开（例如 sshd 超过 `MaxAuthTries`）算认证失败（`auth.disconnected`），和 OpenSSH 一样停下。重连是新会话；会话结束时后端先重置终端模式，免得下一个 shell 把鼠标报告当成输入。连接各阶段有超时，认证阶段没有（服务器有自己的限制），见 `net.rs` 与 `ssh/mod.rs`；握手超时或标签关闭时连接会被结束，不会留在 russh 的连接任务里（`ssh/abortable.rs`）。

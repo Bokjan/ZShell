@@ -30,7 +30,15 @@
     "revokedDetails": "{host}の{algorithm}ホスト鍵は、{path}で失効済みとしてマークされています。\n盗まれた鍵を使って、何者かがこのホストになりすましている可能性があります。",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "changedDetails": "今まさに何者かが通信を盗聴している可能性があります（中間者攻撃）！\nホスト鍵が変更されただけという可能性もあります。\nリモートホストから送られた{algorithm}鍵のフィンガープリントは次のとおりです：\n  {fingerprint}\nこれは{path}の{line}行目と一致しません。\n鍵の変更が想定どおりであれば、「設定」>「既知のホスト」で古い鍵を削除するか、次のコマンドを実行してください：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nその後、もう一度接続してください。",
-    "changedDetailsElsewhere": "今まさに何者かが通信を盗聴している可能性があります（中間者攻撃）！\nホスト鍵が変更されただけという可能性もあります。\nリモートホストから送られた{algorithm}鍵のフィンガープリントは次のとおりです：\n  {fingerprint}\nこれは{path}の{line}行目と一致しません。\n鍵の変更が想定どおりであれば、そのファイルから古い鍵を削除してください。例：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nその後、もう一度接続してください。"
+    "changedDetailsElsewhere": "今まさに何者かが通信を盗聴している可能性があります（中間者攻撃）！\nホスト鍵が変更されただけという可能性もあります。\nリモートホストから送られた{algorithm}鍵のフィンガープリントは次のとおりです：\n  {fingerprint}\nこれは{path}の{line}行目と一致しません。\n鍵の変更が想定どおりであれば、そのファイルから古い鍵を削除してください。例：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nその後、もう一度接続してください。",
+    "certificateSignatureAlgorithm": "{host}のホスト証明書は{algorithm}で署名されていますが、この方式は許可されていません。含まれている鍵を通常のホスト鍵として確認します。",
+    "certificateBadSignature": "{host}のホスト証明書は信頼された認証局によるものですが、署名が無効です。",
+    "certificateNotHost": "{host}が提示した証明書はホスト証明書ではありません。含まれている鍵を通常のホスト鍵として確認します。",
+    "certificateNotYetValid": "{host}のホスト証明書はまだ有効になっていません。含まれている鍵を通常のホスト鍵として確認します。",
+    "certificateExpired": "{host}のホスト証明書は有効期限が切れています。含まれている鍵を通常のホスト鍵として確認します。",
+    "certificateNoPrincipals": "{host}のホスト証明書にはホストが1つも記載されていません。含まれている鍵を通常のホスト鍵として確認します。",
+    "certificateWrongHost": "{host}のホスト証明書は別のホスト向けです。含まれている鍵を通常のホスト鍵として確認します。",
+    "certificateCriticalOptions": "{host}のホスト証明書にはサポートされていない重要なオプションが含まれています。含まれている鍵を通常のホスト鍵として確認します。"
   },
   "forward": {
     "autoStartFailed": "ポートフォワーディング{forward}を開始できませんでした：{error}"

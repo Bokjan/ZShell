@@ -3,7 +3,8 @@
 //!
 //! russh calls [`super::handler::ClientHandler::check_server_key`] from its own task during
 //! key exchange, so the handler cannot talk to the terminal directly. Instead it sends a
-//! [`HostKeyQuery`] to the session task, which asks the user and replies.
+//! [`HostKeyQuery`] to the session task, which asks the user and replies, and warnings for
+//! the session task to show.
 
 use std::path::PathBuf;
 
@@ -20,6 +21,16 @@ pub enum HostKeyStatus {
     Changed { path: PathBuf, line: usize },
     /// Marked `@revoked` in this file.
     Revoked { path: PathBuf },
+    /// A certificate from an authority trusted for the host, with a signature that doesn't
+    /// verify.
+    BadCertificateSignature,
+}
+
+/// What the handler sends the session task.
+pub enum HostKeyMessage {
+    Query(HostKeyQuery),
+    /// A translated warning to show, e.g. about a certificate set aside.
+    Warning(String),
 }
 
 pub struct HostKeyQuery {
@@ -57,6 +68,10 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }
+        HostKeyStatus::BadCertificateSignature => {
+            io.print(&format!("\x1b[1;31m{}\x1b[0m\n", t!("hostKey.certificateBadSignature", host = host)));
+            false
+        }
         HostKeyStatus::Unknown { others } => {
             // As OpenSSH: the keys of other types it has for the host, then a question that
             // says so, since a server the user trusts would normally show one of those.
@@ -92,4 +107,8 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             true
         }
     }
+}
+
+pub fn warn(io: &mut TermIo, warning: &str) {
+    io.print(&format!("\x1b[33m{warning}\x1b[0m\n"));
 }

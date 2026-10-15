@@ -260,3 +260,86 @@ b ssh-ed25519 {OTHER}
     assert_eq!(mode(path.parent().unwrap()), 0o700);
     fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
+
+/// Made with `ssh-keygen -s`: certificates for `HOST`'s key signed by `CA`, for `server.lan`
+/// and `*.example.com` (`VALID_CERT`); a user certificate for `server.lan`; a host certificate
+/// for `server.lan` valid during 2025 only; one naming no host; and one for `server.lan`
+/// signed by `RSA_CA` with SHA-1 (`-t ssh-rsa`).
+const CA: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAQ5C53zyCsuX+M1WNjRY0uWLKtSMXW38PyRLF7yFr7";
+const RSA_CA: &str = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD2KAxYQ+8uwHsi5f7GpXKhCaNjXo++owAb4P/JaXlxUfBxNocPngCuWFybDAzekQYbKP2Yz3O8u2CpheHnA1dcaXLsL51rZVxuSyKw+c30ub6PpjiM2xC1R/Y7HE5Zx1GUZs4Eu7ie6VS3+Mh4PWhn0oQuHJ1b7eseAp029zBzzoxxNV2XOiasTWVqhEmi5irS4i0jR5FQ2TI/LVjYt8tQMz1nEk6pyJT5yumusmkJQVj3JU7/jzL2zFB+dngLycMMT/ZLaPmfMjr+swLIxF2IDnWL1oMHlu/ZcoymmbYuk+M2KpPSbxhe0NUDRW+HR49yPy7fECjnFiWNpbz/94gH";
+const HOST: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBimRMEr7gmUg5LJp8+tNc5ei6sS4vg1Hr2zZlet6MxT";
+const VALID_CERT: &str = "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIKOrc4/iXsTWLT5tTDfQXprP+ye6+C8Dw6v9A+/ETc36AAAAIBimRMEr7gmUg5LJp8+tNc5ei6sS4vg1Hr2zZlet6MxTAAAAAAAAAAAAAAACAAAABXZhbGlkAAAAHwAAAApzZXJ2ZXIubGFuAAAADSouZXhhbXBsZS5jb20AAAAAAAAAAP//////////AAAAAAAAAAAAAAAAAAAAMwAAAAtzc2gtZWQyNTUxOQAAACCgEOQud88grLl/jNVjY0WNLliyrUjF1t/D8kSxe8ha+wAAAFMAAAALc3NoLWVkMjU1MTkAAABAuBxXBRZeKBJq5hIC44uAmXOThvr9LMyEHSCYpXPuaxQkjw1KQrJQkwEs0KCAlqNCA8Gn/H/YBLEsuRktS48CAQ==";
+const USER_CERT: &str = "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIF8gPFGQdXCdDTJ8WY5Zlp60mrytmos99IFyRBNenb2GAAAAIBimRMEr7gmUg5LJp8+tNc5ei6sS4vg1Hr2zZlet6MxTAAAAAAAAAAAAAAABAAAABHVzZXIAAAAOAAAACnNlcnZlci5sYW4AAAAAAAAAAP//////////AAAAAAAAAIIAAAAVcGVybWl0LVgxMS1mb3J3YXJkaW5nAAAAAAAAABdwZXJtaXQtYWdlbnQtZm9yd2FyZGluZwAAAAAAAAAWcGVybWl0LXBvcnQtZm9yd2FyZGluZwAAAAAAAAAKcGVybWl0LXB0eQAAAAAAAAAOcGVybWl0LXVzZXItcmMAAAAAAAAAAAAAADMAAAALc3NoLWVkMjU1MTkAAAAgoBDkLnfPIKy5f4zVY2NFjS5Ysq1Ixdbfw/JEsXvIWvsAAABTAAAAC3NzaC1lZDI1NTE5AAAAQCp2SfF1oeLiF9ZDZFV2t9mN7P3PYEURlaxP+MS7VmczU/KO0fYqT6VxEbIOXmxy6KRAIqZCulWIFb9lM+rNjws=";
+const WINDOW_CERT: &str = "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIKmVdXWOSYJOB0ID3sjOkWw7HufDyc+6v8hMmydGbWrUAAAAIBimRMEr7gmUg5LJp8+tNc5ei6sS4vg1Hr2zZlet6MxTAAAAAAAAAAAAAAACAAAABndpbmRvdwAAAA4AAAAKc2VydmVyLmxhbgAAAABndAbwAAAAAGlVOnAAAAAAAAAAAAAAAAAAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIKAQ5C53zyCsuX+M1WNjRY0uWLKtSMXW38PyRLF7yFr7AAAAUwAAAAtzc2gtZWQyNTUxOQAAAEA5huFzr+nikhbym2WWv8LNiUAqZvbLmHqXSKfEQt4piu3Dhfk7KWVJR9wiqjx9+9AzB6NpoYV1VgfF+y2uoUUL";
+const NONE_CERT: &str = "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIDhiLRIhzJbZkj5WhWlmtMYb7/pXESwHj8Vy7wJeiHKNAAAAIBimRMEr7gmUg5LJp8+tNc5ei6sS4vg1Hr2zZlet6MxTAAAAAAAAAAAAAAACAAAABG5vbmUAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAADMAAAALc3NoLWVkMjU1MTkAAAAgoBDkLnfPIKy5f4zVY2NFjS5Ysq1Ixdbfw/JEsXvIWvsAAABTAAAAC3NzaC1lZDI1NTE5AAAAQAwMddQ8oFseZVHCppqQHmfo7qwXVGJJ5Yw7jRYwxIUpLcEa70M71oEhlKeFtLUlIGw4JJmpxe0MSGIWpv3kPQg=";
+const SHA1_CERT: &str = "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIMhzAhgV2sr8ljnt8TuFclCtSHl/27k8EcCCQd4RgYcFAAAAIBimRMEr7gmUg5LJp8+tNc5ei6sS4vg1Hr2zZlet6MxTAAAAAAAAAAAAAAACAAAABHNoYTEAAAAOAAAACnNlcnZlci5sYW4AAAAAAAAAAP//////////AAAAAAAAAAAAAAAAAAABFwAAAAdzc2gtcnNhAAAAAwEAAQAAAQEA9igMWEPvLsB7IuX+xqVyoQmjY16PvqMAG+D/yWl5cVHwcTaHD54ArlhcmwwM3pEGGyj9mM9zvLtgqYXh5wNXXGly7C+da2VcbksisPnN9Lm+j6Y4jNsQtUf2OxxOWcdRlGbOBLu4nulUt/jIeD1oZ9KELhydW+3rHgKdNvcwc86McTVdlzomrE1laoRJouYq0uItI0eRUNkyPy1Y2LfLUDM9ZxJOqciU+crprrJpCUFY9yVO/48y9sxQfnZ4C8nDDE/2S2j5nzI6/rMCyMRdiA51i9aDB5bv2XKMppm2LpPjNiqT0m8YXtDVA0Vvh0ePcj8u3xAo5xYljaW8//eIBwAAAQ8AAAAHc3NoLXJzYQAAAQCotpbOV9qOJMe/LXzZkShkUeJX+/KvlKQbWgrEaFnCjteP8cDME+XG4iIWH2RdGdqfYX/ks2BxUDmFj2znqN1khmkdW6t8JKQWrX9vSm240peRocG0vVRuAVhUi8JtDqCywlbHUbZyMIhz2SoCKe/S+o5KLit/4M9rbSkqVltwzrFI+sdv9gYIu34/IzbLvv0RpYtv4Y99oR3DmqsX+498gNXiwa7jFLuoiUwBjx70G2EjKiP09oBWQ0jxOzf5anQML92dUSrSBgS6lE8t8M8an7bjmy0ILpbZ5CBUy7VTODMO/BmhsiWAkrl7lDNJ2pqEDDKW0hFGPkTJ9sBDEW+T";
+
+fn certificate(text: &str) -> Certificate {
+    Certificate::from_openssh(text).unwrap()
+}
+
+/// Some time in 2027.
+const NOW: u64 = 1_800_000_000;
+
+#[test]
+fn trusts_certificates_as_openssh() {
+    use CertificateCheck::{Invalid as Not, Trusted, Untrusted};
+    let path = temp_file(&format!("@cert-authority *.lan,*.example.com {CA}\n@cert-authority [*.lan]:2222 {RSA_CA}\n"));
+    let check = |text: &str, host: &str, port: u16, now: u64| {
+        certificate::check_certificate_at(std::slice::from_ref(&path), host, port, &certificate(text), now).unwrap()
+    };
+    assert_eq!(check(VALID_CERT, "Server.LAN", 22, NOW), Trusted);
+    assert_eq!(check(VALID_CERT, "a.example.com", 22, NOW), Trusted);
+    // No authority for the host: the authority's line names other hosts, or the port isn't 22.
+    assert_eq!(check(VALID_CERT, "server.other", 22, NOW), Untrusted);
+    assert_eq!(check(VALID_CERT, "server.lan", 2222, NOW), Untrusted);
+    // An authority for the host, but not the one that signed it.
+    assert_eq!(check(SHA1_CERT, "server.lan", 22, NOW), Untrusted);
+
+    // From the authority, but not valid for the host.
+    assert_eq!(check(VALID_CERT, "nas.lan", 22, NOW), Not(Invalid::WrongHost));
+    assert_eq!(check(USER_CERT, "server.lan", 22, NOW), Not(Invalid::NotHost));
+    assert_eq!(check(NONE_CERT, "server.lan", 22, NOW), Not(Invalid::NoPrincipals));
+    assert_eq!(check(SHA1_CERT, "server.lan", 2222, NOW), Not(Invalid::SignatureAlgorithm("ssh-rsa".into())));
+    let window = certificate(WINDOW_CERT);
+    assert_eq!(check(WINDOW_CERT, "server.lan", 22, window.valid_after() - 1), Not(Invalid::NotYetValid));
+    assert_eq!(check(WINDOW_CERT, "server.lan", 22, window.valid_after()), Trusted);
+    assert_eq!(check(WINDOW_CERT, "server.lan", 22, window.valid_before()), Not(Invalid::Expired));
+
+    // A signature changed by a bit.
+    let (algorithm, blob) = VALID_CERT.split_once(' ').unwrap();
+    let mut bytes = BASE64.decode(blob.as_bytes()).unwrap();
+    *bytes.last_mut().unwrap() ^= 1;
+    let forged = format!("{algorithm} {}", BASE64.encode(&bytes));
+    assert_eq!(check(&forged, "server.lan", 22, NOW), Not(Invalid::Signature));
+}
+
+#[test]
+fn refuses_certificates_with_revoked_keys() {
+    let check = |content: String| {
+        let path = temp_file(&content);
+        certificate::check_certificate_at(std::slice::from_ref(&path), "server.lan", 22, &certificate(VALID_CERT), NOW).unwrap()
+    };
+    // The authority, or the key in the certificate, on a line for any host.
+    let revoked = check(format!("@cert-authority * {CA}\n@revoked other {CA}\n"));
+    assert!(matches!(revoked, CertificateCheck::Revoked { line: 2, .. }), "{revoked:?}");
+    let revoked = check(format!("@cert-authority * {CA}\n# c\n@revoked * {HOST}\n"));
+    assert!(matches!(revoked, CertificateCheck::Revoked { line: 3, .. }), "{revoked:?}");
+    // A plain line for the authority's key doesn't make it one.
+    assert_eq!(check(format!("server.lan {CA}\n")), CertificateCheck::Untrusted);
+}
+
+/// Certificates are asked for from hosts with an authority only, without SHA-1 RSA ones.
+#[test]
+fn asks_for_certificates_where_an_authority_is_trusted() {
+    let preferred = russh::Preferred::default().key.to_vec();
+    let path = temp_file(&format!("@cert-authority *.lan {CA}\nserver.lan ecdsa-sha2-nistp256 {ECDSA}\n"));
+    let algorithms = host_key_algorithms_at(std::slice::from_ref(&path), &preferred, "server.lan", 22);
+    let ecdsa = Algorithm::Ecdsa { curve: russh::keys::EcdsaCurve::NistP256 };
+    assert_eq!(algorithms.keys[0], ecdsa);
+    assert_eq!(algorithms.certificates.len(), preferred.len() - 1);
+    assert_eq!(algorithms.certificates[0], ecdsa);
+    assert!(!algorithms.certificates.contains(&Algorithm::Rsa { hash: None }));
+    let algorithms = host_key_algorithms_at(std::slice::from_ref(&path), &preferred, "server.other", 22);
+    assert_eq!((algorithms.keys, algorithms.certificates), (preferred, Vec::new()));
+}

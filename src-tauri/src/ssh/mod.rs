@@ -26,6 +26,7 @@ use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
 pub use auth::{default_key_path, key_file_exists};
 pub use connections::{Connection, Connections, SshHandle};
 use handler::{ClientHandler, EndReason};
+use host_key::HostKeyMessage;
 
 /// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
 /// terminal. `carry`: forwarding rules to start besides the automatic ones (those running
@@ -372,14 +373,13 @@ where
     let preferred = russh::Preferred::default();
     // Reads the known_hosts files, in the blocking pool.
     let (algorithms, host, port) = (preferred.key.to_vec(), remote.host.clone(), remote.port);
-    let key = tokio::task::spawn_blocking(move || known_hosts::prefer_known(&algorithms, &host, port))
+    let algorithms = tokio::task::spawn_blocking(move || known_hosts::host_key_algorithms(&algorithms, &host, port))
         .await
-        .unwrap_or_else(|_| preferred.key.to_vec())
-        .into();
+        .unwrap_or_else(|_| known_hosts::HostKeyAlgorithms { keys: preferred.key.to_vec(), certificates: Vec::new() });
     let config = Arc::new(client::Config {
         keepalive_interval: remote.keepalive(),
         keepalive_max: 3,
-        preferred: russh::Preferred { key, ..preferred },
+        preferred: russh::Preferred { key: algorithms.keys.into(), host_key_certificates: algorithms.certificates.into(), ..preferred },
         ..Default::default()
     });
     let (queries_tx, mut queries) = mpsc::channel(1);
@@ -395,6 +395,13 @@ where
     loop {
         tokio::select! {
             result = &mut handshake => {
+                // Warnings sent just before the key was accepted, which may not have been
+                // received yet.
+                while let Ok(message) = queries.try_recv() {
+                    if let HostKeyMessage::Warning(warning) = message {
+                        host_key::warn(io, &warning);
+                    }
+                }
                 let session = result.map_err(|e| match e {
                     russh::Error::UnknownKey => anyhow!(Error::new("ssh.hostKeyRejected")),
                     e => anyhow!(e).context(Error::new("ssh.handshakeFailed")),
@@ -402,11 +409,14 @@ where
                 abort.disarm();
                 return Ok(session);
             }
-            Some(query) = queries.recv() => {
-                let accepted = host_key::confirm(io, &remote.host, remote.port, &query).await;
-                let _ = query.reply.send(accepted);
-                deadline.as_mut().reset(tokio::time::Instant::now() + HANDSHAKE_TIMEOUT);
-            }
+            Some(message) = queries.recv() => match message {
+                HostKeyMessage::Warning(warning) => host_key::warn(io, &warning),
+                HostKeyMessage::Query(query) => {
+                    let accepted = host_key::confirm(io, &remote.host, remote.port, &query).await;
+                    let _ = query.reply.send(accepted);
+                    deadline.as_mut().reset(tokio::time::Instant::now() + HANDSHAKE_TIMEOUT);
+                }
+            },
             () = &mut deadline => {
                 return Err(Error::new("ssh.handshakeTimeout").param("target", host_port(&remote.host, remote.port)).into());
             }

@@ -7,8 +7,8 @@ use russh::keys::{PublicKey, PublicKeyOrCertificate};
 use russh::{Channel, ChannelOpenFailure};
 use tokio::sync::{mpsc, oneshot, watch};
 
-use super::host_key::{HostKeyQuery, HostKeyStatus};
-use super::known_hosts::{self, Check};
+use super::host_key::{HostKeyMessage, HostKeyQuery, HostKeyStatus};
+use super::known_hosts::{self, CertificateCheck, Check, Invalid};
 use crate::forward::{Incoming, RemoteRoutes};
 
 pub struct ClientHandler {
@@ -16,7 +16,7 @@ pub struct ClientHandler {
     port: u16,
     /// Whether we asked for agent forwarding; agent channels are refused otherwise.
     forward_agent: bool,
-    queries: mpsc::Sender<HostKeyQuery>,
+    queries: mpsc::Sender<HostKeyMessage>,
     routes: RemoteRoutes,
     /// Receives why the connection ended.
     disconnect: watch::Sender<Option<EndReason>>,
@@ -48,11 +48,35 @@ impl ClientHandler {
         host: String,
         port: u16,
         forward_agent: bool,
-        queries: mpsc::Sender<HostKeyQuery>,
+        queries: mpsc::Sender<HostKeyMessage>,
         routes: RemoteRoutes,
         disconnect: watch::Sender<Option<EndReason>>,
     ) -> Self {
         Self { host, port, forward_agent, queries, routes, disconnect }
+    }
+
+    /// Has the session task tell or ask the user about `key`; whether to go on.
+    async fn ask(&self, key: PublicKey, status: HostKeyStatus) -> bool {
+        let (reply, answer) = oneshot::channel();
+        let query = HostKeyQuery { key, status, reply };
+        if self.queries.send(HostKeyMessage::Query(query)).await.is_err() {
+            return false;
+        }
+        answer.await.unwrap_or(false)
+    }
+}
+
+/// Why a certificate from `host` is set aside, as a warning.
+fn invalid_certificate(why: &Invalid, host: &str) -> String {
+    match why {
+        Invalid::SignatureAlgorithm(algorithm) => t!("hostKey.certificateSignatureAlgorithm", host = host, algorithm = algorithm),
+        Invalid::Signature => t!("hostKey.certificateBadSignature", host = host),
+        Invalid::NotHost => t!("hostKey.certificateNotHost", host = host),
+        Invalid::NotYetValid => t!("hostKey.certificateNotYetValid", host = host),
+        Invalid::Expired => t!("hostKey.certificateExpired", host = host),
+        Invalid::NoPrincipals => t!("hostKey.certificateNoPrincipals", host = host),
+        Invalid::WrongHost => t!("hostKey.certificateWrongHost", host = host),
+        Invalid::CriticalOptions => t!("hostKey.certificateCriticalOptions", host = host),
     }
 }
 
@@ -63,10 +87,28 @@ impl client::Handler for ClientHandler {
     /// exchanged anew later in the session, so a different key then goes unnoticed (see
     /// docs/TODO.md).
     async fn check_server_key(&mut self, server_key: &PublicKeyOrCertificate) -> Result<bool, Self::Error> {
-        let key = match server_key {
-            PublicKeyOrCertificate::PublicKey { key, .. } => key.clone(),
-            PublicKeyOrCertificate::Certificate(cert) => PublicKey::from(cert.public_key().clone()),
-        };
+        let key = server_key.public_key();
+        // As OpenSSH: a certificate that isn't trusted, or not valid, is checked as the key in
+        // it, unless it is revoked or its signature is bad.
+        if let PublicKeyOrCertificate::Certificate(certificate) = server_key {
+            let (host, port, certificate) = (self.host.clone(), self.port, certificate.clone());
+            let checked = tokio::task::spawn_blocking(move || known_hosts::check_certificate(&host, port, &certificate))
+                .await
+                .map_err(std::io::Error::other)?;
+            match checked {
+                Ok(CertificateCheck::Trusted) => return Ok(true),
+                Ok(CertificateCheck::Untrusted) => {}
+                Ok(CertificateCheck::Revoked { path, .. }) => return Ok(self.ask(key, HostKeyStatus::Revoked { path }).await),
+                Ok(CertificateCheck::Invalid(Invalid::Signature)) => {
+                    return Ok(self.ask(key, HostKeyStatus::BadCertificateSignature).await)
+                }
+                Ok(CertificateCheck::Invalid(why)) => {
+                    let warning = invalid_certificate(&why, &self.host);
+                    let _ = self.queries.send(HostKeyMessage::Warning(warning)).await;
+                }
+                Err(e) => return Err(std::io::Error::other(e.to_string()).into()),
+            }
+        }
 
         // Reading the files (and waiting for a write to them), off russh's connection task.
         let (host, port, checked) = (self.host.clone(), self.port, key.clone());
@@ -80,13 +122,7 @@ impl client::Handler for ClientHandler {
             Ok(Check::Revoked { path, .. }) => HostKeyStatus::Revoked { path },
             Err(e) => return Err(std::io::Error::other(e.to_string()).into()),
         };
-
-        let (reply, answer) = oneshot::channel();
-        let query = HostKeyQuery { key, status, reply };
-        if self.queries.send(query).await.is_err() {
-            return Ok(false);
-        }
-        Ok(answer.await.unwrap_or(false))
+        Ok(self.ask(key, status).await)
     }
 
     /// Hands the channel to its rule without waiting: this runs on russh's connection task,

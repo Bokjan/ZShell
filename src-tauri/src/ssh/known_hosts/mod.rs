@@ -2,7 +2,8 @@
 //! which also reads the other files OpenSSH reads by default), and for the settings' Known
 //! Hosts listing entries, finding hashed ones by host name (as
 //! `ssh-keygen -F` does) and removing them (as `ssh-keygen -R` does, keeping the previous
-//! file as `known_hosts.old`), and adding a key the user accepted ([`learn`]).
+//! file as `known_hosts.old`), and adding a key the user accepted ([`learn`]). Host
+//! certificates are checked against the `@cert-authority` lines ([`check_certificate`]).
 //!
 //! russh's own check differs from OpenSSH: it calls a key changed as soon as one line for the
 //! host has another key of the type, even if a later line has the server's key; it ignores
@@ -16,12 +17,16 @@ use std::sync::Mutex;
 use anyhow::Context;
 use data_encoding::BASE64;
 use hmac::{Hmac, KeyInit, Mac};
-use russh::keys::{Algorithm, HashAlg, PublicKey};
+use russh::keys::{Algorithm, Certificate, HashAlg, PublicKey};
 use serde::Serialize;
 use sha1::Sha1;
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
+
+mod certificate;
+
+pub use certificate::{CertificateCheck, Invalid};
 
 /// A line of the file with a host key.
 #[derive(Debug, Clone, Serialize, PartialEq, TS)]
@@ -320,7 +325,7 @@ pub enum Check {
     /// No line for the host has a key of this type, nor of another.
     Unknown,
     /// No line for the host has a key of this type, but some have keys of other types: a
-    /// server the user already trusts, or one pretending to be it (see `prefer_known`).
+    /// server the user already trusts, or one pretending to be it (see `host_key_algorithms`).
     OtherTypesKnown(Vec<OtherKey>),
     /// The host's key of this type is another one, on this line of this file.
     Changed { path: PathBuf, line: usize },
@@ -406,18 +411,33 @@ fn kind_name(algorithm: &Algorithm) -> String {
     }
 }
 
-/// `preferred` host key algorithms with those for the types of key known_hosts has for
-/// `host:port` first, keeping their order, as OpenSSH orders its `HostKeyAlgorithms`: a server
-/// with several keys then shows one that can be checked, rather than one of a type not yet
-/// recorded, which would look like a first connection.
-pub fn prefer_known(preferred: &[Algorithm], host: &str, port: u16) -> Vec<Algorithm> {
+/// The host key algorithms to ask `host:port` for, as OpenSSH's `order_hostkeyalgs` orders
+/// its `HostKeyAlgorithms`.
+pub struct HostKeyAlgorithms {
+    /// `preferred` with those for the types of key known_hosts has for the host first, keeping
+    /// their order: a server with several keys then shows one that can be checked, rather than
+    /// one of a type not yet recorded, which would look like a first connection.
+    pub keys: Vec<Algorithm>,
+    /// The certificate forms of `keys`, which russh asks for ahead of them, when a line trusts
+    /// an authority for the host; none otherwise, as a certificate couldn't be checked.
+    pub certificates: Vec<Algorithm>,
+}
+
+pub fn host_key_algorithms(preferred: &[Algorithm], host: &str, port: u16) -> HostKeyAlgorithms {
     let user = path();
     let mut paths: Vec<PathBuf> = user.iter().cloned().collect();
     paths.extend(user.as_deref().map(other_paths).unwrap_or_default());
+    host_key_algorithms_at(&paths, preferred, host, port)
+}
+
+fn host_key_algorithms_at(paths: &[PathBuf], preferred: &[Algorithm], host: &str, port: u16) -> HostKeyAlgorithms {
     let host_port = host_pattern(host, port).to_ascii_lowercase();
-    let known: Vec<Algorithm> =
-        entries_at(&paths).map(|entries| host_keys(&entries, &host_port).map(|(_, _, key)| key.algorithm()).collect()).unwrap_or_default();
-    order_known(preferred, &known)
+    let entries = entries_at(paths).unwrap_or_default();
+    let known: Vec<Algorithm> = host_keys(&entries, &host_port).map(|(_, _, key)| key.algorithm()).collect();
+    let keys = order_known(preferred, &known);
+    let certificates =
+        if certificate::has_authority(&entries, &host_port) { certificate::certificate_algorithms(&keys) } else { Vec::new() };
+    HostKeyAlgorithms { keys, certificates }
 }
 
 fn order_known(preferred: &[Algorithm], known: &[Algorithm]) -> Vec<Algorithm> {
@@ -427,13 +447,25 @@ fn order_known(preferred: &[Algorithm], known: &[Algorithm]) -> Vec<Algorithm> {
     first
 }
 
-/// Checks the key a server at `host:port` presented, as OpenSSH does: against
 /// `~/.ssh/known_hosts` and the [other files](other_paths) OpenSSH reads by default.
-pub fn check(host: &str, port: u16, key: &PublicKey) -> Result<Check> {
+fn all_paths() -> Result<Vec<PathBuf>> {
     let user = required_path()?;
     let mut paths = vec![user.clone()];
     paths.extend(other_paths(&user));
-    check_at(&paths, host, port, key)
+    Ok(paths)
+}
+
+/// Checks the key a server at `host:port` presented, as OpenSSH does, against [all the
+/// files](all_paths).
+pub fn check(host: &str, port: u16, key: &PublicKey) -> Result<Check> {
+    check_at(&all_paths()?, host, port, key)
+}
+
+/// Checks the certificate a server at `host:port` presented, as OpenSSH does, against [all the
+/// files](all_paths).
+pub fn check_certificate(host: &str, port: u16, certificate: &Certificate) -> Result<CertificateCheck> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs());
+    certificate::check_certificate_at(&all_paths()?, host, port, certificate, now)
 }
 
 /// Writes `content` to `path`, replacing what is there with a file no more readable than the

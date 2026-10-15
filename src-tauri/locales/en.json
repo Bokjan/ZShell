@@ -30,7 +30,15 @@
     "revokedDetails": "The {algorithm} host key for {host} is marked as revoked in {path}.\nThis could mean that a stolen key is being used to impersonate this host.",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "changedDetails": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of {path}.\nIf the key change is expected, remove the old key in Settings › Known Hosts, or with:\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nThen connect again.",
-    "changedDetailsElsewhere": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of {path}.\nIf the key change is expected, remove the old key from that file, for example with:\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nThen connect again."
+    "changedDetailsElsewhere": "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\nIt is also possible that the host key has just been changed.\nThe {algorithm} key fingerprint sent by the remote host is:\n  {fingerprint}\nIt does not match line {line} of {path}.\nIf the key change is expected, remove the old key from that file, for example with:\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nThen connect again.",
+    "certificateSignatureAlgorithm": "The host certificate of {host} is signed with {algorithm}, which is not allowed. The key it contains is checked as a plain host key instead.",
+    "certificateBadSignature": "The host certificate of {host} is from a trusted certificate authority, but its signature is invalid.",
+    "certificateNotHost": "The certificate presented by {host} is not a host certificate. The key it contains is checked as a plain host key instead.",
+    "certificateNotYetValid": "The host certificate of {host} is not valid yet. The key it contains is checked as a plain host key instead.",
+    "certificateExpired": "The host certificate of {host} has expired. The key it contains is checked as a plain host key instead.",
+    "certificateNoPrincipals": "The host certificate of {host} names no hosts. The key it contains is checked as a plain host key instead.",
+    "certificateWrongHost": "The host certificate of {host} is for other hosts. The key it contains is checked as a plain host key instead.",
+    "certificateCriticalOptions": "The host certificate of {host} has critical options, which are not supported. The key it contains is checked as a plain host key instead."
   },
   "forward": {
     "autoStartFailed": "Port forwarding {forward} could not be started: {error}"

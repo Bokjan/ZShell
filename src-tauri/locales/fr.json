@@ -30,7 +30,15 @@
     "revokedDetails": "La clé d’hôte {algorithm} de {host} est marquée comme révoquée dans {path}.\nIl se peut qu’une clé volée soit utilisée pour usurper l’identité de cet hôte.",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "changedDetails": "Quelqu’un est peut-être en train de vous espionner (attaque de l’homme du milieu) !\nIl est aussi possible que la clé d’hôte vienne d’être changée.\nL’empreinte de la clé {algorithm} envoyée par l’hôte distant est :\n  {fingerprint}\nElle ne correspond pas à la ligne {line} de {path}.\nSi ce changement de clé est attendu, supprimez l’ancienne clé dans Paramètres › Hôtes connus, ou avec :\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nPuis reconnectez-vous.",
-    "changedDetailsElsewhere": "Quelqu’un est peut-être en train de vous espionner (attaque de l’homme du milieu) !\nIl est aussi possible que la clé d’hôte vienne d’être changée.\nL’empreinte de la clé {algorithm} envoyée par l’hôte distant est :\n  {fingerprint}\nElle ne correspond pas à la ligne {line} de {path}.\nSi ce changement de clé est attendu, supprimez l’ancienne clé de ce fichier, par exemple avec :\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nPuis reconnectez-vous."
+    "changedDetailsElsewhere": "Quelqu’un est peut-être en train de vous espionner (attaque de l’homme du milieu) !\nIl est aussi possible que la clé d’hôte vienne d’être changée.\nL’empreinte de la clé {algorithm} envoyée par l’hôte distant est :\n  {fingerprint}\nElle ne correspond pas à la ligne {line} de {path}.\nSi ce changement de clé est attendu, supprimez l’ancienne clé de ce fichier, par exemple avec :\n  ssh-keygen -f \"{path}\" -R \"{host}\"\nPuis reconnectez-vous.",
+    "certificateSignatureAlgorithm": "Le certificat d’hôte de {host} est signé avec {algorithm}, qui n’est pas autorisé. La clé qu’il contient est vérifiée comme une clé d’hôte ordinaire.",
+    "certificateBadSignature": "Le certificat d’hôte de {host} provient d’une autorité de certification de confiance, mais sa signature n’est pas valide.",
+    "certificateNotHost": "Le certificat présenté par {host} n’est pas un certificat d’hôte. La clé qu’il contient est vérifiée comme une clé d’hôte ordinaire.",
+    "certificateNotYetValid": "Le certificat d’hôte de {host} n’est pas encore valide. La clé qu’il contient est vérifiée comme une clé d’hôte ordinaire.",
+    "certificateExpired": "Le certificat d’hôte de {host} a expiré. La clé qu’il contient est vérifiée comme une clé d’hôte ordinaire.",
+    "certificateNoPrincipals": "Le certificat d’hôte de {host} ne nomme aucun hôte. La clé qu’il contient est vérifiée comme une clé d’hôte ordinaire.",
+    "certificateWrongHost": "Le certificat d’hôte de {host} est destiné à d’autres hôtes. La clé qu’il contient est vérifiée comme une clé d’hôte ordinaire.",
+    "certificateCriticalOptions": "Le certificat d’hôte de {host} contient des options critiques non prises en charge. La clé qu’il contient est vérifiée comme une clé d’hôte ordinaire."
   },
   "forward": {
     "autoStartFailed": "La redirection de port {forward} n’a pas pu démarrer : {error}"

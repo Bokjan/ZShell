@@ -12,7 +12,7 @@ See the [ZShell website](https://zshell.boyin.org/) for an overview, or go strai
 
 ## Features
 
-- **SSH**: password, private key, agent and keyboard-interactive authentication (or all of them in OpenSSH's order), host keys checked against `~/.ssh/known_hosts`, jump hosts, SOCKS5 and HTTP proxies or proxy commands, keepalives and automatic reconnection. Hosts can be imported from `~/.ssh/config`.
+- **SSH**: password, private key, agent and keyboard-interactive authentication (or all of them in OpenSSH's order), host keys checked against `~/.ssh/known_hosts`, including host certificates from a trusted certificate authority (`@cert-authority`), jump hosts, SOCKS5 and HTTP proxies or proxy commands, keepalives and automatic reconnection. Hosts can be imported from `~/.ssh/config`.
 - **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, and duplicated tabs and split panes reuse it, so you authenticate once.
 - **Telnet and serial consoles** for network devices and older systems, with saved logins typed at the prompts, and serial sessions that reconnect when a USB adapter is plugged back in.
 - **Files**: an SFTP panel that opens in the terminal's folder and can follow it (on Linux servers, or shells that report it), with drag and drop in and out, transfers with progress, and remote files edited in your own editor and uploaded on save; `rz` and `sz` (ZMODEM) for hosts without SFTP.

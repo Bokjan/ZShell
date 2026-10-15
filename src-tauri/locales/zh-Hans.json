@@ -30,7 +30,15 @@
     "revokedDetails": "{path} 中将 {host} 的 {algorithm} 主机密钥标记为已吊销。\n这可能意味着有人正在使用被盗的密钥冒充此主机。",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "changedDetails": "有人可能正在窃听你的连接（中间人攻击）！\n也可能是主机密钥刚刚更换过。\n远程主机发送的 {algorithm} 密钥指纹为：\n  {fingerprint}\n它与 {path} 第 {line} 行的记录不符。\n如果密钥变更在预期之中，请在“设置 › 已知主机”中移除旧密钥，或执行：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\n然后重新连接。",
-    "changedDetailsElsewhere": "有人可能正在窃听你的连接（中间人攻击）！\n也可能是主机密钥刚刚更换过。\n远程主机发送的 {algorithm} 密钥指纹为：\n  {fingerprint}\n它与 {path} 第 {line} 行的记录不符。\n如果密钥变更在预期之中，请从该文件中移除旧密钥，例如执行：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\n然后重新连接。"
+    "changedDetailsElsewhere": "有人可能正在窃听你的连接（中间人攻击）！\n也可能是主机密钥刚刚更换过。\n远程主机发送的 {algorithm} 密钥指纹为：\n  {fingerprint}\n它与 {path} 第 {line} 行的记录不符。\n如果密钥变更在预期之中，请从该文件中移除旧密钥，例如执行：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\n然后重新连接。",
+    "certificateSignatureAlgorithm": "{host} 的主机证书使用 {algorithm} 签名，不允许使用该算法。改为把其中的密钥当作普通主机密钥检查。",
+    "certificateBadSignature": "{host} 的主机证书来自受信任的证书颁发机构，但签名无效。",
+    "certificateNotHost": "{host} 出示的证书不是主机证书。改为把其中的密钥当作普通主机密钥检查。",
+    "certificateNotYetValid": "{host} 的主机证书尚未生效。改为把其中的密钥当作普通主机密钥检查。",
+    "certificateExpired": "{host} 的主机证书已过期。改为把其中的密钥当作普通主机密钥检查。",
+    "certificateNoPrincipals": "{host} 的主机证书没有列出任何主机。改为把其中的密钥当作普通主机密钥检查。",
+    "certificateWrongHost": "{host} 的主机证书是为其他主机签发的。改为把其中的密钥当作普通主机密钥检查。",
+    "certificateCriticalOptions": "{host} 的主机证书包含不支持的关键选项。改为把其中的密钥当作普通主机密钥检查。"
   },
   "forward": {
     "autoStartFailed": "无法启动端口转发 {forward}：{error}"
