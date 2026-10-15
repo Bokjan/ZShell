@@ -53,6 +53,13 @@
 - **处理**：Tauri 把 Linux 后端迁到 GTK4 后，glib 会跟着升到 0.20 以上。支持 Linux 之前再确认一次：依赖树里还是 0.18 的话，重新检查有没有 crate 调用 `array_iter_str`。
 - **登记**：2026-10-11。
 
+### Windows：windows-rs 0.100 只发了一部分
+
+- **现象**：Dependabot 提了把 `windows-core` 升到 0.100、`windows-future` 升到 0.100 的 PR（#6、#7），Windows 上编译失败：`#[implement]` 生成的代码用的是 `windows` 0.62 依赖的 `windows-core` 0.62，依赖树里有两个版本的 `windows_core`，`IDataObject: Interface` 等约束不满足。
+- **原因**：windows-rs 2026-09-03 发布 0.100.0 时，`windows-core`、`windows-future`、`windows-implement` 等小 crate 上了 crates.io，`windows` 本体还没发，最新仍是 0.62.2。按 [microsoft/windows-rs#4867](https://github.com/microsoft/windows-rs/issues/4867)，`windows` 和 `windows-sys` 改用从 SDK 头文件生成的新元数据，可能晚些才发布。新元数据下很多 Win32 API 的签名、类型和 feature 名都会变。
+- **处理**：`.github/dependabot.yml` 已经忽略 `windows-core` 和 `windows-future`，两个 PR 已关闭。`windows` 0.100 发布后，Dependabot 会提它的升级。那时手动把三个 crate 一起升到同一版本，按新 API 改用到它们的代码（`sftp/drag/win.rs` 的拖放、`applock/win.rs` 的 Windows Hello、`pty/shell.rs` 的 `WindowsIntegrityPolicy`），交给 Windows 上的 CI 编译。`windows-sys` 0.61 版本号独立，不受影响。
+- **登记**：2026-10-15。
+
 ## 未查明
 
 ### macOS：退出全屏后窗口不见了（偶现）

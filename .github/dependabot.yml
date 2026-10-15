@@ -32,6 +32,11 @@ updates:
         patterns: ["russh", "russh-*"]
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # They must be the versions `windows` itself depends on (`#[implement]` mixes their types), so
+      # they are bumped by hand along with it.
+      - dependency-name: windows-core
+      - dependency-name: windows-future
 
   - package-ecosystem: github-actions
     directory: /
