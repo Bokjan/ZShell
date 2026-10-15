@@ -55,7 +55,7 @@ The builds on the releases page are not signed with a developer certificate yet,
 
 Add a session with **+** at the top of the sidebar, or import your SSH config from the menu next to it, then double-click the session to connect. To connect without saving a session, type `user@host[:port]` or `telnet host[:port]` in the search box and press Enter. Host keys, passwords and passphrases are asked in the terminal, as `ssh` does; after a disconnection, press Enter to reconnect. Right-click terminals, tabs and sessions for more, and see Settings → Keyboard Shortcuts for the keys.
 
-Sessions and settings are saved in `~/Library/Application Support/ZShell/` on macOS, `%APPDATA%\ZShell\` on Windows and `~/.config/ZShell/` on Linux. Saved passwords go to the macOS Keychain, the Windows Credential Manager or the system keyring (GNOME Keyring, KWallet), and host keys to `~/.ssh/known_hosts`, shared with OpenSSH. See [PRIVACY.md](PRIVACY.md) for the details.
+Sessions and settings are saved in `~/Library/Application Support/ZShell/` on macOS, `%APPDATA%\ZShell\` on Windows and `~/.config/ZShell/` on Linux. Sessions and saved passwords are kept together in `vault.json` there, encrypted with a key kept in the macOS Keychain, the Windows Credential Manager or the system keyring (GNOME Keyring, KWallet), or with a master password, as you choose in Settings › Security. Host keys go to `~/.ssh/known_hosts`, shared with OpenSSH. See [PRIVACY.md](PRIVACY.md) for the details.
 
 ## Development
 
