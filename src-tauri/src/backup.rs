@@ -9,7 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{Additions, Connection, Folder, Profile, Snapshot};
+use crate::config::{Additions, Connection, Folder, Item, Profile, Snapshot};
 use crate::crypto::Kdf;
 use crate::envelope::{self, Envelope, Invalid, Unopened};
 use crate::error::{Error, Result};
@@ -40,6 +40,10 @@ struct SessionsFile {
     folders: Vec<Folder>,
     profiles: Vec<Profile>,
     proxies: Vec<Proxy>,
+    /// The order the folders and sessions were shown in (see `config`); not in files of
+    /// versions before 3.3, where folders come first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    order: Vec<Item>,
     /// Only in an encrypted file; by ids in the file.
     #[serde(skip_serializing_if = "Passwords::is_empty")]
     passwords: Passwords,
@@ -88,15 +92,17 @@ pub struct Candidate {
     pub brings: Vec<String>,
 }
 
+/// What is exported: the sessions, their folders and proxies, and the order of the first two.
+pub struct Contents {
+    pub folders: Vec<Folder>,
+    pub proxies: Vec<Proxy>,
+    pub profiles: Vec<Profile>,
+    pub order: Vec<Item>,
+}
+
 /// Writes the sessions to `path`; with their `passwords` if given, the whole file encrypted
 /// with a key from the passphrase given with them. Blocks while the key is derived.
-pub fn export(
-    path: &Path,
-    folders: Vec<Folder>,
-    proxies: Vec<Proxy>,
-    profiles: Vec<Profile>,
-    passwords: Option<(&str, Passwords)>,
-) -> Result<()> {
+pub fn export(path: &Path, contents: Contents, passwords: Option<(&str, Passwords)>) -> Result<()> {
     let (sealing, key, passwords) = match passwords {
         None => (Sealing::None, None, Passwords::default()),
         Some((passphrase, passwords)) => {
@@ -105,7 +111,8 @@ pub fn export(
             (Sealing::Password { kdf }, Some(key), passwords)
         }
     };
-    let file = SessionsFile { folders, profiles, proxies, passwords };
+    let Contents { folders, proxies, profiles, order } = contents;
+    let file = SessionsFile { folders, profiles, proxies, order, passwords };
     let failed = || Error::new("export.writeFailed").param("path", path.display());
     let bytes = envelope::write(FORMAT, VERSION, &sealing, key.as_ref(), &file).ok_or_else(failed)?;
     write_atomic(path, &bytes).map_err(|e| failed().detail(e))
@@ -224,7 +231,7 @@ pub fn plan(path: &Path, passphrase: Option<&str>, selected: &[String], digest: 
         proxy_ids.insert(&proxy.id, id);
     }
 
-    let mut merger = FolderMerger { file: &file.folders, existing: folders, added: Vec::new() };
+    let mut merger = FolderMerger { file: &file.folders, existing: folders, added: Vec::new(), origins: HashMap::new() };
     let new_profiles = file
         .profiles
         .iter()
@@ -240,8 +247,36 @@ pub fn plan(path: &Path, passphrase: Option<&str>, selected: &[String], digest: 
             profile.normalize_imported().map_err(|e| Error::new("import.invalidSession").param("name", &p.name).detail(e))?;
             Ok(profile)
         })
-        .collect::<Result<_>>()?;
-    Ok(Additions { folders: merger.added, proxies, profiles: new_profiles, passwords })
+        .collect::<Result<Vec<Profile>>>()?;
+
+    // The new folders and sessions in the file's order (the folders, where the folder they
+    // were made for was).
+    let rank = file_rank(&file);
+    let mut order: Vec<(usize, Item)> = merger
+        .added
+        .iter()
+        .map(|f| (rank[&Item::Folder { id: merger.origins[&f.id].clone() }], Item::Folder { id: f.id.clone() }))
+        .collect();
+    for (id, new_id) in ids.iter().filter(|(id, _)| imported.contains(*id)) {
+        order.push((rank[&Item::Profile { id: id.clone() }], Item::Profile { id: new_id.clone() }));
+    }
+    order.sort_by_key(|(rank, _)| *rank);
+    let order = order.into_iter().map(|(_, item)| item).collect();
+    Ok(Additions { folders: merger.added, proxies, profiles: new_profiles, order, passwords })
+}
+
+/// Where each folder and session in the file was shown: as its order says, those it leaves out
+/// after the others (all of them in a file of an older version), folders first.
+fn file_rank(file: &SessionsFile) -> HashMap<Item, usize> {
+    let folders = file.folders.iter().map(|f| Item::Folder { id: f.id.clone() });
+    let items: Vec<Item> = folders.chain(file.profiles.iter().map(|p| Item::Profile { id: p.id.clone() })).collect();
+    let exists: HashSet<&Item> = items.iter().collect();
+    let mut rank = HashMap::new();
+    for item in file.order.iter().filter(|item| exists.contains(item)).chain(&items) {
+        let next = rank.len();
+        rank.entry(item.clone()).or_insert(next);
+    }
+    rank
 }
 
 /// The file, opened with `passphrase` if it is encrypted, and a digest of it (SHA-256, in
@@ -296,18 +331,23 @@ fn duplicate_of<'a>(profile: &Profile, existing: &'a [Profile]) -> Option<&'a Pr
 
 /// The names of `folder` and the folders around it, outermost first.
 fn folder_path(folders: &[Folder], folder: Option<&str>) -> Vec<String> {
-    let mut path = Vec::new();
+    folder_chain(folders, folder).into_iter().map(|f| f.name.clone()).collect()
+}
+
+/// `folder` and the folders around it, outermost first.
+fn folder_chain<'a>(folders: &'a [Folder], folder: Option<&str>) -> Vec<&'a Folder> {
+    let mut chain = Vec::new();
     let mut current = folder;
     while let Some(id) = current {
         let Some(f) = folders.iter().find(|f| f.id == id) else { break };
-        if path.len() > folders.len() {
+        if chain.len() > folders.len() {
             break; // A cycle in a hand-edited file.
         }
-        path.push(f.name.clone());
+        chain.push(f);
         current = f.parent.as_deref();
     }
-    path.reverse();
-    path
+    chain.reverse();
+    chain
 }
 
 /// Maps the file's folders onto existing ones with the same name in the same place, adding
@@ -316,17 +356,20 @@ struct FolderMerger<'a> {
     file: &'a [Folder],
     existing: &'a [Folder],
     added: Vec<Folder>,
+    /// The id of each added folder → that of the folder in the file it was made for.
+    origins: HashMap<String, String>,
 }
 
 impl FolderMerger<'_> {
     fn resolve(&mut self, file_id: &str) -> Option<String> {
-        let path = folder_path(self.file, Some(file_id));
         let mut parent: Option<String> = None;
-        for name in path {
-            let found = self.existing.iter().chain(&self.added).find(|f| f.name == name && f.parent == parent).map(|f| f.id.clone());
+        for in_file in folder_chain(self.file, Some(file_id)) {
+            let name = &in_file.name;
+            let found = self.existing.iter().chain(&self.added).find(|f| f.name == *name && f.parent == parent).map(|f| f.id.clone());
             let id = found.unwrap_or_else(|| {
-                let folder = Folder { id: uuid::Uuid::new_v4().to_string(), name, parent: parent.clone() };
+                let folder = Folder { id: uuid::Uuid::new_v4().to_string(), name: name.clone(), parent: parent.clone() };
                 self.added.push(folder.clone());
+                self.origins.insert(folder.id.clone(), in_file.id.clone());
                 folder.id
             });
             parent = Some(id);
@@ -371,7 +414,7 @@ mod tests {
             profile("db", "db", "db.internal", Some("f2"), &["bastion"]),
             profile("web", "web", "web.example.com", None, &["bastion"]),
         ];
-        export(&path, folders, Vec::new(), profiles, None).unwrap();
+        export(&path, Contents { folders, proxies: Vec::new(), profiles, order: Vec::new() }, None).unwrap();
 
         // Here: a "Work" folder and the bastion already exist (same address, other name).
         let here_folders = vec![folder("w", "Work", None)];
@@ -393,6 +436,38 @@ mod tests {
         assert_ne!(new_profiles[0].id, "db");
         assert_eq!(new_profiles[0].jump_hosts(), ["b2"]);
         assert_eq!(new_profiles[0].folder.as_deref(), Some(new_folders[0].id.as_str()));
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// New folders and sessions come in the order the file showed them, sessions and folders
+    /// mixed; a file without an order (an older version's) has folders first.
+    #[test]
+    fn imports_in_the_file_s_order() {
+        let path = std::env::temp_dir().join(format!("zshell-sessions-order-{}.json", std::process::id()));
+        let folders = vec![folder("f1", "Work", None)];
+        let profiles = vec![profile("web", "web", "web.example.com", None, &[]), profile("db", "db", "db.internal", Some("f1"), &[])];
+        let item = |kind: &str, id: &str| match kind {
+            "folder" => Item::Folder { id: id.into() },
+            _ => Item::Profile { id: id.into() },
+        };
+        let names = |additions: &Additions| -> Vec<String> {
+            let name = |item: &Item| match item {
+                Item::Folder { id } => additions.folders.iter().find(|f| f.id == *id).unwrap().name.clone(),
+                Item::Profile { id } => additions.profiles.iter().find(|p| p.id == *id).unwrap().name.clone(),
+            };
+            additions.order.iter().map(name).collect()
+        };
+        let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
+        let selected = ["db".to_owned(), "web".to_owned()];
+
+        let order = vec![item("profile", "web"), item("folder", "f1"), item("profile", "db")];
+        export(&path, Contents { folders: folders.clone(), proxies: Vec::new(), profiles: profiles.clone(), order }, None).unwrap();
+        let Scan { digest, .. } = scan(&path, None, &[]).unwrap();
+        assert_eq!(names(&plan(&path, None, &selected, &digest, &here).unwrap()), ["web", "Work", "db"]);
+
+        export(&path, Contents { folders, proxies: Vec::new(), profiles, order: Vec::new() }, None).unwrap();
+        let Scan { digest, .. } = scan(&path, None, &[]).unwrap();
+        assert_eq!(names(&plan(&path, None, &selected, &digest, &here).unwrap()), ["Work", "web", "db"]);
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -423,7 +498,7 @@ mod tests {
             profile("", "a", "a.internal", None, &[]),
             profile("", "b", "b.internal", None, &[]),
         ];
-        export(&path, Vec::new(), Vec::new(), profiles, None).unwrap();
+        export(&path, Contents { folders: Vec::new(), proxies: Vec::new(), profiles, order: Vec::new() }, None).unwrap();
 
         let telnet = Profile {
             connection: Connection::Telnet(Remote::new("10.0.0.1".into(), 23, String::new())),
@@ -474,7 +549,7 @@ mod tests {
             with_proxy(profile("c", "c", "c.internal", None, &[]), "missing"),
             with_proxy(profile("d", "d", "d.internal", None, &[]), "x1"),
         ];
-        export(&path, Vec::new(), proxies, profiles, None).unwrap();
+        export(&path, Contents { folders: Vec::new(), proxies, profiles, order: Vec::new() }, None).unwrap();
 
         let Scan { candidates, digest, .. } = scan(&path, None, &[]).unwrap();
         assert_eq!(candidates[0].proxy.as_deref(), Some("corp"));
@@ -517,7 +592,7 @@ mod tests {
             profile("db", "db", "db.internal", None, &["inner"]),
             profile("web", "web", "web.example.com", None, &[]),
         ];
-        export(&path, Vec::new(), proxies, profiles, None).unwrap();
+        export(&path, Contents { folders: Vec::new(), proxies, profiles, order: Vec::new() }, None).unwrap();
 
         let Scan { candidates, digest, .. } = scan(&path, None, &[]).unwrap();
         let brings: Vec<&[String]> = candidates.iter().map(|c| c.brings.as_slice()).collect();
@@ -548,7 +623,7 @@ mod tests {
         let mut passwords = Passwords::default();
         passwords.set(Account::Profile("a"), Some("secret-a"));
         passwords.set(Account::Proxy("x"), Some("secret-x"));
-        export(&path, Vec::new(), proxies, profiles, Some(("passphrase", passwords))).unwrap();
+        export(&path, Contents { folders: Vec::new(), proxies, profiles, order: Vec::new() }, Some(("passphrase", passwords))).unwrap();
         // Nothing in clear, not even the hosts.
         let exported = std::fs::read_to_string(&path).unwrap();
         assert!(!exported.contains("secret") && !exported.contains("a.internal"));

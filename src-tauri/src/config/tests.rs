@@ -58,7 +58,7 @@ fn moves_and_deletes_folders_and_sessions() {
     assert_eq!(a.folder.as_deref(), Some(db.id.as_str()));
 
     // b moves into DB, before a.
-    store.move_item(Item::Profile { id: b.id.clone() }, Some(db.id.clone()), Some(a.id.clone())).unwrap();
+    store.move_item(Item::Profile { id: b.id.clone() }, Some(db.id.clone()), Some(Item::Profile { id: a.id.clone() })).unwrap();
     let names: Vec<_> = store.list().iter().map(|p| (p.name.clone(), p.folder.clone())).collect();
     assert_eq!(names, [("b".to_owned(), Some(db.id.clone())), ("a".to_owned(), Some(db.id.clone()))]);
 
@@ -81,7 +81,7 @@ fn moves_and_deletes_folders_and_sessions() {
     let x = store.save_folder(folder("X", None)).unwrap();
     store.save_folder(folder("B", None)).unwrap();
     let c = store.save_folder(folder("C", Some(&x.id))).unwrap();
-    store.move_item(Item::Folder { id: c.id.clone() }, Some(x.id.clone()), Some(a.id.clone())).unwrap();
+    store.move_item(Item::Folder { id: c.id.clone() }, Some(x.id.clone()), Some(Item::Folder { id: a.id.clone() })).unwrap();
     let names = || store.folders().iter().map(|f| f.name.clone()).collect::<Vec<_>>();
     assert_eq!(names(), ["C", "A", "X", "B"]);
     store.delete_folder(&x.id).unwrap();
@@ -94,6 +94,64 @@ fn moves_and_deletes_folders_and_sessions() {
     let reloaded = load(&dir);
     assert_eq!(reloaded.list().len(), 2);
     assert!(reloaded.folders().is_empty());
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Sessions and folders mix in the order shown; a file without an order (an older version's)
+/// shows folders first, and the lists stay in the order shown for those versions.
+#[test]
+fn keeps_sessions_and_folders_in_one_order() {
+    let (_, dir) = store("order");
+    let connection = serde_json::json!({ "protocol": "telnet", "host": "router.lan", "port": 23, "username": "" });
+    write_vault(
+        &dir,
+        serde_json::json!({
+            "folders": [{ "id": "w", "name": "Work" }],
+            "profiles": [
+                { "id": "a", "name": "a", "connection": connection },
+                { "id": "b", "name": "b", "folder": "w", "connection": connection },
+                { "id": "c", "name": "c", "folder": "w", "connection": connection },
+            ],
+        }),
+    );
+    let store = load(&dir);
+    let item = |id: &str| match id {
+        "w" | "x" => Item::Folder { id: id.into() },
+        _ => Item::Profile { id: id.into() },
+    };
+    let ids = |store: &ProfileStore| {
+        store
+            .order()
+            .iter()
+            .map(|item| match item {
+                Item::Folder { id } | Item::Profile { id } => id.clone(),
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&store), ["w", "a", "b", "c"]);
+
+    // A session goes before a folder; one moved out of a folder goes last.
+    store.move_item(item("a"), None, Some(item("w"))).unwrap();
+    store.move_item(item("b"), None, None).unwrap();
+    assert_eq!(ids(&store), ["a", "w", "c", "b"]);
+
+    // A copy goes right after its session, a new folder last.
+    let copy = store.duplicate("a", "a2").unwrap();
+    let x = store.save_folder(folder("X", None)).unwrap();
+    assert_eq!(ids(&store)[..2], ["a".to_owned(), copy.id.clone()]);
+    assert_eq!(ids(&store).last(), Some(&x.id));
+
+    // A deleted folder's contents take its place.
+    store.move_item(item("w"), Some(x.id.clone()), None).unwrap();
+    store.move_item(item("a"), Some(x.id.clone()), Some(item("w"))).unwrap();
+    store.delete_folder(&x.id).unwrap();
+    assert_eq!(ids(&store), [copy.id.as_str(), "c", "b", "a", "w"]);
+
+    // Kept on disk, with the lists in that order.
+    let reloaded = load(&dir);
+    assert_eq!(ids(&reloaded), ids(&store));
+    let names: Vec<String> = reloaded.list().iter().map(|p| p.name.clone()).collect();
+    assert_eq!(names, ["a2", "c", "b", "a"]);
     fs::remove_dir_all(&dir).unwrap();
 }
 

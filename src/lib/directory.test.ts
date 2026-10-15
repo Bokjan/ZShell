@@ -8,7 +8,7 @@ import type { Pane } from "./panes";
 const profile = (id: string, name = id) => ({ id, name }) as Profile;
 const folder: Folder = { id: "work", name: "Work" };
 const proxy = { id: "socks", name: "socks" } as Proxy;
-const loaded: DirectoryAction = { type: "loaded", profiles: [profile("a"), profile("b")], folders: [folder], proxies: [proxy] };
+const loaded: DirectoryAction = { type: "loaded", profiles: [profile("a"), profile("b")], folders: [folder], order: [], proxies: [proxy] };
 const run = (...actions: DirectoryAction[]) => actions.reduce(reduceDirectory, INITIAL_DIRECTORY);
 
 describe("reduceDirectory", () => {
@@ -41,7 +41,7 @@ describe("recentProfiles", () => {
   it("lists the recent sessions that still exist, most recent first, up to the limit", () => {
     const profiles = ["a", "b", "c", "d", "e", "f"].map((id) => profile(id));
     const state = run(
-      { type: "loaded", profiles, folders: [], proxies: [] },
+      { type: "loaded", profiles, folders: [], order: [], proxies: [] },
       { type: "recent", ids: ["f", "gone", "a", "e", "b", "d", "c"] },
     );
     expect(recentProfiles(state).map((p) => p.id)).toEqual(["f", "a", "e", "b", "d"]);

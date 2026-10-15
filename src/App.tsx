@@ -195,8 +195,7 @@ function App() {
   };
 
   const openAll = (folder: Folder) => {
-    const { folders, profiles } = directory.get();
-    const list = sessionsIn(folder.id, folders, profiles);
+    const list = sessionsIn(folder.id, directory.get());
     // Several tabs (and connections) at once ask first; a single session opens as it would by itself.
     if (list.length > 1) setOpeningAll({ folder, profiles: list });
     else list.forEach((p) => openProfile(p, "newTab"));

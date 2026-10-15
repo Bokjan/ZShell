@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { listProfiles, proxies as proxyApi, tree, type Folder, type Profile, type Proxy } from "./api";
+import { listProfiles, proxies as proxyApi, tree, type Folder, type Profile, type Proxy, type TreeItem } from "./api";
 import type { Pane } from "./panes";
 import { RECENT_LIMIT, addRecent, storedRecent } from "./sessions";
 
@@ -14,15 +14,17 @@ export interface DirectoryState {
   loaded: boolean;
   profiles: Profile[];
   folders: Folder[];
+  /** The order the sessions and folders are shown in (see `SessionTree`). */
+  order: TreeItem[];
   proxies: Proxy[];
   /** Ids of the sessions opened recently, most recent first; deleted ones too. */
   recent: string[];
 }
 
-export const INITIAL_DIRECTORY: DirectoryState = { loaded: false, profiles: [], folders: [], proxies: [], recent: [] };
+export const INITIAL_DIRECTORY: DirectoryState = { loaded: false, profiles: [], folders: [], order: [], proxies: [], recent: [] };
 
 export type DirectoryAction =
-  | { type: "loaded"; profiles: Profile[]; folders: Folder[]; proxies: Proxy[] }
+  | { type: "loaded"; profiles: Profile[]; folders: Folder[]; order: TreeItem[]; proxies: Proxy[] }
   /** One session saved here, known without reading them all again (its port forwards). */
   | { type: "profileSaved"; profile: Profile }
   | { type: "recent"; ids: string[] }
@@ -31,7 +33,7 @@ export type DirectoryAction =
 export function reduceDirectory(state: DirectoryState, action: DirectoryAction): DirectoryState {
   switch (action.type) {
     case "loaded":
-      return { ...state, loaded: true, profiles: action.profiles, folders: action.folders, proxies: action.proxies };
+      return { ...state, loaded: true, profiles: action.profiles, folders: action.folders, order: action.order, proxies: action.proxies };
     case "profileSaved":
       if (!state.profiles.some((p) => p.id === action.profile.id)) return state;
       return { ...state, profiles: state.profiles.map((p) => (p.id === action.profile.id ? action.profile : p)) };
@@ -96,8 +98,8 @@ export function createDirectoryStore(initial: DirectoryState = INITIAL_DIRECTORY
     async reload() {
       const request = ++latest;
       try {
-        const [profiles, folders, proxies] = await Promise.all([listProfiles(), tree.folders(), proxyApi.list()]);
-        if (request === latest) dispatch({ type: "loaded", profiles, folders, proxies });
+        const [profiles, folders, order, proxies] = await Promise.all([listProfiles(), tree.folders(), tree.order(), proxyApi.list()]);
+        if (request === latest) dispatch({ type: "loaded", profiles, folders, order, proxies });
       } catch (e) {
         console.error(e);
       }

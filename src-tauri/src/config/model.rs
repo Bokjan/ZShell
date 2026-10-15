@@ -477,8 +477,8 @@ pub struct Folder {
     pub parent: Option<String>,
 }
 
-/// A session or a folder, as dragged in the sidebar.
-#[derive(Clone, Debug, Deserialize, TS)]
+/// A session or a folder: as dragged in the sidebar, and in the order they are shown.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(rename = "TreeItem")]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Item {

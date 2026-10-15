@@ -198,6 +198,12 @@ pub fn folders_list(store: State<'_, ProfileStore>) -> Vec<Folder> {
     store.folders()
 }
 
+/// The order the sessions and folders are shown in, mixed in each folder.
+#[tauri::command]
+pub fn tree_order(store: State<'_, ProfileStore>) -> Vec<Item> {
+    store.order()
+}
+
 /// Creates a folder (empty id) or renames one; returns it as saved.
 #[tauri::command]
 pub async fn folder_save(app: AppHandle, window: WebviewWindow, folder: Folder) -> Result<Folder> {
@@ -213,9 +219,9 @@ pub async fn folder_delete(app: AppHandle, window: WebviewWindow, id: String) ->
 }
 
 /// Moves a session or folder into `parent` (`None`: top level), before `before` (a session or
-/// folder of the same kind) or at the end.
+/// folder) or at the end.
 #[tauri::command]
-pub async fn tree_move(app: AppHandle, window: WebviewWindow, item: Item, parent: Option<String>, before: Option<String>) -> Result<()> {
+pub async fn tree_move(app: AppHandle, window: WebviewWindow, item: Item, parent: Option<String>, before: Option<Item>) -> Result<()> {
     let result = blocking(app, move |app| app.state::<ProfileStore>().move_item(item, parent, before)).await;
     notified(&window, Change::Profiles, result)
 }
@@ -232,12 +238,12 @@ pub async fn profile_duplicate(app: AppHandle, window: WebviewWindow, id: String
 #[tauri::command]
 pub async fn sessions_export(app: AppHandle, path: PathBuf, passphrase: Option<String>) -> Result<()> {
     blocking(app, move |app| {
-        let (profiles, folders, proxies) = app.state::<ProfileStore>().snapshot();
+        let (profiles, folders, proxies, order) = app.state::<ProfileStore>().snapshot();
         let passwords = match passphrase.as_deref() {
             None | Some("") => None,
             Some(passphrase) => Some((passphrase, app.state::<Arc<Vault>>().data()?.passwords)),
         };
-        backup::export(&path, folders, proxies, profiles, passwords)
+        backup::export(&path, backup::Contents { folders, proxies, profiles, order }, passwords)
     })
     .await
 }

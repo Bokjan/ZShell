@@ -864,7 +864,7 @@ export type TextSize = "normal" | "large" | "larger";
 export type TransferProgress = { transferred: number, total: number, filesDone: number, filesTotal: number, current: string, };
 
 /**
- * A session or a folder, as dragged in the sidebar.
+ * A session or a folder: as dragged in the sidebar, and in the order they are shown.
  */
 export type TreeItem = { "kind": "profile", id: string, } | { "kind": "folder", id: string, };
 

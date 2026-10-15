@@ -1,4 +1,4 @@
-import { DEFAULT_PORTS, type Folder, type Profile, type SerialOptions } from "./api";
+import { DEFAULT_PORTS, type Folder, type Profile, type SerialOptions, type TreeItem } from "./api";
 import { storedJson, storeJson } from "./storage";
 
 /** A visible line of the session tree. */
@@ -28,35 +28,91 @@ export const address = (c: Addressable) => {
   return c.protocol === "telnet" ? `telnet://${where}` : where;
 };
 
+/** The saved sessions and folders, and the order they are shown in (`DirectoryState` is one). */
+export interface SessionTree {
+  folders: Folder[];
+  profiles: Profile[];
+  order: TreeItem[];
+}
+
+/** A session or a folder in the tree. */
+export type Child = { kind: "folder"; folder: Folder } | { kind: "profile"; profile: Profile };
+
+export const childItem = (child: Child): TreeItem =>
+  child.kind === "folder" ? { kind: "folder", id: child.folder.id } : { kind: "profile", id: child.profile.id };
+
+/** The key of the item's row (see `rowKey`). */
+export const itemKey = (item: TreeItem) => `${item.kind === "folder" ? "f" : "p"}:${item.id}`;
+
 /**
- * The tree's visible rows: in each folder its subfolders, then its sessions, in saved order;
- * a collapsed folder hides what it contains.
+ * What each folder holds (`undefined`: the top level), sessions and subfolders mixed in the
+ * order shown. Those the order leaves out (read in between two changes) come after the
+ * others, folders first. A session whose folder is missing (its file was set aside) is at
+ * the top level.
  */
-export function treeRows(folders: Folder[], profiles: Profile[], collapsed: Set<string>): Row[] {
+export function childrenByFolder(tree: SessionTree): Map<string | undefined, Child[]> {
+  const rank = new Map<string, number>();
+  for (const item of tree.order) if (!rank.has(itemKey(item))) rank.set(itemKey(item), rank.size);
+  const unranked = (offset: number) => tree.order.length + offset;
+  const ids = new Set(tree.folders.map((f) => f.id));
+  const ranked: { child: Child; parent: string | undefined; rank: number }[] = [
+    ...tree.folders.map((folder, i) => ({
+      child: { kind: "folder", folder } as Child,
+      parent: folder.parent,
+      rank: rank.get(`f:${folder.id}`) ?? unranked(i),
+    })),
+    ...tree.profiles.map((profile, i) => ({
+      child: { kind: "profile", profile } as Child,
+      parent: profile.folder !== undefined && ids.has(profile.folder) ? profile.folder : undefined,
+      rank: rank.get(`p:${profile.id}`) ?? unranked(tree.folders.length + i),
+    })),
+  ];
+  ranked.sort((a, b) => a.rank - b.rank);
+  const children = new Map<string | undefined, Child[]>();
+  for (const { child, parent } of ranked) {
+    const list = children.get(parent);
+    if (list) list.push(child);
+    else children.set(parent, [child]);
+  }
+  return children;
+}
+
+/** The tree's visible rows, in the order shown; a collapsed folder hides what it contains. */
+export function treeRows(tree: SessionTree, collapsed: Set<string>): Row[] {
+  const children = childrenByFolder(tree);
   const rows: Row[] = [];
-  // A session whose folder is missing (its file was set aside) is at the top level.
-  const ids = new Set(folders.map((f) => f.id));
-  const folderOf = (p: Profile) => (p.folder !== undefined && ids.has(p.folder) ? p.folder : undefined);
   const visit = (parent: string | undefined, depth: number) => {
-    for (const folder of folders.filter((f) => f.parent === parent)) {
+    for (const child of children.get(parent) ?? []) {
+      if (child.kind === "profile") {
+        rows.push({ kind: "profile", profile: child.profile, depth });
+        continue;
+      }
+      const { folder } = child;
       const expanded = !collapsed.has(folder.id);
-      rows.push({ kind: "folder", folder, depth, expanded, count: sessionsIn(folder.id, folders, profiles).length });
+      rows.push({ kind: "folder", folder, depth, expanded, count: sessionsUnder(children, folder.id).length });
       if (expanded) visit(folder.id, depth + 1);
     }
-    for (const profile of profiles.filter((p) => folderOf(p) === parent)) rows.push({ kind: "profile", profile, depth });
   };
   visit(undefined, 0);
   return rows;
 }
 
-/** The sessions in a folder and its subfolders, in tree order. */
-export function sessionsIn(folderId: string, folders: Folder[], profiles: Profile[]): Profile[] {
+/** The sessions in a folder and its subfolders, in the order shown. */
+export function sessionsIn(folderId: string, tree: SessionTree): Profile[] {
+  return sessionsUnder(childrenByFolder(tree), folderId);
+}
+
+function sessionsUnder(children: Map<string | undefined, Child[]>, folderId: string): Profile[] {
   const result: Profile[] = [];
-  const visit = (id: string) => {
-    for (const sub of folders.filter((f) => f.parent === id)) visit(sub.id);
-    result.push(...profiles.filter((p) => p.folder === id));
+  // Bounded, in case of a cycle (the backend breaks them when it loads the folders).
+  const visit = (id: string, depth: number) => {
+    if (depth > children.size) return;
+    for (const child of children.get(id) ?? []) {
+      if (child.kind === "profile") result.push(child.profile);
+      else visit(child.folder.id, depth + 1);
+    }
   };
-  visit(folderId);
+  visit(folderId, 0);
   return result;
 }
 
@@ -85,9 +141,9 @@ export function folderPath(folderId: string | undefined, folders: Folder[]): str
  * Sessions whose name, address or user name contain every word of `query`, in tree order; then
  * those found only with their notes, which match more loosely.
  */
-export function search(query: string, folders: Folder[], profiles: Profile[]): Profile[] {
+export function search(query: string, tree: SessionTree): Profile[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const ordered = treeRows(folders, profiles, new Set()).flatMap((row) => (row.kind === "profile" ? [row.profile] : []));
+  const ordered = treeRows(tree, new Set()).flatMap((row) => (row.kind === "profile" ? [row.profile] : []));
   const matches = (text: string) => words.every((word) => text.toLowerCase().includes(word));
   const target = (p: Profile) => {
     const c = p.connection;

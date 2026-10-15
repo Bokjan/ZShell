@@ -247,6 +247,7 @@ pub fn run() {
             commands::config::proxy_save,
             commands::config::proxy_delete,
             commands::config::folders_list,
+            commands::config::tree_order,
             commands::config::folder_save,
             commands::config::folder_delete,
             commands::config::tree_move,

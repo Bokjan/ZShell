@@ -1,5 +1,6 @@
 //! The store of the sessions, folders and proxies: queries and changes, saved through the vault.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 
 use super::{Connection, Folder, Item, Profile, Protocol, Remote};
@@ -33,6 +34,9 @@ pub struct Additions {
     pub folders: Vec<Folder>,
     pub proxies: Vec<Proxy>,
     pub profiles: Vec<Profile>,
+    /// The new folders and sessions in the order they are shown, after the others; those left
+    /// out follow.
+    pub order: Vec<Item>,
     /// The saved passwords of the new sessions and proxies.
     pub passwords: Passwords,
 }
@@ -42,6 +46,8 @@ struct State {
     profiles: Vec<Profile>,
     folders: Vec<Folder>,
     proxies: Vec<Proxy>,
+    /// The order the sessions and folders are shown in, each once (see [`State::arrange`]).
+    order: Vec<Item>,
 }
 
 impl State {
@@ -71,14 +77,13 @@ impl State {
     /// Until then a session whose folder is missing shows at the top level, and one whose proxy
     /// is missing fails to connect, rather than connecting without it.
     fn repair(&mut self) {
-        let ids: std::collections::HashSet<String> = self.folders.iter().map(|f| f.id.clone()).collect();
+        let ids: HashSet<String> = self.folders.iter().map(|f| f.id.clone()).collect();
         // Jump hosts must be other SSH sessions that exist (a hand-edited file, an import).
-        let ssh: std::collections::HashSet<String> =
-            self.profiles.iter().filter(|p| p.protocol() == Protocol::Ssh).map(|p| p.id.clone()).collect();
+        let ssh: HashSet<String> = self.profiles.iter().filter(|p| p.protocol() == Protocol::Ssh).map(|p| p.id.clone()).collect();
         for profile in &mut self.profiles {
             let id = profile.id.clone();
             if let Some(remote) = profile.connection.remote_mut() {
-                let mut seen = std::collections::HashSet::new();
+                let mut seen = HashSet::new();
                 remote.jump_hosts.retain(|jump| *jump != id && ssh.contains(jump) && seen.insert(jump.clone()));
             }
         }
@@ -93,6 +98,41 @@ impl State {
             }
         }
     }
+
+    /// Makes the order list each session and folder once: those it lacks (new, imported, or
+    /// all of them in an older version's file) go last, folders first, and those that are
+    /// gone leave it. Then sorts the lists of sessions and folders in that order, for older
+    /// versions, which show them in file order.
+    fn arrange(&mut self) {
+        let exists: HashSet<Item> = self.items().collect();
+        let mut seen = HashSet::new();
+        self.order.retain(|item| exists.contains(item) && seen.insert(item.clone()));
+        let missing: Vec<Item> = self.items().filter(|item| !seen.contains(item)).collect();
+        self.order.extend(missing);
+        let rank: HashMap<&Item, usize> = self.order.iter().enumerate().map(|(i, item)| (item, i)).collect();
+        let folder_rank: Vec<usize> = self.folders.iter().map(|f| rank[&Item::Folder { id: f.id.clone() }]).collect();
+        let profile_rank: Vec<usize> = self.profiles.iter().map(|p| rank[&Item::Profile { id: p.id.clone() }]).collect();
+        sort_by_rank(&mut self.folders, folder_rank);
+        sort_by_rank(&mut self.profiles, profile_rank);
+    }
+
+    /// The folders, then the sessions.
+    fn items(&self) -> impl Iterator<Item = Item> + '_ {
+        let folders = self.folders.iter().map(|f| Item::Folder { id: f.id.clone() });
+        folders.chain(self.profiles.iter().map(|p| Item::Profile { id: p.id.clone() }))
+    }
+
+    /// Where `item` is in the order.
+    fn position(&self, item: &Item) -> Option<usize> {
+        self.order.iter().position(|i| i == item)
+    }
+}
+
+/// Sorts `list` by the `rank` of each element.
+fn sort_by_rank<T>(list: &mut Vec<T>, rank: Vec<usize>) {
+    let mut ranked: Vec<(usize, T)> = rank.into_iter().zip(std::mem::take(list)).collect();
+    ranked.sort_by_key(|(rank, _)| *rank);
+    list.extend(ranked.into_iter().map(|(_, value)| value));
 }
 
 impl ProfileStore {
@@ -109,11 +149,12 @@ impl ProfileStore {
 
     fn read(vault: &Vault) -> State {
         let data = vault.data().unwrap_or_default();
-        let mut state = State { profiles: data.profiles, folders: data.folders, proxies: data.proxies };
+        let mut state = State { profiles: data.profiles, folders: data.folders, proxies: data.proxies, order: data.order };
         unique_ids(state.profiles.iter_mut().map(|p| &mut p.id));
         unique_ids(state.folders.iter_mut().map(|f| &mut f.id));
         unique_ids(state.proxies.iter_mut().map(|p| &mut p.id));
         state.repair();
+        state.arrange();
         state
     }
 
@@ -121,14 +162,21 @@ impl ProfileStore {
         self.state.read().unwrap().profiles.clone()
     }
 
-    /// The sessions, folders and proxies as one consistent copy (for exporting them).
-    pub fn snapshot(&self) -> (Vec<Profile>, Vec<Folder>, Vec<Proxy>) {
+    /// The sessions, folders and proxies, and the order of the first two, as one consistent
+    /// copy (for exporting them).
+    pub fn snapshot(&self) -> (Vec<Profile>, Vec<Folder>, Vec<Proxy>, Vec<Item>) {
         let state = self.state.read().unwrap();
-        (state.profiles.clone(), state.folders.clone(), state.proxies.clone())
+        (state.profiles.clone(), state.folders.clone(), state.proxies.clone(), state.order.clone())
     }
 
     pub fn folders(&self) -> Vec<Folder> {
         self.state.read().unwrap().folders.clone()
+    }
+
+    /// The order the sessions and folders are shown in: each folder's contents, sessions and
+    /// subfolders mixed, appear in this order.
+    pub fn order(&self) -> Vec<Item> {
+        self.state.read().unwrap().order.clone()
     }
 
     pub fn get(&self, id: &str) -> Result<Profile> {
@@ -145,7 +193,7 @@ impl ProfileStore {
         profile.normalize_session_options()?;
 
         self.update(|state, passwords| {
-            let mut seen = std::collections::HashSet::new();
+            let mut seen = HashSet::new();
             for jump in profile.jump_hosts() {
                 let ssh = state.profiles.iter().any(|p| p.id == *jump && p.protocol() == Protocol::Ssh);
                 if !ssh || *jump == profile.id || !seen.insert(jump) {
@@ -222,6 +270,8 @@ impl ProfileStore {
             copy.id = uuid::Uuid::new_v4().to_string();
             copy.name = name.trim().to_owned();
             state.profiles.insert(index + 1, copy.clone());
+            let at = state.position(&Item::Profile { id: id.to_owned() }).map_or(state.order.len(), |i| i + 1);
+            state.order.insert(at, Item::Profile { id: copy.id.clone() });
             let password = passwords.get(Account::Profile(id)).map(str::to_owned);
             passwords.set(Account::Profile(&copy.id), password.as_deref());
             Ok(copy)
@@ -247,10 +297,11 @@ impl ProfileStore {
     pub fn add_all(&self, plan: impl FnOnce(&Snapshot) -> Result<Additions>) -> Result<Vec<Profile>> {
         self.update(|state, passwords| {
             let snapshot = Snapshot { profiles: &state.profiles, folders: &state.folders, proxies: &state.proxies };
-            let Additions { folders, proxies, profiles, passwords: added } = plan(&snapshot)?;
+            let Additions { folders, proxies, profiles, order, passwords: added } = plan(&snapshot)?;
             state.folders.extend(folders);
             state.proxies.extend(proxies);
             state.profiles.extend(profiles.iter().cloned());
+            state.order.extend(order);
             passwords.profiles.extend(added.profiles);
             passwords.proxies.extend(added.proxies);
             state.repair();
@@ -336,47 +387,49 @@ impl ProfileStore {
         self.update(|state, _| {
             let index = state.folders.iter().position(|f| f.id == id).ok_or_else(|| Error::new("folder.notFound"))?;
             let folder = state.folders.remove(index);
-            let is_child = |f: &Folder| f.parent.as_deref() == Some(id);
-            let children: Vec<Folder> =
-                state.folders.iter().filter(|f| is_child(f)).map(|f| Folder { parent: folder.parent.clone(), ..f.clone() }).collect();
-            // Where the folder was, once the children before it are taken out too.
-            let before = state.folders[..index].iter().filter(|f| is_child(f)).count();
-            state.folders.retain(|f| !is_child(f));
-            let at = index - before;
-            state.folders.splice(at..at, children);
+            let mut children = HashSet::new();
+            for child in state.folders.iter_mut().filter(|f| f.parent.as_deref() == Some(id)) {
+                child.parent = folder.parent.clone();
+                children.insert(Item::Folder { id: child.id.clone() });
+            }
             for profile in state.profiles.iter_mut().filter(|p| p.folder.as_deref() == Some(id)) {
                 profile.folder = folder.parent.clone();
+                children.insert(Item::Profile { id: profile.id.clone() });
             }
+            // In the order, the contents take the folder's place, wherever they were.
+            let at = state.position(&Item::Folder { id: id.to_owned() }).unwrap_or(state.order.len());
+            let before = state.order[..at].iter().filter(|item| children.contains(*item)).count();
+            let moved: Vec<Item> = state.order.iter().filter(|item| children.contains(*item)).cloned().collect();
+            state.order.retain(|item| !children.contains(item));
+            let at = at - before;
+            state.order.splice(at..at, moved);
             Ok(())
         })
     }
 
     /// Moves a session or folder into `parent` (`None`: the top level), before the session
-    /// or folder `before` (of the same kind), or after the others.
-    pub fn move_item(&self, item: Item, parent: Option<String>, before: Option<String>) -> Result<()> {
+    /// or folder `before`, or after the others.
+    pub fn move_item(&self, item: Item, parent: Option<String>, before: Option<Item>) -> Result<()> {
         self.update(|state, _| {
             if parent.as_ref().is_some_and(|p| !state.folder_exists(p)) {
                 return Err(Error::new("folder.notFound"));
             }
-            match item {
+            match &item {
                 Item::Profile { id } => {
-                    let index = state.profiles.iter().position(|p| p.id == id).ok_or_else(|| Error::new("profile.notFound"))?;
-                    let mut profile = state.profiles.remove(index);
+                    let profile = state.profiles.iter_mut().find(|p| p.id == *id).ok_or_else(|| Error::new("profile.notFound"))?;
                     profile.folder = parent;
-                    let at = before.and_then(|b| state.profiles.iter().position(|p| p.id == b)).unwrap_or(state.profiles.len());
-                    state.profiles.insert(at, profile);
                 }
                 Item::Folder { id } => {
-                    if parent.as_ref().is_some_and(|p| state.is_within(p, &id)) {
+                    if parent.as_ref().is_some_and(|p| state.is_within(p, id)) {
                         return Err(Error::new("folder.invalidMove"));
                     }
-                    let index = state.folders.iter().position(|f| f.id == id).ok_or_else(|| Error::new("folder.notFound"))?;
-                    let mut folder = state.folders.remove(index);
+                    let folder = state.folders.iter_mut().find(|f| f.id == *id).ok_or_else(|| Error::new("folder.notFound"))?;
                     folder.parent = parent;
-                    let at = before.and_then(|b| state.folders.iter().position(|f| f.id == b)).unwrap_or(state.folders.len());
-                    state.folders.insert(at, folder);
                 }
             }
+            state.order.retain(|i| *i != item);
+            let at = before.and_then(|b| state.position(&b)).unwrap_or(state.order.len());
+            state.order.insert(at, item);
             Ok(())
         })
     }
@@ -389,10 +442,12 @@ impl ProfileStore {
         let mut updated = self.state.read().unwrap().clone();
         let value = self.vault.update(|data| {
             let value = change(&mut updated, &mut data.passwords)?;
+            updated.arrange();
             data.passwords.retain_owners(&updated.profiles, &updated.proxies);
             data.folders.clone_from(&updated.folders);
             data.proxies.clone_from(&updated.proxies);
             data.profiles.clone_from(&updated.profiles);
+            data.order.clone_from(&updated.order);
             Ok(value)
         })?;
         *self.state.write().unwrap() = updated;

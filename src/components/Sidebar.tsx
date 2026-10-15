@@ -14,8 +14,11 @@ import { matches, shortcutLabel } from "../lib/keymap";
 import { isComposing, isMac } from "../lib/platform";
 import {
   address,
+  childItem,
+  childrenByFolder,
   folderPath,
   isWithin,
+  itemKey,
   notesPreview,
   parseQuickConnect,
   rowKey,
@@ -123,9 +126,9 @@ export function Sidebar(props: Props) {
   const [importing, setImporting] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  const rows = treeRows(folders, profiles, collapsed);
+  const rows = treeRows(state, collapsed);
   const searching = query.trim() !== "";
-  const results = searching ? search(query, folders, profiles) : [];
+  const results = searching ? search(query, state) : [];
   const quick = searching && results.length === 0 ? parseQuickConnect(query) : null;
   // The search results, then the quick connect line.
   const resultCount = results.length + (quick ? 1 : 0);
@@ -332,9 +335,17 @@ export function Sidebar(props: Props) {
     e.preventDefault();
   };
 
-  // Drag and drop: rows move before or after rows of their kind, sessions and folders into
-  // folders, and anything to the end of the top level below the last row. Not onto the
-  // Recent section, which only lists sessions.
+  // The folder a row is in (undefined: the top level), as the tree shows it.
+  const parentOf = (key: string) => {
+    const row = rows.find((row) => rowKey(row) === key);
+    if (row?.kind === "folder") return row.folder.parent;
+    const folder = row?.profile.folder;
+    return folder !== undefined && folders.some((f) => f.id === folder) ? folder : undefined;
+  };
+
+  // Drag and drop: rows move before or after other rows, sessions and folders mixed, into
+  // folders, and to the end of the top level below the last row. Not onto the Recent
+  // section, which only lists sessions. A folder can't go into itself or its subfolders.
   const dropAt = (item: TreeItem, x: number, y: number): Drop | null => {
     const element = document.elementFromPoint(x, y);
     if (!listRef.current?.contains(element)) return null;
@@ -342,20 +353,19 @@ export function Sidebar(props: Props) {
     const rowElement = element?.closest<HTMLElement>("[data-key]");
     if (!rowElement) return { key: null };
     const key = rowElement.dataset.key!;
-    if (key === `${item.kind === "folder" ? "f" : "p"}:${item.id}`) return null;
+    if (key === itemKey(item)) return null;
+    if (item.kind === "folder" && isWithin(parentOf(key), item.id, folders)) return null;
     const rect = rowElement.getBoundingClientRect();
     const offset = (y - rect.top) / rect.height;
     if (key.startsWith("f:")) {
       const target = key.slice(2);
       if (item.kind === "folder" && isWithin(target, item.id, folders)) return null;
-      if (item.kind === "profile") return { key, position: "into" };
       // Right below an expanded folder are its own rows: "after" it means after all of them,
       // which a line there would not show.
       const index = rows.findIndex((row) => row.kind === "folder" && row.folder.id === target);
       const open = index >= 0 && (rows[index + 1]?.depth ?? 0) > rows[index].depth;
       return { key, position: offset < 0.25 ? "before" : offset > 0.75 && !open ? "after" : "into" };
     }
-    if (item.kind === "folder") return null;
     return { key, position: offset < 0.5 ? "before" : "after" };
   };
 
@@ -370,13 +380,11 @@ export function Sidebar(props: Props) {
       run(tree.move(item, id, null));
       return;
     }
-    // Before or after a row of the same kind: in its folder, before it or its next sibling.
-    const siblings: { id: string; parent?: string }[] =
-      item.kind === "folder" ? folders : profiles.map((p) => ({ id: p.id, parent: p.folder }));
-    const target = siblings.find((s) => s.id === id)!;
-    const peers = siblings.filter((s) => s.parent === target.parent && s.id !== item.id);
-    const at = peers.findIndex((s) => s.id === id) + (drop.position === "after" ? 1 : 0);
-    run(tree.move(item, target.parent ?? null, peers[at]?.id ?? null));
+    // Before or after a row: in its folder, before it or the row that follows it there.
+    const parent = parentOf(drop.key);
+    const peers = (childrenByFolder(state).get(parent) ?? []).map(childItem).filter((peer) => itemKey(peer) !== itemKey(item));
+    const at = peers.findIndex((peer) => itemKey(peer) === drop.key) + (drop.position === "after" ? 1 : 0);
+    run(tree.move(item, parent ?? null, peers[at] ?? null));
   };
 
   const pressDrag = usePressDrag();

@@ -112,12 +112,14 @@ export const quickCommands = {
 
 export const tree = {
   folders: () => invoke<Folder[]>("folders_list"),
+  /** The order the sessions and folders are shown in, mixed in each folder. */
+  order: () => invoke<TreeItem[]>("tree_order"),
   /** Creates (empty id) or renames a folder. */
   saveFolder: (folder: Folder) => invoke<Folder>("folder_save", { folder }),
   /** Its sessions and subfolders move up into its parent. */
   deleteFolder: (id: string) => invoke<void>("folder_delete", { id }),
-  /** Into `parent` (null: top level), before `before` (same kind) or at the end. */
-  move: (item: TreeItem, parent: string | null, before: string | null) => invoke<void>("tree_move", { item, parent, before }),
+  /** Into `parent` (null: top level), before `before` (a session or folder) or at the end. */
+  move: (item: TreeItem, parent: string | null, before: TreeItem | null) => invoke<void>("tree_move", { item, parent, before }),
 };
 
 export const sessionsFile = {

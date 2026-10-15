@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::applock::AppLockSettings;
-use crate::config::{Folder, Profile};
+use crate::config::{Folder, Item, Profile};
 use crate::crypto::{self, Kdf, Key, Sealed};
 use crate::envelope::{self, Envelope, Invalid, Unopened};
 use crate::error::{Error, Result};
@@ -47,6 +47,10 @@ const WRAP_AAD: &[u8] = b"zshell-vault-key";
 pub struct Data {
     pub folders: Vec<Folder>,
     pub profiles: Vec<Profile>,
+    /// The order the sessions and folders are shown in (see `config`). Without one (a vault
+    /// of an older version), folders come first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<Item>,
     pub proxies: Vec<Proxy>,
     pub commands: QuickCommands,
     pub passwords: Passwords,

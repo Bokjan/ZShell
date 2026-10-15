@@ -1,27 +1,48 @@
 import { describe, expect, it } from "vitest";
 
-import type { Folder, Profile } from "./api";
-import { notesPreview, parseQuickConnect, rowKey, search, treeRows, withRecent } from "./sessions";
+import type { Folder, Profile, TreeItem } from "./api";
+import { notesPreview, parseQuickConnect, rowKey, search, sessionsIn, treeRows, withRecent } from "./sessions";
 
 const folder = (id: string, parent?: string): Folder => ({ id, name: id, parent });
 // Only what the tree looks at.
 const profile = (id: string, folder?: string) => ({ id, name: id, folder }) as Profile;
 
+// "f:id" for a folder, "p:id" for a session, as the rows' keys.
+const order = (...keys: string[]): TreeItem[] =>
+  keys.map((key) => ({ kind: key.startsWith("f:") ? "folder" : "profile", id: key.slice(2) }));
+
 describe("treeRows", () => {
-  it("shows folders before sessions, nested, and hides what a collapsed folder holds", () => {
-    const folders = [folder("work"), folder("db", "work")];
-    const profiles = [profile("top"), profile("web", "work"), profile("pg", "db")];
-    expect(treeRows(folders, profiles, new Set()).map(rowKey)).toEqual(["f:work", "f:db", "p:pg", "p:web", "p:top"]);
-    expect(treeRows(folders, profiles, new Set(["work"])).map(rowKey)).toEqual(["f:work", "p:top"]);
+  const folders = [folder("work"), folder("db", "work")];
+  const profiles = [profile("top"), profile("web", "work"), profile("pg", "db")];
+
+  it("shows sessions and folders in their order, nested, and hides what a collapsed folder holds", () => {
+    const tree = { folders, profiles, order: order("p:top", "f:work", "p:web", "f:db", "p:pg") };
+    expect(treeRows(tree, new Set()).map(rowKey)).toEqual(["p:top", "f:work", "p:web", "f:db", "p:pg"]);
+    expect(treeRows(tree, new Set(["work"])).map(rowKey)).toEqual(["p:top", "f:work"]);
+  });
+
+  it("shows what the order leaves out after the rest, folders first", () => {
+    const tree = { folders, profiles, order: order("p:web") };
+    expect(treeRows(tree, new Set()).map(rowKey)).toEqual(["f:work", "p:web", "f:db", "p:pg", "p:top"]);
   });
 
   it("shows a session whose folder is missing at the top level", () => {
-    const rows = treeRows([folder("work")], [profile("lost", "gone"), profile("web", "work")], new Set());
+    const tree = { folders: [folder("work")], profiles: [profile("lost", "gone"), profile("web", "work")], order: [] };
+    const rows = treeRows(tree, new Set());
     expect(rows.map((row) => [rowKey(row), row.depth])).toEqual([
       ["f:work", 0],
       ["p:web", 1],
       ["p:lost", 0],
     ]);
+  });
+});
+
+describe("sessionsIn", () => {
+  it("lists a folder's sessions and its subfolders' in the order shown", () => {
+    const folders = [folder("work"), folder("db", "work")];
+    const profiles = [profile("web", "work"), profile("pg", "db"), profile("api", "work")];
+    const tree = { folders, profiles, order: order("p:web", "f:db", "p:pg", "p:api", "f:work") };
+    expect(sessionsIn("work", tree).map((p) => p.id)).toEqual(["web", "pg", "api"]);
   });
 });
 
@@ -57,13 +78,13 @@ describe("search", () => {
   const profiles = [ssh("web", "web.lan", "Nginx in front of the db"), ssh("db", "pg.lan"), ssh("cache", "redis.lan", "Next to the DB")];
 
   it("finds sessions by name, address or user name, every word", () => {
-    expect(search("alice pg", [], profiles).map((p) => p.id)).toEqual(["db"]);
-    expect(search("LAN", [], profiles).map((p) => p.id)).toEqual(["web", "db", "cache"]);
+    expect(search("alice pg", { folders: [], profiles, order: [] }).map((p) => p.id)).toEqual(["db"]);
+    expect(search("LAN", { folders: [], profiles, order: [] }).map((p) => p.id)).toEqual(["web", "db", "cache"]);
   });
 
   it("finds sessions by their notes after the others", () => {
-    expect(search("db", [], profiles).map((p) => p.id)).toEqual(["db", "web", "cache"]);
-    expect(search("nginx web", [], profiles).map((p) => p.id)).toEqual(["web"]);
+    expect(search("db", { folders: [], profiles, order: [] }).map((p) => p.id)).toEqual(["db", "web", "cache"]);
+    expect(search("nginx web", { folders: [], profiles, order: [] }).map((p) => p.id)).toEqual(["web"]);
   });
 });
 
