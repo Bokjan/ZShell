@@ -88,8 +88,11 @@ const LINK_LEAVE_MS = 100;
 
 const ignore = () => {};
 
-/** Links open with ⌘-click on macOS and Ctrl+click elsewhere, as in other terminals. */
-const opensLink = (e: MouseEvent) => (isMac ? e.metaKey : e.ctrlKey);
+/**
+ * Links open with ⌘-click on macOS and Ctrl+click elsewhere, as in other terminals. xterm.js
+ * activates a link on any button's release: with the right one, the context menu opens.
+ */
+const opensLink = (e: MouseEvent) => e.button === 0 && (isMac ? e.metaKey : e.ctrlKey);
 
 // Through the clipboard plugin: pasting from a menu can't raise the browser's paste event,
 // and WKWebView's `navigator.clipboard.readText` asks the user with a system "Paste" button.
