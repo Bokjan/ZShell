@@ -220,6 +220,18 @@ pub fn printable(text: &str) -> Cow<'_, str> {
     )
 }
 
+/// `text` as it may be shown in the terminal over several lines, as OpenSSH shows a server's
+/// login banner and prompts: line breaks (as `\n`) and tabs stay, other control characters
+/// (an escape sequence's start among them, which could redraw the screen or fake a prompt)
+/// become `\u{FFFD}`.
+pub fn printable_lines(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(|c| c.is_control() && c != '\n' && c != '\t') {
+        return Cow::Borrowed(text);
+    }
+    let text = text.replace("\r\n", "\n");
+    Cow::Owned(text.chars().map(|c| if c.is_control() && c != '\n' && c != '\t' { char::REPLACEMENT_CHARACTER } else { c }).collect())
+}
+
 /// `t!("terminal.connecting", user = name, port = 22)` → the translated, interpolated string.
 /// Available crate-wide because `lib.rs` declares this module first with `#[macro_use]`.
 macro_rules! t {
@@ -285,6 +297,13 @@ mod tests {
         // What is filled in can't act on a terminal.
         let args: [(&str, &dyn Display); 1] = [("name", &"web\x1b[2J\x1b]0;title\x07\r\n$ \u{9b}31m")];
         assert_eq!(interpolate("{name}!", &args), "web\u{FFFD}[2J\u{FFFD}]0;title\u{FFFD}  $ \u{FFFD}31m!");
+    }
+
+    #[test]
+    fn server_text_keeps_its_lines_but_not_escape_sequences() {
+        assert_eq!(printable_lines("Duo login\n\n 1. Push\tnow\nPasscode: "), "Duo login\n\n 1. Push\tnow\nPasscode: ");
+        assert_eq!(printable_lines("Password:\r\n"), "Password:\n");
+        assert_eq!(printable_lines("\x1b[2J\x1b[Hlogin: \x07"), "\u{FFFD}[2J\u{FFFD}[Hlogin: \u{FFFD}");
     }
 
     /// The `{name}` placeholders of a string.

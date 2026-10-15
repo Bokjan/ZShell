@@ -24,6 +24,7 @@ use tokio::sync::watch;
 use super::handler::EndReason;
 use crate::config::{AuthMethod, SshProfile};
 use crate::error::Error;
+use crate::i18n::printable_lines;
 use crate::secrets;
 use crate::session::TermIo;
 
@@ -286,9 +287,10 @@ impl<H: Handler> Auth<'_, H> {
                     }
                     KeyboardInteractiveAuthResponse::Failure { .. } => break,
                     KeyboardInteractiveAuthResponse::InfoRequest { name, instructions, prompts } => {
+                        // The server's text, without what would act on the terminal, as OpenSSH.
                         for text in [name, instructions] {
                             if !text.is_empty() {
-                                self.io.print(&format!("{text}\n"));
+                                self.io.print(&format!("{}\n", printable_lines(&text)));
                             }
                         }
                         let mut answers = Vec::with_capacity(prompts.len());
@@ -302,7 +304,7 @@ impl<H: Handler> Auth<'_, H> {
                                     continue;
                                 }
                             }
-                            self.io.print(&prompt.prompt);
+                            self.io.print(&printable_lines(&prompt.prompt));
                             answers.push(self.io.read_line(prompt.echo).await.context(Error::new("auth.cancelled"))?);
                         }
                         let result = self.session.authenticate_keyboard_interactive_respond(answers).await;
