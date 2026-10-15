@@ -11,7 +11,7 @@ use std::task::{ready, Context, Poll};
 use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 use tokio::sync::{mpsc, watch};
 
-use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, CANOVIO, ZCRCE, ZCRCW};
+use super::frame::{self, Encoding, Header, Kind, CANFC32, CANFDX, CANOVIO, ZCBIN, ZCRCE, ZCRCW};
 use super::link::{Link, TIMEOUT};
 use super::{detect, partial_header, receive, send, Direction, Report};
 
@@ -602,11 +602,16 @@ async fn ctrl_c_cancels_a_streaming_upload() {
     let (mut io, input, _output, events) = TermIo::detached((80, 24));
     let sink = io.sink();
     let sent = Arc::new(AtomicUsize::new(0));
+    let offer = frame::encode_header(&Header::with_flags(Kind::File, ZCBIN), Encoding::Bin32);
+    let (offered_tx, mut offered) = watch::channel(false);
     tokio::spawn({
         let sent = sent.clone();
         async move {
             while let Some(input) = io.recv().await {
                 if let SessionInput::Data(data) = input {
+                    if data.windows(offer.len()).any(|w| w == offer) {
+                        offered_tx.send_replace(true);
+                    }
                     sent.fetch_add(data.len(), Ordering::Relaxed);
                     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
                 }
@@ -629,7 +634,10 @@ async fn ctrl_c_cancels_a_streaming_upload() {
     wait_for("chooseFiles");
     sink.zmodem().reply(super::Reply::Files(vec![file]));
     wait_for("transferring");
-    // The receiver takes the file from its start (the answer to ZFILE), then only listens.
+    // The receiver takes the file from its start (the answer to ZFILE), then only listens. It
+    // answers once offered the file, as a real one does: sooner, the sender would drop the
+    // answer with the ZRINITs that came while the user was choosing.
+    tokio::time::timeout(std::time::Duration::from_secs(5), offered.wait_for(|&offered| offered)).await.expect("offer").unwrap();
     sink.output(frame::encode_header(&Header::with_pos(Kind::Rpos, 0), Encoding::Hex));
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while sent.load(Ordering::Relaxed) < 64 << 10 {
