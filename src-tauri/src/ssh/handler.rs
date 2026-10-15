@@ -127,6 +127,62 @@ impl client::Handler for ClientHandler {
         Ok(())
     }
 
+    // Channels ZShell never asks the server for, which russh accepts by default (and then
+    // leaves open, connected to nothing): refused, as OpenSSH does.
+
+    async fn server_channel_open_session(&mut self, _: Channel<Msg>, reply: ChannelOpenHandle, _: &mut Session) -> Result<(), Self::Error> {
+        reply.reject(ChannelOpenFailure::AdministrativelyProhibited).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_direct_tcpip(
+        &mut self,
+        _: Channel<Msg>,
+        _: &str,
+        _: u32,
+        _: &str,
+        _: u32,
+        reply: ChannelOpenHandle,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        reply.reject(ChannelOpenFailure::AdministrativelyProhibited).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_x11(
+        &mut self,
+        _: Channel<Msg>,
+        _: &str,
+        _: u32,
+        reply: ChannelOpenHandle,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        reply.reject(ChannelOpenFailure::AdministrativelyProhibited).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_forwarded_streamlocal(
+        &mut self,
+        _: Channel<Msg>,
+        _: &str,
+        reply: ChannelOpenHandle,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        reply.reject(ChannelOpenFailure::AdministrativelyProhibited).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_direct_streamlocal(
+        &mut self,
+        _: Channel<Msg>,
+        _: &str,
+        reply: ChannelOpenHandle,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        reply.reject(ChannelOpenFailure::AdministrativelyProhibited).await;
+        Ok(())
+    }
+
     async fn disconnected(&mut self, reason: DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
         self.disconnect.send_replace(Some(EndReason::of(&reason)));
         match reason {
