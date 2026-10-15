@@ -2,13 +2,13 @@
 //! SOCKS (`-D`).
 //!
 //! Each run of a rule is one task that owns everything the rule holds: its listener (for
-//! remote rules, its route in [`RemoteRoutes`] and the server's listener) and a [`JoinSet`] of
+//! remote rules, its route in the connection's `ssh::RemoteRoutes` and the server's listener) and a [`JoinSet`] of
 //! the connections it carries. Stopping a rule signals the task, which releases all of it (a
 //! remote rule waits for the server to cancel its listener) and then ends: once the task has
 //! ended, the rule can start again on the same port. Dropping the signal stops it too. Rules belong to a saved session, which may have several
 //! connections (tabs opened separately): state changes are pushed as [`SessionEvent::Forward`]
 //! to every tab of the session through its [`Hub`], whichever connection runs the rule (see
-//! `ssh::Connections` for how a rule runs on one connection only). A generation number keeps a
+//! `crate::connections` for how a rule runs on one connection only). A generation number keeps a
 //! replaced or stopped task from reporting after the fact.
 
 mod dynamic;
@@ -33,8 +33,7 @@ use tokio::time::Instant;
 use crate::error::Error;
 use crate::model::{host_port, ForwardKind, ForwardRule};
 use crate::session::{ForwardState, SessionEvent, SessionId, SessionSink};
-use crate::ssh::SshHandle;
-pub use remote::{Incoming, RemoteRoutes};
+use crate::ssh::{RemoteRoutes, SshHandle};
 
 /// How long to wait for the name a local or dynamic rule listens on to be looked up.
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);

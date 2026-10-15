@@ -2,7 +2,8 @@
 
 mod abortable;
 mod auth;
-mod connections;
+mod connection;
+mod forwarded;
 mod handler;
 mod host_key;
 pub mod known_hosts;
@@ -18,7 +19,6 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 
 use crate::error::Error;
-use crate::forward::RemoteRoutes;
 use crate::model::host_port;
 use crate::model::Proxy;
 use crate::model::SshProfile;
@@ -26,15 +26,22 @@ use crate::net::Route;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
 use crate::vault::SavedPasswords;
 pub use auth::{default_key_path, key_file_exists};
-pub use connections::{Connection, Connections, SshHandle};
+pub use connection::{Connection, Shells, SshHandle};
+pub use forwarded::{Incoming, RemoteRoutes};
 use handler::{ClientHandler, EndReason};
 use host_key::HostKeyMessage;
 
 /// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
-/// terminal. `carry`: forwarding rules to start besides the automatic ones (those running
-/// before the tab reconnected).
-pub async fn run(profile: SshProfile, route: Route, id: SessionId, mut io: TermIo, connections: Connections, carry: Vec<String>) {
-    let outcome = match start(&profile, &route, id, &mut io, &connections, &carry).await {
+/// terminal. `connected` is given the connection once it is authenticated, before the shell
+/// opens on it, for the other features to use (see `crate::connections`).
+pub async fn run(
+    profile: SshProfile,
+    route: Route,
+    id: SessionId,
+    mut io: TermIo,
+    connected: impl FnOnce(Arc<Connection>, &TermIo) + Send,
+) {
+    let outcome = match start(&profile, &route, id, &mut io, connected).await {
         Ok((channel, disconnect)) => bridge(channel, &mut io, disconnect).await,
         Err(e) => Outcome::Failed(e.into()),
     };
@@ -42,8 +49,8 @@ pub async fn run(profile: SshProfile, route: Route, id: SessionId, mut io: TermI
 }
 
 /// Session backend for a duplicated tab: a new shell on `connection`, which is already
-/// registered for this session. No prompts, no auto-started forwards: like a second
-/// OpenSSH session through a ControlMaster.
+/// registered for this session (see `crate::connections`). No prompts, no auto-started
+/// forwards: like a second OpenSSH session through a ControlMaster.
 pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo) {
     let outcome = match open_shell(&connection, id, &mut io).await {
         Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason()).await,
@@ -123,8 +130,7 @@ async fn start(
     route: &Route,
     id: SessionId,
     io: &mut TermIo,
-    connections: &Connections,
-    carry: &[String],
+    connected: impl FnOnce(Arc<Connection>, &TermIo),
 ) -> Result<(Channel<Msg>, watch::Receiver<Option<EndReason>>)> {
     let remote = &profile.ssh.remote;
     let (transport, chain) = match tunnel(route, &remote.host, remote.port, io).await? {
@@ -139,9 +145,8 @@ async fn start(
     // No time limit, unlike connecting: the user may be answering prompts, and the server
     // has its own (`LoginGraceTime`).
     auth::authenticate(&mut session, profile, &route.passwords, io, disconnect.clone()).await?;
-    let session = Arc::new(session);
-    let connection = connections.insert(id, session.clone(), profile.clone(), chain, routes, disconnect.clone(), io);
-    connections.auto_start(&connection, carry);
+    let connection = Connection::new(session, profile.clone(), chain, routes, disconnect.clone());
+    connected(connection.clone(), io);
     let channel = open_shell(&connection, id, io).await?;
     Ok((channel, disconnect))
 }

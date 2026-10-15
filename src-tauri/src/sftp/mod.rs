@@ -1,5 +1,6 @@
 //! Remote file management over SFTP. Remote paths are POSIX-style strings.
 
+pub mod channels;
 pub mod drag;
 pub mod edit;
 pub mod names;

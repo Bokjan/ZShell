@@ -1,56 +1,17 @@
 //! `-R`: the server listens and opens a `forwarded-tcpip` channel per connection, which
-//! [`crate::ssh`]'s client handler hands to the owning rule through [`RemoteRoutes`].
+//! [`crate::ssh`]'s client handler hands to the owning rule through the connection's
+//! [`RemoteRoutes`].
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use russh::client::{ChannelOpenHandle, Msg};
-use russh::{Channel, ChannelOpenFailure};
+use russh::ChannelOpenFailure;
 use tokio::sync::mpsc;
 
 use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
 use crate::error::Error;
-use crate::ssh::SshHandle;
-
-/// A connection the server accepted on a remote forward, not yet confirmed.
-pub struct Incoming {
-    pub channel: Channel<Msg>,
-    /// Dropping it rejects the channel.
-    pub reply: ChannelOpenHandle,
-}
-
-/// Remote forwards active on a connection, keyed by the address and port the server
-/// listens on.
-#[derive(Clone, Default)]
-pub struct RemoteRoutes(Arc<Mutex<HashMap<(String, u32), Route>>>);
-
-type Route = mpsc::UnboundedSender<Incoming>;
-
-impl RemoteRoutes {
-    /// Delivers a `forwarded-tcpip` channel to its rule; unknown ones are rejected.
-    pub fn route(&self, address: &str, port: u32, incoming: Incoming) {
-        if let Some(rule) = find_route(&self.0.lock().unwrap(), address, port) {
-            let _ = rule.send(incoming);
-        }
-    }
-}
-
-/// The route for a channel. Servers normally echo the requested address (OpenSSH does), but
-/// one that spells it differently (`localhost` for `127.0.0.1`, say) is matched on the port
-/// alone, as long as only one rule listens on it: with two, the connection may be meant for
-/// either, and is rejected rather than sent to the wrong one.
-fn find_route<'a, R>(routes: &'a HashMap<(String, u32), R>, address: &str, port: u32) -> Option<&'a R> {
-    if let Some(route) = routes.get(&(address.to_owned(), port)) {
-        return Some(route);
-    }
-    let mut on_port = routes.iter().filter(|((_, p), _)| *p == port).map(|(_, route)| route);
-    match (on_port.next(), on_port.next()) {
-        (Some(route), None) => Some(route),
-        _ => None,
-    }
-}
+use crate::ssh::{Incoming, RemoteRoutes, SshHandle};
 
 /// How long a stopping rule waits for the server to cancel its listener.
 const CANCEL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -67,9 +28,9 @@ struct Listening {
 }
 
 impl Listening {
-    fn new(ctx: &Ctx, address: String, port: u32, route: Route) -> Self {
+    fn new(ctx: &Ctx, address: String, port: u32, route: mpsc::UnboundedSender<Incoming>) -> Self {
         let routes = ctx.shared.routes.clone();
-        routes.0.lock().unwrap().insert((address.clone(), port), route);
+        routes.insert(address.clone(), port, route);
         Self { handle: ctx.handle(), routes, address, port, cancelled: false }
     }
 
@@ -78,7 +39,7 @@ impl Listening {
     /// closing.
     async fn cancel(mut self) {
         self.cancelled = true;
-        self.routes.0.lock().unwrap().remove(&(self.address.clone(), self.port));
+        self.routes.remove(&self.address, self.port);
         let cancel = self.handle.cancel_tcpip_forward(self.address.clone(), self.port);
         let _ = tokio::time::timeout(CANCEL_TIMEOUT, cancel).await;
     }
@@ -89,7 +50,7 @@ impl Drop for Listening {
         if self.cancelled {
             return;
         }
-        self.routes.0.lock().unwrap().remove(&(self.address.clone(), self.port));
+        self.routes.remove(&self.address, self.port);
         let (handle, address, port) = (self.handle.clone(), self.address.clone(), self.port);
         tauri::async_runtime::spawn(async move {
             let _ = handle.cancel_tcpip_forward(address, port).await;
@@ -154,23 +115,5 @@ async fn connect(incoming: Incoming, host: String, port: u16) -> Result<()> {
             incoming.reply.reject(ChannelOpenFailure::ConnectFailed).await;
             Err(e)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn routes_by_address_then_by_port_alone_when_unambiguous() {
-        let mut routes = HashMap::new();
-        routes.insert(("127.0.0.1".to_owned(), 9000), "loopback");
-        assert_eq!(find_route(&routes, "127.0.0.1", 9000), Some(&"loopback"));
-        assert_eq!(find_route(&routes, "localhost", 9000), Some(&"loopback"));
-        assert_eq!(find_route(&routes, "127.0.0.1", 9001), None);
-
-        routes.insert(("10.0.0.1".to_owned(), 9000), "lan");
-        assert_eq!(find_route(&routes, "10.0.0.1", 9000), Some(&"lan"));
-        assert_eq!(find_route(&routes, "localhost", 9000), None);
     }
 }

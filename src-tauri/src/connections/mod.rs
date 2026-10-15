@@ -1,174 +1,59 @@
-//! Live SSH connections, keyed by the terminal sessions that use them, so other features
-//! (SFTP, port forwarding) can open extra channels on the same connection. A duplicated tab
+//! The live SSH connections, keyed by the terminal sessions (tabs) that use them, with what
+//! runs on each besides shells: its SFTP sessions and its forwarding rules. A duplicated tab
 //! runs its shell on its source tab's connection, which stays open until the last session
 //! using it closes.
+//!
+//! This is where the features meet: `ssh` makes the connection (and knows nothing of what else
+//! runs on it), `sftp` and `forward` use it, and the registry decides where a saved session's
+//! forwarding rules run and what happens to them when a connection closes.
 
 use std::collections::HashMap;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::task::{Context as TaskContext, Poll};
 
-use anyhow::Context;
-use russh::{client, ChannelMsg, Disconnect};
-use russh_sftp::client::{Config as SftpConfig, SftpSession};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::sync::watch;
+use russh::Disconnect;
+use russh_sftp::client::SftpSession;
 
-use super::handler::{ClientHandler, EndReason};
-use super::JumpChain;
 use crate::error::{Error, Result};
-use crate::forward::{Forwards, Hub, RemoteRoutes};
+use crate::forward::{Forwards, Hub};
 use crate::model::ForwardRule;
-use crate::model::SshProfile;
 use crate::session::{SessionId, TermIo};
+use crate::sftp::channels::Channels;
 use crate::sftp::shell_dir::ShellDirs;
+use crate::ssh;
 
-pub type SshHandle = client::Handle<ClientHandler>;
-
-/// How long an SFTP request may wait for its reply. Generous, since on a slow link a request
-/// waits behind the reads queued before it: russh-sftp's default of 10 s failed downloads
-/// below about 400 KB/s. A lost connection doesn't wait for it: once the keepalives (or TCP)
-/// end the connection, the channel closes and the waiting requests fail.
-const SFTP_REQUEST_TIMEOUT_SECS: u64 = 120;
-/// Reads kept in flight per file. The SSH channel window (2 MiB) already limits what is on
-/// the way, so more only makes later requests (listing a folder) queue longer.
-const SFTP_CONCURRENT_READS: usize = 8;
-
-pub struct Connection {
-    handle: Arc<SshHandle>,
-    /// The profile as it was when connecting; shells opened later (duplicated tabs) use its
-    /// terminal options and encoding.
-    profile: SshProfile,
-    /// Connections to the jump hosts this one runs through; disconnected once this
-    /// connection is dropped.
-    _jumps: JumpChain,
-    /// The SFTP session for browsing and editing, once opened...
-    sftp: SftpSlot,
-    /// ...and the one for transfers (see [`Connection::transfer_sftp`]).
-    transfer_sftp: SftpSlot,
+/// A live SSH connection and what runs on it besides shells.
+pub struct LiveConnection {
+    ssh: Arc<ssh::Connection>,
+    sftp: Channels,
+    /// What has been found of its tabs' shells on the server.
+    shell_dirs: ShellDirs,
     forwards: Forwards,
     /// Whether its forwards move to another connection of the session when it closes (the
     /// user chose so when closing its last tab).
     keep_forwards: AtomicBool,
-    /// Why the connection ended, once it has (see `ClientHandler`).
-    disconnect: watch::Receiver<Option<EndReason>>,
-    /// Its tabs' shells, to find the folder each is in.
-    shell_dirs: Arc<ShellDirs>,
 }
 
-impl Connection {
-    pub fn handle(&self) -> &SshHandle {
-        &self.handle
+impl LiveConnection {
+    pub fn ssh(&self) -> &Arc<ssh::Connection> {
+        &self.ssh
     }
 
-    pub fn profile(&self) -> &SshProfile {
-        &self.profile
+    /// The SFTP session for browsing and editing (see [`Channels::browse`]).
+    pub async fn sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
+        self.sftp.browse(&self.ssh).await
     }
 
-    pub fn disconnect_reason(&self) -> watch::Receiver<Option<EndReason>> {
-        self.disconnect.clone()
-    }
-
-    /// Notes that session `id` opens its shell now, until the session closes.
-    pub fn shell_opened(&self, id: SessionId, io: &TermIo) {
-        self.shell_dirs.opened(id);
-        let dirs = self.shell_dirs.clone();
-        io.on_close(move || dirs.closed(id));
+    /// The SFTP session for transfers (see [`Channels::transfer`]).
+    pub async fn transfer_sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
+        self.sftp.transfer(&self.ssh).await
     }
 
     /// The folder session `id`'s shell is in, where the server lets it be found (see
     /// [`crate::sftp::shell_dir`]).
     pub async fn shell_dir(&self, id: SessionId) -> anyhow::Result<Option<String>> {
         let sftp = self.sftp().await?;
-        Ok(self.shell_dirs.find(sftp.as_ref(), id).await)
-    }
-
-    /// The connection's SFTP session for browsing (and editing), opened on first use.
-    pub async fn sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
-        self.open_sftp(&self.sftp).await
-    }
-
-    /// The SFTP session for transfers (uploads, downloads, drags out of the window), on a
-    /// channel of its own: requests on one channel are answered in order, so a folder
-    /// listed during a large transfer would wait behind the transfer's reads. The server
-    /// may refuse another channel (`MaxSessions`); transfers then share the browsing one.
-    pub async fn transfer_sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
-        match self.open_sftp(&self.transfer_sftp).await {
-            Ok(sftp) => Ok(sftp),
-            Err(_) => self.sftp().await,
-        }
-    }
-
-    /// The SFTP session kept in `slot`, opened on first use, and again if its channel ended
-    /// while the connection stays (the server's `sftp-server` exited, say): otherwise every
-    /// SFTP operation would fail until the tab reconnects.
-    async fn open_sftp(&self, slot: &SftpSlot) -> anyhow::Result<Arc<SftpSession>> {
-        let mut cached = slot.lock().await;
-        if let Some((sftp, ended)) = cached.as_ref() {
-            if !ended.load(Ordering::Relaxed) {
-                return Ok(sftp.clone());
-            }
-        }
-        let mut channel = self.handle.channel_open_session().await?;
-        channel.request_subsystem(true, "sftp").await?;
-        // A server without the subsystem answers with a failure but keeps the channel
-        // open, and russh-sftp would wait for its greeting until the request times out.
-        loop {
-            match channel.wait().await {
-                Some(ChannelMsg::Success) => break,
-                Some(ChannelMsg::Failure | ChannelMsg::Close | ChannelMsg::Eof) | None => {
-                    return Err(Error::new("sftp.unsupported").into());
-                }
-                Some(_) => {}
-            }
-        }
-        let ended = Arc::new(AtomicBool::new(false));
-        let stream = crate::sftp::names::convert(channel.into_stream(), crate::encoding::for_profile(&self.profile.encoding));
-        let stream = Watched { inner: stream, ended: ended.clone() };
-        let config = SftpConfig {
-            request_timeout_secs: SFTP_REQUEST_TIMEOUT_SECS,
-            max_concurrent_reads: SFTP_CONCURRENT_READS,
-            ..Default::default()
-        };
-        let sftp = Arc::new(SftpSession::new_with_config(stream, config).await.context(Error::new("sftp.unsupported"))?);
-        *cached = Some((sftp.clone(), ended));
-        Ok(sftp)
-    }
-}
-
-/// An SFTP session, once opened, and whether its channel has ended since.
-type SftpSlot = tokio::sync::Mutex<Option<(Arc<SftpSession>, Arc<AtomicBool>)>>;
-
-/// An SFTP session's stream, noting when reading from it ends: russh-sftp doesn't tell.
-struct Watched {
-    inner: Box<dyn crate::sftp::names::Stream>,
-    ended: Arc<AtomicBool>,
-}
-
-impl AsyncRead for Watched {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
-        let before = buf.filled().len();
-        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
-        let eof = matches!(result, Poll::Ready(Ok(()))) && buf.filled().len() == before && buf.remaining() > 0;
-        if eof || matches!(result, Poll::Ready(Err(_))) {
-            self.ended.store(true, Ordering::Relaxed);
-        }
-        result
-    }
-}
-
-impl AsyncWrite for Watched {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
-        Pin::new(&mut self.inner).poll_write(cx, buf)
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_shutdown(cx)
+        Ok(self.shell_dirs.find(sftp.as_ref(), self.ssh.shells(), id).await)
     }
 }
 
@@ -182,9 +67,9 @@ trait Holder {
     fn is_running(&self, rule_id: &str) -> bool;
 }
 
-impl Holder for Connection {
+impl Holder for LiveConnection {
     fn session(&self) -> &str {
-        &self.profile.id
+        &self.ssh.profile().id
     }
     fn running(&self) -> Vec<ForwardRule> {
         self.forwards.running()
@@ -206,9 +91,9 @@ fn same_session<C: Holder>(a: &C, b: &C) -> bool {
 /// runs, a new connection doesn't start a rule another one runs, and when a connection closes
 /// its rules move to another one if the user chose so.
 #[derive(Clone, Default)]
-pub struct Connections(Arc<Mutex<HashMap<SessionId, Arc<Connection>>>>);
+pub struct Connections(Arc<Mutex<HashMap<SessionId, Arc<LiveConnection>>>>);
 
-type Map<C = Connection> = HashMap<SessionId, Arc<C>>;
+type Map<C = LiveConnection> = HashMap<SessionId, Arc<C>>;
 
 /// The distinct connections of `connection`'s session, itself first.
 fn session_connections<C: Holder>(map: &Map<C>, connection: &Arc<C>) -> Vec<Arc<C>> {
@@ -278,51 +163,42 @@ fn rules_to_adopt<C: Holder>(map: &Map<C>, closed: &C, rules: Vec<ForwardRule>) 
 }
 
 impl Connections {
-    /// Registers a new connection for session `id`, until the session closes. `routes` and
-    /// `disconnect` must be the ones given to the connection's [`ClientHandler`]; forward
-    /// states are reported to the session's tab.
-    #[allow(clippy::too_many_arguments)]
-    pub fn insert(
-        &self,
-        id: SessionId,
-        handle: Arc<SshHandle>,
-        profile: SshProfile,
-        jumps: JumpChain,
-        routes: RemoteRoutes,
-        disconnect: watch::Receiver<Option<EndReason>>,
-        io: &TermIo,
-    ) -> Arc<Connection> {
-        // Under one lock, so that two tabs of a session connecting at once share a hub.
-        let connection = {
+    /// Registers the new connection of session `id` until the session closes, and starts the
+    /// rules that start on connecting and those in `carry` (running before the tab
+    /// reconnected), unless another connection of the session runs them. Forward states are
+    /// reported to the session's tab.
+    pub fn connected(&self, id: SessionId, ssh: Arc<ssh::Connection>, carry: &[String], io: &TermIo) {
+        // Under one lock, so that two tabs of a session connecting at once share a hub, and
+        // don't both start a rule (one would find its port taken).
+        {
             let mut map = self.0.lock().unwrap();
-            let sibling = map.values().find(|other| !profile.id.is_empty() && other.profile.id == profile.id);
+            let profile_id = &ssh.profile().id;
+            let sibling = map.values().find(|other| !profile_id.is_empty() && other.ssh.profile().id == *profile_id);
             let hub = sibling.map(|other| other.forwards.hub()).unwrap_or_else(|| Arc::new(Hub::default()));
-            let connection = Arc::new(Connection {
-                handle: handle.clone(),
-                profile,
-                _jumps: jumps,
-                sftp: SftpSlot::default(),
-                transfer_sftp: SftpSlot::default(),
-                forwards: Forwards::new(handle, routes, hub),
+            let forwards = Forwards::new(ssh.handle().clone(), ssh.routes().clone(), hub);
+            let connection = Arc::new(LiveConnection {
+                ssh,
+                sftp: Channels::default(),
+                shell_dirs: ShellDirs::default(),
+                forwards,
                 keep_forwards: AtomicBool::new(false),
-                disconnect,
-                shell_dirs: Arc::default(),
             });
             Self::register(&mut map, id, connection.clone(), io);
-            connection
-        };
+            for rule in rules_to_start(&map, &connection, &connection.ssh.profile().ssh.forwards, carry) {
+                connection.forwards.start(rule, true);
+            }
+        }
         self.close_with(id, io);
-        connection
     }
 
     /// Registers session `id` as another user of `connection` (a duplicated tab), until the
     /// session closes. A session closing meanwhile is unregistered right away.
-    pub fn attach(&self, id: SessionId, connection: Arc<Connection>, io: &TermIo) {
+    pub fn attach(&self, id: SessionId, connection: Arc<LiveConnection>, io: &TermIo) {
         Self::register(&mut self.0.lock().unwrap(), id, connection, io);
         self.close_with(id, io);
     }
 
-    fn register(map: &mut Map, id: SessionId, connection: Arc<Connection>, io: &TermIo) {
+    fn register(map: &mut Map, id: SessionId, connection: Arc<LiveConnection>, io: &TermIo) {
         connection.forwards.attach(id, io.sink());
         map.insert(id, connection);
     }
@@ -334,7 +210,7 @@ impl Connections {
         io.on_close(move || connections.close(id));
     }
 
-    pub fn get(&self, id: SessionId) -> Result<Arc<Connection>> {
+    pub fn get(&self, id: SessionId) -> Result<Arc<LiveConnection>> {
         self.0.lock().unwrap().get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))
     }
 
@@ -362,29 +238,12 @@ impl Connections {
                     let _ = task.await;
                 }
             }
-            // A slot that is busy is opening an SFTP session, which may take long (as long as
-            // the server takes to answer): the disconnection ends it anyway.
-            for slot in [&connection.sftp, &connection.transfer_sftp] {
-                if let Some((sftp, _)) = slot.try_lock().ok().and_then(|mut slot| slot.take()) {
-                    let _ = sftp.close().await;
-                }
-            }
-            let _ = connection.handle.disconnect(Disconnect::ByApplication, "", "en").await;
+            connection.sftp.close().await;
+            let _ = connection.ssh.handle().disconnect(Disconnect::ByApplication, "", "en").await;
             if handover {
                 connections.adopt(&connection, rules);
             }
         });
-    }
-
-    /// Starts the rules that start on connecting, and those in `carry` (running before the
-    /// tab reconnected), unless another connection of the session runs them.
-    pub fn auto_start(&self, connection: &Arc<Connection>, carry: &[String]) {
-        // Started under the lock that chose them, so that two connections of the session
-        // starting at once don't both start a rule (one would find its port taken).
-        let map = self.0.lock().unwrap();
-        for rule in rules_to_start(&map, connection, &connection.profile.ssh.forwards, carry) {
-            connection.forwards.start(rule, true);
-        }
     }
 
     /// Starts (or restarts with a new definition) a rule of session `id`'s saved session:
@@ -417,7 +276,7 @@ impl Connections {
 
     /// Stops the rules of saved session `profile_id` that are no longer among `rule_ids`.
     pub fn retain_forwards(&self, profile_id: &str, rule_ids: &[String]) {
-        let connections: Vec<_> = self.0.lock().unwrap().values().filter(|c| c.profile.id == profile_id).cloned().collect();
+        let connections: Vec<_> = self.0.lock().unwrap().values().filter(|c| c.ssh.profile().id == profile_id).cloned().collect();
         for connection in connections {
             for rule in connection.forwards.running() {
                 if !rule_ids.contains(&rule.id) {
@@ -449,7 +308,7 @@ impl Connections {
     }
 
     /// Starts `rules` of a closed connection on another connection of its session, if any.
-    fn adopt(&self, closed: &Connection, rules: Vec<ForwardRule>) {
+    fn adopt(&self, closed: &LiveConnection, rules: Vec<ForwardRule>) {
         let map = self.0.lock().unwrap();
         let Some((target, rules)) = rules_to_adopt(&map, closed, rules) else { return };
         for rule in rules {

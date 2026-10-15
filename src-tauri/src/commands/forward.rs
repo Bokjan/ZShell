@@ -2,10 +2,10 @@
 
 use tauri::{State, Webview};
 
+use crate::connections::Connections;
 use crate::error::Result;
 use crate::model::ForwardRule;
 use crate::session::{SessionId, SessionManager};
-use crate::ssh::Connections;
 
 /// Starts (or restarts with a new definition) a forwarding rule of the session's saved
 /// session: where it runs (perhaps another tab's connection), else on the session's

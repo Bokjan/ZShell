@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::backup;
 use crate::config::{Additions, ProfileStore};
+use crate::connections::Connections;
 use crate::error::Result;
 use crate::import;
 use crate::logging::Logs;
@@ -19,7 +20,7 @@ use crate::model::{Folder, Item, Profile};
 use crate::persist::{SetAside, SetAsideFile};
 use crate::quick::QuickCommandStore;
 use crate::settings::SettingsStore;
-use crate::ssh::{self, known_hosts, Connections};
+use crate::ssh::{self, known_hosts};
 use crate::vault::Vault;
 
 use super::{blocking, notified, Change};

@@ -12,6 +12,7 @@ use ts_rs::TS;
 
 use crate::config::ProfileStore;
 
+use crate::connections::{Connections, LiveConnection};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::logging::{LogInfo, LogOpen, LogSlot, Logs};
@@ -21,7 +22,7 @@ use crate::pty;
 use crate::serial;
 use crate::session::{SessionEvent, SessionId, SessionInput, SessionManager, TermIo};
 use crate::settings::SettingsStore;
-use crate::ssh::{self, Connections};
+use crate::ssh;
 use crate::telnet;
 use crate::vault::Account;
 
@@ -158,12 +159,12 @@ fn launch(app: &AppHandle, webview: &str, spec: SessionSpec) -> Result<Launch> {
             let log_info = app.state::<SessionManager>().sink(webview, source)?.log().info.clone();
             let connection = connections.get(source)?;
             // Ended, but its session hasn't noticed yet (it is about to report it lost).
-            if connection.handle().is_closed() {
+            if connection.ssh().handle().is_closed() {
                 return Err(Error::new("session.notConnected"));
             }
             let store = app.state::<ProfileStore>();
             let auto_log = log_info.profile.as_ref().and_then(|id| store.get(id).ok()).is_some_and(|p| p.auto_log);
-            let encoding = encoding::for_profile(&connection.profile().encoding);
+            let encoding = encoding::for_profile(&connection.ssh().profile().encoding);
             Ok(Launch { log_info, auto_log, encoding, backend: Backend::Shared { connection, connections } })
         }
         SessionSpec::Local => {
@@ -184,7 +185,7 @@ enum Backend {
         carry: Vec<String>,
     },
     Shared {
-        connection: Arc<ssh::Connection>,
+        connection: Arc<LiveConnection>,
         connections: Connections,
     },
     /// `password_of`: the saved session whose password answers the login prompt.
@@ -209,8 +210,10 @@ impl Backend {
 
     async fn run(self, id: SessionId, io: TermIo) {
         match self {
-            Backend::Ssh { profile, route, connections, carry } => ssh::run(profile, route, id, io, connections, carry).await,
-            Backend::Shared { connection, .. } => ssh::run_shared(connection, id, io).await,
+            Backend::Ssh { profile, route, connections, carry } => {
+                ssh::run(profile, route, id, io, move |connection, io| connections.connected(id, connection, &carry, io)).await
+            }
+            Backend::Shared { connection, .. } => ssh::run_shared(connection.ssh().clone(), id, io).await,
             Backend::Telnet { remote, route, password_of } => {
                 // Looked up in the session's task when the server asks; `block_in_place` lets
                 // the other tasks move to other threads while the vault is being written.

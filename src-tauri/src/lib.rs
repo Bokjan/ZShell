@@ -6,6 +6,7 @@ mod backup;
 mod bindings;
 mod commands;
 mod config;
+mod connections;
 mod crypto;
 #[cfg(target_os = "linux")]
 mod desktop;
@@ -45,6 +46,7 @@ use tauri::{Emitter, Manager};
 
 use applock::AppLock;
 use config::ProfileStore;
+use connections::Connections;
 use logging::Logs;
 use persist::SetAside;
 use quick::QuickCommandStore;
@@ -52,7 +54,6 @@ use session::SessionManager;
 use settings::SettingsStore;
 use sftp::edit::Edits;
 use sftp::transfer::Transfers;
-use ssh::Connections;
 use vault::Vault;
 use window::Windows;
 

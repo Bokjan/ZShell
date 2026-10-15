@@ -7,9 +7,9 @@ use russh::keys::{PublicKey, PublicKeyOrCertificate};
 use russh::{Channel, ChannelOpenFailure};
 use tokio::sync::{mpsc, oneshot, watch};
 
+use super::forwarded::{Incoming, RemoteRoutes};
 use super::host_key::{HostKeyMessage, HostKeyQuery, HostKeyStatus};
 use super::known_hosts::{self, CertificateCheck, Check, Invalid};
-use crate::forward::{Incoming, RemoteRoutes};
 
 pub struct ClientHandler {
     host: String,

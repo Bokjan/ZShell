@@ -46,8 +46,9 @@
 | 模块（`src-tauri/src/`） | 职责 |
 |---|---|
 | `session/` | 会话抽象：`TermIo`、`SessionManager`、`SessionSink`、输出流控 `Flow` |
-| `ssh/` | 连接与 shell（`mod.rs`）、russh 回调（`handler.rs`）、主机密钥确认（`host_key.rs`）、known_hosts 与主机证书（`known_hosts/`）、认证（`auth/`）、连接注册表（`connections.rs`） |
-| `sftp/` | 浏览与文件操作（`mod.rs`）、传输（`transfer.rs`）、本地编辑（`edit.rs`）、拖出（`drag/`）、替换写入（`replace.rs`）、文件名转码（`names.rs`） |
+| `ssh/` | 连接与 shell（`mod.rs`）、认证好的连接及其上各窗格 shell 的顺序（`connection.rs`）、russh 回调（`handler.rs`）、服务器为远程转发开的通道交给谁（`forwarded.rs`）、主机密钥确认（`host_key.rs`）、known_hosts 与主机证书（`known_hosts/`）、认证（`auth/`）。不认识连接上跑的其他功能 |
+| `connections/` | 连接注册表：会话 id → 连接及其上的 SFTP 与转发规则；同一会话的转发规则在哪条连接上运行、连接关闭时如何移交。ssh、sftp、forward 在这里组合 |
+| `sftp/` | 浏览与文件操作（`mod.rs`）、一条连接上的 SFTP 通道（`channels.rs`）、传输（`transfer.rs`）、本地编辑（`edit.rs`）、拖出（`drag/`）、替换写入（`replace.rs`）、文件名转码（`names.rs`） |
 | `forward/` | 转发规则的运行（`mod.rs`）、`-L` / `-R` / `-D`（`local.rs` / `remote.rs` / `dynamic.rs`）、SOCKS（`socks.rs`） |
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
 | `telnet/` | Telnet 会话与自动登录（`mod.rs`）、协议与选项协商（`protocol.rs`） |
@@ -96,7 +97,7 @@
 
 ### SSH
 
-- **一个连接多路复用**：认证后连接登记到 `Connections`，SFTP 与端口转发开在同一连接上；批量传输另开一个 SFTP channel，免得列目录排在大文件的读请求后面。
+- **一个连接多路复用**：认证后 `ssh::run` 把连接交给 `connections::Connections` 登记（`ssh` 只管连接本身），SFTP 与端口转发开在同一连接上；批量传输另开一个 SFTP channel，免得列目录排在大文件的读请求后面。
 - **复制标签**：已连接的 SSH 标签复制或分屏时，在源连接上开新的 shell channel，不重新连接认证（类似 ControlMaster）。多个会话可以指向同一连接，最后一个结束时才断开；源连接已断开时照常新建连接。
 - **提示都在终端里**：主机指纹、密码、口令、keyboard-interactive 都经 `TermIo::read_line` 在终端里问，与 OpenSSH 一致，不弹窗。
 - **认证**："自动"按 OpenSSH 的顺序尝试 agent、私钥、keyboard-interactive、密码；加密的私钥只在服务器接受其公钥后才问口令。多因素认证按服务器返回的剩余方法继续；保存的密码只回答一次，而且只回答问本账户密码的提示（`Password for root:` 在用户是 alice 时不算），验证码类的提示总在终端里问，以免把密码当验证码提交、白白计入失败次数（`ssh/auth/`）。

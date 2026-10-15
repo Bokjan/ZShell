@@ -22,6 +22,7 @@ use russh_sftp::client::SftpSession;
 use tokio::io::AsyncReadExt;
 
 use crate::session::SessionId;
+use crate::ssh::Shells;
 
 /// What finding the folder needs of the server's files: an SFTP session, or a fake in tests.
 pub(crate) trait Procfs {
@@ -117,7 +118,7 @@ const STAT_LOOKUPS: usize = 64;
 const MAX_PROCESSES: usize = 4096;
 
 /// The shells of the connection's process `parent`: its children with a terminal, oldest first.
-async fn shells(fs: &impl Procfs, parent: u32) -> Vec<u32> {
+async fn shells_of(fs: &impl Procfs, parent: u32) -> Vec<u32> {
     // Listed by the kernel where it keeps the list (most do); otherwise among all processes,
     // which takes longer.
     let children: Vec<u32> = match fs.read(&format!("/proc/{parent}/task/{parent}/children")).await {
@@ -157,45 +158,29 @@ async fn folder_of(fs: &impl Procfs, parent: u32, pid: u32) -> Option<String> {
     fs.read_link(&format!("/proc/{pid}/cwd")).await.and_then(as_folder)
 }
 
-/// The shells of a connection by pane (session), in the order they were opened, and what has
-/// been found of them on the server.
+/// What has been found of a connection's shells on the server; which panes have them open,
+/// in order, is the connection's ([`Shells`]).
 #[derive(Default)]
-pub struct ShellDirs(Mutex<State>);
+pub struct ShellDirs(Mutex<Found>);
 
 #[derive(Default)]
-struct State {
-    /// The sessions whose shells are open, oldest first.
-    open: Vec<SessionId>,
+struct Found {
     /// The connection's process, once found.
     parent: Option<u32>,
     /// The shells found, by session.
     pids: HashMap<SessionId, u32>,
-    /// Counts the sessions opened and closed, for a search to tell whether its place in `open`
-    /// still holds.
-    changes: u64,
 }
 
 impl ShellDirs {
-    /// Session `id` is opening a shell, after those of the sessions open now.
-    pub fn opened(&self, id: SessionId) {
-        let mut state = self.0.lock().unwrap();
-        state.open.push(id);
-        state.changes += 1;
-    }
-
-    pub fn closed(&self, id: SessionId) {
-        let mut state = self.0.lock().unwrap();
-        state.open.retain(|open| *open != id);
-        state.pids.remove(&id);
-        state.changes += 1;
-    }
-
-    /// The folder the shell of session `id` is in; `None` where it can't be found.
-    pub(crate) async fn find(&self, fs: &impl Procfs, id: SessionId) -> Option<String> {
-        let (index, count, changes, parent, known) = {
-            let state = self.0.lock().unwrap();
-            let index = state.open.iter().position(|open| *open == id)?;
-            (index, state.open.len(), state.changes, state.parent, state.pids.get(&id).copied())
+    /// The folder the shell of session `id` is in, among `shells`; `None` where it can't be
+    /// found.
+    pub(crate) async fn find(&self, fs: &impl Procfs, shells: &Shells, id: SessionId) -> Option<String> {
+        let (open, changes) = shells.open();
+        let index = open.iter().position(|open| *open == id)?;
+        let (parent, known) = {
+            let mut found = self.0.lock().unwrap();
+            found.pids.retain(|session, _| open.contains(session));
+            (found.parent, found.pids.get(&id).copied())
         };
         let parent = match parent {
             Some(parent) => parent,
@@ -210,17 +195,14 @@ impl ShellDirs {
                 return Some(path);
             }
         }
-        let shells = shells(fs, parent).await;
-        let pid = *shells.get(index).filter(|_| shells.len() == count)?;
-        {
-            let mut state = self.0.lock().unwrap();
-            // Unless panes opened or closed meanwhile: with one closed and another opened, the
-            // shell at this place, even among as many, may be the other's.
-            if state.changes != changes {
-                return None;
-            }
-            state.pids.insert(id, pid);
+        let found = shells_of(fs, parent).await;
+        let pid = *found.get(index).filter(|_| found.len() == open.len())?;
+        // Unless panes opened or closed meanwhile: with one closed and another opened, the
+        // shell at this place, even among as many, may be the other's.
+        if shells.changes() != changes {
+            return None;
         }
+        self.0.lock().unwrap().pids.insert(id, pid);
         folder_of(fs, parent, pid).await
     }
 }
@@ -273,12 +255,31 @@ mod tests {
         fs
     }
 
-    fn panes(ids: &[SessionId]) -> ShellDirs {
-        let dirs = ShellDirs::default();
-        for id in ids {
-            dirs.opened(*id);
+    /// A connection's shells, and what was found of them.
+    #[derive(Default)]
+    struct Panes {
+        shells: Shells,
+        dirs: ShellDirs,
+    }
+
+    impl Panes {
+        async fn find(&self, fs: &impl Procfs, id: SessionId) -> Option<String> {
+            self.dirs.find(fs, &self.shells, id).await
         }
-        dirs
+        fn opened(&self, id: SessionId) {
+            self.shells.opened(id);
+        }
+        fn closed(&self, id: SessionId) {
+            self.shells.closed(id);
+        }
+    }
+
+    fn panes(ids: &[SessionId]) -> Panes {
+        let panes = Panes::default();
+        for id in ids {
+            panes.opened(*id);
+        }
+        panes
     }
 
     #[test]

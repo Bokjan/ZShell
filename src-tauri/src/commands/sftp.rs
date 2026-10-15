@@ -9,19 +9,19 @@ use tauri::ipc::Channel;
 
 use tauri::{AppHandle, Manager, State, Webview, WebviewWindow};
 
+use crate::connections::{Connections, LiveConnection};
 use crate::error::{Error, Result};
 use crate::session::{SessionId, SessionManager};
 use crate::settings::SettingsStore;
 use crate::sftp::drag;
 use crate::sftp::edit::{self, EditEvent, Edits};
 use crate::sftp::{self, transfer, Listing};
-use crate::ssh::{self, Connections};
 
 use super::blocking;
 
 /// Session `id`'s SSH connection, for a file panel of `webview`: its own session's (see
 /// [`SessionManager::check`]).
-fn connection(webview: &str, sessions: &SessionManager, connections: &Connections, id: SessionId) -> Result<Arc<ssh::Connection>> {
+fn connection(webview: &str, sessions: &SessionManager, connections: &Connections, id: SessionId) -> Result<Arc<LiveConnection>> {
     sessions.check(webview, id)?;
     connections.get(id)
 }
