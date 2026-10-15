@@ -1,0 +1,95 @@
+/* The terminal's find bar. */
+
+/* Find bar over the terminal's top-right corner */
+
+.search-bar {
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 36px);
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 6px 20px var(--shadow);
+}
+.search-bar input {
+  width: calc(200px * var(--text-scale));
+  min-width: 80px;
+  flex-shrink: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.search-bar input:focus {
+  border-color: var(--accent);
+}
+.search-flag {
+  min-width: 24px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-family: Menlo, Consolas, monospace;
+  font-size: calc(11px * var(--text-scale));
+}
+.search-flag:hover {
+  color: var(--text);
+}
+.search-flag.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.search-status {
+  min-width: 64px;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-muted);
+}
+.search-status.empty {
+  color: var(--danger);
+}
+.search-bar .icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* A pane too narrow for one row: the field and the previous / next / close buttons above, the
+   options and the count below. */
+@container terminal (max-width: 380px) {
+  .search-bar {
+    display: grid;
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto auto;
+    row-gap: 4px;
+  }
+  .search-bar input {
+    grid-row: 1;
+    grid-column: 1 / 5;
+    width: auto;
+    min-width: 0;
+  }
+  .search-bar .icon-button {
+    grid-row: 1;
+  }
+  .search-flag {
+    grid-row: 2;
+  }
+  .search-status {
+    grid-row: 2;
+    grid-column: 4 / 8;
+    min-width: 0;
+    text-align: right;
+  }
+}

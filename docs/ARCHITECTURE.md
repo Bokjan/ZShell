@@ -79,6 +79,7 @@
 - **会话结束**：和 Xshell 一样，用户退出 shell（`exit`、Ctrl+D，即 `exited`）后窗格自动关闭，不看退出状态（bash 以上一条命令的状态退出）；本次连接里用户没在 shell 中输入过（服务器一连上就结束，信息要留着看）、shell 被信号结束（本地进程，或 SSH 服务器发来 exit-signal）、或文件面板有工作时不关（`closesOnExit`，`lib/panes.ts`）。不自动关闭的窗格里，Enter 重连，Ctrl+D 按关闭标签的流程关闭窗格。
 - **解锁**：`main.tsx` 里 `SettingsProvider` 之下是 `VaultGate`，保险库锁定时只显示 `UnlockScreen`，解锁后才挂载 `AppLockGate` 与其中的 `App`（见「加密保险库」「应用锁」）。
 - **对话框与快捷键**：对话框经 `useDialog`（`hooks/dialogs.ts`）登记到一个栈，只有最上层的响应 Esc 与点击背景；快捷键经 `useShortcuts`（`hooks/shortcuts.ts`）在捕获阶段统一分发，注册时说明何时生效。
+- **样式**：`styles.css` 只按顺序引入 `styles/` 下按区域分的各部分（主题变量在 `theme.css`）。部分的先后就是层叠的先后：后写的规则覆盖先写的同等特异性的规则，所以新规则写进它所属的部分，而部分不按字母排序，也不由各组件自己引入（那样 CSS 的顺序由导入图决定）。
 - **其他**：纯逻辑模块有 vitest 单元测试（`*.test.ts`）。
 
 ## 设计决策

@@ -1,0 +1,449 @@
+/* Dialogs and the forms in them, with the dialogs that have few styles of their own
+   (forwarding rule, import, command, session). */
+
+/* Dialog */
+
+/* Below the title bar, which stays free to move the window (see lib/window.ts). */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: var(--titlebar-height);
+  background: var(--backdrop);
+  z-index: 10;
+}
+/* A dialog of an inactive tab (see `DialogsHidden`). */
+.dialog-backdrop[hidden] {
+  display: none;
+}
+/* Focused only by script, when its dialog has no control to focus; not a control itself. */
+.dialog-backdrop:focus {
+  outline: none;
+}
+/* Scrolls when taller than the space below the title bar (the session dialog on a small
+   window). */
+.dialog {
+  width: calc(380px * var(--text-scale));
+  max-width: calc(100vw - 32px);
+  /* Content height: leaves 16px above and below, beyond the padding and border. */
+  max-height: calc(100vh - var(--titlebar-height) - 70px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px var(--shadow);
+}
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: calc(15px * var(--text-scale));
+  font-weight: 600;
+}
+.dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.dialog label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.dialog input:not([type="checkbox"]),
+.dialog select,
+.dialog textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(13px * var(--text-scale));
+  outline: none;
+}
+.dialog textarea {
+  resize: vertical;
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* Drawn like the text inputs instead of the native pop-up button, which is shorter and
+   ignores the theme; the menu that opens stays native (keyboard and accessibility). */
+.dialog select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px 6px;
+  cursor: pointer;
+}
+.dialog select:hover:not(:disabled):not(:focus) {
+  border-color: var(--text-muted);
+}
+.dialog input:focus,
+.dialog select:focus,
+.dialog textarea:focus {
+  border-color: var(--accent);
+}
+.dialog input:disabled,
+.dialog select:disabled,
+.dialog textarea:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dialog .row {
+  display: flex;
+  gap: 10px;
+}
+.dialog .port {
+  width: calc(80px * var(--text-scale));
+}
+/* A number field (`SpinInput`) with its ▲ / ▼ buttons inside the right end. */
+.dialog .spin-input {
+  position: relative;
+  display: flex;
+}
+.dialog .spin-input input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 24px;
+}
+.dialog .spin-buttons {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  display: flex;
+  flex-direction: column;
+  width: 18px;
+  border-left: 1px solid var(--input-border);
+}
+.dialog .spin-input .spin-buttons button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text-muted);
+}
+.dialog .spin-input .spin-buttons button + button {
+  border-top: 1px solid var(--input-border);
+}
+.dialog .spin-input .spin-buttons button:first-child {
+  border-top-right-radius: 3px;
+}
+.dialog .spin-input .spin-buttons button:last-child {
+  border-bottom-right-radius: 3px;
+}
+.dialog .spin-input .spin-buttons button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.dialog .spin-input .spin-buttons button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* A text input with a small button after it (the serial device and "refresh"). */
+.dialog .input-with-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dialog .input-with-button input {
+  flex: 1;
+  min-width: 0;
+}
+.dialog .hint {
+  margin: -4px 0 0;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-muted);
+}
+/* In running text, which may wrap: on the middle of the capital letters (0.35em above the
+   baseline in the system fonts) rather than a fixed offset, so at any text size. */
+.help-tip {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: calc(0.35em - 6px);
+  color: var(--text-muted);
+}
+.help-tip:hover,
+.help-tip:focus-visible {
+  color: var(--text);
+}
+.tooltip {
+  position: fixed;
+  z-index: 30;
+  max-width: 320px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 4px 12px var(--shadow);
+  color: var(--text);
+  font-size: calc(12px * var(--text-scale));
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.dialog .hint.warning {
+  color: var(--warn);
+}
+.dialog fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.dialog legend {
+  padding: 0 0 6px;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 600;
+}
+.forward-dialog {
+  width: calc(420px * var(--text-scale));
+}
+.dialog .error {
+  margin: 0;
+  color: var(--danger);
+}
+.dialog footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.dialog footer button {
+  padding: 5px 14px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+}
+.dialog footer button.primary {
+  background: var(--accent-fill);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.dialog footer button.danger {
+  color: var(--danger);
+}
+.dialog footer button.danger-fill {
+  background: var(--danger-fill);
+  border-color: var(--danger);
+}
+.dialog footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dialog .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.jump-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  counter-reset: hop;
+}
+.jump-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 8px;
+  color: var(--text);
+  font-size: calc(13px * var(--text-scale));
+  counter-increment: hop;
+}
+.jump-list li + li {
+  border-top: 1px solid var(--border);
+}
+.jump-list li::before {
+  content: counter(hop) ".";
+  min-width: 18px;
+  color: var(--text-muted);
+}
+.jump-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jump-list .icon-button {
+  font-size: calc(13px * var(--text-scale));
+}
+.jump-list .icon-button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.dialog button.secondary {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: calc(13px * var(--text-scale));
+}
+.dialog button.secondary:disabled {
+  opacity: 0.5;
+}
+/* Fields side by side share the row's width. Otherwise a field is at least as wide as its
+   content, a menu as wide as its longest choice, which pushes the row past the dialog in
+   languages with long names (the encodings in Japanese and German). */
+.dialog .row input.grow,
+.dialog .row > label.grow {
+  min-width: 0;
+}
+.import-dialog {
+  width: calc(520px * var(--text-scale));
+}
+.import-select {
+  display: flex;
+  gap: 10px;
+  margin-bottom: -4px;
+}
+.import-list {
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+}
+.import-list li {
+  padding: 6px 10px;
+}
+.import-list li + li {
+  border-top: 1px solid var(--border);
+}
+.import-list li.existing {
+  opacity: 0.6;
+}
+.import-list label.checkbox {
+  color: var(--text);
+  font-size: calc(13px * var(--text-scale));
+}
+.import-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.import-alias {
+  font-weight: 600;
+}
+.import-address {
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+  overflow-wrap: anywhere;
+}
+.import-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 2px 0 0 22px;
+  color: var(--text-muted);
+  font-size: calc(11px * var(--text-scale));
+}
+.import-notes:empty {
+  display: none;
+}
+.import-notes .warning {
+  color: var(--warn);
+}
+.command-dialog {
+  width: calc(460px * var(--text-scale));
+}
+.profile-dialog {
+  width: calc(440px * var(--text-scale));
+  overflow: hidden;
+}
+/* Only the pages scroll; the title, the page switcher and the buttons stay. */
+.profile-dialog > * {
+  flex-shrink: 0;
+}
+.profile-dialog > .profile-body {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -20px;
+  padding: 0 20px;
+}
+.dialog .profile-pages {
+  align-self: stretch;
+  margin-bottom: 4px;
+}
+.profile-pages button {
+  flex: 1;
+}
+/* The column takes the dialog's width, not that of the widest page: a hidden page that
+   doesn't fit must not widen the page shown, which is cut off at the dialog's edge. */
+.profile-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.profile-page {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Takes its space but can't be seen or focused. */
+.profile-page.hidden {
+  visibility: hidden;
+}
+.dialog .profile-page-hint {
+  margin: 0;
+}
+.profile-scheme {
+  align-items: flex-end;
+}
+.profile-scheme .scheme-preview {
+  width: 140px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.profile-background {
+  align-items: center;
+}
+.dialog input[type="color"] {
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.dialog input[type="color"]:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* A text area for commands: drawn like the other text areas, in a monospace font. */
+.dialog textarea.command-text {
+  font:
+    calc(12px * var(--text-scale)) / 1.5 Menlo,
+    "Cascadia Mono",
+    Consolas,
+    monospace;
+}

@@ -1,0 +1,202 @@
+/* The settings dialog: navigation, shortcuts, proxies, logs, about. */
+
+/* Settings */
+
+/* The navigation on the left, the settings scrolling on the right in a dialog of fixed
+   height, so that the navigation doesn't move as sections are found and filtered. */
+.settings-dialog {
+  position: relative;
+  flex-direction: row;
+  gap: 0;
+  width: calc(760px * var(--text-scale));
+  height: calc(100vh - var(--titlebar-height) - 48px);
+  max-height: 680px;
+  padding: 0;
+  overflow: hidden;
+}
+.settings-nav {
+  width: calc(184px * var(--text-scale));
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 12px 14px;
+  border-right: 1px solid var(--border);
+}
+.settings-nav h2 {
+  margin-left: 4px;
+}
+.settings-nav-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.settings-nav-list button {
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: calc(13px * var(--text-scale));
+  text-align: left;
+}
+.settings-nav-list button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.settings-nav-list button.on {
+  background: var(--bg-active);
+}
+.settings-nav-list button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.settings-nav footer {
+  margin-top: 0;
+}
+/* `position` makes it the sections' offset parent, which the navigation scrolls by. Room is
+   left on the right for the close button. */
+.settings-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 44px 24px 24px;
+  overflow-y: auto;
+  outline: none;
+}
+.settings-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  padding: 4px;
+}
+.settings-dialog section[data-section="shortcuts"] {
+  gap: 6px;
+}
+.shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: calc(12px * var(--text-scale));
+}
+.shortcut kbd {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font: inherit;
+  white-space: nowrap;
+}
+.settings-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.settings-dialog .row button {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: calc(12px * var(--text-scale));
+}
+.settings-dialog .row button.danger {
+  color: var(--danger);
+}
+.settings-dialog .row button:disabled,
+.settings-dialog .row button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+.settings-dialog button.link {
+  align-self: flex-start;
+  margin-top: -6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: calc(12px * var(--text-scale));
+}
+.proxy-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+}
+.proxy-list li + li {
+  border-top: 1px solid var(--border);
+}
+.proxy-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.proxy-list button:hover {
+  background: var(--bg-hover);
+}
+.proxy-name {
+  color: var(--text);
+  font-size: calc(13px * var(--text-scale));
+}
+.proxy-summary {
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+  overflow-wrap: anywhere;
+}
+.proxy-dialog {
+  width: calc(420px * var(--text-scale));
+}
+.log-summary {
+  align-items: center;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.about-app {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.about-app span {
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.settings-dialog .about-links {
+  display: flex;
+  gap: 16px;
+}
+.settings-dialog .about-links button.link {
+  margin-top: 0;
+}
+.about-update p {
+  margin: 0;
+}
+.about-update-buttons {
+  flex-wrap: wrap;
+  margin: 6px 0 10px;
+}
+.settings-nav-list .dot-icon {
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+/* After the text of a link that opens in the browser. */
+.external-link-icon {
+  margin-left: 4px;
+  /* As `.help-tip`. */
+  vertical-align: calc(0.35em - 5.5px);
+}
+.settings-dialog button.link:hover {
+  text-decoration: underline;
+}

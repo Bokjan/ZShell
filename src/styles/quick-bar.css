@@ -1,0 +1,102 @@
+/* The quick command bar. */
+
+/* Quick command bar below the terminal; the warning color while commands go to several tabs. */
+.quick-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: calc(34px * var(--text-scale));
+  padding: 0 8px;
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border);
+}
+.quick-bar.many {
+  background: var(--warn-soft);
+  border-top-color: var(--warn);
+}
+.quick-group,
+.quick-command {
+  flex-shrink: 0;
+  height: calc(24px * var(--text-scale));
+  padding: 0 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: calc(12px * var(--text-scale));
+  white-space: nowrap;
+}
+.quick-group {
+  display: inline-flex;
+  align-items: center;
+  border-color: transparent;
+  background: none;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.quick-group:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.quick-command:hover {
+  border-color: var(--text-muted);
+}
+.quick-command.dragging {
+  opacity: 0.7;
+  cursor: grabbing;
+}
+.quick-no-enter {
+  margin-left: 2px;
+  color: var(--text-muted);
+}
+.quick-targets {
+  flex-shrink: 0;
+  color: var(--warn);
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Scrolls sideways when the buttons don't fit, without a scroll bar, like the tab strip. */
+.quick-commands {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.quick-commands::-webkit-scrollbar {
+  display: none;
+}
+.quick-empty {
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+  white-space: nowrap;
+}
+.quick-status {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-add {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: calc(24px * var(--text-scale));
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+}
+.quick-add:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}

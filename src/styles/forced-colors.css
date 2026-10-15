@@ -1,0 +1,46 @@
+/* Windows contrast themes. */
+
+/* Windows contrast themes replace the colors with a few system ones, and backgrounds are
+   dropped: states shown only by a background (the active tab, selected rows, choices that
+   are on) use the system's highlight colors instead. */
+@media (forced-colors: active) {
+  .tab.active,
+  .tree-row.selected,
+  .tree-row.highlighted,
+  .sftp-list tbody tr.selected,
+  .palette-item.selected,
+  .licenses-item.selected,
+  .context-menu-item.highlighted,
+  .segmented button.on,
+  .panel-switch button.on,
+  .settings-nav-list button.on,
+  .compose-toggle.on,
+  .search-flag.on,
+  .scheme-card.on {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+  /* On a highlighted row, an icon is in the row's text color like the rest. */
+  .sftp-list tbody tr.selected .file-icon {
+    color: inherit;
+  }
+  /* The status bar's lights: on is highlighted, off is grayed. */
+  .status-activity {
+    forced-color-adjust: none;
+    color: GrayText;
+  }
+  .status-activity > .send.on,
+  .status-activity > .receive.on {
+    color: Highlight;
+  }
+  /* Status and color marks are their color. */
+  .status-dot,
+  .tab-color,
+  .badge {
+    forced-color-adjust: none;
+  }
+  :where(button, a, summary, [tabindex]):focus-visible {
+    outline-color: Highlight;
+  }
+}

@@ -1,0 +1,81 @@
+/* The document, buttons and focus rings, text read only by screen readers, icon buttons. */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* The keyboard focus on controls, the same on both platforms. Of no specificity beyond
+   :focus-visible, so a component that marks its focus its own way (a field's border, a
+   list's selected row) turns it off with `outline: none`. */
+:where(button, a, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* WebKit's default placeholder color is close to the text color in dark mode. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+/* Read by screen readers, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.icon-button {
+  border: none;
+  background: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.icon-button:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+/* Icons are SVGs (icons.tsx), not glyphs, which sit differently in each platform's fonts. Alone
+   in a button, one is centered in it. One after a label (a menu's chevron) is centered beside
+   it by the button, which is an inline flex box. (`:only-child` doesn't count the label's
+   text, so a chevron is excluded by its class.) */
+button > svg:only-child:not(.inline-icon) {
+  display: block;
+}
+.inline-icon {
+  flex-shrink: 0;
+  margin-left: 4px;
+}

@@ -1,0 +1,301 @@
+/* The file panel: toolbar, path field and its suggestions, filter, file list, drop zone. */
+
+/* SFTP panel */
+
+.sftp-panel {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sftp-panel.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+.sftp-panel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sftp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 4px;
+}
+/* All but the parent folder's button, which the drop zone covers. */
+.sftp-toolbar-rest {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sftp-path {
+  position: relative;
+  flex: 1;
+  margin-left: 4px;
+}
+/* Folders offered while a path is typed, below the field. */
+.path-suggestions {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  left: 0;
+  z-index: 12;
+  max-height: calc(240px * var(--text-scale));
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px var(--shadow);
+  list-style: none;
+}
+.path-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: default;
+  white-space: nowrap;
+}
+.path-suggestion span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.path-suggestion:hover {
+  background: var(--bg-hover);
+}
+.path-suggestion.selected {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+.sftp-path input,
+.sftp-list input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.sftp-path input:focus,
+.sftp-list input:focus {
+  border-color: var(--accent);
+}
+.sftp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 8px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sftp-actions button {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  white-space: nowrap;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg-active);
+  font-size: calc(12px * var(--text-scale));
+}
+.sftp-toolbar .icon-button.on {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.sftp-toolbar .icon-button.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.sftp-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+/* The field fills the row and has no border of its own: the row's border shows its focus. */
+.sftp-filter:focus-within {
+  border-bottom-color: var(--accent);
+}
+.sftp-filter input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.sftp-status {
+  padding: 3px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.sftp-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.sftp-list.loading {
+  opacity: 0.6;
+}
+.sftp-list table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.sftp-list td {
+  padding: 3px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sftp-list:focus {
+  outline: none;
+}
+.sftp-list tr {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sftp-list tbody tr:hover {
+  background: var(--bg-hover);
+}
+.sftp-list tbody tr.selected {
+  background: var(--bg-active);
+}
+.sftp-list:focus tbody tr.selected {
+  background: var(--accent-soft);
+}
+.sftp-list tbody tr.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.sftp-list thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  font-size: calc(11px * var(--text-scale));
+  font-weight: normal;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sftp-list thead th.file-size {
+  text-align: right;
+}
+.sftp-list thead th:hover {
+  color: var(--text);
+}
+/* The column title, a button for the keyboard; looks like the header itself. */
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  max-width: 100%;
+  cursor: default;
+}
+.sort-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-name > span:last-child,
+.file-name form {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-icon {
+  flex-shrink: 0;
+  font-size: calc(14px * var(--text-scale));
+  color: var(--text-muted);
+}
+.file-icon svg {
+  display: block;
+}
+.file-icon.folder {
+  color: var(--accent);
+}
+.symlink {
+  font-style: italic;
+}
+.col-size {
+  width: calc(70px * var(--text-scale));
+}
+.col-time {
+  /* Wide enough for 12-hour formats like "10/07, 09:34 PM". */
+  width: calc(120px * var(--text-scale));
+}
+.file-size {
+  text-align: right;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.file-time {
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.sftp-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+/* Over the toolbar but for the parent folder's button while files are dragged over the panel,
+   the same size whatever it says; filled when they would go into the folder shown, as when
+   dropped anywhere on the panel but a folder. */
+.sftp-drop-zone {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.sftp-drop-zone span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-drop-zone.drop-target {
+  border-style: solid;
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}

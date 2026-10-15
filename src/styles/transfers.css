@@ -1,0 +1,84 @@
+/* The file transfers list. */
+
+/* Transfers */
+
+.transfers {
+  max-height: 40%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.transfers header {
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px 2px;
+  font-size: calc(11px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.transfers ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 8px;
+  overflow-y: auto;
+}
+.transfers li {
+  padding: 5px 0;
+}
+.transfer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.transfer-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.transfer-kind {
+  color: var(--text-muted);
+}
+.transfer-kind svg,
+.context-menu-check svg {
+  display: block;
+}
+.progress {
+  height: 3px;
+  margin: 4px 0 3px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+.progress > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+.transfers li.done .progress > div {
+  background: var(--ok);
+}
+.transfers li.error .progress > div,
+.transfers li.cancelled .progress > div {
+  background: var(--text-muted);
+}
+.transfer-detail {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: calc(11px * var(--text-scale));
+  color: var(--text-muted);
+}
+.transfers li.error .transfer-detail {
+  color: var(--danger);
+}
+.link-button {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  color: var(--accent);
+  font-size: calc(12px * var(--text-scale));
+}

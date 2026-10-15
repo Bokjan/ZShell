@@ -64,7 +64,7 @@ export async function followLanguageSetting(setting: string) {
 
 /**
  * The document's language, which selects hyphenation and localized glyphs; the CJK fonts that
- * come first (`data-cjk`, see styles.css): the interface's if it is in one, otherwise the
+ * come first (`data-cjk`, see styles/theme.css): the interface's if it is in one, otherwise the
  * system's first; and the names of keys in shortcuts. Before the page renders in it.
  */
 function applyLanguage(language: Language) {

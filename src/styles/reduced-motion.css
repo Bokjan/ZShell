@@ -1,0 +1,16 @@
+/* Less motion, when the system asks for it. */
+
+/* The system asks for less motion: no transitions, and flashes are skipped. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+  /* A visual bell is how the bell is heard, so it still shows: held for a moment, not faded. */
+  .bell-flash {
+    animation: bell-flash 0.15s step-end !important;
+  }
+}

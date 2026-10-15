@@ -1,0 +1,93 @@
+/* The settings' sections, the segmented control and the color scheme cards. */
+
+.settings-dialog section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* The first section shown while searching has no line above it. */
+.settings-dialog section:not([hidden]) ~ section {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+/* Groups elements for search only (see `filterSettings`), without changing the layout. */
+.settings-dialog .setting {
+  display: contents;
+}
+.settings-dialog [hidden] {
+  display: none !important;
+}
+.settings-dialog h3 {
+  margin: 0;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 600;
+}
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--input-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.segmented button {
+  padding: 4px 14px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+}
+.segmented button + button {
+  border-left: 1px solid var(--input-border);
+}
+.segmented button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.scheme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.scheme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+}
+.scheme-card:hover {
+  border-color: var(--text-muted);
+}
+.scheme-card.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.scheme-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+.scheme-swatches {
+  display: flex;
+  gap: 3px;
+}
+.scheme-swatches span {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
+.scheme-name {
+  padding: 0 4px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: calc(12px * var(--text-scale));
+}

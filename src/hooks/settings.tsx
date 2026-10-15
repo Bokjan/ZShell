@@ -156,7 +156,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALES[textSize] ?? 1));
   }, [textSize]);
 
-  // The app font before the default ones (see styles.css), also before painting. A list the
+  // The app font before the default ones (see styles/theme.css), also before painting. A list the
   // page can't read (a stray quote) is left out: it would take the default ones with it. It is
   // checked as the start of a list, where a value valid alone (`inherit`) may not be.
   const appFont = settings?.appFont ?? "";

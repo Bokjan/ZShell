@@ -1,0 +1,55 @@
+/* Invalid fields, the lists and messages in dialogs, the paste preview; and the tabs' focus
+   ring. */
+
+.dialog input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.set-aside-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+.dialog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-family: Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.set-aside-list .hint {
+  display: block;
+  margin: 2px 0 0;
+}
+.dialog-message {
+  margin: 0;
+  white-space: pre-wrap;
+  /* Long paths and names still wrap, without splitting ordinary words. */
+  overflow-wrap: anywhere;
+}
+.paste-preview {
+  max-height: 200px;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  font:
+    calc(12px * var(--text-scale)) / 1.4 Menlo,
+    "Cascadia Mono",
+    Consolas,
+    monospace;
+  white-space: pre;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Tabs clip what is drawn around them: their focus ring is drawn inside. */
+.tab:focus-visible {
+  outline-offset: -2px;
+}

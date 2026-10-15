@@ -1,0 +1,63 @@
+/* The status bar. */
+
+/* Under the terminals: the focused pane's connection, activity lights, terminal type, size
+   and cursor. The size and cursor keep a width for three digits each, so that the items
+   before them don't move as the numbers change. */
+.status-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  height: calc(22px * var(--text-scale));
+  padding: 0 10px;
+  font-size: calc(12px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border);
+  cursor: default;
+}
+.status-connection {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-address {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.status-state {
+  flex-shrink: 0;
+}
+.status-activity {
+  display: flex;
+  gap: 2px;
+  color: var(--indicator-off);
+}
+.status-activity svg {
+  display: block;
+}
+/* On at once, off with a short fade. */
+.status-activity > span {
+  transition: color 0.12s ease-out;
+}
+.status-activity > .on {
+  transition: none;
+}
+.status-activity > .send.on {
+  color: var(--indicator-send);
+}
+.status-activity > .receive.on {
+  color: var(--indicator-receive);
+}
+.status-size {
+  min-width: 7ch;
+}
+.status-cursor {
+  min-width: 8ch;
+}
