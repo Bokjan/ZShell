@@ -18,8 +18,8 @@ function threePanes(connected: [boolean, boolean, boolean]) {
   state = reduceTabs(state, { type: "split", key: state.tabs[0].focused, direction: "row", pane: ssh("c") });
   const tabs = state.tabs.map((tab) => ({
     ...tab,
-    panes: tab.panes.map(
-      (pane, i): Pane => (connected[i] ? { ...pane, status: "connected", sessionId: 100 + i } : { ...pane, status: "connecting" }),
+    panes: tab.panes.map((pane, i): Pane =>
+      connected[i] ? { ...pane, status: "connected", sessionId: 100 + i } : { ...pane, status: "connecting" },
     ),
   }));
   return { tabs, activeKey: state.activeKey, keys: tabs[0].panes.map((pane) => pane.key), focused: tabs[0].focused };

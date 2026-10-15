@@ -10,8 +10,7 @@ export const rowKey = (row: Row) => (row.kind === "folder" ? `f:${row.folder.id}
 
 /** What `address` needs: the connection of a session (or an import candidate), or a quick connection. */
 export type Addressable =
-  | { protocol: "ssh" | "telnet"; username: string; host: string; port: number }
-  | ({ protocol: "serial" } & SerialOptions);
+  { protocol: "ssh" | "telnet"; username: string; host: string; port: number } | ({ protocol: "serial" } & SerialOptions);
 
 /** The usual short form of serial settings, `115200 8N1`. */
 export const serialSummary = (s: SerialOptions) =>
@@ -72,7 +71,7 @@ export function isWithin(folder: string | undefined, ancestor: string, folders: 
 /** Folder names from the top level down to `folderId`. */
 export function folderPath(folderId: string | undefined, folders: Folder[]): string[] {
   const path: string[] = [];
-  for (let id = folderId; id && path.length <= folders.length; ) {
+  for (let id = folderId; id && path.length <= folders.length;) {
     const folder = folders.find((f) => f.id === id);
     if (!folder) break;
     path.unshift(folder.name);

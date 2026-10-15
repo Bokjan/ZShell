@@ -149,24 +149,22 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       if (!tab || !canMove(tab)) return;
       const here = getCurrentWindow().label;
       const live = tab.panes.filter((pane) => pane.sessionId !== null).map((pane) => pane.key);
-      const panes = tab.panes.map(
-        (pane): Pane => ({
-          ...pane,
-          // The other window's once it has taken it over (see `arrival`): its panels don't use
-          // it before, which the backend would refuse.
-          sessionId: null,
-          // Its first shell has long run on that connection; reconnecting makes its own.
-          shareFrom: undefined,
-          retryAt: null,
-          arrival: {
-            sessionId: pane.sessionId,
-            connected: pane.status === "connected",
-            snapshot: pane.sessionId === null ? (sessions.snapshot(pane.key) ?? null) : null,
-            reconnect: pane.retryAt !== null,
-            from: { window: here, pane: pane.key },
-          },
-        }),
-      );
+      const panes = tab.panes.map((pane): Pane => ({
+        ...pane,
+        // The other window's once it has taken it over (see `arrival`): its panels don't use
+        // it before, which the backend would refuse.
+        sessionId: null,
+        // Its first shell has long run on that connection; reconnecting makes its own.
+        shareFrom: undefined,
+        retryAt: null,
+        arrival: {
+          sessionId: pane.sessionId,
+          connected: pane.status === "connected",
+          snapshot: pane.sessionId === null ? (sessions.snapshot(pane.key) ?? null) : null,
+          reconnect: pane.retryAt !== null,
+          from: { window: here, pane: pane.key },
+        },
+      }));
       const transfer: TabTransfer = {
         layout: tab.layout,
         focused: tab.focused,

@@ -24,9 +24,7 @@ export interface Transfer {
 }
 
 export type EditSave =
-  | { state: "uploading" | "waiting" | "skipped" }
-  | { state: "uploaded"; at: number }
-  | { state: "failed"; error: string };
+  { state: "uploading" | "waiting" | "skipped" } | { state: "uploaded"; at: number } | { state: "failed"; error: string };
 
 interface Props {
   transfers: Transfer[];
