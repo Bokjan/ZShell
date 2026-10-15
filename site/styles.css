@@ -13,6 +13,8 @@
   --focus: #1269a8;
   --code: #eee3d5;
   --shot-border: #292c2f;
+  /* Behind the app's screenshot while it loads: the app's dark background, in both themes. */
+  --shot-backdrop: #1e1e1e;
   --header: rgb(247 240 230 / 0.92);
   font-family:
     Inter,
@@ -375,7 +377,7 @@ h1 {
   height: auto;
   border: 1px solid var(--shot-border);
   border-radius: 9px;
-  background: #1e1e1e;
+  background: var(--shot-backdrop);
 }
 
 .connection-section,
