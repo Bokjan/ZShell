@@ -645,7 +645,12 @@
     },
     "cursorBlink": "Blinkender Cursor",
     "screenReader": "Unterstützung für Screenreader",
-    "screenReaderHint": "Screenreader wie VoiceOver, Sprachausgabe und NVDA können das Terminal vorlesen und neue Ausgaben ansagen. Schalten Sie dies nur ein, solange Sie einen verwenden: Terminals mit viel Ausgabe werden langsamer.",
+    "screenReaderModes": {
+      "auto": "Automatisch",
+      "on": "Ein",
+      "off": "Aus"
+    },
+    "screenReaderHint": "Screenreader wie VoiceOver, Sprachausgabe, NVDA und Orca können das Terminal vorlesen und neue Ausgaben ansagen. „Automatisch“ schaltet dies ein, solange ein Screenreader läuft. Solange es eingeschaltet ist, werden Terminals mit viel Ausgabe langsamer.",
     "bell": "Wenn die Terminalglocke läutet",
     "bellAlert": "Tab markieren und um Aufmerksamkeit bitten",
     "bellAlertHint": "Läutet die Glocke in einem Tab im Hintergrund, zeigt der Tab eine Glocke und Bildschirmleser melden es; ist ZShell im Hintergrund, bittet es um Aufmerksamkeit (das Dock-Symbol hüpft oder die Taskleistenschaltfläche blinkt). Eine Glocke direkt nach einer Eingabe, etwa bei einer fehlgeschlagenen Vervollständigung, benachrichtigt nicht.",

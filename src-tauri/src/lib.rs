@@ -24,6 +24,7 @@ mod persist;
 mod proxy;
 mod pty;
 mod quick;
+mod screen_reader;
 mod secrets;
 mod serial;
 mod session;
@@ -188,6 +189,7 @@ pub fn run() {
             clean_up_logs(app.handle().clone());
             app.manage(update::Updates::load(config_dir.join("update.json")));
             update::watch(app.handle().clone());
+            screen_reader::watch(app.handle().clone());
             app.manage(Edits::new(scratch_dir(app.handle())?.join("ZShell-edit")));
             #[cfg(target_os = "linux")]
             {
@@ -233,6 +235,7 @@ pub fn run() {
             update::update_check,
             commands::config::settings_get,
             commands::config::system_monospace_font,
+            commands::config::screen_reader_running,
             commands::config::settings_set,
             commands::config::config_directory,
             commands::config::config_set_aside,

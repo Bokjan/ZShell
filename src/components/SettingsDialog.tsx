@@ -19,6 +19,7 @@ import {
   type FileSettings,
   type LogSettings,
   type RightClick,
+  type ScreenReaderMode,
   type SidebarSettings,
   type TabSettings,
   type TerminalSettings,
@@ -55,6 +56,7 @@ const TEXT_SIZES: TextSize[] = ["normal", "large", "larger"];
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
+const SCREEN_READER_MODES: ScreenReaderMode[] = ["auto", "on", "off"];
 
 /** A place in the content: a section, and how far its top is scrolled past. */
 interface Place {
@@ -426,14 +428,16 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 {t("settings.cursorBlink")}
               </label>
               <Setting>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={terminal.screenReader}
-                    onChange={(e) => setTerminal({ screenReader: e.target.checked })}
+                <div className="field">
+                  <span>{t("settings.screenReader")}</span>
+                  <RadioGroup
+                    className="segmented"
+                    label={t("settings.screenReader")}
+                    value={terminal.screenReaderMode}
+                    options={SCREEN_READER_MODES.map((mode) => ({ value: mode, content: t(`settings.screenReaderModes.${mode}`) }))}
+                    onChange={(screenReaderMode) => setTerminal({ screenReaderMode })}
                   />
-                  {t("settings.screenReader")}
-                </label>
+                </div>
                 <p className="hint">{t("settings.screenReaderHint")}</p>
               </Setting>
               <Setting>

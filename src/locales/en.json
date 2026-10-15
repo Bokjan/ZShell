@@ -645,7 +645,12 @@
     },
     "cursorBlink": "Blinking cursor",
     "screenReader": "Screen reader support",
-    "screenReaderHint": "Screen readers such as VoiceOver, Narrator and NVDA can read the terminal and announce new output. Turn it on only while you use one: terminals with a lot of output become slower.",
+    "screenReaderModes": {
+      "auto": "Automatic",
+      "on": "On",
+      "off": "Off"
+    },
+    "screenReaderHint": "Screen readers such as VoiceOver, Narrator, NVDA and Orca can read the terminal and announce new output. Automatic turns this on while a screen reader is running. Terminals with a lot of output become slower while it is on.",
     "bell": "When the terminal rings its bell",
     "bellAlert": "Mark its tab and ask for attention",
     "bellAlertHint": "A bell in a tab in the background shows on the tab, and screen readers hear it; while ZShell is in the background, it asks for your attention (its Dock icon bounces, or its taskbar button flashes). A bell right after typing, such as a failed completion, doesn't alert.",

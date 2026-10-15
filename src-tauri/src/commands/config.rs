@@ -36,6 +36,12 @@ pub async fn system_monospace_font() -> Option<String> {
     None
 }
 
+/// Whether the system's screen reader is running; then `screen-reader-changed` tells.
+#[tauri::command]
+pub fn screen_reader_running() -> bool {
+    crate::screen_reader::running()
+}
+
 /// Stores the settings; returns them as validated (e.g. with the font size clamped).
 #[tauri::command]
 pub fn settings_set(app: AppHandle, window: WebviewWindow, store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {

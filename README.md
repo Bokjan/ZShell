@@ -21,6 +21,7 @@ See the [ZShell website](https://zshell.boyin.org/) for an overview, or go strai
 - **Terminal and tabs**: local terminals, split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
 - **Many hosts at once**: quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 - **Security**: sessions and saved passwords encrypted with a master password or a key in the system's credential store, exports protected with a passphrase, and an app lock that covers the window with Touch ID, Windows Hello or the account password after a period of inactivity, when the computer locks, or on demand.
+- **Accessibility**: screen readers (VoiceOver, Narrator, NVDA, Orca) can read the terminals, turned on automatically while one is running; everything works from the keyboard, and the system's contrast and reduced motion settings are followed.
 - **Languages**: English, Simplified Chinese, Japanese, German and French, following the system or chosen in Settings › Appearance. The Japanese, German and French translations have not been reviewed by native speakers yet: corrections are welcome as [issues](https://github.com/Bokjan/ZShell/issues).
 
 Customizable shortcuts are planned, without a date yet. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).

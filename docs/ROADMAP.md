@@ -60,17 +60,8 @@
 | **M32 Microsoft Store** ✅ | x64 与 ARM64 的 MSIX 上架 [Microsoft Store](https://apps.microsoft.com/detail/9n502tzg8hk8)；S 模式下隐藏本地终端 | |
 | **M34 文件面板跟随终端** ✅ | 文件面板在终端所在的文件夹打开，可跟随 shell 切换文件夹；路径栏补全；会话备注 | |
 | **M35 终端与会话细节** ✅ | 响铃（提示音、后台标签与窗口提醒、可选闪屏）；后台标签的新输出标记；⌘ / Ctrl+点击打开链接与 OSC 8；用户退出 shell 后关闭窗格；断开的会话在原窗格重连；界面字体；会话列表中会话与文件夹混排（3.2.0–3.3.0） | |
-| **M36 自动读屏模式** | 系统的读屏软件开启时自动打开终端读屏模式（macOS、Windows、Linux） | |
+| **M36 自动读屏模式** ✅ | 系统的读屏软件开启时自动打开终端读屏模式（macOS、Windows、Linux） | |
 | **M37 主机证书** ✅ | 按 known_hosts 的 `@cert-authority` 接受 CA 签发的主机证书，不必逐台确认主机密钥 | |
-
-### M36 自动读屏模式
-
-WebView 拿不到读屏软件是否开启，由后端查询系统并在变化时广播给所有窗口，前端由设置与系统状态算出 xterm.js 实际的 `screenReaderMode`（已打开的终端随选项更新）。
-
-- 设置"读屏支持"从开关改为"自动 / 开 / 关"（与 VS Code 的 `accessibilitySupport` 相同），默认"自动"。`settings.json` 中旧的 `true` 读作"开"、`false` 读作"自动"，配置向后兼容。"关"留给偶尔开读屏、不想承担性能开销的人。
-- macOS：`NSWorkspace.isVoiceOverEnabled`（objc2-app-kit 的 `NSAccessibility` feature）。它没有对应的通知，变化要用 KVO 观察 `voiceOverEnabled`（`define_class!` 定义观察者，与 `sftp/drag/macos.rs` 同样的写法）；不能只在应用激活时查询，在 ZShell 里按 ⌘F5 开关 VoiceOver 时应用不会重新激活。
-- Windows：`SystemParametersInfoW(SPI_GETSCREENREADER)`，讲述人、NVDA、JAWS 都会设置；变化时系统广播 `WM_SETTINGCHANGE`（`wParam` 为 `SPI_SETSCREENREADER`），需要一个窗口接收。
-- Linux：AT-SPI 总线的 `org.a11y.Status.ScreenReaderEnabled`（会话总线上的 `org.a11y.Bus`，`/org/a11y/bus`），Orca 会设置它，与桌面无关；变化由 `PropertiesChanged` 得知。拿不到时当作未开启。
 
 ## 暂不排期（P2）
 

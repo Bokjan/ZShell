@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -7,7 +7,7 @@ import type { Appearance, Settings, TextSize } from "./bindings";
 import { latestSave } from "./latestSave";
 import { isWindows } from "./platform";
 import { setSystemFont } from "./terminalSchemes";
-import { useConfigChanged } from "./windows";
+import { useConfigChanged, useWindowEvent } from "./windows";
 
 export type {
   Appearance,
@@ -16,6 +16,7 @@ export type {
   LogFormat,
   LogSettings,
   RightClick,
+  ScreenReaderMode,
   Settings,
   SidebarSettings,
   StatusBarSettings,
@@ -54,7 +55,7 @@ export const DEFAULT_SETTINGS: Settings = {
     rightClick: "menu",
     confirmMultilinePaste: true,
     optionAsMeta: false,
-    screenReader: false,
+    screenReaderMode: "auto",
     bellAlert: true,
     bellSound: true,
     bellFlash: false,
@@ -71,6 +72,8 @@ interface SettingsContextValue {
   settings: Settings;
   /** The appearance in effect, with "system" resolved. */
   theme: "dark" | "light";
+  /** Whether terminals are read for screen readers, with "auto" resolved. */
+  screenReader: boolean;
   /** Applies `settings` and saves them, after `delay` ms without another change if given. */
   update(settings: Settings, delay?: number): void;
   /** Saves a change still waiting for its delay. */
@@ -162,6 +165,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     else style.removeProperty("--app-font");
   }, [appFont]);
 
+  // Whether the system's screen reader is running, which the web view can't tell. An answer
+  // to the question that comes after a change was told is out of date.
+  const [screenReaderRunning, setScreenReaderRunning] = useState(false);
+  const screenReaderTold = useRef(false);
+  useWindowEvent<boolean>("screen-reader-changed", (running) => {
+    screenReaderTold.current = true;
+    setScreenReaderRunning(running);
+  });
+  useEffect(() => {
+    invoke<boolean>("screen_reader_running").then((running) => {
+      if (!screenReaderTold.current) setScreenReaderRunning(running);
+    }, console.error);
+  }, []);
+
   // Applied immediately; the backend's validated copy replaces it once saved (see
   // `latestSave`).
   const [saveError, setSaveError] = useState<unknown>(null);
@@ -179,7 +196,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   // Wait for the stored settings so terminals start with the right theme and font.
   if (!settings) return null;
-  const value = { settings, theme, update: saver.save, flush: saver.flush, saveError, dismissSaveError: () => setSaveError(null) };
+  const mode = settings.terminal.screenReaderMode;
+  const screenReader = mode === "on" || (mode === "auto" && screenReaderRunning);
+  const value = {
+    settings,
+    theme,
+    screenReader,
+    update: saver.save,
+    flush: saver.flush,
+    saveError,
+    dismissSaveError: () => setSaveError(null),
+  };
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
 

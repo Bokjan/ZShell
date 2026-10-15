@@ -153,7 +153,7 @@ export function TerminalView({
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const wrapRef = useRef<HTMLDivElement>(null);
-  const { settings, theme, update } = useSettings();
+  const { settings, theme, screenReader, update } = useSettings();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const scheme = useMemo(
@@ -167,7 +167,7 @@ export function TerminalView({
     theme: scheme.theme,
     minimumContrastRatio: moreContrast ? 4.5 : 1,
     // A tree of the screen's lines for screen readers, and announcements of new output.
-    screenReaderMode: settings.terminal.screenReader,
+    screenReaderMode: screenReader,
     fontFamily: fontStack(appearance?.fontFamily ?? settings.terminal.fontFamily, currentCjk()),
     fontSize: appearance?.fontSize ?? settings.terminal.fontSize,
     cursorStyle: settings.terminal.cursorStyle,

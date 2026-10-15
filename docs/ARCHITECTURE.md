@@ -188,9 +188,9 @@
 
 ### 无障碍
 
-目标是读屏用户（VoiceOver、讲述人、NVDA）能完成连接、操作终端、使用 SFTP 与主要对话框，全部功能可以只用键盘完成；不追求逐条符合 WCAG。
+目标是读屏用户（VoiceOver、讲述人、NVDA、Orca）能完成连接、操作终端、使用 SFTP 与主要对话框，全部功能可以只用键盘完成；不追求逐条符合 WCAG。
 
-- **终端**：设置里的"读屏支持"打开 xterm.js 的 `screenReaderMode`，有性能开销，默认关。系统要求更高对比度时提高终端的最低对比度，配色本身不变。
+- **终端**：xterm.js 的 `screenReaderMode` 有性能开销，由设置里的"读屏支持"决定：默认"自动"，系统的读屏软件运行时打开，也可以固定开或关。WebView 拿不到读屏软件是否运行，由后端查询系统并在变化时向所有窗口发 `screen-reader-changed`（`screen_reader/`：macOS 用 KVO 观察 `NSWorkspace.voiceOverEnabled`，Windows 读 `SPI_GETSCREENREADER` 并由隐藏窗口接收 `WM_SETTINGCHANGE`，Linux 监听 AT-SPI 的 `org.a11y.Status.ScreenReaderEnabled`）；前端在 `SettingsProvider` 里得出实际是否开启。系统要求更高对比度时提高终端的最低对比度，配色本身不变。
 - **对话框**：`Modal` 带 `role="dialog"`（确认类为 `alertdialog`）与 `aria-modal`，以标题命名。打开时聚焦第一个控件，Tab 在最上层对话框内循环，关闭后焦点还给打开前的元素。不给根元素加 `inert`，因为 Windows 的窗口按钮在里面。
 - **列表**：焦点停在列表容器上，用 `aria-activedescendant` 指向当前行。标签栏是 `tablist`，会话列表是 `tree`（搜索时为 `listbox`），文件列表是多选的 `grid`。各处菜单都可以用 Shift+F10 或菜单键打开。WebKit 对角色结构的要求见 `Sidebar.tsx` 的注释。
 - **播报**：`lib/announce.ts` 是唯一的 live region，播报一闪而过或不在视线内的变化（后台窗格断开、传输完成、已复制）。

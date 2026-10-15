@@ -664,7 +664,12 @@
     },
     "cursorBlink": "Curseur clignotant",
     "screenReader": "Prise en charge des lecteurs d’écran",
-    "screenReaderHint": "Les lecteurs d’écran comme VoiceOver, le Narrateur et NVDA peuvent lire le terminal et annoncer les nouvelles sorties. Ne l’activez que lorsque vous en utilisez un : les terminaux qui produisent beaucoup de sortie deviennent plus lents.",
+    "screenReaderModes": {
+      "auto": "Automatique",
+      "on": "Activé",
+      "off": "Désactivé"
+    },
+    "screenReaderHint": "Les lecteurs d’écran comme VoiceOver, le Narrateur, NVDA et Orca peuvent lire le terminal et annoncer les nouvelles sorties. « Automatique » l’active lorsqu’un lecteur d’écran est en cours d’exécution. Tant que c’est activé, les terminaux qui produisent beaucoup de sortie deviennent plus lents.",
     "bell": "Quand la cloche du terminal sonne",
     "bellAlert": "Marquer son onglet et demander votre attention",
     "bellAlertHint": "Quand la cloche sonne dans un onglet en arrière-plan, l’onglet affiche une cloche et les lecteurs d’écran l’annoncent ; quand ZShell est en arrière-plan, il demande votre attention (son icône du Dock rebondit ou son bouton de la barre des tâches clignote). Une cloche juste après une saisie, comme une complétion ratée, ne déclenche rien.",

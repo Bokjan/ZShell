@@ -106,9 +106,16 @@ pub struct TerminalSettings {
     pub confirm_multiline_paste: bool,
     /// macOS: the Option key sends Meta (Esc-prefixed) sequences instead of special characters.
     pub option_as_meta: bool,
-    /// Let screen readers read the terminal and announce new output (xterm.js's
-    /// `screenReaderMode`); off by default, since it slows down terminals with much output.
-    pub screen_reader: bool,
+    /// Whether screen readers can read the terminal and hear new output (xterm.js's
+    /// `screenReaderMode`), which slows down terminals with much output: by default while the
+    /// system's screen reader runs.
+    pub screen_reader_mode: ScreenReaderMode,
+    /// `screenReader`, on or off, as versions before 3.4.0 saved it: read into
+    /// `screen_reader_mode` by [`Settings::normalize`], off (the old default) as automatic.
+    /// Never saved, so those versions read the file as before and ignore the new key.
+    #[serde(rename = "screenReader", skip_serializing)]
+    #[ts(skip)]
+    screen_reader: Option<bool>,
     /// A bell (BEL) not caused by typing marks its tab if in the background, tells screen
     /// readers, and asks for attention while the window is in the background.
     pub bell_alert: bool,
@@ -116,6 +123,17 @@ pub struct TerminalSettings {
     pub bell_sound: bool,
     /// A bell flashes its terminal (a visual bell).
     pub bell_flash: bool,
+}
+
+/// When terminals are read for screen readers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ScreenReaderMode {
+    /// While the system's screen reader runs (see `screen_reader`).
+    #[default]
+    Auto,
+    On,
+    Off,
 }
 
 /// What right-clicking the terminal does.
@@ -286,7 +304,8 @@ impl Default for TerminalSettings {
             right_click: RightClick::Menu,
             confirm_multiline_paste: true,
             option_as_meta: false,
-            screen_reader: false,
+            screen_reader_mode: ScreenReaderMode::Auto,
+            screen_reader: None,
             bell_alert: true,
             bell_sound: true,
             bell_flash: false,
@@ -312,6 +331,9 @@ impl Settings {
         terminal.scrollback = terminal.scrollback.min(100_000);
         if terminal.color_scheme.trim().is_empty() {
             terminal.color_scheme = "auto".to_owned();
+        }
+        if terminal.screen_reader.take() == Some(true) {
+            terminal.screen_reader_mode = ScreenReaderMode::On;
         }
         let files = &mut self.files;
         files.download_directory = files.download_directory.trim().to_owned();
@@ -376,6 +398,20 @@ mod tests {
         let language = |json: &str| serde_json::from_str::<Settings>(json).unwrap().normalize().language;
         assert_eq!(language(r#"{"language":"en"}"#), "en");
         assert_eq!(language(r#"{"language":"xx"}"#), "system");
+    }
+
+    #[test]
+    fn reads_the_screen_reader_setting_of_earlier_versions() {
+        let mode = |json: &str| serde_json::from_str::<Settings>(json).unwrap().normalize().terminal.screen_reader_mode;
+        assert_eq!(mode("{}"), ScreenReaderMode::Auto);
+        assert_eq!(mode(r#"{"terminal":{"screenReader":true}}"#), ScreenReaderMode::On);
+        // Off was the default: now automatic.
+        assert_eq!(mode(r#"{"terminal":{"screenReader":false}}"#), ScreenReaderMode::Auto);
+        assert_eq!(mode(r#"{"terminal":{"screenReaderMode":"off"}}"#), ScreenReaderMode::Off);
+        // Saved under the new key only, which earlier versions ignore.
+        let saved = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(saved["terminal"]["screenReaderMode"], "auto");
+        assert!(saved["terminal"].get("screenReader").is_none());
     }
 
     #[test]

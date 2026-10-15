@@ -612,6 +612,11 @@ termType: string, };
 export type RightClick = "menu" | "paste";
 
 /**
+ * When terminals are read for screen readers.
+ */
+export type ScreenReaderMode = "auto" | "on" | "off";
+
+/**
  * A serial line's settings: 115200 8N1 without flow control unless set otherwise.
  */
 export type SerialOptions = { 
@@ -840,10 +845,11 @@ confirmMultilinePaste: boolean,
  */
 optionAsMeta: boolean, 
 /**
- * Let screen readers read the terminal and announce new output (xterm.js's
- * `screenReaderMode`); off by default, since it slows down terminals with much output.
+ * Whether screen readers can read the terminal and hear new output (xterm.js's
+ * `screenReaderMode`), which slows down terminals with much output: by default while the
+ * system's screen reader runs.
  */
-screenReader: boolean, 
+screenReaderMode: ScreenReaderMode, 
 /**
  * A bell (BEL) not caused by typing marks its tab if in the background, tells screen
  * readers, and asks for attention while the window is in the background.
