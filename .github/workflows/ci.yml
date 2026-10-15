@@ -83,6 +83,23 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+  # Known security advisories for the Rust dependencies (RustSec). Those that don't apply are
+  # ignored in src-tauri/.cargo/audit.toml, each with why and when to look again.
+  audit:
+    name: Advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-audit
+      - name: Audit
+        working-directory: src-tauri
+        run: cargo audit
+
   # The third-party license notices (scripts/generate-licenses.mjs), which fail on a license
   # not accepted in src-tauri/about.toml or a stale clarification there. The release
   # workflow generates them too, but finding out there is too late. Not platform-specific,

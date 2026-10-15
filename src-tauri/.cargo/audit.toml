@@ -1,0 +1,11 @@
+# RustSec advisories that `cargo audit` (CI's Advisories job) reports but that don't apply to
+# ZShell, each with why and when to look again. Warnings (unmaintained, unsound) don't fail
+# the job and aren't listed; docs/TODO.md tracks the ones that matter (glib 0.18 on Linux).
+
+[advisories]
+ignore = [
+    # rsa: Marvin Attack, a timing side channel in PKCS#1 v1.5 decryption. russh and ssh-key
+    # use RSA only to sign, verify and parse keys; nothing in ZShell decrypts with RSA. No
+    # fixed release yet. Look again when russh moves to a fixed rsa, or by 2027-04-01.
+    "RUSTSEC-2023-0071",
+]
