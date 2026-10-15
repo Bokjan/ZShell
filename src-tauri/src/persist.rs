@@ -164,13 +164,19 @@ pub fn stage_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<Staged> {
     name.push(".tmp");
     let staged = Staged { tmp: path.with_file_name(name), path: path.to_owned(), committed: false };
     let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options.open(&staged.tmp)?;
-    // A temporary file left by an older version keeps its permissions when opened again.
-    #[cfg(unix)]
-    file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    // Always a new file, never through one that is there: in a folder shared with other
+    // users (an export to /tmp), that may be someone else's file, or a link to one of ours.
+    // One left by a crash is ours, and is removed (a link itself, not what it points to).
+    let mut file = match options.open(&staged.tmp) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            fs::remove_file(&staged.tmp)?;
+            options.open(&staged.tmp)?
+        }
+        result => result?,
+    };
     file.write_all(bytes)?;
     file.sync_all()?;
     Ok(staged)
@@ -233,5 +239,35 @@ pub fn unique_ids<'a>(ids: impl Iterator<Item = &'a mut String>) {
             *id = (0..).map(|n| format!("#{index}.{n}")).find(|candidate| !seen.contains(candidate)).unwrap();
         }
         seen.insert(id.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A temporary file in the way (left by a crash, or planted as a link to another file)
+    /// is replaced, and what it points to is left alone.
+    #[test]
+    fn writes_through_nothing_in_the_way() {
+        let dir = std::env::temp_dir().join(format!("zshell-persist-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.json");
+        let tmp = dir.join("sessions.json.tmp");
+        fs::write(&tmp, b"left by a crash").unwrap();
+        write_atomic(&path, b"one").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"one");
+        assert!(!tmp.exists());
+
+        #[cfg(unix)]
+        {
+            let victim = dir.join("victim");
+            fs::write(&victim, b"mine").unwrap();
+            std::os::unix::fs::symlink(&victim, &tmp).unwrap();
+            write_atomic(&path, b"two").unwrap();
+            assert_eq!(fs::read(&path).unwrap(), b"two");
+            assert_eq!(fs::read(&victim).unwrap(), b"mine");
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 }
