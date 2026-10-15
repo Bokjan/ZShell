@@ -7,10 +7,11 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, EventTarget, Manager, State, Webview};
+use tauri::{AppHandle, Manager, State, Webview};
 use ts_rs::TS;
 
 use crate::config::ProfileStore;
+use crate::events;
 
 use crate::connections::{Connections, LiveConnection};
 use crate::encoding;
@@ -323,7 +324,7 @@ pub struct SessionSnapshot {
 #[tauri::command]
 pub fn session_handover(app: AppHandle, webview: Webview, sessions: State<'_, SessionManager>, snapshot: SessionSnapshot) -> Result<()> {
     let owner = sessions.handover(webview.label(), snapshot.id, &snapshot.move_id)?;
-    let _ = app.emit_to(EventTarget::webview_window(owner), "session-snapshot", snapshot);
+    events::emit_to(&app, owner, events::SessionSnapshot(snapshot));
     Ok(())
 }
 

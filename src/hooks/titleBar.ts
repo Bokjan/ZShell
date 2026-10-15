@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { windows } from "../ipc/windows";
 import { isLinux, isMac, isWindows } from "../lib/platform";
 
 /** Marks an element as part of the title bar that moves the window (only the element itself, not its children). */
@@ -36,7 +36,7 @@ export function suppressWebViewMenu() {
   });
 }
 
-const titleBarDoubleClick = () => invoke("window_title_double_click").catch(console.error);
+const titleBarDoubleClick = windows.titleDoubleClick;
 
 /**
  * The title bar the app draws in place of the native one (see ARCHITECTURE.md): moving the
@@ -77,7 +77,7 @@ export function useTitleBar() {
       if (!onTitleBar(e.target, e.clientY)) return;
       e.preventDefault();
       e.stopPropagation();
-      if (isWindows || isLinux) void invoke("window_system_menu").catch(console.error);
+      if (isWindows || isLinux) windows.systemMenu();
     };
     // Capture phase: before the backdrop's own handler, which closes its dialog.
     window.addEventListener("mousedown", onMouseDown, true);

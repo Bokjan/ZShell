@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter, EventTarget, WebviewWindow};
+use tauri::{AppHandle, WebviewWindow};
 use ts_rs::TS;
 
+use crate::events;
 use crate::window;
 
 /// The system's Quit (⌘Q): it asks the page first, which asks when tabs of any window are
@@ -253,16 +254,15 @@ pub fn chosen(app: &AppHandle, id: &str) {
         }
         return;
     };
-    let target = EventTarget::webview_window(current.label());
     match id {
         QUIT => {
-            let _ = app.emit_to(target, "quit-requested", ());
+            events::emit_to(app, current.label(), events::QuitRequested);
         }
         CLOSE_WINDOW => {
             let _ = current.close();
         }
         _ => {
-            let _ = app.emit_to(target, "menu-action", id);
+            events::emit_to(app, current.label(), events::MenuAction(id.to_owned()));
         }
     }
 }

@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { followLanguageSetting } from "../i18n/index";
+import { appSettings } from "../ipc/api";
 import type { Appearance, Settings, TextSize } from "../ipc/bindings";
+import { windows } from "../ipc/windows";
 import { latestSave } from "../lib/latestSave";
 import { isWindows } from "../lib/platform";
 import { setSystemFont } from "../lib/terminalSchemes";
@@ -102,12 +103,12 @@ function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
   const window = getCurrentWindow();
   const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   // null follows the system, so the title bar keeps tracking it in "system" mode. Through the
-  // backend, which on Linux reads the desktop's color scheme (see `window_set_theme`).
-  invoke("window_set_theme", { theme: appearance === "system" ? null : theme }).catch(console.error);
+  // backend, which on Linux reads the desktop's color scheme (see `window::set_theme`).
+  windows.setTheme(appearance === "system" ? null : theme);
   window.setBackgroundColor(color("--bg")).catch(console.error);
   // Windows: the border around a snapped window, which blends in with the title bar.
   if (isWindows) {
-    invoke("window_set_snapped_border_color", { color: color("--bg-sidebar") }).catch(console.error);
+    windows.setSnappedBorderColor(color("--bg-sidebar"));
   }
 }
 
@@ -117,8 +118,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // With the desktop's monospace font (Linux), which terminals default to.
-    const font = invoke<string | null>("system_monospace_font").catch(() => null);
-    const stored = invoke<Settings>("settings_get").catch((e) => {
+    const font = appSettings.systemMonospaceFont().catch(() => null);
+    const stored = appSettings.get().catch((e) => {
       console.error(e);
       return DEFAULT_SETTINGS;
     });
@@ -169,12 +170,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // to the question that comes after a change was told is out of date.
   const [screenReaderRunning, setScreenReaderRunning] = useState(false);
   const screenReaderTold = useRef(false);
-  useWindowEvent<boolean>("screen-reader-changed", (running) => {
+  useWindowEvent("screen-reader-changed", (running) => {
     screenReaderTold.current = true;
     setScreenReaderRunning(running);
   });
   useEffect(() => {
-    invoke<boolean>("screen_reader_running").then((running) => {
+    appSettings.screenReaderRunning().then((running) => {
       if (!screenReaderTold.current) setScreenReaderRunning(running);
     }, console.error);
   }, []);
@@ -186,8 +187,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     () =>
       latestSave<Settings>({
         show: setSettings,
-        store: (settings) => invoke<Settings>("settings_set", { settings }),
-        load: () => invoke<Settings>("settings_get"),
+        store: appSettings.set,
+        load: appSettings.get,
         failed: (e) => setSaveError(() => e),
       }),
     [],

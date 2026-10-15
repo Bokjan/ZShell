@@ -443,6 +443,12 @@ keepDays: number, };
 export type LogSummary = { count: number, bytes: number, };
 
 /**
+ * The state of a window's maximize button as the system sees it: under the pointer, pressed
+ * (Windows, see `win.rs`; the page draws the button).
+ */
+export type MaximizeButtonState = { hover: boolean, pressed: boolean, };
+
+/**
  * A menu of the menu bar, or a part of the app menu outside macOS.
  */
 export type MenuSection = "app" | "file" | "edit" | "view" | "help";
@@ -952,6 +958,144 @@ export type ZmodemSettings = {
  * What happens when `sz` sends files.
  */
 receive: ZmodemReceive, };
+
+/** The events the backend sends the pages, by name, with their payloads (see `events.rs`). */
+export type Events = {
+  "app-locked": null;
+  "busy-query": number;
+  "config-changed": Change;
+  "menu-action": string;
+  "pane-stayed": number;
+  "quit-requested": null;
+  "screen-reader-changed": boolean;
+  "session-snapshot": SessionSnapshot;
+  "tab-drag-native-end": TabDragNativeEnd;
+  "tab-drag-over": number | null;
+  "tab-received": null;
+  "update-status": UpdateStatus;
+  "window-buttons-changed": null;
+  "window-closed": string;
+  "window-maximize-button": MaximizeButtonState;
+  "windows-changed": null;
+};
+
+/** The commands the frontend can call (see `commands/`). */
+export type Command =
+  | "app_bell"
+  | "app_busy_count"
+  | "app_lock_configure"
+  | "app_lock_lock"
+  | "app_lock_status"
+  | "app_lock_unlock"
+  | "app_menu_set"
+  | "app_menu_set_label"
+  | "app_quit"
+  | "config_directory"
+  | "config_set_aside"
+  | "credential_store_available"
+  | "downloads_directory"
+  | "folder_delete"
+  | "folder_save"
+  | "folders_list"
+  | "forward_carry"
+  | "forward_keep"
+  | "forward_keep_candidates"
+  | "forward_start"
+  | "forward_stop"
+  | "home_directory"
+  | "known_hosts_find"
+  | "known_hosts_list"
+  | "known_hosts_path"
+  | "known_hosts_remove"
+  | "local_shell_name"
+  | "local_username"
+  | "locale_get"
+  | "logs_count"
+  | "logs_delete"
+  | "logs_directory"
+  | "logs_summary"
+  | "profile_delete"
+  | "profile_duplicate"
+  | "profile_save"
+  | "profile_set_forwards"
+  | "profiles_list"
+  | "proxies_list"
+  | "proxy_delete"
+  | "proxy_save"
+  | "quick_commands_get"
+  | "quick_commands_set"
+  | "screen_reader_running"
+  | "serial_ports"
+  | "session_ack"
+  | "session_adopt"
+  | "session_break"
+  | "session_close"
+  | "session_foreground"
+  | "session_handover"
+  | "session_log_start"
+  | "session_log_stop"
+  | "session_open"
+  | "session_resize"
+  | "session_write"
+  | "session_write_bytes"
+  | "sessions_export"
+  | "sessions_import"
+  | "sessions_import_scan"
+  | "settings_get"
+  | "settings_set"
+  | "sftp_chmod"
+  | "sftp_download"
+  | "sftp_download_as"
+  | "sftp_drag_out"
+  | "sftp_edit_open"
+  | "sftp_edit_reopen"
+  | "sftp_edit_stop"
+  | "sftp_edit_upload"
+  | "sftp_list"
+  | "sftp_mkdir"
+  | "sftp_open"
+  | "sftp_remove"
+  | "sftp_rename"
+  | "sftp_shell_dir"
+  | "sftp_upload"
+  | "ssh_config_default_path"
+  | "ssh_config_import"
+  | "ssh_config_scan"
+  | "ssh_default_key_path"
+  | "ssh_key_file_exists"
+  | "system_monospace_font"
+  | "tab_drag_end"
+  | "tab_drag_move"
+  | "transfer_cancel"
+  | "tree_move"
+  | "tree_order"
+  | "update_check"
+  | "update_status"
+  | "vault_reset"
+  | "vault_set_protection"
+  | "vault_status"
+  | "vault_try_unlock"
+  | "vault_unlock"
+  | "window_busy_reply"
+  | "window_buttons"
+  | "window_close_empty"
+  | "window_file_dialog"
+  | "window_list"
+  | "window_open"
+  | "window_pane_stayed"
+  | "window_send_tab"
+  | "window_set_drag_area"
+  | "window_set_maximize_button"
+  | "window_set_snapped_border_color"
+  | "window_set_tab_bar"
+  | "window_set_theme"
+  | "window_set_title"
+  | "window_system_menu"
+  | "window_take"
+  | "window_title_double_click"
+  | "zmodem_cancel"
+  | "zmodem_save_to"
+  | "zmodem_send_files";
 
 /** The character encodings a session can use (WHATWG labels, as profiles store them). */
 export const ENCODINGS = ["utf-8", "gb18030", "gbk", "big5", "shift_jis", "euc-jp", "euc-kr", "windows-1252"] as const;

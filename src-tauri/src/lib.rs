@@ -13,6 +13,7 @@ mod desktop;
 mod encoding;
 mod envelope;
 mod error;
+mod events;
 mod forward;
 mod import;
 #[cfg(unix)]
@@ -42,7 +43,7 @@ mod zmodem;
 
 use std::sync::Arc;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 use applock::AppLock;
 use config::ProfileStore;
@@ -178,7 +179,7 @@ pub fn run() {
             app.manage(QuickCommandStore::load(vault.clone()));
             let handle = app.handle().clone();
             let app_lock = Arc::new(AppLock::for_platform(vault.clone(), move || {
-                let _ = handle.emit("app-locked", ());
+                events::emit(&handle, events::AppLocked);
             }));
             applock::watch_idle(app_lock.clone());
             applock::watch_system(app_lock.clone());

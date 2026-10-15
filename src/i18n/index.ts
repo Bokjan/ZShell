@@ -1,7 +1,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 
+import { locales } from "../ipc/api";
 import { LANGUAGES, type Cjk, type Locales } from "../ipc/bindings";
 import { KEY_NAMES, setKeyNames, type KeyName } from "../lib/keymap";
 import de from "../locales/de.json";
@@ -35,7 +35,7 @@ export const systemLanguage = () => languageFor("system");
 
 /** Starts in the language the backend chose from the settings. */
 export async function setupI18n() {
-  system = await invoke<Locales>("locale_get").catch((e) => {
+  system = await locales().catch((e) => {
     console.error("failed to get the locales", e);
     return system;
   });

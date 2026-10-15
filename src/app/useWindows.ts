@@ -209,9 +209,9 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   /** The pane's session has moved to the other window (see `SessionRegistry`). */
   const movedAway = useCallback((paneKey: number) => resolve(paneKey, false), [resolve]);
   // The other window couldn't take the pane's session, which is still here.
-  useWindowEvent<number>("pane-stayed", (paneKey) => resolve(paneKey, true));
+  useWindowEvent("pane-stayed", (paneKey) => resolve(paneKey, true));
   // The window a tab was moving to closed before taking all its sessions: they are still here.
-  useWindowEvent<string>("window-closed", (label) => {
+  useWindowEvent("window-closed", (label) => {
     for (const [key, move] of moving.current) {
       if (move.target !== label) continue;
       move.waiting.forEach((paneKey) => move.stayed.add(paneKey));

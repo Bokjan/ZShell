@@ -19,7 +19,9 @@ use win as platform;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+
+use crate::events;
 
 /// Called with whether a screen reader is running: first as watching starts, then on changes.
 type Changed = Box<dyn Fn(bool) + Send + Sync>;
@@ -35,7 +37,7 @@ pub fn running() -> bool {
 pub fn watch(app: AppHandle) {
     platform::watch(Box::new(move |running| {
         if RUNNING.swap(running, Ordering::Relaxed) != running {
-            let _ = app.emit("screen-reader-changed", running);
+            events::emit(&app, events::ScreenReaderChanged(running));
         }
     }));
 }

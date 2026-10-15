@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
 import type { WindowButton } from "../ipc/bindings";
 import { isWindows } from "../lib/platform";
 import { listenHere } from "../ipc/events";
+import { windows } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
 import { IconButton } from "./IconButton";
 import { CloseIcon, MaximizeIcon, MinimizeIcon, RestoreIcon } from "./icons";
@@ -43,7 +43,7 @@ function WindowsControls() {
   const maximizeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const unlisten = listenHere<{ hover: boolean; pressed: boolean }>("window-maximize-button", (e) => setMaximizeState(e.payload));
+    const unlisten = listenHere("window-maximize-button", (e) => setMaximizeState(e.payload));
     return () => void unlisten.then((f) => f());
   }, []);
 
@@ -53,7 +53,7 @@ function WindowsControls() {
     const button = maximizeRef.current!;
     const place = () => {
       const r = button.getBoundingClientRect();
-      invoke("window_set_maximize_button", { rect: { x: r.left, y: r.top, width: r.width, height: r.height } }).catch(console.error);
+      windows.setMaximizeButton({ x: r.left, y: r.top, width: r.width, height: r.height });
     };
     place();
     window.addEventListener("resize", place);
@@ -61,7 +61,7 @@ function WindowsControls() {
     return () => {
       window.removeEventListener("resize", place);
       void unlisten.then((f) => f());
-      invoke("window_set_maximize_button", { rect: null }).catch(console.error);
+      windows.setMaximizeButton(null);
     };
   }, []);
 
@@ -98,7 +98,7 @@ function LinuxControls() {
   const { t } = useTranslation();
   const maximized = useMaximized();
   const [buttons, setButtons] = useState<WindowButton[]>([]);
-  const load = () => void invoke<WindowButton[]>("window_buttons").then(setButtons, console.error);
+  const load = () => void windows.buttons().then(setButtons, console.error);
   useEffect(load, []);
   useWindowEvent("window-buttons-changed", load);
 

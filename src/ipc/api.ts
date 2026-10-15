@@ -1,5 +1,6 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
 
+import { call } from "./call";
 import { listenHere } from "./events";
 
 import type {
@@ -15,6 +16,8 @@ import type {
   Folder,
   ForwardRule,
   ImportCandidate,
+  Locales,
+  NativeMenuSection,
   KnownHost,
   Listing,
   LogOpen,
@@ -29,8 +32,10 @@ import type {
   SessionsScan,
   SessionSpec,
   SetAsideFile,
+  Settings,
   TransferProgress,
   TreeItem,
+  UpdateStatus,
   VaultStatus,
 } from "./bindings";
 
@@ -75,115 +80,114 @@ export interface Session {
 }
 
 export const proxies = {
-  list: () => invoke<Proxy[]>("proxies_list"),
+  list: () => call<Proxy[]>("proxies_list"),
   /** `password`: undefined keeps the saved password, "" deletes it. */
-  save: (proxy: Proxy, password?: string) => invoke<Proxy>("proxy_save", { proxy, password: password ?? null }),
+  save: (proxy: Proxy, password?: string) => call<Proxy>("proxy_save", { proxy, password: password ?? null }),
   /** With its password. Fails with `proxy.inUse` while a session uses it. */
-  delete: (id: string) => invoke<void>("proxy_delete", { id }),
+  delete: (id: string) => call<void>("proxy_delete", { id }),
 };
 
 export const knownHosts = {
   /** `~/.ssh/known_hosts`, whether or not it exists; null without a home folder. */
-  path: () => invoke<string | null>("known_hosts_path"),
-  list: () => invoke<KnownHost[]>("known_hosts_list"),
+  path: () => call<string | null>("known_hosts_path"),
+  list: () => call<KnownHost[]>("known_hosts_list"),
   /** Lines of the entries for `host`, `host:port` or `[host]:port`, hashed ones included. */
-  find: (query: string) => invoke<number[]>("known_hosts_find", { query }),
+  find: (query: string) => call<number[]>("known_hosts_find", { query }),
   /** Fails with `knownHosts.changed` if the line no longer reads `text`. */
-  remove: (entry: KnownHost) => invoke<void>("known_hosts_remove", { line: entry.line, text: entry.text }),
+  remove: (entry: KnownHost) => call<void>("known_hosts_remove", { line: entry.line, text: entry.text }),
 };
 
-export const listProfiles = () => invoke<Profile[]>("profiles_list");
+export const listProfiles = () => call<Profile[]>("profiles_list");
 
 /** `password`: undefined keeps the saved password, "" deletes it. */
-export const saveProfile = (profile: Profile, password?: string) =>
-  invoke<Profile>("profile_save", { profile, password: password ?? null });
+export const saveProfile = (profile: Profile, password?: string) => call<Profile>("profile_save", { profile, password: password ?? null });
 
 /** With its saved password. */
-export const deleteProfile = (id: string) => invoke<void>("profile_delete", { id });
+export const deleteProfile = (id: string) => call<void>("profile_delete", { id });
 
 /** Copies a profile (with its saved password) as `name`, right after it. */
-export const duplicateProfile = (id: string, name: string) => invoke<Profile>("profile_duplicate", { id, name });
+export const duplicateProfile = (id: string, name: string) => call<Profile>("profile_duplicate", { id, name });
 
 export const quickCommands = {
-  get: () => invoke<QuickCommands>("quick_commands_get"),
+  get: () => call<QuickCommands>("quick_commands_get"),
   /** Stores all groups and commands; returns them as stored (new ones get ids). */
-  set: (commands: QuickCommands) => invoke<QuickCommands>("quick_commands_set", { commands }),
+  set: (commands: QuickCommands) => call<QuickCommands>("quick_commands_set", { commands }),
 };
 
 export const tree = {
-  folders: () => invoke<Folder[]>("folders_list"),
+  folders: () => call<Folder[]>("folders_list"),
   /** The order the sessions and folders are shown in, mixed in each folder. */
-  order: () => invoke<TreeItem[]>("tree_order"),
+  order: () => call<TreeItem[]>("tree_order"),
   /** Creates (empty id) or renames a folder. */
-  saveFolder: (folder: Folder) => invoke<Folder>("folder_save", { folder }),
+  saveFolder: (folder: Folder) => call<Folder>("folder_save", { folder }),
   /** Its sessions and subfolders move up into its parent. */
-  deleteFolder: (id: string) => invoke<void>("folder_delete", { id }),
+  deleteFolder: (id: string) => call<void>("folder_delete", { id }),
   /** Into `parent` (null: top level), before `before` (a session or folder) or at the end. */
-  move: (item: TreeItem, parent: string | null, before: TreeItem | null) => invoke<void>("tree_move", { item, parent, before }),
+  move: (item: TreeItem, parent: string | null, before: TreeItem | null) => call<void>("tree_move", { item, parent, before }),
 };
 
 export const sessionsFile = {
   /** With `passphrase`, the saved passwords come along, and the whole file is encrypted with it. */
-  export: (path: string, passphrase?: string) => invoke<void>("sessions_export", { path, passphrase: passphrase ?? null }),
+  export: (path: string, passphrase?: string) => call<void>("sessions_export", { path, passphrase: passphrase ?? null }),
   /**
    * An encrypted file takes its `passphrase`: fails with `import.passphraseRequired` without
    * one, `import.wrongPassphrase` with another one.
    */
-  scan: (path: string, passphrase?: string) => invoke<SessionsScan>("sessions_import_scan", { path, passphrase: passphrase ?? null }),
+  scan: (path: string, passphrase?: string) => call<SessionsScan>("sessions_import_scan", { path, passphrase: passphrase ?? null }),
   /** `digest` is the scan's: a file that changed since isn't imported. The passwords in the file come along. */
   import: (path: string, ids: string[], digest: string, passphrase?: string) =>
-    invoke<void>("sessions_import", { path, ids, digest, passphrase: passphrase ?? null }),
+    call<void>("sessions_import", { path, ids, digest, passphrase: passphrase ?? null }),
 };
 
 /** Where the sessions and passwords are kept, and how they are protected (see `vault/`). */
 export const vault = {
-  status: () => invoke<VaultStatus>("vault_status"),
+  status: () => call<VaultStatus>("vault_status"),
   /** Unlocks with the key in the credential store, or makes the vault if there is none, reading the file again first. */
-  tryUnlock: () => invoke<VaultStatus>("vault_try_unlock"),
+  tryUnlock: () => call<VaultStatus>("vault_try_unlock"),
   /** Fails with `vault.wrongPassword`. */
-  unlock: (password: string) => invoke<VaultStatus>("vault_unlock", { password }),
+  unlock: (password: string) => call<VaultStatus>("vault_unlock", { password }),
   /** Deletes the locked vault: every session and password in it. `tryUnlock` then makes a new one. */
-  reset: () => invoke<VaultStatus>("vault_reset"),
+  reset: () => call<VaultStatus>("vault_reset"),
   /** `current`: the master password, to leave or change password protection. */
-  setProtection: (change: ProtectionChange, current: string | null) => invoke<VaultStatus>("vault_set_protection", { change, current }),
+  setProtection: (change: ProtectionChange, current: string | null) => call<VaultStatus>("vault_set_protection", { change, current }),
   /** Whether the system's credential store can be used; on Linux there may be none. */
-  storeAvailable: () => invoke<boolean>("credential_store_available"),
+  storeAvailable: () => call<boolean>("credential_store_available"),
 };
 
 /** The app lock (see `applock/mod.rs`). */
 export const appLock = {
-  status: () => invoke<AppLockStatus>("app_lock_status"),
+  status: () => call<AppLockStatus>("app_lock_status"),
   /** Locks now, if the app lock is on. */
-  lock: () => invoke<AppLockStatus>("app_lock_lock"),
+  lock: () => call<AppLockStatus>("app_lock_lock"),
   /**
    * Asks the user to authenticate; fails with `appLock.cancelled` if they don't, and with
    * `appLock.gone` if there is no way to left. `anyway` then unlocks without.
    */
-  unlock: (anyway = false) => invoke<AppLockStatus>("app_lock_unlock", { anyway }),
+  unlock: (anyway = false) => call<AppLockStatus>("app_lock_unlock", { anyway }),
   /** Turning the lock on asks the user to authenticate first. */
-  configure: (settings: AppLockSettings) => invoke<AppLockStatus>("app_lock_configure", { settings }),
+  configure: (settings: AppLockSettings) => call<AppLockStatus>("app_lock_configure", { settings }),
 };
 
 /** The user's home folder, which `~` stands for in key paths. */
-export const homeDirectory = () => invoke<string | null>("home_directory");
+export const homeDirectory = () => call<string | null>("home_directory");
 
 /** Plays the system's alert sound (a terminal's bell). */
-export const playBell = () => invoke<void>("app_bell");
+export const playBell = () => call<void>("app_bell");
 /**
  * The key file a session set to use one starts with: the first of OpenSSH's default keys
  * (`~/.ssh/id_ed25519` and so on) that exists here; null if there is none.
  */
-export const defaultKeyPath = () => invoke<string | null>("ssh_default_key_path");
+export const defaultKeyPath = () => call<string | null>("ssh_default_key_path");
 /** Whether the key file at `path` (`~/…` included) exists here. */
-export const keyFileExists = (path: string) => invoke<boolean>("ssh_key_file_exists", { path });
+export const keyFileExists = (path: string) => call<boolean>("ssh_key_file_exists", { path });
 /** The folder the sessions and settings are saved in; created if needed. */
-export const configDirectory = () => invoke<string>("config_directory");
+export const configDirectory = () => call<string>("config_directory");
 
 /** The data files set aside at startup; returned once. */
-export const configSetAside = () => invoke<SetAsideFile[]>("config_set_aside");
+export const configSetAside = () => call<SetAsideFile[]>("config_set_aside");
 
 /** The user name `ssh` uses when none is given. */
-export const localUsername = () => invoke<string>("local_username");
+export const localUsername = () => call<string>("local_username");
 
 /** A session's port forwarding rules; only SSH sessions have them. */
 export const profileForwards = (profile: Profile): ForwardRule[] =>
@@ -191,14 +195,14 @@ export const profileForwards = (profile: Profile): ForwardRule[] =>
 
 /** Replaces the SSH session's forwarding rules; resolves to the updated profile (with rule ids). */
 export const setProfileForwards = (profileId: string, forwards: ForwardRule[]) =>
-  invoke<Profile>("profile_set_forwards", { profileId, forwards });
+  call<Profile>("profile_set_forwards", { profileId, forwards });
 
 export const sshConfig = {
   /** `~/.ssh/config`, whether or not it exists. */
-  defaultPath: () => invoke<string | null>("ssh_config_default_path"),
-  scan: (path: string) => invoke<ImportCandidate[]>("ssh_config_scan", { path }),
+  defaultPath: () => call<string | null>("ssh_config_default_path"),
+  scan: (path: string) => call<ImportCandidate[]>("ssh_config_scan", { path }),
   /** Imports the hosts (and the jump hosts they need); resolves to the new profiles. */
-  import: (path: string, aliases: string[]) => invoke<Profile[]>("ssh_config_import", { path, aliases }),
+  import: (path: string, aliases: string[]) => call<Profile[]>("ssh_config_import", { path, aliases }),
 };
 
 /**
@@ -207,21 +211,21 @@ export const sshConfig = {
  */
 export const forwards = {
   /** Starts the rule, or restarts it with this definition where it is running. */
-  start: (id: SessionId, rule: ForwardRule) => invoke<void>("forward_start", { id, rule }),
+  start: (id: SessionId, rule: ForwardRule) => call<void>("forward_start", { id, rule }),
   /** Stops the rule wherever it runs. */
-  stop: (id: SessionId, ruleId: string) => invoke<void>("forward_stop", { id, ruleId }),
+  stop: (id: SessionId, ruleId: string) => call<void>("forward_stop", { id, ruleId }),
   /** The rules closing these sessions would stop although another tab of their session could keep them running. */
-  keepCandidates: (ids: SessionId[]) => invoke<ForwardRule[]>("forward_keep_candidates", { ids }),
+  keepCandidates: (ids: SessionId[]) => call<ForwardRule[]>("forward_keep_candidates", { ids }),
   /** Moves those rules to another tab of their session once the sessions close. */
-  keep: (ids: SessionId[]) => invoke<void>("forward_keep", { ids }),
+  keep: (ids: SessionId[]) => call<void>("forward_keep", { ids }),
   /** The rules running on the session's connection, to start again on reconnecting (see `openSession`). */
-  carry: (id: SessionId) => invoke<string[]>("forward_carry", { id }),
+  carry: (id: SessionId) => call<string[]>("forward_carry", { id }),
 };
 
-export const serialPorts = () => invoke<SerialPortInfo[]>("serial_ports");
+export const serialPorts = () => call<SerialPortInfo[]>("serial_ports");
 
 /** Sends a break: on a serial line, or Telnet's BRK. */
-export const sendBreak = (id: SessionId) => invoke<void>("session_break", { id });
+export const sendBreak = (id: SessionId) => call<void>("session_break", { id });
 
 /**
  * Starts a session for `target`. With `shareFrom` (SSH only), the shell runs on that
@@ -242,7 +246,7 @@ export async function openSession(
   if (shareFrom !== undefined) spec = { kind: "shared", source: shareFrom };
   else if (target.kind === "profile") spec = { ...target, carry };
   else spec = target;
-  const id = await invoke<SessionId>("session_open", { spec, ...size, log, channel: sessionChannel(onOutput, onEvent) });
+  const id = await call<SessionId>("session_open", { spec, ...size, log, channel: sessionChannel(onOutput, onEvent) });
   return sessionHandle(id);
 }
 
@@ -263,11 +267,11 @@ function sessionChannel(onOutput: (data: Uint8Array) => void, onEvent: (event: S
 
 const sessionHandle = (id: SessionId): Session => ({
   id,
-  write: (data) => invoke("session_write", { id, data }),
-  writeBytes: (data) => invoke("session_write_bytes", { id, data: Array.from(data) }),
-  resize: (cols, rows) => invoke("session_resize", { id, cols, rows }),
-  ack: (bytes) => invoke("session_ack", { id, bytes }),
-  close: () => invoke("session_close", { id }),
+  write: (data) => call("session_write", { id, data }),
+  writeBytes: (data) => call("session_write_bytes", { id, data: Array.from(data) }),
+  resize: (cols, rows) => call("session_resize", { id, cols, rows }),
+  ack: (bytes) => call("session_ack", { id, bytes }),
+  close: () => call("session_close", { id }),
 });
 
 /** How long a session moving here waits for its old window's screen; it goes on without it. */
@@ -288,7 +292,7 @@ export async function adoptSession(
   onOutput: (data: Uint8Array) => void,
   onEvent: (event: SessionEvent) => void,
 ): Promise<{ session: Session; snapshot: Promise<SessionSnapshot | null> }> {
-  snapshotListener ??= listenHere<SessionSnapshot>("session-snapshot", ({ payload }) => snapshotWaiters.get(payload.moveId)?.(payload));
+  snapshotListener ??= listenHere("session-snapshot", ({ payload }) => snapshotWaiters.get(payload.moveId)?.(payload));
   await snapshotListener;
   // A screen handed over late for an earlier move of the session isn't this one's.
   const moveId = crypto.randomUUID();
@@ -303,7 +307,7 @@ export async function adoptSession(
     snapshotWaiters.set(moveId, done);
   });
   try {
-    await invoke("session_adopt", { id, moveId, channel: sessionChannel(onOutput, onEvent) });
+    await call("session_adopt", { id, moveId, channel: sessionChannel(onOutput, onEvent) });
   } catch (e) {
     clearTimeout(timer);
     snapshotWaiters.delete(moveId);
@@ -313,41 +317,41 @@ export async function adoptSession(
 }
 
 /** Passes the screen of a session that moved away to the window it moved to. */
-export const handOver = (snapshot: SessionSnapshot) => invoke<void>("session_handover", { snapshot });
+export const handOver = (snapshot: SessionSnapshot) => call<void>("session_handover", { snapshot });
 
 export const sessionLog = {
   /** Starts logging in a new file; the session reports it with a `log` event. */
-  start: (id: SessionId) => invoke<string>("session_log_start", { id }),
-  stop: (id: SessionId) => invoke<void>("session_log_stop", { id }),
+  start: (id: SessionId) => call<string>("session_log_start", { id }),
+  stop: (id: SessionId) => call<void>("session_log_stop", { id }),
 };
 
 export const logs = {
   /** How many logs ZShell has written (and still exist), and their total size. */
-  summary: () => invoke<LogSummary>("logs_summary"),
+  summary: () => call<LogSummary>("logs_summary"),
   /** Where new logs go; created only with `create`, which showing the folder needs. */
-  directory: (create = false) => invoke<string>("logs_directory", { create }),
-  count: (profileId: string) => invoke<number>("logs_count", { profileId }),
+  directory: (create = false) => call<string>("logs_directory", { create }),
+  count: (profileId: string) => call<number>("logs_count", { profileId }),
   /** Deletes a session's logs, or all of them; those being written are kept. Returns how many were deleted. */
-  delete: (profileId?: string) => invoke<number>("logs_delete", { profileId }),
+  delete: (profileId?: string) => call<number>("logs_delete", { profileId }),
 };
 
 /**
  * The program running in a local terminal other than its shell ("" if its name is unknown),
  * or null. Always null for SSH sessions.
  */
-export const sessionForeground = (id: SessionId) => invoke<string | null>("session_foreground", { id });
+export const sessionForeground = (id: SessionId) => call<string | null>("session_foreground", { id });
 
 export const zmodem = {
   /** `dir` null saves into the Downloads folder. */
-  saveTo: (id: SessionId, dir: string | null) => invoke<void>("zmodem_save_to", { id, dir }),
-  sendFiles: (id: SessionId, paths: string[]) => invoke<void>("zmodem_send_files", { id, paths }),
+  saveTo: (id: SessionId, dir: string | null) => call<void>("zmodem_save_to", { id, dir }),
+  sendFiles: (id: SessionId, paths: string[]) => call<void>("zmodem_send_files", { id, paths }),
   /** Cancels the transfer, also while it waits for an answer. */
-  cancel: (id: SessionId) => invoke<void>("zmodem_cancel", { id }),
+  cancel: (id: SessionId) => call<void>("zmodem_cancel", { id }),
 };
 
 /** Short name of the default local shell, e.g. "zsh" or "pwsh"; null when the system doesn't
  *  allow local terminals (Windows in S mode). */
-export const localShellName = () => invoke<string | null>("local_shell_name");
+export const localShellName = () => call<string | null>("local_shell_name");
 
 function progressChannel(onProgress: (p: TransferProgress) => void) {
   const channel = new Channel<TransferProgress>();
@@ -357,16 +361,16 @@ function progressChannel(onProgress: (p: TransferProgress) => void) {
 
 export const sftp = {
   /** Opens the session's SFTP channel; resolves to the remote home directory. */
-  open: (id: SessionId) => invoke<string>("sftp_open", { id }),
-  list: (id: SessionId, path: string) => invoke<Listing>("sftp_list", { id, path }),
+  open: (id: SessionId) => call<string>("sftp_open", { id }),
+  list: (id: SessionId, path: string) => call<Listing>("sftp_list", { id, path }),
   /** The folder the session's shell is in, where the server lets it be found (Linux); null elsewhere. */
-  shellDir: (id: SessionId) => invoke<string | null>("sftp_shell_dir", { id }),
-  mkdir: (id: SessionId, path: string) => invoke<void>("sftp_mkdir", { id, path }),
-  rename: (id: SessionId, from: string, to: string) => invoke<void>("sftp_rename", { id, from, to }),
-  remove: (id: SessionId, path: string) => invoke<void>("sftp_remove", { id, path }),
-  chmod: (id: SessionId, path: string, mode: number) => invoke<void>("sftp_chmod", { id, path, mode }),
+  shellDir: (id: SessionId) => call<string | null>("sftp_shell_dir", { id }),
+  mkdir: (id: SessionId, path: string) => call<void>("sftp_mkdir", { id, path }),
+  rename: (id: SessionId, from: string, to: string) => call<void>("sftp_rename", { id, from, to }),
+  remove: (id: SessionId, path: string) => call<void>("sftp_remove", { id, path }),
+  chmod: (id: SessionId, path: string, mode: number) => call<void>("sftp_chmod", { id, path, mode }),
   upload: (id: SessionId, transferId: string, localPaths: string[], remoteDir: string, onProgress: (p: TransferProgress) => void) =>
-    invoke<void>("sftp_upload", { id, transferId, localPaths, remoteDir, onProgress: progressChannel(onProgress) }),
+    call<void>("sftp_upload", { id, transferId, localPaths, remoteDir, onProgress: progressChannel(onProgress) }),
   /** `localDir` null downloads into the Downloads folder. Resolves to the created local paths. */
   download: (
     id: SessionId,
@@ -375,7 +379,7 @@ export const sftp = {
     localDir: string | null,
     onProgress: (p: TransferProgress) => void,
   ) =>
-    invoke<string[]>("sftp_download", {
+    call<string[]>("sftp_download", {
       id,
       transferId,
       remotePaths,
@@ -384,10 +388,10 @@ export const sftp = {
     }),
   /** Downloads one item to `localPath`, replacing what is there. */
   downloadAs: (id: SessionId, transferId: string, remotePath: string, localPath: string, onProgress: (p: TransferProgress) => void) =>
-    invoke<string>("sftp_download_as", { id, transferId, remotePath, localPath, onProgress: progressChannel(onProgress) }),
+    call<string>("sftp_download_as", { id, transferId, remotePath, localPath, onProgress: progressChannel(onProgress) }),
   /** The folder downloads go to without asking. */
-  downloadsDirectory: () => invoke<string>("downloads_directory"),
-  cancel: (transferId: string) => invoke<void>("transfer_cancel", { transferId }),
+  downloadsDirectory: () => call<string>("downloads_directory"),
+  cancel: (transferId: string) => call<void>("transfer_cancel", { transferId }),
   /**
    * Downloads a file into a temporary folder and opens it in the editor; `onChanged` is called
    * each time it is saved. `editId` also identifies the download for `cancel`.
@@ -395,12 +399,12 @@ export const sftp = {
   editOpen: (id: SessionId, editId: string, remotePath: string, onProgress: (p: TransferProgress) => void, onChanged: () => void) => {
     const onEvent = new Channel<EditEvent>();
     onEvent.onmessage = onChanged;
-    return invoke<string>("sftp_edit_open", { id, editId, remotePath, onProgress: progressChannel(onProgress), onEvent });
+    return call<string>("sftp_edit_open", { id, editId, remotePath, onProgress: progressChannel(onProgress), onEvent });
   },
-  editReopen: (editId: string) => invoke<void>("sftp_edit_reopen", { editId }),
+  editReopen: (editId: string) => call<void>("sftp_edit_reopen", { editId }),
   /** Fails with `edit.conflict` unless `force` when the remote file changed meanwhile. */
-  editUpload: (id: SessionId, editId: string, force: boolean) => invoke<void>("sftp_edit_upload", { id, editId, force }),
-  editStop: (editId: string) => invoke<void>("sftp_edit_stop", { editId }),
+  editUpload: (id: SessionId, editId: string, force: boolean) => call<void>("sftp_edit_upload", { id, editId, force }),
+  editStop: (editId: string) => call<void>("sftp_edit_stop", { editId }),
   /**
    * Drags the items out of the window (call while the mouse button is down, pressed at
    * `pressedAt`, an event's `timeStamp`). Resolves when the drag ends; items dropped on another
@@ -409,7 +413,7 @@ export const sftp = {
   dragOut: (id: SessionId, transferId: string, items: FileEntry[], pressedAt: number, onEvent: (event: DragOutEvent) => void) => {
     const channel = new Channel<DragOutEvent>();
     channel.onmessage = onEvent;
-    return invoke<DragResult>("sftp_drag_out", {
+    return call<DragResult>("sftp_drag_out", {
       id,
       transferId,
       items: items.map(({ path, isDir }): DragItem => ({ path, isDir })),
@@ -417,4 +421,29 @@ export const sftp = {
       onEvent: channel,
     });
   },
+};
+
+/** The app's settings, as the backend validated and saved them. */
+export const appSettings = {
+  get: () => call<Settings>("settings_get"),
+  set: (settings: Settings) => call<Settings>("settings_set", { settings }),
+  /** The desktop's monospace font (Linux), which terminals default to. */
+  systemMonospaceFont: () => call<string | null>("system_monospace_font"),
+  /** Whether a screen reader is running now. */
+  screenReaderRunning: () => call<boolean>("screen_reader_running"),
+};
+
+/** The languages in effect: the backend's follows the `language` setting. */
+export const locales = () => call<Locales>("locale_get");
+
+/** Checking for updates (see `update.rs`). */
+export const updates = {
+  status: () => call<UpdateStatus>("update_status"),
+  check: () => call<UpdateStatus>("update_check"),
+};
+
+/** The native menu bar (macOS), built from the page's menu. */
+export const nativeMenu = {
+  set: (sections: NativeMenuSection[]) => call("app_menu_set", { sections }),
+  setLabel: (id: string, label: string) => call("app_menu_set_label", { id, label }),
 };

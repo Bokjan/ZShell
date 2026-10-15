@@ -1,5 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import * as dialog from "@tauri-apps/plugin-dialog";
+
+import { call } from "./call";
 
 /**
  * The dialog plugin's file dialogs, used in their place: on Windows, WebView2 hides the
@@ -7,11 +8,11 @@ import * as dialog from "@tauri-apps/plugin-dialog";
  * have none. The backend shows it while the dialog is open (`win::file_dialog`).
  */
 async function withPointer<T>(show: () => Promise<T>): Promise<T> {
-  await invoke("window_file_dialog", { open: true }).catch(console.error);
+  await call("window_file_dialog", { open: true }).catch(console.error);
   try {
     return await show();
   } finally {
-    void invoke("window_file_dialog", { open: false }).catch(console.error);
+    void call("window_file_dialog", { open: false }).catch(console.error);
   }
 }
 

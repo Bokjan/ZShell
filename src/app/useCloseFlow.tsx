@@ -150,7 +150,7 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
 
   // Quitting (⌘Q, from the window that had the focus) asks once for all the windows: each
   // says how many of its panes are busy.
-  useWindowEvent<number>("busy-query", (query) => void busyPanes(store).then((count) => windows.busyReply(query, count)));
+  useWindowEvent("busy-query", (query) => void busyPanes(store).then((count) => windows.busyReply(query, count)));
   const quit = async () => {
     const busy = await windows.busyCount().catch(() => 0);
     if (busy === 0) void windows.quit();

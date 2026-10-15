@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { sftp, type FileEntry, type SessionId } from "../../ipc/api";
+import { windows } from "../../ipc/windows";
 import { isAppLocked } from "../../lib/appLock";
 import { usePressDrag } from "../../hooks/drag";
 import { isMac, isWindows } from "../../lib/platform";
@@ -133,7 +133,7 @@ export function useSftpDragDrop(options: Options) {
       const r = list.getBoundingClientRect();
       const top = Math.max(r.top, list.querySelector("thead")?.getBoundingClientRect().bottom ?? r.top);
       const rect = { x: r.left, y: top, width: r.width, height: Math.max(0, r.bottom - top) };
-      invoke("window_set_drag_area", { rect }).catch(console.error);
+      windows.setDragArea(rect);
     };
     const onMouseDown = (e: globalThis.MouseEvent) => {
       if (e.button !== 0 || document.hasFocus()) return;
@@ -152,7 +152,7 @@ export function useSftpDragDrop(options: Options) {
       observer.disconnect();
       window.removeEventListener("blur", place);
       list.removeEventListener("mousedown", onMouseDown, true);
-      invoke("window_set_drag_area", { rect: null }).catch(console.error);
+      windows.setDragArea(null);
     };
   }, [active]);
 

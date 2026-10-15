@@ -30,10 +30,11 @@ pub mod zmodem;
 use std::path::PathBuf;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, EventTarget, WebviewWindow};
+use tauri::{AppHandle, WebviewWindow};
 use ts_rs::TS;
 
 use crate::error::Result;
+use crate::events;
 use crate::i18n;
 
 /// The languages in effect: the backend's follows the `language` setting.
@@ -66,17 +67,10 @@ pub enum Change {
     AppLock,
 }
 
-/// Sends `event` to the windows other than `from`.
-pub(crate) fn tell_others<S: Serialize + Clone>(from: &WebviewWindow, event: &str, payload: S) {
-    let label = from.label().to_owned();
-    let others = |target: &EventTarget| matches!(target, EventTarget::WebviewWindow { label: other } if *other != label);
-    let _ = from.emit_filter(event, payload, others);
-}
-
 /// Tells the windows other than `from` about `change` if `result` is a success; returns it.
 fn notified<T>(from: &WebviewWindow, change: Change, result: Result<T>) -> Result<T> {
     if result.is_ok() {
-        tell_others(from, "config-changed", change);
+        events::tell_others(from, events::ConfigChanged(change));
     }
     result
 }

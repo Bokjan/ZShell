@@ -12,7 +12,7 @@ use std::rc::Rc;
 use gtk::gdk::{DragAction, DragContext};
 use gtk::glib::{self, Propagation, SignalHandlerId};
 use gtk::prelude::*;
-use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 use super::{DropTarget, Point, TabDrag, TabDragNativeEnd};
 
@@ -155,7 +155,7 @@ fn end(app: &AppHandle, drag: &Rc<Drag>) {
     let dropped = target.is_some();
     *app.state::<TabDrag>().native_ended.lock().unwrap() = Some((drag.id.clone(), target));
     let end = TabDragNativeEnd { id: drag.id.clone(), dropped };
-    let _ = app.emit_to(EventTarget::webview_window(drag.source.clone()), "tab-drag-native-end", end);
+    crate::events::emit_to(app, drag.source.clone(), crate::events::TabDragNativeEnd(end));
 }
 
 fn disconnect(drag: &Drag) {

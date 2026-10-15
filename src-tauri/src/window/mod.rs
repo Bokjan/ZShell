@@ -17,11 +17,12 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{App, AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder};
+use tauri::{App, AppHandle, Manager, WebviewWindow, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
+use crate::events;
 use crate::session::{SessionId, SessionManager};
 use crate::tab_drag::{self, Dropped};
 
@@ -95,7 +96,7 @@ pub fn current(app: &AppHandle) -> Option<WebviewWindow> {
 
 /// Tells every window that windows opened, closed or changed their titles (`windows-changed`).
 fn changed(app: &AppHandle) {
-    let _ = app.emit("windows-changed", ());
+    events::emit(app, events::WindowsChanged);
 }
 
 /// Records the window that has the focus now.
@@ -113,7 +114,7 @@ pub fn destroyed(window: &tauri::Window) {
         inbox.closing.remove(window.label());
     }
     tab_drag::forget(window.app_handle(), window.label());
-    let _ = window.emit("window-closed", window.label());
+    events::emit(window, events::WindowClosed(window.label().to_owned()));
     #[cfg(windows)]
     if let Ok(hwnd) = window.hwnd() {
         win::forget(hwnd.0 as isize);
@@ -233,6 +234,15 @@ pub fn close_empty(app: AppHandle, window: WebviewWindow, windows: &Windows) -> 
     Ok(true)
 }
 
+/// The state of a window's maximize button as the system sees it: under the pointer, pressed
+/// (Windows, see `win.rs`; the page draws the button).
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, TS)]
+pub struct MaximizeButtonState {
+    pub hover: bool,
+    pub pressed: bool,
+}
+
 /// Another window, as the tab menu lists it.
 #[derive(Serialize, TS)]
 pub struct WindowInfo {
@@ -283,7 +293,7 @@ pub fn send_tab(
         session_manager.offer(&source, &sessions, &target)?;
         inbox.pending.entry(target.clone()).or_default().push(serde_json::json!({ "kind": "tab", "tab": tab, "at": at }));
     }
-    let _ = app.emit_to(EventTarget::webview_window(target), "tab-received", ());
+    events::emit_to(&app, target, events::TabReceived);
     let _ = window.unminimize();
     let _ = window.set_focus();
     Ok(())
@@ -292,7 +302,7 @@ pub fn send_tab(
 /// Tells window `target`, which gave this one a tab, that its pane `pane` couldn't move here
 /// (its session is still there): the `pane-stayed` event.
 pub fn pane_stayed(app: AppHandle, target: String, pane: u32) {
-    let _ = app.emit_to(EventTarget::webview_window(target), "pane-stayed", pane);
+    events::emit_to(&app, target, events::PaneStayed(pane));
 }
 
 /// How many tabs quitting would end, in all the windows: each is asked (the `busy-query`
@@ -305,7 +315,7 @@ pub async fn busy_count(app: AppHandle, windows: &Windows, sessions: &SessionMan
     let (done, answered) = oneshot::channel();
     windows.busy.lock().unwrap().insert(id, BusyQuery { waiting: labels.clone(), count: 0, done: Some(done) });
     for label in labels {
-        let _ = app.emit_to(EventTarget::webview_window(label), "busy-query", id);
+        events::emit_to(&app, label, events::BusyQuery(id));
     }
     let _ = tokio::time::timeout(BUSY_TIMEOUT, answered).await;
     let Some(query) = windows.busy.lock().unwrap().remove(&id) else { return Ok(0) };

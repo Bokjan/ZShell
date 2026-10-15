@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
-use tauri::{AppHandle, Emitter, EventTarget};
+use tauri::AppHandle;
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
@@ -79,11 +79,7 @@ pub(super) unsafe fn update_border(hwnd: HWND) {
 
 pub(super) static APP: OnceLock<AppHandle> = OnceLock::new();
 
-#[derive(Clone, Copy, Default, PartialEq, serde::Serialize)]
-struct ButtonState {
-    hover: bool,
-    pressed: bool,
-}
+use super::MaximizeButtonState as ButtonState;
 
 /// A window's maximize button: its native window, the label of the window it is in, and
 /// the state the frontend was last told.
@@ -117,7 +113,7 @@ fn set_state(parent: HWND, state: ButtonState) {
         })
     });
     if let (Some(label), Some(app)) = (label, APP.get()) {
-        let _ = app.emit_to(EventTarget::webview_window(label), "window-maximize-button", state);
+        crate::events::emit_to(app, label, crate::events::MaximizeButton(state));
     }
 }
 

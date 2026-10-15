@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { listenHere } from "../ipc/events";
+import { listenHere, type Events } from "../ipc/events";
 import type { Change } from "../ipc/bindings";
 
 /** Listens to an event for this window while the component is mounted; `handler` may change. */
-export function useWindowEvent<T>(event: string, handler: (payload: T) => void) {
+export function useWindowEvent<E extends keyof Events>(event: E, handler: (payload: Events[E]) => void) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
   useEffect(() => {
-    const unlisten = listenHere<T>(event, (e) => handlerRef.current(e.payload));
+    const unlisten = listenHere(event, (e) => handlerRef.current(e.payload));
     return () => void unlisten.then((f) => f());
   }, [event]);
 }
@@ -29,5 +29,5 @@ export function useWindowFocus(handler: () => void) {
 
 /** Calls `handler` when another window saved what this one shows (see `Change`). */
 export function useConfigChanged(change: Change, handler: () => void) {
-  useWindowEvent<Change>("config-changed", (changed) => changed === change && handler());
+  useWindowEvent("config-changed", (changed) => changed === change && handler());
 }

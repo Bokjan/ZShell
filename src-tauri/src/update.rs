@@ -13,10 +13,11 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use ts_rs::TS;
 
 use crate::error::{Error, Result};
+use crate::events;
 use crate::persist;
 use crate::settings::SettingsStore;
 
@@ -91,7 +92,7 @@ impl Updates {
             let _ = persist::write_json_atomic(&self.path, &*saved);
         }
         let status = self.status();
-        let _ = app.emit("update-status", &status);
+        events::emit(app, events::UpdateStatus(status.clone()));
         Ok(status)
     }
 }

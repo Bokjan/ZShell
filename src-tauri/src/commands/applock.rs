@@ -6,11 +6,12 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::applock::{AppLock, AppLockStatus, Trigger};
+use crate::events;
 
 use crate::error::Result;
 use crate::model::AppLockSettings;
 
-use super::{blocking, notified, tell_others, Change};
+use super::{blocking, notified, Change};
 
 #[tauri::command]
 pub async fn app_lock_status(app: AppHandle) -> Result<AppLockStatus> {
@@ -28,7 +29,7 @@ pub async fn app_lock_lock(app: AppHandle, window: WebviewWindow) -> Result<AppL
     })
     .await?;
     if status.locked {
-        tell_others(&window, "app-locked", ());
+        events::tell_others(&window, events::AppLocked);
     }
     Ok(status)
 }

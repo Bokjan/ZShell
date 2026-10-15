@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
+import { nativeMenu } from "../ipc/api";
 import type { NativeMenuSection } from "../ipc/bindings";
 import { appMenu, macKeys, setNativeMenu, type MenuAction } from "../lib/keymap";
 import { isMac } from "../lib/platform";
@@ -30,10 +30,11 @@ export function useNativeMenu() {
         item === "separator" ? { kind: "separator" } : { kind: "action", id: item, label: menuLabel(t, item), keys: macKeys(item) },
       ),
     }));
-    invoke("app_menu_set", { sections }).then(setNativeMenu, console.error);
+    nativeMenu.set(sections).then(setNativeMenu, console.error);
   }, [t]);
 
-  useWindowEvent<MenuAction>("menu-action", (action) => void runAction(action));
+  // The items have the ids this page gave them.
+  useWindowEvent("menu-action", (action) => void runAction(action as MenuAction));
 }
 
 /**
@@ -43,7 +44,7 @@ export function useNativeMenu() {
  */
 export function useNativeMenuLabel(action: MenuAction, label: string) {
   const show = () => {
-    if (isMac) invoke("app_menu_set_label", { id: action, label }).catch(console.error);
+    if (isMac) nativeMenu.setLabel(action, label).catch(console.error);
   };
   useEffect(show, [action, label]);
   useWindowFocus(show);

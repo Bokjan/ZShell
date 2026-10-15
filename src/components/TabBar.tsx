@@ -14,7 +14,7 @@ import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { shortcutLabel } from "../lib/keymap";
 import { isComposing, isMac } from "../lib/platform";
-import type { Point, TabDragNativeEnd } from "../ipc/bindings";
+import type { Point } from "../ipc/bindings";
 import { tabIndexAt } from "../lib/tabStrip";
 import { DRAG_REGION } from "../hooks/titleBar";
 import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
@@ -132,7 +132,7 @@ export function TabBar({
   const [leaving, setLeaving] = useState(false);
   // Where a tab dragged from another window would go, while it is over this tab bar.
   const [dropX, setDropX] = useState<number | null>(null);
-  useWindowEvent<number | null>("tab-drag-over", setDropX);
+  useWindowEvent("tab-drag-over", setDropX);
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
   const tabsRef = useRef(tabs);
@@ -259,7 +259,7 @@ export function TabBar({
     const goNative = () => {
       if (native || ended) return;
       native = true;
-      const unlisten = listenHere<TabDragNativeEnd>("tab-drag-native-end", ({ payload }) => {
+      const unlisten = listenHere("tab-drag-native-end", ({ payload }) => {
         if (payload.id !== id) return;
         void unlisten.then((f) => f());
         // Cancelled (Escape): back where it was, as in the page.

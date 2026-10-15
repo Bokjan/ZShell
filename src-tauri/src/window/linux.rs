@@ -16,7 +16,7 @@ use std::sync::Mutex;
 
 use gtk::glib::Propagation;
 use gtk::prelude::*;
-use tauri::{AppHandle, Emitter, Manager, Theme, WebviewWindow};
+use tauri::{AppHandle, Manager, Theme, WebviewWindow};
 
 use super::{DoubleClick, WindowButton};
 
@@ -109,7 +109,7 @@ pub fn watch_buttons(app: &AppHandle) {
     let Some(settings) = gtk::Settings::default() else { return };
     let app = app.clone();
     settings.connect_gtk_decoration_layout_notify(move |_| {
-        let _ = app.emit("window-buttons-changed", ());
+        crate::events::emit(&app, crate::events::WindowButtonsChanged);
     });
 }
 

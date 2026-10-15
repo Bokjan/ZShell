@@ -80,6 +80,29 @@ mod tests {
         }
     }
 
+    /// The events the backend sends, by name, with the type of each one's payload.
+    fn events_map(cfg: &Config) -> String {
+        let mut events = crate::events::declarations(cfg);
+        events.sort();
+        let fields: Vec<String> = events.iter().map(|(name, payload)| format!("\n  \"{name}\": {payload};")).collect();
+        format!("\n/** The events the backend sends the pages, by name, with their payloads (see `events.rs`). */\nexport type Events = {{{}\n}};\n", fields.concat())
+    }
+
+    /// The commands the frontend can call: those `lib.rs` registers.
+    fn command_names() -> String {
+        let lib = include_str!("lib.rs");
+        let start = lib.find("generate_handler![").expect("lib.rs registers the commands");
+        let end = start + lib[start..].find(']').unwrap();
+        let mut names: Vec<&str> =
+            lib[start..end].split(',').filter_map(|path| path.trim().rsplit("::").next()).filter(|name| !name.is_empty()).collect();
+        let registered = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), registered, "a command is registered twice");
+        let names: Vec<String> = names.iter().map(|name| format!("\n  | \"{name}\"")).collect();
+        format!("\n/** The commands the frontend can call (see `commands/`). */\nexport type Command ={};\n", names.concat())
+    }
+
     /// The constants written after the types: a doc comment, the declaration, the value.
     fn constants() -> String {
         use crate::*;
@@ -146,6 +169,7 @@ mod tests {
         visitor.visit::<tab_drag::Dropped>();
         visitor.visit::<tab_drag::TabDragNativeEnd>();
         visitor.visit::<commands::Change>();
+        events::visit(visitor);
 
         let mut out = String::from(HEADER);
         let codes: Vec<String> = error_codes().iter().map(|code| format!("\n  | \"{code}\"")).collect();
@@ -155,6 +179,8 @@ mod tests {
             out.push_str(decl);
             out.push('\n');
         }
+        out.push_str(&events_map(&cfg));
+        out.push_str(&command_names());
         out.push_str(&constants());
         out
     }

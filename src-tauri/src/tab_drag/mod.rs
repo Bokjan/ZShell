@@ -15,9 +15,11 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::oneshot;
 use ts_rs::TS;
+
+use crate::events;
 
 /// A rectangle in a page's CSS pixels.
 #[derive(Clone, Copy, Deserialize, TS)]
@@ -108,10 +110,10 @@ impl Drags {
             _ => (None, None),
         };
         if let Some(previous) = self.showing.take().filter(|previous| Some(previous) != label.as_ref()) {
-            let _ = app.emit_to(EventTarget::webview_window(previous), "tab-drag-over", None::<f64>);
+            events::emit_to(app, previous, events::TabDragOver(None));
         }
         if let Some(label) = label {
-            let _ = app.emit_to(EventTarget::webview_window(label.clone()), "tab-drag-over", x);
+            events::emit_to(app, label.clone(), events::TabDragOver(x));
             self.showing = Some(label);
         }
     }

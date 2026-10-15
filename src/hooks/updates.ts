@@ -1,7 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { invoke } from "@tauri-apps/api/core";
 
-import { errorMessage } from "../ipc/api";
+import { errorMessage, updates } from "../ipc/api";
 import type { Release, UpdateStatus } from "../ipc/bindings";
 import { useSettings } from "./settings";
 import { listenHere } from "../ipc/events";
@@ -36,9 +35,9 @@ let started = false;
 function start() {
   if (started) return;
   started = true;
-  invoke<UpdateStatus>("update_status").then(apply, console.error);
+  updates.status().then(apply, console.error);
   // A check that worked (the automatic one, or another window's) clears the error of one that didn't.
-  void listenHere<UpdateStatus>("update-status", (e) => {
+  void listenHere("update-status", (e) => {
     apply(e.payload);
     if (state.result?.kind === "failed") set({ result: null });
   });
@@ -53,7 +52,7 @@ function subscribe(listener: () => void) {
 export function checkForUpdates() {
   if (state.checking || !state.supported) return;
   set({ checking: true, result: null });
-  invoke<UpdateStatus>("update_check").then(
+  updates.check().then(
     (status) => {
       apply(status);
       set({ checking: false, result: status.newer ? null : { kind: "upToDate" } });
