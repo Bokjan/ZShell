@@ -123,7 +123,8 @@
       "invalidSerialSettings": "シリアルの設定が無効です：データビットは5～8、ストップビットは1または2にしてください",
       "jumpHostNotSsh": "このセッションは{names}の踏み台ホストなので、SSHセッションのままにする必要があります",
       "invalidProxy": "このセッションのプロキシはもう存在しません。別のプロキシを選択してください",
-      "forwardsNeedSsh": "ポートフォワーディングを使用できるのはSSHセッションのみです"
+      "forwardsNeedSsh": "ポートフォワーディングを使用できるのはSSHセッションのみです",
+      "networkKeyPath": "インポートしたセッションでは、ネットワークパス上の秘密鍵（{path}）は使用できません"
     },
     "ssh": {
       "handshakeFailed": "SSHハンドシェイクに失敗しました",

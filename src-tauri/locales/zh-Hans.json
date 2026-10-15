@@ -123,7 +123,8 @@
       "invalidSerialSettings": "无效的串口设置：数据位必须为 5 到 8，停止位必须为 1 或 2",
       "jumpHostNotSsh": "此会话是 {names} 的跳板机，因此必须保持为 SSH 会话",
       "invalidProxy": "此会话的代理已不存在；请选择其他代理",
-      "forwardsNeedSsh": "只有 SSH 会话可以转发端口"
+      "forwardsNeedSsh": "只有 SSH 会话可以转发端口",
+      "networkKeyPath": "导入的会话不能使用网络路径上的私钥（{path}）"
     },
     "ssh": {
       "handshakeFailed": "SSH 握手失败",

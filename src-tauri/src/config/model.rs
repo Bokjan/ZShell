@@ -320,6 +320,13 @@ impl ProfileAppearance {
     }
 }
 
+/// Whether a path names a file on another computer (`\\server\share`, `//server/share`) or
+/// a Windows device (`\\?\`, `\\.\`), where a file from elsewhere must not lead.
+fn is_network_path(path: &str) -> bool {
+    let path = path.trim_start();
+    path.starts_with("\\\\") || path.starts_with("//") || path.starts_with("\\/") || path.starts_with("/\\")
+}
+
 fn is_hex_color(color: &str) -> bool {
     color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
@@ -422,6 +429,14 @@ impl Profile {
         self.normalize_target()?;
         self.normalize_session_options()?;
         if let Connection::Ssh(ssh) = &mut self.connection {
+            // Reading a key from another computer's share would sign in there as the user
+            // (Windows sends the account's NTLM response), before the session even connects:
+            // the edit dialog checks that the file exists.
+            if let AuthMethod::PublicKey { key_path } = &ssh.auth {
+                if is_network_path(key_path) {
+                    return Err(Error::new("profile.networkKeyPath").param("path", key_path));
+                }
+            }
             ssh.forwards = std::mem::take(&mut ssh.forwards)
                 .into_iter()
                 .map(|rule| ForwardRule { id: uuid::Uuid::new_v4().to_string(), ..rule }.normalize())

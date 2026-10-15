@@ -123,7 +123,8 @@
       "invalidSerialSettings": "Invalid serial settings: data bits must be 5 to 8 and stop bits 1 or 2",
       "jumpHostNotSsh": "This session is a jump host for {names}, so it must stay an SSH session",
       "invalidProxy": "The proxy of this session no longer exists; choose another one",
-      "forwardsNeedSsh": "Only SSH sessions can forward ports"
+      "forwardsNeedSsh": "Only SSH sessions can forward ports",
+      "networkKeyPath": "An imported session cannot use a private key on a network path ({path})"
     },
     "ssh": {
       "handshakeFailed": "SSH handshake failed",

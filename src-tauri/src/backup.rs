@@ -389,7 +389,7 @@ fn free_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Remote, SshOptions};
+    use crate::config::{AuthMethod, Remote, SshOptions};
 
     fn profile(id: &str, name: &str, host: &str, folder: Option<&str>, jumps: &[&str]) -> Profile {
         let remote = Remote { jump_hosts: jumps.iter().map(|j| j.to_string()).collect(), ..Remote::new(host.into(), 22, "alice".into()) };
@@ -521,6 +521,24 @@ mod tests {
         assert_eq!(new[1].forwards()[0].bind_host, "localhost");
         assert!(!new[1].forwards()[0].id.is_empty());
         std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A key on another computer's share would be read (signing in there) as soon as the
+    /// session is edited or connects.
+    #[test]
+    fn refuses_keys_on_network_paths() {
+        for key_path in [r"\\attacker.example\share\id_ed25519", "//attacker.example/share/id_ed25519", r"\\?\UNC\host\k"] {
+            let path = std::env::temp_dir().join(format!("zshell-sessions-unc-{}.json", uuid::Uuid::new_v4()));
+            let mut db = profile("db", "db", "db.internal", None, &[]);
+            let Connection::Ssh(ssh) = &mut db.connection else { unreachable!() };
+            ssh.auth = AuthMethod::PublicKey { key_path: key_path.into() };
+            export(&path, Contents { folders: Vec::new(), proxies: Vec::new(), profiles: vec![db], order: Vec::new() }, None).unwrap();
+            let Scan { candidates, digest, .. } = scan(&path, None, &[]).unwrap();
+            let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
+            let error = plan(&path, None, &[candidates[0].id.clone()], &digest, &here).err().unwrap();
+            assert_eq!(error.code(), "import.invalidSession", "{key_path}");
+            std::fs::remove_file(&path).unwrap();
+        }
     }
 
     fn proxy(id: &str, name: &str, kind: ProxyKind, command: &str) -> Proxy {

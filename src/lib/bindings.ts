@@ -81,6 +81,7 @@ export type ErrorCode =
   | "profile.missingDevice"
   | "profile.missingFields"
   | "profile.missingHost"
+  | "profile.networkKeyPath"
   | "profile.notFound"
   | "profile.usedAsJumpHost"
   | "proxy.authFailed"

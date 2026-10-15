@@ -123,7 +123,8 @@
       "invalidSerialSettings": "Ungültige serielle Einstellungen: Die Datenbits müssen 5 bis 8 sein, die Stoppbits 1 oder 2",
       "jumpHostNotSsh": "Diese Sitzung ist ein Jump-Host für {names} und muss daher eine SSH-Sitzung bleiben",
       "invalidProxy": "Der Proxy dieser Sitzung existiert nicht mehr; wählen Sie einen anderen",
-      "forwardsNeedSsh": "Nur SSH-Sitzungen können Ports weiterleiten"
+      "forwardsNeedSsh": "Nur SSH-Sitzungen können Ports weiterleiten",
+      "networkKeyPath": "Eine importierte Sitzung kann keinen privaten Schlüssel auf einem Netzwerkpfad verwenden ({path})"
     },
     "ssh": {
       "handshakeFailed": "SSH-Handshake fehlgeschlagen",
