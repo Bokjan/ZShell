@@ -23,8 +23,8 @@ use crate::ssh::{self, JumpChain};
 use protocol::{Telnet, BREAK};
 
 const READ_BUFFER: usize = 16 << 10;
-/// Input for the server waiting to be written; beyond that, new input waits (a ZMODEM
-/// upload is paced by the connection).
+/// What waits to be written to the server; beyond that, new input waits (a ZMODEM upload is
+/// paced by the connection), and so does reading the server's output (see [`bridge`]).
 const OUTGOING_LIMIT: usize = 64 << 10;
 
 /// Session backend: connects to the session's host (by `route`) and bridges the Telnet
@@ -91,11 +91,14 @@ async fn bridge(
     let mut buffer = vec![0; READ_BUFFER];
     let flow = io.sink().flow();
     loop {
-        // Not read while the terminal is behind: TCP holds the server back meanwhile.
+        // Not read while the terminal is behind: TCP holds the server back meanwhile. Nor
+        // while what we send waits: the server's negotiation needs answers, and one that
+        // doesn't read them would otherwise have them pile up here.
         let paused = flow.is_paused();
+        let reading = !paused && outgoing.len() < OUTGOING_LIMIT;
         tokio::select! {
             () = flow.ready(), if paused => {}
-            read = reader.read(&mut buffer), if !paused => match read {
+            read = reader.read(&mut buffer), if reading => match read {
                 // A tunnel also ends when its jump host connection does.
                 Ok(0) if jumps.is_broken() => return lost(None),
                 Ok(0) => return Outcome::Exited(None),
@@ -483,6 +486,23 @@ mod tests {
         session.await.unwrap();
         tokio::time::sleep(Duration::from_millis(10)).await;
         assert!(server.write_all(b"y").await.is_err());
+    }
+
+    /// A server that sends negotiation without end and never reads the answers: they don't
+    /// pile up, as reading stops once they wait (and the server's writes then wait too).
+    #[tokio::test]
+    async fn stops_reading_while_answers_wait() {
+        let (client, mut server) = tokio::io::duplex(64);
+        let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(async move {
+            let outcome = bridge(Box::new(client), JumpChain::default(), "xterm", AutoLogin::new("", || None), &mut io).await;
+            io.finish(outcome);
+        });
+        // IAC WILL 5 (status), refused each time with IAC DONT 5.
+        let flood = [255, 251, 5].repeat(1 << 20);
+        let sent = tokio::time::timeout(Duration::from_secs(2), server.write_all(&flood)).await;
+        assert!(sent.is_err(), "all of the negotiation was read");
+        session.abort();
     }
 
     #[test]
