@@ -20,6 +20,9 @@ cd "$(dirname "$0")/.."
 
 manifest=src-tauri/Cargo.toml
 changelog=CHANGELOG.md
+# A fixed version: the changelog shouldn't change with whatever git-cliff is latest on npm,
+# nor run code that hasn't been looked at.
+git_cliff=git-cliff@2.14.2
 
 die() {
   echo "error: $*" >&2
@@ -37,6 +40,10 @@ prepare() {
   [[ -z $(git status --porcelain) ]] || die "the working tree has uncommitted changes"
   ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null || die "tag v$version already exists"
 
+  # A failure from here on (git-cliff without a network, say) puts the files back, so that
+  # the tree is clean for running prepare again.
+  trap 'git checkout -q -- "$manifest" src-tauri/Cargo.lock "$changelog"; echo "error: prepare failed; nothing was changed" >&2' EXIT
+
   # The package's own version is the first `version =` line.
   awk -v version="$version" '!done && /^version = "/ { $0 = "version = \"" version "\""; done = 1 } 1' \
     "$manifest" >"$manifest.tmp"
@@ -47,10 +54,11 @@ prepare() {
 
   if grep -q '^## \[[0-9]' "$changelog"; then
     # Earlier versions' sections stay as they were edited.
-    pnpm dlx git-cliff --unreleased --tag "v$version" --prepend "$changelog"
+    pnpm dlx "$git_cliff" --unreleased --tag "v$version" --prepend "$changelog"
   else
-    pnpm dlx git-cliff --tag "v$version" -o "$changelog"
+    pnpm dlx "$git_cliff" --tag "v$version" -o "$changelog"
   fi
+  trap - EXIT
 
   echo
   echo "Version set to $version. Edit the $version section of $changelog, then run:"
@@ -60,6 +68,10 @@ prepare() {
 tag() {
   local version
   version=$(current_version)
+  [[ $(git branch --show-current) == main ]] || die "not on main"
+  # Behind or apart from origin's main, the push after tagging would be refused.
+  git fetch -q origin main
+  git merge-base --is-ancestor origin/main HEAD || die "main doesn't contain origin/main; bring it up to date first"
   ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null || die "tag v$version already exists; run '$0 prepare X.Y.Z' first"
   grep -q "^## \[$version\]" "$changelog" || die "$changelog has no section for $version"
   local unexpected
