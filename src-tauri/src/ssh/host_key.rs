@@ -21,6 +21,8 @@ pub enum HostKeyStatus {
     Changed { path: PathBuf, line: usize },
     /// Marked `@revoked` in this file.
     Revoked { path: PathBuf },
+    /// A certificate whose authority is marked `@revoked` in this file.
+    RevokedAuthority { path: PathBuf },
     /// A certificate from an authority trusted for the host, with a signature that doesn't
     /// verify.
     BadCertificateSignature,
@@ -65,6 +67,13 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
         HostKeyStatus::Revoked { path } => {
             let banner = t!("hostKey.revokedBanner");
             let details = t!("hostKey.revokedDetails", algorithm = algorithm, host = host_pattern(host, port), path = path.display());
+            io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
+            false
+        }
+        HostKeyStatus::RevokedAuthority { path } => {
+            // OpenSSH shows the revoked key banner here too, with the certificate's type.
+            let banner = t!("hostKey.revokedBanner");
+            let details = t!("hostKey.revokedAuthorityDetails", host = host_pattern(host, port), path = path.display());
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }

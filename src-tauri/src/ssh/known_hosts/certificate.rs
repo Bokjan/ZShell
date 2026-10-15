@@ -21,9 +21,9 @@ pub enum CertificateCheck {
     Untrusted,
     /// Signed by an authority trusted for the host, but not valid for it.
     Invalid(Invalid),
-    /// The key in it, or the authority that signed it, is marked `@revoked` on this line of
-    /// this file.
-    Revoked { path: PathBuf, line: usize },
+    /// The key in it, or the authority that signed it (`authority`), is marked `@revoked` on
+    /// this line of this file.
+    Revoked { path: PathBuf, line: usize, authority: bool },
 }
 
 /// Why a certificate from a trusted authority isn't valid, as OpenSSH's `sshkey_cert_check_host`
@@ -73,8 +73,9 @@ pub(super) fn check_certificate_at(
     let entries = entries_at(paths)?;
     // As for plain keys, a revoked line applies whatever host it names.
     let revoked = |key: &PublicKey| key.key_data() == certificate.public_key() || key.key_data() == certificate.signature_key();
-    if let Some((path, entry, _)) = marked(&entries, "revoked").find(|(_, _, key)| revoked(key)) {
-        return Ok(CertificateCheck::Revoked { path: path.to_path_buf(), line: entry.line });
+    if let Some((path, entry, key)) = marked(&entries, "revoked").find(|(_, _, key)| revoked(key)) {
+        let authority = key.key_data() != certificate.public_key();
+        return Ok(CertificateCheck::Revoked { path: path.to_path_buf(), line: entry.line, authority });
     }
     let trusted = marked(&entries, "cert-authority")
         .any(|(_, entry, key)| entry.applies_to(&host_port) && key.key_data() == certificate.signature_key());

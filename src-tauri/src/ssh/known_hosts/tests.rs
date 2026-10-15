@@ -322,9 +322,9 @@ fn refuses_certificates_with_revoked_keys() {
     };
     // The authority, or the key in the certificate, on a line for any host.
     let revoked = check(format!("@cert-authority * {CA}\n@revoked other {CA}\n"));
-    assert!(matches!(revoked, CertificateCheck::Revoked { line: 2, .. }), "{revoked:?}");
+    assert!(matches!(revoked, CertificateCheck::Revoked { line: 2, authority: true, .. }), "{revoked:?}");
     let revoked = check(format!("@cert-authority * {CA}\n# c\n@revoked * {HOST}\n"));
-    assert!(matches!(revoked, CertificateCheck::Revoked { line: 3, .. }), "{revoked:?}");
+    assert!(matches!(revoked, CertificateCheck::Revoked { line: 3, authority: false, .. }), "{revoked:?}");
     // A plain line for the authority's key doesn't make it one.
     assert_eq!(check(format!("server.lan {CA}\n")), CertificateCheck::Untrusted);
 }

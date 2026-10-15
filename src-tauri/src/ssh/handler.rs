@@ -98,7 +98,12 @@ impl client::Handler for ClientHandler {
             match checked {
                 Ok(CertificateCheck::Trusted) => return Ok(true),
                 Ok(CertificateCheck::Untrusted) => {}
-                Ok(CertificateCheck::Revoked { path, .. }) => return Ok(self.ask(key, HostKeyStatus::Revoked { path }).await),
+                Ok(CertificateCheck::Revoked { path, authority: false, .. }) => {
+                    return Ok(self.ask(key, HostKeyStatus::Revoked { path }).await)
+                }
+                Ok(CertificateCheck::Revoked { path, authority: true, .. }) => {
+                    return Ok(self.ask(key, HostKeyStatus::RevokedAuthority { path }).await)
+                }
                 Ok(CertificateCheck::Invalid(Invalid::Signature)) => {
                     return Ok(self.ask(key, HostKeyStatus::BadCertificateSignature).await)
                 }

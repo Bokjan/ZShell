@@ -28,6 +28,7 @@
     "saveFailed": "无法写入 known_hosts：{error}",
     "revokedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@       WARNING: REVOKED HOST KEY DETECTED!               @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "revokedDetails": "{path} 中将 {host} 的 {algorithm} 主机密钥标记为已吊销。\n这可能意味着有人正在使用被盗的密钥冒充此主机。",
+    "revokedAuthorityDetails": "{path} 中将为 {host} 的主机证书签名的证书颁发机构标记为已吊销。\n这可能意味着有人正在使用被盗的证书颁发机构密钥冒充此主机。",
     "changedBanner": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
     "changedDetails": "有人可能正在窃听你的连接（中间人攻击）！\n也可能是主机密钥刚刚更换过。\n远程主机发送的 {algorithm} 密钥指纹为：\n  {fingerprint}\n它与 {path} 第 {line} 行的记录不符。\n如果密钥变更在预期之中，请在“设置 › 已知主机”中移除旧密钥，或执行：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\n然后重新连接。",
     "changedDetailsElsewhere": "有人可能正在窃听你的连接（中间人攻击）！\n也可能是主机密钥刚刚更换过。\n远程主机发送的 {algorithm} 密钥指纹为：\n  {fingerprint}\n它与 {path} 第 {line} 行的记录不符。\n如果密钥变更在预期之中，请从该文件中移除旧密钥，例如执行：\n  ssh-keygen -f \"{path}\" -R \"{host}\"\n然后重新连接。",
