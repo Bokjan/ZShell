@@ -21,12 +21,14 @@ interface Renderer {
 
 const renderers = new Set<Renderer>();
 let renewal: ReturnType<typeof setTimeout> | undefined;
+/** Set once loading the addon failed: WebGL2 is unavailable, and trying again won't help. */
+let unavailable = false;
 
 /**
  * Atlases are shared by the terminals with the same font, colors and pixel ratio, and live
  * while a terminal uses them: all the terminals drawing with WebGL let theirs go before any
- * loads a new addon. Some pages may be missed (those an atlas had before a terminal joined
- * it, once the terminal that saw them is gone), so the count errs low.
+ * loads a new addon. Some pages may be missed (those an atlas had beyond its first before a
+ * terminal joined it, once the terminal that saw them is gone), so the count errs low.
  */
 function checkAtlases() {
   if (renewal !== undefined) return;
@@ -48,17 +50,19 @@ function checkAtlases() {
  */
 export function drawWithWebgl(term: Terminal): () => void {
   let addon: WebglAddon | undefined;
-  // The canvas the addon draws on, while its context is there to release.
-  let canvas: HTMLCanvasElement | undefined;
+  // The addon's context, while it is there to release.
+  let gl: WebGL2RenderingContext | undefined;
   const pages = new Set<HTMLCanvasElement>();
   const renderer: Renderer = {
     pages,
     drawing: () => addon !== undefined,
     load() {
+      if (unavailable) return;
+      let webgl: WebglAddon | undefined;
       try {
-        const webgl = new WebglAddon();
+        webgl = new WebglAddon();
         webgl.onContextLoss(() => {
-          canvas = undefined;
+          gl = undefined;
           renderer.release();
         });
         webgl.onAddTextureAtlasCanvas((page) => {
@@ -66,11 +70,24 @@ export function drawWithWebgl(term: Terminal): () => void {
           checkAtlases();
         });
         webgl.onRemoveTextureAtlasCanvas((page) => pages.delete(page));
+        // Another atlas (new colors, font or pixel ratio): the old one's pages are no longer
+        // this terminal's, and the atlas removes none of them as it goes.
+        webgl.onChangeTextureAtlas((page) => {
+          pages.clear();
+          pages.add(page);
+          checkAtlases();
+        });
         const before = new Set(term.element?.querySelectorAll("canvas"));
         term.loadAddon(webgl);
-        canvas = [...(term.element?.querySelectorAll("canvas") ?? [])].find((c) => !before.has(c));
+        // The addon adds a 2D canvas for link underlines before its WebGL one. Asking a canvas
+        // that has a 2D context for "webgl2" gives null, and creates nothing.
+        const added = [...(term.element?.querySelectorAll("canvas") ?? [])].filter((c) => !before.has(c));
+        gl = added.map((c) => c.getContext("webgl2")).find((context) => context !== null) ?? undefined;
         addon = webgl;
       } catch (e) {
+        // The terminal keeps an addon whose activation failed until it is disposed.
+        webgl?.dispose();
+        unavailable = true;
         console.warn("WebGL renderer unavailable, using DOM renderer", e);
       }
     },
@@ -81,8 +98,8 @@ export function drawWithWebgl(term: Terminal): () => void {
       pages.clear();
       // The addon leaves its context to the garbage collector, which keeps the context's
       // memory (and its place among the web view's contexts) until it runs.
-      canvas?.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
-      canvas = undefined;
+      gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      gl = undefined;
     },
   };
   renderers.add(renderer);
