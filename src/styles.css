@@ -2586,7 +2586,11 @@ body.resizing .terminal-view {
 .dialog button.secondary:disabled {
   opacity: 0.5;
 }
-.dialog .row input.grow {
+/* Fields side by side share the row's width. Otherwise a field is at least as wide as its
+   content, a menu as wide as its longest choice, which pushes the row past the dialog in
+   languages with long names (the encodings in Japanese and German). */
+.dialog .row input.grow,
+.dialog .row > label.grow {
   min-width: 0;
 }
 .import-dialog {
@@ -2673,8 +2677,11 @@ body.resizing .terminal-view {
 .profile-pages button {
   flex: 1;
 }
+/* The column takes the dialog's width, not that of the widest page: a hidden page that
+   doesn't fit must not widen the page shown, which is cut off at the dialog's edge. */
 .profile-stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
 }
 .profile-page {
   grid-area: 1 / 1;
