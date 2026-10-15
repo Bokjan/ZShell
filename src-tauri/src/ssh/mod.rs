@@ -189,6 +189,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
     let mut close = CloseOnDrop(Some(writer.clone()));
     let flow = io.sink().flow();
     let mut exit_status = None;
+    let mut exit_signal = None;
     let mut sending: Option<Sending> = None;
     let mut data = None;
     let mut resize = None;
@@ -215,9 +216,16 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
                     exit_status = Some(status);
                     Ok(())
                 }
+                Some(ChannelMsg::ExitSignal { signal_name, .. }) => {
+                    exit_signal = Some(signal_name);
+                    Ok(())
+                }
                 Some(ChannelMsg::Close) => {
                     close.0 = None;
-                    return Outcome::Exited(exit_status);
+                    return match exit_signal {
+                        Some(signal) => Outcome::Signaled(signal_label(&signal)),
+                        None => Outcome::Exited(exit_status),
+                    };
                 }
                 // The connection ended without closing the channel.
                 None => break,
@@ -281,6 +289,28 @@ async fn in_flight<F: Future + Unpin>(sending: &mut Option<F>) -> F::Output {
         Some(sending) => sending.await,
         None => std::future::pending().await,
     }
+}
+
+/// How a signal the server names is shown, as OpenSSH's `SIG` names. A server's own name
+/// (an extension) is cut short: it ends up in the terminal.
+fn signal_label(signal: &russh::Sig) -> String {
+    use russh::Sig;
+    let name = match signal {
+        Sig::ABRT => "ABRT",
+        Sig::ALRM => "ALRM",
+        Sig::FPE => "FPE",
+        Sig::HUP => "HUP",
+        Sig::ILL => "ILL",
+        Sig::INT => "INT",
+        Sig::KILL => "KILL",
+        Sig::PIPE => "PIPE",
+        Sig::QUIT => "QUIT",
+        Sig::SEGV => "SEGV",
+        Sig::TERM => "TERM",
+        Sig::USR1 => "USR1",
+        Sig::Custom(name) => return name.chars().take(32).collect(),
+    };
+    format!("SIG{name}")
 }
 
 /// What a connection to one hop takes besides its address: what the server may open, and
@@ -461,12 +491,19 @@ mod tests {
             Ok(())
         }
 
-        async fn data(
-            &mut self,
-            _channel: russh::ChannelId,
-            data: &[u8],
-            _session: &mut russh::server::Session,
-        ) -> Result<(), Self::Error> {
+        async fn data(&mut self, channel: russh::ChannelId, data: &[u8], session: &mut russh::server::Session) -> Result<(), Self::Error> {
+            // The shell is killed, or exits.
+            match data {
+                b"kill" => {
+                    session.exit_signal_request(channel, russh::Sig::KILL, false, "", "")?;
+                    session.close(channel)?;
+                }
+                b"exit" => {
+                    session.exit_status_request(channel, 3)?;
+                    session.close(channel)?;
+                }
+                _ => {}
+            }
             let _ = self.typed.send(data.to_vec());
             Ok(())
         }
@@ -590,6 +627,20 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
         shell.expect(b"q", (149, 30), true).await;
         shell.bridge.abort();
+    }
+
+    /// A shell the server reports as killed by a signal is told apart from one that exited.
+    #[tokio::test]
+    async fn a_shell_ended_by_a_signal_is_reported_as_such() {
+        let shell = Shell::start(false).await;
+        shell.input.send(SessionInput::Data(b"kill".to_vec())).unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(10), shell.bridge).await.unwrap().unwrap();
+        assert!(matches!(&outcome, Outcome::Signaled(signal) if signal == "SIGKILL"));
+
+        let shell = Shell::start(false).await;
+        shell.input.send(SessionInput::Data(b"exit".to_vec())).unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(10), shell.bridge).await.unwrap().unwrap();
+        assert!(matches!(outcome, Outcome::Exited(Some(3))));
     }
 
     /// Typing and pastes reach the shell whole and in order, with window changes in between.

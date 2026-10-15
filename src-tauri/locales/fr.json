@@ -3,6 +3,7 @@
     "connecting": "Connexion à {user}@{host}:{port} ...",
     "closed": "[Connexion fermée]",
     "closedWithStatus": "[Connexion fermée, code de sortie {status}]",
+    "closedBySignal": "[Connexion fermée, shell terminé par le signal : {signal}]",
     "savedPasswordRejected": "Le mot de passe enregistré a été refusé par le serveur.",
     "incorrectPassphrase": "Phrase secrète incorrecte.",
     "connectingVia": "Connexion à {user}@{host}:{port} via {jump} ...",

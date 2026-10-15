@@ -3,6 +3,7 @@
     "connecting": "{user}@{host}:{port}に接続しています...",
     "closed": "[接続が閉じられました]",
     "closedWithStatus": "[接続が閉じられました。終了ステータス：{status}]",
+    "closedBySignal": "[接続が閉じられました。シェルがシグナルで終了しました：{signal}]",
     "savedPasswordRejected": "保存されたパスワードはサーバーに拒否されました。",
     "incorrectPassphrase": "パスフレーズが正しくありません。",
     "connectingVia": "{jump}経由で{user}@{host}:{port}に接続しています...",

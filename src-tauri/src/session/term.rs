@@ -126,35 +126,40 @@ impl TermIo {
         self.lifetime.close();
         self.sink.flush_text();
         self.sink.reset_modes();
-        let (reason, error, status) = match outcome {
+        let (reason, error, status, signal) = match outcome {
             Outcome::Exited(status) => {
                 let message = match status {
                     Some(status) => t!("terminal.closedWithStatus", status = status),
                     None => t!("terminal.closed"),
                 };
                 self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
-                (CloseReason::Exited, None, status)
+                (CloseReason::Exited, None, status, None)
+            }
+            Outcome::Signaled(signal) => {
+                let message = t!("terminal.closedBySignal", signal = signal);
+                self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
+                (CloseReason::Exited, None, None, Some(signal))
             }
             Outcome::ProcessEnded { code, signal } => {
-                let message = match (signal, code) {
+                let message = match (&signal, code) {
                     (Some(signal), _) => t!("terminal.processSignaled", signal = signal),
                     (None, Some(code)) if code != 0 => t!("terminal.processExitedWithCode", code = code),
                     _ => t!("terminal.processExited"),
                 };
                 self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
-                (CloseReason::Exited, None, code)
+                (CloseReason::Exited, None, code, signal)
             }
             Outcome::Lost(e) => {
                 // The remote program may have left the cursor mid-line.
                 self.print(&format!("\n\x1b[31m{e}\x1b[0m\n"));
-                (CloseReason::Lost, Some(e), None)
+                (CloseReason::Lost, Some(e), None, None)
             }
             Outcome::Failed(e) => {
                 self.print(&format!("\x1b[31m{e}\x1b[0m\n"));
-                (CloseReason::Failed, Some(e), None)
+                (CloseReason::Failed, Some(e), None, None)
             }
         };
-        self.event(SessionEvent::Closed { reason, error, status });
+        self.event(SessionEvent::Closed { reason, error, status, signal });
     }
 
     pub fn sink(&self) -> SessionSink {

@@ -49,10 +49,11 @@ export interface SessionEvents {
   /** The session's log started (its path) or stopped (null). */
   log(path: string | null): void;
   /**
-   * The shell exited (rather than failing to start or losing the connection), with whether
-   * the user typed into it. Returns whether the pane closes, which then shows nothing more.
+   * The shell exited (rather than failing to start or losing the connection), with its exit
+   * status or the signal that ended it, and whether the user typed into it. Returns whether
+   * the pane closes, which then shows nothing more.
    */
-  exited(status: number | null, typed: boolean): boolean;
+  exited(status: number | null, signal: string | null, typed: boolean): boolean;
   /** Ctrl+D in a closed terminal: the user asks to close the pane. */
   close(): void;
   /** An automatic reconnection is due at this time (`Date.now()`), or none is any more (null). */
@@ -513,7 +514,7 @@ export class PaneSession {
           this.connect();
           return;
         }
-        if (event.reason === "exited" && this.events.exited(event.status, this.typed)) return;
+        if (event.reason === "exited" && this.events.exited(event.status, event.signal, this.typed)) return;
         this.events.status("closed");
         if (target.kind === "local") {
           this.dim(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));

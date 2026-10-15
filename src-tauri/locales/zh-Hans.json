@@ -3,6 +3,7 @@
     "connecting": "正在连接 {user}@{host}:{port}…",
     "closed": "[连接已关闭]",
     "closedWithStatus": "[连接已关闭，退出状态 {status}]",
+    "closedBySignal": "[连接已关闭，shell 被信号终止：{signal}]",
     "savedPasswordRejected": "服务器拒绝了已保存的密码。",
     "incorrectPassphrase": "口令不正确。",
     "connectingVia": "正在经由 {jump} 连接 {user}@{host}:{port}…",

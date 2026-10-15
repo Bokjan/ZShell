@@ -71,11 +71,13 @@ pub enum SessionInput {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SessionEvent {
     Connected,
-    /// `status`: the exit status of the shell, if it reported one.
+    /// `status`: the exit status of the shell, if it reported one. `signal`: the signal that
+    /// ended it, if one did.
     Closed {
         reason: CloseReason,
         error: Option<Error>,
         status: Option<u32>,
+        signal: Option<String>,
     },
     Forward {
         rule_id: String,
@@ -112,6 +114,8 @@ pub enum CloseReason {
 pub enum Outcome {
     /// The remote side closed the session, with the shell's exit status if it reported one.
     Exited(Option<u32>),
+    /// The remote side closed the session after its shell was ended by the signal named.
+    Signaled(String),
     /// A local shell exited, with its exit code, or the signal that ended it.
     ProcessEnded { code: Option<u32>, signal: Option<String> },
     /// The connection broke (or the device went away) after the session had started.

@@ -140,11 +140,12 @@ export function paneWork(pane: Pane): PaneWork | null {
  * Whether the pane closes now that its shell has exited (`exit`, Ctrl+D), as in Xshell,
  * whatever the exit status (bash exits with the last command's). Not when the user never
  * typed into the shell (the server ended the session at once: what it said stays in sight),
- * when a local shell was ended by a signal (`status` null), nor while closing would end work
- * of the file panel.
+ * when the shell was ended by a signal (killed: its last output, "Killed" or the end of a
+ * build, stays in sight), nor while closing would end work of the file panel. A local shell
+ * reports one or the other; servers may report neither.
  */
-export function closesOnExit(pane: Pane, status: number | null, typed: boolean): boolean {
-  if (!typed || paneWork(pane)) return false;
+export function closesOnExit(pane: Pane, status: number | null, signal: string | null, typed: boolean): boolean {
+  if (!typed || signal !== null || paneWork(pane)) return false;
   return pane.target.kind !== "local" || status !== null;
 }
 

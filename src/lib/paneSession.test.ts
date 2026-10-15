@@ -42,8 +42,14 @@ interface Opened {
   reject(error: unknown): void;
 }
 
-const lost = (error: CommandError | null = null): SessionEvent => ({ type: "closed", reason: "lost", error, status: null });
-const failed = (error: CommandError | null = null): SessionEvent => ({ type: "closed", reason: "failed", error, status: null });
+const lost = (error: CommandError | null = null): SessionEvent => ({ type: "closed", reason: "lost", error, status: null, signal: null });
+const failed = (error: CommandError | null = null): SessionEvent => ({
+  type: "closed",
+  reason: "failed",
+  error,
+  status: null,
+  signal: null,
+});
 
 let nextId = 1;
 
@@ -139,7 +145,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     forward: vi.fn(),
     zmodem: vi.fn(),
     log: vi.fn(),
-    exited: vi.fn((_status: number | null, _typed: boolean) => false),
+    exited: vi.fn((_status: number | null, _signal: string | null, _typed: boolean) => false),
     close: vi.fn(),
     retry: vi.fn(),
     arrived: vi.fn(),
@@ -340,8 +346,8 @@ describe("automatic reconnection", () => {
     const { pane, opened, events, screen } = setup({ target: () => ({ kind: "local" }) });
     pane.connect();
     opened[0].event({ type: "connected" });
-    opened[0].event({ type: "closed", reason: "exited", error: null, status: 0 });
-    expect(events.exited).toHaveBeenCalledWith(0, false);
+    opened[0].event({ type: "closed", reason: "exited", error: null, status: 0, signal: null });
+    expect(events.exited).toHaveBeenCalledWith(0, null, false);
     expect(screen()).toContain("terminal.restartHint");
     await vi.advanceTimersByTimeAsync(60_000);
     expect(opened).toHaveLength(1);
@@ -349,7 +355,7 @@ describe("automatic reconnection", () => {
 });
 
 describe("ending", () => {
-  const exited = (status: number | null): SessionEvent => ({ type: "closed", reason: "exited", error: null, status });
+  const exited = (status: number | null): SessionEvent => ({ type: "closed", reason: "exited", error: null, status, signal: null });
 
   it("says whether the user typed into the shell, not into the prompts of connecting", async () => {
     const { pane, opened, events } = setup();
@@ -361,7 +367,7 @@ describe("ending", () => {
     // The terminal's answers to the shell's queries aren't typing.
     pane.input("\x1b[?1;2c");
     opened[0].event(exited(1));
-    expect(events.exited).toHaveBeenLastCalledWith(1, false);
+    expect(events.exited).toHaveBeenLastCalledWith(1, null, false);
 
     pane.input("\r");
     opened[1].resolve();
@@ -369,7 +375,7 @@ describe("ending", () => {
     opened[1].event({ type: "connected" });
     pane.input("exit\r");
     opened[1].event(exited(null));
-    expect(events.exited).toHaveBeenLastCalledWith(null, true);
+    expect(events.exited).toHaveBeenLastCalledWith(null, null, true);
   });
 
   it("shows nothing more when the pane closes", async () => {

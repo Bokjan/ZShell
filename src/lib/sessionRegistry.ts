@@ -150,9 +150,9 @@ export function createSessionRegistry(
             view.zmodem(phase);
           },
           log: (path) => update({ logPath: path }),
-          exited: (status, typed) => {
+          exited: (status, signal, typed) => {
             const current = pane();
-            if (!closesOnExit(current, status, typed)) return false;
+            if (!closesOnExit(current, status, signal, typed)) return false;
             if (activeTabOf(store.get())?.focused !== key) announce(t("announce.closed", { name: current.title }));
             store.dispatch({ type: "close", keys: [key] });
             return true;

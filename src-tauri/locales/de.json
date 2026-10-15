@@ -3,6 +3,7 @@
     "connecting": "Verbindung zu {user}@{host}:{port} wird hergestellt ...",
     "closed": "[Verbindung beendet]",
     "closedWithStatus": "[Verbindung beendet, Exit-Status {status}]",
+    "closedBySignal": "[Verbindung beendet, Shell durch Signal beendet: {signal}]",
     "savedPasswordRejected": "Der Server hat das gespeicherte Passwort abgelehnt.",
     "incorrectPassphrase": "Falsche Passphrase.",
     "connectingVia": "Verbindung zu {user}@{host}:{port} über {jump} wird hergestellt ...",

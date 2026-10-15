@@ -28,25 +28,28 @@ describe("closesOnExit", () => {
   const local = { ...pane, target: { kind: "local" as const } };
 
   it("closes a pane whose shell the user exited, whatever the status", () => {
-    expect(closesOnExit(pane, 0, true)).toBe(true);
-    expect(closesOnExit(pane, 1, true)).toBe(true);
+    expect(closesOnExit(pane, 0, null, true)).toBe(true);
+    expect(closesOnExit(pane, 1, null, true)).toBe(true);
     // Telnet servers, and SSH servers that don't send one, report no status.
-    expect(closesOnExit(pane, null, true)).toBe(true);
-    expect(closesOnExit(local, 0, true)).toBe(true);
-    expect(closesOnExit(local, 130, true)).toBe(true);
+    expect(closesOnExit(pane, null, null, true)).toBe(true);
+    expect(closesOnExit(local, 0, null, true)).toBe(true);
+    expect(closesOnExit(local, 130, null, true)).toBe(true);
   });
 
   it("keeps it when the user never typed into the shell", () => {
-    expect(closesOnExit(pane, 0, false)).toBe(false);
-    expect(closesOnExit(local, 0, false)).toBe(false);
+    expect(closesOnExit(pane, 0, null, false)).toBe(false);
+    expect(closesOnExit(local, 0, null, false)).toBe(false);
   });
 
-  it("keeps a local shell ended by a signal", () => {
-    expect(closesOnExit(local, null, true)).toBe(false);
+  it("keeps a shell ended by a signal", () => {
+    expect(closesOnExit(local, null, "Killed: 9", true)).toBe(false);
+    expect(closesOnExit(pane, null, "SIGKILL", true)).toBe(false);
+    // A local shell reports a signal without a status.
+    expect(closesOnExit(local, null, null, true)).toBe(false);
   });
 
   it("keeps it while closing would end work of the file panel", () => {
-    expect(closesOnExit({ ...pane, transfers: 1 }, 0, true)).toBe(false);
-    expect(closesOnExit({ ...pane, edits: 1 }, 0, true)).toBe(false);
+    expect(closesOnExit({ ...pane, transfers: 1 }, 0, null, true)).toBe(false);
+    expect(closesOnExit({ ...pane, edits: 1 }, 0, null, true)).toBe(false);
   });
 });
