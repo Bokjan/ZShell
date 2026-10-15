@@ -12,6 +12,7 @@ import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  TYPING_SAVE_DELAY,
   useSettings,
   type Appearance,
   type CursorStyle,
@@ -68,7 +69,8 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { t } = useTranslation();
   const { settings, theme, update } = useSettings();
   const terminal = settings.terminal;
-  const setTerminal = (patch: Partial<TerminalSettings>) => update({ ...settings, terminal: { ...terminal, ...patch } });
+  const setTerminal = (patch: Partial<TerminalSettings>, delay?: number) =>
+    update({ ...settings, terminal: { ...terminal, ...patch } }, delay);
   const setTabs = (patch: Partial<TabSettings>) => update({ ...settings, tabs: { ...settings.tabs, ...patch } });
   const setSidebar = (patch: Partial<SidebarSettings>) => update({ ...settings, sidebar: { ...settings.sidebar, ...patch } });
   const setFiles = (patch: Partial<FileSettings>) => update({ ...settings, files: { ...settings.files, ...patch } });
@@ -299,7 +301,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                     {t("settings.appFont")}
                     <LiveTextField
                       value={settings.appFont}
-                      onChange={(appFont) => update({ ...settings, appFont })}
+                      onChange={(appFont) => update({ ...settings, appFont }, TYPING_SAVE_DELAY)}
                       placeholder={t("settings.appFontPlaceholder")}
                       autoCapitalize="off"
                       autoCorrect="off"
@@ -373,7 +375,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                     {t("settings.fontFamily")}
                     <LiveTextField
                       value={terminal.fontFamily}
-                      onChange={(fontFamily) => setTerminal({ fontFamily })}
+                      onChange={(fontFamily) => setTerminal({ fontFamily }, TYPING_SAVE_DELAY)}
                       placeholder={
                         systemFontFamilies()
                           ? t("settings.fontFamilyPlaceholderSystem", { font: systemFontFamilies().replace(/"/g, "") })

@@ -5,6 +5,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { nextFieldText } from "../../lib/fieldText";
 import { wholeNumber } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
+import { useSettings } from "../../lib/settings";
 import { SpinInput } from "../SpinInput";
 
 /**
@@ -139,16 +140,20 @@ export function NumberField({
 }
 
 /**
- * A text field applied as it is typed. The stored value comes back trimmed, which must not
- * replace what is being typed: a space typed before the next word would disappear; nor does a
- * value from another window replace a keystroke not saved yet.
+ * A text field applied as it is typed. `onChange` saves after a pause in typing (see
+ * `TYPING_SAVE_DELAY`), not on each key; the field saves what is waiting when it loses the
+ * focus or the dialog closes. The stored value comes back trimmed, which must not replace
+ * what is being typed: a space typed before the next word would disappear; nor does a value
+ * from another window replace a keystroke not saved yet.
  */
 export function LiveTextField({
   value,
   onChange,
   ...rest
 }: { value: string; onChange(text: string): void } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  const { flush } = useSettings();
   const [text, setText] = useFieldText(value, (text, value) => text.trim() === value);
+  useEffect(() => flush, [flush]);
   return (
     <input
       {...rest}
@@ -156,6 +161,10 @@ export function LiveTextField({
       onChange={(e) => {
         setText(e.target.value);
         onChange(e.target.value);
+      }}
+      onBlur={(e) => {
+        flush();
+        rest.onBlur?.(e);
       }}
     />
   );

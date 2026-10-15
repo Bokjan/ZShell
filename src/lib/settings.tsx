@@ -34,6 +34,9 @@ export const FONT_SIZE_MAX = 48;
 
 export const DEFAULT_LOG_FILE_NAME = "{session}_{date}_{time}.log";
 
+/** How long a setting typed into a field waits for the next key before it is saved. */
+export const TYPING_SAVE_DELAY = 500;
+
 export const DEFAULT_SETTINGS: Settings = {
   language: "system",
   appearance: "system",
@@ -68,7 +71,10 @@ interface SettingsContextValue {
   settings: Settings;
   /** The appearance in effect, with "system" resolved. */
   theme: "dark" | "light";
-  update(settings: Settings): void;
+  /** Applies `settings` and saves them, after `delay` ms without another change if given. */
+  update(settings: Settings, delay?: number): void;
+  /** Saves a change still waiting for its delay. */
+  flush(): void;
   /** Why the last change couldn't be saved (it was undone), until dismissed. */
   saveError: unknown;
   dismissSaveError(): void;
@@ -173,7 +179,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   // Wait for the stored settings so terminals start with the right theme and font.
   if (!settings) return null;
-  const value = { settings, theme, update: saver.save, saveError, dismissSaveError: () => setSaveError(null) };
+  const value = { settings, theme, update: saver.save, flush: saver.flush, saveError, dismissSaveError: () => setSaveError(null) };
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
 

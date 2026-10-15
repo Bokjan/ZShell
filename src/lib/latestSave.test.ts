@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { latestSave } from "./latestSave";
 
@@ -94,5 +94,52 @@ describe("latestSave", () => {
     saver.save("a");
     await settle();
     expect(shown).toEqual(["stored", "a"]);
+  });
+
+  describe("waiting", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("shows each change at once and stores the last once changes stop", () => {
+      const { saver, shown, stores } = setup("stored");
+      saver.save("a", 500);
+      vi.advanceTimersByTime(300);
+      saver.save("ab", 500);
+      vi.advanceTimersByTime(499);
+      expect(shown).toEqual(["a", "ab"]);
+      expect(stores).toHaveLength(0);
+      vi.advanceTimersByTime(1);
+      expect(stores).toHaveLength(1);
+    });
+
+    it("stores a waiting change when flushed, once", async () => {
+      const { saver, shown, stores } = setup("stored");
+      saver.save("a", 500);
+      saver.flush();
+      saver.flush();
+      vi.advanceTimersByTime(500);
+      expect(stores).toHaveLength(1);
+      stores[0].resolve("a (saved)");
+      await vi.runAllTimersAsync();
+      expect(shown).toEqual(["a", "a (saved)"]);
+    });
+
+    it("drops a waiting change that a save overtakes", () => {
+      const { saver, stores } = setup("stored");
+      saver.save("a", 500);
+      saver.save("b");
+      vi.advanceTimersByTime(500);
+      expect(stores).toHaveLength(1);
+    });
+
+    it("stores a waiting change instead of reloading", async () => {
+      const { saver, shown, stores } = setup("stored");
+      saver.save("a", 500);
+      saver.reload();
+      expect(stores).toHaveLength(1);
+      stores[0].resolve("a (saved)");
+      await vi.runAllTimersAsync();
+      expect(shown).toEqual(["a", "a (saved)"]);
+    });
   });
 });
