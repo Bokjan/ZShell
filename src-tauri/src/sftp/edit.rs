@@ -69,7 +69,7 @@ impl Edits {
         let Some(name) = local_file_name(file_name(remote)) else {
             return Err(Error::new("transfer.invalidName").param("name", remote));
         };
-        if edit_id.contains(['/', '\\', '.']) {
+        if !super::is_folder_id(edit_id) {
             return Err(Error::new("transfer.invalidPath").param("path", remote));
         }
         Ok(self.root.join(edit_id).join(name))

@@ -253,7 +253,7 @@ fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Re
     use crate::local_name::{create_unique, create_unique_file};
 
     super::edit::remove_old(root);
-    if transfer_id.contains(['/', '\\', '.']) {
+    if !super::is_folder_id(transfer_id) {
         return Err(Error::new("transfer.invalidPath").param("path", transfer_id));
     }
     let dir = root.join(transfer_id);

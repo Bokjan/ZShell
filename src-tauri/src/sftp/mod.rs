@@ -61,6 +61,12 @@ pub fn is_entry(name: &str) -> bool {
     !matches!(name, "" | "." | "..") && !name.contains(['/', '\0'])
 }
 
+/// Whether an id the frontend made (a UUID) can name a folder of ours: letters, digits and
+/// dashes only, so that it can't lead elsewhere (`..`, or a drive such as `C:` on Windows).
+pub fn is_folder_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 /// Symlinks whose targets are looked up at once when listing, rather than one round trip
 /// after another (a folder such as `/usr/lib` has hundreds).
 const SYMLINK_LOOKUPS: usize = 16;
@@ -152,6 +158,14 @@ pub async fn remove(sftp: &SftpSession, path: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_ids_are_plain() {
+        assert!(is_folder_id("0b4f5e3c-7d1a-4c55-9a0e-2f6b8c1d3e4f"));
+        for id in ["", ".", "..", "C:x", "a/b", "a\\b", "x.y"] {
+            assert!(!is_folder_id(id), "{id:?}");
+        }
+    }
 
     #[test]
     fn listings_name_entries_of_the_directory_only() {
