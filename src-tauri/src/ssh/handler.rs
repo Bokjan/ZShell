@@ -68,7 +68,11 @@ impl client::Handler for ClientHandler {
             PublicKeyOrCertificate::Certificate(cert) => PublicKey::from(cert.public_key().clone()),
         };
 
-        let status = match known_hosts::check(&self.host, self.port, &key) {
+        // Reading the files (and waiting for a write to them), off russh's connection task.
+        let (host, port, checked) = (self.host.clone(), self.port, key.clone());
+        let checked =
+            tokio::task::spawn_blocking(move || known_hosts::check(&host, port, &checked)).await.map_err(std::io::Error::other)?;
+        let status = match checked {
             Ok(Check::Known) => return Ok(true),
             Ok(Check::Unknown) => HostKeyStatus::Unknown { others: Vec::new() },
             Ok(Check::OtherTypesKnown(others)) => HostKeyStatus::Unknown { others },

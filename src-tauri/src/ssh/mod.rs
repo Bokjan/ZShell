@@ -370,7 +370,12 @@ where
 {
     let remote = &hop.ssh.remote;
     let preferred = russh::Preferred::default();
-    let key = known_hosts::prefer_known(&preferred.key, &remote.host, remote.port).into();
+    // Reads the known_hosts files, in the blocking pool.
+    let (algorithms, host, port) = (preferred.key.to_vec(), remote.host.clone(), remote.port);
+    let key = tokio::task::spawn_blocking(move || known_hosts::prefer_known(&algorithms, &host, port))
+        .await
+        .unwrap_or_else(|_| preferred.key.to_vec())
+        .into();
     let config = Arc::new(client::Config {
         keepalive_interval: remote.keepalive(),
         keepalive_max: 3,

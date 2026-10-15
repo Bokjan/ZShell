@@ -83,7 +83,9 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
                     Some(_) => io.print(&format!("{} ", t!("hostKey.typeYesOrNo"))),
                 }
             }
-            match known_hosts::learn(host, port, &query.key) {
+            let (learned, key) = (host.to_owned(), query.key.clone());
+            let learned = tokio::task::spawn_blocking(move || known_hosts::learn(&learned, port, &key)).await;
+            match learned.unwrap_or_else(|e| Err(crate::error::Error::new("unexpected").detail(e))) {
                 Ok(()) => io.print(&format!("{}\n", t!("hostKey.added", host = host, algorithm = algorithm))),
                 Err(e) => io.print(&format!("\x1b[33m{}\x1b[0m\n", t!("hostKey.saveFailed", error = e))),
             }
