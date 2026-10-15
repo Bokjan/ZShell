@@ -47,3 +47,8 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      # Breaks pnpm on Windows (see docs/TODO.md); a later version is tried, and CI checks that
+      # pnpm runs.
+      - dependency-name: pnpm/action-setup
+        versions: ["6.1.0"]

@@ -27,6 +27,13 @@
 - **上游 issue 的素材**：重交换时 `KexProgress::Done` 带着 `server_host_key`，只是没有交给 handler；OpenSSH 每次密钥交换都验证主机密钥，并要求和初次的一致。
 - **登记**：2026-10-12（代码审查 L10）。
 
+### CI：pnpm/action-setup 停在 v6.0.10
+
+- **现象**：Dependabot 把 `pnpm/action-setup` 升到 v6.1.0（#3，2026-10-15 合入）后，Windows runner 上 PowerShell 步骤里的每条 `pnpm` 命令都不输出任何东西、立即以 0 退出：CI 的 Windows 与 Windows ARM64 job 里 `pnpm build`、`pnpm test` 没有运行却显示通过（cargo 的步骤不受影响），直到 v3.4.0 的 release workflow 在 Windows x64 上找不到安装包才暴露。
+- **上游**：[pnpm/action-setup#291](https://github.com/pnpm/action-setup/issues/291)（2026-10-12 提出，未修复）是同一处：v6.1.0 在 Windows 上先装 pnpm 11 再 `self-update` 到 12，留下的 `pnpm.cmd` shim 指向不存在的路径。那里的步骤会报错失败，我们这里却静默成功，原因没有深究。
+- **处理**：三个 workflow 都固定在 v6.0.10，Dependabot 跳过 6.1.0；CI 的 `Check that pnpm runs` 在 `pnpm --version` 没有输出时失败，所以 Dependabot 提出更新的版本时，CI 能看出它是否修好。修好后合入 Dependabot 的 PR，删掉 `dependabot.yml` 里的 ignore 和这一条。
+- **登记**：2026-10-16。
+
 ### Windows：最大化后按 F11，任务栏位置留黑边
 
 - **现象**：窗口先最大化，再按 F11 进入全屏，屏幕底部原来任务栏的那一条变成黑边或透明。窗口没有最大化时进入全屏是正常的。
