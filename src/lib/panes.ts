@@ -6,7 +6,7 @@ import {
   type SessionId,
   type SessionSnapshot,
   type SessionTarget,
-} from "./api";
+} from "../ipc/api";
 import type { SessionStatus } from "./paneSession";
 
 export type SidePanel = "files" | "forwards";

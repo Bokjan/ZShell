@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Proxy } from "../../lib/api";
-import { useDirectory } from "../../lib/directory";
+import type { Proxy } from "../../ipc/api";
+import { useDirectory } from "../../hooks/stores";
 import { ProxyDialog, proxySummary } from "../ProxyDialog";
 import { Section, Setting } from "./common";
 

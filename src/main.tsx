@@ -3,9 +3,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AppLockGate } from "./components/AppLockGate";
 import { VaultGate } from "./components/VaultGate";
-import { setupI18n } from "./i18n";
-import { applyTheme, SettingsProvider } from "./lib/settings";
-import { suppressWebViewMenu } from "./lib/window";
+import { setupI18n } from "./i18n/index";
+import { applyTheme, SettingsProvider } from "./hooks/settings";
+import { suppressWebViewMenu } from "./hooks/titleBar";
 
 // Until the stored settings load, follow the system appearance to avoid a flash of the
 // wrong theme.

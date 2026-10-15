@@ -3,13 +3,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
 import { useAppLock } from "../components/AppLockGate";
-import type { SessionTarget } from "../lib/api";
+import type { SessionTarget } from "../ipc/api";
 import { paneWork, tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
-import type { Dropped, Point } from "../lib/bindings";
+import type { Dropped, Point } from "../ipc/bindings";
 import { tabIndexAt, tabStrip } from "../lib/tabStrip";
-import { useTabStore, type TabStore, type TabTransfer } from "../lib/tabs";
-import { useWindowEvent, windows, type DropTarget, type WindowInfo } from "../lib/windows";
+import { type TabStore, type TabTransfer } from "../lib/tabs";
+import { useTabStore } from "../hooks/stores";
+import { windows, type DropTarget, type WindowInfo } from "../ipc/windows";
+import { useWindowEvent } from "../hooks/windowEvents";
 
 interface Options {
   followRemoteTitle: boolean;

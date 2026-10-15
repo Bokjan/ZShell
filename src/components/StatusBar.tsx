@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Profile } from "../lib/api";
+import type { Profile } from "../ipc/api";
 import { formatAgo, formatSize } from "../lib/format";
 import type { Pane } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { address, serialSummary } from "../lib/sessions";
-import { useMediaQuery } from "../lib/settings";
+import { useMediaQuery } from "../hooks/settings";
 import type { TrafficMeter } from "../lib/traffic";
 import { ActivityIcon } from "./icons";
 

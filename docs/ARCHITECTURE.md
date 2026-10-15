@@ -67,17 +67,18 @@
 | `desktop.rs` | Linux 桌面的设置（配色方案、等宽字体），经设置 portal 读取 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
 | `commands/` | Tauri 命令入口，按领域分文件：前端能调用的全部命令都在这里（也只在这里），只做检查调用方、交给所属模块、通知其他窗口；逻辑在各模块里 |
-| `bindings.rs` | 生成前端的 TypeScript 类型和共用常量（`src/lib/bindings.ts`） |
+| `bindings.rs` | 生成前端的 TypeScript 类型和共用常量（`src/ipc/bindings.ts`） |
 
 前端（`src/`）：
 
-- **标签页与窗格**：状态在 `lib/tabs.ts` 的 store 里，每个修改是一个 action，由纯函数 `reduceTabs` 处理，修改后立即生效，不等渲染。`App.tsx` 订阅并分发；关闭流程、撰写栏、快速命令、全屏各是 `app/` 下的一个 hook。`TabPage` 只在自己的标签变化时重绘。
+- **分层**：组件之外分三层。`lib/` 是不用 React 的逻辑，调用后端只经 `ipc/`；`ipc/` 是唯一调用后端命令、监听后端事件的地方，类型来自生成的 `ipc/bindings.ts`；`hooks/` 是组件共用的 React store、provider 与 hook（只属于 `App` 的在 `app/`）。`layers.test.ts` 检查 `lib/` 不引 React 与 Tauri。Tauri 自带的窗口与插件 API（有它们自己的类型）不受此限。
+- **标签页与窗格**：状态在 `lib/tabs.ts` 的 store 里（组件经 `hooks/stores.ts` 订阅），每个修改是一个 action，由纯函数 `reduceTabs` 处理，修改后立即生效，不等渲染。`App.tsx` 订阅并分发；关闭流程、撰写栏、快速命令、全屏各是 `app/` 下的一个 hook。`TabPage` 只在自己的标签变化时重绘。
 - **会话目录**：已保存的会话、文件夹、代理和最近打开的会话在 `lib/directory.ts` 的 store 里（每个窗口一个，写法同标签），用到它们的组件（侧栏、标签页、会话与代理的对话框）直接订阅，不经 `App` 传递。`app/useDirectorySync.ts` 在 `App` 挂载（即保险库解锁）后读入，收到其他窗口的 `config-changed` 时重读，卸载时清空；本窗口改了数据后由改的地方调用 `directory.reload()`，因为 `config-changed` 不会发回发起修改的窗口。最近打开的会话存在 `localStorage`，各窗口经 `storage` 事件同步。
 - **窗格的会话**：`lib/sessionRegistry.ts` 为每个窗格建一个 `PaneSession`（`lib/paneSession.ts`），负责打开会话、重连、共享连接、登录后命令和流控，只经一个小接口读写终端；`TerminalView` 只管终端本身。
 - **会话结束**：和 Xshell 一样，用户退出 shell（`exit`、Ctrl+D，即 `exited`）后窗格自动关闭，不看退出状态（bash 以上一条命令的状态退出）；本次连接里用户没在 shell 中输入过（服务器一连上就结束，信息要留着看）、shell 被信号结束（本地进程，或 SSH 服务器发来 exit-signal）、或文件面板有工作时不关（`closesOnExit`，`lib/panes.ts`）。不自动关闭的窗格里，Enter 重连，Ctrl+D 按关闭标签的流程关闭窗格。
 - **解锁**：`main.tsx` 里 `SettingsProvider` 之下是 `VaultGate`，保险库锁定时只显示 `UnlockScreen`，解锁后才挂载 `AppLockGate` 与其中的 `App`（见「加密保险库」「应用锁」）。
-- **对话框与快捷键**：对话框经 `useDialog`（`lib/dialogs.ts`）登记到一个栈，只有最上层的响应 Esc 与点击背景；快捷键经 `useShortcuts`（`lib/shortcuts.ts`）在捕获阶段统一分发，注册时说明何时生效。
-- **其他**：`lib/api.ts` 封装全部后端命令，类型来自生成的 `lib/bindings.ts`。纯逻辑模块有 vitest 单元测试（`*.test.ts`）。
+- **对话框与快捷键**：对话框经 `useDialog`（`hooks/dialogs.ts`）登记到一个栈，只有最上层的响应 Esc 与点击背景；快捷键经 `useShortcuts`（`hooks/shortcuts.ts`）在捕获阶段统一分发，注册时说明何时生效。
+- **其他**：纯逻辑模块有 vitest 单元测试（`*.test.ts`）。
 
 ## 设计决策
 
@@ -222,7 +223,7 @@
 ### 标题栏
 
 - **布局**：没有原生标题栏，窗口顶部一行在侧栏右边界处分为侧栏顶行与标签栏。窗口由 `window/` 按平台创建：macOS 用 Overlay 标题栏，红绿灯居中于顶行；Windows 无边框，窗口按钮自绘（`WindowControls`）；Linux 保留 GTK 的客户端装饰（阴影、圆角、从边缘外缩放，与 GNOME 自己的应用一样），只把标题栏换成空控件（要在窗口 realize 之前，所以窗口先隐藏着创建），窗口按钮自绘成 GTK 的圆形样式，按桌面的按钮布局（`gtk-decoration-layout`，GNOME 默认只有关闭）显示，布局变化时更新。
-- **拖动**：由 `lib/window.ts` 处理带 `data-window-drag` 的元素，双击与右键交给后端，行为与系统一致（macOS 与 Linux 上双击按系统设置，Linux 右键弹出 GNOME 的窗口菜单，它需要一个输入事件，所以后端记着 webview 最近一次按键）；对话框遮罩顶部那一条也能拖动窗口。
+- **拖动**：由 `hooks/titleBar.ts` 处理带 `data-window-drag` 的元素，双击与右键交给后端，行为与系统一致（macOS 与 Linux 上双击按系统设置，Linux 右键弹出 GNOME 的窗口菜单，它需要一个输入事件，所以后端记着 webview 最近一次按键）；对话框遮罩顶部那一条也能拖动窗口。
 - **Windows 贴靠布局**：每个窗口的最大化按钮上方放一个不绘制的原生子窗口，让系统认出它是最大化按钮（`window/win.rs`）。
 
 ### 剪贴板与终端输入
@@ -247,7 +248,7 @@
 ### 多窗口
 
 - **窗口从标签产生**：没有空白的新窗口。标签右键菜单"移到新窗口 / 移到某窗口"、把标签拖出窗口，或会话列表的"在新窗口中连接"，才会打开窗口。第一个窗口是 `main`，之后的是 `window-N`（capability 授权 `window-*`）；新窗口在来源窗口右下方错开，大小相同。窗口要显示的内容（新窗口打开时带的标签或会话，之后其他窗口移来的标签）由后端按窗口暂存，页面启动时和收到 `tab-received` 时取走（`window_take`），后端不解读它。暂存而不是直接用事件发，是为了让还在加载的页面也拿得到，并让"关空窗口"和"移入标签"互斥（见下文"关闭与退出"）。
-- **只发给一个窗口的事件**：前端 `listen()` 不指定目标时，也会收到发给其他窗口的事件，所以一律用 `lib/windows.ts` 的 `listenHere` / `useWindowEvent`（监听本窗口）。原生菜单项发给最近有焦点的窗口（`window::current`，也是 Windows 与 Linux 上再次启动时提到前台的窗口）。
+- **只发给一个窗口的事件**：前端 `listen()` 不指定目标时，也会收到发给其他窗口的事件，所以一律用 `ipc/events.ts` 与 `hooks/windowEvents.ts` 的 `listenHere` / `useWindowEvent`（监听本窗口）。原生菜单项发给最近有焦点的窗口（`window::current`，也是 Windows 与 Linux 上再次启动时提到前台的窗口）。
 - **跨窗口同步**：设置、会话与文件夹、代理、快速命令、保险库的保护方式、应用锁在一个窗口里保存后，后端通知其他窗口（`config-changed`），它们重新读取；设置与快速命令是整体替换的写入，重新读取让下一次写入基于最新内容。最近打开的会话在浏览器存储里，经 `storage` 事件同步。应用锁的状态本来在后端：一个窗口锁定或解锁，其他窗口跟着盖上或揭开，只有有焦点的窗口自动请求认证。
 - **窗口标题**：窗口以当前标签的标题命名（macOS 的 Window 菜单、任务栏、其他窗口的"移到"菜单都用它），改变时通知其他窗口刷新列表。
 - **移动标签**（`app/useWindows.ts`）：整个标签连同分屏布局与窗格状态（标题、状态、转发、日志、命令分组）作为数据交给目标窗口，目标窗口用自己的 key 插入。有会话的窗格由目标窗口接管：来源窗口交出标签时同时把其中的会话提供给目标窗口（`window_send_tab` / `window_open` 的 `sessions`，`SessionManager::offer`），目标窗口建好终端与新 Channel 后请后端换通道（`session_adopt`），只能接管提供给它的会话、各一次，后端在旧 Channel 上最后发一个 `moved` 事件再换（`SessionManager::adopt`）。旧窗口收到 `moved` 时已写完之前的全部输出，这时用 `@xterm/addon-serialize` 序列化屏幕与回滚，经后端转交（`session-snapshot`，后端只接受上一任窗口带着这次移动的 `moveId` 转交一次）；目标窗口按原尺寸写入快照和在此期间缓存的输出（不丢不重；程序是按旧尺寸输出的），画完才适配窗格，并把新尺寸告诉会话一次；画完之前终端的尺寸变化不转给会话。每次移动由目标窗口取一个 id（`moveId`），随 `moved` 和快照往返，迟到的旧快照不会被当成这次的。addon 不保存的状态（SGR 鼠标编码、隐藏光标、光标形状、滚动区域）从 xterm.js 内部读出附在快照后（`lib/terminalModes.ts`）。会话在 `session_adopt` 返回时就归目标窗格（输入直达，关闭窗格会结束它；在这之前移来的窗格不带会话 id，面板不会提前使用它），但画完快照前不能再移走。旧窗口还没确认的输出不再计入流控，旧窗口迟到的确认被忽略。没有会话的窗格直接带上快照，等待重连的立即重连；旧窗口里的这类窗格在移动期间不再连接（重试计时、网络恢复、回车），移动失败才恢复，以免两边各连一次。全部会话移走后旧窗口关掉这个标签。目标窗口接管失败（会话刚结束、ZMODEM 刚开始）时去掉这个窗格并告诉来源窗口（`pane-stayed`）；目标窗口在接管完之前关闭时，来源窗口从 `window-closed` 得知。没移走的窗格留在来源窗口，标签的其余部分照常移走。

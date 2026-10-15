@@ -2,13 +2,13 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
-import { errorMessage, proxies, type Proxy, type ProxyKind } from "../lib/api";
-import { useConfirmButton } from "../lib/confirm";
-import { useDialog } from "../lib/dialogs";
+import { errorMessage, proxies, type Proxy, type ProxyKind } from "../ipc/api";
+import { useConfirmButton } from "../hooks/confirm";
+import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
 import { hostPort, parsePort } from "../lib/format";
 import { passwordUpdate } from "../lib/password";
-import { useSubmitting } from "../lib/submitting";
+import { useSubmitting } from "../hooks/submitting";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordField } from "./PasswordField";

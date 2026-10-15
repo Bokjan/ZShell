@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { SessionTarget } from "../lib/api";
+import type { SessionTarget } from "../ipc/api";
 import { announce } from "../lib/announce";
 import { canSplit, type Direction, type Size } from "../lib/layout";
 import { findPane, focusedPane, type Pane, type TabProtocol } from "../lib/panes";

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { directory } from "../lib/directory";
 import { RECENT_KEY } from "../lib/sessions";
-import { useConfigChanged } from "../lib/windows";
+import { useConfigChanged } from "../hooks/windowEvents";
 
 /**
  * Keeps the session directory (`lib/directory.ts`) up to date while the app is shown: read

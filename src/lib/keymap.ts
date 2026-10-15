@@ -1,7 +1,7 @@
-import type { MenuSection } from "./bindings";
+import type { MenuSection } from "../ipc/bindings";
 import { isMac } from "./platform";
 
-export type { MenuSection } from "./bindings";
+export type { MenuSection } from "../ipc/bindings";
 
 /**
  * The app's actions and their keyboard shortcuts: the keys of each action on macOS and on

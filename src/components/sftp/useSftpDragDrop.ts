@@ -3,9 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { sftp, type FileEntry, type SessionId } from "../../lib/api";
+import { sftp, type FileEntry, type SessionId } from "../../ipc/api";
 import { isAppLocked } from "../../lib/appLock";
-import { usePressDrag } from "../../lib/drag";
+import { usePressDrag } from "../../hooks/drag";
 import { isMac, isWindows } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
 import { parentPath } from "./useTransfers";

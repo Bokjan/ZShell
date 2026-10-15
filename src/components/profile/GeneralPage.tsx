@@ -1,7 +1,7 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Profile, Protocol, SerialPortInfo } from "../../lib/api";
+import type { Profile, Protocol, SerialPortInfo } from "../../ipc/api";
 import { expandHome, startsWithHome } from "../../lib/paths";
 import { isMac, isWindows } from "../../lib/platform";
 import type { ProfileForm } from "../../lib/profileForm";

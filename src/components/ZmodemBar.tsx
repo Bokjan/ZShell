@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import type { ZmodemPhase } from "../lib/api";
+import type { ZmodemPhase } from "../ipc/api";
 
 interface Props {
   phase: Exclude<ZmodemPhase, "idle">;

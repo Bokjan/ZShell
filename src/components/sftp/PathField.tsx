@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { sftp, type FileEntry, type SessionId } from "../../lib/api";
+import { sftp, type FileEntry, type SessionId } from "../../ipc/api";
 import { completionTarget, folderCandidates, tabCompletion } from "../../lib/pathCompletion";
 import { isComposing } from "../../lib/platform";
 import { FolderIcon } from "../icons";

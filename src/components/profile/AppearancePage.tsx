@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 
 import { appearanceOf, type ProfileForm } from "../../lib/profileForm";
-import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../../lib/settings";
+import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "../../hooks/settings";
 import { sessionScheme, TERMINAL_SCHEMES } from "../../lib/terminalSchemes";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
 import { SpinInput } from "../SpinInput";

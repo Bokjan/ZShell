@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { appLock, errorCode, errorMessage, type AppLockSettings } from "../../lib/api";
+import { appLock, errorCode, errorMessage, type AppLockSettings } from "../../ipc/api";
 import { shortcutLabel } from "../../lib/keymap";
 import { useAppLock } from "../AppLockGate";
 import { ErrorText } from "../ErrorMessage";

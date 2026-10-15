@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { useDialog } from "../lib/dialogs";
+import { useDialog } from "../hooks/dialogs";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { ExternalLinkIcon } from "./icons";
 import { Modal } from "./Modal";

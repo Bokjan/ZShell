@@ -1,6 +1,4 @@
-import { useSyncExternalStore } from "react";
-
-import { listProfiles, proxies as proxyApi, tree, type Folder, type Profile, type Proxy, type TreeItem } from "./api";
+import { listProfiles, proxies as proxyApi, tree, type Folder, type Profile, type Proxy, type TreeItem } from "../ipc/api";
 import type { Pane } from "./panes";
 import { RECENT_LIMIT, addRecent, storedRecent } from "./sessions";
 
@@ -115,6 +113,3 @@ export function createDirectoryStore(initial: DirectoryState = INITIAL_DIRECTORY
 
 /** This window's session directory, kept up to date by `useDirectorySync` while the app is shown. */
 export const directory = createDirectoryStore();
-
-/** The session directory, rendering again when it changes. */
-export const useDirectory = () => useSyncExternalStore(directory.subscribe, directory.get);

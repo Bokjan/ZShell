@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessage, vault, type Protection, type ProtectionChange, type VaultStatus } from "../lib/api";
+import { errorMessage, vault, type Protection, type ProtectionChange, type VaultStatus } from "../ipc/api";
 import { announce } from "../lib/announce";
-import { useDialog } from "../lib/dialogs";
+import { useDialog } from "../hooks/dialogs";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 

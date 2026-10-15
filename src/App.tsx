@@ -26,7 +26,7 @@ import { StatusBar } from "./components/StatusBar";
 import { TabBar } from "./components/TabBar";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
-import i18n from "./i18n";
+import i18n from "./i18n/index";
 import {
   configSetAside,
   errorMessage,
@@ -39,8 +39,8 @@ import {
   type QuickCommand,
   type SessionTarget,
   type SetAsideFile,
-} from "./lib/api";
-import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./lib/appMenu";
+} from "./ipc/api";
+import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./hooks/appMenu";
 import { basename } from "./lib/format";
 import { actionOf, matches, paneSideOf, shortcutLabel, tabIndexOf, type MenuAction } from "./lib/keymap";
 import { neighbor } from "./lib/layout";
@@ -49,14 +49,16 @@ import { asTyped } from "./lib/compose";
 import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { address, sessionsIn, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
-import { directory, paneProfile, useDirectory } from "./lib/directory";
+import { directory, paneProfile } from "./lib/directory";
+import { useDirectory } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
-import { useSettings } from "./lib/settings";
-import { useShortcuts } from "./lib/shortcuts";
-import { useStableHandlers } from "./lib/stableHandlers";
-import { activeTabOf, createTabStore, useTabStore, type PanePatch } from "./lib/tabs";
+import { useSettings } from "./hooks/settings";
+import { useShortcuts } from "./hooks/shortcuts";
+import { useStableHandlers } from "./hooks/stableHandlers";
+import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
+import { useTabStore } from "./hooks/stores";
 import { tabMark } from "./lib/terminalSchemes";
-import { checkForUpdates, useUpdates } from "./lib/updates";
+import { checkForUpdates, useUpdates } from "./hooks/updates";
 import "./styles.css";
 
 /** Quick commands listed in the terminal's menu; the palette has them all. */

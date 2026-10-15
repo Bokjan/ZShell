@@ -2,11 +2,11 @@ import { useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ContextMenu, type MenuItem } from "../components/ContextMenu";
-import { menuLabel } from "../lib/appMenu";
+import { menuLabel } from "../hooks/appMenu";
 import { appMenu, matches, shortcutLabel, type MenuAction, type MenuEntry } from "../lib/keymap";
 import { isMac } from "../lib/platform";
-import { runAction, useShortcuts } from "../lib/shortcuts";
-import type { Release } from "../lib/updates";
+import { runAction, useShortcuts } from "../hooks/shortcuts";
+import type { Release } from "../hooks/updates";
 
 /** Where the menu opens when the button is out of sight (terminal full screen). */
 const CORNER = 4;

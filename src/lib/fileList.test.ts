@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileEntry } from "./api";
+import type { FileEntry } from "../ipc/api";
 import { parseMode, visibleEntries, type FileView } from "./fileList";
 
 // Only what the list looks at.

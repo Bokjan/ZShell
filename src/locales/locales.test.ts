@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LANGUAGES } from "../lib/bindings";
+import { LANGUAGES } from "../ipc/bindings";
 import en from "./en.json";
 
 // Every source but the tests, including the generated bindings, whose string unions name the

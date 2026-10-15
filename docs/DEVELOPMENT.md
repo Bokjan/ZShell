@@ -39,7 +39,7 @@ ZMODEM 的测试除了自己的收发互测，还与 lrzsz 的 `lsz` / `lrz` 对
 
 `cargo test` 中的 `catalog_covers_all_keys_in_sources` 会检查后端源码用到的消息 key 都在英语语言包中（见 [I18N.md](I18N.md)）。
 
-`cargo test` 中的 `bindings_are_up_to_date` 检查 `src/lib/bindings.ts` 与 Rust 类型一致；改了与前端交换的类型、错误码或 `bindings.rs` 里列出的常量后，在 `src-tauri/` 下重新生成并提交：
+`cargo test` 中的 `bindings_are_up_to_date` 检查 `src/ipc/bindings.ts` 与 Rust 类型一致；改了与前端交换的类型、错误码或 `bindings.rs` 里列出的常量后，在 `src-tauri/` 下重新生成并提交：
 
 ```bash
 UPDATE_BINDINGS=1 cargo test bindings
@@ -51,7 +51,7 @@ UPDATE_BINDINGS=1 cargo test bindings
 - **提交信息**：Conventional Commits（`feat:`、`fix:`、`docs:`、`chore:`、`refactor:`、`test:`、`ci:`，可带 scope，如 `feat(sftp): …`）；正文不手动折行，每段或每个列表项一行。
 - **版本号**：只在 `src-tauri/Cargo.toml` 维护，由 `scripts/release.sh` 修改（规则见下文「发布」）。`tauri.conf.json` 不写 `version`，Tauri 取 Cargo 包版本；`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
 - **文档分工**：做什么、先后顺序与未实现功能的设计写在 [ROADMAP.md](ROADMAP.md)；跨模块的设计写在 [ARCHITECTURE.md](ARCHITECTURE.md)；模块内的细节（边界情况、库的坑）写在代码注释里。根目录的 `CLAUDE.md`（英语）是给 AI 助手的项目说明，汇总上述约定；约定变化时同步更新。
-- **单元测试**：`src/lib/` 里不依赖 React、DOM 和后端命令的导出函数，在相邻的 `*.test.ts` 里测试；组件不写单元测试，界面上的行为按下文「端到端测试」检查。vitest 没有配置 DOM 环境，测试里不要碰 `localStorage` 和后端命令。
+- **单元测试**：`src/lib/` 与 `src/ipc/` 里不依赖 React、DOM 和后端命令的导出函数，在相邻的 `*.test.ts` 里测试；组件不写单元测试，界面上的行为按下文「端到端测试」检查。vitest 没有配置 DOM 环境，测试里不要碰 `localStorage` 和后端命令。
 - **文件大小**：一个 Rust 文件超过约 800 行、并且里面有可以独立的类型时，改成目录模块，按类型分文件，`mod.rs` 保留模块文档和 `pub use`（如 `session/`、`config/`）。测试让文件超过这个长度时，移到同目录的 `tests.rs`（如 `config/`、`vault/`、`zmodem/`）。
 
 ## 端到端测试

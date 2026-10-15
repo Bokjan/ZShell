@@ -2,8 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
-import { errorMessage, type ForwardKind, type ForwardRule } from "../lib/api";
-import { useDialog } from "../lib/dialogs";
+import { errorMessage, type ForwardKind, type ForwardRule } from "../ipc/api";
+import { useDialog } from "../hooks/dialogs";
 import { hostPort, parsePort } from "../lib/format";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";

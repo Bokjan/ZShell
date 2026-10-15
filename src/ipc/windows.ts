@@ -1,48 +1,10 @@
-import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { EventCallback, UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 
-import type { Change, DropTarget, Dropped, Rect, WindowInfo } from "./bindings";
-import { transferSessions, type TabTransfer } from "./tabs";
+import type { DropTarget, Dropped, Rect, WindowInfo } from "./bindings";
+import { transferSessions, type TabTransfer } from "../lib/tabs";
 
 export type { Change, DropTarget, WindowInfo } from "./bindings";
-
-/**
- * Listens to an event for this window: sent to it, or to all windows. (The event module's
- * `listen` also hears what is sent to the other windows.)
- */
-export const listenHere = <T>(event: string, handler: EventCallback<T>): Promise<UnlistenFn> =>
-  getCurrentWebviewWindow().listen<T>(event, handler);
-
-/** Listens to an event for this window while the component is mounted; `handler` may change. */
-export function useWindowEvent<T>(event: string, handler: (payload: T) => void) {
-  const handlerRef = useRef(handler);
-  handlerRef.current = handler;
-  useEffect(() => {
-    const unlisten = listenHere<T>(event, (e) => handlerRef.current(e.payload));
-    return () => void unlisten.then((f) => f());
-  }, [event]);
-}
-
-/**
- * Calls `handler` each time this window gets the focus back, while the component is mounted:
- * to read again what can change while the user is elsewhere (another window, another app).
- */
-export function useWindowFocus(handler: () => void) {
-  const handlerRef = useRef(handler);
-  handlerRef.current = handler;
-  useEffect(() => {
-    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => focused && handlerRef.current());
-    return () => void unlisten.then((f) => f());
-  }, []);
-}
-
-/** Calls `handler` when another window saved what this one shows (see `Change`). */
-export function useConfigChanged(change: Change, handler: () => void) {
-  useWindowEvent<Change>("config-changed", (changed) => changed === change && handler());
-}
 
 /**
  * What a window is to show: a tab moved out of another window (dropped `at` that many CSS
@@ -51,6 +13,8 @@ export function useConfigChanged(change: Change, handler: () => void) {
 export type WindowContent = { kind: "tab"; tab: TabTransfer; at?: number | null } | { kind: "profile"; profileId: string; title: string };
 
 export const windows = {
+  /** Asks the system to draw attention to this window (the Dock icon bounces, the taskbar button flashes). */
+  requestAttention: () => void getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(console.error),
   /**
    * Opens a window showing `content`, and returns its label: next to this one, or where a tab
    * was `dropped` outside the windows.

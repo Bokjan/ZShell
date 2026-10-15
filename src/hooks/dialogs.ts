@@ -1,7 +1,7 @@
 import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 
-import { isAppLocked } from "./appLock";
-import { isComposing } from "./platform";
+import { isAppLocked } from "../lib/appLock";
+import { isComposing } from "../lib/platform";
 
 /**
  * The open dialogs, as a stack: only the top one answers Escape and clicks on its backdrop,

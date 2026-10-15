@@ -1,10 +1,11 @@
 import { Fragment, memo, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DialogsHidden } from "../lib/dialogs";
-import { paneProfile, useDirectory } from "../lib/directory";
+import { DialogsHidden } from "../hooks/dialogs";
+import { paneProfile } from "../lib/directory";
+import { useDirectory } from "../hooks/stores";
 import type { MenuItem } from "./ContextMenu";
-import { dragHorizontally, dragSplitter } from "../lib/drag";
+import { dragHorizontally, dragSplitter } from "../hooks/drag";
 import { dividers, equalize, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, moveDivider, paneRects, type Divider, type Size } from "../lib/layout";
 import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";

@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-import { listenHere } from "./windows";
+import { listenHere } from "./events";
 
 import type {
   AppLockSettings,

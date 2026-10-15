@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import type { Profile, Proxy } from "../../lib/api";
+import type { Profile, Proxy } from "../../ipc/api";
 import type { ProfileForm } from "../../lib/profileForm";
 import { IconButton } from "../IconButton";
 import { ArrowIcon, CloseIcon } from "../icons";

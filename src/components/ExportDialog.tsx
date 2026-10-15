@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessage, sessionsFile } from "../lib/api";
+import { errorMessage, sessionsFile } from "../ipc/api";
 import { announce } from "../lib/announce";
-import { useDialog } from "../lib/dialogs";
-import { save as saveDialog } from "../lib/fileDialog";
+import { useDialog } from "../hooks/dialogs";
+import { save as saveDialog } from "../ipc/fileDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 

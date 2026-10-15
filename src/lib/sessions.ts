@@ -1,4 +1,4 @@
-import { DEFAULT_PORTS, type Folder, type Profile, type SerialOptions, type TreeItem } from "./api";
+import { DEFAULT_PORTS, type Folder, type Profile, type SerialOptions, type TreeItem } from "../ipc/api";
 import { storedJson, storeJson } from "./storage";
 
 /** A visible line of the session tree. */

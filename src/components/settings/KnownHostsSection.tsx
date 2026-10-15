@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { knownHosts } from "../../lib/api";
+import { knownHosts } from "../../ipc/api";
 import { isMac, isWindows } from "../../lib/platform";
-import { useWindowFocus } from "../../lib/windows";
+import { useWindowFocus } from "../../hooks/windowEvents";
 import { HelpTip } from "../HelpTip";
 import { KnownHostsDialog } from "../KnownHostsDialog";
 import { Section, Setting } from "./common";

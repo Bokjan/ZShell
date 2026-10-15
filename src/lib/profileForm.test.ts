@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PORTS, type Profile } from "./api";
+import { DEFAULT_PORTS, type Profile } from "../ipc/api";
 import { parsePort } from "./format";
 import { fromProfile, isChanged, toProfile, validate, withProtocol } from "./profileForm";
 

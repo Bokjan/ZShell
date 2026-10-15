@@ -4,10 +4,11 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import type { AppMenuButton } from "../app/useAppMenu";
 import { announce } from "../lib/announce";
-import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../lib/api";
-import { directory, recentProfiles as recentOf, useDirectory } from "../lib/directory";
-import { dragHorizontally, usePressDrag } from "../lib/drag";
-import { open as openDialog } from "../lib/fileDialog";
+import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../ipc/api";
+import { directory, recentProfiles as recentOf } from "../lib/directory";
+import { useDirectory } from "../hooks/stores";
+import { dragHorizontally, usePressDrag } from "../hooks/drag";
+import { open as openDialog } from "../ipc/fileDialog";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { matches, shortcutLabel } from "../lib/keymap";
@@ -29,10 +30,10 @@ import {
   type QuickTarget,
   type Row,
 } from "../lib/sessions";
-import { useSettings } from "../lib/settings";
-import { useShortcuts } from "../lib/shortcuts";
+import { useSettings } from "../hooks/settings";
+import { useShortcuts } from "../hooks/shortcuts";
 import { storedString, storeString } from "../lib/storage";
-import { DRAG_REGION } from "../lib/window";
+import { DRAG_REGION } from "../hooks/titleBar";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { ChevronIcon, DisclosureIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";

@@ -15,7 +15,7 @@ import {
   type SessionId,
   type SessionTarget,
   type ZmodemPhase,
-} from "./api";
+} from "../ipc/api";
 import type { Arrival, Snapshot } from "./panes";
 import { isTerminalReport } from "./terminalReports";
 import { TrafficMeter, utf8Length } from "./traffic";

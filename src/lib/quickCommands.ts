@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 
-import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "./api";
+import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../ipc/api";
 import { storedString, storeString } from "./storage";
 
 export const groupName = (group: CommandGroup, t: TFunction): string => (group.id === DEFAULT_GROUP ? t("quick.defaultGroup") : group.name);

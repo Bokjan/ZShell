@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { focusables, type DialogHandle } from "../lib/dialogs";
+import { focusables, type DialogHandle } from "../hooks/dialogs";
 
 interface Props {
   dialog: DialogHandle;

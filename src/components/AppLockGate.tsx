@@ -2,9 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
-import { appLock, errorCode, errorMessage, type AppLockStatus } from "../lib/api";
+import { appLock, errorCode, errorMessage, type AppLockStatus } from "../ipc/api";
 import { setAppLocked } from "../lib/appLock";
-import { listenHere, useConfigChanged, windows } from "../lib/windows";
+import { windows } from "../ipc/windows";
+import { listenHere } from "../ipc/events";
+import { useConfigChanged } from "../hooks/windowEvents";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 

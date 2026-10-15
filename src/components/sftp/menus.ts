@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 
-import type { FileEntry } from "../../lib/api";
+import type { FileEntry } from "../../ipc/api";
 import { isMac } from "../../lib/platform";
 import type { MenuItem } from "../ContextMenu";
 

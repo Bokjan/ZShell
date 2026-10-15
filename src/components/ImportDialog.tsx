@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessage, sshConfig, type ImportCandidate } from "../lib/api";
-import { useDialog } from "../lib/dialogs";
+import { errorMessage, sshConfig, type ImportCandidate } from "../ipc/api";
+import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
-import { open } from "../lib/fileDialog";
+import { open } from "../ipc/fileDialog";
 import { isComposing } from "../lib/platform";
 import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";

@@ -33,11 +33,11 @@ pnpm tauri dev                              # run the app
 
 Run the first four before committing; CI runs the same build, formatting check, clippy and tests on macOS, Windows (x64 and ARM64) and Linux (formatting on macOS only). Platform-only code (ConPTY, the OpenSSH agent pipe and Pageant on Windows, AppKit on macOS, GTK on Linux) cannot be compiled elsewhere, so CI is the only check for it there.
 
-Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/lib/bindings.ts` (never mirror them by hand in `api.ts`), and so are the few constants both sides need (`constants()` in `bindings.rs`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale.
+Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/ipc/bindings.ts` (never mirror them by hand in `api.ts`), and so are the few constants both sides need (`constants()` in `bindings.rs`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale.
 
 ## Testing
 
-Exported functions in `src/lib/` that use no React, DOM or backend commands get unit tests in a `*.test.ts` next to the module; components have none and are checked end to end. Vitest has no DOM environment.
+The frontend has three layers besides the components: `src/lib/` is logic without React that reaches the backend only through `src/ipc/` (`layers.test.ts` checks), `src/ipc/` is the only place that calls commands or listens to the backend's events, and `src/hooks/` holds the React stores, providers and hooks shared by components (`src/app/` those of `App`). Exported functions in `src/lib/` and `src/ipc/` that use no React, DOM or backend commands get unit tests in a `*.test.ts` next to the module; components have none and are checked end to end. Vitest has no DOM environment.
 
 Never touch the maintainer's real configuration (`vault.json`, `settings.json`, `~/.ssh`) during tests. For anything that needs a live SSH server, run the debug app with an isolated `HOME` and a temporary `sshd`, as described in the end-to-end testing section of `docs/DEVELOPMENT.md`. Kill only the processes you started; the maintainer may have their own instance open.
 

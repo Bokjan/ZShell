@@ -3,9 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
-import type { WindowButton } from "../lib/bindings";
+import type { WindowButton } from "../ipc/bindings";
 import { isWindows } from "../lib/platform";
-import { listenHere, useWindowEvent } from "../lib/windows";
+import { listenHere } from "../ipc/events";
+import { useWindowEvent } from "../hooks/windowEvents";
 import { IconButton } from "./IconButton";
 import { CloseIcon, MaximizeIcon, MinimizeIcon, RestoreIcon } from "./icons";
 

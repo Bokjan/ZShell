@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorCode, errorMessage, sessionsFile, type SessionsScan } from "../lib/api";
-import { useDialog } from "../lib/dialogs";
+import { errorCode, errorMessage, sessionsFile, type SessionsScan } from "../ipc/api";
+import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
 import { forwardMapping } from "../lib/format";
 import { address } from "../lib/sessions";

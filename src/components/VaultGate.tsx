@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
-import { errorMessage, vault, type VaultStatus } from "../lib/api";
-import { useNativeMenu } from "../lib/appMenu";
-import { useTitleBar } from "../lib/window";
-import { useConfigChanged } from "../lib/windows";
+import { errorMessage, vault, type VaultStatus } from "../ipc/api";
+import { useNativeMenu } from "../hooks/appMenu";
+import { useTitleBar } from "../hooks/titleBar";
+import { useConfigChanged } from "../hooks/windowEvents";
 import { ProtectionDialog } from "./ProtectionDialog";
 import { UnlockScreen } from "./UnlockScreen";
 

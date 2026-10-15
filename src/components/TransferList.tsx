@@ -1,11 +1,11 @@
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import type { TransferProgress } from "../lib/api";
+import type { TransferProgress } from "../ipc/api";
 import { formatSize } from "../lib/format";
 import { IconButton } from "./IconButton";
 import { ArrowIcon, CloseIcon, PencilIcon } from "./icons";
-import i18n from "../i18n";
+import i18n from "../i18n/index";
 
 export interface Transfer {
   id: string;

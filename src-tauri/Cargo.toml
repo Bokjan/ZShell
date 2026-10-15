@@ -55,7 +55,7 @@ glob = "0.3"
 # keys from memory (both already in the tree through russh).
 ring = "0.17.14"
 zeroize = "1.9"
-# TypeScript types for the frontend (`src/lib/bindings.ts`, checked and written by `cargo test`).
+# TypeScript types for the frontend (`src/ipc/bindings.ts`, checked and written by `cargo test`).
 ts-rs = "12"
 # The update check (already in the tree through tauri, without TLS): the system's TLS and
 # proxy settings.

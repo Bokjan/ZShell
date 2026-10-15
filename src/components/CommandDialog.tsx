@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CommandGroup, QuickCommand } from "../lib/api";
-import { useDialog } from "../lib/dialogs";
+import type { CommandGroup, QuickCommand } from "../ipc/api";
+import { useDialog } from "../hooks/dialogs";
 import { groupName } from "../lib/quickCommands";
 import { Modal } from "./Modal";
 

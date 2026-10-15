@@ -3,13 +3,14 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
-import { configDirectory, errorMessage, vault, type VaultStatus } from "../lib/api";
+import { configDirectory, errorMessage, vault, type VaultStatus } from "../ipc/api";
 import { announce } from "../lib/announce";
-import { useDialog } from "../lib/dialogs";
+import { useDialog } from "../hooks/dialogs";
 import { matches } from "../lib/keymap";
 import { isWindows } from "../lib/platform";
-import { useShortcuts } from "../lib/shortcuts";
-import { useWindowEvent, windows } from "../lib/windows";
+import { useShortcuts } from "../hooks/shortcuts";
+import { windows } from "../ipc/windows";
+import { useWindowEvent } from "../hooks/windowEvents";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 import { Modal } from "./Modal";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Folder, Profile, Proxy } from "./api";
+import type { Folder, Profile, Proxy } from "../ipc/api";
 import { createDirectoryStore, INITIAL_DIRECTORY, paneProfile, recentProfiles, reduceDirectory, type DirectoryAction } from "./directory";
 import type { Pane } from "./panes";
 

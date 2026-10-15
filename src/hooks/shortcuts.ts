@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 
-import { isAppLocked } from "./appLock";
+import { isAppLocked } from "../lib/appLock";
 import { isDialogOpen, type DialogHandle } from "./dialogs";
-import { actionEvent, type Action } from "./keymap";
+import { actionEvent, type Action } from "../lib/keymap";
 
 /** Handles a key if it is one of its shortcuts, returning whether it did. */
 export type ShortcutHandler = (e: KeyboardEvent) => boolean;

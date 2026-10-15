@@ -10,7 +10,7 @@ import {
   type ForwardState,
   type Profile,
   type SessionId,
-} from "../lib/api";
+} from "../ipc/api";
 import { directory } from "../lib/directory";
 import { forwardMapping as mapping } from "../lib/format";
 import { ConfirmDialog } from "./ConfirmDialog";

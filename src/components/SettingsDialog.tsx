@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { currentCjk, systemLanguage } from "../i18n";
-import { LANGUAGES } from "../lib/bindings";
-import { useConfirmButton } from "../lib/confirm";
-import { useDialog } from "../lib/dialogs";
+import { currentCjk, systemLanguage } from "../i18n/index";
+import { LANGUAGES } from "../ipc/bindings";
+import { useConfirmButton } from "../hooks/confirm";
+import { useDialog } from "../hooks/dialogs";
 import { languageName } from "../lib/format";
 import { matches, shortcutRows } from "../lib/keymap";
 import { isMac } from "../lib/platform";
@@ -26,10 +26,10 @@ import {
   type TextSize,
   type ZmodemReceive,
   type ZmodemSettings,
-} from "../lib/settings";
-import { useShortcuts } from "../lib/shortcuts";
+} from "../hooks/settings";
+import { useShortcuts } from "../hooks/shortcuts";
 import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies, type TerminalScheme } from "../lib/terminalSchemes";
-import { useUpdates } from "../lib/updates";
+import { useUpdates } from "../hooks/updates";
 import { CloseIcon, DotIcon } from "./icons";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";

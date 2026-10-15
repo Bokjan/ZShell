@@ -1,4 +1,4 @@
-import type { FileEntry } from "./api";
+import type { FileEntry } from "../ipc/api";
 import { storedJson, storeJson } from "./storage";
 
 export type SortKey = "name" | "size" | "modified";

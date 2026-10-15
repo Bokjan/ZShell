@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useDialog } from "../lib/dialogs";
+import { useDialog } from "../hooks/dialogs";
 import { Modal } from "./Modal";
 
 interface Props {

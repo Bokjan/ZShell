@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { quickCommands, type QuickCommands } from "../lib/api";
+import { quickCommands, type QuickCommands } from "../ipc/api";
 import { latestSave } from "../lib/latestSave";
 import { storeBarVisible, storedBarVisible } from "../lib/quickCommands";
-import { useConfigChanged } from "../lib/windows";
+import { useConfigChanged } from "../hooks/windowEvents";
 
 /** The quick commands, their bar under the terminals and their palette. */
 export function useQuickCommands() {

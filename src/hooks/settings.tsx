@@ -2,12 +2,12 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { followLanguageSetting } from "../i18n";
-import type { Appearance, Settings, TextSize } from "./bindings";
-import { latestSave } from "./latestSave";
-import { isWindows } from "./platform";
-import { setSystemFont } from "./terminalSchemes";
-import { useConfigChanged, useWindowEvent } from "./windows";
+import { followLanguageSetting } from "../i18n/index";
+import type { Appearance, Settings, TextSize } from "../ipc/bindings";
+import { latestSave } from "../lib/latestSave";
+import { isWindows } from "../lib/platform";
+import { setSystemFont } from "../lib/terminalSchemes";
+import { useConfigChanged, useWindowEvent } from "./windowEvents";
 
 export type {
   Appearance,
@@ -25,7 +25,7 @@ export type {
   TextSize,
   ZmodemReceive,
   ZmodemSettings,
-} from "./bindings";
+} from "../ipc/bindings";
 
 const TEXT_SCALES: Record<TextSize, number> = { normal: 1, large: 1.15, larger: 1.3 };
 

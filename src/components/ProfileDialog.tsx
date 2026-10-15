@@ -14,14 +14,16 @@ import {
   type Profile,
   type Protocol,
   type SerialPortInfo,
-} from "../lib/api";
-import { useConfirmButton } from "../lib/confirm";
-import { useDialog } from "../lib/dialogs";
-import { directory, useDirectory } from "../lib/directory";
-import { open as openDialog } from "../lib/fileDialog";
+} from "../ipc/api";
+import { useConfirmButton } from "../hooks/confirm";
+import { useDialog } from "../hooks/dialogs";
+import { directory } from "../lib/directory";
+import { useDirectory } from "../hooks/stores";
+import { open as openDialog } from "../ipc/fileDialog";
 import { rovingTarget } from "../lib/listNavigation";
 import { passwordUpdate } from "../lib/password";
-import { contractHome, expandHome, startsWithHome, useHomeDirectory } from "../lib/paths";
+import { contractHome, expandHome, startsWithHome } from "../lib/paths";
+import { useHomeDirectory } from "../hooks/paths";
 import {
   fromProfile,
   isChanged,
@@ -33,7 +35,7 @@ import {
   type ProfileDefaults,
   type ProfileForm,
 } from "../lib/profileForm";
-import { useSubmitting } from "../lib/submitting";
+import { useSubmitting } from "../hooks/submitting";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";

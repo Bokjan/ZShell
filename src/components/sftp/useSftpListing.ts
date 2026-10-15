@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { errorMessage, sftp, type FileEntry, type SessionId } from "../../lib/api";
+import { errorMessage, sftp, type FileEntry, type SessionId } from "../../ipc/api";
 
 /**
  * The folder the file panel shows and its entries. `onNewFolder` runs when another folder is

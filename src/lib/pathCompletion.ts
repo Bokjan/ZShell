@@ -1,4 +1,4 @@
-import type { FileEntry } from "./api";
+import type { FileEntry } from "../ipc/api";
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 

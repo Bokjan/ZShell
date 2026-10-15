@@ -2,7 +2,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 
-import { LANGUAGES, type Cjk, type Locales } from "../lib/bindings";
+import { LANGUAGES, type Cjk, type Locales } from "../ipc/bindings";
 import { KEY_NAMES, setKeyNames, type KeyName } from "../lib/keymap";
 import de from "../locales/de.json";
 import en from "../locales/en.json";

@@ -3,11 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
-import type { NativeMenuSection } from "./bindings";
-import { appMenu, macKeys, setNativeMenu, type MenuAction } from "./keymap";
-import { isMac } from "./platform";
+import type { NativeMenuSection } from "../ipc/bindings";
+import { appMenu, macKeys, setNativeMenu, type MenuAction } from "../lib/keymap";
+import { isMac } from "../lib/platform";
 import { runAction } from "./shortcuts";
-import { useWindowEvent, useWindowFocus } from "./windows";
+import { useWindowEvent, useWindowFocus } from "./windowEvents";
 
 export const RELEASES_URL = "https://github.com/Bokjan/ZShell/releases";
 export const ISSUES_URL = "https://github.com/Bokjan/ZShell/issues";

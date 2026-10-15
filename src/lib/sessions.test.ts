@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Folder, Profile, TreeItem } from "./api";
+import type { Folder, Profile, TreeItem } from "../ipc/api";
 import { notesPreview, parseQuickConnect, rowKey, search, sessionsIn, treeRows, withRecent } from "./sessions";
 
 const folder = (id: string, parent?: string): Folder => ({ id, name: id, parent });

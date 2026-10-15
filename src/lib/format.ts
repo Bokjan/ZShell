@@ -1,5 +1,5 @@
-import i18n from "../i18n";
-import type { ForwardRule } from "./api";
+import i18n from "../i18n/index";
+import type { ForwardRule } from "../ipc/api";
 
 /**
  * The number typed in a field that takes whole numbers, or NaN: digits only, as `Number`

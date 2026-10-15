@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { QuickCommand, QuickCommands } from "../lib/api";
-import { useDialog } from "../lib/dialogs";
+import type { QuickCommand, QuickCommands } from "../ipc/api";
+import { useDialog } from "../hooks/dialogs";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { groupName, searchCommands } from "../lib/quickCommands";
 import { Modal } from "./Modal";

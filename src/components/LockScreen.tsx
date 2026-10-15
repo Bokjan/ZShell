@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { isMac } from "../lib/platform";
-import { DRAG_REGION } from "../lib/window";
+import { DRAG_REGION } from "../hooks/titleBar";
 import { LockIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
 

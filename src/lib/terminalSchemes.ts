@@ -1,7 +1,7 @@
 import type { ITheme } from "@xterm/xterm";
 
-import type { ProfileAppearance } from "./api";
-import type { Cjk } from "./bindings";
+import type { ProfileAppearance } from "../ipc/api";
+import type { Cjk } from "../ipc/bindings";
 
 export interface TerminalScheme {
   id: string;

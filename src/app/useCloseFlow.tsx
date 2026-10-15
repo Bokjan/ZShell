@@ -4,14 +4,15 @@ import { useTranslation } from "react-i18next";
 
 import { useAppLock, type PendingClose } from "../components/AppLockGate";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { forwards, sessionForeground, type ForwardRule, type SessionId, type Settings } from "../lib/api";
+import { forwards, sessionForeground, type ForwardRule, type SessionId, type Settings } from "../ipc/api";
 import { isAppLocked } from "../lib/appLock";
 import { forwardMapping } from "../lib/format";
 import { matches } from "../lib/keymap";
 import { findPane, paneLabel, paneWork, tabTitle, type Pane, type PaneWork } from "../lib/panes";
-import { useShortcuts } from "../lib/shortcuts";
+import { useShortcuts } from "../hooks/shortcuts";
 import { activeTabOf, type TabStore } from "../lib/tabs";
-import { useWindowEvent, windows } from "../lib/windows";
+import { windows } from "../ipc/windows";
+import { useWindowEvent } from "../hooks/windowEvents";
 
 /**
  * Why closing a pane needs confirmation: its file panel is at work (even disconnected), a

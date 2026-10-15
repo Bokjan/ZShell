@@ -1,6 +1,4 @@
-import { useSyncExternalStore } from "react";
-
-import type { SessionId, SessionTarget } from "./api";
+import type { SessionId, SessionTarget } from "../ipc/api";
 import { heirOf, mapLayout, removeFromLayout, splitLayout, type Direction } from "./layout";
 import { focusedPane, type Attention, type Layout, type Pane, type SidePanel, type Tab, type TabProtocol } from "./panes";
 
@@ -259,4 +257,3 @@ export function createTabStore(initial: TabsState = INITIAL_TABS): TabStore {
 }
 
 /** The store's state, rendering again when it changes. */
-export const useTabStore = (store: TabStore) => useSyncExternalStore(store.subscribe, store.get);

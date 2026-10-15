@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { sftp } from "../../lib/api";
-import { open as openDialog } from "../../lib/fileDialog";
+import { sftp } from "../../ipc/api";
+import { open as openDialog } from "../../ipc/fileDialog";
 import { basename } from "../../lib/format";
 import { isMac, isWindows } from "../../lib/platform";
-import type { FileSettings } from "../../lib/settings";
+import type { FileSettings } from "../../hooks/settings";
 import { FolderField, Section, Setting } from "./common";
 
 /** Remote files: where downloads go, and the editor remote files are edited with. */

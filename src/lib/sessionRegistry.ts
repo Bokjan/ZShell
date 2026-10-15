@@ -1,7 +1,6 @@
-import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
-
-import { playBell, type LogOpen, type Profile, type SessionId, type ZmodemPhase } from "./api";
-import type { TerminalSettings } from "./bindings";
+import { playBell, type LogOpen, type Profile, type SessionId, type ZmodemPhase } from "../ipc/api";
+import type { TerminalSettings } from "../ipc/bindings";
+import { windows } from "../ipc/windows";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
 import { closesOnExit, findPane, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
 import { activeTabOf, type TabStore } from "./tabs";
@@ -178,7 +177,7 @@ export function createSessionRegistry(
               store.dispatch({ type: "attention", key, kind: "bell" });
               announce(t("announce.bell", { name: pane().title }));
             }
-            if (!document.hasFocus()) void getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(console.error);
+            if (!document.hasFocus()) windows.requestAttention();
           },
           arrived: () => update({ arrival: undefined }),
           movedAway: () => movedAway(key),

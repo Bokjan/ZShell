@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { FileEntry } from "../../lib/api";
-import { useDialog } from "../../lib/dialogs";
+import type { FileEntry } from "../../ipc/api";
+import { useDialog } from "../../hooks/dialogs";
 import { parseMode } from "../../lib/fileList";
 import { formatMode } from "../../lib/format";
 import { ErrorText } from "../ErrorMessage";

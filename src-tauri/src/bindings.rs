@@ -1,5 +1,5 @@
 //! The TypeScript types of what the frontend and the backend exchange, generated from the Rust
-//! types into `src/lib/bindings.ts`: `cargo test` fails while that file is out of date, and
+//! types into `src/ipc/bindings.ts`: `cargo test` fails while that file is out of date, and
 //! rewrites it when run with `UPDATE_BINDINGS=1`.
 //!
 //! Every type reachable from the roots below is declared, under its `#[ts(rename)]` name.
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn bindings_are_up_to_date() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/bindings.ts");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/ipc/bindings.ts");
         let generated = generate();
         if std::env::var_os("UPDATE_BINDINGS").is_some() {
             std::fs::write(&path, generated).unwrap();
@@ -169,6 +169,6 @@ mod tests {
         }
         // Checked out with CRLF line endings on Windows.
         let written = std::fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
-        assert!(written == generated, "src/lib/bindings.ts is out of date: run `UPDATE_BINDINGS=1 cargo test bindings` in src-tauri");
+        assert!(written == generated, "src/ipc/bindings.ts is out of date: run `UPDATE_BINDINGS=1 cargo test bindings` in src-tauri");
     }
 }

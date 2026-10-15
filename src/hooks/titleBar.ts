@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { isLinux, isMac, isWindows } from "./platform";
+import { isLinux, isMac, isWindows } from "../lib/platform";
 
 /** Marks an element as part of the title bar that moves the window (only the element itself, not its children). */
 export const DRAG_REGION = { "data-window-drag": "" };

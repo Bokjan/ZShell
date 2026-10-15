@@ -1,12 +1,12 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-import { errorMessage } from "./api";
-import type { Release, UpdateStatus } from "./bindings";
+import { errorMessage } from "../ipc/api";
+import type { Release, UpdateStatus } from "../ipc/bindings";
 import { useSettings } from "./settings";
-import { listenHere } from "./windows";
+import { listenHere } from "../ipc/events";
 
-export type { Release } from "./bindings";
+export type { Release } from "../ipc/bindings";
 
 interface State {
   /** Whether the status has been read from the backend. */

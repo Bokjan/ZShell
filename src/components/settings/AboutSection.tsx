@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { configDirectory } from "../../lib/api";
-import { useSettings } from "../../lib/settings";
-import { checkForUpdates, useUpdates } from "../../lib/updates";
+import { configDirectory } from "../../ipc/api";
+import { useSettings } from "../../hooks/settings";
+import { checkForUpdates, useUpdates } from "../../hooks/updates";
 import { ErrorText } from "../ErrorMessage";
 import { ExternalLinkIcon } from "../icons";
 import { FolderField, Section, Setting } from "./common";

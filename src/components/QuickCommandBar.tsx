@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../lib/api";
+import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../ipc/api";
 import { announce } from "../lib/announce";
-import { usePressDrag } from "../lib/drag";
+import { usePressDrag } from "../hooks/drag";
 import type { SendResult } from "../lib/compose";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { addGroup, deleteCommand, deleteGroup, groupName, moveCommand, renameGroup, saveCommand } from "../lib/quickCommands";

@@ -5,7 +5,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { nextFieldText } from "../../lib/fieldText";
 import { wholeNumber } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
-import { useSettings } from "../../lib/settings";
+import { useSettings } from "../../hooks/settings";
 import { SpinInput } from "../SpinInput";
 
 /**

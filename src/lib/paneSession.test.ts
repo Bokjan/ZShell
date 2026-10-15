@@ -11,7 +11,7 @@ import {
   type SessionSnapshot,
   type SessionTarget,
   type openSession,
-} from "./api";
+} from "../ipc/api";
 import type { Arrival } from "./panes";
 import {
   BELL_MS,
@@ -25,8 +25,8 @@ import {
 
 // The forwarding rules running on a connection being replaced (see `reconnect`), and the
 // screen handed over when a session moves to another window.
-vi.mock("./api", async (importOriginal) => {
-  const api = await importOriginal<typeof import("./api")>();
+vi.mock("../ipc/api", async (importOriginal) => {
+  const api = await importOriginal<typeof import("../ipc/api")>();
   return { ...api, forwards: { ...api.forwards, carry: vi.fn(async () => ["r1"]) }, handOver: vi.fn(async () => {}) };
 });
 

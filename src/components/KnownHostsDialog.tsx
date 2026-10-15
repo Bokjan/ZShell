@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessage, knownHosts, type KnownHost } from "../lib/api";
-import { useDialog } from "../lib/dialogs";
-import { useWindowFocus } from "../lib/windows";
+import { errorMessage, knownHosts, type KnownHost } from "../ipc/api";
+import { useDialog } from "../hooks/dialogs";
+import { useWindowFocus } from "../hooks/windowEvents";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";

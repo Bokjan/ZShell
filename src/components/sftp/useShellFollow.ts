@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import { announce } from "../../lib/announce";
-import { sftp, type SessionId } from "../../lib/api";
+import { sftp, type SessionId } from "../../ipc/api";
 import { shellDirs } from "../../lib/shellDirs";
 
 interface Options {

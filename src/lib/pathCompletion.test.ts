@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileEntry } from "./api";
+import type { FileEntry } from "../ipc/api";
 import { commonPrefix, completionTarget, folderCandidates, tabCompletion } from "./pathCompletion";
 
 const entry = (name: string, isDir: boolean, isSymlink = false) =>

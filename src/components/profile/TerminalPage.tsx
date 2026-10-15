@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { DEFAULT_TERM_TYPE, ENCODINGS, type CommandGroup } from "../../lib/api";
+import { DEFAULT_TERM_TYPE, ENCODINGS, type CommandGroup } from "../../ipc/api";
 import type { ProfileForm } from "../../lib/profileForm";
 import { groupName } from "../../lib/quickCommands";
 

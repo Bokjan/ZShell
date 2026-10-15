@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_GROUP, type QuickCommand, type QuickCommands } from "./api";
+import { DEFAULT_GROUP, type QuickCommand, type QuickCommands } from "../ipc/api";
 import { addGroup, deleteCommand, deleteGroup, moveCommand, renameGroup, saveCommand, searchCommands, tabGroup } from "./quickCommands";
 
 const t = ((key: string) => key) as TFunction;

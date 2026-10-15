@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { logs } from "../../lib/api";
-import { useConfirmButton } from "../../lib/confirm";
-import { open as openDialog } from "../../lib/fileDialog";
+import { logs } from "../../ipc/api";
+import { useConfirmButton } from "../../hooks/confirm";
+import { open as openDialog } from "../../ipc/fileDialog";
 import { formatSize } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
-import type { LogFormat, LogSettings } from "../../lib/settings";
-import { useWindowFocus } from "../../lib/windows";
+import type { LogFormat, LogSettings } from "../../hooks/settings";
+import { useWindowFocus } from "../../hooks/windowEvents";
 import { FolderField, Section, Setting, useFieldText } from "./common";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
