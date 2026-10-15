@@ -2,6 +2,10 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.4.1] - 2026-10-15
+
+The same app as 3.4.0, which was not released because its Windows packages failed to build.
+
 ## [3.4.0] - 2026-10-15
 
 ### Features
