@@ -112,8 +112,9 @@ pub struct TerminalSettings {
     pub screen_reader_mode: ScreenReaderMode,
     /// `screenReader`, on or off, as versions before 3.4.0 saved it: read into
     /// `screen_reader_mode` by [`Settings::normalize`], off (the old default) as automatic.
-    /// Never saved, so those versions read the file as before and ignore the new key.
-    #[serde(rename = "screenReader", skip_serializing)]
+    /// Saved alongside it, on for "On" only, so that those versions still read the terminal
+    /// for screen readers (see [`Settings::stored`]); never sent to the frontend.
+    #[serde(rename = "screenReader", skip_serializing_if = "Option::is_none")]
     #[ts(skip)]
     screen_reader: Option<bool>,
     /// A bell (BEL) not caused by typing marks its tab if in the background, tells screen
@@ -347,6 +348,15 @@ impl Settings {
         logs.keep_days = logs.keep_days.min(3650);
         self
     }
+
+    /// The settings as written to the file, with the keys versions before 3.4.0 read. Their
+    /// `screenReader` agrees with `screenReaderMode`, so this version reads it back unchanged;
+    /// they drop `screenReaderMode` when they save, and then their value is the one read.
+    fn stored(&self) -> Self {
+        let mut stored = self.clone();
+        stored.terminal.screen_reader = Some(stored.terminal.screen_reader_mode == ScreenReaderMode::On);
+        stored
+    }
 }
 
 pub struct SettingsStore {
@@ -369,7 +379,7 @@ impl SettingsStore {
     pub fn set(&self, settings: Settings) -> Result<Settings> {
         let settings = settings.normalize();
         let mut current = self.settings.lock().unwrap();
-        self.file.write_changed(&*current, &settings)?;
+        self.file.write_changed(&current.stored(), &settings.stored())?;
         *current = settings.clone();
         Ok(settings)
     }
@@ -408,10 +418,20 @@ mod tests {
         // Off was the default: now automatic.
         assert_eq!(mode(r#"{"terminal":{"screenReader":false}}"#), ScreenReaderMode::Auto);
         assert_eq!(mode(r#"{"terminal":{"screenReaderMode":"off"}}"#), ScreenReaderMode::Off);
-        // Saved under the new key only, which earlier versions ignore.
-        let saved = serde_json::to_value(Settings::default()).unwrap();
-        assert_eq!(saved["terminal"]["screenReaderMode"], "auto");
-        assert!(saved["terminal"].get("screenReader").is_none());
+        // Sent to the frontend under the new key only.
+        let sent = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(sent["terminal"]["screenReaderMode"], "auto");
+        assert!(sent["terminal"].get("screenReader").is_none());
+        // Saved with the old key too, for earlier versions, which reads back the same.
+        for (mode, on) in [(ScreenReaderMode::Auto, false), (ScreenReaderMode::On, true), (ScreenReaderMode::Off, false)] {
+            let mut settings = Settings::default();
+            settings.terminal.screen_reader_mode = mode;
+            let saved = serde_json::to_value(settings.stored()).unwrap();
+            assert_eq!(saved["terminal"]["screenReader"], on);
+            let read = serde_json::from_value::<Settings>(saved).unwrap().normalize();
+            assert_eq!(read.terminal.screen_reader_mode, mode);
+            assert_eq!(read.terminal.screen_reader, None);
+        }
     }
 
     #[test]
