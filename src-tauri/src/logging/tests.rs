@@ -28,6 +28,16 @@ fn plain_text_follows_the_cursor_within_a_line() {
 }
 
 #[test]
+fn an_endless_osc_sequence_stays_bounded() {
+    // vte with its `std` feature keeps an OSC sequence in a `Vec`, growing without limit; it
+    // is then the size of a few pointers.
+    assert!(std::mem::size_of::<vte::Parser>() > 1024, "vte is built with `std`");
+    let mut endless = b"\x1b]0;".to_vec();
+    endless.extend(b"y\n".repeat(1 << 20));
+    assert_eq!(text(&[b"before\r\n", &endless, b"\x07after\r\n"]), "before\nafter\n");
+}
+
+#[test]
 fn long_lines_and_far_cursor_moves_stay_bounded() {
     let long = "a".repeat(3 * MAX_COLUMNS + 10);
     assert_eq!(text(&[long.as_bytes(), b"\r\nnext\r\n"]), format!("{long}\nnext\n"));
