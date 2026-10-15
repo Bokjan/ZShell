@@ -17,7 +17,7 @@ use russh::keys::ssh_encoding::Encode;
 use russh::keys::ssh_key::private::KeypairData;
 use russh::keys::ssh_key::public::KeyData;
 use russh::keys::ssh_key::Signature;
-use russh::keys::{load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
+use russh::keys::{decode_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use russh::{MethodKind, MethodSet, Signer};
 use tokio::sync::watch;
 
@@ -170,10 +170,12 @@ impl<H: Handler> Auth<'_, H> {
                 let path = expand_home(key_path);
                 // As in automatic mode, the passphrase is asked for once the server accepts
                 // the key, but a key that can't be read or decrypted is an error.
-                let outcome = match load_secret_key(&path, None) {
+                let read_failed = || Error::new("auth.keyReadFailed").param("path", path.display());
+                let text = read_key_file(&path).await.context(read_failed())?;
+                let outcome = match decode_secret_key(&text, None) {
                     Ok(key) => self.sign_in_with(key).await?,
-                    Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(&path, true).await?,
-                    Err(e) => return Err(e).context(Error::new("auth.keyReadFailed").param("path", path.display())),
+                    Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(&path, &text, true).await?,
+                    Err(e) => return Err(e).context(read_failed()),
                 };
                 ensure!(outcome != Outcome::Rejected, Error::new("auth.keyRejected").param("path", path.display()));
                 outcome
@@ -344,9 +346,10 @@ impl<H: Handler> Auth<'_, H> {
     /// Tries one key file: unreadable files and rejected keys are `Rejected`. An encrypted
     /// key's passphrase is only asked for once the server accepts its public key.
     async fn try_key_file(&mut self, path: &Path) -> Result<Outcome> {
-        match load_secret_key(path, None) {
+        let Ok(text) = read_key_file(path).await else { return Ok(Outcome::Rejected) };
+        match decode_secret_key(&text, None) {
             Ok(key) => self.sign_in_with(key).await,
-            Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(path, false).await,
+            Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(path, &text, false).await,
             Err(_) => Ok(Outcome::Rejected),
         }
     }
@@ -354,11 +357,11 @@ impl<H: Handler> Auth<'_, H> {
     /// Tries an encrypted key file. Wrong passphrases skip the key (as in OpenSSH), unless
     /// it is the one the session is set to use (`chosen`): that fails with
     /// `auth.keyDecryptFailed`.
-    async fn try_encrypted_key(&mut self, path: &Path, chosen: bool) -> Result<Outcome> {
+    async fn try_encrypted_key(&mut self, path: &Path, text: &str, chosen: bool) -> Result<Outcome> {
         let decrypt_failed = || Error::new("auth.keyDecryptFailed").param("path", path.display());
         // The OpenSSH format keeps the public key readable; legacy PEM keys need the passphrase first.
-        let Ok(encrypted) = PrivateKey::read_openssh_file(path) else {
-            return match load_key(path, self.io).await {
+        let Ok(encrypted) = PrivateKey::from_openssh(text) else {
+            return match load_key(path, text, self.io).await {
                 Ok(key) => self.sign_in_with(key).await,
                 Err(e) if !chosen && e.downcast_ref::<Error>().is_some_and(|e| e.code() == "auth.keyDecryptFailed") => {
                     Ok(Outcome::Rejected)
@@ -432,8 +435,39 @@ fn method_names(methods: &MethodSet) -> String {
     methods.iter().map(<&str>::from).collect::<Vec<_>>().join(", ")
 }
 
-async fn load_key(path: &Path, io: &mut TermIo) -> Result<PrivateKey> {
-    match load_secret_key(path, None) {
+/// No key file is anywhere near this size. Without a limit, a path to something else (a
+/// device such as `/dev/zero`, from a session someone else wrote) would be read without end.
+const MAX_KEY_FILE: u64 = 1 << 20;
+
+/// Reads a private key file in the blocking pool: only a regular file (opening a pipe would
+/// wait for a writer), and at most [`MAX_KEY_FILE`].
+async fn read_key_file(path: &Path) -> std::io::Result<String> {
+    use std::io::{Error, ErrorKind, Read};
+
+    let path = path.to_owned();
+    let read = move || {
+        if !std::fs::metadata(&path)?.is_file() {
+            return Err(Error::new(ErrorKind::InvalidInput, "not a file"));
+        }
+        let mut text = String::new();
+        std::fs::File::open(&path)?.take(MAX_KEY_FILE + 1).read_to_string(&mut text)?;
+        if text.len() as u64 > MAX_KEY_FILE {
+            return Err(Error::new(ErrorKind::InvalidData, "too large for a key file"));
+        }
+        Ok(text)
+    };
+    tokio::task::spawn_blocking(read).await.unwrap_or_else(|e| Err(Error::other(e)))
+}
+
+/// Decrypts a key with `passphrase` in the blocking pool: the OpenSSH format's key
+/// derivation (bcrypt) takes a good part of a second.
+async fn decrypt_key(text: &str, passphrase: String) -> Option<PrivateKey> {
+    let text = text.to_owned();
+    tokio::task::spawn_blocking(move || decode_secret_key(&text, Some(&passphrase)).ok()).await.ok().flatten()
+}
+
+async fn load_key(path: &Path, text: &str, io: &mut TermIo) -> Result<PrivateKey> {
+    match decode_secret_key(text, None) {
         Ok(key) => return Ok(key),
         Err(russh::keys::Error::KeyIsEncrypted) => {}
         Err(e) => return Err(e).context(Error::new("auth.keyReadFailed").param("path", path.display())),
@@ -441,9 +475,9 @@ async fn load_key(path: &Path, io: &mut TermIo) -> Result<PrivateKey> {
     for _ in 0..MAX_ATTEMPTS {
         io.print(&passphrase_prompt(path));
         let passphrase = io.read_line(false).await.context(Error::new("auth.cancelled"))?;
-        match load_secret_key(path, Some(&passphrase)) {
-            Ok(key) => return Ok(key),
-            Err(_) => io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
+        match decrypt_key(text, passphrase).await {
+            Some(key) => return Ok(key),
+            None => io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
         }
     }
     bail!(Error::new("auth.keyDecryptFailed").param("path", path.display()))
@@ -501,9 +535,11 @@ impl PassphraseSigner<'_> {
                 self.cancelled = true;
                 return None;
             };
-            match self.key.decrypt(passphrase) {
-                Ok(key) => return Some(key),
-                Err(_) => self.io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
+            // bcrypt, as in `decrypt_key`.
+            let key = self.key.clone();
+            match tokio::task::spawn_blocking(move || key.decrypt(passphrase)).await {
+                Ok(Ok(key)) => return Some(key),
+                _ => self.io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
             }
         }
         self.decrypt_failed = true;

@@ -328,3 +328,21 @@ async fn agent_refusal_gives_invalid_signature() {
     invalid_signature(Algorithm::Ed25519).encode(&mut expected).unwrap();
     assert_eq!(signed, expected);
 }
+
+/// Only a regular file of key size is read: a folder, a device such as `/dev/zero` (which would
+/// be read without end) or a huge file is not.
+#[tokio::test]
+async fn only_key_sized_files_are_read_as_keys() {
+    let dir = std::env::temp_dir().join(format!("zshell-key-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let key = dir.join("id_ed25519");
+    std::fs::write(&key, KEY).unwrap();
+    assert_eq!(read_key_file(&key).await.unwrap(), KEY);
+    assert!(read_key_file(&dir).await.is_err());
+    let huge = dir.join("huge");
+    std::fs::write(&huge, vec![b'a'; MAX_KEY_FILE as usize + 1]).unwrap();
+    assert!(read_key_file(&huge).await.is_err());
+    #[cfg(unix)]
+    assert!(read_key_file(Path::new("/dev/zero")).await.is_err());
+    std::fs::remove_dir_all(dir).unwrap();
+}
