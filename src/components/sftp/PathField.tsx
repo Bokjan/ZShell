@@ -12,6 +12,8 @@ interface Props {
   onChange(value: string): void;
   /** Shows the folder at `path`. */
   onGo(path: string): void;
+  /** Called when the user starts typing a path, and when they stop (going there, or leaving). */
+  onEditing(editing: boolean): void;
   /** Whether hidden folders are offered without typing a dot. */
   showHidden: boolean;
 }
@@ -25,12 +27,16 @@ const LIST_DELAY = 150;
  * as a shell does, the arrow keys pick one, Enter or a click goes to it, Escape closes the list.
  * Each folder is listed once while the field has the focus.
  */
-export function PathField({ sessionId, value, onChange, onGo, showHidden }: Props) {
+export function PathField({ sessionId, value, onChange, onGo, onEditing, showHidden }: Props) {
   const { t } = useTranslation();
   const listId = useId();
   const listRef = useRef<HTMLUListElement>(null);
   // Whether the value is the user's typing (rather than the folder shown), which is completed.
-  const [typing, setTyping] = useState(false);
+  const [typing, setTypingState] = useState(false);
+  const setTyping = (next: boolean) => {
+    setTypingState(next);
+    onEditing(next);
+  };
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [listing, setListing] = useState<{ dir: string; entries: FileEntry[] } | null>(null);
@@ -64,6 +70,11 @@ export function PathField({ sessionId, value, onChange, onGo, showHidden }: Prop
       clearTimeout(timer);
     };
   }, [typing, sessionId, dir]);
+
+  const onEditingRef = useRef(onEditing);
+  onEditingRef.current = onEditing;
+  // Typing stops with the field.
+  useEffect(() => () => onEditingRef.current(false), []);
 
   useEffect(() => {
     if (active >= 0) listRef.current?.children[active]?.scrollIntoView({ block: "nearest" });

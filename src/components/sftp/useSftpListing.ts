@@ -27,6 +27,11 @@ export function useSftpListing(
   onNewFolderRef.current = onNewFolder;
   const startDirRef = useRef(startDir);
   startDirRef.current = startDir;
+  /**
+   * Whether the user is typing in the path field: a listing they didn't ask for there (after
+   * an upload, or following the terminal) leaves what they typed alone.
+   */
+  const editingRef = useRef(false);
 
   const fail = useCallback((e: unknown) => setError(errorMessage(e)), []);
 
@@ -47,13 +52,13 @@ export function useSftpListing(
         // Refreshing keeps the selection; another folder starts afresh.
         if (listing.path !== cwdRef.current) onNewFolderRef.current();
         setCwd(listing.path);
-        setPathInput(listing.path);
+        if (!editingRef.current) setPathInput(listing.path);
         setEntries(listing.entries);
         setError(null);
         return true;
       } catch (e) {
         if (stale() || quiet) return false;
-        setPathInput(cwdRef.current ?? "");
+        if (!editingRef.current) setPathInput(cwdRef.current ?? "");
         fail(e);
         return false;
       } finally {
@@ -101,5 +106,5 @@ export function useSftpListing(
     };
   }, [sessionId, connected, load, fail]);
 
-  return { cwd, cwdRef, pathInput, setPathInput, entries, loading, error, setError, fail, load, reload };
+  return { cwd, cwdRef, pathInput, setPathInput, editingRef, entries, loading, error, setError, fail, load, reload };
 }

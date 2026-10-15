@@ -443,6 +443,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
               value={listing.pathInput}
               onChange={listing.setPathInput}
               onGo={(path) => void load(path)}
+              onEditing={(editing) => (listing.editingRef.current = editing)}
               showHidden={view.showHidden}
             />
           </form>
