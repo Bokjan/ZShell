@@ -173,30 +173,160 @@ async fn watch(local: PathBuf, stopped: Arc<AtomicBool>, events: Channel<EditEve
     }
 }
 
-/// Opens a local file in the editor from the settings, or the system's default application.
+/// Kinds of files that the system's default action runs, installs or follows instead of
+/// opening them in an application (the server names the file and writes what is in it, and
+/// nothing marks the file as downloaded for Gatekeeper or SmartScreen to warn about).
+#[cfg(target_os = "macos")]
+const RUN_WHEN_OPENED: &[&str] = &[
+    "action",
+    "app",
+    "command",
+    "configprofile",
+    "fileloc",
+    "inetloc",
+    "jar",
+    "mobileconfig",
+    "mpkg",
+    "pkg",
+    "prefpane",
+    "saver",
+    "shortcut",
+    "terminal",
+    "tool",
+    "webloc",
+    "workflow",
+];
+/// Besides what `PATHEXT` lists.
+#[cfg(windows)]
+const RUN_WHEN_OPENED: &[&str] = &[
+    "ade",
+    "adp",
+    "app",
+    "application",
+    "appref-ms",
+    "appx",
+    "appxbundle",
+    "bas",
+    "bat",
+    "chm",
+    "cmd",
+    "com",
+    "cpl",
+    "diagcab",
+    "exe",
+    "gadget",
+    "hlp",
+    "hta",
+    "inf",
+    "ins",
+    "isp",
+    "jar",
+    "js",
+    "jse",
+    "library-ms",
+    "lnk",
+    "mde",
+    "msc",
+    "msh",
+    "msi",
+    "msix",
+    "msixbundle",
+    "msp",
+    "mst",
+    "pif",
+    "ps1",
+    "ps1xml",
+    "ps2",
+    "psc1",
+    "psd1",
+    "psm1",
+    "py",
+    "pyw",
+    "pyz",
+    "reg",
+    "scf",
+    "scr",
+    "sct",
+    "search-ms",
+    "searchconnector-ms",
+    "settingcontent-ms",
+    "shb",
+    "url",
+    "vb",
+    "vbe",
+    "vbs",
+    "website",
+    "ws",
+    "wsc",
+    "wsf",
+    "wsh",
+    "xbap",
+];
+/// The downloaded copy is never executable, so scripts open in an editor; these don't need to be.
+#[cfg(target_os = "linux")]
+const RUN_WHEN_OPENED: &[&str] = &["desktop", "flatpakref", "jar"];
+
+/// Whether `path`'s extension is one of `kinds` (lowercase, without the dot).
+fn is_kind(path: &Path, kinds: &[impl AsRef<str>]) -> bool {
+    let Some(extension) = path.extension().and_then(|e| e.to_str()) else { return false };
+    kinds.iter().any(|kind| kind.as_ref().eq_ignore_ascii_case(extension))
+}
+
+/// Whether the system would run `path` rather than open it, if asked to open it.
+fn runs_when_opened(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let listed = std::env::var("PATHEXT").unwrap_or_default();
+        let listed: Vec<&str> = listed.split(';').map(|e| e.trim_start_matches('.')).filter(|e| !e.is_empty()).collect();
+        if is_kind(path, &listed) {
+            return true;
+        }
+    }
+    is_kind(path, RUN_WHEN_OPENED)
+}
+
+/// Opens a local file in the editor from the settings, or the system's default application;
+/// a file that application would run opens in the system's text editor instead (macOS,
+/// Windows), or not at all until an editor is chosen (Linux, which has no such default).
 /// Blocking: on macOS it waits for `open` to report whether the application was found.
 pub fn open_in_editor(app: &AppHandle, editor: &str, path: &Path) -> Result<()> {
     let failed = |e: &dyn std::fmt::Display| Error::new("edit.openFailed").param("path", path.display()).detail(e);
-    if editor.is_empty() {
-        use tauri_plugin_opener::OpenerExt;
-        return app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| failed(&e));
-    }
     #[cfg(target_os = "macos")]
     {
-        let output = std::process::Command::new("open").arg("-a").arg(editor).arg(path).output().map_err(|e| failed(&e))?;
+        let _ = app;
+        let mut open = std::process::Command::new("open");
+        match editor {
+            "" if runs_when_opened(path) => open.arg("-t"),
+            "" => &mut open,
+            editor => open.arg("-a").arg(editor),
+        };
+        let output = open.arg(path).output().map_err(|e| failed(&e))?;
         if !output.status.success() {
             return Err(failed(&String::from_utf8_lossy(&output.stderr).trim()));
         }
         Ok(())
     }
-    #[cfg(windows)]
-    return std::process::Command::new(editor).arg(path).spawn().map(drop).map_err(|e| failed(&e));
-    // Waited for, so that it doesn't stay a zombie once it exits.
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     {
-        let mut child = std::process::Command::new(editor).arg(path).spawn().map_err(|e| failed(&e))?;
-        std::thread::spawn(move || child.wait());
-        Ok(())
+        if editor.is_empty() && runs_when_opened(path) {
+            #[cfg(windows)]
+            return open_in_editor(app, "notepad.exe", path);
+            #[cfg(target_os = "linux")]
+            return Err(Error::new("edit.chooseEditor").param("name", path.file_name().unwrap_or_default().to_string_lossy()));
+        }
+        if editor.is_empty() {
+            use tauri_plugin_opener::OpenerExt;
+            return app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| failed(&e));
+        }
+        #[cfg(windows)]
+        return std::process::Command::new(editor).arg(path).spawn().map(drop).map_err(|e| failed(&e));
+        // Waited for, so that it doesn't stay a zombie once it exits.
+        #[cfg(target_os = "linux")]
+        {
+            let mut child = std::process::Command::new(editor).arg(path).spawn().map_err(|e| failed(&e))?;
+            std::thread::spawn(move || child.wait());
+            Ok(())
+        }
     }
 }
 
@@ -215,6 +345,34 @@ pub(crate) fn remove_old(root: &Path) {
         let old = last_modified(&path).is_some_and(|modified| SystemTime::now().duration_since(modified).is_ok_and(|age| age > KEEP_OLD));
         if old {
             let _ = std::fs::remove_dir_all(path);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kinds_are_matched_by_extension_ignoring_case() {
+        assert!(is_kind(Path::new("/tmp/a/Deploy.CMD"), &["cmd"]));
+        assert!(!is_kind(Path::new("/tmp/a/cmd"), &["cmd"]));
+        assert!(!is_kind(Path::new("/tmp/a/x.cmd.txt"), &["cmd"]));
+    }
+
+    #[test]
+    fn files_the_system_would_run_are_told_apart() {
+        #[cfg(target_os = "macos")]
+        let runs = ["x.command", "x.webloc", "x.terminal"];
+        #[cfg(windows)]
+        let runs = ["x.bat", "x.lnk", "x.url"];
+        #[cfg(target_os = "linux")]
+        let runs = ["x.desktop", "x.jar", "x.flatpakref"];
+        for name in runs {
+            assert!(runs_when_opened(Path::new(name)), "{name}");
+        }
+        for name in ["x.txt", "x.sh", "x.conf", "Makefile"] {
+            assert!(!runs_when_opened(Path::new(name)), "{name}");
         }
     }
 }

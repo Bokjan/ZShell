@@ -215,7 +215,8 @@
     "edit": {
       "notFound": "该文件已不在编辑中",
       "conflict": "{name} 在你打开后已在服务器上被修改",
-      "openFailed": "无法在编辑器中打开 {path}"
+      "openFailed": "无法在编辑器中打开 {path}",
+      "chooseEditor": "{name} 会被运行而不是打开。要编辑它，请在“设置 › 文件”中选择编辑器。"
     },
     "proxy": {
       "notFound": "未找到代理",

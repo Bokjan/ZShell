@@ -215,7 +215,8 @@
     "edit": {
       "notFound": "Die Datei wird nicht mehr bearbeitet",
       "conflict": "{name} wurde auf dem Server geändert, nachdem Sie die Datei geöffnet haben",
-      "openFailed": "{path} kann nicht im Editor geöffnet werden"
+      "openFailed": "{path} kann nicht im Editor geöffnet werden",
+      "chooseEditor": "{name} würde ausgeführt statt geöffnet. Wählen Sie unter Einstellungen › Dateien einen Editor, um die Datei zu bearbeiten."
     },
     "proxy": {
       "notFound": "Proxy nicht gefunden",

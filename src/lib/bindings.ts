@@ -30,6 +30,7 @@ export type ErrorCode =
   | "config.unreadable"
   | "config.writeFailed"
   | "credentialStore"
+  | "edit.chooseEditor"
   | "edit.conflict"
   | "edit.notFound"
   | "edit.openFailed"

@@ -215,7 +215,8 @@
     "edit": {
       "notFound": "The file is no longer being edited",
       "conflict": "{name} was changed on the server after you opened it",
-      "openFailed": "Cannot open {path} in the editor"
+      "openFailed": "Cannot open {path} in the editor",
+      "chooseEditor": "{name} would be run rather than opened. Choose an editor in Settings › Files to edit it."
     },
     "proxy": {
       "notFound": "Proxy not found",
