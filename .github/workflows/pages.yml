@@ -23,9 +23,10 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces its build; a deployment that has started finishes.
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

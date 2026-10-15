@@ -31,7 +31,7 @@ cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
 pnpm tauri dev                              # run the app
 ```
 
-Run the first four before committing; CI runs the same build, formatting check, clippy and tests on macOS, Windows and Linux (formatting on macOS only). Platform-only code (ConPTY, the OpenSSH agent pipe and Pageant on Windows, AppKit on macOS, GTK on Linux) cannot be compiled elsewhere, so CI is the only check for it there.
+Run the first four before committing; CI runs the same build, formatting check, clippy and tests on macOS, Windows (x64 and ARM64) and Linux (formatting on macOS only). Platform-only code (ConPTY, the OpenSSH agent pipe and Pageant on Windows, AppKit on macOS, GTK on Linux) cannot be compiled elsewhere, so CI is the only check for it there.
 
 Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/lib/bindings.ts` (never mirror them by hand in `api.ts`), and so are the few constants both sides need (`constants()` in `bindings.rs`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale.
 

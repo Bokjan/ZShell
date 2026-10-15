@@ -1,6 +1,9 @@
 # Builds and tests on every platform the app supports. Platform-only code (ConPTY, the
 # OpenSSH agent pipe / Pageant on Windows, GTK on Linux) cannot be checked from another one,
-# so each runs the frontend build, clippy and the tests.
+# so each runs the frontend build, clippy and the tests. The runners are those the release
+# builds on, so that what breaks only there shows up before a release: Windows on ARM64
+# (where ring needs clang), and Ubuntu 22.04's older GTK and WebKitGTK. Intel Macs aren't
+# checked apart: the code has nothing specific to the processor.
 # Actions are pinned to a commit (Dependabot updates the hash and the version comment), so
 # that a moved tag can't change what runs.
 name: CI
@@ -14,6 +17,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces its run. Runs on main all finish: a release checks
+# that CI passed on its commit (a group of their own, since a group keeps one pending run).
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     strategy:
@@ -24,10 +33,13 @@ jobs:
             os: macos-latest
           - name: Windows
             os: windows-latest
+          - name: Windows ARM64
+            os: windows-11-arm
           - name: Linux
-            os: ubuntu-latest
+            os: ubuntu-22.04
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,6 +90,7 @@ jobs:
   licenses:
     name: Licenses
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
