@@ -169,7 +169,8 @@ button {
 }
 
 /* WebKit's default placeholder color is close to the text color in dark mode. */
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: var(--text-muted);
   opacity: 0.8;
 }
@@ -2336,7 +2337,8 @@ body.resizing .terminal-view {
   gap: 6px;
 }
 .dialog input:not([type="checkbox"]),
-.dialog select {
+.dialog select,
+.dialog textarea {
   padding: 6px 8px;
   border: 1px solid var(--input-border);
   border-radius: 4px;
@@ -2345,6 +2347,11 @@ body.resizing .terminal-view {
   font: inherit;
   font-size: calc(13px * var(--text-scale));
   outline: none;
+}
+.dialog textarea {
+  resize: vertical;
+  user-select: text;
+  -webkit-user-select: text;
 }
 /* Drawn like the text inputs instead of the native pop-up button, which is shorter and
    ignores the theme; the menu that opens stays native (keyboard and accessibility). */
@@ -2362,11 +2369,13 @@ body.resizing .terminal-view {
   border-color: var(--text-muted);
 }
 .dialog input:focus,
-.dialog select:focus {
+.dialog select:focus,
+.dialog textarea:focus {
   border-color: var(--accent);
 }
 .dialog input:disabled,
-.dialog select:disabled {
+.dialog select:disabled,
+.dialog textarea:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -2704,24 +2713,13 @@ body.resizing .terminal-view {
   opacity: 0.4;
   cursor: default;
 }
-.command-text {
-  padding: 6px 8px;
-  border: 1px solid var(--input-border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text);
+/* A text area for commands: drawn like the other text areas, in a monospace font. */
+.dialog textarea.command-text {
   font:
     calc(12px * var(--text-scale)) / 1.5 Menlo,
     "Cascadia Mono",
     Consolas,
     monospace;
-  resize: vertical;
-  outline: none;
-  user-select: text;
-  -webkit-user-select: text;
-}
-.command-text:focus {
-  border-color: var(--accent);
 }
 
 /* Settings */
