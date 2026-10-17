@@ -2,6 +2,7 @@ import { useCallback, useEffect, useInsertionEffect, useRef, useState } from "re
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
+import { useLocale } from "./hooks/locale";
 import { useLatest } from "./hooks/latest";
 import { useAppMenu } from "./app/useAppMenu";
 import { useCloseFlow } from "./app/useCloseFlow";
@@ -44,7 +45,7 @@ import {
 } from "./ipc/api";
 import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./hooks/appMenu";
 import { basename } from "./lib/format";
-import { actionOf, matches, paneSideOf, shortcutLabel, tabIndexOf, type MenuAction } from "./lib/keymap";
+import { actionOf, matches, paneSideOf, tabIndexOf, type MenuAction } from "./lib/keymap";
 import { neighbor } from "./lib/layout";
 import { tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
@@ -77,6 +78,7 @@ interface RegistryLater {
 
 function App() {
   const { t } = useTranslation();
+  const { shortcutLabel } = useLocale();
   const { settings, update, saveError: settingsSaveError, dismissSaveError: dismissSettingsSaveError } = useSettings();
   useDirectorySync();
   const { profiles } = useDirectory();

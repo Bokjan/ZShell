@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { currentCjk, systemLanguage } from "../i18n/index";
+import { systemLanguage } from "../i18n/index";
 import { LANGUAGES } from "../ipc/bindings";
 import { useConfirmButton } from "../hooks/confirm";
 import { useDialog } from "../hooks/dialogs";
 import { languageName } from "../lib/format";
-import { matches, shortcutRows } from "../lib/keymap";
+import { matches } from "../lib/keymap";
 import { isMac } from "../lib/platform";
 import {
   DEFAULT_SETTINGS,
@@ -31,6 +31,7 @@ import { useShortcuts } from "../hooks/shortcuts";
 import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies, type TerminalScheme } from "../lib/terminalSchemes";
 import { useUpdates } from "../hooks/updates";
 import { useLatest } from "../hooks/latest";
+import { useLocale } from "../hooks/locale";
 import { CloseIcon, DotIcon } from "./icons";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
@@ -70,6 +71,7 @@ let lastPlace: Place | null = null;
 
 export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { t } = useTranslation();
+  const { shortcutRows, cjk } = useLocale();
   const { settings, theme, update } = useSettings();
   const terminal = settings.terminal;
   const setTerminal = (patch: Partial<TerminalSettings>, delay?: number) =>
@@ -383,7 +385,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                           ? t("settings.fontFamilyPlaceholderSystem", { font: systemFontFamilies().replace(/"/g, "") })
                           : t("settings.fontFamilyPlaceholder")
                       }
-                      title={defaultFontStack(currentCjk())}
+                      title={defaultFontStack(cjk)}
                       autoCapitalize="off"
                       autoCorrect="off"
                     />

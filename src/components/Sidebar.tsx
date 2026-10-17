@@ -11,7 +11,7 @@ import { dragHorizontally, usePressDrag } from "../hooks/drag";
 import { open as openDialog } from "../ipc/fileDialog";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
-import { matches, shortcutLabel } from "../lib/keymap";
+import { matches } from "../lib/keymap";
 import { isComposing, isMac } from "../lib/platform";
 import {
   address,
@@ -36,6 +36,7 @@ import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../hooks/titleBar";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { useLatest } from "../hooks/latest";
+import { useLocale } from "../hooks/locale";
 import { ChevronIcon, DisclosureIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -99,6 +100,7 @@ type Drop = { key: string; position: "before" | "after" | "into" } | { key: null
 export function Sidebar(props: Props) {
   const { searchFocusKey, onOpen, onOpenAll, onQuickConnect, onEdit, onNew } = props;
   const { t } = useTranslation();
+  const { shortcutLabel } = useLocale();
   const { settings } = useSettings();
   const state = useDirectory();
   const { profiles, folders } = state;

@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Profile } from "../ipc/api";
-import { formatAgo, formatSize } from "../lib/format";
 import type { Pane } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { address, serialSummary } from "../lib/sessions";
 import { useMediaQuery } from "../hooks/settings";
 import type { TrafficMeter } from "../lib/traffic";
+import { useLocale } from "../hooks/locale";
 import { ActivityIcon } from "./icons";
 
 interface Props {
@@ -105,6 +105,7 @@ function Connection({ pane, profile }: { pane: Pane; profile: Profile | undefine
  */
 function Activity({ meter }: { meter: TrafficMeter | undefined }) {
   const { t } = useTranslation();
+  const { formatSize, formatAgo } = useLocale();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const { send, receive } = useLights(meter, reduced ? LIGHT_REDUCED_MS : LIGHT_MS);
   const now = useTick(1000);

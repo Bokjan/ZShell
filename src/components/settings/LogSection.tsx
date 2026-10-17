@@ -5,11 +5,11 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { logs } from "../../ipc/api";
 import { useConfirmButton } from "../../hooks/confirm";
 import { open as openDialog } from "../../ipc/fileDialog";
-import { formatSize } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
 import type { LogFormat, LogSettings } from "../../hooks/settings";
 import { useWindowFocus } from "../../hooks/windowEvents";
 import { useLatest } from "../../hooks/latest";
+import { useLocale } from "../../hooks/locale";
 import { FolderField, Section, Setting, useFieldText } from "./common";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
@@ -27,6 +27,7 @@ export function LogSection({
   onChange(patch: Partial<LogSettings>): void;
 }) {
   const { t } = useTranslation();
+  const { formatSize } = useLocale();
   const [directory, setDirectory] = useState("");
   const [summary, setSummary] = useState<{ count: number; bytes: number } | null>(null);
   const { ref: deleteRef, armed: deleteArmed, setArmed: setDeleteArmed, onBlur: onDeleteBlur } = useConfirmButton();

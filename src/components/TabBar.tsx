@@ -12,7 +12,6 @@ import { useTranslation } from "react-i18next";
 import { focusedPane, isLogging, tabId, tabPanelId, tabTitle, type SidePanel, type Tab } from "../lib/panes";
 import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
-import { shortcutLabel } from "../lib/keymap";
 import { isComposing, isMac } from "../lib/platform";
 import type { Point } from "../ipc/bindings";
 import { tabIndexAt } from "../lib/tabStrip";
@@ -21,6 +20,7 @@ import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { listenHere } from "../ipc/events";
 import { useWindowEvent } from "../hooks/windowEvents";
 import { useLatest } from "../hooks/latest";
+import { useLocale } from "../hooks/locale";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
@@ -125,6 +125,7 @@ export function TabBar({
   addressOf,
 }: Props) {
   const { t } = useTranslation();
+  const { shortcutLabel } = useLocale();
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
   const stripRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLElement>(null);

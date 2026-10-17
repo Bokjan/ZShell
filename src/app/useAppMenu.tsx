@@ -3,10 +3,11 @@ import { useTranslation } from "react-i18next";
 
 import { ContextMenu, type MenuItem } from "../components/ContextMenu";
 import { menuLabel } from "../hooks/appMenu";
-import { appMenu, matches, shortcutLabel, type MenuAction, type MenuEntry } from "../lib/keymap";
+import { appMenu, matches, type MenuAction, type MenuEntry } from "../lib/keymap";
 import { isMac } from "../lib/platform";
 import { runAction, useShortcuts } from "../hooks/shortcuts";
 import type { Release } from "../hooks/updates";
+import { useLocale } from "../hooks/locale";
 
 /** Where the menu opens when the button is out of sight (terminal full screen). */
 const CORNER = 4;
@@ -39,6 +40,7 @@ export function useAppMenu({
   updates: { supported: boolean; available: Release | null };
 }) {
   const { t } = useTranslation();
+  const { shortcutLabel } = useLocale();
   const ref = useRef<HTMLButtonElement>(null);
   // `anchor` is the button, taken when the menu opens: a click on it toggles the menu rather than
   // closing it as a click outside.

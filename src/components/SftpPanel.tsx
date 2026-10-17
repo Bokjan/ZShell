@@ -18,10 +18,11 @@ import { notConnected, sftp, type FileEntry, type SessionId } from "../ipc/api";
 import { open } from "../ipc/fileDialog";
 import { storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
-import { basename, formatMode, formatSize, formatTime } from "../lib/format";
+import { basename, formatMode } from "../lib/format";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
 import { useLatest } from "../hooks/latest";
+import { useLocale } from "../hooks/locale";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
@@ -69,6 +70,7 @@ const rowClass = (selected: boolean, dropTarget: boolean) =>
  */
 export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, onEdits, onQuestions }: Props) {
   const { t } = useTranslation();
+  const { formatSize, formatTime } = useLocale();
   const [view, setView] = useState<FileView>(storedView);
   /** The name filter; null while the filter field is closed. */
   const [filter, setFilter] = useState<string | null>(null);

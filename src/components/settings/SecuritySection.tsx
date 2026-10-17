@@ -2,12 +2,12 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { appLock, errorCode, errorMessage, type AppLockSettings } from "../../ipc/api";
-import { shortcutLabel } from "../../lib/keymap";
 import { useAppLock } from "../AppLockGate";
 import { ErrorText } from "../ErrorMessage";
 import { ProtectionDialog } from "../ProtectionDialog";
 import { useVault } from "../VaultGate";
 import { attempt } from "../../lib/attempt";
+import { useLocale } from "../../hooks/locale";
 import { Section, Setting } from "./common";
 
 /** The idle times offered, in minutes (as the backend accepts, `applock/mod.rs`); 0 never locks. */
@@ -59,6 +59,7 @@ export function SecuritySection() {
  */
 function AppLockSetting() {
   const { t } = useTranslation();
+  const { shortcutLabel } = useLocale();
   const { status, setStatus } = useAppLock();
   const vault = useVault().status;
   const [busy, setBusy] = useState(false);

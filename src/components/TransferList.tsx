@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import type { TransferProgress } from "../ipc/api";
-import { formatSize } from "../lib/format";
+import { useLocale } from "../hooks/locale";
 import { IconButton } from "./IconButton";
 import { ArrowIcon, CloseIcon, PencilIcon } from "./icons";
 import i18n from "../i18n/index";
@@ -47,6 +47,7 @@ const finished = (transfer: Transfer) => transfer.status !== "running" && transf
 
 export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, onReopen, onStopEditing }: Props) {
   const { t } = useTranslation();
+  const { formatSize } = useLocale();
   if (transfers.length === 0) return null;
 
   const detail = (transfer: Transfer) => {

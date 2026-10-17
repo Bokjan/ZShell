@@ -11,12 +11,11 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
-import { currentCjk } from "../i18n/index";
 import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../ipc/api";
 import { isAppLocked, whenUnlocked } from "../lib/appLock";
 import { afterDialogs, isDialogOpen } from "../hooks/dialogs";
 import { open as openDialog } from "../ipc/fileDialog";
-import { chosenAction, clipboardKeyOf, matches, shortcutLabel } from "../lib/keymap";
+import { chosenAction, clipboardKeyOf, matches } from "../lib/keymap";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import type { PaneSession } from "../lib/paneSession";
 import { isMac } from "../lib/platform";
@@ -30,6 +29,7 @@ import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSche
 import { drawWithWebgl } from "../lib/webgl";
 import { attemptSync } from "../lib/attempt";
 import { useLatest } from "../hooks/latest";
+import { useLocale } from "../hooks/locale";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
@@ -115,6 +115,7 @@ export function TerminalView({
   appearance,
 }: Props) {
   const { t } = useTranslation();
+  const { shortcutLabel, cjk } = useLocale();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   // Fits the terminal to the pane, except while a screen from another window is drawn.
@@ -169,7 +170,7 @@ export function TerminalView({
     minimumContrastRatio: moreContrast ? 4.5 : 1,
     // A tree of the screen's lines for screen readers, and announcements of new output.
     screenReaderMode: screenReader,
-    fontFamily: fontStack(appearance?.fontFamily ?? settings.terminal.fontFamily, currentCjk()),
+    fontFamily: fontStack(appearance?.fontFamily ?? settings.terminal.fontFamily, cjk),
     fontSize: appearance?.fontSize ?? settings.terminal.fontSize,
     cursorStyle: settings.terminal.cursorStyle,
     cursorBlink: settings.terminal.cursorBlink,
