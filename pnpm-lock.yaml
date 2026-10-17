@@ -48,10 +48,10 @@ importers:
         specifier: ^26.4.4
         version: 26.4.4(typescript@7.0.2)
       react:
-        specifier: ^19.1.0
+        specifier: ^19.2.0
         version: 19.3.0
       react-dom:
-        specifier: ^19.1.0
+        specifier: ^19.2.0
         version: 19.3.0(react@19.3.0)
       react-i18next:
         specifier: ^17.0.16
@@ -70,10 +70,10 @@ importers:
         specifier: ^7.20.5
         version: 7.20.5
       '@types/react':
-        specifier: ^19.1.8
+        specifier: ^19.2.0
         version: 19.3.0
       '@types/react-dom':
-        specifier: ^19.1.6
+        specifier: ^19.2.0
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: ^6.1.2
