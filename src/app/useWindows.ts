@@ -20,6 +20,15 @@ interface Options {
   openTab(target: SessionTarget, title: string): void;
 }
 
+/**
+ * A window's title goes to the system at most this often while it keeps changing: each change
+ * is told to every window, which asks for the list of windows again.
+ */
+const TITLE_MS = 500;
+
+const sameWindows = (a: WindowInfo[], b: WindowInfo[]) =>
+  a.length === b.length && a.every((window, i) => window.label === b[i].label && window.title === b[i].title);
+
 /** A tab moving out of this window. */
 interface Moving {
   /** The window it moves to, once known. */
@@ -54,9 +63,29 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   const locked = useAppLock().status.locked;
   const activeTab = tabs.find((tab) => tab.key === activeKey);
   const title = activeTab && !locked ? tabTitle(activeTab, followRemoteTitle) : t("app.name");
-  useEffect(() => void windows.setTitle(title).catch(console.error), [title]);
+  // A title that keeps changing (a program's spinner) at most every `TITLE_MS`, the last one
+  // always; the title of a locked window at once.
+  const titleSetAt = useRef(-Infinity);
+  useEffect(() => {
+    const set = () => {
+      titleSetAt.current = Date.now();
+      void windows.setTitle(title).catch(console.error);
+    };
+    const wait = locked ? 0 : titleSetAt.current + TITLE_MS - Date.now();
+    if (wait <= 0) {
+      set();
+      return;
+    }
+    const timer = setTimeout(set, wait);
+    return () => clearTimeout(timer);
+  }, [title, locked]);
 
-  const refreshOthers = useCallback(() => void windows.list().then(setOthers, console.error), []);
+  // Every window hears of every change of a window's title: only a change to the list
+  // renders this one again.
+  const refreshOthers = useCallback(
+    () => void windows.list().then((list) => setOthers((others) => (sameWindows(others, list) ? others : list)), console.error),
+    [],
+  );
   useEffect(refreshOthers, [refreshOthers]);
   useWindowEvent("windows-changed", refreshOthers);
 
