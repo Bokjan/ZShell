@@ -288,6 +288,22 @@ fn push_hex(out: &mut Vec<u8>, bytes: &[u8]) {
 /// CRC-16/XMODEM (CCITT polynomial, initial value 0).
 struct Crc16(u16);
 
+const CRC16_TABLE: [u16; 256] = {
+    let mut table = [0u16; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut crc = (i as u16) << 8;
+        let mut bit = 0;
+        while bit < 8 {
+            crc = if crc & 0x8000 != 0 { (crc << 1) ^ 0x1021 } else { crc << 1 };
+            bit += 1;
+        }
+        table[i] = crc;
+        i += 1;
+    }
+    table
+};
+
 impl Crc16 {
     fn new() -> Self {
         Self(0)
@@ -295,10 +311,7 @@ impl Crc16 {
 
     fn update(&mut self, data: &[u8]) {
         for &byte in data {
-            self.0 ^= u16::from(byte) << 8;
-            for _ in 0..8 {
-                self.0 = if self.0 & 0x8000 != 0 { (self.0 << 1) ^ 0x1021 } else { self.0 << 1 };
-            }
+            self.0 = CRC16_TABLE[usize::from((self.0 >> 8) as u8 ^ byte)] ^ (self.0 << 8);
         }
     }
 
