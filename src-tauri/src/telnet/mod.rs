@@ -11,6 +11,7 @@ mod protocol;
 use std::time::Duration;
 
 use anyhow::Result;
+use futures_util::FutureExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -102,13 +103,34 @@ async fn bridge(
                 // A tunnel also ends when its jump host connection does.
                 Ok(0) if jumps.is_broken() => return lost(None),
                 Ok(0) => return Outcome::Exited(None),
-                Ok(n) => {
+                Ok(mut n) => {
+                    // And what is already waiting after it: each read becomes a message to the
+                    // web view, which takes the main thread. The end of the stream, or a
+                    // failure, found doing so comes after what was read.
+                    let mut ended = None;
+                    while n < buffer.len() {
+                        match reader.read(&mut buffer[n..]).now_or_never() {
+                            Some(Ok(0)) => ended = Some(None),
+                            Some(Ok(more)) => n += more,
+                            Some(Err(e)) => ended = Some(Some(e.to_string())),
+                            None => break,
+                        }
+                        if ended.is_some() {
+                            break;
+                        }
+                    }
                     let received = telnet.receive(&buffer[..n]);
                     outgoing.extend(received.reply);
                     if !received.data.is_empty() {
                         login.output(&received.data);
                         echo.output(&received.data);
                         io.output(received.data);
+                    }
+                    match ended {
+                        Some(None) if jumps.is_broken() => return lost(None),
+                        Some(None) => return Outcome::Exited(None),
+                        Some(failure) => return lost(failure),
+                        None => {}
                     }
                 }
                 Err(e) => return lost(Some(e.to_string())),

@@ -273,7 +273,10 @@ fn read_output(mut port: Box<dyn SerialPort>, sink: &SessionSink, failed: &mpsc:
                 let _ = failed.send(std::io::Error::from(ErrorKind::UnexpectedEof).to_string());
                 return;
             }
-            Ok(n) => sink.output(buffer[..n].to_vec()),
+            Ok(n) => {
+                let n = read_ready(&mut *port, &mut buffer, n);
+                sink.output(buffer[..n].to_vec());
+            }
             Err(e) if matches!(e.kind(), ErrorKind::TimedOut | ErrorKind::Interrupted | ErrorKind::WouldBlock) => {}
             Err(e) => {
                 let _ = failed.send(e.to_string());
@@ -281,6 +284,19 @@ fn read_output(mut port: Box<dyn SerialPort>, sink: &SessionSink, failed: &mpsc:
             }
         }
     }
+}
+
+/// Reads on into `buffer` past its first `read` bytes while the port has more waiting: an
+/// adapter hands over a few dozen bytes at a time, and each read becomes a message to the web
+/// view. Returns how much `buffer` holds; a failure comes again on the next read.
+fn read_ready(port: &mut dyn SerialPort, buffer: &mut [u8], mut read: usize) -> usize {
+    while read < buffer.len() && port.bytes_to_read().is_ok_and(|waiting| waiting > 0) {
+        match port.read(&mut buffer[read..]) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => read += n,
+        }
+    }
+    read
 }
 
 fn write_input(mut port: Box<dyn SerialPort>, mut inputs: mpsc::Receiver<Output>, failed: &mpsc::UnboundedSender<String>) {

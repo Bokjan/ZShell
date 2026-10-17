@@ -13,8 +13,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use futures_util::FutureExt;
 use russh::client::{self, Msg};
-use russh::{Channel, ChannelMsg, ChannelStream, ChannelWriteHalf, Disconnect};
+use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelStream, ChannelWriteHalf, Disconnect, Sig};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 
@@ -201,7 +202,16 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
     let mut sending: Option<Sending> = None;
     let mut data = None;
     let mut resize = None;
+    // A message taken while gathering output (see `gather`), to handle next.
+    let mut next = None;
     loop {
+        if let Some(msg) = next.take() {
+            match received(msg, io, &mut close, &mut exit_status, &mut exit_signal) {
+                Some(Ok(())) => continue,
+                Some(Err(outcome)) => return outcome,
+                None => break,
+            }
+        }
         if sending.is_none() {
             sending = match (data.take(), resize.take()) {
                 (Some(bytes), size) => {
@@ -215,29 +225,21 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
         let paused = flow.is_paused();
         let sent = tokio::select! {
             () = flow.ready(), if paused => Ok(()),
-            msg = reader.wait(), if !paused => match msg {
-                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                    io.output(data.to_vec());
-                    Ok(())
+            msg = reader.wait(), if !paused => {
+                let msg = match msg {
+                    Some(ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. }) => {
+                        let (output, after) = gather(&mut reader, data.to_vec());
+                        next = after;
+                        io.output(output);
+                        continue;
+                    }
+                    msg => msg,
+                };
+                match received(msg, io, &mut close, &mut exit_status, &mut exit_signal) {
+                    Some(Ok(())) => Ok(()),
+                    Some(Err(outcome)) => return outcome,
+                    None => break,
                 }
-                Some(ChannelMsg::ExitStatus { exit_status: status }) => {
-                    exit_status = Some(status);
-                    Ok(())
-                }
-                Some(ChannelMsg::ExitSignal { signal_name, .. }) => {
-                    exit_signal = Some(signal_name);
-                    Ok(())
-                }
-                Some(ChannelMsg::Close) => {
-                    close.0 = None;
-                    return match exit_signal {
-                        Some(signal) => Outcome::Signaled(signal_label(&signal)),
-                        None => Outcome::Exited(exit_status),
-                    };
-                }
-                // The connection ended without closing the channel.
-                None => break,
-                Some(_) => Ok(()),
             },
             result = in_flight(&mut sending) => {
                 sending = None;
@@ -270,6 +272,51 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
         Some(reason) => error.detail(reason.detail),
         None => error,
     })
+}
+
+/// Output messages from the channel are passed on together up to this many bytes.
+const GATHER: usize = 64 << 10;
+
+/// `output` and the output messages already waiting after it, up to [`GATHER`] bytes, with
+/// the next message if another kind was taken (to handle after the output, in order). Each
+/// message is a packet from the server, often a few KiB, and the terminal gets each of its
+/// own as a message to the web view, which takes the main thread.
+fn gather(reader: &mut ChannelReadHalf, mut output: Vec<u8>) -> (Vec<u8>, Option<Option<ChannelMsg>>) {
+    while output.len() < GATHER {
+        match reader.wait().now_or_never() {
+            Some(Some(ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. })) => output.extend_from_slice(&data),
+            Some(msg) => return (output, Some(msg)),
+            None => break,
+        }
+    }
+    (output, None)
+}
+
+/// Handles a message from the shell channel other than output: `Some(Err)` when the session
+/// ended, `None` when the connection did.
+fn received(
+    msg: Option<ChannelMsg>,
+    io: &TermIo,
+    close: &mut CloseOnDrop,
+    exit_status: &mut Option<u32>,
+    exit_signal: &mut Option<Sig>,
+) -> Option<Result<(), Outcome>> {
+    match msg {
+        Some(ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. }) => io.output(data.to_vec()),
+        Some(ChannelMsg::ExitStatus { exit_status: status }) => *exit_status = Some(status),
+        Some(ChannelMsg::ExitSignal { signal_name, .. }) => *exit_signal = Some(signal_name),
+        Some(ChannelMsg::Close) => {
+            close.0 = None;
+            return Some(Err(match exit_signal {
+                Some(signal) => Outcome::Signaled(signal_label(signal)),
+                None => Outcome::Exited(*exit_status),
+            }));
+        }
+        // The connection ended without closing the channel.
+        None => return None,
+        Some(_) => {}
+    }
+    Some(Ok(()))
 }
 
 /// Closes the shell channel when the bridge ends without the server closing it: the tab was

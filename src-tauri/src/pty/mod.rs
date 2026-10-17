@@ -428,23 +428,49 @@ impl OutputReader {
 }
 
 #[cfg(unix)]
+impl OutputReader {
+    /// Waits up to `wait` for output to read; false when none came.
+    fn ready(&self, wait: Duration) -> std::io::Result<bool> {
+        use std::os::fd::AsRawFd;
+        let mut ready = libc::pollfd { fd: self.0.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        let wait = libc::c_int::try_from(wait.as_millis()).unwrap_or(libc::c_int::MAX);
+        // SAFETY: one valid pollfd.
+        match unsafe { libc::poll(&mut ready, 1, wait) } {
+            -1 => Err(std::io::Error::last_os_error()),
+            0 => Ok(false),
+            _ => Ok(true),
+        }
+    }
+
+    fn read_once(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::os::fd::AsRawFd;
+        // SAFETY: `buf` is valid for writes of its length.
+        let read = unsafe { libc::read(self.0.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+        usize::try_from(read).map_err(|_| std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
 impl Read for OutputReader {
     /// Fails with `TimedOut` when nothing comes within [`READ_WAIT`], and with EIO (macOS)
     /// or reads nothing at the end of the output.
+    ///
+    /// Reads on while more is ready: a read from a terminal returns at most about 1 KiB on
+    /// macOS, and each read becomes a message to the web view, which takes the main thread
+    /// (`cat` of a large file sent a thousand of them per MiB).
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        use std::os::fd::AsRawFd;
-        let fd = self.0.as_raw_fd();
-        let mut ready = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
-        let wait = libc::c_int::try_from(READ_WAIT.as_millis()).unwrap_or(libc::c_int::MAX);
-        // SAFETY: one valid pollfd.
-        match unsafe { libc::poll(&mut ready, 1, wait) } {
-            -1 => return Err(std::io::Error::last_os_error()),
-            0 => return Err(ErrorKind::TimedOut.into()),
-            _ => {}
+        if !self.ready(READ_WAIT)? {
+            return Err(ErrorKind::TimedOut.into());
         }
-        // SAFETY: `buf` is valid for writes of its length.
-        let read = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
-        usize::try_from(read).map_err(|_| std::io::Error::last_os_error())
+        let mut read = self.read_once(buf)?;
+        // What this reads is passed on now; a failure (EIO at the end) comes again next time.
+        while read > 0 && read < buf.len() && self.ready(Duration::ZERO).unwrap_or(false) {
+            match self.read_once(&mut buf[read..]) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => read += n,
+            }
+        }
+        Ok(read)
     }
 }
 
@@ -529,6 +555,31 @@ mod tests {
         let end = shown.find("END").expect("all the output");
         let exited = shown.find(&t!("terminal.processExited").to_string()).expect("the exit message");
         assert!(end < exited, "{:?}", &shown[shown.len() - 200..]);
+    }
+
+    /// A stream of output goes out in fewer messages than reads (about 1 KiB each on macOS).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sends_what_is_ready_together() {
+        const SIZE: usize = 4 << 20;
+        let (io, _input, output, _events) = TermIo::detached((80, 24));
+        let flow = io.sink().flow();
+        let script = format!("head -c {SIZE} /dev/zero | tr '\\000' x; exit 0");
+        let session = tokio::spawn(run(sh(&script), io));
+        let (mut messages, mut bytes) = (0, 0);
+        loop {
+            let finished = session.is_finished();
+            for chunk in output.try_iter() {
+                flow.ack(chunk.len());
+                messages += 1;
+                bytes += chunk.len();
+            }
+            if finished {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        assert!(bytes >= SIZE, "{bytes}");
+        assert!(messages < SIZE / 2048, "{messages} messages");
     }
 
     #[tokio::test(flavor = "multi_thread")]
