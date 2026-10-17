@@ -13,6 +13,13 @@
   display: flex;
   visibility: hidden;
 }
+/* Hidden pages also move out of the viewport, keeping their size. xterm.js stops rendering a
+   terminal only when it leaves the viewport (an IntersectionObserver, which ignores visibility),
+   and a hidden terminal draws with the DOM renderer, rebuilding its rows on every output. The
+   page clears the viewport by more than its own width, since an edge touching it still counts. */
+.tab-page:not(.active) {
+  transform: translateX(calc(-100% - 100vw));
+}
 .tab-page.active {
   visibility: visible;
 }
