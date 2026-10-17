@@ -6,10 +6,8 @@ use std::ffi::c_void;
 use std::sync::OnceLock;
 
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW, SystemParametersInfoW, MSG, SPI_GETSCREENREADER,
-    SPI_SETSCREENREADER, WM_SETTINGCHANGE, WNDCLASSW, WS_OVERLAPPED,
+    DefWindowProcW, SystemParametersInfoW, SPI_GETSCREENREADER, SPI_SETSCREENREADER, WM_SETTINGCHANGE,
 };
 
 use super::Changed;
@@ -30,37 +28,7 @@ pub fn watch(changed: Changed) {
     if let Some(changed) = CHANGED.get() {
         changed(running());
     }
-    // SAFETY: a window class and a window of this thread, which runs their messages for as
-    // long as the app; the class name outlives them, and the procedure has the right signature.
-    std::thread::spawn(|| unsafe {
-        let class: Vec<u16> = "ZShellScreenReader\0".encode_utf16().collect();
-        let instance = GetModuleHandleW(std::ptr::null());
-        let window_class =
-            WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, lpszClassName: class.as_ptr(), ..Default::default() };
-        RegisterClassW(&window_class);
-        // Never shown. Not a message-only window: those don't get broadcasts.
-        let hwnd = CreateWindowExW(
-            0,
-            class.as_ptr(),
-            std::ptr::null(),
-            WS_OVERLAPPED,
-            0,
-            0,
-            0,
-            0,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            instance,
-            std::ptr::null(),
-        );
-        if hwnd.is_null() {
-            return;
-        }
-        let mut message: MSG = std::mem::zeroed();
-        while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
-            DispatchMessageW(&message);
-        }
-    });
+    crate::hidden_window::spawn("ZShellScreenReader", Some(window_proc), |_| true);
 }
 
 unsafe extern "system" fn window_proc(hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {

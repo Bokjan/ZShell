@@ -17,6 +17,8 @@ mod envelope;
 mod error;
 mod events;
 mod forward;
+#[cfg(windows)]
+mod hidden_window;
 mod import;
 #[cfg(unix)]
 mod instance;

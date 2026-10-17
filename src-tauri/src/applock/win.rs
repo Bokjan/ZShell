@@ -11,13 +11,11 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::System::WinRT::IUserConsentVerifierInterop;
 use windows_future::IAsyncOperation;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
 use windows_sys::Win32::System::SystemInformation::GetTickCount;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW, MSG, PBT_APMSUSPEND, WM_POWERBROADCAST,
-    WM_WTSSESSION_CHANGE, WNDCLASSW, WS_OVERLAPPED, WTS_SESSION_LOCK,
+    DefWindowProcW, PBT_APMSUSPEND, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE, WTS_SESSION_LOCK,
 };
 
 use super::{Method, System};
@@ -95,37 +93,13 @@ pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
     if ON_LOCK.set(on_lock).is_err() {
         return;
     }
-    // SAFETY: a window class and a window of this thread, which runs their messages for as
-    // long as the app; the class name outlives them, and the procedure has the right signature.
-    std::thread::spawn(|| unsafe {
-        let class: Vec<u16> = "ZShellSystemEvents\0".encode_utf16().collect();
-        let instance = GetModuleHandleW(std::ptr::null());
-        let window_class =
-            WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, lpszClassName: class.as_ptr(), ..Default::default() };
-        RegisterClassW(&window_class);
-        // Never shown.
-        let hwnd = CreateWindowExW(
-            0,
-            class.as_ptr(),
-            std::ptr::null(),
-            WS_OVERLAPPED,
-            0,
-            0,
-            0,
-            0,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            instance,
-            std::ptr::null(),
-        );
-        if hwnd.is_null() || WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION) == 0 {
-            return;
+    crate::hidden_window::spawn("ZShellSystemEvents", Some(window_proc), |hwnd| {
+        // SAFETY: the window was just made, on this thread.
+        if unsafe { WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION) } == 0 {
+            return false;
         }
         WATCHING.store(true, Ordering::Relaxed);
-        let mut message: MSG = std::mem::zeroed();
-        while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
-            DispatchMessageW(&message);
-        }
+        true
     });
 }
 
