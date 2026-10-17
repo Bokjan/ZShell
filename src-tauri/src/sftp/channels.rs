@@ -23,6 +23,11 @@ const SFTP_REQUEST_TIMEOUT_SECS: u64 = 120;
 /// Reads kept in flight per file. The SSH channel window (2 MiB) already limits what is on
 /// the way, so more only makes later requests (listing a folder) queue longer.
 const SFTP_CONCURRENT_READS: usize = 8;
+/// Writes kept in flight per file on the transfer channel: 64 of 32 KiB fill the server's
+/// window (2 MiB on OpenSSH) as `sftp` does; russh-sftp's 16 kept uploads to a quarter of the
+/// speed of downloads on a distant server. The browsing channel keeps 16, as a folder listed
+/// while an edited file uploads waits behind its writes.
+const SFTP_CONCURRENT_TRANSFER_WRITES: usize = 64;
 
 /// An SFTP session, once opened, and whether its channel has ended since.
 type Slot = tokio::sync::Mutex<Option<(Arc<SftpSession>, Arc<AtomicBool>)>>;
@@ -37,7 +42,7 @@ pub struct Channels {
 impl Channels {
     /// The SFTP session for browsing (and editing) on `connection`, opened on first use.
     pub async fn browse(&self, connection: &ssh::Connection) -> anyhow::Result<Arc<SftpSession>> {
-        open(&self.browse, connection).await
+        open(&self.browse, connection, config()).await
     }
 
     /// The SFTP session for transfers (uploads, downloads, drags out of the window), on a
@@ -45,7 +50,8 @@ impl Channels {
     /// listed during a large transfer would wait behind the transfer's reads. The server
     /// may refuse another channel (`MaxSessions`); transfers then share the browsing one.
     pub async fn transfer(&self, connection: &ssh::Connection) -> anyhow::Result<Arc<SftpSession>> {
-        match open(&self.transfer, connection).await {
+        let config = SftpConfig { max_concurrent_writes: SFTP_CONCURRENT_TRANSFER_WRITES, ..config() };
+        match open(&self.transfer, connection, config).await {
             Ok(sftp) => Ok(sftp),
             Err(_) => self.browse(connection).await,
         }
@@ -66,7 +72,11 @@ impl Channels {
 /// The SFTP session kept in `slot`, opened on first use, and again if its channel ended
 /// while the connection stays (the server's `sftp-server` exited, say): otherwise every SFTP
 /// operation would fail until the tab reconnects.
-async fn open(slot: &Slot, connection: &ssh::Connection) -> anyhow::Result<Arc<SftpSession>> {
+fn config() -> SftpConfig {
+    SftpConfig { request_timeout_secs: SFTP_REQUEST_TIMEOUT_SECS, max_concurrent_reads: SFTP_CONCURRENT_READS, ..Default::default() }
+}
+
+async fn open(slot: &Slot, connection: &ssh::Connection, config: SftpConfig) -> anyhow::Result<Arc<SftpSession>> {
     let mut cached = slot.lock().await;
     if let Some((sftp, ended)) = cached.as_ref() {
         if !ended.load(Ordering::Relaxed) {
@@ -89,8 +99,6 @@ async fn open(slot: &Slot, connection: &ssh::Connection) -> anyhow::Result<Arc<S
     let ended = Arc::new(AtomicBool::new(false));
     let encoding = crate::encoding::for_profile(&connection.profile().encoding);
     let stream = Watched { inner: super::names::convert(channel.into_stream(), encoding), ended: ended.clone() };
-    let config =
-        SftpConfig { request_timeout_secs: SFTP_REQUEST_TIMEOUT_SECS, max_concurrent_reads: SFTP_CONCURRENT_READS, ..Default::default() };
     let sftp = Arc::new(SftpSession::new_with_config(stream, config).await.context(Error::new("sftp.unsupported"))?);
     *cached = Some((sftp.clone(), ended));
     Ok(sftp)
