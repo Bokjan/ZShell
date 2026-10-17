@@ -70,6 +70,15 @@ export function drawWithWebgl(term: Terminal): () => void {
   // Waits for the new canvas's first layout, to draw it then.
   let sized: ResizeObserver | undefined;
   const pages = new Set<HTMLCanvasElement>();
+  // After a lost context: tries WebGL again later, while tries are left.
+  const retryLater = () => {
+    const delay = RETRY_MS[losses++];
+    if (delay === undefined) return;
+    retry = setTimeout(() => {
+      retry = undefined;
+      if (renderers.has(renderer)) renderer.load();
+    }, delay);
+  };
   const renderer: Renderer = {
     pages,
     drawing: () => addon !== undefined,
@@ -81,12 +90,7 @@ export function drawWithWebgl(term: Terminal): () => void {
         webgl.onContextLoss(() => {
           gl = undefined;
           renderer.release();
-          const delay = RETRY_MS[losses++];
-          if (delay === undefined) return;
-          retry = setTimeout(() => {
-            retry = undefined;
-            if (renderers.has(renderer)) renderer.load();
-          }, delay);
+          retryLater();
         });
         webgl.onAddTextureAtlasCanvas((page) => {
           pages.add(page);
@@ -128,6 +132,13 @@ export function drawWithWebgl(term: Terminal): () => void {
       } catch (e) {
         // The terminal keeps an addon whose activation failed until it is disposed.
         webgl?.dispose();
+        // Once a context was lost, the GPU may still be starting again: that is one try used,
+        // and the other terminals keep trying theirs.
+        if (losses > 0) {
+          console.warn("WebGL renderer not back yet, using DOM renderer", e);
+          retryLater();
+          return;
+        }
         unavailable = true;
         console.warn("WebGL renderer unavailable, using DOM renderer", e);
       }
