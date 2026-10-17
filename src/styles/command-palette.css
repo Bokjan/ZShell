@@ -24,7 +24,7 @@
   margin: 8px;
   padding: 7px 10px;
   border: 1px solid var(--input-border);
-  border-radius: 5px;
+  border-radius: 4px;
   background: var(--bg);
   color: var(--text);
   font: inherit;

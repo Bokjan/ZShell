@@ -118,7 +118,7 @@
 }
 .sftp-toolbar .icon-button.drop-target {
   background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .sftp-filter {
   display: flex;
@@ -186,7 +186,7 @@
 }
 .sftp-list tbody tr.drop-target {
   background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .sftp-list thead th {
   position: sticky;

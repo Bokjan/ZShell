@@ -42,7 +42,7 @@
 }
 .scheme-card.on {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
 }
 .scheme-preview {
   display: flex;

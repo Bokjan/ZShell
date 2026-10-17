@@ -148,6 +148,15 @@
   background: none;
   text-align: left;
 }
+/* The first and last rows' hover fill follows the list's rounded corners. */
+.proxy-list li:first-child button {
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+}
+.proxy-list li:last-child button {
+  border-bottom-left-radius: 3px;
+  border-bottom-right-radius: 3px;
+}
 .proxy-list button:hover {
   background: var(--bg-hover);
 }
