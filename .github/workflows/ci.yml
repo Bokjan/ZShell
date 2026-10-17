@@ -89,10 +89,10 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Test
         working-directory: src-tauri
-        run: cargo test
+        run: cargo test --locked
 
   # Known security advisories for the Rust dependencies (RustSec). Those that don't apply are
   # ignored in src-tauri/.cargo/audit.toml, each with why and when to look again.
