@@ -30,7 +30,8 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   // until the window comes back.
   const [byHand, setByHand] = useState(false);
   const statusRef = useLatest(status);
-  // Asked as events come, and answered in any order: only the latest counts (see `latestOnly`).
+  // Asked as events come, and answered in any order: only the latest counts, and the answers
+  // to locking and unlocking here outdate those asked before them (see `latestOnly`).
   const statuses = useMemo(() => latestOnly<AppLockStatus>(setStatus), []);
 
   const refresh = useCallback(() => void statuses.track(appLock.status()).catch((e) => setFailure(errorMessage(e))), [statuses]);
@@ -38,9 +39,10 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   // Covered at once, then the rest of the status: asking Windows Hello what it offers takes a
   // moment, which the sessions would show through.
   const coverNow = useCallback(() => {
-    const current = statusRef.current;
-    if (current) statuses.changed({ ...current, locked: true });
-  }, [statuses, statusRef]);
+    statuses.outdate();
+    // From the status as it is now, which may not have rendered yet.
+    setStatus((current) => current && { ...current, locked: true });
+  }, [statuses]);
 
   // Locked by the backend (idle, the system locking or sleeping).
   useEffect(() => {
@@ -65,7 +67,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     if (!current || !appLockOn(current)) return false;
     setByHand(true);
     coverNow();
-    void statuses.track(appLock.lock()).catch(console.error);
+    void statuses.change(appLock.lock()).catch(console.error);
     return true;
   }, [coverNow, statusRef, statuses]);
   const confirmClose = useCallback((close: PendingClose) => setClosing(close), []);
@@ -78,7 +80,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     >
       {children}
       {locked && (
-        <AppLockScreen status={status} byHand={byHand} track={statuses.track} closing={closing} onKeepOpen={() => setClosing(null)} />
+        <AppLockScreen status={status} byHand={byHand} change={statuses.change} closing={closing} onKeepOpen={() => setClosing(null)} />
       )}
     </AppLockContext.Provider>
   );
@@ -88,8 +90,8 @@ interface ScreenProps {
   status: AppLockStatus;
   /** Locked with the Lock action in this window: the system is asked once the window comes back. */
   byHand: boolean;
-  /** Shows the status an unlock answers with, unless a newer one came (see `latestOnly`). */
-  track(answer: Promise<AppLockStatus>): Promise<AppLockStatus>;
+  /** Shows the status an unlock answers with, over those of questions asked meanwhile (see `latestOnly`). */
+  change(answer: Promise<AppLockStatus>): Promise<AppLockStatus>;
   closing: PendingClose | null;
   onKeepOpen(): void;
 }
@@ -106,7 +108,7 @@ interface ScreenProps {
  * button asks. When there is no way to authenticate left (a Windows Hello PIN removed), it says
  * so, and only a button of its own unlocks without.
  */
-function AppLockScreen({ status, byHand, track, closing, onKeepOpen }: ScreenProps) {
+function AppLockScreen({ status, byHand, change, closing, onKeepOpen }: ScreenProps) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
@@ -144,7 +146,7 @@ function AppLockScreen({ status, byHand, track, closing, onKeepOpen }: ScreenPro
       setError(null);
       return attempt(
         async () => {
-          await track(appLock.unlock(anyway));
+          await change(appLock.unlock(anyway));
         },
         {
           onError: (e) => {
@@ -159,7 +161,7 @@ function AppLockScreen({ status, byHand, track, closing, onKeepOpen }: ScreenPro
         },
       );
     },
-    [track],
+    [change],
   );
 
   // The window's focus, not `document.hasFocus()`: WKWebView says the page has it while the
