@@ -28,8 +28,11 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
  * The entries shown: hidden files (dotfiles) only when asked for, names containing every word
  * of `filter` (ignoring case), folders first, then by the sort key with name as tiebreaker.
  */
-export function visibleEntries(entries: FileEntry[], view: FileView, filter: string): FileEntry[] {
-  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
+export const visibleEntries = (entries: FileEntry[], view: FileView, filter: string): FileEntry[] =>
+  filterEntries(sortedEntries(entries, view), filter);
+
+/** The entries shown before filtering by name (see `visibleEntries`), in order. */
+export function sortedEntries(entries: FileEntry[], view: FileView): FileEntry[] {
   const byName = (a: FileEntry, b: FileEntry) => collator.compare(a.name, b.name);
   const byKey = (a: FileEntry, b: FileEntry) => {
     // Folders have no meaningful size, so they stay in name order when sorting by size.
@@ -40,8 +43,17 @@ export function visibleEntries(entries: FileEntry[], view: FileView, filter: str
   const direction = view.descending ? -1 : 1;
   return entries
     .filter((entry) => view.showHidden || !entry.name.startsWith("."))
-    .filter((entry) => words.every((word) => entry.name.toLowerCase().includes(word)))
     .sort((a, b) => Number(b.isDir) - Number(a.isDir) || direction * (byKey(a, b) || byName(a, b)));
+}
+
+/** Those of `entries` whose names contain every word of `filter`, ignoring case, in order. */
+export function filterEntries(entries: FileEntry[], filter: string): FileEntry[] {
+  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return entries;
+  return entries.filter((entry) => {
+    const name = entry.name.toLowerCase();
+    return words.every((word) => name.includes(word));
+  });
 }
 
 /** A permission mode as typed (`644`, `0755`, octal), or null if it isn't one. */

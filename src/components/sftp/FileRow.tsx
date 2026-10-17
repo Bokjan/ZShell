@@ -26,6 +26,8 @@ interface Props {
   entry: FileEntry;
   /** For the list's `aria-activedescendant`. */
   id: string;
+  /** Where it is in the list (`aria-rowindex`), when the list draws only some of its rows. */
+  rowIndex?: number;
   selected: boolean;
   /** Something dragged is over this folder. */
   dropTarget: boolean;
@@ -44,13 +46,14 @@ const rowClass = (selected: boolean, dropTarget: boolean) =>
  */
 export function FileRow(props: Props) {
   useStableProps("FileRow", props, ["actions"]);
-  const { entry, id, selected, dropTarget, renaming, actions } = props;
+  const { entry, id, rowIndex, selected, dropTarget, renaming, actions } = props;
   const { t } = useTranslation();
   const { formatSize, formatTime } = useLocale();
   return (
     <tr
       id={id}
       role="row"
+      aria-rowindex={rowIndex}
       aria-selected={selected}
       data-path={entry.path}
       data-drop-dir={entry.isDir ? entry.path : undefined}

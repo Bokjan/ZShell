@@ -3,6 +3,7 @@ import {
   useEffectEvent,
   useId,
   useInsertionEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,7 +17,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { announce } from "../lib/announce";
 import { notConnected, sftp, type FileEntry, type SessionId } from "../ipc/api";
 import { open } from "../ipc/fileDialog";
-import { storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
+import { filterEntries, sortedEntries, storeView, storedView, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
 import { basename } from "../lib/format";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
@@ -36,6 +37,7 @@ import { useConfirmQueue } from "./sftp/useConfirmQueue";
 import { useSftpDragDrop } from "./sftp/useSftpDragDrop";
 import { useShellFollow } from "./sftp/useShellFollow";
 import { useSftpListing } from "./sftp/useSftpListing";
+import { useRowWindow } from "./sftp/useRowWindow";
 import { parentPath, useTransfers } from "./sftp/useTransfers";
 import { TransferList } from "./TransferList";
 
@@ -126,7 +128,9 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     onEdits,
   });
 
-  const visible = useMemo(() => visibleEntries(entries, view, filter ?? ""), [entries, view, filter]);
+  // Sorted apart from the filter, which keeps their order: typing in the filter sorts nothing.
+  const sorted = useMemo(() => sortedEntries(entries, view), [entries, view]);
+  const visible = useMemo(() => filterEntries(sorted, filter ?? ""), [sorted, filter]);
   const rows = useMemo(() => visible.map((entry) => entry.path), [visible]);
   // What actions apply to: the selected entries that are shown, in the listed order.
   const selected = useMemo(() => visible.filter((entry) => selection.paths.has(entry.path)), [visible, selection]);
@@ -342,10 +346,17 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     setMenu({ x: e.clientX, y: e.clientY, items: shownFolderMenu() });
   };
 
+  // Moved by a key: brought into view once drawn (a long list draws the cursor's row wherever it
+  // is, but only after this render).
+  const [cursorMoved, setCursorMoved] = useState(0);
+  useLayoutEffect(() => {
+    if (cursorMoved === 0 || !cursor) return;
+    listRef.current?.querySelector(`tr[data-path="${CSS.escape(cursor)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [cursorMoved]);
+
   const moveCursor = (index: number, extend: boolean) => {
-    const next = movedTo(selection, rows, index, extend);
-    setSelection(next);
-    if (next.cursor) listRef.current?.querySelector(`tr[data-path="${CSS.escape(next.cursor)}"]`)?.scrollIntoView({ block: "nearest" });
+    setSelection(movedTo(selection, rows, index, extend));
+    setCursorMoved((count) => count + 1);
   };
 
   const onListKeyDown = (e: KeyboardEvent) => {
@@ -401,6 +412,12 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     onRenameBlur: () => setRenaming(null),
   });
 
+  const cursorIndex = visible.findIndex((entry) => entry.path === cursor);
+  const renamingIndex = renaming ? visible.findIndex((entry) => entry.path === renaming.path) : -1;
+  // A long list draws the rows in view, and those of the cursor (which screen readers are
+  // pointed at) and of the name being edited wherever they are.
+  const rowWindow = useRowWindow(listRef, visible.length, [cursorIndex, renamingIndex]);
+
   if (!connected && cwd == null) {
     return (
       <div className="sftp-panel" ref={panelRef}>
@@ -425,7 +442,22 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
   );
 
   const parent = cwd && cwd !== "/" ? parentPath(cwd) : null;
-  const cursorIndex = visible.findIndex((entry) => entry.path === cursor);
+  const fileRow = (index: number) => {
+    const entry = visible[index];
+    return (
+      <FileRow
+        key={entry.path}
+        entry={entry}
+        id={`${gridId}-${index}`}
+        // After the header row, counted from 1.
+        rowIndex={rowWindow ? index + 2 : undefined}
+        selected={selection.paths.has(entry.path)}
+        dropTarget={dropDir === entry.path}
+        renaming={renaming?.path === entry.path ? renaming.value : null}
+        actions={rowActions}
+      />
+    );
+  };
   const hiddenCount = view.showHidden ? 0 : entries.filter((entry) => entry.name.startsWith(".")).length;
 
   return (
@@ -556,6 +588,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         aria-multiselectable="true"
         aria-busy={loading}
         aria-activedescendant={cursorIndex >= 0 ? `${gridId}-${cursorIndex}` : undefined}
+        aria-rowcount={rowWindow ? visible.length + 1 : undefined}
         tabIndex={0}
         onKeyDown={onListKeyDown}
         onMouseDownCapture={(e) => {
@@ -597,17 +630,17 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
                 </td>
               </tr>
             )}
-            {visible.map((entry, index) => (
-              <FileRow
-                key={entry.path}
-                entry={entry}
-                id={`${gridId}-${index}`}
-                selected={selection.paths.has(entry.path)}
-                dropTarget={dropDir === entry.path}
-                renaming={renaming?.path === entry.path ? renaming.value : null}
-                actions={rowActions}
-              />
-            ))}
+            {rowWindow
+              ? rowWindow.segments.map((segment, i) =>
+                  segment.kind === "rows" ? (
+                    Array.from({ length: segment.end - segment.start }, (_, j) => fileRow(segment.start + j))
+                  ) : (
+                    <tr key={`gap-${i}`} className="sftp-gap" aria-hidden="true">
+                      <td colSpan={3} style={{ height: segment.rows * rowWindow.rowHeight }} />
+                    </tr>
+                  ),
+                )
+              : visible.map((_, index) => fileRow(index))}
           </tbody>
         </table>
         {visible.length === 0 && !loading && cwd && (

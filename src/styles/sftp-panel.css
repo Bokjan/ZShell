@@ -304,3 +304,10 @@
   background: var(--accent-fill);
   color: var(--on-accent);
 }
+/* The height of the rows a long list doesn't draw (see `useRowWindow`). */
+.sftp-list tbody tr.sftp-gap:hover {
+  background: none;
+}
+.sftp-list td:only-child:empty {
+  padding: 0;
+}
