@@ -6,9 +6,20 @@ import { paneProfile } from "../lib/directory";
 import { useDirectory } from "../hooks/stores";
 import { useLatest } from "../hooks/latest";
 import { useStableProps } from "../hooks/stableProps";
+import type { ProfileAppearance } from "../ipc/api";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../hooks/drag";
-import { dividers, equalize, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, moveDivider, paneRects, type Divider, type Size } from "../lib/layout";
+import {
+  dividers,
+  equalize,
+  MIN_PANE_HEIGHT,
+  MIN_PANE_WIDTH,
+  moveDivider,
+  paneRects,
+  type Divider,
+  type Rect,
+  type Size,
+} from "../lib/layout";
 import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { ForwardsPanel } from "./ForwardsPanel";
@@ -62,6 +73,8 @@ const MIN_TERMINAL = 240;
 
 const percent = (fraction: number) => `${fraction * 100}%`;
 
+const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
+
 /**
  * One tab's content: its panes, each a terminal, plus a side panel (files or port forwards)
  * on the focused pane's SSH connection.
@@ -106,14 +119,17 @@ function TabPageView(props: Props) {
     return () => observer.disconnect();
   }, [h, tab.key]);
 
-  // For where the side panel's edge is, as screen readers are told.
+  // For where the side panel's edge is, as screen readers are told: only while it is shown,
+  // or every tab would render again on each frame of resizing the window.
   const [pageWidth, setPageWidth] = useState(0);
+  const panelShown = active && tab.sidePanel !== null;
   useEffect(() => {
+    if (!panelShown) return;
     const page = pageRef.current!;
     const observer = new ResizeObserver(() => setPageWidth(page.clientWidth));
     observer.observe(page);
     return () => observer.disconnect();
-  }, []);
+  }, [panelShown]);
   const focused = focusedPane(tab);
   const panelHere = tab.sidePanel !== null && focused.protocol === "ssh";
   if (panelHere && !mounted[focused.key]?.includes(tab.sidePanel!)) {
@@ -232,42 +248,21 @@ function TabPageView(props: Props) {
           {/* Flat, in the order opened, and placed by the layout's percentages: splitting,
               closing or resizing never remounts another pane's terminal, which would end its
               session. */}
-          {tab.panes.map((pane) => {
-            const profile = paneProfile(profiles, pane);
-            const rect = rects.get(pane.key) ?? { x: 0, y: 0, w: 1, h: 1 };
-            return (
-              <div
-                key={pane.key}
-                data-pane={pane.key}
-                className={[
-                  "pane",
-                  pane.key === focused.key && "focused",
-                  syncing === pane.key && "syncing",
-                  inScope.includes(pane.key) && "in-scope",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                style={{ left: percent(rect.x), top: percent(rect.y), width: percent(rect.w), height: percent(rect.h) }}
-                onMouseDownCapture={() => h.onFocus(pane.key)}
-                onFocus={() => h.onFocus(pane.key)}
-              >
-                <TerminalView
-                  paneKey={pane.key}
-                  sessions={h.sessions}
-                  visible={active}
-                  active={active && pane.key === focused.key}
-                  onTitle={(title) => h.onTitle(pane.key, title)}
-                  onInput={(data) => h.onInput(pane.key, data)}
-                  registerPaste={(target) => h.registerPaste(pane.key, target)}
-                  pasteTargets={() => h.pasteTargets(pane.key)}
-                  menuItems={() => h.menuItems(pane)}
-                  appearance={profile?.appearance}
-                />
-                {split && flashing.includes(pane.key) && <div className="pane-flash" />}
-                {refused?.key === pane.key && <div key={refused.count} className="pane-refused" />}
-              </div>
-            );
-          })}
+          {tab.panes.map((pane) => (
+            <PaneItem
+              key={pane.key}
+              pane={pane}
+              appearance={paneProfile(profiles, pane)?.appearance}
+              rect={rects.get(pane.key) ?? FULL}
+              focused={pane.key === focused.key}
+              syncing={syncing === pane.key}
+              inScope={inScope.includes(pane.key)}
+              visible={active}
+              flashing={split && flashing.includes(pane.key)}
+              refused={refused?.key === pane.key ? refused.count : null}
+              handlers={h}
+            />
+          ))}
         </div>
         {(anyMounted || tab.sidePanel) && (
           <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>
@@ -285,5 +280,54 @@ function TabPageView(props: Props) {
         )}
       </div>
     </DialogsHidden.Provider>
+  );
+}
+
+interface PaneItemProps {
+  pane: Pane;
+  appearance: ProfileAppearance | undefined;
+  /** Where the pane is in the tab's area, as fractions of it. */
+  rect: Rect;
+  focused: boolean;
+  syncing: boolean;
+  inScope: boolean;
+  visible: boolean;
+  flashing: boolean;
+  /** Each time the pane couldn't be split, a new count. */
+  refused: number | null;
+  handlers: PaneHandlers;
+}
+
+/**
+ * One pane, its own component so that React Compiler memoizes it: the other panes' terminals
+ * don't render again when one pane changes, nor get new handlers.
+ */
+function PaneItem(props: PaneItemProps) {
+  useStableProps("PaneItem", props, ["handlers"]);
+  const { pane, appearance, rect, focused, syncing, inScope, visible, flashing, refused, handlers: h } = props;
+  const { key } = pane;
+  return (
+    <div
+      data-pane={key}
+      className={["pane", focused && "focused", syncing && "syncing", inScope && "in-scope"].filter(Boolean).join(" ")}
+      style={{ left: percent(rect.x), top: percent(rect.y), width: percent(rect.w), height: percent(rect.h) }}
+      onMouseDownCapture={() => h.onFocus(key)}
+      onFocus={() => h.onFocus(key)}
+    >
+      <TerminalView
+        paneKey={key}
+        sessions={h.sessions}
+        visible={visible}
+        active={visible && focused}
+        onTitle={(title) => h.onTitle(key, title)}
+        onInput={(data) => h.onInput(key, data)}
+        registerPaste={(target) => h.registerPaste(key, target)}
+        pasteTargets={() => h.pasteTargets(key)}
+        menuItems={() => h.menuItems(pane)}
+        appearance={appearance}
+      />
+      {flashing && <div className="pane-flash" />}
+      {refused !== null && <div key={refused} className="pane-refused" />}
+    </div>
   );
 }
