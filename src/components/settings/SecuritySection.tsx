@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { appLock, errorCode, errorMessage, type AppLockSettings } from "../../ipc/api";
-import { useAppLock } from "../AppLockGate";
+import { useAppLock } from "../../hooks/appLock";
 import { ErrorText } from "../ErrorMessage";
 import { ProtectionDialog } from "../ProtectionDialog";
-import { useVault } from "../VaultGate";
+import { useVault } from "../../hooks/vault";
 import { attempt } from "../../lib/attempt";
 import { useLocale } from "../../hooks/locale";
 import { Section, Setting } from "./common";

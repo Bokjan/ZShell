@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
-import { useAppLock, type PendingClose } from "../components/AppLockGate";
+import { useAppLock, type PendingClose } from "../hooks/appLock";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { forwards, sessionForeground, type ForwardRule, type SessionId, type Settings } from "../ipc/api";
 import { isAppLocked } from "../lib/appLock";

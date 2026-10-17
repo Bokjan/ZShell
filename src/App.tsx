@@ -13,7 +13,7 @@ import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommands } from "./app/useQuickCommands";
 import { useWindows } from "./app/useWindows";
 
-import { useAppLock } from "./components/AppLockGate";
+import { useAppLock } from "./hooks/appLock";
 import { CommandPalette } from "./components/CommandPalette";
 import { ComposeBar } from "./components/ComposeBar";
 import type { MenuItem } from "./components/ContextMenu";

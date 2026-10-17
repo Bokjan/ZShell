@@ -1,25 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { errorMessage, vault, type VaultStatus } from "../ipc/api";
 import { useNativeMenu } from "../hooks/appMenu";
 import { useTitleBar } from "../hooks/titleBar";
 import { useConfigChanged } from "../hooks/windowEvents";
+import { VaultContext } from "../hooks/vault";
+import { latestOnly } from "../lib/latestOnly";
 import { ProtectionDialog } from "./ProtectionDialog";
 import { UnlockScreen } from "./UnlockScreen";
-
-interface VaultContextValue {
-  status: VaultStatus;
-  /** After the protection changed. */
-  setStatus(status: VaultStatus): void;
-}
-
-const VaultContext = createContext<VaultContextValue | null>(null);
-
-export function useVault(): VaultContextValue {
-  const value = useContext(VaultContext);
-  if (!value) throw new Error("useVault outside VaultGate");
-  return value;
-}
 
 /**
  * Shows `children` (the app) once the sessions can be read: until the vault is unlocked, the
@@ -39,28 +27,29 @@ export function VaultGate({ children }: { children: ReactNode }) {
   const [trying, setTrying] = useState(false);
   // The vault was just made here, protected without asking: says how, once.
   const [introducing, setIntroducing] = useState(false);
+  // Read again as other windows change it: only the latest answer counts (see `latestOnly`).
+  const statuses = useMemo(() => latestOnly<VaultStatus>(setStatus), []);
 
   const tryUnlock = useCallback(() => {
     setTrying(true);
-    vault
-      .tryUnlock()
+    statuses
+      .track(vault.tryUnlock())
       .then(
         (next) => {
-          setStatus(next);
           if (next.created) setIntroducing(true);
         },
         (e) => setFailure(errorMessage(e)),
       )
       .finally(() => setTrying(false));
-  }, []);
+  }, [statuses]);
 
   // Read at once: a saved key, or no vault yet.
   const found = useCallback(
     (next: VaultStatus) => {
-      setStatus(next);
+      statuses.changed(next);
       if (next.locked?.reason === "saved" || (next.locked?.reason === "new" && !next.locked.error)) tryUnlock();
     },
-    [tryUnlock],
+    [tryUnlock, statuses],
   );
 
   useEffect(() => {
@@ -68,21 +57,21 @@ export function VaultGate({ children }: { children: ReactNode }) {
   }, [found]);
 
   // Its protection changed in another window.
-  useConfigChanged("vault", () => void vault.status().then(setStatus, console.error));
+  useConfigChanged("vault", () => void statuses.track(vault.status()).catch(console.error));
 
   if (!status) return failure ? <p className="vault-failure">{failure}</p> : null;
   if (status.locked) {
-    return <UnlockScreen status={status} trying={trying} onTryAgain={tryUnlock} onStatus={setStatus} onReset={found} />;
+    return <UnlockScreen status={status} trying={trying} onTryAgain={tryUnlock} onStatus={statuses.changed} onReset={found} />;
   }
   return (
-    <VaultContext.Provider value={{ status, setStatus }}>
+    <VaultContext.Provider value={{ status, setStatus: statuses.changed }}>
       {children}
       {introducing && (
         <ProtectionDialog
           intro
           status={status}
           onDone={(next) => {
-            setStatus(next);
+            statuses.changed(next);
             setIntroducing(false);
           }}
           onClose={() => setIntroducing(false)}

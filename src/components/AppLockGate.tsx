@@ -1,9 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
 import { appLock, errorCode, errorMessage, type AppLockStatus } from "../ipc/api";
 import { setAppLocked } from "../lib/appLock";
+import { latestOnly } from "../lib/latestOnly";
+import { AppLockContext, appLockOn, type PendingClose } from "../hooks/appLock";
 import { windows } from "../ipc/windows";
 import { listenHere } from "../ipc/events";
 import { useConfigChanged } from "../hooks/windowEvents";
@@ -11,39 +13,6 @@ import { attempt } from "../lib/attempt";
 import { useLatest } from "../hooks/latest";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
-
-interface AppLockContextValue {
-  status: AppLockStatus;
-  /** After the settings changed. */
-  setStatus(status: AppLockStatus): void;
-  /** The "Lock" action: locks, and returns false if the app lock is off. */
-  lock(): boolean;
-  /** Closing the window (or quitting) while locked would end busy tabs: asks on the lock screen. */
-  confirmClose(close: PendingClose): void;
-  /**
-   * A close that was waiting on the lock screen when the app was unlocked (the system's dialog
-   * can be over it): the close flow asks again, as when unlocked.
-   */
-  pendingClose: PendingClose | null;
-  clearPendingClose(): void;
-}
-
-/** Closing the window, or quitting (all of them), would end `busy` tabs. */
-export interface PendingClose {
-  busy: number;
-  quit: boolean;
-}
-
-const AppLockContext = createContext<AppLockContextValue | null>(null);
-
-export function useAppLock(): AppLockContextValue {
-  const value = useContext(AppLockContext);
-  if (!value) throw new Error("useAppLock outside AppLockGate");
-  return value;
-}
-
-/** Whether the app lock can be used and is on. */
-export const appLockOn = (status: AppLockStatus) => !!status.settings?.enabled && status.method !== null;
 
 /**
  * Covers the app with the lock screen while the app lock is locked (see `applock/mod.rs`),
@@ -61,12 +30,17 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   // until the window comes back.
   const [byHand, setByHand] = useState(false);
   const statusRef = useLatest(status);
+  // Asked as events come, and answered in any order: only the latest counts (see `latestOnly`).
+  const statuses = useMemo(() => latestOnly<AppLockStatus>(setStatus), []);
 
-  const refresh = useCallback(() => void appLock.status().then(setStatus, (e) => setFailure(errorMessage(e))), []);
+  const refresh = useCallback(() => void statuses.track(appLock.status()).catch((e) => setFailure(errorMessage(e))), [statuses]);
 
   // Covered at once, then the rest of the status: asking Windows Hello what it offers takes a
   // moment, which the sessions would show through.
-  const coverNow = useCallback(() => setStatus((current) => current && { ...current, locked: true }), []);
+  const coverNow = useCallback(() => {
+    const current = statusRef.current;
+    if (current) statuses.changed({ ...current, locked: true });
+  }, [statuses, statusRef]);
 
   // Locked by the backend (idle, the system locking or sleeping).
   useEffect(() => {
@@ -91,18 +65,20 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     if (!current || !appLockOn(current)) return false;
     setByHand(true);
     coverNow();
-    void appLock.lock().then(setStatus, console.error);
+    void statuses.track(appLock.lock()).catch(console.error);
     return true;
-  }, [coverNow, statusRef]);
+  }, [coverNow, statusRef, statuses]);
   const confirmClose = useCallback((close: PendingClose) => setClosing(close), []);
   const clearPendingClose = useCallback(() => setClosing(null), []);
 
   if (!status) return failure ? <p className="vault-failure">{failure}</p> : null;
   return (
-    <AppLockContext.Provider value={{ status, setStatus, lock, confirmClose, pendingClose: locked ? null : closing, clearPendingClose }}>
+    <AppLockContext.Provider
+      value={{ status, setStatus: statuses.changed, lock, confirmClose, pendingClose: locked ? null : closing, clearPendingClose }}
+    >
       {children}
       {locked && (
-        <AppLockScreen status={status} byHand={byHand} onStatus={setStatus} closing={closing} onKeepOpen={() => setClosing(null)} />
+        <AppLockScreen status={status} byHand={byHand} track={statuses.track} closing={closing} onKeepOpen={() => setClosing(null)} />
       )}
     </AppLockContext.Provider>
   );
@@ -112,7 +88,8 @@ interface ScreenProps {
   status: AppLockStatus;
   /** Locked with the Lock action in this window: the system is asked once the window comes back. */
   byHand: boolean;
-  onStatus(status: AppLockStatus): void;
+  /** Shows the status an unlock answers with, unless a newer one came (see `latestOnly`). */
+  track(answer: Promise<AppLockStatus>): Promise<AppLockStatus>;
   closing: PendingClose | null;
   onKeepOpen(): void;
 }
@@ -129,7 +106,7 @@ interface ScreenProps {
  * button asks. When there is no way to authenticate left (a Windows Hello PIN removed), it says
  * so, and only a button of its own unlocks without.
  */
-function AppLockScreen({ status, byHand, onStatus, closing, onKeepOpen }: ScreenProps) {
+function AppLockScreen({ status, byHand, track, closing, onKeepOpen }: ScreenProps) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
@@ -167,7 +144,7 @@ function AppLockScreen({ status, byHand, onStatus, closing, onKeepOpen }: Screen
       setError(null);
       return attempt(
         async () => {
-          onStatus(await appLock.unlock(anyway));
+          await track(appLock.unlock(anyway));
         },
         {
           onError: (e) => {
@@ -182,7 +159,7 @@ function AppLockScreen({ status, byHand, onStatus, closing, onKeepOpen }: Screen
         },
       );
     },
-    [onStatus],
+    [track],
   );
 
   // The window's focus, not `document.hasFocus()`: WKWebView says the page has it while the

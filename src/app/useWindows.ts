@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
-import { useAppLock } from "../components/AppLockGate";
+import { useAppLock } from "../hooks/appLock";
 import type { SessionTarget } from "../ipc/api";
 import { paneWork, tabTitle, type Arrival, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
