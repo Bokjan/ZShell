@@ -14,7 +14,7 @@ One connection per tab: the terminal, the SFTP file panel and port forwarding sh
 
 SSH
 • Password, private key, SSH agent (the Windows OpenSSH agent and Pageant) and keyboard-interactive authentication, or all of them in OpenSSH's order.
-• Host keys checked against ~/.ssh/known_hosts, shared with OpenSSH, and asked in the terminal as ssh does.
+• Host keys checked against ~/.ssh/known_hosts, shared with OpenSSH, and asked in the terminal as ssh does, including host certificates from a trusted certificate authority (@cert-authority).
 • Jump hosts, SOCKS5 and HTTP proxies or proxy commands, keepalives and automatic reconnection.
 • Hosts imported from ~/.ssh/config.
 
@@ -23,7 +23,7 @@ Telnet and serial consoles
 • Serial sessions reconnect when a USB adapter is plugged back in.
 
 Files
-• An SFTP panel with drag and drop in and out, transfers with progress, and remote files edited in your own editor and uploaded on save.
+• An SFTP panel that opens in the terminal's folder and can follow it, with drag and drop in and out, transfers with progress, and remote files edited in your own editor and uploaded on save.
 • rz and sz (ZMODEM) for hosts without SFTP.
 
 Port forwarding
@@ -31,7 +31,7 @@ Port forwarding
 
 Sessions, tabs and terminals
 • Nested folders, search and quick connect, export and import.
-• Per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login and environment variables.
+• Per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login, environment variables and notes.
 • Local terminals (PowerShell), split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
 • Quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 
@@ -39,6 +39,10 @@ Security
 • Sessions and saved passwords encrypted with a master password or a key in the Windows Credential Manager.
 • Exports protected with a passphrase.
 • An app lock that covers the window with Windows Hello after a period of inactivity, when the computer locks, or on demand.
+
+Accessibility
+• Screen readers (Narrator, NVDA, JAWS) can read the terminals, turned on automatically while one is running.
+• Everything works from the keyboard, and the system's contrast and reduced motion settings are followed.
 
 Languages: English, Simplified Chinese, Japanese, German and French.
 
@@ -55,9 +59,9 @@ ZShell runs entirely on your computer: no account, no telemetry, nothing collect
 1. One SSH connection per tab, shared by the terminal, the SFTP file panel and port forwarding
 2. Password, private key, SSH agent and keyboard-interactive authentication, in OpenSSH's order
 3. Jump hosts, SOCKS5 and HTTP proxies, proxy commands, keepalives and automatic reconnection
-4. Import hosts from ~/.ssh/config; host keys shared with OpenSSH's known_hosts
+4. Import hosts from ~/.ssh/config; host keys shared with OpenSSH's known_hosts, with host certificates
 5. Telnet and serial consoles for network devices
-6. SFTP file panel with drag and drop, and remote files edited in your own editor
+6. SFTP file panel that follows the terminal's folder, with drag and drop, and remote files edited in your own editor
 7. ZMODEM (rz and sz) file transfers
 8. Local, remote and dynamic SOCKS port forwarding with live status
 9. Session folders, search, quick connect, export and import
@@ -67,7 +71,8 @@ ZShell runs entirely on your computer: no account, no telemetry, nothing collect
 13. Session logs
 14. Sessions and passwords encrypted with a master password or the Windows Credential Manager
 15. App lock with Windows Hello
-16. In English, Simplified Chinese, Japanese, German and French
+16. Terminals readable with Narrator, NVDA and JAWS; everything works from the keyboard
+17. In English, Simplified Chinese, Japanese, German and French
 
 ## Screenshots
 
@@ -87,7 +92,7 @@ ZShell runs entirely on your computer: no account, no telemetry, nothing collect
 
 - **Category:** Developer tools
 - **Privacy policy URL:** https://github.com/Bokjan/ZShell/blob/main/PRIVACY.md
-- **Website:** https://github.com/Bokjan/ZShell
+- **Website:** https://zshell.boyin.org/
 - **Support contact info:** https://github.com/Bokjan/ZShell/issues
 
 ## Notes for certification

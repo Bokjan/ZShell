@@ -3,7 +3,7 @@
 ## 环境
 
 - Rust stable、Node.js、pnpm（CI 使用 Node 26、pnpm 12）。
-- macOS 或 Linux 上开发；Windows 专用代码（ConPTY、OpenSSH agent 命名管道 / Pageant）本地无法编译，依赖 CI 检查与 Windows 上的手动测试，macOS 与 Linux 的专用代码也只能在各自的平台上编译。
+- macOS、Windows、Linux 上都可以开发。平台专用代码（Windows 的 ConPTY、OpenSSH agent 命名管道与 Pageant，macOS 的 AppKit，Linux 的 GTK）只能在各自的平台上编译，其他平台上的修改靠 CI 检查，再到该平台上手动测试。
 - Linux（Debian / Ubuntu）需要 Tauri 的系统库，以及 Tao 与 keyring 用的 libdbus：
 
   ```bash
@@ -33,7 +33,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-格式由 Prettier（`.prettierrc.json`）和 rustfmt（`src-tauri/rustfmt.toml`）决定，两边都是 140 列，CI 会检查。Prettier 管 `src-tauri/` 与 Markdown 以外的文件，`src/lib/bindings.ts` 和 `pnpm-lock.yaml` 是生成的，也不参与（见 `.prettierignore`）。全量格式化的提交记在 `.git-blame-ignore-revs` 里，GitHub 的 blame 会跳过它们；本地运行一次 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 即可同样跳过。
+格式由 Prettier（`.prettierrc.json`）和 rustfmt（`src-tauri/rustfmt.toml`）决定，两边都是 140 列，CI 会检查。Prettier 管 `src-tauri/` 与 Markdown 以外的文件，`src/ipc/bindings.ts` 和 `pnpm-lock.yaml` 是生成的，也不参与（见 `.prettierignore`）。全量格式化的提交记在 `.git-blame-ignore-revs` 里，GitHub 的 blame 会跳过它们；本地运行一次 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 即可同样跳过。
 
 ZMODEM 的测试除了自己的收发互测，还与 lrzsz 的 `lsz` / `lrz` 对传（含经由伪终端），未安装 lrzsz 时跳过（`brew install lrzsz`；CI 上没有）。
 
@@ -48,7 +48,7 @@ UPDATE_BINDINGS=1 cargo test bindings
 ## 约定
 
 - **语言**：`docs/` 用中文，其他一切（代码、注释、界面文案、README、提交信息）用英语，见 [I18N.md](I18N.md)「语言约定」。
-- **提交信息**：Conventional Commits（`feat:`、`fix:`、`docs:`、`chore:`、`refactor:`、`test:`、`ci:`，可带 scope，如 `feat(sftp): …`）；正文不手动折行，每段或每个列表项一行。
+- **提交信息**：Conventional Commits（`feat:`、`fix:`、`perf:`、`refactor:`、`docs:`、`test:`、`ci:`、`chore:`，可带 scope，如 `feat(sftp): …`）；只有前四种和破坏性变更进更新日志（见下文「发布」），类型要选准。正文不手动折行，每段或每个列表项一行。来自 GitHub issue 的修改在正文里引用它（`Closes #12`）。
 - **版本号**：只在 `src-tauri/Cargo.toml` 维护，由 `scripts/release.sh` 修改（规则见下文「发布」）。`tauri.conf.json` 不写 `version`，Tauri 取 Cargo 包版本；`TERM_PROGRAM_VERSION` 用 `CARGO_PKG_VERSION`；`package.json` 为 private 包，不写版本。
 - **文档分工**：做什么、先后顺序与未实现功能的设计写在 [ROADMAP.md](ROADMAP.md)；跨模块的设计写在 [ARCHITECTURE.md](ARCHITECTURE.md)；模块内的细节（边界情况、库的坑）写在代码注释里。根目录的 `CLAUDE.md`（英语）是给 AI 助手的项目说明，汇总上述约定；约定变化时同步更新。
 - **单元测试**：`src/lib/` 与 `src/ipc/` 里不依赖 React、DOM 和后端命令的导出函数，在相邻的 `*.test.ts` 里测试；组件不写单元测试，界面上的行为按下文「端到端测试」检查。vitest 没有配置 DOM 环境，测试里不要碰 `localStorage` 和后端命令。
@@ -67,6 +67,8 @@ HOME=$T/home src-tauri/target/debug/bundle/macos/ZShell.app/Contents/MacOS/zshel
 会话配置写在 `$T/home/Library/Application Support/ZShell/vault.json`。隔离的 HOME 里没有钥匙串，新建的保险库不加密，可以直接读写。注意 WKWebView 的 localStorage（如侧栏宽度）可能不跟随 HOME，会写进正式应用的 WebKit 数据。
 
 Linux 上运行 `src-tauri/target/debug/zshell`，配置在 `$T/home/.config/ZShell/`，WebKitGTK 的数据也跟随 HOME（前提是没有设置 `XDG_CONFIG_HOME` 等变量，有则一并指到 `$T`）。HOME 要用绝对路径：相对路径下缓存目录也是相对的，拖出给其他应用的文件 URI 与"显示"的位置都会出错。系统钥匙串（Secret Service）、polkit 与 logind 是真实会话的，没有隔离：新建的保险库会把密钥存进自己的钥匙串，debug 构建的条目在 service `org.boyin.zshell.dev` 下，不会碰到正式应用的，测试后可以删掉；应用锁要先装上策略文件（`sudo install -m 644 src-tauri/linux/org.boyin.zshell.policy /usr/share/polkit-1/actions/`）。
+
+Windows 上没法这样隔离：配置目录取自系统的已知文件夹（`%APPDATA%\ZShell`），不看 `HOME` 与 `APPDATA` 环境变量，debug 版和正式版读写的是同一份 `vault.json` 与 `settings.json`（只有凭据管理器里的条目分开，debug 版在 `org.boyin.zshell.dev` 下）。在 Windows 上测试会改动配置的功能，用另一个 Windows 账户，或者先备份配置目录；只看界面的测试可以在临时目录里搭测试页，用仓库里的前端代码在浏览器里跑（例子见 [TODO.md](TODO.md) 里切换标签页空白一帧的验证方法）。
 
 **临时 sshd**：用 `ssh-keygen -t ed25519 -N '' -f $T/host_key` 生成主机密钥，配置文件示例：
 

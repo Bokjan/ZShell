@@ -1,14 +1,14 @@
 # <img src="src-tauri/icons/128x128.png" width="36" alt=""> ZShell
 
-[![CI](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Bokjan/ZShell)](https://github.com/Bokjan/ZShell/releases/latest)
-[![Website](https://img.shields.io/badge/website-zshell.boyin.org-C8553D)](https://zshell.boyin.org/)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-ZShell-0078D4)](https://apps.microsoft.com/detail/9n502tzg8hk8)
+[![Website](https://img.shields.io/badge/website-zshell.boyin.org-C8553D)](https://zshell.boyin.org/)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
+[![CI](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml/badge.svg)](https://github.com/Bokjan/ZShell/actions/workflows/ci.yml)
 
 A cross-platform (macOS / Windows / Linux) SSH, Telnet and serial terminal, built with Tauri 2, Rust and xterm.js.
 
-See the [ZShell website](https://zshell.boyin.org/) for an overview, or go straight to the [latest release](https://github.com/Bokjan/ZShell/releases/latest).
+Get it from the [Microsoft Store](https://apps.microsoft.com/detail/9n502tzg8hk8) on Windows, or download the [latest release](https://github.com/Bokjan/ZShell/releases/latest) for macOS, Windows and Linux. The [ZShell website](https://zshell.boyin.org/) has an overview.
 
 ## Features
 
@@ -21,10 +21,10 @@ See the [ZShell website](https://zshell.boyin.org/) for an overview, or go strai
 - **Terminal and tabs**: local terminals, split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
 - **Many hosts at once**: quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 - **Security**: sessions and saved passwords encrypted with a master password or a key in the system's credential store, exports protected with a passphrase, and an app lock that covers the window with Touch ID, Windows Hello or the account password after a period of inactivity, when the computer locks, or on demand.
-- **Accessibility**: screen readers (VoiceOver, Narrator, NVDA, Orca) can read the terminals, turned on automatically while one is running; everything works from the keyboard, and the system's contrast and reduced motion settings are followed.
+- **Accessibility**: screen readers (VoiceOver, Narrator, NVDA, JAWS, Orca) can read the terminals, turned on automatically while one is running; everything works from the keyboard, and the system's contrast and reduced motion settings are followed.
 - **Languages**: English, Simplified Chinese, Japanese, German and French, following the system or chosen in Settings › Appearance. The Japanese, German and French translations have not been reviewed by native speakers yet: corrections are welcome as [issues](https://github.com/Bokjan/ZShell/issues).
 
-Customizable shortcuts are planned, without a date yet. See the [roadmap](docs/ROADMAP.md) (in Chinese) and the [changelog](CHANGELOG.md).
+See the [changelog](CHANGELOG.md) for what changed in each version, and the [roadmap](docs/ROADMAP.md) (in Chinese) for what is planned.
 
 ## Installation
 
@@ -40,7 +40,9 @@ Otherwise, download the latest version from the [releases page](https://github.c
 | Linux (Debian, Ubuntu) | `ZShell_<version>_amd64.deb` |
 | Linux (Fedora) | `ZShell-<version>-1.x86_64.rpm` |
 
-Local terminals on Windows need Windows 10 version 1809 or later. On Linux, ZShell is made for GNOME on Wayland, the default desktop of Debian, Ubuntu and Fedora; other desktops work, but may lack the idle lock. To open serial ports, add yourself to the group that owns them (`dialout` on most distributions). The standalone executable needs the WebView2 runtime, which Windows 11 and up-to-date Windows 10 already include; it still keeps its settings in `%APPDATA%`.
+Local terminals on Windows need Windows 10 version 1809 or later. The standalone executable needs the WebView2 runtime, which Windows 11 and up-to-date Windows 10 already include; it still keeps its settings in `%APPDATA%`.
+
+On Linux, ZShell is made for GNOME on Wayland, the default desktop of Debian, Ubuntu and Fedora; other desktops work, but may lack the idle lock. To open serial ports, add yourself to the group that owns them (`dialout` on most distributions).
 
 The builds on the releases page are not signed with a developer certificate yet, so the system warns on first launch:
 
@@ -75,6 +77,7 @@ Documentation for contributors is in Chinese:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): architecture and design decisions
 - [docs/I18N.md](docs/I18N.md): language policy and internationalization
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): testing, conventions, CI and releases
+- [docs/TODO.md](docs/TODO.md): known issues set aside, most of them waiting on upstream fixes
 
 ## Feedback
 

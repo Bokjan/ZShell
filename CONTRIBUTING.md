@@ -16,7 +16,7 @@ ZShell is maintained by one person, and it is source-available rather than open 
 
 A good report lets the maintainer see the problem for themselves. Please include:
 
-- the ZShell version (Settings › About), and how you installed it: the installer, the portable exe, the Microsoft Store or the macOS disk image;
+- the ZShell version (Settings › About), and how you installed it: the Microsoft Store, the Windows installer or standalone executable, the macOS disk image, or the Linux deb or rpm package;
 - your operating system and its version;
 - the kind of session: SSH, Telnet, serial or a local terminal, and for SSH how you log in (password, key, agent) and whether a jump host or proxy is involved;
 - what you did, what you expected, and what happened instead, with any error message, screenshot or terminal output;
