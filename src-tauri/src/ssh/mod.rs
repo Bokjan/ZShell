@@ -7,6 +7,8 @@ mod forwarded;
 mod handler;
 mod host_key;
 pub mod known_hosts;
+#[cfg(test)]
+pub(crate) mod testing;
 
 use std::future::Future;
 use std::sync::Arc;
@@ -607,16 +609,6 @@ mod tests {
     /// Packets of output the test server sends for `burst`.
     const BURST: usize = 2000;
 
-    struct AnyHostKey;
-
-    impl client::Handler for AnyHostKey {
-        type Error = russh::Error;
-
-        async fn check_server_key(&mut self, _key: &russh::keys::PublicKeyOrCertificate) -> Result<bool, Self::Error> {
-            Ok(true)
-        }
-    }
-
     /// A shell on a [`Server`], bridged to a terminal that acknowledges nothing by itself.
     struct Shell {
         input: mpsc::UnboundedSender<SessionInput>,
@@ -629,23 +621,11 @@ mod tests {
 
     impl Shell {
         async fn start(flood: bool) -> Self {
-            let config = russh::server::Config {
-                methods: russh::MethodSet::from(&[russh::MethodKind::None][..]),
-                keys: vec![russh::keys::PrivateKey::from_openssh(TEST_KEY).unwrap()],
-                ..Default::default()
-            };
-            let (client_side, server_side) = tokio::io::duplex(1 << 16);
             let (sizes_tx, sizes) = mpsc::unbounded_channel();
             let (typed_tx, typed) = mpsc::unbounded_channel();
             let server = Server { flood, sizes: sizes_tx, typed: typed_tx };
-            tokio::spawn(async move {
-                if let Ok(session) = russh::server::run_stream(Arc::new(config), server_side, server).await {
-                    let _ = session.await;
-                }
-            });
-            let mut session = client::connect_stream(Arc::new(client::Config::default()), client_side, AnyHostKey).await.unwrap();
-            assert!(session.authenticate_none("alice").await.unwrap().success());
-            let channel = session.channel_open_session().await.unwrap();
+            let connection = testing::connect(server, "").await;
+            let channel = connection.handle().channel_open_session().await.unwrap();
             channel.request_shell(false).await.unwrap();
             let (mut io, input, output, _events) = TermIo::detached((80, 24));
             let flow = io.sink().flow();

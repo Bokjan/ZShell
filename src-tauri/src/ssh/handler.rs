@@ -20,6 +20,10 @@ pub struct ClientHandler {
     routes: RemoteRoutes,
     /// Receives why the connection ended.
     disconnect: watch::Sender<Option<EndReason>>,
+    /// Takes any host key without reading known_hosts: for connections to the test server
+    /// (see `super::testing`), which must not touch the user's files.
+    #[cfg(test)]
+    any_host_key: bool,
 }
 
 /// Why a connection ended.
@@ -52,7 +56,22 @@ impl ClientHandler {
         routes: RemoteRoutes,
         disconnect: watch::Sender<Option<EndReason>>,
     ) -> Self {
-        Self { host, port, forward_agent, queries, routes, disconnect }
+        Self {
+            host,
+            port,
+            forward_agent,
+            queries,
+            routes,
+            disconnect,
+            #[cfg(test)]
+            any_host_key: false,
+        }
+    }
+
+    /// Takes any host key, reading no known_hosts file (see `any_host_key`).
+    #[cfg(test)]
+    pub(super) fn with_any_host_key(self) -> Self {
+        Self { any_host_key: true, ..self }
     }
 
     /// Has the session task tell or ask the user about `key`; whether to go on.
@@ -87,6 +106,10 @@ impl client::Handler for ClientHandler {
     /// exchanged anew later in the session, so a different key then goes unnoticed (see
     /// docs/TODO.md).
     async fn check_server_key(&mut self, server_key: &PublicKeyOrCertificate) -> Result<bool, Self::Error> {
+        #[cfg(test)]
+        if self.any_host_key {
+            return Ok(true);
+        }
         let key = server_key.public_key();
         // As OpenSSH: a certificate that isn't trusted, or not valid, is checked as the key in
         // it, unless it is revoked or its signature is bad.
