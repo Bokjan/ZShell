@@ -332,14 +332,15 @@ pub async fn download(sftp: &SftpSession, remote_paths: &[String], local_dir: &P
             }
         }
     }
-    let mut done = 0;
+    let mut whole = Vec::new();
     if result.is_ok() {
-        result = download_counting(sftp, &items, reporter, &mut done).await;
+        result = download_counting(sftp, &items, reporter, &mut whole).await;
     }
     if let Err(e) = result {
         // Give back the names of the items that never arrived. Those that did stay, even an
         // empty file or folder.
-        for (_, local) in &items[done..] {
+        let missing = items.iter().enumerate().filter(|(i, _)| !whole.get(*i).copied().unwrap_or(false));
+        for (_, (_, local)) in missing {
             let _ = match std::fs::symlink_metadata(local) {
                 Ok(metadata) if metadata.is_dir() => std::fs::remove_dir(local),
                 Ok(metadata) if metadata.len() == 0 => std::fs::remove_file(local),
@@ -367,12 +368,12 @@ async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<Pat
 
 /// Downloads each remote file or directory to the given local path, replacing files there.
 pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter) -> Result<()> {
-    download_counting(sftp, items, reporter, &mut 0).await
+    download_counting(sftp, items, reporter, &mut Vec::new()).await
 }
 
-/// [`download_to`], keeping in `done` how many of the items, from the first, have arrived
-/// whole.
-async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, done: &mut usize) -> Result<()> {
+/// [`download_to`], keeping in `whole` which of the items have arrived whole: those copied at
+/// the same time as one that failed may have.
+async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, whole: &mut Vec<bool>) -> Result<()> {
     let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
     // The items of one download go to one folder, or one disk at least.
     let mut taken = Taken::new(items.first().is_some_and(|(_, local)| ignores_case(local)));
@@ -436,10 +437,15 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
     })
     .await;
     run.end();
-    let arrived = arrived.into_inner().unwrap();
-    let first_missing = arrived.iter().position(|&arrived| !arrived).unwrap_or(arrived.len());
-    *done = ends.partition_point(|&end| end <= first_missing);
+    *whole = items_whole(&ends, &arrived.into_inner().unwrap());
     result
+}
+
+/// Which items arrived whole, from where each item's files end (`ends`) and which files
+/// `arrived`: all of an item's (none for an empty folder).
+fn items_whole(ends: &[usize], arrived: &[bool]) -> Vec<bool> {
+    let starts = std::iter::once(0).chain(ends.iter().copied());
+    starts.zip(ends).map(|(start, &end)| arrived[start..end].iter().all(|&arrived| arrived)).collect()
 }
 
 /// The local paths a download has taken, as the local file system tells names apart: two
@@ -687,7 +693,8 @@ mod tests {
     }
 
     /// A failed download takes back only the names of the items that did not arrive: an
-    /// empty file before the failure stays. Skipped without `sftp-server`.
+    /// empty file that did stays, and one copied at the same time as the failure stays if it
+    /// arrived. Skipped without `sftp-server`.
     #[tokio::test]
     async fn a_failed_download_keeps_the_items_that_arrived() {
         use std::os::unix::fs::PermissionsExt;
@@ -709,7 +716,17 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
 
         assert!(result.is_err());
+        // "later" may have arrived before "secret" failed, or not have started.
+        left.retain(|name| name != "later");
         assert_eq!(left, ["empty"]);
+    }
+
+    #[test]
+    fn an_item_arrived_whole_with_all_its_files() {
+        // A file, a folder of two, an empty folder, a file after the one that failed.
+        let ends = [1, 3, 3, 4];
+        assert_eq!(items_whole(&ends, &[true, true, false, true]), [true, false, true, true]);
+        assert_eq!(items_whole(&ends, &[false; 4]), [false, false, true, false]);
     }
 
     #[test]
