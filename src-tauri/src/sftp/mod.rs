@@ -115,7 +115,8 @@ pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
             None => break,
         }
     }
-    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    // Each name lowered once rather than at every comparison: folders can hold many thousands.
+    entries.sort_by_cached_key(|entry| (!entry.is_dir, entry.name.to_lowercase()));
     Ok(Listing { path, entries })
 }
 
