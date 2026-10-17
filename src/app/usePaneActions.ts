@@ -19,7 +19,14 @@ export function usePaneActions(store: TabStore, protocolOf: (target: SessionTarg
   // Each tab's pane area, as its page last measured it.
   const areas = useRef(new Map<number, Size>());
 
-  const onAreaSize = (tabKey: number, size: Size) => areas.current.set(tabKey, size);
+  const onAreaSize = (tabKey: number, size: Size) => {
+    // A tab measured for the first time: those closed since go.
+    if (!areas.current.has(tabKey)) {
+      const open = new Set(store.get().tabs.map((tab) => tab.key));
+      for (const key of areas.current.keys()) if (!open.has(key)) areas.current.delete(key);
+    }
+    areas.current.set(tabKey, size);
+  };
 
   /** Whether the pane is large enough to split in two, each half at least the minimum size. */
   const roomToSplit = (key: number, direction: Direction) => {

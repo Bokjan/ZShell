@@ -27,6 +27,15 @@ export interface PaneView {
   hasSelection(): boolean;
   /** Flashes the terminal: a visual bell. */
   flash(): void;
+  /** Pastes into the terminal, for another pane syncing its input with this one. */
+  paste: PasteTarget;
+}
+
+/** A pane that text can be pasted into, as its terminal's mode requires. */
+export interface PasteTarget {
+  /** Whether the program in it takes bracketed pastes (inserting lines without running them). */
+  bracketed(): boolean;
+  paste(text: string): void;
 }
 
 export interface SessionRegistry {
@@ -48,6 +57,8 @@ export interface SessionRegistry {
   focus(key: number): void;
   /** Whether text is selected in the pane's terminal. */
   hasSelection(key: number): boolean;
+  /** Pasting into the pane's terminal, while it is shown. */
+  pasteTarget(key: number): PasteTarget | undefined;
   /** What the pane's terminal shows, while it is shown. */
   snapshot(key: number): Snapshot | undefined;
   /** Whether a ZMODEM transfer runs in the pane, or waits for an answer. */
@@ -225,6 +236,7 @@ export function createSessionRegistry(
     reconnect: (key) => sessions.get(key)?.reconnect(),
     focus: (key) => views.get(key)?.focus(),
     hasSelection: (key) => views.get(key)?.hasSelection() ?? false,
+    pasteTarget: (key) => views.get(key)?.paste,
     snapshot: (key) => views.get(key)?.port.snapshot(),
     inZmodem: (key) => (zmodemPhases.get(key) ?? "idle") !== "idle",
     arriving: (key) => sessions.get(key)?.isArriving ?? false,

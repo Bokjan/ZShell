@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import type { PasteTarget } from "../components/TerminalView";
 import { CLOSED_COMPOSE, scopePanes, sendsToMany, syncTargets, type Compose, type SendResult } from "../lib/compose";
 import { findPane, paneLabel, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
@@ -60,16 +59,11 @@ export function useCompose(store: TabStore, sessions: SessionRegistry, tabs: Tab
     for (const pane of syncedWith(source)) sessions.get(pane.key)?.send(data);
   };
   // Pastes go to each synced pane's terminal, which brackets them or not as its program wants.
-  const pasteTargets = useRef(new Map<number, PasteTarget>());
-  const registerPaste = (key: number, target: PasteTarget | null) => {
-    if (target) pasteTargets.current.set(key, target);
-    else pasteTargets.current.delete(key);
-  };
-  const syncedPasteTargets = (source: number) => syncedWith(source).flatMap((pane) => pasteTargets.current.get(pane.key) ?? []);
+  const syncedPasteTargets = (source: number) => syncedWith(source).flatMap((pane) => sessions.pasteTarget(pane.key) ?? []);
 
   const inScope = useMemo(() => (sendsToMany(compose) ? scopePanes(compose, tabs, activeKey) : []), [compose, tabs, activeKey]);
   // Who a quick command goes to, when that is more than the focused pane.
   const targets = sendsToMany(compose) ? labelsOf(inScope, tabs, options.followRemoteTitle) : null;
 
-  return { compose, setCompose, toggle, send, onInput, registerPaste, syncedPasteTargets, flashing, inScope, targets };
+  return { compose, setCompose, toggle, send, onInput, syncedPasteTargets, flashing, inScope, targets };
 }

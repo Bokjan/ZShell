@@ -21,11 +21,11 @@ import {
   type Size,
 } from "../lib/layout";
 import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
-import type { SessionRegistry } from "../lib/sessionRegistry";
+import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { Separator } from "./Separator";
 import { SftpPanel } from "./SftpPanel";
-import { TerminalView, type PasteTarget } from "./TerminalView";
+import { TerminalView } from "./TerminalView";
 
 /** What a tab page reports about its panes, and asks for them; each by pane key. */
 export interface PaneHandlers {
@@ -34,7 +34,6 @@ export interface PaneHandlers {
   onTitle(key: number, title: string): void;
   /** What the user typed in the pane's terminal (see `TerminalView`). */
   onInput(key: number, data: string): void;
-  registerPaste(key: number, target: PasteTarget | null): void;
   /** The other panes a paste in the pane goes to as well (syncing). */
   pasteTargets(key: number): PasteTarget[];
   /** The pane was clicked or got the keyboard focus. */
@@ -321,7 +320,6 @@ function PaneItem(props: PaneItemProps) {
         active={visible && focused}
         onTitle={(title) => h.onTitle(key, title)}
         onInput={(data) => h.onInput(key, data)}
-        registerPaste={(target) => h.registerPaste(key, target)}
         pasteTargets={() => h.pasteTargets(key)}
         menuItems={() => h.menuItems(pane)}
         appearance={appearance}

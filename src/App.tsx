@@ -492,7 +492,6 @@ function App() {
     sessions,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
     onInput: composer.onInput,
-    registerPaste: composer.registerPaste,
     pasteTargets: composer.syncedPasteTargets,
     onFocus: (key) => {
       const found = findPane(store.get().tabs, key);

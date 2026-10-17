@@ -19,7 +19,7 @@ import { chosenAction, clipboardKeyOf, matches } from "../lib/keymap";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import type { PaneSession } from "../lib/paneSession";
 import { isMac } from "../lib/platform";
-import type { SessionRegistry } from "../lib/sessionRegistry";
+import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../hooks/settings";
 import { parseOsc7, shellDirs } from "../lib/shellDirs";
 import { useShortcuts } from "../hooks/shortcuts";
@@ -48,21 +48,12 @@ interface Props {
   onTitle(title: string): void;
   /** What the user typed and the session received (not mouse or focus reports, nor pastes). */
   onInput(data: string): void;
-  /** Lets other panes paste into this one (while syncing), or stops (null). */
-  registerPaste(target: PasteTarget | null): void;
   /** The other panes a paste goes to as well (syncing): each pastes it its own way. */
   pasteTargets(): PasteTarget[];
   /** Added to the end of the context menu when it opens (pane actions, quick commands). */
   menuItems(): MenuItem[];
   /** The session's own colors and font, over the settings. */
   appearance?: ProfileAppearance;
-}
-
-/** A pane that text can be pasted into, as its terminal's mode requires. */
-export interface PasteTarget {
-  /** Whether the program in it takes bracketed pastes (inserting lines without running them). */
-  bracketed(): boolean;
-  paste(text: string): void;
 }
 
 /** Characters of a multi-line paste shown in the confirmation dialog. */
@@ -109,7 +100,6 @@ export function TerminalView({
   active,
   onTitle,
   onInput,
-  registerPaste,
   pasteTargets,
   menuItems: extraMenuItems,
   appearance,
@@ -129,7 +119,6 @@ export function TerminalView({
   const sessionsRef = useLatest(sessions);
   const onTitleRef = useLatest(onTitle);
   const onInputRef = useLatest(onInput);
-  const registerPasteRef = useLatest(registerPaste);
   const pasteTargetsRef = useLatest(pasteTargets);
   /** Pastes text, asking first if it would run several commands; set while the terminal exists. */
   const pasteRef = useRef<(text: string) => void>(ignore);
@@ -298,6 +287,12 @@ export function TerminalView({
         },
       },
       zmodem: (phase) => onZmodemRef.current(phase),
+      paste: {
+        bracketed: () => term.modes.bracketedPasteMode,
+        paste: (text) => {
+          if (text && !session.isClosed) term.paste(text);
+        },
+      },
       session: () => setZmodemPhase(null),
       focus: () => term.focus(),
       hasSelection: () => term.hasSelection(),
@@ -332,12 +327,6 @@ export function TerminalView({
       if (confirm && /[\r\n]/.test(text)) setPendingPaste(text);
       else pasteAllRef.current(text);
     };
-    registerPasteRef.current({
-      bracketed: () => term.modes.bracketedPasteMode,
-      paste: (text) => {
-        if (text && !session.isClosed) term.paste(text);
-      },
-    });
 
     // Ctrl+Shift+C / Ctrl+V and friends outside macOS (see `clipboardKeyOf`).
     term.attachCustomKeyEventHandler((e) => {
@@ -482,7 +471,6 @@ export function TerminalView({
       container.removeEventListener("mousedown", onMouseDown, true);
       container.removeEventListener("contextmenu", onContextMenu);
       pasteRef.current = pasteAllRef.current = ignore;
-      registerPasteRef.current(null);
       observer.disconnect();
       subscriptions.forEach((s) => s.dispose());
       sessionsRef.current.detach(paneKey, session);
