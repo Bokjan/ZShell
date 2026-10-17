@@ -15,7 +15,12 @@
   .settings-nav-list button.on,
   .compose-toggle.on,
   .search-flag.on,
-  .scheme-card.on {
+  .scheme-card.on,
+  .path-suggestion.selected,
+  .sftp-toolbar .icon-button.on,
+  .tree-row.drop-into,
+  .sftp-list tbody tr.drop-target,
+  .sftp-toolbar .icon-button.drop-target {
     forced-color-adjust: none;
     background: Highlight;
     color: HighlightText;
@@ -36,8 +41,89 @@
   /* Status and color marks are their color. */
   .status-dot,
   .tab-color,
+  .tab-log,
+  .tab-question,
   .badge {
     forced-color-adjust: none;
+  }
+  /* Lines and bars drawn as a background would be dropped too: they take system colors. */
+  .pane-divider::before,
+  .progress,
+  .tab-drop-marker,
+  .tree-row.drop-before::before,
+  .tree-row.drop-after::after,
+  .pane-area.split .pane.in-scope:not(.syncing)::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  .pane-divider::before {
+    background: CanvasText;
+  }
+  .pane-divider:hover::before,
+  .pane-divider:focus-visible::before {
+    background: Highlight;
+  }
+  .progress {
+    background: GrayText;
+  }
+  .progress > div {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  .transfers li.error .progress > div,
+  .transfers li.cancelled .progress > div {
+    background: CanvasText;
+  }
+  /* The switch: an outlined track, filled with the highlight color when on. */
+  .switch span {
+    forced-color-adjust: none;
+    background: Canvas;
+    box-shadow: inset 0 0 0 1px ButtonText;
+  }
+  .switch span::after {
+    background: ButtonText;
+  }
+  .switch input:checked + span {
+    background: Highlight;
+    box-shadow: none;
+  }
+  .switch input:checked + span::after {
+    background: HighlightText;
+  }
+  .switch input:focus-visible + span {
+    outline-color: Highlight;
+  }
+  /* Shadows are dropped: the tabs the compose bar sends to get their line from a pseudo-element,
+     and a list's own focus ring becomes an outline, drawn inside. */
+  .tab.in-scope::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    forced-color-adjust: none;
+    background: Highlight;
+    pointer-events: none;
+  }
+  .sidebar-list:focus-visible:not(:has(.tree-row.selected, .tree-row.highlighted)),
+  .sftp-list:focus-visible:not(:has(tr.selected)) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  /* The file list's header cells draw the part their background covers (see sidebar.css). */
+  .sftp-list:focus-visible:not(:has(tr.selected)) thead th {
+    forced-color-adjust: none;
+    background: Canvas;
+    color: CanvasText;
+    border-bottom-color: CanvasText;
+    box-shadow: inset 0 2px 0 Highlight;
+  }
+  .sftp-list:focus-visible:not(:has(tr.selected)) thead th:first-child {
+    box-shadow: inset 2px 2px 0 Highlight;
+  }
+  .sftp-list:focus-visible:not(:has(tr.selected)) thead th:last-child {
+    box-shadow: inset -2px 2px 0 Highlight;
   }
   :where(button, a, summary, [tabindex]):focus-visible {
     outline-color: Highlight;
