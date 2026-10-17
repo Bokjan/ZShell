@@ -1,4 +1,15 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useInsertionEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
@@ -24,6 +35,7 @@ import { useShellFollow } from "./sftp/useShellFollow";
 import { useSftpListing } from "./sftp/useSftpListing";
 import { parentPath, useTransfers } from "./sftp/useTransfers";
 import { TransferList } from "./TransferList";
+import { useLatest } from "../hooks/latest";
 
 interface Props {
   /** The pane whose connection it shows, and whose terminal it may follow. */
@@ -48,6 +60,9 @@ interface Menu {
 
 const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name : `${dir}/${name}`);
 
+const rowClass = (selected: boolean, dropTarget: boolean) =>
+  [selected && "selected", dropTarget && "drop-target"].filter(Boolean).join(" ") || undefined;
+
 /**
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
@@ -69,8 +84,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
   /** The rows the last two presses in the list were on (null elsewhere). */
   const pressedRowsRef = useRef<[string | null, string | null]>([null, null]);
 
-  const sessionRef = useRef(sessionId);
-  sessionRef.current = sessionId;
+  const sessionRef = useLatest(sessionId);
 
   // Set below, once the listing it opens is there.
   const startDirRef = useRef<(id: SessionId) => Promise<string | null>>(async () => null);
@@ -94,11 +108,12 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     load,
     setError: listing.setError,
   });
-  startDirRef.current = shellFollow.startDir;
+  useInsertionEffect(() => {
+    startDirRef.current = shellFollow.startDir;
+  });
   const { confirm, count: questions, ask, answered } = useConfirmQueue();
-  const onQuestionsRef = useRef(onQuestions);
-  onQuestionsRef.current = onQuestions;
-  useEffect(() => onQuestionsRef.current(questions), [questions]);
+  const reportQuestions = useEffectEvent(onQuestions);
+  useEffect(() => reportQuestions(questions), [questions]);
   const transfers = useTransfers({
     sessionId,
     connected,
@@ -158,10 +173,12 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
   // Uploading files or a folder, from the menu of the Upload button: one button rather than
   // two keeps the row on one line in languages with longer words.
   const uploadButtonRef = useRef<HTMLButtonElement>(null);
-  const [uploadMenu, setUploadMenu] = useState<{ x: number; y: number; fromKeyboard: boolean } | null>(null);
+  // `anchor` is the button, taken when the menu opens (see `ContextMenu`).
+  const [uploadMenu, setUploadMenu] = useState<{ x: number; y: number; fromKeyboard: boolean; anchor: HTMLButtonElement } | null>(null);
   const toggleUploadMenu = (fromKeyboard: boolean) => {
-    const rect = uploadButtonRef.current?.getBoundingClientRect();
-    setUploadMenu(uploadMenu || !rect ? null : { x: rect.left, y: rect.bottom + 2, fromKeyboard });
+    const anchor = uploadButtonRef.current;
+    const rect = anchor?.getBoundingClientRect();
+    setUploadMenu(uploadMenu || !anchor || !rect ? null : { x: rect.left, y: rect.bottom + 2, fromKeyboard, anchor });
   };
 
   const pickAndUpload = async (directory: boolean) => {
@@ -443,7 +460,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
               value={listing.pathInput}
               onChange={listing.setPathInput}
               onGo={(path) => void load(path)}
-              onEditing={(editing) => (listing.editingRef.current = editing)}
+              onEditing={listing.setEditing}
               showHidden={view.showHidden}
             />
           </form>
@@ -572,10 +589,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
                 aria-selected={selection.paths.has(entry.path)}
                 data-path={entry.path}
                 data-drop-dir={entry.isDir ? entry.path : undefined}
-                className={
-                  [selection.paths.has(entry.path) && "selected", dropDir === entry.path && "drop-target"].filter(Boolean).join(" ") ||
-                  undefined
-                }
+                className={rowClass(selection.paths.has(entry.path), dropDir === entry.path)}
                 onMouseDown={(e) => onRowMouseDown(e, entry)}
                 onClick={(e) => onRowClick(e, entry)}
                 onDoubleClick={(e) => isDoubleClick(e, entry) && activate(entry)}
@@ -647,7 +661,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
             { label: t("sftp.uploadFiles"), onSelect: () => void pickAndUpload(false) },
             { label: t("sftp.uploadFolder"), onSelect: () => void pickAndUpload(true) },
           ]}
-          anchor={uploadButtonRef.current}
+          anchor={uploadMenu.anchor}
           highlightFirst={uploadMenu.fromKeyboard}
           onClose={() => setUploadMenu(null)}
         />

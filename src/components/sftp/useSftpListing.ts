@@ -106,5 +106,10 @@ export function useSftpListing(
     };
   }, [sessionId, connected, load, fail]);
 
-  return { cwd, cwdRef, pathInput, setPathInput, editingRef, entries, loading, error, setError, fail, load, reload };
+  /** Whether the path field is being edited, which a listing then leaves alone. */
+  const setEditing = (editing: boolean) => {
+    editingRef.current = editing;
+  };
+
+  return { cwd, cwdRef, pathInput, setPathInput, setEditing, entries, loading, error, setError, fail, load, reload };
 }
