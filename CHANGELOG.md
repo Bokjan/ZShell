@@ -2,6 +2,46 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.6.1] - 2026-10-17
+
+### Bug Fixes
+
+- Settings and quick commands changed in two windows at about the same time are both kept: a change still waiting to be saved in one window no longer overwrites what another window saved meanwhile. Forwarding rules are saved and deleted one at a time, so a rule added or changed in another window is no longer put back to this window's copy, and deleting a rule stops only that rule.
+- A tab being moved to another window can no longer be closed halfway, which ended the sessions the other window was about to take. If that window closes or reloads before taking them, they stay in the tab here.
+- A ZMODEM transfer starting just as its session moves to another window no longer waits forever for an answer from the old window.
+- Session logs are written to the end when the app quits; up to a second of output was lost before.
+- A reloaded window cancels its file transfers and stops watching the files it was editing, and only the window that started a transfer or an edit can cancel or upload it.
+- A serial session keeps reading keystrokes while the device holds up output with flow control, so Ctrl+C still cancels a ZMODEM upload; SSH and Telnet sessions likewise keep reading input while a write waits.
+- A connection lost while the shell or the SFTP channel was being started now says so, instead of reporting an unexpected error.
+- The app lock's screen no longer comes off when an answer from before the app locked arrives late, and an unlock is no longer lost to a status read asked while Touch ID or Windows Hello was asking.
+- Terminals open when the interface language changes describe their input and output to screen readers in the new language.
+- macOS: a click on the file list of a window in the background brings that window forward once the button is released, as intended; the window lacked the permission to do it. Windows closed are no longer watched for full screen changes.
+- Windows contrast themes show the states they dropped: the forwarding switch, selected path suggestions, toggled toolbar buttons, drop targets, pane dividers, progress bars and the marks on tabs now use system colors.
+- Settings › Terminal says how much memory the scrollback takes (about 25 MB per 10,000 lines in a wide window, for every pane).
+- Controls look the same everywhere: segmented controls (including the side panel switch) have rounded selected segments, focus rings and the drop outline are no longer cut off, badges, fields and buttons stay in proportion at the larger text sizes, and selected and drop target rows look alike in every list.
+- The pages are granted only the permissions they use.
+
+### Performance
+
+- Terminal output reaches the window in far fewer messages (a local terminal on macOS sent about a thousand per MiB of `cat`), and is acknowledged in larger batches, so fast output takes much less of the main thread that every window shares.
+- SFTP transfers of many small files are many times faster: up to eight small files are copied at once, folders are listed and created a level at a time, and deleting a folder removes its files several at a time (10,000 files from a server 100 ms away took over an hour to copy, and a quarter of an hour to delete). Uploads keep as many writes on the way as OpenSSH's `sftp`, and new files are no longer synced to the server's disk one by one.
+- A folder with many files opens at once: from 500 entries the file panel draws only the rows in view, and the listing is sorted with less work.
+- Resizing the window no longer renders every tab and fits every terminal on each frame; hidden tabs fit once shown, and the session hears of a new size at most every 100 ms.
+- Busy terminals cost less: a program that keeps setting its title, or the same title at every prompt, no longer makes the whole window and the other windows render again, the session list draws only the rows that change, a hidden terminal isn't searched again as output arrives, and the status bar and tooltips do less every second and every key.
+- Switching tabs keeps the terminals' glyph atlas instead of building it again, and a terminal that loses WebGL (after sleep or a GPU switch) tries it again a few times instead of staying on the slower renderer.
+- Windows show sooner: the app no longer waits for Windows Hello or polkit at startup while the app lock is off, finds the default local shell (Windows) and the desktop's monospace font (Linux) without holding up the first window, and loads only the interface language in use.
+- Saving settings and quick commands no longer blocks every window while the file is written.
+- Text logs, ZMODEM detection and CRCs, Telnet's login prompt detection and forwarded connections do less work, and a file being edited is uploaded without reading it all into memory.
+
+### Internal
+
+- The types of what each command takes and returns, and the constants both sides share, are generated for the frontend instead of copied there.
+- The vault answers queries from what its last change published, and each store changes its part from the data as it is.
+- What a new session runs is resolved outside the commands; the window code has the same functions on every platform, with tests of what moving tabs and quitting keep; the hidden windows that hear Windows' broadcasts are made in one place; how a drag of files out of the window ended is decided once for every platform.
+- The logs are split into the writer, the plain text and the index; tab dragging, the sidebar's drop logic and its width, and the appearance and terminal settings have files of their own.
+- The frontend's stores are built one way, and the session registry's owners subscribe to it.
+- Tests can connect with ZShell's own SSH client to a server in the test process, which covers forwarding rules and handing them over when a connection closes.
+
 ## [3.6.0] - 2026-10-17
 
 ### Bug Fixes
