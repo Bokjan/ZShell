@@ -166,13 +166,14 @@ impl SessionManager {
         }
         let entry = sessions.get_mut(&id).filter(|entry| entry.offered_to.as_ref() == Some(&page.webview));
         let entry = entry.ok_or_else(|| Error::new("session.notFound"))?;
-        if entry.zmodem.is_active() {
+        // A transfer starting at the same time asks the new tab, or keeps the session here.
+        let sink = entry.sink.clone();
+        if !entry.zmodem.unless_active(|| sink.move_to(channel, move_id.clone())) {
             return Err(Error::new("session.busy"));
         }
         entry.offered_to = None;
         let from = std::mem::replace(&mut entry.webview, page.webview.clone());
-        entry.moved_from = Some((from, move_id.clone()));
-        entry.sink.move_to(channel, move_id);
+        entry.moved_from = Some((from, move_id));
         Ok(())
     }
 

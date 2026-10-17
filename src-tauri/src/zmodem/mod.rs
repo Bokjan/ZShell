@@ -174,6 +174,17 @@ impl Zmodem {
         matches!(*self.state.lock().unwrap(), State::Active(_))
     }
 
+    /// Runs `f` unless a transfer is going on, and keeps one from starting meanwhile (the
+    /// output it would start in waits); whether it ran.
+    pub fn unless_active(&self, f: impl FnOnce()) -> bool {
+        let state = self.state.lock().unwrap();
+        if matches!(*state, State::Active(_)) {
+            return false;
+        }
+        f();
+        true
+    }
+
     /// Keystrokes during a transfer: Ctrl+C cancels, anything else is dropped.
     pub fn input(&self, data: &[u8]) {
         if data.contains(&0x03) {
