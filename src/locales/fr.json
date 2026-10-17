@@ -676,6 +676,7 @@
     "bellSound": "Émettre le son d’alerte",
     "bellFlash": "Faire clignoter le terminal",
     "scrollback": "Lignes d’historique de défilement",
+    "scrollbackHint": "Chaque volet garde ces lignes en mémoire : dans une fenêtre large, 10 000 lignes occupent environ 25 Mo par volet. Plus il en garde, plus le redimensionnement du terminal prend de temps.",
     "mouseAndClipboard": "Souris et presse-papiers",
     "copyOnSelect": "Copier le texte dès qu’il est sélectionné",
     "rightClick": "Clic droit",

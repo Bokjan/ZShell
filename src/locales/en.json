@@ -657,6 +657,7 @@
     "bellSound": "Play the alert sound",
     "bellFlash": "Flash the terminal",
     "scrollback": "Scrollback lines",
+    "scrollbackHint": "Every pane keeps these lines in memory: in a wide window, 10,000 lines take about 25 MB per pane. Resizing a terminal also takes longer the more lines it keeps.",
     "mouseAndClipboard": "Mouse and Clipboard",
     "copyOnSelect": "Copy text as soon as it is selected",
     "rightClick": "Right-click",

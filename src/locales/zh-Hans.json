@@ -638,6 +638,7 @@
     "bellSound": "播放提示音",
     "bellFlash": "闪烁终端",
     "scrollback": "回滚行数",
+    "scrollbackHint": "每个窗格都把这些行保存在内存中：在较宽的窗口里，10000 行每个窗格约占 25 MB。保存的行越多，调整终端大小也越慢。",
     "mouseAndClipboard": "鼠标和剪贴板",
     "copyOnSelect": "选中文本后立即复制",
     "rightClick": "右键单击",

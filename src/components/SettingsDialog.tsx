@@ -403,28 +403,31 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 <p className="hint">{t("settings.fontHint")}</p>
               </Setting>
 
-              <div className="row">
-                <label className="grow">
-                  {t("settings.cursorStyle")}
-                  <select value={terminal.cursorStyle} onChange={(e) => setTerminal({ cursorStyle: e.target.value as CursorStyle })}>
-                    {CURSOR_STYLES.map((style) => (
-                      <option key={style} value={style}>
-                        {t(`settings.cursorStyles.${style}`)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grow">
-                  {t("settings.scrollback")}
-                  <NumberField
-                    value={terminal.scrollback}
-                    min={0}
-                    max={100000}
-                    step={1000}
-                    onChange={(scrollback) => setTerminal({ scrollback })}
-                  />
-                </label>
-              </div>
+              <Setting>
+                <div className="row">
+                  <label className="grow">
+                    {t("settings.cursorStyle")}
+                    <select value={terminal.cursorStyle} onChange={(e) => setTerminal({ cursorStyle: e.target.value as CursorStyle })}>
+                      {CURSOR_STYLES.map((style) => (
+                        <option key={style} value={style}>
+                          {t(`settings.cursorStyles.${style}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grow">
+                    {t("settings.scrollback")}
+                    <NumberField
+                      value={terminal.scrollback}
+                      min={0}
+                      max={100000}
+                      step={1000}
+                      onChange={(scrollback) => setTerminal({ scrollback })}
+                    />
+                  </label>
+                </div>
+                <p className="hint">{t("settings.scrollbackHint")}</p>
+              </Setting>
               <label className="checkbox">
                 <input type="checkbox" checked={terminal.cursorBlink} onChange={(e) => setTerminal({ cursorBlink: e.target.checked })} />
                 {t("settings.cursorBlink")}

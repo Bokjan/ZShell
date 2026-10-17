@@ -657,6 +657,7 @@
     "bellSound": "Warnton abspielen",
     "bellFlash": "Terminal aufblinken lassen",
     "scrollback": "Zeilen im Verlauf",
+    "scrollbackHint": "Jeder Bereich hält diese Zeilen im Arbeitsspeicher: In einem breiten Fenster belegen 10.000 Zeilen etwa 25 MB pro Bereich. Je mehr Zeilen er hält, desto länger dauert auch eine Größenänderung des Terminals.",
     "mouseAndClipboard": "Maus und Zwischenablage",
     "copyOnSelect": "Text kopieren, sobald er ausgewählt ist",
     "rightClick": "Rechtsklick",
