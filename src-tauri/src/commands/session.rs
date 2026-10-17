@@ -250,10 +250,11 @@ pub fn session_log_stop(webview: Webview, sessions: State<'_, SessionManager>, l
 }
 
 /// Short name of the default local shell, e.g. "zsh" or "pwsh"; none when the system doesn't
-/// allow local terminals (Windows in S mode).
+/// allow local terminals (Windows in S mode). Off the main thread: on Windows, finding it asks
+/// the system's policy and looks through `PATH`, which may hold network drives.
 #[tauri::command]
-pub fn local_shell_name() -> Option<String> {
-    pty::local_shells_allowed().then(|| pty::default_shell().name())
+pub async fn local_shell_name() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(|| pty::local_shells_allowed().then(|| pty::default_shell().name())).await.ok().flatten()
 }
 
 #[tauri::command]
