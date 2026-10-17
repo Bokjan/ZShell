@@ -23,9 +23,11 @@ pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
 pub async fn profile_save(app: AppHandle, window: WebviewWindow, profile: Profile, password: Option<String>) -> Result<Profile> {
     let result = blocking(app, move |app| {
         let profile = app.state::<ProfileStore>().save(profile, password.as_deref())?;
-        // A session that is no longer SSH has no forwarding rules; running ones stop.
-        let rules: Vec<String> = profile.forwards().iter().map(|rule| rule.id.clone()).collect();
-        app.state::<Connections>().retain_forwards(&profile.id, &rules);
+        // A session that is no longer SSH has no forwarding rules; running ones stop. Saving
+        // an SSH session keeps its rules.
+        if profile.ssh().is_none() {
+            app.state::<Connections>().stop_saved_forwards(&profile.id, None);
+        }
         Ok(profile)
     })
     .await;
@@ -53,8 +55,7 @@ pub async fn profile_forward_save(app: AppHandle, window: WebviewWindow, profile
 pub async fn profile_forward_delete(app: AppHandle, window: WebviewWindow, profile_id: String, rule_id: String) -> Result<Profile> {
     let result = blocking(app, move |app| {
         let profile = app.state::<ProfileStore>().delete_forward(&profile_id, &rule_id)?;
-        let ids: Vec<String> = profile.forwards().iter().map(|rule| rule.id.clone()).collect();
-        app.state::<Connections>().retain_forwards(&profile_id, &ids);
+        app.state::<Connections>().stop_saved_forwards(&profile_id, Some(&rule_id));
         Ok(profile)
     })
     .await;

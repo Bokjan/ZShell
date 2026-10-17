@@ -274,12 +274,14 @@ impl Connections {
         Ok(())
     }
 
-    /// Stops the rules of saved session `profile_id` that are no longer among `rule_ids`.
-    pub fn retain_forwards(&self, profile_id: &str, rule_ids: &[String]) {
+    /// Stops rule `rule_id` of saved session `profile_id` wherever it runs (deleted), or all
+    /// its rules (`None`: it is no longer SSH). Only those: stopping the rules a session no
+    /// longer lists would also stop one another window saved and started meanwhile.
+    pub fn stop_saved_forwards(&self, profile_id: &str, rule_id: Option<&str>) {
         let connections: Vec<_> = self.0.lock().unwrap().values().filter(|c| c.ssh.profile().id == profile_id).cloned().collect();
         for connection in connections {
             for rule in connection.forwards.running() {
-                if !rule_ids.contains(&rule.id) {
+                if rule_id.is_none_or(|id| id == rule.id) {
                     connection.forwards.stop(&rule.id);
                 }
             }
