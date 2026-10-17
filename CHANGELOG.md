@@ -2,6 +2,21 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.6.0] - 2026-10-17
+
+### Bug Fixes
+
+- In Settings › Known Hosts, the help icon next to the number of host keys lines up with the text.
+
+### Performance
+
+- The interface does less work while terminals are busy. A program that keeps changing its title, such as one showing a spinner, no longer makes the session list, the other tabs or the quick command bar redraw, and a running transfer no longer redraws the whole file list several times a second.
+
+### Internal
+
+- The interface is memoized by React Compiler, which compiles only components written by its rules: no refs read or written while rendering, the DOM measured in events and effects, and text that depends on the language taken from a hook. A test checks that every component and hook compiles.
+- The components that shouldn't render again as the tabs change, and the rows of lists that render often (tabs, files, transfers, quick commands), get their callbacks as one object that stays the same; in development a warning says when that breaks.
+
 ## [3.5.1] - 2026-10-17
 
 ### Bug Fixes
