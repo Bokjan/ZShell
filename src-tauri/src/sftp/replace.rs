@@ -76,6 +76,13 @@ impl RemoteTarget {
         Ok(Self { file, path: path.to_owned(), temporary: None, existed: true, permissions: None })
     }
 
+    /// Creates `path`, where nothing is (in a folder just created).
+    pub async fn create_new(sftp: &SftpSession, path: &str) -> Result<Self> {
+        let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path));
+        let file = sftp.create(path).await.map_err(created)?;
+        Ok(Self { file, path: path.to_owned(), temporary: None, existed: false, permissions: None })
+    }
+
     /// Closes the file, checking what the server says (some, like NFS or quotas, report a
     /// failed write only then), and puts it in place. Removes what was written if that fails.
     /// A file replacing another is synced to the server's disk first (where the server can),
