@@ -12,6 +12,17 @@ use super::handler::ClientHandler;
 use super::{Connection, JumpChain, RemoteRoutes, TEST_KEY};
 use crate::model::{Remote, SshProfile};
 
+/// A server that lets anyone in without authenticating, and does nothing else.
+pub struct Anyone;
+
+impl russh::server::Handler for Anyone {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+        Ok(russh::server::Auth::Accept)
+    }
+}
+
 /// A connection of saved session `profile_id` (a quick connection if empty) to `server`,
 /// which runs on a stream in this process and lets anyone in without authenticating.
 pub async fn connect<H: russh::server::Handler + Send + 'static>(server: H, profile_id: &str) -> Arc<Connection> {

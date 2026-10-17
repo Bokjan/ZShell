@@ -320,7 +320,74 @@ impl Connections {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forward::testing::{free_port, local_rule, until, Tab};
     use crate::model::ForwardKind;
+    use crate::session::Outcome;
+    use crate::ssh::testing::{connect, Anyone};
+
+    /// Two connections of saved session "web", by tabs 1 and 2, with rule r1 running on the
+    /// first; tab 2 watches the rule.
+    async fn two_connections(port: u16) -> (Connections, [Arc<ssh::Connection>; 2], [Tab; 2]) {
+        let connections = Connections::default();
+        let ssh = [connect(Anyone, "web").await, connect(Anyone, "web").await];
+        let tabs = [Tab::new(), Tab::new()];
+        connections.connected(1, ssh[0].clone(), &[], &tabs[0].io);
+        connections.connected(2, ssh[1].clone(), &[], &tabs[1].io);
+        connections.start_forward(1, local_rule("r1", port)).unwrap();
+        assert_eq!(tabs[1].next_kind("r1").await, "starting");
+        assert_eq!(tabs[1].next_kind("r1").await, "active");
+        assert!(connections.get(1).unwrap().forwards.is_running("r1"));
+        (connections, ssh, tabs)
+    }
+
+    /// Closing the connection running a rule the user chose to keep: the rule moves to the
+    /// session's other connection, on the same port, once the first has let it go.
+    #[tokio::test]
+    async fn hands_rules_over_when_a_connection_closes() {
+        let port = free_port();
+        let (connections, ssh, tabs) = two_connections(port).await;
+        assert_eq!(ids(&connections.forwards_to_keep(&[1])), ["r1"]);
+        connections.keep_forwards(&[1]);
+        let closing = connections.get(1).unwrap();
+        tabs[0].io.finish(Outcome::Exited(None));
+
+        assert_eq!(tabs[1].next_kind("r1").await, "stopped");
+        assert_eq!(tabs[1].next_kind("r1").await, "starting");
+        let active = tabs[1].next_state("r1").await;
+        assert_eq!(active["type"], "active", "{active}");
+        assert_eq!(active["bound"], format!("127.0.0.1:{port}"));
+        until("the closing task's end", || Arc::strong_count(&closing) == 1).await;
+        until("the connection's end", || ssh[0].handle().is_closed()).await;
+        assert!(connections.get(1).is_err());
+        assert!(connections.get(2).unwrap().forwards.is_running("r1"));
+    }
+
+    /// Without the user choosing to keep them, a closing connection's rules just stop.
+    #[tokio::test]
+    async fn stops_rules_not_kept_when_a_connection_closes() {
+        let (connections, ssh, tabs) = two_connections(0).await;
+        let closing = connections.get(1).unwrap();
+        tabs[0].io.finish(Outcome::Exited(None));
+        assert_eq!(tabs[1].next_kind("r1").await, "stopped");
+        // The task that disconnects it, and would hand the rules over, has let it go.
+        until("the closing task's end", || Arc::strong_count(&closing) == 1).await;
+        until("the connection's end", || ssh[0].handle().is_closed()).await;
+        assert!(!connections.get(2).unwrap().forwards.has("r1"));
+        assert_eq!(tabs[1].reported("r1"), Vec::<String>::new());
+    }
+
+    /// A connection another tab still uses (a duplicated tab) stays open with its rules.
+    #[tokio::test]
+    async fn keeps_rules_while_another_tab_uses_the_connection() {
+        let (connections, ssh, tabs) = two_connections(0).await;
+        let duplicate = Tab::new();
+        connections.attach(3, connections.get(1).unwrap(), &duplicate.io);
+        tabs[0].io.finish(Outcome::Exited(None));
+        assert!(connections.get(1).is_err());
+        assert!(connections.get(3).unwrap().forwards.is_running("r1"));
+        assert!(!ssh[0].handle().is_closed());
+        assert!(tabs[1].quiet());
+    }
 
     /// A connection of saved session `session` running `running`.
     struct Fake {
