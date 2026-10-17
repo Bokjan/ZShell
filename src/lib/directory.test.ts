@@ -93,9 +93,23 @@ describe("createDirectoryStore", () => {
     vi.mocked(listProfiles).mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
     const reading = store.reload();
     const saved = profile("a", "saved");
+    let readAgain!: (profiles: Profile[]) => void;
+    vi.mocked(listProfiles).mockReturnValueOnce(new Promise((resolve) => (readAgain = resolve)));
     store.profileSaved(saved);
     reply([profile("a"), profile("b")]);
     await reading;
     expect(store.get().profiles).toEqual([saved, profile("b")]);
+    // What the dropped reply was read for (another window added "c") is read again.
+    readAgain([saved, profile("b"), profile("c")]);
+    await new Promise((done) => setTimeout(done));
+    expect(store.get().profiles).toEqual([saved, profile("b"), profile("c")]);
+  });
+
+  it("doesn't read again for a session saved here while nothing is being read", () => {
+    const store = createDirectoryStore();
+    store.dispatch(loaded);
+    vi.mocked(listProfiles).mockClear();
+    store.profileSaved(profile("a", "saved"));
+    expect(listProfiles).not.toHaveBeenCalled();
   });
 });

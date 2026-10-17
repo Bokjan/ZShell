@@ -84,26 +84,34 @@ export function createDirectoryStore(initial: DirectoryState = INITIAL_DIRECTORY
   const store = createStore(initial, reduceDirectory);
   const { dispatch } = store;
   let latest = 0;
+  // Reads on their way, whose replies a change here drops.
+  let reading = 0;
+  const reload = async () => {
+    const request = ++latest;
+    reading++;
+    try {
+      const [profiles, folders, order, proxies] = await Promise.all([listProfiles(), tree.folders(), tree.order(), proxyApi.list()]);
+      if (request === latest) dispatch({ type: "loaded", profiles, folders, order, proxies });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      reading--;
+    }
+  };
   return {
     ...store,
-    async reload() {
-      const request = ++latest;
-      try {
-        const [profiles, folders, order, proxies] = await Promise.all([listProfiles(), tree.folders(), tree.order(), proxyApi.list()]);
-        if (request === latest) dispatch({ type: "loaded", profiles, folders, order, proxies });
-      } catch (e) {
-        console.error(e);
-      }
-    },
+    reload,
     async changed(write) {
       const value = await write;
-      void this.reload();
+      void reload();
       return value;
     },
     profileSaved(profile) {
-      // A reply on its way was read before this was saved.
+      // A reply on its way was read before this was saved, so it is dropped; what it was read
+      // for (a change in another window) is read again.
       latest++;
       dispatch({ type: "profileSaved", profile });
+      if (reading > 0) void reload();
     },
     opened: (profileId) => dispatch({ type: "recent", ids: addRecent(profileId) }),
     recentChanged: () => dispatch({ type: "recent", ids: storedRecent() }),
