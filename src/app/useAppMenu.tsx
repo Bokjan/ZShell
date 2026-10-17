@@ -40,7 +40,9 @@ export function useAppMenu({
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState<{ x: number; y: number; fromKeyboard: boolean } | null>(null);
+  // `anchor` is the button, taken when the menu opens: a click on it toggles the menu rather than
+  // closing it as a click outside.
+  const [open, setOpen] = useState<{ x: number; y: number; fromKeyboard: boolean; anchor: HTMLButtonElement | null } | null>(null);
 
   const toggle = (fromKeyboard: boolean) => {
     if (open) {
@@ -49,7 +51,8 @@ export function useAppMenu({
     }
     const button = ref.current;
     const rect = button?.checkVisibility() ? button.getBoundingClientRect() : null;
-    setOpen(rect ? { x: rect.left, y: rect.bottom + 2, fromKeyboard } : { x: CORNER, y: CORNER, fromKeyboard });
+    const anchor = button ?? null;
+    setOpen(rect ? { x: rect.left, y: rect.bottom + 2, fromKeyboard, anchor } : { x: CORNER, y: CORNER, fromKeyboard, anchor });
   };
 
   useShortcuts((e) => {
@@ -88,7 +91,7 @@ export function useAppMenu({
       x={open.x}
       y={open.y}
       items={items()}
-      anchor={ref.current}
+      anchor={open.anchor}
       highlightFirst={open.fromKeyboard}
       onClose={() => setOpen(null)}
     />

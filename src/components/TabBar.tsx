@@ -131,9 +131,17 @@ export function TabBar({
   const [dragging, setDragging] = useState<number | null>(null);
   // The dragged tab would leave the window if dropped now.
   const [leaving, setLeaving] = useState(false);
-  // Where a tab dragged from another window would go, while it is over this tab bar.
-  const [dropX, setDropX] = useState<number | null>(null);
-  useWindowEvent("tab-drag-over", setDropX);
+  // Where a tab dragged from another window would go, while it is over this tab bar: the
+  // marker's left edge in the strip, measured when the drag moves rather than while rendering.
+  const [dropLeft, setDropLeft] = useState<number | null>(null);
+  useWindowEvent("tab-drag-over", (x) => {
+    const strip = stripRef.current;
+    if (x === null || !strip) return setDropLeft(null);
+    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")];
+    const index = tabIndexAt(strip, x);
+    const last = elements[elements.length - 1];
+    setDropLeft(index < elements.length ? elements[index].offsetLeft : last ? last.offsetLeft + last.offsetWidth : 0);
+  });
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
   const tabsRef = useLatest(tabs);
@@ -289,17 +297,6 @@ export function TabBar({
     window.addEventListener("mouseup", up);
     window.addEventListener("keydown", keyDown, true);
   };
-
-  // Where a tab dragged from another window would go among the tabs.
-  const dropMarker = (() => {
-    const strip = stripRef.current;
-    if (dropX === null || !strip) return null;
-    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")];
-    const index = tabIndexAt(strip, dropX);
-    const last = elements[elements.length - 1];
-    const left = index < elements.length ? elements[index].offsetLeft : last ? last.offsetLeft + last.offsetWidth : 0;
-    return <span className="tab-drop-marker" style={{ left }} aria-hidden="true" />;
-  })();
 
   const menuItems = (key: number): MenuItem[] => {
     const index = tabs.findIndex((tab) => tab.key === key);
@@ -508,7 +505,7 @@ export function TabBar({
             </div>
           );
         })}
-        {dropMarker}
+        {dropLeft !== null && <span className="tab-drop-marker" style={{ left: dropLeft }} aria-hidden="true" />}
       </div>
       {menu && tabs.some((tab) => tab.key === menu.key) && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />

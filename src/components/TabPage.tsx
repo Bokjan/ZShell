@@ -102,6 +102,15 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
     observer.observe(area);
     return () => observer.disconnect();
   }, [h, tab.key]);
+
+  // For where the side panel's edge is, as screen readers are told.
+  const [pageWidth, setPageWidth] = useState(0);
+  useEffect(() => {
+    const page = pageRef.current!;
+    const observer = new ResizeObserver(() => setPageWidth(page.clientWidth));
+    observer.observe(page);
+    return () => observer.disconnect();
+  }, []);
   const focused = focusedPane(tab);
   const panelHere = tab.sidePanel !== null && focused.protocol === "ssh";
   if (panelHere && !mounted[focused.key]?.includes(tab.sidePanel!)) {
@@ -184,8 +193,6 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
   };
 
   const anyMounted = tab.panes.some((pane) => (mounted[pane.key] ?? []).length > 0);
-  // For where the side panel's edge is, as screen readers are told; read when rendering.
-  const pageWidth = pageRef.current?.clientWidth ?? 0;
 
   // Dialogs of an inactive tab (a background save's conflict) wait for it to be shown.
   return (
