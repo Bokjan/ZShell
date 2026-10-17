@@ -1,4 +1,4 @@
-/* The settings' sections, the segmented control and the color scheme cards. */
+/* The settings' sections and the color scheme cards. */
 
 .settings-dialog section {
   display: flex;
@@ -21,36 +21,6 @@
   margin: 0;
   font-size: calc(13px * var(--text-scale));
   font-weight: 600;
-}
-/* Each button draws its own border, overlapping its neighbor's, so the selected one's border
-   replaces the control's outline there and follows its rounded corners at either end. */
-.segmented {
-  display: inline-flex;
-  align-self: flex-start;
-}
-.segmented button {
-  padding: 4px 14px;
-  border: 1px solid var(--input-border);
-  border-radius: 0;
-  background: none;
-  color: var(--text-muted);
-}
-.segmented button + button {
-  margin-left: -1px;
-}
-.segmented button:first-child {
-  border-top-left-radius: 5px;
-  border-bottom-left-radius: 5px;
-}
-.segmented button:last-child {
-  border-top-right-radius: 5px;
-  border-bottom-right-radius: 5px;
-}
-.segmented button.on {
-  position: relative;
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
 }
 .scheme-grid {
   display: grid;

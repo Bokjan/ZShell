@@ -47,42 +47,27 @@
 
 .panel-switch {
   align-self: center;
-  display: flex;
   flex-shrink: 0;
   margin: 0 8px;
-  border: 1px solid var(--input-border);
-  border-radius: 4px;
 }
 .panel-switch button {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   padding: 3px 10px;
-  border: none;
-  background: none;
-  color: var(--text-muted);
   white-space: nowrap;
-}
-.panel-switch button + button {
-  border-left: 1px solid var(--input-border);
-}
-.panel-switch button:first-child {
-  border-radius: 3px 0 0 3px;
-}
-.panel-switch button:last-child {
-  border-radius: 0 3px 3px 0;
 }
 .panel-switch button:hover:not(:disabled) {
   color: var(--text);
 }
-.panel-switch button.on {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
-  color: var(--text);
-}
 .panel-switch button:disabled {
-  opacity: 0.4;
   cursor: default;
+}
+/* A disabled segment fades its label and badge, not its border, so the outline stays whole. */
+.panel-switch-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.panel-switch button:disabled .panel-switch-label {
+  opacity: 0.4;
 }
 .badge {
   min-width: 16px;

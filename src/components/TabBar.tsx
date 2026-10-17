@@ -435,8 +435,10 @@ export function TabBar({
       onClick={onToggle}
       title={unavailable ? t("tabs.panelUnavailable") : hint}
     >
-      {label}
-      {badge}
+      <span className="panel-switch-label">
+        {label}
+        {badge}
+      </span>
     </button>
   );
 
@@ -506,7 +508,7 @@ export function TabBar({
         </IconButton>
       )}
       {tabs.length > 0 && (
-        <div className="panel-switch">
+        <div className="segmented panel-switch">
           {segment(
             "files",
             toggleFiles,

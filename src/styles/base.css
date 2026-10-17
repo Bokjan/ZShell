@@ -1,4 +1,5 @@
-/* The document, buttons and focus rings, text read only by screen readers, icon buttons. */
+/* The document, buttons and focus rings, text read only by screen readers, icon buttons, the
+   segmented control. */
 
 html,
 body,
@@ -78,4 +79,36 @@ button > svg:only-child:not(.inline-icon) {
 .inline-icon {
   flex-shrink: 0;
   margin-left: 4px;
+}
+
+/* A segmented control: one choice among a few (settings, the profile's pages, the side panels).
+   Each button draws its own border, overlapping its neighbor's, so the selected one's border
+   replaces the control's outline there and follows its rounded corners at either end. */
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+}
+.segmented button {
+  padding: 4px 14px;
+  border: 1px solid var(--input-border);
+  border-radius: 0;
+  background: none;
+  color: var(--text-muted);
+}
+.segmented button + button {
+  margin-left: -1px;
+}
+.segmented button:first-child {
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+}
+.segmented button:last-child {
+  border-top-right-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+.segmented button.on {
+  position: relative;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
 }
