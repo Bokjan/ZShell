@@ -2,6 +2,7 @@ import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState, 
 
 import { isAppLocked } from "../lib/appLock";
 import { isComposing } from "../lib/platform";
+import { useLatest } from "./latest";
 
 /**
  * The open dialogs, as a stack: only the top one answers Escape and clicks on its backdrop,
@@ -126,8 +127,7 @@ export function useDialog(onClose: () => void, options: Options = {}): DialogHan
   const [order] = useState(takeOrder);
   const hidden = useContext(DialogsHidden);
   const element = useRef<HTMLDivElement>(null);
-  const latest = useRef({ onClose, ...options });
-  latest.current = { onClose, ...options };
+  const latestRef = useLatest({ onClose, ...options });
 
   useLayoutEffect(() => {
     if (!listening) {
@@ -138,7 +138,7 @@ export function useDialog(onClose: () => void, options: Options = {}): DialogHan
       hidden,
       element,
       escape: (e) => {
-        const { onEscape, onClose, persistent } = latest.current;
+        const { onEscape, onClose, persistent } = latestRef.current;
         if (onEscape) onEscape(e);
         else if (!persistent) onClose();
       },
@@ -155,9 +155,9 @@ export function useDialog(onClose: () => void, options: Options = {}): DialogHan
       element,
       isTop: () => topOrder() === order,
       close: () => {
-        if (!latest.current.persistent) latest.current.onClose();
+        if (!latestRef.current.persistent) latestRef.current.onClose();
       },
     }),
-    [order, hidden],
+    [order, hidden, latestRef],
   );
 }

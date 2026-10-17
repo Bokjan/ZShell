@@ -9,6 +9,7 @@ import { usePressDrag } from "../../hooks/drag";
 import { isMac, isWindows } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
 import { attempt } from "../../lib/attempt";
+import { useLatest } from "../../hooks/latest";
 import { parentPath } from "./useTransfers";
 
 const DRAG_DISTANCE = 5;
@@ -56,8 +57,7 @@ export function useSftpDragDrop(options: Options) {
   const [dropDir, setDropDir] = useState<string | null>(null);
   /** The paths being dragged out of this panel, until shortly after the drag ends. */
   const draggingRef = useRef<string[] | null>(null);
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  const optionsRef = useLatest(options);
   const pressDrag = usePressDrag();
 
   /** The folder at a point in the page: null on the panel elsewhere, undefined off the panel. */

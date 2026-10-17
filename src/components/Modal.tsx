@@ -59,16 +59,18 @@ export function Modal({ dialog, label, alert, className, children }: Props) {
     };
   }, [dialog, opener]);
 
+  // Taken apart: React Compiler treats an object holding a ref as a ref (see `useLatest`).
+  const { element, hidden } = dialog;
   return createPortal(
     <div
-      ref={dialog.element}
+      ref={element}
       className={className ? `dialog-backdrop ${className}` : "dialog-backdrop"}
       role={alert ? "alertdialog" : "dialog"}
       aria-modal="true"
       aria-label={label}
       // Focusable by script only, for a dialog without controls.
       tabIndex={-1}
-      hidden={dialog.hidden}
+      hidden={hidden}
       onMouseDown={(e) => e.target === e.currentTarget && dialog.isTop() && dialog.close()}
     >
       {children}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useInsertionEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -29,6 +29,7 @@ import { isTerminalReport } from "../lib/terminalReports";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { drawWithWebgl } from "../lib/webgl";
 import { attemptSync } from "../lib/attempt";
+import { useLatest } from "../hooks/latest";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
@@ -119,16 +120,14 @@ export function TerminalView({
   // Fits the terminal to the pane, except while a screen from another window is drawn.
   const fitRef = useRef<{ fit(): void } | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
-  const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
-  const onTitleRef = useRef(onTitle);
-  onTitleRef.current = onTitle;
-  const onInputRef = useRef(onInput);
-  onInputRef.current = onInput;
-  const registerPasteRef = useRef(registerPaste);
-  registerPasteRef.current = registerPaste;
-  const pasteTargetsRef = useRef(pasteTargets);
-  pasteTargetsRef.current = pasteTargets;
+  // The same two for rendering (the context menu, the search bar), which can't read refs.
+  const [terminal, setTerminal] = useState<Terminal | null>(null);
+  const [searchAddon, setSearchAddon] = useState<SearchAddon | null>(null);
+  const sessionsRef = useLatest(sessions);
+  const onTitleRef = useLatest(onTitle);
+  const onInputRef = useLatest(onInput);
+  const registerPasteRef = useLatest(registerPaste);
+  const pasteTargetsRef = useLatest(pasteTargets);
   /** Pastes text, asking first if it would run several commands; set while the terminal exists. */
   const pasteRef = useRef<(text: string) => void>(ignore);
   /** Pastes into this pane and the panes synced with it, without asking. */
@@ -151,15 +150,16 @@ export function TerminalView({
   const [sizeShown, setSizeShown] = useState<{ cols: number; rows: number; count: number } | null>(null);
   // Counts the visual bells, each a new flash.
   const [flashes, setFlashes] = useState(0);
-  const visibleRef = useRef(visible);
-  visibleRef.current = visible;
+  const visibleRef = useLatest(visible);
   const wrapRef = useRef<HTMLDivElement>(null);
   const { settings, theme, screenReader, update } = useSettings();
-  const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+  const settingsRef = useLatest(settings);
+  // Only these two of the session's appearance choose its colors.
+  const ownScheme = appearance?.colorScheme;
+  const ownBackground = appearance?.background;
   const scheme = useMemo(
-    () => sessionScheme(settings.terminal.colorScheme, theme, appearance),
-    [settings.terminal.colorScheme, theme, appearance?.colorScheme, appearance?.background],
+    () => sessionScheme(settings.terminal.colorScheme, theme, { colorScheme: ownScheme, background: ownBackground }),
+    [settings.terminal.colorScheme, theme, ownScheme, ownBackground],
   );
   // The system asks for more contrast (macOS's Increase Contrast, Windows's contrast themes):
   // colors of the scheme too close to the background are adjusted as they are drawn.
@@ -182,8 +182,7 @@ export function TerminalView({
     // Terminal.app (the xterm.js default).
     rightClickSelectsWord: isMac && settings.terminal.rightClick === "menu",
   };
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  const optionsRef = useLatest(options);
 
   useEffect(() => {
     const container = containerRef.current!;
@@ -255,6 +254,8 @@ export function TerminalView({
     fit.fit();
     termRef.current = term;
     searchRef.current = search;
+    setTerminal(term);
+    setSearchAddon(search);
 
     const session = sessionsRef.current.attach(paneKey, {
       port: {
@@ -468,6 +469,8 @@ export function TerminalView({
       sessionRef.current = null;
       term.dispose();
       termRef.current = fitRef.current = searchRef.current = null;
+      setTerminal(null);
+      setSearchAddon(null);
     };
   }, [paneKey]);
 
@@ -586,18 +589,20 @@ export function TerminalView({
   // A file dialog that `rz` or `sz` opened while the app was locked, waiting to be shown:
   // shown at once, it would be over the lock screen.
   const pendingDialogRef = useRef<() => void>(null);
-  onZmodemRef.current = (phase) => {
-    const id = sessionRef.current?.id;
-    if (id == null) return;
-    setZmodemPhase(phase === "idle" ? null : phase);
-    pendingDialogRef.current?.();
-    pendingDialogRef.current = null;
-    if (phase === "chooseFiles") pendingDialogRef.current = whenUnlocked(chooseFiles);
-    else if (phase === "chooseDestination") {
-      if (settings.zmodem.receive === "downloads") saveReceived(null);
-      else if (settings.zmodem.receive === "chooseFolder") pendingDialogRef.current = whenUnlocked(chooseFolder);
-    }
-  };
+  useInsertionEffect(() => {
+    onZmodemRef.current = (phase) => {
+      const id = sessionRef.current?.id;
+      if (id == null) return;
+      setZmodemPhase(phase === "idle" ? null : phase);
+      pendingDialogRef.current?.();
+      pendingDialogRef.current = null;
+      if (phase === "chooseFiles") pendingDialogRef.current = whenUnlocked(chooseFiles);
+      else if (phase === "chooseDestination") {
+        if (settings.zmodem.receive === "downloads") saveReceived(null);
+        else if (settings.zmodem.receive === "chooseFolder") pendingDialogRef.current = whenUnlocked(chooseFolder);
+      }
+    };
+  });
 
   // While `rz` waits, files dropped on this terminal are sent.
   const waitingForFiles = active && zmodemPhase === "chooseFiles";
@@ -631,8 +636,7 @@ export function TerminalView({
     };
   }, [waitingForFiles]);
 
-  const menuItems = (link?: string): MenuItem[] => {
-    const term = termRef.current!;
+  const menuItems = (term: Terminal, link?: string): MenuItem[] => {
     const linkItems: MenuItem[] = link
       ? [
           { label: t("terminal.menu.openLink"), onSelect: () => void openUrl(link).catch(console.error) },
@@ -696,11 +700,11 @@ export function TerminalView({
           onCancel={cancelZmodem}
         />
       )}
-      {menu && termRef.current && (
+      {menu && terminal && (
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          items={menuItems(menu.link)}
+          items={menuItems(terminal, menu.link)}
           onClose={() => {
             setMenu(null);
             focus();
@@ -727,8 +731,8 @@ export function TerminalView({
           text={[linkHint.uri, t(isMac ? "terminal.link.openHintMac" : "terminal.link.openHint")].filter(Boolean).join("\n")}
         />
       )}
-      {searchKey > 0 && searchRef.current && (
-        <SearchBar addon={searchRef.current} decorations={searchDecorations(scheme)} focusKey={searchKey} onClose={closeSearch} />
+      {searchKey > 0 && searchAddon && (
+        <SearchBar addon={searchAddon} decorations={searchDecorations(scheme)} focusKey={searchKey} onClose={closeSearch} />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errorMessage, sftp, type FileEntry, type SessionId } from "../../ipc/api";
 import { attempt } from "../../lib/attempt";
+import { useLatest } from "../../hooks/latest";
 
 /**
  * The folder the file panel shows and its entries. `onNewFolder` runs when another folder is
@@ -20,14 +21,10 @@ export function useSftpListing(
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cwdRef = useRef<string | null>(null);
-  cwdRef.current = cwd;
-  const sessionRef = useRef(sessionId);
-  sessionRef.current = sessionId;
-  const onNewFolderRef = useRef(onNewFolder);
-  onNewFolderRef.current = onNewFolder;
-  const startDirRef = useRef(startDir);
-  startDirRef.current = startDir;
+  const cwdRef = useLatest(cwd);
+  const sessionRef = useLatest(sessionId);
+  const onNewFolderRef = useLatest(onNewFolder);
+  const startDirRef = useLatest(startDir);
   /**
    * Whether the user is typing in the path field: a listing they didn't ask for there (after
    * an upload, or following the terminal) leaves what they typed alone.
@@ -72,7 +69,7 @@ export function useSftpListing(
         },
       );
     },
-    [sessionId, fail],
+    [sessionId, fail, cwdRef, sessionRef, onNewFolderRef],
   );
 
   /**
@@ -81,7 +78,7 @@ export function useSftpListing(
    */
   const reload = useCallback(() => {
     if (cwdRef.current) void load(cwdRef.current);
-  }, [load]);
+  }, [load, cwdRef]);
 
   // (Re)open on connect, staying in the current directory across reconnects. An answer that
   // comes after a reconnection is dropped: its listing would make the newer one stale, and

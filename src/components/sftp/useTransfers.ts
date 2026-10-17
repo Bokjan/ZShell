@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { dirname, join } from "@tauri-apps/api/path";
 
@@ -8,6 +8,7 @@ import { open, save } from "../../ipc/fileDialog";
 import { basename } from "../../lib/format";
 import { storedString, storeString } from "../../lib/storage";
 import type { Transfer } from "../TransferList";
+import { useLatest } from "../../hooks/latest";
 import { attempt } from "../../lib/attempt";
 import type { Confirm } from "./useConfirmQueue";
 
@@ -40,12 +41,9 @@ interface Options {
 export function useTransfers({ sessionId, connected, active, cwdRef, entries, load, ask, fail, onTransfers, onEdits }: Options) {
   const { t } = useTranslation();
   const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const transfersRef = useRef(transfers);
-  transfersRef.current = transfers;
-  const sessionRef = useRef({ sessionId, connected });
-  sessionRef.current = { sessionId, connected };
-  const activeRef = useRef(active);
-  activeRef.current = active;
+  const transfersRef = useLatest(transfers);
+  const sessionRef = useLatest({ sessionId, connected });
+  const activeRef = useLatest(active);
 
   // Finished and failed transfers are announced to screen readers: the list may be out of
   // sight, or the panel closed.
@@ -82,12 +80,17 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
   const run = async (kind: Transfer["kind"], names: string[], work: (id: string) => Promise<string[] | void>) => {
     const id = crypto.randomUUID();
     add({ id, kind, label: labelFor(names), progress: null, status: "running" });
-    try {
-      const results = await work(id);
-      update(id, { status: "done", results: results ?? undefined });
-    } catch (e) {
-      failed(id, e);
-    }
+    return attempt(
+      async () => {
+        const results = await work(id);
+        update(id, { status: "done", results: results ?? undefined });
+      },
+      {
+        onError: (e) => {
+          failed(id, e);
+        },
+      },
+    );
   };
 
   /** Uploads into `remoteDir`, asking first about replacing what is there. */
@@ -204,8 +207,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
       },
     );
   };
-  const uploadEditRef = useRef(uploadEdit);
-  uploadEditRef.current = uploadEdit;
+  const uploadEditRef = useLatest(uploadEdit);
 
   useEffect(() => {
     if (sessionId == null || !connected) return;
@@ -215,13 +217,11 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
   }, [sessionId, connected]);
 
   const running = transfers.filter((t) => t.status === "running").length;
-  const onTransfersRef = useRef(onTransfers);
-  onTransfersRef.current = onTransfers;
-  useEffect(() => onTransfersRef.current(running), [running]);
+  const reportTransfers = useEffectEvent(onTransfers);
+  useEffect(() => reportTransfers(running), [running]);
   const editing = transfers.filter((t) => t.status === "editing").length;
-  const onEditsRef = useRef(onEdits);
-  onEditsRef.current = onEdits;
-  useEffect(() => onEditsRef.current(editing), [editing]);
+  const reportEdits = useEffectEvent(onEdits);
+  useEffect(() => reportEdits(editing), [editing]);
 
   // Closing the pane stops watching its files and cancels its transfers, which would otherwise
   // go on out of sight on a connection that other panes share.
