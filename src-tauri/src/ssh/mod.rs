@@ -573,6 +573,14 @@ mod tests {
                     session.exit_status_request(channel, 3)?;
                     session.close(channel)?;
                 }
+                // Many small packets of output at once, then the end.
+                b"burst" => {
+                    for i in 0..BURST {
+                        session.data(channel, format!("{i}\n").into_bytes())?;
+                    }
+                    session.exit_status_request(channel, 0)?;
+                    session.close(channel)?;
+                }
                 _ => {}
             }
             let _ = self.typed.send(data.to_vec());
@@ -592,6 +600,9 @@ mod tests {
             Ok(())
         }
     }
+
+    /// Packets of output the test server sends for `burst`.
+    const BURST: usize = 2000;
 
     struct AnyHostKey;
 
@@ -712,6 +723,20 @@ mod tests {
         shell.input.send(SessionInput::Data(b"exit".to_vec())).unwrap();
         let outcome = tokio::time::timeout(Duration::from_secs(10), shell.bridge).await.unwrap().unwrap();
         assert!(matches!(outcome, Outcome::Exited(Some(3))));
+    }
+
+    /// Output waiting in many small packets reaches the terminal in fewer messages, whole and
+    /// in order, and before the shell's end.
+    #[tokio::test]
+    async fn output_waiting_is_passed_on_together() {
+        let shell = Shell::start(false).await;
+        shell.input.send(SessionInput::Data(b"burst".to_vec())).unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(10), shell.bridge).await.unwrap().unwrap();
+        assert!(matches!(outcome, Outcome::Exited(Some(0))));
+        let messages: Vec<Vec<u8>> = shell.output.try_iter().collect();
+        let expected: String = (0..BURST).map(|i| format!("{i}\n")).collect();
+        assert_eq!(String::from_utf8(messages.concat()).unwrap(), expected);
+        assert!(messages.len() < BURST / 4, "{} messages", messages.len());
     }
 
     /// Typing and pastes reach the shell whole and in order, with window changes in between.
