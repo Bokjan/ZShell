@@ -11,4 +11,4 @@ mod store;
 #[cfg(test)]
 mod tests;
 
-pub use store::{Additions, ProfileStore, Snapshot};
+pub use store::{Additions, Export, ProfileStore, Snapshot};

@@ -1,7 +1,7 @@
 //! The store of the sessions, folders and proxies: queries and changes, saved through the vault.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::model::ForwardRule;
@@ -16,8 +16,6 @@ pub struct ProfileStore {
     /// on the main thread) never wait for the files to be written. Empty while the vault is
     /// locked, and read again once it is unlocked.
     state: Part<State>,
-    /// Held by a change from reading the state to replacing it: one change at a time.
-    writing: Mutex<()>,
 }
 
 /// The sessions, folders and proxies an import is planned against.
@@ -25,6 +23,15 @@ pub struct Snapshot<'a> {
     pub profiles: &'a [Profile],
     pub folders: &'a [Folder],
     pub proxies: &'a [Proxy],
+}
+
+/// What is exported (see [`ProfileStore::export`]).
+pub struct Export {
+    pub profiles: Vec<Profile>,
+    pub folders: Vec<Folder>,
+    pub proxies: Vec<Proxy>,
+    pub order: Vec<Item>,
+    pub passwords: Option<Passwords>,
 }
 
 /// What an import adds.
@@ -136,11 +143,16 @@ fn sort_by_rank<T>(list: &mut Vec<T>, rank: Vec<usize>) {
 
 impl ProfileStore {
     pub fn load(vault: Arc<Vault>) -> Self {
-        Self { state: Part::new(vault, Self::read), writing: Mutex::new(()) }
+        Self { state: Part::new(vault, Self::read) }
     }
 
-    fn read(data: Data) -> State {
-        let mut state = State { profiles: data.profiles, folders: data.folders, proxies: data.proxies, order: data.order };
+    fn read(data: &Data) -> State {
+        let mut state = State {
+            profiles: data.profiles.clone(),
+            folders: data.folders.clone(),
+            proxies: data.proxies.clone(),
+            order: data.order.clone(),
+        };
         unique_ids(state.profiles.iter_mut().map(|p| &mut p.id));
         unique_ids(state.folders.iter_mut().map(|f| &mut f.id));
         unique_ids(state.proxies.iter_mut().map(|p| &mut p.id));
@@ -153,11 +165,12 @@ impl ProfileStore {
         self.state.read().profiles.clone()
     }
 
-    /// The sessions, folders and proxies, and the order of the first two, as one consistent
-    /// copy (for exporting them).
-    pub fn snapshot(&self) -> (Vec<Profile>, Vec<Folder>, Vec<Proxy>, Vec<Item>) {
-        let state = self.state.read();
-        (state.profiles.clone(), state.folders.clone(), state.proxies.clone(), state.order.clone())
+    /// The sessions, folders and proxies, the order of the first two and, if `with_passwords`,
+    /// their saved passwords, all read at once (for exporting them).
+    pub fn export(&self, with_passwords: bool) -> Result<Export> {
+        let data = self.state.vault().data()?;
+        let State { profiles, folders, proxies, order } = Self::read(&data);
+        Ok(Export { profiles, folders, proxies, order, passwords: with_passwords.then(|| data.passwords.clone()) })
     }
 
     pub fn folders(&self) -> Vec<Folder> {
@@ -425,24 +438,19 @@ impl ProfileStore {
         })
     }
 
-    /// Applies `change` to a copy of the state and the saved passwords and, if it succeeds,
-    /// saves them in one write and keeps the copy. Passwords whose session or proxy is gone
-    /// (or takes none) go with it.
+    /// Applies `change` to the state and the saved passwords and, if it succeeds, saves them
+    /// in one write. Passwords whose session or proxy is gone (or takes none) go with it.
     fn update<T>(&self, change: impl FnOnce(&mut State, &mut Passwords) -> Result<T>) -> Result<T> {
-        let _writing = self.writing.lock().unwrap();
-        let mut updated = self.state.read().clone();
-        let value = self.state.vault().update(|data| {
-            let value = change(&mut updated, &mut data.passwords)?;
-            updated.arrange();
-            data.passwords.retain_owners(&updated.profiles, &updated.proxies);
-            data.folders.clone_from(&updated.folders);
-            data.proxies.clone_from(&updated.proxies);
-            data.profiles.clone_from(&updated.profiles);
-            data.order.clone_from(&updated.order);
+        self.state.update(|state, data| {
+            let value = change(state, &mut data.passwords)?;
+            state.arrange();
+            data.passwords.retain_owners(&state.profiles, &state.proxies);
+            data.folders.clone_from(&state.folders);
+            data.proxies.clone_from(&state.proxies);
+            data.profiles.clone_from(&state.profiles);
+            data.order.clone_from(&state.order);
             Ok(value)
-        })?;
-        self.state.replace(updated);
-        Ok(value)
+        })
     }
 }
 

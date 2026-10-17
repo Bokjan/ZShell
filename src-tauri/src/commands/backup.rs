@@ -1,14 +1,12 @@
 //! Commands for exporting sessions to a file and importing them from one (see `backup.rs`).
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::backup;
-use crate::config::ProfileStore;
+use crate::config::{Export, ProfileStore};
 use crate::error::Result;
-use crate::vault::Vault;
 
 use super::{blocking, notified, Change};
 
@@ -17,11 +15,9 @@ use super::{blocking, notified, Change};
 #[tauri::command]
 pub async fn sessions_export(app: AppHandle, path: PathBuf, passphrase: Option<String>) -> Result<()> {
     blocking(app, move |app| {
-        let (profiles, folders, proxies, order) = app.state::<ProfileStore>().snapshot();
-        let passwords = match passphrase.as_deref() {
-            None | Some("") => None,
-            Some(passphrase) => Some((passphrase, app.state::<Arc<Vault>>().data()?.passwords)),
-        };
+        let passphrase = passphrase.filter(|p| !p.is_empty());
+        let Export { profiles, folders, proxies, order, passwords } = app.state::<ProfileStore>().export(passphrase.is_some())?;
+        let passwords = passphrase.as_deref().zip(passwords);
         backup::export(&path, backup::Contents { folders, proxies, profiles, order }, passwords)
     })
     .await

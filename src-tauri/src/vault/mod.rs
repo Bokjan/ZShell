@@ -12,16 +12,19 @@
 //! puts the new file in place, then deletes the old key, and stopping anywhere in between
 //! leaves at most an entry that opens nothing. Each change uses a new key.
 //!
-//! The stores (`ProfileStore`, `QuickCommandStore`) keep a copy of their part ([`Part`]) to
-//! answer queries without waiting, read again by itself once the vault is unlocked or reset,
-//! and write through [`Vault::update`], which writes the whole file.
+//! Queries never wait for a change: what changes the vault (writing the file, deriving a key
+//! from the master password, asking the credential store, which may wait for the user) holds
+//! its state, and publishes what queries read ([`View`]) once done. The stores
+//! (`ProfileStore`, `QuickCommandStore`) keep a copy of their part ([`Part`]), read again by
+//! itself once the vault is unlocked or reset, and change it through [`Part::update`], which
+//! writes the whole file.
 
 mod part;
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -259,7 +262,7 @@ enum Found {
 struct Open {
     sealing: Sealing,
     key: Option<Key>,
-    data: Data,
+    data: Arc<Data>,
 }
 
 enum State {
@@ -273,12 +276,25 @@ impl State {
     }
 }
 
+/// What queries read: the state as of the last change, published by it before letting go of
+/// the state ([`Vault::publish`]).
+#[derive(Default)]
+struct View {
+    /// `None` while locked.
+    data: Option<Arc<Data>>,
+    protection: Option<Protection>,
+    remember: bool,
+    lock: Option<Lock>,
+}
+
 pub struct Vault {
     dir: PathBuf,
     store: Arc<dyn CredentialStore>,
-    /// Held while writing, and while deriving a key from the master password: nothing else
-    /// may change what is stored meanwhile.
+    /// Held by a change for as long as it takes (writing, deriving a key from the master
+    /// password, the credential store): one change at a time. Queries don't take it.
     state: Mutex<State>,
+    /// What queries read, held only to read or replace it.
+    view: RwLock<View>,
     /// Held by [`Vault::try_unlock`], so that two windows starting together don't both make
     /// a vault.
     trying: Mutex<()>,
@@ -339,11 +355,15 @@ impl Vault {
             dir,
             store,
             state: Mutex::new(State::locked(None, LockReason::New, None)),
+            view: RwLock::default(),
             trying: Mutex::new(()),
             resets: Default::default(),
             generation: Default::default(),
         };
-        *vault.state.lock().unwrap() = vault.load(false).0;
+        let mut state = vault.state.lock().unwrap();
+        *state = vault.load(false).0;
+        vault.publish(&state);
+        drop(state);
         vault
     }
 
@@ -352,23 +372,34 @@ impl Vault {
     }
 
     pub fn status(&self) -> VaultStatus {
-        let store = StoreKind::current();
-        match &*self.state.lock().unwrap() {
-            State::Open(open) => VaultStatus {
+        let view = self.view.read().unwrap();
+        VaultStatus {
+            protection: view.protection,
+            remember: view.remember,
+            locked: view.lock.clone(),
+            store: StoreKind::current(),
+            created: false,
+        }
+    }
+
+    /// Makes `state` what queries read; by every change, before it lets go of the state, so
+    /// that what they read changes in the same order.
+    fn publish(&self, state: &State) {
+        let view = match state {
+            State::Open(open) => View {
+                data: Some(open.data.clone()),
                 protection: Some(open.sealing.protection()),
                 remember: open.sealing.remember(),
-                locked: None,
-                store,
-                created: false,
+                lock: None,
             },
-            State::Locked { sealing, lock } => VaultStatus {
+            State::Locked { sealing, lock } => View {
+                data: None,
                 protection: sealing.as_ref().map(Sealing::protection),
                 remember: sealing.as_ref().is_some_and(Sealing::remember),
-                locked: Some(lock.clone()),
-                store,
-                created: false,
+                lock: Some(lock.clone()),
             },
-        }
+        };
+        *self.view.write().unwrap() = view;
     }
 
     /// Whether the credential store can be used (see [`CredentialStore::available`]); blocks
@@ -384,45 +415,40 @@ impl Vault {
         self.generation.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Puts `next` in place of the state, as a new generation of the data.
+    /// Puts `next` in place of the state, as a new generation of the data. Published before
+    /// the generation moves: a [`Part`] that sees the new generation reads the new data.
     fn replace(&self, state: &mut State, next: State) {
         *state = next;
+        self.publish(state);
         self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
-    /// A copy of everything, `vault.locked` while locked.
-    pub fn data(&self) -> Result<Data> {
-        match &*self.state.lock().unwrap() {
-            State::Open(open) => Ok(open.data.clone()),
-            State::Locked { .. } => Err(locked()),
-        }
+    /// Everything, as of the last change; `vault.locked` while locked.
+    pub fn data(&self) -> Result<Arc<Data>> {
+        self.view.read().unwrap().data.clone().ok_or_else(locked)
     }
 
     /// The app lock's settings; `None` while locked.
     pub fn app_lock(&self) -> Option<AppLockSettings> {
-        match &*self.state.lock().unwrap() {
-            State::Open(open) => Some(open.data.app_lock.clone()),
-            State::Locked { .. } => None,
-        }
+        self.view.read().unwrap().data.as_ref().map(|data| data.app_lock.clone())
     }
 
     /// The saved password of `account`, if there is one.
     pub fn password(&self, account: Account) -> Result<Option<String>> {
-        match &*self.state.lock().unwrap() {
-            State::Open(open) => Ok(open.data.passwords.get(account).map(str::to_owned)),
-            State::Locked { .. } => Err(locked()),
-        }
+        Ok(self.data()?.passwords.get(account).map(str::to_owned))
     }
 
-    /// Changes the data, and writes it if `change` succeeds and changed it.
+    /// Changes the data, and writes it if `change` succeeds and changed it. `change` gets the
+    /// data as it is now: changes go one at a time.
     pub fn update<T>(&self, change: impl FnOnce(&mut Data) -> Result<T>) -> Result<T> {
         let mut state = self.state.lock().unwrap();
         let State::Open(open) = &mut *state else { return Err(locked()) };
-        let mut data = open.data.clone();
+        let mut data = Data::clone(&open.data);
         let value = change(&mut data)?;
-        if data != open.data {
+        if data != *open.data {
             self.write(&open.sealing, open.key.as_ref(), &data)?;
-            open.data = data;
+            open.data = Arc::new(data);
+            self.publish(&state);
         }
         Ok(value)
     }
@@ -489,7 +515,7 @@ impl Vault {
         };
         let opened = file.open(key.as_ref());
         match opened {
-            Ok(data) => State::Open(Open { sealing: file.header, key, data }),
+            Ok(data) => State::Open(Open { sealing: file.header, key, data: Arc::new(data) }),
             Err(Unopened::WrongKey) => State::locked(Some(file.header), LockReason::Damaged, None),
             Err(Unopened::Damaged(detail)) => State::locked(Some(file.header), LockReason::Damaged, parse_failed(detail)),
         }
@@ -555,7 +581,7 @@ impl Vault {
             }
             return Err(e);
         }
-        Ok(Open { sealing, key, data })
+        Ok(Open { sealing, key, data: Arc::new(data) })
     }
 
     /// Unlocks with the key in the credential store (system protection, or a remembered
@@ -568,7 +594,7 @@ impl Vault {
         let _trying = self.trying.lock().unwrap();
         let mut created = false;
         let resets = self.resets.load(Ordering::SeqCst);
-        if matches!(&*self.state.lock().unwrap(), State::Locked { .. }) {
+        if self.view.read().unwrap().data.is_none() {
             let (next, made) = self.load(true);
             let mut state = self.state.lock().unwrap();
             if matches!(&*state, State::Locked { .. }) && self.resets.load(Ordering::SeqCst) == resets {
@@ -597,7 +623,7 @@ impl Vault {
                         match data {
                             Ok(data) => {
                                 opened = true;
-                                State::Open(Open { sealing: file.header, key: Some(key), data })
+                                State::Open(Open { sealing: file.header, key: Some(key), data: Arc::new(data) })
                             }
                             Err(_) => State::locked(Some(file.header), LockReason::Damaged, None),
                         }
@@ -645,12 +671,13 @@ impl Vault {
                 _ => None,
             };
             let old_account = open.sealing.store_account();
-            let next = self.reseal(target, current, open.data.clone())?;
+            let next = self.reseal(target, current, Data::clone(&open.data))?;
             // Another key's: the new key always has an entry of its own.
             if let Some(account) = old_account {
                 let _ = self.store.delete(&account);
             }
             *state = State::Open(next);
+            self.publish(&state);
         }
         Ok(self.status())
     }

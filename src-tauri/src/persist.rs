@@ -149,7 +149,10 @@ fn stage_json(path: &Path, value: &impl Serialize) -> std::io::Result<Staged> {
     stage_bytes(path, &serde_json::to_vec_pretty(value)?)
 }
 
-/// Writes `bytes` next to `path`, to be put in place by [`Staged::commit`].
+/// Writes `bytes` next to `path`, to be put in place by [`Staged::commit`]. One write to a
+/// path at a time: the temporary file's name is the path's with `.tmp` (so that one left by a
+/// crash goes with the next write), which another write would take. Each data file has one
+/// store, which writes it one change at a time.
 ///
 /// On unix the file is created readable by the user only, rather than made so after it is
 /// written, which would leave it readable for a moment: the data files hold host names and

@@ -50,7 +50,7 @@ pub struct Status {
     pub newer: Option<Release>,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 struct Saved {
     /// Seconds since the Unix epoch.
     checked: Option<u64>,
@@ -85,12 +85,12 @@ impl Updates {
     pub async fn check(&self, app: &AppHandle) -> Result<Status> {
         let _checking = self.checking.lock().await;
         let latest = latest().await?;
-        {
-            let mut saved = self.saved.lock().unwrap();
-            *saved = Saved { checked: Some(now()), latest: Some(latest) };
-            // Only a cache: a failed write means checking again at the next start.
-            let _ = persist::write_json_atomic(&self.path, &*saved);
-        }
+        let saved = Saved { checked: Some(now()), latest: Some(latest) };
+        *self.saved.lock().unwrap() = saved.clone();
+        // Only a cache: a failed write means checking again at the next start. Off the async
+        // threads, and in order, as checks are one at a time.
+        let path = self.path.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || persist::write_json_atomic(&path, &saved)).await;
         let status = self.status();
         events::emit(app, events::UpdateStatus(status.clone()));
         Ok(status)

@@ -367,3 +367,62 @@ fn copies_follow_the_vault_being_unlocked_and_reset() {
     assert_eq!(*part.read(), 0);
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn queries_answer_while_a_change_waits_for_the_credential_store() {
+    let dir = dir("view");
+    let store = Arc::new(MemoryStore::default());
+    store.failing.store(true, Ordering::Relaxed);
+    let vault = Arc::new(create(&dir, &store));
+    add(&vault, "a", "alpha", Some("secret"));
+    store.failing.store(false, Ordering::Relaxed);
+    store.set_delay_ms.store(500, Ordering::Relaxed);
+
+    let changing = {
+        let vault = vault.clone();
+        std::thread::spawn(move || vault.set_protection(Target::System, None).unwrap())
+    };
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let asked = std::time::Instant::now();
+    assert_eq!(names(&vault), ["alpha"]);
+    assert_eq!(vault.password(Account::Profile("a")).unwrap().as_deref(), Some("secret"));
+    assert!(vault.app_lock().is_some());
+    // As it was until the change is done.
+    assert_eq!(vault.status().protection, Some(Protection::None));
+    assert!(asked.elapsed() < std::time::Duration::from_millis(200));
+    changing.join().unwrap();
+    assert_eq!(vault.status().protection, Some(Protection::System));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_part_changes_the_data_as_it_is_not_its_copy() {
+    let dir = dir("part-update");
+    let store = Arc::new(MemoryStore::default());
+    let vault = Arc::new(create(&dir, &store));
+    let part = Part::new(vault.clone(), |data| data.profiles.iter().map(|p| p.name.clone()).collect::<Vec<_>>());
+    // Written by someone else: the copy doesn't know.
+    add(&vault, "a", "alpha", None);
+    assert!(part.read().is_empty());
+
+    part.update(|names, data| {
+        assert_eq!(*names, ["alpha"]);
+        names.push("beta".into());
+        data.profiles.push(profile("b", "beta"));
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(*part.read(), ["alpha", "beta"]);
+    assert_eq!(names(&vault), ["alpha", "beta"]);
+
+    // A failed change keeps both.
+    let failed = part.update(|names, data| {
+        names.clear();
+        data.profiles.clear();
+        Err::<(), _>(Error::new("unexpected"))
+    });
+    assert!(failed.is_err());
+    assert_eq!(*part.read(), ["alpha", "beta"]);
+    assert_eq!(names(&vault), ["alpha", "beta"]);
+    fs::remove_dir_all(&dir).unwrap();
+}

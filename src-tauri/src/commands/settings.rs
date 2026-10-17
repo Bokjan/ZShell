@@ -40,9 +40,13 @@ pub fn screen_reader_running() -> bool {
 /// time, which keeps them in order (see `latestSave`).
 #[tauri::command]
 pub async fn settings_set(app: AppHandle, window: WebviewWindow, settings: Settings) -> Result<Settings> {
-    let stored = blocking(app.clone(), move |app| app.state::<SettingsStore>().set(settings)).await;
+    let stored = blocking(app.clone(), move |app| {
+        app.state::<SettingsStore>().set(settings, |settings| {
+            crate::i18n::apply(&settings.language);
+        })
+    })
+    .await;
     let settings = notified(&window, Change::Settings, stored)?;
-    crate::i18n::apply(&settings.language);
     // A shorter retention applies right away; checking every log can take a while.
     let keep_days = settings.logs.keep_days;
     tauri::async_runtime::spawn_blocking(move || app.state::<Logs>().clean_up(keep_days));
