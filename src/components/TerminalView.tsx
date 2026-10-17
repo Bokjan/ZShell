@@ -733,7 +733,13 @@ export function TerminalView({
         />
       )}
       {searchKey > 0 && searchAddon && (
-        <SearchBar addon={searchAddon} decorations={searchDecorations(scheme)} focusKey={searchKey} onClose={closeSearch} />
+        <SearchBar
+          addon={searchAddon}
+          decorations={searchDecorations(scheme)}
+          focusKey={searchKey}
+          visible={visible}
+          onClose={closeSearch}
+        />
       )}
     </div>
   );

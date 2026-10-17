@@ -12,6 +12,8 @@ interface Props {
   decorations: ISearchOptions["decorations"];
   /** Changes whenever the find shortcut is pressed again, to refocus the input. */
   focusKey: number;
+  /** Whether the terminal is shown (its tab is the active one). */
+  visible: boolean;
   onClose(): void;
 }
 
@@ -27,7 +29,7 @@ const FLAGS: { flag: Flag; label: string; title: "search.caseSensitive" | "searc
 ];
 
 /** Find bar floating over the terminal, backed by xterm's search addon. */
-export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
+export function SearchBar({ addon, decorations, focusKey, visible, onClose }: Props) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [flags, setFlags] = useState<Record<Flag, boolean>>({ caseSensitive: false, wholeWord: false, regex: false });
@@ -62,17 +64,19 @@ export function SearchBar({ addon, decorations, focusKey, onClose }: Props) {
     }
   };
 
-  // Search as you type, extending the current match where possible.
+  // Search as you type, extending the current match where possible. Not while the terminal
+  // is hidden: with its matches highlighted, the addon searches all of it again after output.
   useEffect(() => {
     // Also resets the addon's cached term: it compares options only after storing the new
     // ones, so toggling a flag alone would otherwise never re-highlight (addon-search 0.16).
     addon.clearDecorations();
+    if (!visible) return;
     if (query) find(true, true);
     else {
       setResult(null);
       setInvalid(false);
     }
-  }, [query, flags]);
+  }, [query, flags, visible]);
 
   const onInputKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !isComposing(e)) {
