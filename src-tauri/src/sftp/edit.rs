@@ -59,7 +59,9 @@ pub struct Edits {
 
 impl Edits {
     pub fn new(root: PathBuf) -> Self {
-        remove_old(&root);
+        // Not before the first window: a folder deleted meanwhile is one no edit uses now.
+        let old = root.clone();
+        std::thread::spawn(move || remove_old(&old));
         Self { root, edits: Mutex::new(HashMap::new()) }
     }
 
