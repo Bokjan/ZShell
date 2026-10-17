@@ -155,11 +155,15 @@
   opacity: 0.35;
   cursor: default;
 }
-/* A text input with a small button after it (the serial device and "refresh"). */
+/* A text input with a small button after it (the serial device and "refresh", the key file and "Choose"). */
 .dialog .input-with-button {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+/* A text button is as tall as the field; an icon button keeps its square. */
+.dialog .input-with-button button.secondary {
+  align-self: stretch;
 }
 .dialog .input-with-button input {
   flex: 1;

@@ -111,7 +111,8 @@
 .compose-input {
   flex: 1;
   min-width: 0;
-  padding: 5px 8px;
+  /* One line is as tall as the buttons beside it at every text size. */
+  padding: calc(6px * var(--text-scale) - 1px) 8px;
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg);

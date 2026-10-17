@@ -70,11 +70,11 @@
   opacity: 0.4;
 }
 .badge {
-  min-width: 16px;
+  min-width: calc(16px * var(--text-scale));
   height: calc(16px * var(--text-scale));
   box-sizing: border-box;
   padding: 0 4px;
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--ok);
   color: var(--on-ok);
   font-size: calc(10px * var(--text-scale));

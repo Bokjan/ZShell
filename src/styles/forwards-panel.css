@@ -61,7 +61,8 @@
 }
 .forward-kind {
   flex-shrink: 0;
-  min-width: 52px;
+  /* Wide enough for every language's longest kind (French "DISTANTE"), so the mappings line up. */
+  min-width: 6.6em;
   margin-top: calc((var(--rule-line) - var(--kind-height)) / 2);
   padding: 1px 5px;
   line-height: calc(14px * var(--text-scale));
