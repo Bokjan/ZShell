@@ -8,16 +8,17 @@ import { isMac } from "../lib/platform";
 import { runAction, useShortcuts } from "../hooks/shortcuts";
 import type { Release } from "../hooks/updates";
 import { useLocale } from "../hooks/locale";
-import { useLatest } from "../hooks/latest";
+import { useStableHandlers } from "../hooks/stableHandlers";
 
 /** Where the menu opens when the button is out of sight (terminal full screen). */
 const CORNER = 4;
 
+/**
+ * The button's ref and what it does: one object that stays the same (see `useStableHandlers`).
+ * Whether the menu is open and the newer version come beside it, as values that change.
+ */
 export interface AppMenuButton {
   ref: RefObject<HTMLButtonElement | null>;
-  open: boolean;
-  /** A newer version, which the button marks. */
-  update: Release | null;
   /** Opens or closes the menu; `fromKeyboard` highlights its first item. */
   toggle(fromKeyboard: boolean): void;
 }
@@ -47,12 +48,8 @@ export function useAppMenu({
   // closing it as a click outside.
   const [open, setOpen] = useState<{ x: number; y: number; fromKeyboard: boolean; anchor: HTMLButtonElement | null } | null>(null);
 
-  // Read from a ref, so that `toggle` stays the same as the menu opens and closes: the sidebar,
-  // which gets it, doesn't render again for it (see `useStableProps`).
-  const openRef = useLatest(open);
-
   const toggle = (fromKeyboard: boolean) => {
-    if (openRef.current) {
+    if (open) {
       setOpen(null);
       return;
     }
@@ -91,7 +88,7 @@ export function useAppMenu({
         : [{ label: t(`appMenu.${section}`), badge: section === "help" ? badge : undefined, submenu: entries(items) }],
     );
 
-  const button: AppMenuButton = { ref, open: open !== null, update: updates.available, toggle };
+  const button = useStableHandlers<AppMenuButton>({ ref, toggle });
   const menu = open && (
     <ContextMenu
       x={open.x}
@@ -102,5 +99,5 @@ export function useAppMenu({
       onClose={() => setOpen(null)}
     />
   );
-  return { button, menu };
+  return { button, open: open !== null, menu };
 }

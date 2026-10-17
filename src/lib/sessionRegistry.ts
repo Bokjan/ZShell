@@ -37,6 +37,11 @@ export interface SessionRegistry {
   get(key: number): PaneSession | undefined;
   /** The pane's terminal, while it is shown. */
   screen(key: number): TerminalScreen | undefined;
+  /**
+   * Calls `listener` when a pane's session and terminal come or go (what `get` and `screen`
+   * return), for `useSyncExternalStore`; returns what stops it.
+   */
+  subscribe(listener: () => void): () => void;
   /** Closes the pane's session and connects again. */
   reconnect(key: number): void;
   /** Gives the pane's terminal the keyboard focus. */
@@ -89,6 +94,10 @@ export function createSessionRegistry(
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
   const zmodemPhases = new Map<number, ZmodemPhase>();
+  const listeners = new Set<() => void>();
+  const changed = () => {
+    for (const listener of listeners) listener();
+  };
 
   return {
     attach(key, view) {
@@ -190,6 +199,7 @@ export function createSessionRegistry(
       );
       sessions.set(key, session);
       views.set(key, view);
+      changed();
       return session;
     },
     detach(key, session) {
@@ -198,10 +208,15 @@ export function createSessionRegistry(
         sessions.delete(key);
         views.delete(key);
         zmodemPhases.delete(key);
+        changed();
       }
     },
     get: (key) => sessions.get(key),
     screen: (key) => views.get(key)?.screen,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
     reconnect: (key) => sessions.get(key)?.reconnect(),
     focus: (key) => views.get(key)?.focus(),
     hasSelection: (key) => views.get(key)?.hasSelection() ?? false,

@@ -497,7 +497,13 @@ function App() {
 
   return (
     <div className={`app${fullScreen.on ? " full-screen" : ""}`}>
-      <Sidebar searchFocusKey={searchFocusKey} handlers={sidebarHandlers} appMenu={appMenu.button} />
+      <Sidebar
+        searchFocusKey={searchFocusKey}
+        handlers={sidebarHandlers}
+        appMenu={appMenu.button}
+        appMenuOpen={appMenu.open}
+        update={updates.available}
+      />
       <main>
         <TabBar
           tabs={tabs}

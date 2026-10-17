@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Profile } from "../ipc/api";
 import type { Pane } from "../lib/panes";
-import type { SessionRegistry } from "../lib/sessionRegistry";
+import type { SessionRegistry, TerminalScreen } from "../lib/sessionRegistry";
 import { address, serialSummary } from "../lib/sessions";
 import { useMediaQuery } from "../hooks/settings";
 import type { TrafficMeter } from "../lib/traffic";
@@ -33,7 +33,7 @@ const LIGHT_REDUCED_MS = 400;
 export function StatusBar({ pane, profile, sessions }: Props) {
   const { t } = useTranslation();
   const screen = useScreen(sessions, pane.key);
-  const meter = useMeter(sessions, pane);
+  const meter = useRegistered(sessions, () => sessions.get(pane.key)?.traffic);
   const connection = profile?.connection;
   const serial = connection?.protocol === "serial" ? connection : null;
   return (
@@ -163,39 +163,33 @@ function useLights(meter: TrafficMeter | undefined, hold: number) {
 }
 
 /**
- * The pane's traffic meter, looked up after rendering: a new pane's terminal attaches its
- * session in an effect, which has run by the time this one does (the terminals come before the
- * status bar) but not when the status bar renders. Looked up again whenever the pane changes;
- * the one found is kept with its pane's key, so another pane never shows it while its own is
- * looked up.
+ * What the registry has for the pane (its session, its terminal), rendering again when that
+ * comes or goes: a new pane's terminal attaches its session in an effect, after the status bar
+ * has rendered, and a terminal shown again attaches a new one.
  */
-function useMeter(sessions: SessionRegistry, pane: Pane): TrafficMeter | undefined {
-  const [found, setFound] = useState<{ key: number; meter: TrafficMeter | undefined } | null>(null);
-  useEffect(() => {
-    const meter = sessions.get(pane.key)?.traffic;
-    setFound((found) => (found?.key === pane.key && found.meter === meter ? found : { key: pane.key, meter }));
-  }, [sessions, pane]);
-  return found?.key === pane.key ? found.meter : undefined;
+function useRegistered<T>(sessions: SessionRegistry, read: () => T): T {
+  return useSyncExternalStore(sessions.subscribe, read);
 }
 
 /** The pane's terminal size and cursor, at most once a frame; null until its terminal is shown. */
 function useScreen(sessions: SessionRegistry, key: number) {
-  const [state, setState] = useState<{ cols: number; rows: number; row: number; column: number } | null>(null);
+  const screen = useRegistered(sessions, () => sessions.screen(key));
+  // Kept with the terminal it was read from, so that another one never shows it.
+  const [state, setState] = useState<{ from: TerminalScreen; shown: { cols: number; rows: number; row: number; column: number } } | null>(
+    null,
+  );
   useEffect(() => {
-    const screen = sessions.screen(key);
-    if (!screen) {
-      setState(null);
-      return;
-    }
+    if (!screen) return;
     let frame = 0;
     const read = () => {
       frame = 0;
       const next = { ...screen.size(), ...screen.cursor() };
-      setState((state) =>
-        state && state.cols === next.cols && state.rows === next.rows && state.row === next.row && state.column === next.column
+      setState((state) => {
+        const shown = state?.from === screen ? state.shown : null;
+        return shown && shown.cols === next.cols && shown.rows === next.rows && shown.row === next.row && shown.column === next.column
           ? state
-          : next,
-      );
+          : { from: screen, shown: next };
+      });
     };
     read();
     const unsubscribe = screen.subscribe(() => {
@@ -205,8 +199,8 @@ function useScreen(sessions: SessionRegistry, key: number) {
       unsubscribe();
       cancelAnimationFrame(frame);
     };
-  }, [sessions, key]);
-  return state;
+  }, [screen]);
+  return screen && state?.from === screen ? state.shown : null;
 }
 
 /** Whole seconds left until `at` (`Date.now()`), changing as each second passes; null without one. */

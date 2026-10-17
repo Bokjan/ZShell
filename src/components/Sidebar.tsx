@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import type { AppMenuButton } from "../app/useAppMenu";
+import type { Release } from "../hooks/updates";
 import { announce } from "../lib/announce";
 import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../ipc/api";
 import { directory, recentProfiles as recentOf } from "../lib/directory";
@@ -69,11 +70,11 @@ interface Props {
   /** Changes when the search shortcut is pressed, to focus the search box. */
   searchFocusKey: number;
   handlers: SidebarHandlers;
-  /**
-   * The app menu, opened by the app's icon and name outside macOS; a newer version marks it,
-   * and on macOS the settings button, where the check is.
-   */
+  /** The app menu, opened by the app's icon and name outside macOS. */
   appMenu: AppMenuButton;
+  appMenuOpen: boolean;
+  /** A newer version, which marks the app menu's button, and on macOS the settings button, where the check is. */
+  update: Release | null;
 }
 
 const DEFAULT_WIDTH = 260;
@@ -109,12 +110,11 @@ type Drop = { key: string; position: "before" | "after" | "into" } | { key: null
  * program shows a spinner): its handlers come as one stable object, checked in development.
  */
 export function Sidebar(props: Props) {
-  const { searchFocusKey, handlers, appMenu } = props;
+  useStableProps("Sidebar", props, ["handlers", "appMenu"]);
+  const { searchFocusKey, handlers, appMenu, appMenuOpen, update } = props;
   // Taken apart here: React Compiler treats an object holding a ref as a ref, and reading any of
   // it while rendering would keep the whole component from being compiled.
-  const { ref: appMenuRef, open: appMenuOpen, update, toggle: toggleAppMenu } = appMenu;
-  // The app menu's object changes as it opens and closes; its function must not.
-  useStableProps("Sidebar", { searchFocusKey, handlers, toggleAppMenu }, ["handlers"]);
+  const { ref: appMenuRef, toggle: toggleAppMenu } = appMenu;
   const { onOpen, onOpenAll, onQuickConnect, onEdit, onNew, onImportSshConfig, onSettings } = handlers;
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
