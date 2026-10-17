@@ -9,26 +9,42 @@
 //! later, and only delays the ordering for drags of selected text. So Wry's web view class
 //! gets its own `acceptsFirstMouse:`, `shouldDelayWindowOrderingForEvent:` and `mouseDown:`,
 //! which defer to the originals outside the area.
+//!
+//! Also: what a window entering or leaving full screen does ([`watch_full_screen`]). What is
+//! kept for each window goes when it is destroyed ([`forget`]).
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_char;
 use std::sync::{Once, OnceLock};
 
+use std::ptr::NonNull;
+
+use block2::RcBlock;
 use objc2::ffi::{class_replaceMethod, method_getTypeEncoding};
-use objc2::runtime::{AnyClass, Bool, Imp, Sel};
+use objc2::rc::Retained;
+use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, NSObjectProtocol, ProtocolObject, Sel};
 use objc2::{sel, MainThreadMarker};
-use objc2_app_kit::{NSApplication, NSEvent, NSView};
+use objc2_app_kit::{NSApplication, NSEvent, NSView, NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification};
+use objc2_foundation::{NSNotification, NSNotificationCenter};
+use tauri::{Manager, WebviewWindow};
 
 use super::Rect;
 
-// Only touched on the main thread, where AppKit asks about presses.
+// Only touched on the main thread, where AppKit asks about presses and posts the window's
+// notifications.
 thread_local! {
-    /// Each web view's drag area (by the view's address), in its CSS pixels.
-    static AREAS: RefCell<HashMap<usize, Rect>> = RefCell::new(HashMap::new());
+    /// Each web view's drag area (by the view's address), in its CSS pixels, with the label of
+    /// its window.
+    static AREAS: RefCell<HashMap<usize, (String, Rect)>> = RefCell::new(HashMap::new());
+    /// Each window's full screen observers, by its label.
+    static OBSERVERS: RefCell<HashMap<String, Vec<Observer>>> = RefCell::new(HashMap::new());
     /// The press being handled is on a drag area, with the window's ordering delayed.
     static DELAYED: Cell<bool> = const { Cell::new(false) };
 }
+
+/// The token for an observer of the notification center.
+type Observer = Retained<ProtocolObject<dyn NSObjectProtocol>>;
 
 type EventQuery = unsafe extern "C-unwind" fn(&NSView, Sel, &NSEvent) -> Bool;
 type EventHandler = unsafe extern "C-unwind" fn(&NSView, Sel, &NSEvent);
@@ -38,14 +54,66 @@ static ACCEPTS_FIRST_MOUSE: OnceLock<EventQuery> = OnceLock::new();
 static SHOULD_DELAY: OnceLock<EventQuery> = OnceLock::new();
 static MOUSE_DOWN: OnceLock<EventHandler> = OnceLock::new();
 
-/// Sets the drag area of `view`, a web view; `None` removes it.
-pub(super) fn set_area(view: &NSView, rect: Option<Rect>) {
+/// Sets the drag area of `view`, window `label`'s web view; `None` removes it. On the main
+/// thread.
+pub(super) fn set_area(view: &NSView, label: &str, rect: Option<Rect>) {
     static INSTALL: Once = Once::new();
     INSTALL.call_once(|| install(view.class()));
     AREAS.with_borrow_mut(|areas| match rect {
-        Some(rect) => areas.insert(view as *const NSView as usize, rect),
+        Some(rect) => areas.insert(view as *const NSView as usize, (label.to_owned(), rect)),
         None => areas.remove(&(view as *const NSView as usize)),
     });
+}
+
+/// How long after a full screen transition the web view takes the focus back.
+const REFOCUS_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// As the window enters or leaves full screen (its own or the terminals'): the menu bar's full
+/// screen item says what it now does (`menu::show_full_screen`), and the web view gets the
+/// keyboard focus back. Once the window has left full screen, the focus is on the window
+/// rather than the web view, so keys go nowhere until it is clicked: the web view gets it
+/// back shortly after either transition ends, since focusing it right away is undone by what
+/// the window still does as the transition finishes.
+pub(super) fn watch_full_screen(window: &WebviewWindow) -> tauri::Result<()> {
+    let window = window.clone();
+    window.app_handle().clone().run_on_main_thread(move || {
+        let Ok(ns_window) = window.ns_window() else { return };
+        let center = NSNotificationCenter::defaultCenter();
+        let mut observers = Vec::new();
+        // SAFETY: the notification names are AppKit's constants.
+        for name in unsafe { [NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification] } {
+            let webview = window.as_ref().clone();
+            let app = window.app_handle().clone();
+            let block = RcBlock::new(move |_: NonNull<NSNotification>| {
+                crate::menu::show_full_screen(&app);
+                let webview = webview.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(REFOCUS_DELAY).await;
+                    let _ = webview.set_focus();
+                });
+            });
+            // SAFETY: `ns_window` is the window's NSWindow, which is alive now; the observer is
+            // removed once the window is destroyed ([`forget`]), before the address can be
+            // another window's.
+            observers.push(unsafe {
+                center.addObserverForName_object_queue_usingBlock(Some(name), Some(&*ns_window.cast::<AnyObject>()), None, &block)
+            });
+        }
+        OBSERVERS.with_borrow_mut(|all| all.insert(window.label().to_owned(), observers));
+    })
+}
+
+/// Lets go of what was kept for window `label`, now destroyed: its drag area and its full
+/// screen observers. On the main thread.
+pub(super) fn forget(label: &str) {
+    AREAS.with_borrow_mut(|areas| areas.retain(|_, (owner, _)| owner != label));
+    if let Some(observers) = OBSERVERS.with_borrow_mut(|all| all.remove(label)) {
+        let center = NSNotificationCenter::defaultCenter();
+        for observer in observers {
+            // SAFETY: a token the center gave for an observer it keeps.
+            unsafe { center.removeObserver(observer.as_ref()) };
+        }
+    }
 }
 
 /// Replaces the methods on `class`, the web view's (Wry's subclass of `WKWebView`): `imp`
@@ -74,7 +142,7 @@ fn install(class: &AnyClass) {
 
 /// Whether `event`, a press, is on the drag area of `view`.
 fn in_area(view: &NSView, event: &NSEvent) -> bool {
-    let Some(rect) = AREAS.with_borrow(|areas| areas.get(&(view as *const NSView as usize)).copied()) else { return false };
+    let Some(rect) = AREAS.with_borrow(|areas| areas.get(&(view as *const NSView as usize)).map(|(_, rect)| *rect)) else { return false };
     let point = view.convertPoint_fromView(event.locationInWindow(), None);
     // The page's coordinates grow downwards.
     let y = if view.isFlipped() { point.y } else { view.bounds().size.height - point.y };

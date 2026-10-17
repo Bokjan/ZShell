@@ -119,6 +119,8 @@ pub fn destroyed(window: &tauri::Window) {
     if let Ok(hwnd) = window.hwnd() {
         win::forget(hwnd.0 as isize);
     }
+    #[cfg(target_os = "macos")]
+    macos::forget(window.label());
     changed(window.app_handle());
 }
 
@@ -161,7 +163,7 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
         window.show()?;
     }
     #[cfg(target_os = "macos")]
-    watch_full_screen(&window);
+    macos::watch_full_screen(&window)?;
     Ok(window)
 }
 
@@ -358,46 +360,6 @@ pub fn quit(app: AppHandle) {
     app.exit(0);
 }
 
-/// How long after a full screen transition the web view takes the focus back.
-#[cfg(target_os = "macos")]
-const REFOCUS_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
-
-/// As the window enters or leaves full screen (its own or the terminals'): the menu bar's full
-/// screen item says what it now does (`menu::show_full_screen`), and the web view gets the
-/// keyboard focus back. Once the window has left full screen, the focus is on the window
-/// rather than the web view, so keys go nowhere until it is clicked: the web view gets it
-/// back shortly after either transition ends, since focusing it right away is undone by what
-/// the window still does as the transition finishes.
-#[cfg(target_os = "macos")]
-fn watch_full_screen(window: &WebviewWindow) {
-    use std::ptr::NonNull;
-
-    use block2::RcBlock;
-    use objc2::runtime::AnyObject;
-    use objc2_app_kit::{NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification};
-    use objc2_foundation::{NSNotification, NSNotificationCenter};
-
-    let Ok(ns_window) = window.ns_window() else { return };
-    let center = NSNotificationCenter::defaultCenter();
-    // SAFETY: the notification names are AppKit's constants.
-    for name in unsafe { [NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification] } {
-        let webview = window.as_ref().clone();
-        let app = window.app_handle().clone();
-        let block = RcBlock::new(move |_: NonNull<NSNotification>| {
-            crate::menu::show_full_screen(&app);
-            let webview = webview.clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(REFOCUS_DELAY).await;
-                let _ = webview.set_focus();
-            });
-        });
-        // SAFETY: `ns_window` is the window's NSWindow, which outlives the observer (both last
-        // as long as the app). The center keeps the observer, so the token can go.
-        let _ =
-            unsafe { center.addObserverForName_object_queue_usingBlock(Some(name), Some(&*ns_window.cast::<AnyObject>()), None, &block) };
-    }
-}
-
 /// Brings the current window (see [`current`]) forward, restored if it was minimized.
 #[cfg(windows)]
 pub fn show_current(app: &AppHandle) {
@@ -497,11 +459,14 @@ pub fn file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()> {
 /// ([`keep_behind`]).
 pub fn set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
-    window.with_webview(move |webview| {
-        // SAFETY: on macOS the platform webview is a WKWebView, an NSView.
-        let view: &objc2_app_kit::NSView = unsafe { &*(webview.inner() as *const objc2_app_kit::NSView) };
-        macos::set_area(view, rect);
-    })?;
+    {
+        let label = window.label().to_owned();
+        window.with_webview(move |webview| {
+            // SAFETY: on macOS the platform webview is a WKWebView, an NSView.
+            let view: &objc2_app_kit::NSView = unsafe { &*(webview.inner() as *const objc2_app_kit::NSView) };
+            macos::set_area(view, &label, rect);
+        })?;
+    }
     #[cfg(not(target_os = "macos"))]
     let _ = (window, rect);
     Ok(())
