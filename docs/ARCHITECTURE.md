@@ -64,7 +64,7 @@
 | `persist.rs` | JSON 文件的读写：读不出的文件、原子写入、手写文件的 id |
 | `encoding.rs` / `local_name.rs` | 会话的字符编码；对方给出的文件名转成本地文件名 |
 | `import/` / `backup.rs` | ssh_config 导入；会话导出与导入 |
-| `window/` | 窗口：按平台创建，新窗口要显示的内容，退出前询问各窗口；macOS 的红绿灯，Windows 的窗口按钮与贴靠边框，Linux 的空标题栏、窗口菜单与主题 |
+| `window/` | 窗口：按平台创建，新窗口要显示的内容与退出前询问各窗口（`inbox.rs`，不依赖窗口、可单独测试）；各平台文件（`macos.rs`、`win.rs`、`linux.rs`）提供同一组函数，`mod.rs` 经 `platform` 调用，缺了哪个都编译不过：macOS 的红绿灯，Windows 的窗口按钮与贴靠边框，Linux 的空标题栏、窗口菜单与主题 |
 | `desktop.rs` | Linux 桌面的设置（配色方案、等宽字体），经设置 portal 读取 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
 | `events.rs` | 后端发给页面的事件：名字与 payload 类型在一处声明 |

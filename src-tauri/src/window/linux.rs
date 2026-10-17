@@ -10,15 +10,17 @@
 //! ([`system_theme`]), as GTK 4 and libadwaita apps do. tao also sets it to the desktop's
 //! scheme on its own, whenever it creates a window and whenever the scheme changes, however the
 //! app's is set: a theme chosen in the settings is put back each time ([`watch_theme`]).
+//!
+//! This is Linux's part of `window` (see its module docs).
 
 use std::cell::RefCell;
 use std::sync::Mutex;
 
 use gtk::glib::Propagation;
 use gtk::prelude::*;
-use tauri::{AppHandle, Manager, Theme, WebviewWindow};
+use tauri::{AppHandle, Manager, Theme, WebviewWindow, WebviewWindowBuilder, Wry};
 
-use super::{DoubleClick, WindowButton};
+use super::{DoubleClick, Rect, WindowButton};
 
 thread_local! {
     /// The last button press on a web view (on the main thread, where GTK runs). Wayland only
@@ -29,7 +31,7 @@ thread_local! {
 /// Before the window is first shown, on the main thread: gives it an empty title bar (which
 /// GTK only takes before the window is realized), and keeps its web view's button presses
 /// for the window menu.
-pub fn prepare(window: &WebviewWindow) -> tauri::Result<()> {
+fn replace_title_bar(window: &WebviewWindow) -> tauri::Result<()> {
     window.gtk_window()?.set_titlebar(Some(&gtk::EventBox::new()));
     window.with_webview(|webview| {
         webview.inner().connect_button_press_event(|_, event| {
@@ -57,7 +59,7 @@ pub fn present(window: &WebviewWindow, token: &str) {
 
 /// The window menu (Minimize, Maximize, Move, Resize, Always on Top, Close…) at the pointer,
 /// as a right click on a native title bar shows it. On the main thread.
-pub fn show_window_menu(window: &WebviewWindow) {
+fn show_window_menu(window: &WebviewWindow) {
     let Some(mut event) = LAST_PRESS.with(|press| press.borrow().clone()) else { return };
     if let Some(gdk_window) = window.gtk_window().ok().and_then(|window| window.window()) {
         gdk_window.show_window_menu(&mut event);
@@ -66,7 +68,7 @@ pub fn show_window_menu(window: &WebviewWindow) {
 
 /// What a double click on the title bar does, as the desktop says (GNOME's "Titlebar
 /// Actions"); lowering the window and its menu aren't offered. On the main thread.
-pub fn double_click_action() -> DoubleClick {
+pub(super) fn double_click_action() -> DoubleClick {
     let action = gtk::Settings::default().and_then(|settings| settings.property::<Option<String>>("gtk-titlebar-double-click"));
     match action.as_deref() {
         Some("minimize") => DoubleClick::Minimize,
@@ -80,7 +82,7 @@ pub fn double_click_action() -> DoubleClick {
 /// from left to right. They all go at the right end of the tab bar, even where the layout puts
 /// them on the left (the left end has the sidebar's controls): those go in mirror order, so the
 /// one at the window's edge stays at the edge. On the main thread.
-pub fn buttons() -> Vec<WindowButton> {
+pub(super) fn buttons() -> Vec<WindowButton> {
     let layout = gtk::Settings::default().and_then(|settings| settings.gtk_decoration_layout()).map(|layout| layout.to_string());
     parse_layout(layout.as_deref().unwrap_or(":minimize,maximize,close"))
 }
@@ -114,7 +116,7 @@ pub fn watch_buttons(app: &AppHandle) {
 }
 
 /// The desktop's color scheme (see `desktop`). Blocks for a moment at most.
-pub fn system_theme() -> Theme {
+fn system_theme() -> Theme {
     if crate::desktop::prefers_dark() {
         Theme::Dark
     } else {
@@ -125,8 +127,9 @@ pub fn system_theme() -> Theme {
 /// The theme chosen in the settings, or `None` to follow the desktop's.
 static CHOSEN: Mutex<Option<Theme>> = Mutex::new(None);
 
-/// Sets the app's appearance to `theme`, or the desktop's (`None`), through `window`.
-pub fn set_theme(window: &WebviewWindow, theme: Option<Theme>) -> tauri::Result<()> {
+/// Sets the app's appearance to `theme`, or the desktop's (`None`), through `window`. Off the
+/// main thread: it may ask the settings portal.
+pub(super) fn set_theme(window: &WebviewWindow, theme: Option<Theme>) -> tauri::Result<()> {
     *CHOSEN.lock().unwrap() = theme;
     window.set_theme(Some(theme.unwrap_or_else(system_theme)))
 }
@@ -151,6 +154,67 @@ pub fn watch_theme(app: &AppHandle) {
         }
     });
 }
+
+/// GTK's client-side decorations, with the title bar replaced before the window is shown
+/// ([`prepare`]).
+pub(super) fn title_bar(builder: WebviewWindowBuilder<'_, Wry, AppHandle>) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
+    builder
+}
+
+/// The title bar is replaced before the window is first shown.
+pub(super) const PREPARED_HIDDEN: bool = true;
+
+/// See [`replace_title_bar`]; queued on the main thread before the window is shown.
+pub(super) fn prepare(window: &WebviewWindow) -> tauri::Result<()> {
+    let window_ = window.clone();
+    window.run_on_main_thread(move || {
+        let _ = replace_title_bar(&window_);
+    })
+}
+
+pub(super) fn created(_window: &WebviewWindow) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// Nothing to set up before the first window here (see `watch_buttons`, `watch_theme`).
+pub(super) fn starting() {}
+
+/// Nothing is kept per window.
+pub(super) fn forget(_window: &tauri::Window) {}
+
+/// On the main thread.
+pub(super) fn bell() {
+    if let Some(display) = gtk::gdk::Display::default() {
+        display.beep();
+    }
+}
+
+/// See [`show_window_menu`].
+pub(super) fn system_menu(window: WebviewWindow) -> tauri::Result<()> {
+    window.clone().run_on_main_thread(move || show_window_menu(&window))
+}
+
+/// File dialogs show the pointer by themselves.
+pub(super) fn file_dialog(_window: WebviewWindow, _open: bool) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// A press in the background brings the window forward (`window::set_drag_area`).
+pub(super) fn set_drag_area(_window: WebviewWindow, _rect: Option<Rect>) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// No border to color while snapped (Windows 11's).
+pub(super) fn set_snapped_border_color(_window: WebviewWindow, _color: String) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// The snap layouts are Windows 11's.
+pub(super) fn set_maximize_button(_window: WebviewWindow, _rect: Option<Rect>) -> tauri::Result<()> {
+    Ok(())
+}
+
+pub(super) fn update_border(_window: &tauri::Window) {}
 
 #[cfg(test)]
 mod tests {

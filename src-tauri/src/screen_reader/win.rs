@@ -30,6 +30,8 @@ pub fn watch(changed: Changed) {
     if let Some(changed) = CHANGED.get() {
         changed(running());
     }
+    // SAFETY: a window class and a window of this thread, which runs their messages for as
+    // long as the app; the class name outlives them, and the procedure has the right signature.
     std::thread::spawn(|| unsafe {
         let class: Vec<u16> = "ZShellScreenReader\0".encode_utf16().collect();
         let instance = GetModuleHandleW(std::ptr::null());

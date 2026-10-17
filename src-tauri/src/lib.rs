@@ -1,3 +1,5 @@
+// Every unsafe block says why it is sound; CI checks each platform's code (`-D warnings`).
+#![warn(clippy::undocumented_unsafe_blocks)]
 #[macro_use]
 mod i18n;
 

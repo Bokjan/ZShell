@@ -102,6 +102,7 @@ impl Shared {
 /// Handles the thread's messages for a moment, as a modal loop would; returns whether the
 /// application is quitting (WM_QUIT, left for the main loop).
 fn pump_messages() -> bool {
+    // SAFETY: this thread's messages, into a MSG owned here.
     unsafe {
         MsgWaitForMultipleObjects(None, false, 50, QS_ALLINPUT);
         let mut msg = MSG::default();
@@ -134,6 +135,8 @@ fn drop_files(items: &[(String, PathBuf)]) -> windows::core::Result<HGLOBAL> {
     }
     names.push(0);
     let header = std::mem::size_of::<DROPFILES>();
+    // SAFETY: the block has room for the header and the names, is written while locked, and is
+    // unlocked before it is handed over.
     unsafe {
         let memory = GlobalAlloc(GHND, header + names.len() * 2)?;
         let base = GlobalLock(memory) as *mut u8;
@@ -162,6 +165,7 @@ struct DataObject {
 
 impl IDataObject_Impl for DataObject_Impl {
     fn GetData(&self, format: *const FORMATETC) -> windows::core::Result<STGMEDIUM> {
+        // SAFETY: COM passes null or a FORMATETC that lives for the call.
         let Some(format) = (unsafe { format.as_ref() }) else { return Err(DV_E_FORMATETC.into()) };
         if !is_hdrop(format) {
             return Err(DV_E_FORMATETC.into());
@@ -179,6 +183,7 @@ impl IDataObject_Impl for DataObject_Impl {
     }
 
     fn QueryGetData(&self, format: *const FORMATETC) -> HRESULT {
+        // SAFETY: COM passes null or a FORMATETC that lives for the call.
         match unsafe { format.as_ref() } {
             Some(format) if is_hdrop(format) => S_OK,
             _ => DV_E_FORMATETC,
@@ -186,6 +191,7 @@ impl IDataObject_Impl for DataObject_Impl {
     }
 
     fn GetCanonicalFormatEtc(&self, _format: *const FORMATETC, out: *mut FORMATETC) -> HRESULT {
+        // SAFETY: COM passes null or a FORMATETC of the caller's to write.
         if let Some(out) = unsafe { out.as_mut() } {
             out.ptd = std::ptr::null_mut();
         }
@@ -200,6 +206,7 @@ impl IDataObject_Impl for DataObject_Impl {
         if direction != DATADIR_GET.0 as u32 {
             return Err(E_NOTIMPL.into());
         }
+        // SAFETY: the formats, which the enumerator copies.
         unsafe { SHCreateStdEnumFmtEtc(&[hdrop_format()]) }
     }
 
@@ -259,6 +266,7 @@ impl IDropSource_Impl for DropSource_Impl {
         }
         let window = HWND(self.shared.window as *mut _);
         let mut point = POINT::default();
+        // SAFETY: a POINT owned here; `window` is the window the drag started from.
         unsafe {
             let _ = GetCursorPos(&mut point);
             let inside = GetAncestor(WindowFromPoint(point), GA_ROOT) == window;
@@ -305,6 +313,8 @@ pub(super) fn start(
                 DataObject { shared: shared.clone(), async_mode: AtomicBool::new(true), in_operation: AtomicBool::new(false) }.into();
             let source: IDropSource = DropSource { shared: shared.clone() }.into();
             let mut effect = DROPEFFECT_NONE;
+            // SAFETY: on the main thread, where OLE is initialized, with objects that live
+            // until it returns.
             let hr = unsafe { DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect) };
             let release = *shared.release.lock().unwrap();
             // A window that refuses the drop still ends it with DRAGDROP_S_DROP, but with no

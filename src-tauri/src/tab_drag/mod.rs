@@ -52,8 +52,9 @@ pub enum DropTarget {
     /// Over window `label`'s tab bar, `x` CSS pixels from the left of its page.
     Window { label: String, x: f64 },
     /// Anywhere else (outside the windows, or over another window but not its tab bar), with
-    /// the cursor in screen coordinates, for the window it would open in.
-    Elsewhere { cursor: Point },
+    /// the cursor in screen coordinates, for the window it would open in; `None` where the
+    /// system doesn't tell (Wayland), which places that window itself.
+    Elsewhere { cursor: Option<Point> },
     /// Out of its window on Wayland: the system's drag has taken over, and where the tab goes
     /// comes when it ends (`tab-drag-native-end`, then [`end`]).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -68,11 +69,12 @@ pub struct TabDragNativeEnd {
     pub dropped: bool,
 }
 
-/// A tab dropped outside the windows: the cursor in screen coordinates (from [`DropTarget`]),
-/// and where it held the tab in the window it came from, in CSS pixels from its top left.
+/// A tab dropped outside the windows: the cursor in screen coordinates, if known (from
+/// [`DropTarget`]), and where it held the tab in the window it came from, in CSS pixels from
+/// its top left.
 #[derive(Clone, Copy, Deserialize, TS)]
 pub struct Dropped {
-    pub cursor: Point,
+    pub cursor: Option<Point>,
     pub grab: Point,
 }
 
@@ -214,20 +216,20 @@ fn target_at_cursor(app: &AppHandle, source: &str, outside: bool, id: Option<Str
         return match (outside, id) {
             (false, _) => DropTarget::Here,
             (true, Some(id)) if linux::start(app, source, id.clone()) => DropTarget::Native,
-            (true, _) => DropTarget::Elsewhere { cursor: Point { x: 0.0, y: 0.0 } },
+            (true, _) => DropTarget::Elsewhere { cursor: None },
         };
     }
     let _ = (outside, id);
     // Nowhere new if the cursor can't be read.
     let Some(cursor) = cursor(app) else { return DropTarget::Here };
-    let Some(window) = window_at_cursor(app, cursor) else { return DropTarget::Elsewhere { cursor } };
+    let Some(window) = window_at_cursor(app, cursor) else { return DropTarget::Elsewhere { cursor: Some(cursor) } };
     if window.label() == source {
         return DropTarget::Here;
     }
     let tab_bar = app.state::<TabDrag>().tab_bars.lock().unwrap().get(window.label()).copied();
     match (tab_bar, page_point(&window, cursor)) {
         (Some(rect), Some(Point { x, y })) if rect.contains(x, y) => DropTarget::Window { label: window.label().to_owned(), x },
-        _ => DropTarget::Elsewhere { cursor },
+        _ => DropTarget::Elsewhere { cursor: Some(cursor) },
     }
 }
 
@@ -294,6 +296,7 @@ fn page_point(window: &WebviewWindow, point: Point) -> Option<Point> {
 pub fn place_dropped(app: &AppHandle, source: &WebviewWindow, dropped: Dropped) -> Option<tauri::Position> {
     let size = source.inner_size().ok()?.to_logical::<f64>(source.scale_factor().ok()?);
     let Dropped { cursor, grab } = dropped;
+    let cursor = cursor?;
     let monitor = app.available_monitors().ok()?.into_iter().find(|monitor| {
         let scale = monitor.scale_factor();
         let (position, size) = (monitor.position(), monitor.size());

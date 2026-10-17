@@ -47,9 +47,10 @@ impl System for Platform {
         });
         // macOS shows it as "“ZShell” is trying to <reason>."
         let reason = NSString::from_str(&t!("appLock.reasonMacos"));
+        // SAFETY: a new context takes nothing.
+        let context = unsafe { LAContext::new() };
         // SAFETY: the reply block is sendable (it only holds a channel's sender), and the
         // context lives until the reply has come, as evaluation requires.
-        let context = unsafe { LAContext::new() };
         unsafe { context.evaluatePolicy_localizedReason_reply(LAPolicy::DeviceOwnerAuthentication, &reason, &reply) };
         let (success, error) = receiver.recv().map_err(|_| Error::new("appLock.failed"))?;
         drop(context);

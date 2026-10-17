@@ -10,8 +10,9 @@
 //! gets its own `acceptsFirstMouse:`, `shouldDelayWindowOrderingForEvent:` and `mouseDown:`,
 //! which defer to the originals outside the area.
 //!
-//! Also: what a window entering or leaving full screen does ([`watch_full_screen`]). What is
-//! kept for each window goes when it is destroyed ([`forget`]).
+//! Also the rest of macOS's part of `window` (see its module docs): the overlay title bar
+//! with the traffic lights, what entering or leaving full screen does ([`watch_full_screen`]),
+//! and what is kept for each window, which goes when it is destroyed ([`forget`]).
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -27,9 +28,9 @@ use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, NSObjectProtocol, ProtocolO
 use objc2::{sel, MainThreadMarker};
 use objc2_app_kit::{NSApplication, NSEvent, NSView, NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification};
 use objc2_foundation::{NSNotification, NSNotificationCenter};
-use tauri::{Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
 
-use super::Rect;
+use super::{DoubleClick, Rect, WindowButton};
 
 // Only touched on the main thread, where AppKit asks about presses and posts the window's
 // notifications.
@@ -56,7 +57,7 @@ static MOUSE_DOWN: OnceLock<EventHandler> = OnceLock::new();
 
 /// Sets the drag area of `view`, window `label`'s web view; `None` removes it. On the main
 /// thread.
-pub(super) fn set_area(view: &NSView, label: &str, rect: Option<Rect>) {
+fn set_area(view: &NSView, label: &str, rect: Option<Rect>) {
     static INSTALL: Once = Once::new();
     INSTALL.call_once(|| install(view.class()));
     AREAS.with_borrow_mut(|areas| match rect {
@@ -74,7 +75,7 @@ const REFOCUS_DELAY: std::time::Duration = std::time::Duration::from_millis(200)
 /// rather than the web view, so keys go nowhere until it is clicked: the web view gets it
 /// back shortly after either transition ends, since focusing it right away is undone by what
 /// the window still does as the transition finishes.
-pub(super) fn watch_full_screen(window: &WebviewWindow) -> tauri::Result<()> {
+fn watch_full_screen(window: &WebviewWindow) -> tauri::Result<()> {
     let window = window.clone();
     window.app_handle().clone().run_on_main_thread(move || {
         let Ok(ns_window) = window.ns_window() else { return };
@@ -103,9 +104,10 @@ pub(super) fn watch_full_screen(window: &WebviewWindow) -> tauri::Result<()> {
     })
 }
 
-/// Lets go of what was kept for window `label`, now destroyed: its drag area and its full
-/// screen observers. On the main thread.
-pub(super) fn forget(label: &str) {
+/// Lets go of what was kept for `window`, now destroyed: its drag area and its full screen
+/// observers. On the main thread.
+pub(super) fn forget(window: &tauri::Window) {
+    let label = window.label();
     AREAS.with_borrow_mut(|areas| areas.retain(|_, (owner, _)| owner != label));
     if let Some(observers) = OBSERVERS.with_borrow_mut(|all| all.remove(label)) {
         let center = NSNotificationCenter::defaultCenter();
@@ -181,3 +183,90 @@ unsafe extern "C-unwind" fn mouse_down(this: &NSView, sel: Sel, event: &NSEvent)
         original(this, sel, event);
     }
 }
+
+/// Where the traffic lights sit, centered in the frontend's 34px title bar.
+const TRAFFIC_LIGHTS: tauri::LogicalPosition<f64> = tauri::LogicalPosition { x: 14.0, y: 19.0 };
+
+/// The title bar: the page draws under it, the traffic lights over the page.
+pub(super) fn title_bar(builder: WebviewWindowBuilder<'_, Wry, AppHandle>) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
+    builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS)
+}
+
+/// Nothing to do before the window is first shown.
+pub(super) const PREPARED_HIDDEN: bool = false;
+
+pub(super) fn prepare(_window: &WebviewWindow) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// Once the window is shown: follows it entering and leaving full screen.
+pub(super) fn created(window: &WebviewWindow) -> tauri::Result<()> {
+    watch_full_screen(window)
+}
+
+/// Nothing to set up before the first window.
+pub(super) fn starting() {}
+
+/// On the main thread.
+pub(super) fn bell() {
+    objc2_app_kit::NSBeep();
+}
+
+/// What a double click on the title bar does, as the system setting says ("Double-click a
+/// window's title bar to"). On the main thread.
+pub(super) fn double_click_action() -> DoubleClick {
+    use objc2_foundation::{NSString, NSUserDefaults};
+
+    let defaults = NSUserDefaults::standardUserDefaults();
+    // "Maximize" (Zoom), "Fill" (macOS 15; zooming fills the screen too), "Minimize" or "None";
+    // older systems only had the minimize switch.
+    match defaults.stringForKey(&NSString::from_str("AppleActionOnDoubleClick")).map(|v| v.to_string()).as_deref() {
+        Some("Minimize") => DoubleClick::Minimize,
+        Some("None") => DoubleClick::Nothing,
+        Some(_) => DoubleClick::Zoom,
+        None if defaults.boolForKey(&NSString::from_str("AppleMiniaturizeOnDoubleClick")) => DoubleClick::Minimize,
+        None => DoubleClick::Zoom,
+    }
+}
+
+/// No window menu: the title bar's right click does nothing on macOS.
+pub(super) fn system_menu(_window: WebviewWindow) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// File dialogs show the pointer by themselves.
+pub(super) fn file_dialog(_window: WebviewWindow, _open: bool) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// See `window::set_drag_area`.
+pub(super) fn set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
+    let label = window.label().to_owned();
+    // On the main thread, where the web view runs this.
+    window.with_webview(move |webview| {
+        // SAFETY: on macOS the platform webview is a WKWebView, an NSView.
+        let view: &NSView = unsafe { &*(webview.inner() as *const NSView) };
+        set_area(view, &label, rect);
+    })
+}
+
+/// None: the traffic lights are the system's.
+pub(super) fn buttons() -> Vec<WindowButton> {
+    Vec::new()
+}
+
+pub(super) fn set_theme(window: &WebviewWindow, theme: Option<tauri::Theme>) -> tauri::Result<()> {
+    window.set_theme(theme)
+}
+
+/// No border to color while snapped (Windows 11's).
+pub(super) fn set_snapped_border_color(_window: WebviewWindow, _color: String) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// The snap layouts are Windows 11's.
+pub(super) fn set_maximize_button(_window: WebviewWindow, _rect: Option<Rect>) -> tauri::Result<()> {
+    Ok(())
+}
+
+pub(super) fn update_border(_window: &tauri::Window) {}

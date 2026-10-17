@@ -73,6 +73,7 @@ impl System for Platform {
             return None;
         }
         // Both are milliseconds since the system started, wrapping after 49.7 days.
+        // SAFETY: takes nothing.
         let idle = unsafe { GetTickCount() }.wrapping_sub(info.dwTime);
         Some(u64::from(idle) / 1000)
     }
@@ -94,6 +95,8 @@ pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
     if ON_LOCK.set(on_lock).is_err() {
         return;
     }
+    // SAFETY: a window class and a window of this thread, which runs their messages for as
+    // long as the app; the class name outlives them, and the procedure has the right signature.
     std::thread::spawn(|| unsafe {
         let class: Vec<u16> = "ZShellSystemEvents\0".encode_utf16().collect();
         let instance = GetModuleHandleW(std::ptr::null());

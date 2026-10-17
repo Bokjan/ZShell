@@ -374,7 +374,9 @@ mod tests {
         let name = unsafe { CStr::from_ptr(libc::ttyname(slave)) }.to_string_lossy().into_owned();
         // SAFETY: both descriptors are open and owned here; the slave is reopened by name.
         unsafe { libc::close(slave) };
-        (unsafe { File::from_raw_fd(master) }, name)
+        // SAFETY: `master` is open and owned here, by the file from now on.
+        let master = unsafe { File::from_raw_fd(master) };
+        (master, name)
     }
 
     #[tokio::test(flavor = "multi_thread")]

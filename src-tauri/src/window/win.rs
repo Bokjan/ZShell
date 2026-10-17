@@ -7,13 +7,18 @@
 //! hover and press for the button's style, and maximizes or restores on click itself.
 //! `WS_EX_LAYERED` or `WS_EX_TRANSPARENT` would make the hit test pass through it.
 //! Each window has its own button, kept by the window's handle.
+//!
+//! Also the rest of Windows' part of `window` (see its module docs): the window has no
+//! decorations, the system menu shows at a right click on the title bar, the border takes the
+//! title bar's color while snapped, and the pointer shows in file dialogs opened right after
+//! typing.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
@@ -33,7 +38,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_TOPMOST,
 };
 
-use super::Rect;
+use super::{DoubleClick, Rect, WindowButton};
 
 /// For reporting the button's state to the frontend from the window procedure.
 type IsWindowArranged = unsafe extern "system" fn(HWND) -> BOOL;
@@ -42,6 +47,8 @@ type IsWindowArranged = unsafe extern "system" fn(HWND) -> BOOL;
 /// Windows 10 builds don't have it, and a static import would keep the app from starting.
 fn is_window_arranged() -> Option<IsWindowArranged> {
     static FUNCTION: OnceLock<Option<IsWindowArranged>> = OnceLock::new();
+    // SAFETY: the name is a NUL-terminated wide string; user32 stays loaded (the app's windows
+    // need it), and the function found has the signature documented for `IsWindowArranged`.
     *FUNCTION.get_or_init(|| unsafe {
         let user32 = GetModuleHandleW(wide("user32.dll").as_ptr());
         if user32.is_null() {
@@ -53,10 +60,10 @@ fn is_window_arranged() -> Option<IsWindowArranged> {
 }
 
 /// The border's color while snapped, a `COLORREF`; the system's until the frontend sets it.
-pub(super) static SNAPPED_BORDER: AtomicU32 = AtomicU32::new(DWMWA_COLOR_DEFAULT);
+static SNAPPED_BORDER: AtomicU32 = AtomicU32::new(DWMWA_COLOR_DEFAULT);
 
 /// `#rrggbb` as a `COLORREF` (`0x00bbggrr`).
-pub(super) fn colorref(color: &str) -> Option<u32> {
+fn colorref(color: &str) -> Option<u32> {
     let hex = color.strip_prefix('#').filter(|hex| hex.len() == 6)?;
     let rgb = u32::from_str_radix(hex, 16).ok()?;
     Some(((rgb & 0xff) << 16) | (rgb & 0xff00) | (rgb >> 16))
@@ -68,7 +75,7 @@ static BORDERS: Mutex<BTreeMap<isize, u32>> = Mutex::new(BTreeMap::new());
 
 /// # Safety
 /// `hwnd` is one of the app's windows.
-pub(super) unsafe fn update_border(hwnd: HWND) {
+unsafe fn update_border_color(hwnd: HWND) {
     let Some(is_window_arranged) = is_window_arranged() else { return };
     let color = if is_window_arranged(hwnd) != 0 { SNAPPED_BORDER.load(Ordering::Relaxed) } else { DWMWA_COLOR_DEFAULT };
     if BORDERS.lock().unwrap().insert(hwnd as isize, color) != Some(color) {
@@ -77,7 +84,7 @@ pub(super) unsafe fn update_border(hwnd: HWND) {
     }
 }
 
-pub(super) static APP: OnceLock<AppHandle> = OnceLock::new();
+static APP: OnceLock<AppHandle> = OnceLock::new();
 
 use super::MaximizeButtonState as ButtonState;
 
@@ -118,14 +125,14 @@ fn set_state(parent: HWND, state: ButtonState) {
 }
 
 /// Forgets what was kept about a window that is gone, whose handle may be reused.
-pub(super) fn forget(hwnd: isize) {
+fn forget_handle(hwnd: isize) {
     BUTTONS.with_borrow_mut(|buttons| buttons.remove(&hwnd));
     BORDERS.lock().unwrap().remove(&hwnd);
 }
 
 /// # Safety
 /// On the main thread, with `parent` the window labelled `label`.
-pub(super) unsafe fn place_maximize_button(parent: HWND, label: String, rect: Option<Rect>, scale: f64) {
+unsafe fn place_maximize_button(parent: HWND, label: String, rect: Option<Rect>, scale: f64) {
     let existing = BUTTONS.with_borrow(|buttons| buttons.get(&(parent as isize)).map(|button| button.hwnd));
     let button = match existing {
         Some(button) => button,
@@ -228,7 +235,7 @@ unsafe extern "system" fn button_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
         WM_DESTROY => {
             let parent = BUTTONS.with_borrow(|buttons| buttons.iter().find(|(_, button)| button.hwnd == hwnd).map(|(parent, _)| *parent));
             if let Some(parent) = parent {
-                forget(parent);
+                forget_handle(parent);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
@@ -237,8 +244,8 @@ unsafe extern "system" fn button_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
 }
 
 /// # Safety
-/// On the main thread, with `hwnd` the main window.
-pub(super) unsafe fn show_system_menu(hwnd: HWND) {
+/// On the main thread, with `hwnd` one of the app's windows.
+unsafe fn show_system_menu(hwnd: HWND) {
     let menu = GetSystemMenu(hwnd, 0);
     if menu.is_null() {
         return;
@@ -279,13 +286,14 @@ thread_local! {
 /// to 0 shows it; lowering it as much once the last dialog has closed leaves it where
 /// WebView2 expects it. Chromium stopped calling `ShowCursor` for this in October 2026;
 /// TODO.md says when this can go.
-pub(super) fn file_dialog(open: bool) {
+fn count_file_dialog(open: bool) {
     let (mut dialogs, mut shown) = FILE_DIALOGS.get();
     if open {
         dialogs += 1;
         // Each call raises the count by one and returns it.
         loop {
             shown += 1;
+            // SAFETY: takes no pointers.
             if unsafe { ShowCursor(1) } >= 0 {
                 break;
             }
@@ -294,6 +302,7 @@ pub(super) fn file_dialog(open: bool) {
         dialogs -= 1;
         if dialogs == 0 {
             for _ in 0..shown {
+                // SAFETY: takes no pointers.
                 unsafe { ShowCursor(0) };
             }
             shown = 0;
@@ -325,7 +334,9 @@ thread_local! {
 const PRESS_ACTIVATION_SLACK: u32 = 500;
 
 /// Follows the foreground window, for [`keep_behind`]. On the main thread.
-pub(super) fn watch_foreground() {
+fn watch_foreground() {
+    // SAFETY: no module handle (out of context), and a callback with the hook's signature,
+    // called on this thread, which pumps messages.
     unsafe {
         FOREGROUND.set(GetForegroundWindow() as isize);
         SetWinEventHook(
@@ -389,6 +400,101 @@ pub unsafe fn keep_behind(hwnd: HWND, since_press: u32) {
 
 fn class_name(hwnd: HWND) -> String {
     let mut name = [0u16; 64];
+    // SAFETY: the buffer and its length in characters; a handle that is gone only fails.
     let length = unsafe { GetClassNameW(hwnd, name.as_mut_ptr(), name.len() as i32) };
     String::from_utf16_lossy(&name[..length.max(0) as usize])
+}
+
+/// No decorations: the page draws the title bar and the window buttons.
+pub(super) fn title_bar(builder: WebviewWindowBuilder<'_, Wry, AppHandle>) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
+    builder.decorations(false)
+}
+
+/// Nothing to do before the window is first shown.
+pub(super) const PREPARED_HIDDEN: bool = false;
+
+pub(super) fn prepare(_window: &WebviewWindow) -> tauri::Result<()> {
+    Ok(())
+}
+
+pub(super) fn created(_window: &WebviewWindow) -> tauri::Result<()> {
+    Ok(())
+}
+
+/// Before the first window, on the main thread: follows the foreground window.
+pub(super) fn starting() {
+    watch_foreground();
+}
+
+/// What was kept about `window`, now destroyed, goes.
+pub(super) fn forget(window: &tauri::Window) {
+    if let Ok(hwnd) = window.hwnd() {
+        forget_handle(hwnd.0 as isize);
+    }
+}
+
+/// On the main thread.
+pub(super) fn bell() {
+    // SAFETY: takes no pointers; `MB_OK` is the default sound.
+    unsafe { windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(windows_sys::Win32::UI::WindowsAndMessaging::MB_OK) };
+}
+
+/// A double click on the title bar always maximizes or restores.
+pub(super) fn double_click_action() -> DoubleClick {
+    DoubleClick::Zoom
+}
+
+/// See `window::system_menu`.
+pub(super) fn system_menu(window: WebviewWindow) -> tauri::Result<()> {
+    let hwnd = window.hwnd()?.0 as isize;
+    // SAFETY: on the main thread, with the window's own handle.
+    window.run_on_main_thread(move || unsafe { show_system_menu(hwnd as _) })
+}
+
+/// See `count_file_dialog`.
+pub(super) fn file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()> {
+    window.run_on_main_thread(move || count_file_dialog(open))
+}
+
+/// Windows has no drag area: a press always brings the window forward, and a drag out of it
+/// puts it back ([`keep_behind`]).
+pub(super) fn set_drag_area(_window: WebviewWindow, _rect: Option<Rect>) -> tauri::Result<()> {
+    Ok(())
+}
+
+pub(super) fn buttons() -> Vec<WindowButton> {
+    vec![WindowButton::Minimize, WindowButton::Maximize, WindowButton::Close]
+}
+
+pub(super) fn set_theme(window: &WebviewWindow, theme: Option<tauri::Theme>) -> tauri::Result<()> {
+    window.set_theme(theme)
+}
+
+/// See `window::set_snapped_border_color`.
+pub(super) fn set_snapped_border_color(window: WebviewWindow, color: String) -> tauri::Result<()> {
+    if let Some(color) = colorref(&color) {
+        SNAPPED_BORDER.store(color, Ordering::Relaxed);
+        let hwnd = window.hwnd()?.0 as isize;
+        // SAFETY: the window's own handle.
+        unsafe { update_border_color(hwnd as _) };
+    }
+    Ok(())
+}
+
+/// See `window::set_maximize_button`.
+pub(super) fn set_maximize_button(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
+    APP.get_or_init(|| window.app_handle().clone());
+    let parent = window.hwnd()?.0 as isize;
+    let scale = window.scale_factor()?;
+    let label = window.label().to_owned();
+    // SAFETY: on the main thread, with the handle of the window labelled `label`.
+    window.run_on_main_thread(move || unsafe { place_maximize_button(parent as _, label, rect, scale) })
+}
+
+/// See `window::update_border`.
+pub(super) fn update_border(window: &tauri::Window) {
+    if let Ok(hwnd) = window.hwnd() {
+        // SAFETY: the window's own handle.
+        unsafe { update_border_color(hwnd.0) };
+    }
 }

@@ -14,7 +14,7 @@ use gtk::glib::{self, Propagation, SignalHandlerId};
 use gtk::prelude::*;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-use super::{DropTarget, Point, TabDrag, TabDragNativeEnd};
+use super::{DropTarget, TabDrag, TabDragNativeEnd};
 
 /// The drag's data type, which no other application takes.
 const TARGET: &str = "application/x-zshell-tab";
@@ -46,7 +46,7 @@ fn target(app: &AppHandle, source: &str, label: &str, x: i32, y: i32) -> DropTar
     }
     match app.state::<TabDrag>().tab_bars.lock().unwrap().get(label) {
         Some(rect) if rect.contains(x, y) => DropTarget::Window { label: label.to_owned(), x },
-        _ => DropTarget::Elsewhere { cursor: Point { x: 0.0, y: 0.0 } },
+        _ => DropTarget::Elsewhere { cursor: None },
     }
 }
 
@@ -150,7 +150,7 @@ fn end(app: &AppHandle, drag: &Rc<Drag>) {
     let target = match drag.dropped.borrow_mut().take() {
         Some(target) => Some(target),
         None if drag.cancelled.get() => None,
-        None => Some(DropTarget::Elsewhere { cursor: Point { x: 0.0, y: 0.0 } }),
+        None => Some(DropTarget::Elsewhere { cursor: None }),
     };
     let dropped = target.is_some();
     *app.state::<TabDrag>().native_ended.lock().unwrap() = Some((drag.id.clone(), target));

@@ -198,6 +198,7 @@ fn url_text(url: &NSURL) -> String {
 
 /// The receiving application shows its own message; ours is in the transfer list.
 fn ns_error() -> Retained<NSError> {
+    // SAFETY: a literal domain, a code and no user info.
     unsafe { NSError::errorWithDomain_code_userInfo(ns_string!("ZShell"), 1, None) }
 }
 
@@ -235,6 +236,7 @@ pub(super) fn start(
             };
 
             let promises = PromiseDelegate::alloc().set_ivars(PromiseIvars { items, download });
+            // SAFETY: the superclass's (NSObject's) `init`, on the delegate just allocated.
             let promises: Retained<PromiseDelegate> = unsafe { msg_send![super(promises), init] };
             // Icons stacked at the pointer, in the view's coordinates.
             let at = view.convertPoint_fromView(in_window, None);
@@ -252,6 +254,7 @@ pub(super) fn start(
                         ProtocolObject::from_ref(&*promises),
                     );
                     let number = NSNumber::new_usize(index);
+                    // SAFETY: any object may be the user info; the provider keeps the number.
                     unsafe { provider.setUserInfo(Some(&number)) };
                     let dragging = NSDraggingItem::initWithPasteboardWriter(NSDraggingItem::alloc(), ProtocolObject::from_ref(&*provider));
                     // Deprecated for iconForContentType:, which needs the UniformTypeIdentifiers
@@ -268,6 +271,7 @@ pub(super) fn start(
                         NSSize::new(ICON_SIZE, ICON_SIZE),
                     );
                     let contents: &AnyObject = icon.as_ref();
+                    // SAFETY: the contents are an NSImage, which the dragging item draws and keeps.
                     unsafe { dragging.setDraggingFrame_contents(rect, Some(contents)) };
                     dragging
                 })
@@ -280,6 +284,7 @@ pub(super) fn start(
                 window: owner,
                 done: RefCell::new(Some(done)),
             });
+            // SAFETY: the superclass's (NSObject's) `init`, on the source just allocated.
             let source: Retained<DragSource> = unsafe { msg_send![super(source), init] };
             PROMISES.lock().unwrap().push(promises);
             SOURCES.with_borrow_mut(|sources| sources.push(source.clone()));

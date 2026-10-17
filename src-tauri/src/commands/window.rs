@@ -93,8 +93,8 @@ pub fn app_quit(app: AppHandle) {
 
 /// See [`window::title_double_click`].
 #[tauri::command]
-pub fn window_title_double_click(window: WebviewWindow) -> Result<()> {
-    Ok(window::title_double_click(window)?)
+pub async fn window_title_double_click(window: WebviewWindow) -> Result<()> {
+    Ok(window::title_double_click(window).await?)
 }
 
 /// See [`window::system_menu`].
@@ -117,8 +117,8 @@ pub fn window_set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> Result
 
 /// See [`window::buttons`].
 #[tauri::command]
-pub fn window_buttons() -> Vec<WindowButton> {
-    window::buttons()
+pub async fn window_buttons(app: AppHandle) -> Result<Vec<WindowButton>> {
+    Ok(window::buttons(app).await?)
 }
 
 /// See [`window::set_theme`].
