@@ -76,9 +76,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
         );
       },
       {
-        onError: (e) => {
-          fail(e);
-        },
+        onError: fail,
       },
     );
   };

@@ -86,9 +86,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
         update(id, { status: "done", results: results ?? undefined });
       },
       {
-        onError: (e) => {
-          failed(id, e);
-        },
+        onError: (e) => failed(id, e),
       },
     );
   };

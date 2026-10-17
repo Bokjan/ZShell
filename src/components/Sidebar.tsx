@@ -109,17 +109,18 @@ type Drop = { key: string; position: "before" | "after" | "into" } | { key: null
  * program shows a spinner): its handlers come as one stable object, checked in development.
  */
 export function Sidebar(props: Props) {
-  useStableProps("Sidebar", props, ["handlers"]);
   const { searchFocusKey, handlers, appMenu } = props;
+  // Taken apart here: React Compiler treats an object holding a ref as a ref, and reading any of
+  // it while rendering would keep the whole component from being compiled.
+  const { ref: appMenuRef, open: appMenuOpen, update, toggle: toggleAppMenu } = appMenu;
+  // The app menu's object changes as it opens and closes; its function must not.
+  useStableProps("Sidebar", { searchFocusKey, handlers, toggleAppMenu }, ["handlers"]);
   const { onOpen, onOpenAll, onQuickConnect, onEdit, onNew, onImportSshConfig, onSettings } = handlers;
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
   const { settings } = useSettings();
   const state = useDirectory();
   const { profiles, folders } = state;
-  // Taken apart here: React Compiler treats an object holding a ref as a ref, and reading any of
-  // it while rendering would keep the whole component from being compiled.
-  const { ref: appMenuRef, open: appMenuOpen, update, toggle: toggleAppMenu } = appMenu;
   const [width, setWidth] = useState(storedWidth);
   const widthRef = useLatest(width);
   const asideRef = useRef<HTMLElement>(null);

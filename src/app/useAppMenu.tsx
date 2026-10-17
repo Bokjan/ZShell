@@ -8,6 +8,7 @@ import { isMac } from "../lib/platform";
 import { runAction, useShortcuts } from "../hooks/shortcuts";
 import type { Release } from "../hooks/updates";
 import { useLocale } from "../hooks/locale";
+import { useLatest } from "../hooks/latest";
 
 /** Where the menu opens when the button is out of sight (terminal full screen). */
 const CORNER = 4;
@@ -46,14 +47,17 @@ export function useAppMenu({
   // closing it as a click outside.
   const [open, setOpen] = useState<{ x: number; y: number; fromKeyboard: boolean; anchor: HTMLButtonElement | null } | null>(null);
 
+  // Read from a ref, so that `toggle` stays the same as the menu opens and closes: the sidebar,
+  // which gets it, doesn't render again for it (see `useStableProps`).
+  const openRef = useLatest(open);
+
   const toggle = (fromKeyboard: boolean) => {
-    if (open) {
+    if (openRef.current) {
       setOpen(null);
       return;
     }
-    const button = ref.current;
-    const rect = button?.checkVisibility() ? button.getBoundingClientRect() : null;
-    const anchor = button ?? null;
+    const anchor = ref.current;
+    const rect = anchor?.checkVisibility() ? anchor.getBoundingClientRect() : null;
     setOpen(rect ? { x: rect.left, y: rect.bottom + 2, fromKeyboard, anchor } : { x: CORNER, y: CORNER, fromKeyboard, anchor });
   };
 

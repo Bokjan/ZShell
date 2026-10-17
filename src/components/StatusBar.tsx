@@ -162,18 +162,23 @@ function useLights(meter: TrafficMeter | undefined, hold: number) {
   return lights;
 }
 
-/** The pane's terminal size and cursor, at most once a frame; null until its terminal is shown. */
 /**
  * The pane's traffic meter, looked up after rendering: a new pane's terminal attaches its
  * session in an effect, which has run by the time this one does (the terminals come before the
- * status bar) but not when the status bar renders. Looked up again whenever the pane changes.
+ * status bar) but not when the status bar renders. Looked up again whenever the pane changes;
+ * the one found is kept with its pane's key, so another pane never shows it while its own is
+ * looked up.
  */
 function useMeter(sessions: SessionRegistry, pane: Pane): TrafficMeter | undefined {
-  const [meter, setMeter] = useState<TrafficMeter | undefined>(undefined);
-  useEffect(() => setMeter(sessions.get(pane.key)?.traffic), [sessions, pane]);
-  return meter;
+  const [found, setFound] = useState<{ key: number; meter: TrafficMeter | undefined } | null>(null);
+  useEffect(() => {
+    const meter = sessions.get(pane.key)?.traffic;
+    setFound((found) => (found?.key === pane.key && found.meter === meter ? found : { key: pane.key, meter }));
+  }, [sessions, pane]);
+  return found?.key === pane.key ? found.meter : undefined;
 }
 
+/** The pane's terminal size and cursor, at most once a frame; null until its terminal is shown. */
 function useScreen(sessions: SessionRegistry, key: number) {
   const [state, setState] = useState<{ cols: number; rows: number; row: number; column: number } | null>(null);
   useEffect(() => {

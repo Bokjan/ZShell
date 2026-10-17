@@ -95,9 +95,7 @@ export function useSftpDragDrop(options: Options) {
         if (dir && !isPointlessMove(paths, dir)) void move(paths, dir);
       },
       {
-        onError: (e) => {
-          fail(e);
-        },
+        onError: fail,
         cleanup: () => {
           setDropDir(null);
           // Drop events may arrive after the drag has ended (on Windows they all do); they must

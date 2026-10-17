@@ -14,17 +14,12 @@ export function useSubmitting() {
     if (running.current) return;
     running.current = true;
     setBusy(true);
-    return attempt(
-      async () => {
-        await work();
+    return attempt(work, {
+      cleanup: () => {
+        running.current = false;
+        setBusy(false);
       },
-      {
-        cleanup: () => {
-          running.current = false;
-          setBusy(false);
-        },
-      },
-    );
+    });
   }, []);
   return { busy, submit };
 }

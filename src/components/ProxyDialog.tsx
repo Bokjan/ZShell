@@ -77,8 +77,8 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
     }
     // Only a SOCKS or HTTP proxy with a user name keeps a password; the backend drops it otherwise.
     const update = passwordUpdate({ keeps: server && !!username.trim(), existed: false, clear: clearPassword, password });
-    await saving.submit(async () => {
-      return attempt(
+    await saving.submit(() =>
+      attempt(
         async () => {
           const saved = await proxies.save(
             {
@@ -97,12 +97,10 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
           onClose();
         },
         {
-          onError: (err) => {
-            setError(errorMessage(err));
-          },
+          onError: (err) => setError(errorMessage(err)),
         },
-      );
-    });
+      ),
+    );
   };
 
   const remove = async () => {
@@ -111,8 +109,8 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
       setDeleteArmed(true);
       return;
     }
-    await saving.submit(async () => {
-      return attempt(
+    await saving.submit(() =>
+      attempt(
         async () => {
           await proxies.delete(proxy.id);
           void directory.reload();
@@ -124,8 +122,8 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
             setError(errorMessage(err));
           },
         },
-      );
-    });
+      ),
+    );
   };
 
   return (

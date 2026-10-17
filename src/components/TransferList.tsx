@@ -5,7 +5,6 @@ import type { TransferProgress } from "../ipc/api";
 import { useLocale } from "../hooks/locale";
 import { IconButton } from "./IconButton";
 import { ArrowIcon, CloseIcon, PencilIcon } from "./icons";
-import i18n from "../i18n/index";
 
 export interface Transfer {
   id: string;
@@ -46,7 +45,7 @@ const KIND_ICONS = {
 const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
 
 export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, onReopen, onStopEditing }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { formatSize } = useLocale();
   if (transfers.length === 0) return null;
 

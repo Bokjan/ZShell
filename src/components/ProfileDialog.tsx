@@ -156,8 +156,8 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
       return;
     }
     const update = passwordUpdate({ keeps: usesPassword, existed: !!profile, clear: clearPassword, password });
-    await saving.submit(async () => {
-      return attempt(
+    await saving.submit(() =>
+      attempt(
         async () => {
           const saved = await saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update);
           void directory.reload();
@@ -165,12 +165,10 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
           onClose();
         },
         {
-          onError: (err) => {
-            setError(errorMessage(err));
-          },
+          onError: (err) => setError(errorMessage(err)),
         },
-      );
-    });
+      ),
+    );
   };
 
   const remove = async () => {
@@ -179,20 +177,18 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
       setDeleteArmed(true);
       return;
     }
-    await saving.submit(async () => {
-      return attempt(
+    await saving.submit(() =>
+      attempt(
         async () => {
           await deleteProfile(profile.id);
           void directory.reload();
           onClose();
         },
         {
-          onError: (err) => {
-            setError(errorMessage(err));
-          },
+          onError: (err) => setError(errorMessage(err)),
         },
-      );
-    });
+      ),
+    );
   };
 
   const pages: Record<Page, ReactNode> = {
