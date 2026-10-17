@@ -1,32 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { systemLanguage } from "../i18n/index";
-import { LANGUAGES } from "../ipc/bindings";
 import { useConfirmButton } from "../hooks/confirm";
 import { useDialog } from "../hooks/dialogs";
-import { languageName } from "../lib/format";
 import { matches } from "../lib/keymap";
 import { isMac } from "../lib/platform";
-import { DEFAULT_SETTINGS, FONT_SIZE_MAX, FONT_SIZE_MIN, SCROLLBACK_MAX } from "../ipc/api";
+import { DEFAULT_SETTINGS } from "../ipc/api";
 import {
-  TYPING_SAVE_DELAY,
   useSettings,
-  type Appearance,
-  type CursorStyle,
   type FileSettings,
   type LogSettings,
   type RightClick,
-  type ScreenReaderMode,
   type SidebarSettings,
   type TabSettings,
   type TerminalSettings,
-  type TextSize,
   type ZmodemReceive,
   type ZmodemSettings,
 } from "../hooks/settings";
 import { useShortcuts } from "../hooks/shortcuts";
-import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies, type TerminalScheme } from "../lib/terminalSchemes";
 import { useUpdates } from "../hooks/updates";
 import { useLatest } from "../hooks/latest";
 import { useLocale } from "../hooks/locale";
@@ -34,9 +25,10 @@ import { CloseIcon, DotIcon } from "./icons";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
 import { RadioGroup } from "./RadioGroup";
-import { SchemePreview, schemeLabel } from "./SchemePreview";
 import { AboutSection } from "./settings/AboutSection";
-import { filterSettings, LiveTextField, NumberField, Section, SECTION_REACHED, SECTIONS, Setting, type SectionId } from "./settings/common";
+import { AppearanceSection } from "./settings/AppearanceSection";
+import { TerminalSection } from "./settings/TerminalSection";
+import { filterSettings, Section, SECTION_REACHED, SECTIONS, Setting, type SectionId } from "./settings/common";
 import { FileSection } from "./settings/FileSection";
 import { KnownHostsSection } from "./settings/KnownHostsSection";
 import { LogSection } from "./settings/LogSection";
@@ -51,12 +43,8 @@ interface Props {
   onClose(): void;
 }
 
-const APPEARANCES: Appearance[] = ["system", "dark", "light"];
-const TEXT_SIZES: TextSize[] = ["normal", "large", "larger"];
-const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const ZMODEM_RECEIVE: ZmodemReceive[] = ["ask", "downloads", "chooseFolder"];
 const RIGHT_CLICKS: RightClick[] = ["menu", "paste"];
-const SCREEN_READER_MODES: ScreenReaderMode[] = ["auto", "on", "off"];
 
 /** A place in the content: a section, and how far its top is scrolled past. */
 interface Place {
@@ -69,8 +57,8 @@ let lastPlace: Place | null = null;
 
 export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { t } = useTranslation();
-  const { shortcutRows, cjk } = useLocale();
-  const { settings, theme, update } = useSettings();
+  const { shortcutRows } = useLocale();
+  const { settings, update } = useSettings();
   const terminal = settings.terminal;
   const setTerminal = (patch: Partial<TerminalSettings>, delay?: number) =>
     update((settings) => ({ ...settings, terminal: { ...settings.terminal, ...patch } }), delay);
@@ -223,8 +211,6 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
     update((settings) => ({ ...DEFAULT_SETTINGS, language: settings.language }));
   };
 
-  const schemeName = (scheme: TerminalScheme) => schemeLabel(scheme, t);
-
   return (
     <>
       <Modal dialog={dialog}>
@@ -277,192 +263,9 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
             onPointerDown={release}
             onKeyDown={release}
           >
-            <Section id="appearance">
-              <RadioGroup
-                className="segmented"
-                label={t("settings.appearance")}
-                value={settings.appearance}
-                options={APPEARANCES.map((appearance) => ({ value: appearance, content: t(`settings.appearances.${appearance}`) }))}
-                onChange={(appearance) => update((settings) => ({ ...settings, appearance }))}
-              />
-              <Setting>
-                <div className="field">
-                  <span>{t("settings.textSize")}</span>
-                  <RadioGroup
-                    className="segmented"
-                    label={t("settings.textSize")}
-                    value={settings.textSize}
-                    options={TEXT_SIZES.map((textSize) => ({ value: textSize, content: t(`settings.textSizes.${textSize}`) }))}
-                    onChange={(textSize) => update((settings) => ({ ...settings, textSize }))}
-                  />
-                </div>
-                <p className="hint">{t("settings.textSizeHint")}</p>
-              </Setting>
-              <Setting>
-                <div className="row">
-                  <label className="grow">
-                    {t("settings.appFont")}
-                    <LiveTextField
-                      value={settings.appFont}
-                      onChange={(appFont) => update((settings) => ({ ...settings, appFont }), TYPING_SAVE_DELAY)}
-                      placeholder={t("settings.appFontPlaceholder")}
-                      autoCapitalize="off"
-                      autoCorrect="off"
-                    />
-                  </label>
-                </div>
-                <p className="hint">{t("settings.appFontHint")}</p>
-              </Setting>
-              <Setting>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={settings.statusBar.show}
-                    onChange={(e) => update((settings) => ({ ...settings, statusBar: { ...settings.statusBar, show: e.target.checked } }))}
-                  />
-                  {t("settings.showStatusBar")}
-                </label>
-                <p className="hint">{t("settings.showStatusBarHint")}</p>
-              </Setting>
-              <Setting>
-                <label className="field">
-                  {t("settings.language")}
-                  <select value={settings.language} onChange={(e) => update((settings) => ({ ...settings, language: e.target.value }))}>
-                    <option value="system">{t("settings.languageSystem", { language: languageName(systemLanguage()) })}</option>
-                    {LANGUAGES.map((language) => (
-                      <option key={language} value={language} lang={language}>
-                        {languageName(language)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="hint">{t("settings.languageHint")}</p>
-              </Setting>
-            </Section>
+            <AppearanceSection />
 
-            <Section id="terminal">
-              <div className="field">
-                <span>{t("settings.colorScheme")}</span>
-                <RadioGroup
-                  className="scheme-grid"
-                  optionClassName="scheme-card"
-                  label={t("settings.colorScheme")}
-                  value={terminal.colorScheme}
-                  options={[
-                    {
-                      value: "auto",
-                      content: (
-                        <>
-                          <SchemePreview scheme={resolveScheme("auto", theme)} />
-                          <span className="scheme-name">{t("settings.schemeAuto")}</span>
-                        </>
-                      ),
-                    },
-                    ...TERMINAL_SCHEMES.map((scheme) => ({
-                      value: scheme.id,
-                      content: (
-                        <>
-                          <SchemePreview scheme={scheme} />
-                          <span className="scheme-name">{schemeName(scheme)}</span>
-                        </>
-                      ),
-                    })),
-                  ]}
-                  onChange={(colorScheme) => setTerminal({ colorScheme })}
-                />
-              </div>
-
-              <Setting>
-                <div className="row">
-                  <label className="grow">
-                    {t("settings.fontFamily")}
-                    <LiveTextField
-                      value={terminal.fontFamily}
-                      onChange={(fontFamily) => setTerminal({ fontFamily }, TYPING_SAVE_DELAY)}
-                      placeholder={
-                        systemFontFamilies()
-                          ? t("settings.fontFamilyPlaceholderSystem", { font: systemFontFamilies().replace(/"/g, "") })
-                          : t("settings.fontFamilyPlaceholder")
-                      }
-                      title={defaultFontStack(cjk)}
-                      autoCapitalize="off"
-                      autoCorrect="off"
-                    />
-                  </label>
-                  <label className="port">
-                    {t("settings.fontSize")}
-                    <NumberField
-                      value={terminal.fontSize}
-                      min={FONT_SIZE_MIN}
-                      max={FONT_SIZE_MAX}
-                      onChange={(fontSize) => setTerminal({ fontSize })}
-                    />
-                  </label>
-                </div>
-                <p className="hint">{t("settings.fontHint")}</p>
-              </Setting>
-
-              <Setting>
-                <div className="row">
-                  <label className="grow">
-                    {t("settings.cursorStyle")}
-                    <select value={terminal.cursorStyle} onChange={(e) => setTerminal({ cursorStyle: e.target.value as CursorStyle })}>
-                      {CURSOR_STYLES.map((style) => (
-                        <option key={style} value={style}>
-                          {t(`settings.cursorStyles.${style}`)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="grow">
-                    {t("settings.scrollback")}
-                    <NumberField
-                      value={terminal.scrollback}
-                      min={0}
-                      max={SCROLLBACK_MAX}
-                      step={1000}
-                      onChange={(scrollback) => setTerminal({ scrollback })}
-                    />
-                  </label>
-                </div>
-                <p className="hint">{t("settings.scrollbackHint")}</p>
-              </Setting>
-              <label className="checkbox">
-                <input type="checkbox" checked={terminal.cursorBlink} onChange={(e) => setTerminal({ cursorBlink: e.target.checked })} />
-                {t("settings.cursorBlink")}
-              </label>
-              <Setting>
-                <div className="field">
-                  <span>{t("settings.screenReader")}</span>
-                  <RadioGroup
-                    className="segmented"
-                    label={t("settings.screenReader")}
-                    value={terminal.screenReaderMode}
-                    options={SCREEN_READER_MODES.map((mode) => ({ value: mode, content: t(`settings.screenReaderModes.${mode}`) }))}
-                    onChange={(screenReaderMode) => setTerminal({ screenReaderMode })}
-                  />
-                </div>
-                <p className="hint">{t("settings.screenReaderHint")}</p>
-              </Setting>
-              <Setting>
-                <fieldset>
-                  <legend>{t("settings.bell")}</legend>
-                  <label className="checkbox">
-                    <input type="checkbox" checked={terminal.bellAlert} onChange={(e) => setTerminal({ bellAlert: e.target.checked })} />
-                    {t("settings.bellAlert")}
-                  </label>
-                  <p className="hint">{t("settings.bellAlertHint")}</p>
-                  <label className="checkbox">
-                    <input type="checkbox" checked={terminal.bellSound} onChange={(e) => setTerminal({ bellSound: e.target.checked })} />
-                    {t("settings.bellSound")}
-                  </label>
-                  <label className="checkbox">
-                    <input type="checkbox" checked={terminal.bellFlash} onChange={(e) => setTerminal({ bellFlash: e.target.checked })} />
-                    {t("settings.bellFlash")}
-                  </label>
-                </fieldset>
-              </Setting>
-            </Section>
+            <TerminalSection />
 
             <Section id="mouseAndClipboard">
               <Setting>
