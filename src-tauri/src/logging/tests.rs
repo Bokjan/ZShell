@@ -1,3 +1,5 @@
+use super::index::{file_name, ActiveLogs};
+use super::text::{MAX_CELL_LEN, MAX_COLUMNS};
 use super::*;
 
 fn text(chunks: &[&[u8]]) -> String {
