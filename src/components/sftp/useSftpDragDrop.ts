@@ -8,6 +8,7 @@ import { isAppLocked } from "../../lib/appLock";
 import { usePressDrag } from "../../hooks/drag";
 import { isMac, isWindows } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
+import { attempt } from "../../lib/attempt";
 import { parentPath } from "./useTransfers";
 
 const DRAG_DISTANCE = 5;
@@ -73,34 +74,40 @@ export function useSftpDragDrop(options: Options) {
     const paths = items.map((entry) => entry.path);
     let listed = false;
     draggingRef.current = paths;
-    try {
-      const result = await sftp.dragOut(sessionId, id, items, pressedAt, (event) => {
-        if (!listed) {
-          listed = true;
-          transfers.add({
-            id,
-            kind: "download",
-            label: transfers.labelFor(items.map((entry) => entry.name)),
-            progress: null,
-            status: "running",
-          });
-        }
-        if (event.type === "progress") transfers.update(id, { progress: event });
-        else if (event.type === "done") transfers.update(id, { status: "done", results: event.paths });
-        else transfers.failed(id, event.error);
-      });
-      const dir = result.outcome === "inside" ? folderAt(result.x, result.y) : undefined;
-      if (dir && !isPointlessMove(paths, dir)) void move(paths, dir);
-    } catch (e) {
-      fail(e);
-    } finally {
-      setDropDir(null);
-      // Drop events may arrive after the drag has ended (on Windows they all do); they must
-      // not be taken for files dropped from another application.
-      setTimeout(() => {
-        if (draggingRef.current === paths) draggingRef.current = null;
-      }, 1000);
-    }
+    return attempt(
+      async () => {
+        const result = await sftp.dragOut(sessionId, id, items, pressedAt, (event) => {
+          if (!listed) {
+            listed = true;
+            transfers.add({
+              id,
+              kind: "download",
+              label: transfers.labelFor(items.map((entry) => entry.name)),
+              progress: null,
+              status: "running",
+            });
+          }
+          if (event.type === "progress") transfers.update(id, { progress: event });
+          else if (event.type === "done") transfers.update(id, { status: "done", results: event.paths });
+          else transfers.failed(id, event.error);
+        });
+        const dir = result.outcome === "inside" ? folderAt(result.x, result.y) : undefined;
+        if (dir && !isPointlessMove(paths, dir)) void move(paths, dir);
+      },
+      {
+        onError: (e) => {
+          fail(e);
+        },
+        cleanup: () => {
+          setDropDir(null);
+          // Drop events may arrive after the drag has ended (on Windows they all do); they must
+          // not be taken for files dropped from another application.
+          setTimeout(() => {
+            if (draggingRef.current === paths) draggingRef.current = null;
+          }, 1000);
+        },
+      },
+    );
   };
 
   /** A press on a row, which drags `items()` out once the pointer moves far enough. */

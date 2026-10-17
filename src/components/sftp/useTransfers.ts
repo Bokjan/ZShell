@@ -8,6 +8,7 @@ import { open, save } from "../../ipc/fileDialog";
 import { basename } from "../../lib/format";
 import { storedString, storeString } from "../../lib/storage";
 import type { Transfer } from "../TransferList";
+import { attempt } from "../../lib/attempt";
 import type { Confirm } from "./useConfirmQueue";
 
 const DOWNLOAD_TO_KEY = "zshell.downloadToDirectory";
@@ -169,33 +170,39 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     if (queued) return void editUploads.current.set(id, { again: true, force: queued.force || force });
     editUploads.current.set(id, { again: false, force: false });
     update(id, { save: { state: "uploading" } });
-    try {
-      await sftp.editUpload(sessionId, id, force);
-      update(id, { save: { state: "uploaded", at: Date.now() } });
-      const dir = cwdRef.current;
-      if (transfer.remotePath && dir === parentPath(transfer.remotePath)) void load(dir);
-    } catch (e) {
-      if (errorCode(e) !== "edit.conflict") {
-        // Saved in another app: the transfer list may be out of sight, or the panel closed.
-        announce(t("announce.editUploadFailed", { name: transfer.label, error: errorMessage(e) }));
-        return update(id, { save: { state: "failed", error: errorMessage(e) } });
-      }
-      // Until the user decides. The question waits in the panel if it isn't shown.
-      update(id, { save: { state: "skipped" } });
-      if (!activeRef.current) announce(t("announce.editConflict", { name: transfer.label }));
-      ask({
-        title: t("sftp.editConflictTitle"),
-        message: t("sftp.editConflictMessage", { name: transfer.label }),
-        confirmLabel: t("sftp.editConflictReplace"),
-        danger: true,
-        action: () => void uploadEdit(id, true),
-        key: `edit:${id}`,
-      });
-    } finally {
-      const queued = editUploads.current.get(id);
-      editUploads.current.delete(id);
-      if (queued?.again) void uploadEditRef.current(id, queued.force);
-    }
+    return attempt(
+      async () => {
+        await sftp.editUpload(sessionId, id, force);
+        update(id, { save: { state: "uploaded", at: Date.now() } });
+        const dir = cwdRef.current;
+        if (transfer.remotePath && dir === parentPath(transfer.remotePath)) void load(dir);
+      },
+      {
+        onError: (e) => {
+          if (errorCode(e) !== "edit.conflict") {
+            // Saved in another app: the transfer list may be out of sight, or the panel closed.
+            announce(t("announce.editUploadFailed", { name: transfer.label, error: errorMessage(e) }));
+            return update(id, { save: { state: "failed", error: errorMessage(e) } });
+          }
+          // Until the user decides. The question waits in the panel if it isn't shown.
+          update(id, { save: { state: "skipped" } });
+          if (!activeRef.current) announce(t("announce.editConflict", { name: transfer.label }));
+          ask({
+            title: t("sftp.editConflictTitle"),
+            message: t("sftp.editConflictMessage", { name: transfer.label }),
+            confirmLabel: t("sftp.editConflictReplace"),
+            danger: true,
+            action: () => void uploadEdit(id, true),
+            key: `edit:${id}`,
+          });
+        },
+        cleanup: () => {
+          const queued = editUploads.current.get(id);
+          editUploads.current.delete(id);
+          if (queued?.again) void uploadEditRef.current(id, queued.force);
+        },
+      },
+    );
   };
   const uploadEditRef = useRef(uploadEdit);
   uploadEditRef.current = uploadEdit;

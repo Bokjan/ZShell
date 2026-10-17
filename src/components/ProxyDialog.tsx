@@ -9,6 +9,7 @@ import { directory } from "../lib/directory";
 import { hostPort, parsePort } from "../lib/format";
 import { passwordUpdate } from "../lib/password";
 import { useSubmitting } from "../hooks/submitting";
+import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordField } from "./PasswordField";
@@ -77,25 +78,30 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
     // Only a SOCKS or HTTP proxy with a user name keeps a password; the backend drops it otherwise.
     const update = passwordUpdate({ keeps: server && !!username.trim(), existed: false, clear: clearPassword, password });
     await saving.submit(async () => {
-      try {
-        const saved = await proxies.save(
-          {
-            id: proxy?.id ?? "",
-            name,
-            kind,
-            host,
-            port: portNumber ?? proxy?.port ?? 0,
-            username,
-            command,
+      return attempt(
+        async () => {
+          const saved = await proxies.save(
+            {
+              id: proxy?.id ?? "",
+              name,
+              kind,
+              host,
+              port: portNumber ?? proxy?.port ?? 0,
+              username,
+              command,
+            },
+            update,
+          );
+          void directory.reload();
+          onSaved?.(saved);
+          onClose();
+        },
+        {
+          onError: (err) => {
+            setError(errorMessage(err));
           },
-          update,
-        );
-        void directory.reload();
-        onSaved?.(saved);
-        onClose();
-      } catch (err) {
-        setError(errorMessage(err));
-      }
+        },
+      );
     });
   };
 
@@ -106,14 +112,19 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
       return;
     }
     await saving.submit(async () => {
-      try {
-        await proxies.delete(proxy.id);
-        void directory.reload();
-        onClose();
-      } catch (err) {
-        setDeleteArmed(false);
-        setError(errorMessage(err));
-      }
+      return attempt(
+        async () => {
+          await proxies.delete(proxy.id);
+          void directory.reload();
+          onClose();
+        },
+        {
+          onError: (err) => {
+            setDeleteArmed(false);
+            setError(errorMessage(err));
+          },
+        },
+      );
     });
   };
 

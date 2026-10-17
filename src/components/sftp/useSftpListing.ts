@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errorMessage, sftp, type FileEntry, type SessionId } from "../../ipc/api";
+import { attempt } from "../../lib/attempt";
 
 /**
  * The folder the file panel shows and its entries. `onNewFolder` runs when another folder is
@@ -46,24 +47,30 @@ export function useSftpListing(
       // reconnection, must not replace what came after it.
       const stale = () => seq !== seqRef.current || sessionRef.current !== sessionId;
       setLoading(true);
-      try {
-        const listing = await sftp.list(sessionId, path);
-        if (stale()) return false;
-        // Refreshing keeps the selection; another folder starts afresh.
-        if (listing.path !== cwdRef.current) onNewFolderRef.current();
-        setCwd(listing.path);
-        if (!editingRef.current) setPathInput(listing.path);
-        setEntries(listing.entries);
-        setError(null);
-        return true;
-      } catch (e) {
-        if (stale() || quiet) return false;
-        if (!editingRef.current) setPathInput(cwdRef.current ?? "");
-        fail(e);
-        return false;
-      } finally {
-        if (seq === seqRef.current) setLoading(false);
-      }
+      return attempt(
+        async () => {
+          const listing = await sftp.list(sessionId, path);
+          if (stale()) return false;
+          // Refreshing keeps the selection; another folder starts afresh.
+          if (listing.path !== cwdRef.current) onNewFolderRef.current();
+          setCwd(listing.path);
+          if (!editingRef.current) setPathInput(listing.path);
+          setEntries(listing.entries);
+          setError(null);
+          return true;
+        },
+        {
+          onError: (e) => {
+            if (stale() || quiet) return false;
+            if (!editingRef.current) setPathInput(cwdRef.current ?? "");
+            fail(e);
+            return false;
+          },
+          cleanup: () => {
+            if (seq === seqRef.current) setLoading(false);
+          },
+        },
+      );
     },
     [sessionId, fail],
   );

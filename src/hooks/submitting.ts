@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
+import { attempt } from "../lib/attempt";
+
 /**
  * One request at a time for a dialog's buttons (save, delete): while one is running, others
  * are ignored, and `busy` disables the buttons. The ref, unlike the state, already holds for
@@ -12,12 +14,17 @@ export function useSubmitting() {
     if (running.current) return;
     running.current = true;
     setBusy(true);
-    try {
-      await work();
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
+    return attempt(
+      async () => {
+        await work();
+      },
+      {
+        cleanup: () => {
+          running.current = false;
+          setBusy(false);
+        },
+      },
+    );
   }, []);
   return { busy, submit };
 }

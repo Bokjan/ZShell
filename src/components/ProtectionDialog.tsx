@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { errorMessage, vault, type Protection, type ProtectionChange, type VaultStatus } from "../ipc/api";
 import { announce } from "../lib/announce";
 import { useDialog } from "../hooks/dialogs";
+import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
@@ -60,14 +61,19 @@ export function ProtectionDialog({ intro, status, onDone, onClose }: Props) {
     const change: ProtectionChange =
       choice === "password" ? { protection: "password", password: newPassword ? password : null, remember } : { protection: choice };
     setBusy(true);
-    try {
-      const next = await vault.setProtection(change, current === "password" ? currentPassword : null);
-      announce(t("protection.changed"));
-      onDone(next);
-    } catch (err) {
-      setError(errorMessage(err));
-      setBusy(false);
-    }
+    return attempt(
+      async () => {
+        const next = await vault.setProtection(change, current === "password" ? currentPassword : null);
+        announce(t("protection.changed"));
+        onDone(next);
+      },
+      {
+        onError: (err) => {
+          setError(errorMessage(err));
+          setBusy(false);
+        },
+      },
+    );
   };
 
   const option = (value: Protection, label: string, description: string, disabled = false) => (

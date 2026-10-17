@@ -7,9 +7,10 @@ import { setAppLocked } from "../lib/appLock";
 import { windows } from "../ipc/windows";
 import { listenHere } from "../ipc/events";
 import { useConfigChanged } from "../hooks/windowEvents";
+import { attempt } from "../lib/attempt";
+import { useLatest } from "../hooks/latest";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
-import { useLatest } from "../hooks/latest";
 
 interface AppLockContextValue {
   status: AppLockStatus;
@@ -164,16 +165,22 @@ function AppLockScreen({ status, byHand, onStatus, closing, onKeepOpen }: Screen
       asking.current = asked.current = true;
       setBusy(true);
       setError(null);
-      try {
-        onStatus(await appLock.unlock(anyway));
-      } catch (e) {
-        const code = errorCode(e);
-        if (code === "appLock.gone") setGone(errorMessage(e));
-        else if (code !== "appLock.cancelled" && code !== "appLock.busy") setError(errorMessage(e));
-      } finally {
-        asking.current = false;
-        setBusy(false);
-      }
+      return attempt(
+        async () => {
+          onStatus(await appLock.unlock(anyway));
+        },
+        {
+          onError: (e) => {
+            const code = errorCode(e);
+            if (code === "appLock.gone") setGone(errorMessage(e));
+            else if (code !== "appLock.cancelled" && code !== "appLock.busy") setError(errorMessage(e));
+          },
+          cleanup: () => {
+            asking.current = false;
+            setBusy(false);
+          },
+        },
+      );
     },
     [onStatus],
   );

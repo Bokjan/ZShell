@@ -21,6 +21,7 @@ import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } f
 import { basename, formatMode, formatSize, formatTime } from "../lib/format";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
+import { useLatest } from "../hooks/latest";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
@@ -35,7 +36,6 @@ import { useShellFollow } from "./sftp/useShellFollow";
 import { useSftpListing } from "./sftp/useSftpListing";
 import { parentPath, useTransfers } from "./sftp/useTransfers";
 import { TransferList } from "./TransferList";
-import { useLatest } from "../hooks/latest";
 
 interface Props {
   /** The pane whose connection it shows, and whose terminal it may follow. */

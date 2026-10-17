@@ -6,6 +6,7 @@ import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
 import { forwardMapping } from "../lib/format";
 import { address } from "../lib/sessions";
+import { attempt } from "../lib/attempt";
 import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
@@ -36,15 +37,20 @@ export function SessionImportDialog({ path, onClose }: Props) {
 
   const read = useCallback(
     async (passphrase?: string) => {
-      try {
-        const found = await sessionsFile.scan(path, passphrase);
-        setScan(found);
-        setSelected(new Set(found.candidates.filter((c) => !c.existing).map((c) => c.id)));
-      } catch (e) {
-        if (errorCode(e) === "import.passphraseRequired") return setEncrypted(true);
-        setError(errorMessage(e));
-        if (errorCode(e) === "import.wrongPassphrase") requestAnimationFrame(() => passphraseRef.current?.select());
-      }
+      return attempt(
+        async () => {
+          const found = await sessionsFile.scan(path, passphrase);
+          setScan(found);
+          setSelected(new Set(found.candidates.filter((c) => !c.existing).map((c) => c.id)));
+        },
+        {
+          onError: (e) => {
+            if (errorCode(e) === "import.passphraseRequired") return setEncrypted(true);
+            setError(errorMessage(e));
+            if (errorCode(e) === "import.wrongPassphrase") requestAnimationFrame(() => passphraseRef.current?.select());
+          },
+        },
+      );
     },
     [path],
   );
@@ -60,14 +66,19 @@ export function SessionImportDialog({ path, onClose }: Props) {
       if (passphrase) await read(passphrase);
       return setBusy(false);
     }
-    try {
-      await sessionsFile.import(path, [...selected], scan.digest, encrypted ? passphrase : undefined);
-      void directory.reload();
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-      setBusy(false);
-    }
+    return attempt(
+      async () => {
+        await sessionsFile.import(path, [...selected], scan.digest, encrypted ? passphrase : undefined);
+        void directory.reload();
+        onClose();
+      },
+      {
+        onError: (err) => {
+          setError(errorMessage(err));
+          setBusy(false);
+        },
+      },
+    );
   };
 
   const candidates = scan?.candidates ?? null;

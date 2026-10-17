@@ -20,11 +20,11 @@ import { DRAG_REGION } from "../hooks/titleBar";
 import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { listenHere } from "../ipc/events";
 import { useWindowEvent } from "../hooks/windowEvents";
+import { useLatest } from "../hooks/latest";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
-import { useLatest } from "../hooks/latest";
 
 interface Props {
   tabs: Tab[];

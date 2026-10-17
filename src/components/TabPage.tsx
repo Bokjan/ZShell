@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { DialogsHidden } from "../hooks/dialogs";
 import { paneProfile } from "../lib/directory";
 import { useDirectory } from "../hooks/stores";
+import { useLatest } from "../hooks/latest";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../hooks/drag";
 import { dividers, equalize, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, moveDivider, paneRects, type Divider, type Size } from "../lib/layout";
@@ -13,7 +14,6 @@ import { ForwardsPanel } from "./ForwardsPanel";
 import { Separator } from "./Separator";
 import { SftpPanel } from "./SftpPanel";
 import { TerminalView, type PasteTarget } from "./TerminalView";
-import { useLatest } from "../hooks/latest";
 
 /** What a tab page reports about its panes, and asks for them; each by pane key. */
 export interface PaneHandlers {

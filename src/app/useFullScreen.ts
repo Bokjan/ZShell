@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+
 import { useLatest } from "../hooks/latest";
 
 /** How long the hint with the keys that leave full screen stays. */

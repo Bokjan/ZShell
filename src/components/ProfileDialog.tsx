@@ -36,6 +36,7 @@ import {
   type ProfileForm,
 } from "../lib/profileForm";
 import { useSubmitting } from "../hooks/submitting";
+import { attempt } from "../lib/attempt";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
@@ -156,14 +157,19 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
     }
     const update = passwordUpdate({ keeps: usesPassword, existed: !!profile, clear: clearPassword, password });
     await saving.submit(async () => {
-      try {
-        const saved = await saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update);
-        void directory.reload();
-        onSaved?.(saved);
-        onClose();
-      } catch (err) {
-        setError(errorMessage(err));
-      }
+      return attempt(
+        async () => {
+          const saved = await saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update);
+          void directory.reload();
+          onSaved?.(saved);
+          onClose();
+        },
+        {
+          onError: (err) => {
+            setError(errorMessage(err));
+          },
+        },
+      );
     });
   };
 
@@ -174,13 +180,18 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
       return;
     }
     await saving.submit(async () => {
-      try {
-        await deleteProfile(profile.id);
-        void directory.reload();
-        onClose();
-      } catch (err) {
-        setError(errorMessage(err));
-      }
+      return attempt(
+        async () => {
+          await deleteProfile(profile.id);
+          void directory.reload();
+          onClose();
+        },
+        {
+          onError: (err) => {
+            setError(errorMessage(err));
+          },
+        },
+      );
     });
   };
 

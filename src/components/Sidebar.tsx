@@ -35,6 +35,7 @@ import { useShortcuts } from "../hooks/shortcuts";
 import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../hooks/titleBar";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
+import { useLatest } from "../hooks/latest";
 import { ChevronIcon, DisclosureIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -43,7 +44,6 @@ import { IconButton } from "./IconButton";
 import { Separator } from "./Separator";
 import { ExportDialog } from "./ExportDialog";
 import { SessionImportDialog } from "./SessionImportDialog";
-import { useLatest } from "../hooks/latest";
 
 /**
  * How a session is opened: switch to a pane it already has, always in a new tab, or in a

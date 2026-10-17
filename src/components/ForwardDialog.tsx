@@ -5,6 +5,7 @@ import type { TFunction } from "i18next";
 import { errorMessage, type ForwardKind, type ForwardRule } from "../ipc/api";
 import { useDialog } from "../hooks/dialogs";
 import { hostPort, parsePort } from "../lib/format";
+import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
@@ -64,22 +65,27 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
       return;
     }
     setSaving(true);
-    try {
-      await onSave({
-        id: rule?.id ?? "",
-        kind,
-        bindHost: host,
-        bindPort: bindPortNumber,
-        targetHost: dynamic ? "" : targetHost.trim(),
-        targetPort: dynamic || targetPortNumber === null ? 0 : targetPortNumber,
-        description: description.trim(),
-        autoStart,
-      });
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-      setSaving(false);
-    }
+    return attempt(
+      async () => {
+        await onSave({
+          id: rule?.id ?? "",
+          kind,
+          bindHost: host,
+          bindPort: bindPortNumber,
+          targetHost: dynamic ? "" : targetHost.trim(),
+          targetPort: dynamic || targetPortNumber === null ? 0 : targetPortNumber,
+          description: description.trim(),
+          autoStart,
+        });
+        onClose();
+      },
+      {
+        onError: (err) => {
+          setError(errorMessage(err));
+          setSaving(false);
+        },
+      },
+    );
   };
 
   const listenLabel = {

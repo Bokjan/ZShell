@@ -20,6 +20,7 @@ interface Entry {
 
 const entries = new Map<number, Entry>();
 let nextOrder = 0;
+const takeOrder = () => ++nextOrder;
 let listening = false;
 
 /** The order of the top dialog shown, if any. */
@@ -122,7 +123,7 @@ interface Options {
 
 /** Registers a dialog while it is mounted; render it with `Modal`. */
 export function useDialog(onClose: () => void, options: Options = {}): DialogHandle {
-  const [order] = useState(() => ++nextOrder);
+  const [order] = useState(takeOrder);
   const hidden = useContext(DialogsHidden);
   const element = useRef<HTMLDivElement>(null);
   const latest = useRef({ onClose, ...options });

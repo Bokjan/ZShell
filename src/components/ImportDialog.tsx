@@ -6,6 +6,7 @@ import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
 import { open } from "../ipc/fileDialog";
 import { isComposing } from "../lib/platform";
+import { attempt } from "../lib/attempt";
 import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
@@ -34,21 +35,27 @@ export function ImportDialog({ onClose }: Props) {
     if (!file.trim()) return;
     const current = ++loads.current;
     setBusy(true);
-    try {
-      const found = await sshConfig.scan(file.trim());
-      if (current !== loads.current) return;
-      setCandidates(found);
-      setScanned(file.trim());
-      // Hosts that already have a profile are not imported again.
-      setSelected(new Set(found.filter((c) => !c.existing).map((c) => c.alias)));
-      setError(null);
-    } catch (e) {
-      if (current !== loads.current) return;
-      setCandidates(null);
-      setError(errorMessage(e));
-    } finally {
-      if (current === loads.current) setBusy(false);
-    }
+    return attempt(
+      async () => {
+        const found = await sshConfig.scan(file.trim());
+        if (current !== loads.current) return;
+        setCandidates(found);
+        setScanned(file.trim());
+        // Hosts that already have a profile are not imported again.
+        setSelected(new Set(found.filter((c) => !c.existing).map((c) => c.alias)));
+        setError(null);
+      },
+      {
+        onError: (e) => {
+          if (current !== loads.current) return;
+          setCandidates(null);
+          setError(errorMessage(e));
+        },
+        cleanup: () => {
+          if (current === loads.current) setBusy(false);
+        },
+      },
+    );
   };
 
   useEffect(() => {

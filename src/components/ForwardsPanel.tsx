@@ -13,6 +13,7 @@ import {
 } from "../ipc/api";
 import { directory } from "../lib/directory";
 import { forwardMapping as mapping } from "../lib/format";
+import { attempt } from "../lib/attempt";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorBanner } from "./ErrorMessage";
 import { ForwardDialog, explainRule } from "./ForwardDialog";
@@ -63,18 +64,23 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
   const remove = async (rule: ForwardRule) => {
     setDeleting(null);
     if (!profile) return;
-    try {
-      // Also clears a failed state, so the tab's badge forgets the rule.
-      if (live && states[rule.id]) await forwards.stop(sessionId, rule.id);
-      profileSaved(
-        await setProfileForwards(
-          profile.id,
-          rules.filter((r) => r.id !== rule.id),
-        ),
-      );
-    } catch (e) {
-      fail(e);
-    }
+    return attempt(
+      async () => {
+        // Also clears a failed state, so the tab's badge forgets the rule.
+        if (live && states[rule.id]) await forwards.stop(sessionId, rule.id);
+        profileSaved(
+          await setProfileForwards(
+            profile.id,
+            rules.filter((r) => r.id !== rule.id),
+          ),
+        );
+      },
+      {
+        onError: (e) => {
+          fail(e);
+        },
+      },
+    );
   };
 
   const closeDialog = useCallback(() => setEditing(undefined), []);

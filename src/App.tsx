@@ -2,6 +2,7 @@ import { useCallback, useEffect, useInsertionEffect, useRef, useState } from "re
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
+import { useLatest } from "./hooks/latest";
 import { useAppMenu } from "./app/useAppMenu";
 import { useCloseFlow } from "./app/useCloseFlow";
 import { useCompose } from "./app/useCompose";
@@ -61,7 +62,6 @@ import { useTabStore } from "./hooks/stores";
 import { tabMark } from "./lib/terminalSchemes";
 import { checkForUpdates, useUpdates } from "./hooks/updates";
 import "./styles.css";
-import { useLatest } from "./hooks/latest";
 
 /** Quick commands listed in the terminal's menu; the palette has them all. */
 const MENU_COMMANDS = 8;

@@ -9,8 +9,8 @@ import { formatSize } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
 import type { LogFormat, LogSettings } from "../../hooks/settings";
 import { useWindowFocus } from "../../hooks/windowEvents";
-import { FolderField, Section, Setting, useFieldText } from "./common";
 import { useLatest } from "../../hooks/latest";
+import { FolderField, Section, Setting, useFieldText } from "./common";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
 /** Retention choices, in days; 0 keeps logs. */

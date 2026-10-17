@@ -30,6 +30,7 @@ import {
 import { useShortcuts } from "../hooks/shortcuts";
 import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies, type TerminalScheme } from "../lib/terminalSchemes";
 import { useUpdates } from "../hooks/updates";
+import { useLatest } from "../hooks/latest";
 import { CloseIcon, DotIcon } from "./icons";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
@@ -42,7 +43,6 @@ import { KnownHostsSection } from "./settings/KnownHostsSection";
 import { LogSection } from "./settings/LogSection";
 import { ProxySection } from "./settings/ProxySection";
 import { SecuritySection } from "./settings/SecuritySection";
-import { useLatest } from "../hooks/latest";
 
 interface Props {
   /** Whether the system allows local terminals (not Windows in S mode). */

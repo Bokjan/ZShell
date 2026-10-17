@@ -7,6 +7,7 @@ import { useAppLock } from "../AppLockGate";
 import { ErrorText } from "../ErrorMessage";
 import { ProtectionDialog } from "../ProtectionDialog";
 import { useVault } from "../VaultGate";
+import { attempt } from "../../lib/attempt";
 import { Section, Setting } from "./common";
 
 /** The idle times offered, in minutes (as the backend accepts, `applock/mod.rs`); 0 never locks. */
@@ -68,13 +69,19 @@ function AppLockSetting() {
   const save = async (next: AppLockSettings) => {
     setBusy(true);
     setError(null);
-    try {
-      setStatus(await appLock.configure(next));
-    } catch (e) {
-      if (errorCode(e) !== "appLock.cancelled") setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    return attempt(
+      async () => {
+        setStatus(await appLock.configure(next));
+      },
+      {
+        onError: (e) => {
+          if (errorCode(e) !== "appLock.cancelled") setError(errorMessage(e));
+        },
+        cleanup: () => {
+          setBusy(false);
+        },
+      },
+    );
   };
 
   let hint: string;

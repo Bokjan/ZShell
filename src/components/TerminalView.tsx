@@ -28,6 +28,7 @@ import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { drawWithWebgl } from "../lib/webgl";
+import { attemptSync } from "../lib/attempt";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
@@ -305,11 +306,10 @@ export function TerminalView({
     pasteAllRef.current = (text: string) => {
       const others = pasteTargetsRef.current();
       pasting = true;
-      try {
-        term.paste(text);
-      } finally {
-        pasting = false;
-      }
+      attemptSync(
+        () => term.paste(text),
+        () => (pasting = false),
+      );
       for (const other of others) other.paste(text);
     };
     pasteRef.current = (text: string) => {

@@ -1,8 +1,8 @@
 import { useEffect, useRef, type InputHTMLAttributes, type KeyboardEvent, type PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ChevronIcon } from "./icons";
 import { useLatest } from "../hooks/latest";
+import { ChevronIcon } from "./icons";
 
 /** How long a held ▲ / ▼ waits before repeating, and how often it repeats. */
 const REPEAT_DELAY = 400;

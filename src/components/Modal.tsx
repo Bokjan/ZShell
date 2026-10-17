@@ -37,12 +37,12 @@ export function Modal({ dialog, label, alert, className, children }: Props) {
     if (!element || label) return;
     const title = element.querySelector("h2");
     if (title) {
-      title.id ||= `${id}-title`;
+      if (!title.id) title.id = `${id}-title`;
       element.setAttribute("aria-labelledby", title.id);
     }
     const message = alert ? element.querySelector(".dialog-message") : null;
     if (message) {
-      message.id ||= `${id}-message`;
+      if (!message.id) message.id = `${id}-message`;
       element.setAttribute("aria-describedby", message.id);
     }
   }, [dialog, label, alert, id]);

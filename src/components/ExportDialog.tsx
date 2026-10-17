@@ -5,6 +5,7 @@ import { errorMessage, sessionsFile } from "../ipc/api";
 import { announce } from "../lib/announce";
 import { useDialog } from "../hooks/dialogs";
 import { save as saveDialog } from "../ipc/fileDialog";
+import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
@@ -31,14 +32,19 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
     const path = await saveDialog({ title: t("sidebar.exportSessions"), defaultPath: "zshell-sessions.json", filters: [fileType] });
     if (!path) return;
     setBusy(true);
-    try {
-      await sessionsFile.export(path, includePasswords ? passphrase : undefined);
-      announce(t("exportDialog.done"));
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-      setBusy(false);
-    }
+    return attempt(
+      async () => {
+        await sessionsFile.export(path, includePasswords ? passphrase : undefined);
+        announce(t("exportDialog.done"));
+        onClose();
+      },
+      {
+        onError: (err) => {
+          setError(errorMessage(err));
+          setBusy(false);
+        },
+      },
+    );
   };
 
   return (
