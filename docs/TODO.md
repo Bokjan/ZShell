@@ -86,10 +86,10 @@
   2. **显示时终端还在暂停**：隐藏页在视口外，RenderService 是暂停的；移回视口后，IntersectionObserver 的回调要等这一帧画完才到，这一帧里 `setRenderer` 请求的刷新因为暂停被推迟。任何缩放下都有，前提是隐藏页移出视口（`styles/terminals.css`）。
 - **上游**：
   - 第 1 条是 [xtermjs/xterm.js#4922](https://github.com/xtermjs/xterm.js/issues/4922)，由 [xtermjs/xterm.js#5529](https://github.com/xtermjs/xterm.js/pull/5529) 修复（2025-12-28 合入 master，晚于 6.0.0）：重设画布后发出 `sync: true`，同步重画。6.1.0-beta 已包含，正式版尚未发布。
-  - 第 2 条上游没有人报过（2026-10-17 查过）。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到 6.1.0，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。我们附上复现和录屏，向上游提 issue 和 PR，提交后在这里补上链接。
+  - 第 2 条是我们提的 [xtermjs/xterm.js#6239](https://github.com/xtermjs/xterm.js/issues/6239)（2026-10-17 提出，之前上游没有人报过），修复是 [xtermjs/xterm.js#6240](https://github.com/xtermjs/xterm.js/pull/6240)，等待评审。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到 6.1.0，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。#6240 就是这样改的，附了单元测试；issue 里有最小复现（npm 6.1.0-beta.315 上每次切换都空白一帧）。
 - **关注**：
   - `@xterm/xterm` 6.1.0 正式版的发布。它只带第 1 条的修复，绕过要保留。
-  - 我们提的 issue 和 PR：是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
+  - #6239 和 #6240：评审意见（要改补丁时，从 fork `Bokjan/xterm.js` 的 `paused-blank-render` 分支继续），是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
   - 维护者如果选了别的修法，要看它能不能让显示的那一帧就有内容。例如只在 IntersectionObserver 恢复渲染时同步补画是不够的：回调本来就晚一帧，补画时那一帧已经空白地画出去了。
 - **绕过**：`webgl.ts` 加载插件后，给新的 WebGL 画布再挂一个 ResizeObserver。它创建在插件的之后，同一轮回调里排在插件后面，也就是画布刚被重设之后、这一帧绘制之前；第一次回调时断开，并调用私有的 `_core._renderService._renderRows` 同步画整屏，这个函数不看暂停。可选链访问，xterm.js 内部改名时什么都不做，空白帧又会出现，不会报错。图集重建时重新加载插件也走这里。
 - **验证**：在临时目录里搭测试页（用仓库里打过补丁的 xterm.js 和 `webgl.ts`，照应用的 `.tab-page` CSS 放两个终端，切换时先改 class，再释放旧终端的 WebGL、加载新终端的），在独立配置目录的 Chrome 里用 `--force-device-scale-factor` 设缩放，用 CDP 录屏，按两个终端的文字颜色把每帧分成「A」「B」「空白」。Chrome 要加 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`，否则窗口被遮住后 rAF 停止。每种情形切换 6 次，空白帧数：
