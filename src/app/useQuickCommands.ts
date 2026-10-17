@@ -26,8 +26,8 @@ export function useQuickCommands() {
   );
 
   useEffect(() => {
-    quickCommands.get().then(setCommands).catch(console.error);
-  }, []);
+    quickCommands.get().then(saver.loaded).catch(console.error);
+  }, [saver]);
   // Changed in another window.
   useConfigChanged("quickCommands", saver.reload);
 

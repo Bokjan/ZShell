@@ -58,7 +58,7 @@ async function busyReason(pane: Pane): Promise<Busy | null> {
  * whether port forwarding another tab of the session could take over should keep running.
  * `dialogs` is what to render for the questions.
  */
-export function useCloseFlow(store: TabStore, settings: Settings, update: (settings: Settings) => void) {
+export function useCloseFlow(store: TabStore, settings: Settings, update: (change: (settings: Settings) => Settings) => void) {
   const { t } = useTranslation();
   const settingsRef = useLatest(settings);
   // Panes waiting for the user to confirm closing them, with why the first busy one is busy.
@@ -173,7 +173,7 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
 
   const confirmClose = (dontAskAgain: boolean) => {
     if (!closing) return;
-    if (dontAskAgain) update({ ...settings, tabs: { ...settings.tabs, confirmClose: false } });
+    if (dontAskAgain) update((settings) => ({ ...settings, tabs: { ...settings.tabs, confirmClose: false } }));
     closePanes(closing.panes);
     setClosing(null);
   };

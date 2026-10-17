@@ -19,7 +19,8 @@ export function AboutSection({ onShowLicenses }: { onShowLicenses(): void }) {
   const { settings, update } = useSettings();
   const updates = useUpdates();
   const checkNowRef = useRef<HTMLButtonElement>(null);
-  const setUpdates = (patch: Partial<typeof settings.updates>) => update({ ...settings, updates: { ...settings.updates, ...patch } });
+  const setUpdates = (patch: Partial<typeof settings.updates>) =>
+    update((settings) => ({ ...settings, updates: { ...settings.updates, ...patch } }));
   const [app, setApp] = useState<{ name: string; version: string } | null>(null);
   const [directory, setDirectory] = useState("");
   useEffect(() => {

@@ -690,7 +690,7 @@ export function TerminalView({
 
   const confirmPaste = (text: string, dontAskAgain: boolean) => {
     setPendingPaste(null);
-    if (dontAskAgain) update({ ...settings, terminal: { ...settings.terminal, confirmMultilinePaste: false } });
+    if (dontAskAgain) update((settings) => ({ ...settings, terminal: { ...settings.terminal, confirmMultilinePaste: false } }));
     pasteAllRef.current(text);
     focus();
   };

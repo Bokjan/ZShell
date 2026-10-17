@@ -1,29 +1,33 @@
 /**
- * A value saved whole to the backend (the settings, the quick commands), shown as changed at
- * once. Only the latest request's answer is applied: an older one would undo a newer change,
- * here or in another window.
+ * A value saved whole to the backend (the settings, the quick commands), changed here as a
+ * change to it, shown at once. Until it is stored, a change is kept as a change: when another
+ * window stores the value meanwhile (`reload`), the changes made here are made again to what
+ * it stored, so that neither window's change is lost, as they would be if either stored the
+ * whole value it showed. Only the latest request's answer is shown: an older one would undo a
+ * newer change, here or in another window.
  *
  * A save that fails puts back the stored value, which the change never reached, and is
  * reported: otherwise the change would stay on screen until the next start. A failure that
- * a newer request has overtaken is neither: that request carries the whole value too.
+ * newer changes have overtaken is neither: their save carries the failed change too.
  *
  * A save can wait (a field saved as it is typed, which would otherwise write the file on each
- * key): the change is shown at once and stored once no other change has come for `delay`
- * ms. Anything else stores it first: a save that doesn't wait, `flush`, and `reload`, so that
- * the last change made here is not lost to a change from another window.
+ * key): the change is shown at once and stored once no other change has come for `delay` ms,
+ * or when flushed.
  *
  * One request is with the backend at a time, which keeps them in order (its commands run
- * apart, off the main thread, as each writes a file): the others wait, a newer value taking
- * the place of one waiting to be stored, so that changes made faster than the disk takes them
+ * apart, off the main thread, as each writes a file): the others wait, a newer store taking
+ * the place of one waiting to be made, so that changes made faster than the disk takes them
  * (a number stepped with a key held down) are stored as they can be, the last one always.
  */
 export interface LatestSave<T> {
-  /** Shows `value` and saves it, after `delay` ms without another change if given. */
-  save(value: T, delay?: number): void;
+  /** Shows `change` made to the value shown and saves it, after `delay` ms without another change if given. */
+  save(change: (value: T) => T, delay?: number): void;
   /** Stores a change still waiting, if any. */
   flush(): void;
-  /** Shows the stored value (after a change in another window). */
+  /** Shows the stored value (after a change in another window), with the changes not stored yet. */
   reload(): void;
+  /** The stored value, read elsewhere (when the page starts). */
+  loaded(value: T): void;
 }
 
 export function latestSave<T>(options: {
@@ -32,8 +36,13 @@ export function latestSave<T>(options: {
   load(): Promise<T>;
   failed(error: unknown): void;
 }): LatestSave<T> {
+  // The value as last stored or loaded, and the changes made since that aren't stored yet,
+  // oldest first: what is shown is those changes made to it.
+  let base: T | undefined;
+  let shown: T | undefined;
+  const pending: ((value: T) => T)[] = [];
+  let waiting: ReturnType<typeof setTimeout> | null = null;
   let latest = 0;
-  let waiting: { value: T; timer: ReturnType<typeof setTimeout> } | null = null;
   // The requests after the one with the backend, in order: stores and loads.
   const queue: { kind: "store" | "load"; run(): Promise<void> }[] = [];
   let busy = false;
@@ -42,52 +51,71 @@ export function latestSave<T>(options: {
     busy = request !== undefined;
     request?.run().then(next, next);
   };
-  const enqueue = (kind: "store" | "load", run: () => Promise<void>) => {
-    // The value stored is whole: a newer one replaces one waiting right before it.
+  const enqueue = (kind: "store" | "load", run: (request: number) => Promise<void>) => {
+    const request = ++latest;
+    // A store makes what is pending then, and a load reads what is stored then: one right
+    // before another of its kind does the same.
     const last = queue[queue.length - 1];
-    if (last?.kind === kind) queue[queue.length - 1] = { kind, run };
-    else queue.push({ kind, run });
+    const entry = { kind, run: () => run(request) };
+    if (last?.kind === kind) queue[queue.length - 1] = entry;
+    else queue.push(entry);
     if (!busy) next();
   };
-  const store = (value: T, request: number) =>
-    enqueue("store", () =>
-      options.store(value).then(
+  const show = (value: T) => {
+    shown = value;
+    options.show(value);
+  };
+  const changed = (value: T, changes = pending) => changes.reduce((value, change) => change(value), value);
+
+  const store = () =>
+    enqueue("store", async (request) => {
+      const changes = pending.slice();
+      if (changes.length === 0) return;
+      // Nothing loaded yet (never in the app, which loads first): what is shown has them.
+      const value = base === undefined ? shown : changed(base, changes);
+      if (value === undefined) return;
+      await options.store(value).then(
         (saved) => {
-          if (request === latest) options.show(saved);
+          base = saved;
+          pending.splice(0, changes.length);
+          if (request === latest && pending.length === 0) show(saved);
         },
         (e: unknown) => {
-          if (request !== latest) return;
+          if (pending.length > changes.length) return;
+          pending.splice(0, changes.length);
           options.failed(e);
           reload();
         },
-      ),
-    );
+      );
+    });
   const flush = () => {
-    if (!waiting) return;
-    clearTimeout(waiting.timer);
-    const { value } = waiting;
+    if (waiting === null) return;
+    clearTimeout(waiting);
     waiting = null;
-    store(value, latest);
+    store();
   };
-  const reload = () => {
-    if (waiting) return flush();
-    const request = ++latest;
-    enqueue("load", () =>
+  const reload = () =>
+    enqueue("load", (request) =>
       options.load().then((stored) => {
-        if (request === latest) options.show(stored);
+        base = stored;
+        if (request === latest) show(changed(stored));
       }, console.error),
     );
-  };
   return {
-    save(value, delay) {
-      const request = ++latest;
-      options.show(value);
-      if (waiting) clearTimeout(waiting.timer);
+    save(change, delay) {
+      if (shown === undefined && base === undefined) return;
+      pending.push(change);
+      show(change(shown ?? (base as T)));
+      if (waiting !== null) clearTimeout(waiting);
       waiting = null;
-      if (delay === undefined) store(value, request);
-      else waiting = { value, timer: setTimeout(flush, delay) };
+      if (delay === undefined) store();
+      else waiting = setTimeout(flush, delay);
     },
     flush,
     reload,
+    loaded(value) {
+      base = value;
+      show(changed(value));
+    },
   };
 }

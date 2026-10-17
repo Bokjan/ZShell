@@ -29,13 +29,15 @@ function setup(stored: string) {
     load: () => Promise.resolve(stored),
     failed: (e) => failures.push(e),
   });
+  saver.loaded(stored);
+  shown.length = 0;
   return { saver, shown, failures, stores };
 }
 
 describe("latestSave", () => {
   it("shows a change at once, then what was saved", async () => {
     const { saver, shown, stores } = setup("stored");
-    saver.save("a");
+    saver.save(() => "a");
     expect(shown).toEqual(["a"]);
     stores[0].resolve("a (saved)");
     await settle();
@@ -44,7 +46,7 @@ describe("latestSave", () => {
 
   it("puts back the stored value when a save fails, and reports it", async () => {
     const { saver, shown, failures, stores } = setup("stored");
-    saver.save("a");
+    saver.save(() => "a");
     stores[0].reject("disk full");
     await settle();
     expect(failures).toEqual(["disk full"]);
@@ -53,9 +55,9 @@ describe("latestSave", () => {
 
   it("stores one value at a time, the newest of those waiting next", async () => {
     const { saver, shown, failures, stores } = setup("stored");
-    saver.save("a");
-    saver.save("b");
-    saver.save("c");
+    saver.save(() => "a");
+    saver.save(() => "b");
+    saver.save(() => "c");
     expect(stores).toHaveLength(1);
     // Overtaken, failed or not: not shown or reported.
     stores[0].reject("disk full");
@@ -70,8 +72,8 @@ describe("latestSave", () => {
 
   it("reports the newest failure even after older saves succeeded", async () => {
     const { saver, shown, failures, stores } = setup("stored");
-    saver.save("a");
-    saver.save("b");
+    saver.save(() => "a");
+    saver.save(() => "b");
     stores[0].resolve("a (saved)");
     await settle();
     stores[1].reject("read-only");
@@ -93,7 +95,9 @@ describe("latestSave", () => {
       load: async () => stored,
       failed: () => {},
     });
-    saver.save("a");
+    saver.loaded(stored);
+    shown.length = 0;
+    saver.save(() => "a");
     // Another window changed them meanwhile.
     saver.reload();
     await settle();
@@ -103,10 +107,10 @@ describe("latestSave", () => {
 
   it("lets a change made after a failure win over putting back", async () => {
     const { saver, shown, stores } = setup("stored");
-    saver.save("a");
+    saver.save(() => "a");
     stores[0].reject("disk full");
     // Before the stored value arrives.
-    saver.save("b");
+    saver.save(() => "b");
     await settle();
     expect(shown).toEqual(["a", "b"]);
   });
@@ -117,7 +121,7 @@ describe("latestSave", () => {
     await settle();
     expect(shown).toEqual(["stored"]);
     saver.reload();
-    saver.save("a");
+    saver.save(() => "a");
     await settle();
     expect(shown).toEqual(["stored", "a"]);
   });
@@ -128,9 +132,9 @@ describe("latestSave", () => {
 
     it("shows each change at once and stores the last once changes stop", () => {
       const { saver, shown, stores } = setup("stored");
-      saver.save("a", 500);
+      saver.save(() => "a", 500);
       vi.advanceTimersByTime(300);
-      saver.save("ab", 500);
+      saver.save(() => "ab", 500);
       vi.advanceTimersByTime(499);
       expect(shown).toEqual(["a", "ab"]);
       expect(stores).toHaveLength(0);
@@ -140,7 +144,7 @@ describe("latestSave", () => {
 
     it("stores a waiting change when flushed, once", async () => {
       const { saver, shown, stores } = setup("stored");
-      saver.save("a", 500);
+      saver.save(() => "a", 500);
       saver.flush();
       saver.flush();
       vi.advanceTimersByTime(500);
@@ -152,20 +156,34 @@ describe("latestSave", () => {
 
     it("drops a waiting change that a save overtakes", () => {
       const { saver, stores } = setup("stored");
-      saver.save("a", 500);
-      saver.save("b");
+      saver.save(() => "a", 500);
+      saver.save(() => "b");
       vi.advanceTimersByTime(500);
       expect(stores).toHaveLength(1);
     });
 
-    it("stores a waiting change instead of reloading", async () => {
-      const { saver, shown, stores } = setup("stored");
-      saver.save("a", 500);
+    it("keeps a waiting change on top of what another window stored", async () => {
+      interface Value {
+        here: string;
+        there: string;
+      }
+      let stored: Value = { here: "", there: "" };
+      const shown: Value[] = [];
+      const saver = latestSave<Value>({
+        show: (value) => shown.push(value),
+        store: async (value) => (stored = value),
+        load: async () => stored,
+        failed: () => {},
+      });
+      saver.loaded(stored);
+      saver.save((value) => ({ ...value, here: "typed" }), 500);
+      // Another window stores its change while this one waits.
+      stored = { ...stored, there: "changed" };
       saver.reload();
-      expect(stores).toHaveLength(1);
-      stores[0].resolve("a (saved)");
-      await vi.runAllTimersAsync();
-      expect(shown).toEqual(["a", "a (saved)"]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(shown[shown.length - 1]).toEqual({ here: "typed", there: "changed" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(stored).toEqual({ here: "typed", there: "changed" });
     });
   });
 });

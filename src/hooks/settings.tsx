@@ -39,8 +39,12 @@ interface SettingsContextValue {
   theme: "dark" | "light";
   /** Whether terminals are read for screen readers, with "auto" resolved. */
   screenReader: boolean;
-  /** Applies `settings` and saves them, after `delay` ms without another change if given. */
-  update(settings: Settings, delay?: number): void;
+  /**
+   * Applies `change` to the settings and saves them, after `delay` ms without another change if
+   * given. A change rather than the settings it makes, so that a change another window saves
+   * meanwhile is kept too (see `latestSave`).
+   */
+  update(change: (settings: Settings) => Settings, delay?: number): void;
   /** Saves a change still waiting for its delay. */
   flush(): void;
   /** Why the last change couldn't be saved (it was undone), until dismissed. */
@@ -80,6 +84,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [system, setSystem] = useState<"dark" | "light">(systemTheme);
 
+  // Applied immediately; the backend's validated copy replaces it once saved (see
+  // `latestSave`).
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const saver = useMemo(
+    () =>
+      latestSave<Settings>({
+        show: setSettings,
+        store: appSettings.set,
+        load: appSettings.get,
+        failed: (e) => setSaveError(() => e),
+      }),
+    [],
+  );
+
   useEffect(() => {
     // With the desktop's monospace font (Linux), which terminals default to.
     const font = appSettings.systemMonospaceFont().catch(() => null);
@@ -89,13 +107,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
     void Promise.all([stored, font]).then(([stored, font]) => {
       if (font) setSystemFont(font);
-      setSettings(stored);
+      saver.loaded(stored);
     });
     const query = window.matchMedia("(prefers-color-scheme: light)");
     const onChange = () => setSystem(systemTheme());
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
-  }, []);
+  }, [saver]);
 
   const loaded = settings !== null;
   const appearance = settings?.appearance ?? "system";
@@ -144,19 +162,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }, console.error);
   }, []);
 
-  // Applied immediately; the backend's validated copy replaces it once saved (see
-  // `latestSave`).
-  const [saveError, setSaveError] = useState<unknown>(null);
-  const saver = useMemo(
-    () =>
-      latestSave<Settings>({
-        show: setSettings,
-        store: appSettings.set,
-        load: appSettings.get,
-        failed: (e) => setSaveError(() => e),
-      }),
-    [],
-  );
   useConfigChanged("settings", saver.reload);
 
   // Wait for the stored settings so terminals start with the right theme and font.

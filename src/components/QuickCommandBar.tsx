@@ -21,7 +21,8 @@ interface Props {
   /** The active tab's group. */
   group: CommandGroup;
   onPickGroup(id: string): void;
-  onChange(commands: QuickCommands): void;
+  /** Saves a change to the commands (see `latestSave`). */
+  onChange(change: (commands: QuickCommands) => QuickCommands): void;
   onRun(command: QuickCommand): SendResult;
   /**
    * Titles of the tabs a command goes to when that is more than the active tab (the compose
@@ -102,7 +103,9 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
         {
           label: t("quick.duplicate"),
           onSelect: () =>
-            onChange(saveCommand(commands, group.id, { ...command, id: "", name: t("quick.copyName", { name: command.name }) })),
+            onChange((commands) =>
+              saveCommand(commands, group.id, { ...command, id: "", name: t("quick.copyName", { name: command.name }) }),
+            ),
         },
         "separator",
         { label: t("quick.delete"), danger: true, onSelect: () => setDeleting({ kind: "command", command }) },
@@ -133,7 +136,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
       onEnd: (moved) => {
         if (moved) {
           dragged.current = true;
-          onChange(moveCommand(commands, id, ids.indexOf(id)));
+          onChange((commands) => moveCommand(commands, id, ids.indexOf(id)));
         }
         setOrder(null);
         setDragging(null);
@@ -192,7 +195,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           command={editing.command}
           groupId={group.id}
           groups={commands.groups}
-          onSave={(groupId, command) => onChange(saveCommand(commands, groupId, command))}
+          onSave={(groupId, command) => onChange((commands) => saveCommand(commands, groupId, command))}
           onClose={() => setEditing(null)}
         />
       )}
@@ -201,7 +204,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           title={naming.id ? t("quick.renameGroupTitle") : t("quick.newGroupTitle")}
           label={t("quick.groupName")}
           initial={naming.name}
-          onSave={(name) => onChange(naming.id ? renameGroup(commands, naming.id, name) : addGroup(commands, name))}
+          onSave={(name) => onChange((commands) => (naming.id ? renameGroup(commands, naming.id, name) : addGroup(commands, name)))}
           onClose={() => setNaming(null)}
         />
       )}
@@ -212,7 +215,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           confirmLabel={t("common.delete")}
           danger
           onConfirm={() => {
-            onChange(deleteCommand(commands, deleting.command.id));
+            onChange((commands) => deleteCommand(commands, deleting.command.id));
             setDeleting(null);
           }}
           onCancel={() => setDeleting(null)}
@@ -225,7 +228,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           confirmLabel={t("common.delete")}
           danger
           onConfirm={() => {
-            onChange(deleteGroup(commands, group.id));
+            onChange((commands) => deleteGroup(commands, group.id));
             onPickGroup(DEFAULT_GROUP);
             setDeleting(null);
           }}

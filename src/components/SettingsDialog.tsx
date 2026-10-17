@@ -73,12 +73,13 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { settings, theme, update } = useSettings();
   const terminal = settings.terminal;
   const setTerminal = (patch: Partial<TerminalSettings>, delay?: number) =>
-    update({ ...settings, terminal: { ...terminal, ...patch } }, delay);
-  const setTabs = (patch: Partial<TabSettings>) => update({ ...settings, tabs: { ...settings.tabs, ...patch } });
-  const setSidebar = (patch: Partial<SidebarSettings>) => update({ ...settings, sidebar: { ...settings.sidebar, ...patch } });
-  const setFiles = (patch: Partial<FileSettings>) => update({ ...settings, files: { ...settings.files, ...patch } });
-  const setZmodem = (patch: Partial<ZmodemSettings>) => update({ ...settings, zmodem: { ...settings.zmodem, ...patch } });
-  const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
+    update((settings) => ({ ...settings, terminal: { ...settings.terminal, ...patch } }), delay);
+  const setTabs = (patch: Partial<TabSettings>) => update((settings) => ({ ...settings, tabs: { ...settings.tabs, ...patch } }));
+  const setSidebar = (patch: Partial<SidebarSettings>) =>
+    update((settings) => ({ ...settings, sidebar: { ...settings.sidebar, ...patch } }));
+  const setFiles = (patch: Partial<FileSettings>) => update((settings) => ({ ...settings, files: { ...settings.files, ...patch } }));
+  const setZmodem = (patch: Partial<ZmodemSettings>) => update((settings) => ({ ...settings, zmodem: { ...settings.zmodem, ...patch } }));
+  const setLogs = (patch: Partial<LogSettings>) => update((settings) => ({ ...settings, logs: { ...settings.logs, ...patch } }));
   const [licensesOpen, setLicensesOpen] = useState(false);
   const updates = useUpdates();
   const { ref: resetRef, armed: resetArmed, setArmed: setResetArmed, onBlur: onResetBlur } = useConfirmButton();
@@ -219,7 +220,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
     }
     setResetArmed(false);
     // Except the language: whoever chose one may not read the default.
-    update({ ...DEFAULT_SETTINGS, language: settings.language });
+    update((settings) => ({ ...DEFAULT_SETTINGS, language: settings.language }));
   };
 
   const schemeName = (scheme: TerminalScheme) => schemeLabel(scheme, t);
@@ -282,7 +283,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 label={t("settings.appearance")}
                 value={settings.appearance}
                 options={APPEARANCES.map((appearance) => ({ value: appearance, content: t(`settings.appearances.${appearance}`) }))}
-                onChange={(appearance) => update({ ...settings, appearance })}
+                onChange={(appearance) => update((settings) => ({ ...settings, appearance }))}
               />
               <Setting>
                 <div className="field">
@@ -292,7 +293,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                     label={t("settings.textSize")}
                     value={settings.textSize}
                     options={TEXT_SIZES.map((textSize) => ({ value: textSize, content: t(`settings.textSizes.${textSize}`) }))}
-                    onChange={(textSize) => update({ ...settings, textSize })}
+                    onChange={(textSize) => update((settings) => ({ ...settings, textSize }))}
                   />
                 </div>
                 <p className="hint">{t("settings.textSizeHint")}</p>
@@ -303,7 +304,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                     {t("settings.appFont")}
                     <LiveTextField
                       value={settings.appFont}
-                      onChange={(appFont) => update({ ...settings, appFont }, TYPING_SAVE_DELAY)}
+                      onChange={(appFont) => update((settings) => ({ ...settings, appFont }), TYPING_SAVE_DELAY)}
                       placeholder={t("settings.appFontPlaceholder")}
                       autoCapitalize="off"
                       autoCorrect="off"
@@ -317,7 +318,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                   <input
                     type="checkbox"
                     checked={settings.statusBar.show}
-                    onChange={(e) => update({ ...settings, statusBar: { ...settings.statusBar, show: e.target.checked } })}
+                    onChange={(e) => update((settings) => ({ ...settings, statusBar: { ...settings.statusBar, show: e.target.checked } }))}
                   />
                   {t("settings.showStatusBar")}
                 </label>
@@ -326,7 +327,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
               <Setting>
                 <label className="field">
                   {t("settings.language")}
-                  <select value={settings.language} onChange={(e) => update({ ...settings, language: e.target.value })}>
+                  <select value={settings.language} onChange={(e) => update((settings) => ({ ...settings, language: e.target.value }))}>
                     <option value="system">{t("settings.languageSystem", { language: languageName(systemLanguage()) })}</option>
                     {LANGUAGES.map((language) => (
                       <option key={language} value={language} lang={language}>
