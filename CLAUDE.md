@@ -31,6 +31,8 @@ cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
 pnpm tauri dev                              # run the app
 ```
 
+Cargo never removes stale artifacts, so `src-tauri/target` keeps growing as dependencies, features and the toolchain change. Run `cargo clean` in `src-tauri/` when it gets large, after a batch of dependency updates for example; Windows locks the files of a running `zshell.exe`, so first stop the debug instances you started (never the maintainer's).
+
 Run the first four before committing; CI runs the same build, formatting check, clippy and tests on macOS, Windows (x64 and ARM64) and Linux (formatting on macOS only). Platform-only code (ConPTY, the OpenSSH agent pipe and Pageant on Windows, AppKit on macOS, GTK on Linux) cannot be compiled elsewhere, so CI is the only check for it there.
 
 Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/ipc/bindings.ts` (never mirror them by hand in `api.ts`), and so are the few constants both sides need (`constants()` in `bindings.rs`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale. The names of the commands (from `lib.rs`) and of the events, with their payloads (declared in `events.rs`, the only way the backend sends one), are generated there too: the frontend calls commands only through `call` in `src/ipc/call.ts` and listens through `listenHere` / `useWindowEvent`, which check them.

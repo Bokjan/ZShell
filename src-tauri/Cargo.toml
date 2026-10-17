@@ -13,7 +13,8 @@ publish = false
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "zshell_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Only the rlib the binary links: the template's staticlib (iOS) and cdylib (Android) were rebuilt on every change for nothing.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -154,6 +155,11 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 block2 = "0.6"
 # The app lock: Touch ID or the login password.
 objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }
+
+# Dependencies keep only line tables in debug builds: backtraces still show file and line, while target/ and linking shrink a lot.
+# Remove this to step through a dependency in a debugger.
+[profile.dev.package."*"]
+debug = "line-tables-only"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
