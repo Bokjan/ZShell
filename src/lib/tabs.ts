@@ -256,5 +256,3 @@ export function createTabStore(initial: TabsState = INITIAL_TABS): TabStore {
     },
   };
 }
-
-/** The store's state, rendering again when it changes. */
