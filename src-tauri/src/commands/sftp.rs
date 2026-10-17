@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
@@ -124,11 +125,15 @@ pub async fn sftp_upload(
     remote_dir: String,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<()> {
-    let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &transfer_id));
-    let result = transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await;
+    let cancelled = transfers.start(webview.label(), &transfer_id);
+    let result = async {
+        let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled);
+        Ok(transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await?)
+    };
+    let result = result.await;
     transfers.finish(webview.label(), &transfer_id);
-    Ok(result?)
+    result
 }
 
 /// Downloads into `local_dir` (default: the download folder from the settings); returns the
@@ -147,15 +152,19 @@ pub async fn sftp_download(
     local_dir: Option<PathBuf>,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<Vec<PathBuf>> {
-    let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-    let local_dir = match local_dir {
-        Some(dir) => dir,
-        None => download_dir(&app, &settings)?,
+    let cancelled = transfers.start(webview.label(), &transfer_id);
+    let result = async {
+        let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
+        let local_dir = match local_dir {
+            Some(dir) => dir,
+            None => download_dir(&app, &settings)?,
+        };
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled);
+        Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await?)
     };
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &transfer_id));
-    let result = transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await;
+    let result = result.await;
     transfers.finish(webview.label(), &transfer_id);
-    Ok(result?)
+    result
 }
 
 /// Downloads one item to `local_path`, replacing what is there (the save dialog asked).
@@ -171,12 +180,15 @@ pub async fn sftp_download_as(
     local_path: PathBuf,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<PathBuf> {
-    let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &transfer_id));
-    let result = transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter).await;
+    let cancelled = transfers.start(webview.label(), &transfer_id);
+    let result = async {
+        let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled);
+        Ok(transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter).await?)
+    };
+    let result = result.await;
     transfers.finish(webview.label(), &transfer_id);
-    result?;
-    Ok(local_path)
+    result.map(|()| local_path)
 }
 
 /// Where downloads go without asking: the folder chosen in the settings, else Downloads.
@@ -214,14 +226,28 @@ pub async fn sftp_edit_open(
     on_progress: Channel<transfer::Progress>,
     on_event: Channel<EditEvent>,
 ) -> Result<PathBuf> {
-    let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
-    let local = edits.local_path(&edit_id, &remote_path)?;
-    let remote_stamp = edit::remote_stamp(&sftp, &remote_path).await;
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &edit_id));
-    let result = transfer::download_to(&sftp, &[(remote_path.clone(), local.clone())], &mut reporter).await;
+    let cancelled = transfers.start(webview.label(), &edit_id);
+    let result = async {
+        let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
+        let local = edits.local_path(&edit_id, &remote_path)?;
+        let remote_stamp = edit::remote_stamp(&sftp, &remote_path).await;
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled.clone());
+        transfer::download_to(&sftp, &[(remote_path.clone(), local.clone())], &mut reporter).await?;
+        edits.start(webview.label(), &edit_id, remote_path, local.clone(), remote_stamp, on_event);
+        Result::Ok(local)
+    };
+    // Watched while the download still counts as the page's: if the page went since, the
+    // download was cancelled with it, and the edit, watched too late for the page to stop it,
+    // stops here.
+    let result = result.await.and_then(|local| {
+        if !cancelled.load(Ordering::Relaxed) {
+            return Ok(local);
+        }
+        edits.stop(webview.label(), &edit_id);
+        Err(Error::new("transfer.cancelled"))
+    });
     transfers.finish(webview.label(), &edit_id);
-    result?;
-    edits.start(webview.label(), &edit_id, remote_path, local.clone(), remote_stamp, on_event);
+    let local = result?;
     if let Err(e) = open_editor(&app, &settings, local.clone()).await {
         edits.stop(webview.label(), &edit_id);
         return Err(e);
