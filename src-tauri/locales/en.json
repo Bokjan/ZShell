@@ -140,6 +140,7 @@
       "handshakeTimeout": "{target} accepted the connection but did not complete the SSH handshake in time",
       "hostKeyRejected": "Host key not trusted, connection aborted",
       "channelFailed": "Cannot open a session channel",
+      "shellFailed": "The server did not start a shell",
       "jumpFailed": "Jump host {jump} cannot connect to {target}"
     },
     "auth": {
@@ -159,6 +160,7 @@
     },
     "sftp": {
       "unsupported": "The server does not support SFTP",
+      "openFailed": "Cannot open an SFTP channel",
       "listFailed": "Cannot list {path}",
       "mkdirFailed": "Cannot create folder {path}",
       "renameFailed": "Cannot rename {from} to {to}",

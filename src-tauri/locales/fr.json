@@ -140,6 +140,7 @@
       "handshakeTimeout": "{target} a accepté la connexion mais n’a pas terminé la négociation SSH à temps",
       "hostKeyRejected": "Clé d’hôte non approuvée, connexion interrompue",
       "channelFailed": "Impossible d’ouvrir un canal de session",
+      "shellFailed": "Le serveur n’a pas démarré de shell",
       "jumpFailed": "L’hôte de rebond {jump} ne peut pas se connecter à {target}"
     },
     "auth": {
@@ -159,6 +160,7 @@
     },
     "sftp": {
       "unsupported": "Le serveur ne prend pas en charge SFTP",
+      "openFailed": "Impossible d’ouvrir un canal SFTP",
       "listFailed": "Impossible de lister {path}",
       "mkdirFailed": "Impossible de créer le dossier {path}",
       "renameFailed": "Impossible de renommer {from} en {to}",

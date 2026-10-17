@@ -158,17 +158,18 @@ async fn start(
 async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> Result<Channel<Msg>> {
     let profile = connection.profile();
     let channel = connection.handle().channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
+    let failed = || Error::new("ssh.shellFailed");
     if profile.ssh.forward_agent {
-        channel.agent_forward(false).await?;
+        channel.agent_forward(false).await.context(failed())?;
     }
     let (cols, rows) = io.size;
-    channel.request_pty(false, &profile.ssh.remote.term_type, cols.into(), rows.into(), 0, 0, &[]).await?;
+    channel.request_pty(false, &profile.ssh.remote.term_type, cols.into(), rows.into(), 0, 0, &[]).await.context(failed())?;
     for var in &profile.ssh.env {
-        channel.set_env(false, var.name.clone(), var.value.clone()).await?;
+        channel.set_env(false, var.name.clone(), var.value.clone()).await.context(failed())?;
     }
     // In the order the server starts the shells, which is how their folders are found.
     connection.shell_opened(id, io);
-    channel.request_shell(false).await?;
+    channel.request_shell(false).await.context(failed())?;
     io.event(SessionEvent::Connected);
     Ok(channel)
 }

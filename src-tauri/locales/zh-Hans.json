@@ -140,6 +140,7 @@
       "handshakeTimeout": "{target} 接受了连接，但未能及时完成 SSH 握手",
       "hostKeyRejected": "主机密钥不受信任，已中止连接",
       "channelFailed": "无法打开会话通道",
+      "shellFailed": "服务器没有启动 shell",
       "jumpFailed": "跳板机 {jump} 无法连接到 {target}"
     },
     "auth": {
@@ -159,6 +160,7 @@
     },
     "sftp": {
       "unsupported": "服务器不支持 SFTP",
+      "openFailed": "无法打开 SFTP 通道",
       "listFailed": "无法列出 {path}",
       "mkdirFailed": "无法创建文件夹 {path}",
       "renameFailed": "无法将 {from} 重命名为 {to}",
