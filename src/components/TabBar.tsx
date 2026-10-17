@@ -174,11 +174,16 @@ export function TabBar({
     }
   }, [activeKey, tabs.length]);
 
-  // Where the tab bar is, for tabs dragged from other windows (see `tab_drag/`).
+  // Where the tab bar is, for tabs dragged from other windows (see `tab_drag/`): only when it
+  // has moved, as both of these fire on each frame of a resize.
   useEffect(() => {
     const bar = barRef.current!;
+    let last = "";
     const report = () => {
       const { x, y, width, height } = bar.getBoundingClientRect();
+      const key = `${x} ${y} ${width} ${height}`;
+      if (key === last) return;
+      last = key;
       void tabDrag.setTabBar({ x, y, width, height }).catch(console.error);
     };
     report();
