@@ -180,11 +180,12 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 - 提交选项：`listing.md` 的 "Notes for certification" 整段填入给认证人员的说明，其中 `runFullTrust` 一段也用作受限能力的理由。
 - 截图在 Windows 上用英语界面截，1366 × 768 以上的 PNG。
 
-**依赖的许可证**：ZShell 不开源、免费分发，依赖的许可证必须允许闭源分发，只要求附上声明。可以接受的列在 `src-tauri/about.toml` 的 `accepted` 里（MIT、Apache-2.0、BSD、ISC、Zlib、BSL-1.0、Unicode-3.0、MPL-2.0，以及数据类依赖常用的 CC-BY-4.0、CC0-1.0），`pnpm licenses:generate` 对 crate 与 npm 包都按这份列表检查，不在列表里的会让生成失败（release workflow 也随之失败）。引入新依赖前先看它（及其新带来的间接依赖）的许可证：
+**依赖的许可证**：ZShell 不开源、免费分发（见 `LICENSE.md`），依赖的许可证必须满足三点：允许分发不附源码的构建；不限制用途，用户可以在工作中商用；义务至多是附上声明。满足这三点的常见许可证都可以接受，列在 `src-tauri/about.toml` 的 `accepted` 里：宽松许可证（MIT、Apache-2.0、BSD-2/3-Clause、ISC、Zlib、BSL-1.0、Unicode、BlueOak、Python-2.0 等）、没有条件的（0BSD、MIT-0、Unlicense、CC0-1.0）、原样使用的 MPL-2.0，以及数据与字体常用的 CC-BY-3.0/4.0、CDLA-Permissive-2.0、OFL-1.1。`pnpm licenses:generate` 对 crate 与 npm 包都按这份列表检查，不在列表里的会让生成失败（release workflow 也随之失败）。引入新依赖前先看它（及其新带来的间接依赖）的许可证：
 - GPL、LGPL、AGPL 等 copyleft 许可证不接受：GPL / AGPL 要求整个程序以同样的许可证开源；LGPL 要求用户能替换该库，Rust 静态链接做不到。只有在多许可证（`MIT OR GPL-3.0`）里能选宽松的一个时才可用。
 - MPL-2.0 是文件级 copyleft：原样使用没有问题（声明里附有主页，说明源码在哪里），但修改了 MPL 文件（`[patch]`、vendoring）就要以 MPL 公开修改后的这些文件。
-- 声明里没有的条件（如要求在界面或文档里致谢的 BSD-4-Clause、限制商用的 CC BY-NC、"Commons Clause"）一律不接受；拿不准的先问。确认能遵守后再加进 `accepted`。
-- Creative Commons 只接受 CC-BY-4.0 与 CC0-1.0：CC-BY 要求的署名与许可证链接由声明满足，CC0 没有条件。CC-BY-SA 要求改编作品沿用同一许可证，CC-BY-NC 禁止商用（ZShell 允许用户在工作中使用），CC-BY-ND 禁止演绎，都不接受。
+- 声明以外的条件一律不接受：要求在界面或文档里致谢的 BSD-4-Clause，限制用途的 CC-BY-NC、SSPL、BUSL、Elastic License、"Commons Clause"，以及 JSON License「用于善而非恶」这类没法确定是否遵守的条款。拿不准的先问。确认能遵守后再加进 `accepted`。
+- Creative Commons 只接受 CC-BY 与 CC0：CC-BY 要求的署名与许可证链接由声明满足，CC0 没有条件。CC-BY-SA 要求改编作品沿用同一许可证，CC-BY-NC 禁止商用，CC-BY-ND 禁止演绎，都不接受。OFL-1.1 的字体可以随应用分发，只是不能单独出售。
+- 带例外的表达式（`Apache-2.0 WITH LLVM-exception`）还没有加进列表：`generate-licenses.mjs` 解析表达式时不认识 `WITH`，cargo-about 的写法也要先确认。遇到时再处理（例外只增加许可，判断看前面的许可证）。
 
 **第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.json`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置「关于」里的许可证对话框读取显示。Rust 依赖用 `cargo-about`（配置 `src-tauri/about.toml`，覆盖五个发布目标，不含 build / dev 依赖），前端只收运行时依赖（`pnpm licenses list --prod`）。本地需 `cargo install --locked cargo-about --features cli`，未安装时只生成前端部分，设置里注明；CI 中未安装则报错，release workflow 打包前生成。cargo-about 认不出许可证文件的 crate 在 `about.toml` 里按校验和 `clarify`，Dependabot 升级后文件变了会生成失败，更新校验和即可。
 
