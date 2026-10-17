@@ -140,7 +140,6 @@
       "handshakeTimeout": "{target} 接受了连接，但未能及时完成 SSH 握手",
       "hostKeyRejected": "主机密钥不受信任，已中止连接",
       "channelFailed": "无法打开会话通道",
-      "shellFailed": "服务器没有启动 shell",
       "jumpFailed": "跳板机 {jump} 无法连接到 {target}"
     },
     "auth": {

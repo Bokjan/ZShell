@@ -140,7 +140,6 @@
       "handshakeTimeout": "{target} a accepté la connexion mais n’a pas terminé la négociation SSH à temps",
       "hostKeyRejected": "Clé d’hôte non approuvée, connexion interrompue",
       "channelFailed": "Impossible d’ouvrir un canal de session",
-      "shellFailed": "Le serveur n’a pas démarré de shell",
       "jumpFailed": "L’hôte de rebond {jump} ne peut pas se connecter à {target}"
     },
     "auth": {

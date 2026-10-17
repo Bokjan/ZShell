@@ -120,7 +120,6 @@ export type ErrorCode =
   | "ssh.handshakeTimeout"
   | "ssh.hostKeyRejected"
   | "ssh.jumpFailed"
-  | "ssh.shellFailed"
   | "transfer.cancelled"
   | "transfer.createDirFailed"
   | "transfer.createFailed"

@@ -140,7 +140,6 @@
       "handshakeTimeout": "{target} accepted the connection but did not complete the SSH handshake in time",
       "hostKeyRejected": "Host key not trusted, connection aborted",
       "channelFailed": "Cannot open a session channel",
-      "shellFailed": "The server did not start a shell",
       "jumpFailed": "Jump host {jump} cannot connect to {target}"
     },
     "auth": {

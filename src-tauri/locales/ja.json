@@ -140,7 +140,6 @@
       "handshakeTimeout": "{target}は接続を受け付けましたが、SSHハンドシェイクが時間内に完了しませんでした",
       "hostKeyRejected": "ホスト鍵が信頼されていないため、接続を中止しました",
       "channelFailed": "セッションチャネルを開けません",
-      "shellFailed": "サーバーがシェルを開始しませんでした",
       "jumpFailed": "踏み台ホスト{jump}から{target}に接続できません"
     },
     "auth": {

@@ -140,7 +140,6 @@
       "handshakeTimeout": "{target} hat die Verbindung angenommen, den SSH-Handshake aber nicht rechtzeitig abgeschlossen",
       "hostKeyRejected": "Der Hostschlüssel ist nicht vertrauenswürdig, die Verbindung wurde abgebrochen",
       "channelFailed": "Es kann kein Sitzungskanal geöffnet werden",
-      "shellFailed": "Der Server hat keine Shell gestartet",
       "jumpFailed": "Der Jump-Host {jump} kann keine Verbindung mit {target} herstellen"
     },
     "auth": {

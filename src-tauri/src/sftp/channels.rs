@@ -84,7 +84,9 @@ async fn open(slot: &Slot, connection: &ssh::Connection, config: SftpConfig) -> 
         }
     }
     let mut channel = connection.handle().channel_open_session().await.context(Error::new("sftp.openFailed"))?;
-    channel.request_subsystem(true, "sftp").await.context(Error::new("sftp.openFailed"))?;
+    // Sent without waiting for the answer, which comes below: this fails only when the
+    // connection is gone.
+    channel.request_subsystem(true, "sftp").await.context(Error::new("net.connectionLost"))?;
     // A server without the subsystem answers with a failure but keeps the channel open, and
     // russh-sftp would wait for its greeting until the request times out.
     loop {

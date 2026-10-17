@@ -160,7 +160,9 @@ async fn start(
 async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> Result<Channel<Msg>> {
     let profile = connection.profile();
     let channel = connection.handle().channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
-    let failed = || Error::new("ssh.shellFailed");
+    // These requests wait for no answer: they fail only when the connection is gone. A server
+    // that won't start the shell closes the channel, which ends the session as usual.
+    let failed = || Error::new("net.connectionLost");
     if profile.ssh.forward_agent {
         channel.agent_forward(false).await.context(failed())?;
     }
