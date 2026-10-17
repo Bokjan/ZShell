@@ -101,7 +101,7 @@ impl Telnet {
 
     /// Splits a chunk from the server into data and commands, answering the commands.
     pub fn receive(&mut self, input: &[u8]) -> Received {
-        let mut received = Received::default();
+        let mut received = Received { data: Vec::with_capacity(input.len()), ..Received::default() };
         for &byte in input {
             match self.state {
                 State::Data if byte == IAC => self.state = State::Iac,

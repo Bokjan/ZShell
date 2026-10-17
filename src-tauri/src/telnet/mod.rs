@@ -227,10 +227,14 @@ struct LastLine(Vec<u8>);
 
 impl LastLine {
     fn push(&mut self, data: &[u8]) {
-        match data.iter().rposition(|&b| b == b'\n' || b == b'\r') {
-            Some(at) => self.0 = data[at + 1..].to_vec(),
-            None => self.0.extend(data),
-        }
+        let line = match data.iter().rposition(|&b| b == b'\n' || b == b'\r') {
+            Some(at) => {
+                self.0.clear();
+                &data[at + 1..]
+            }
+            None => data,
+        };
+        self.0.extend(&line[line.len().saturating_sub(TAIL)..]);
         if self.0.len() > TAIL {
             self.0.drain(..self.0.len() - TAIL);
         }
