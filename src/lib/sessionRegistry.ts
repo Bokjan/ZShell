@@ -3,7 +3,7 @@ import type { TerminalSettings } from "../ipc/bindings";
 import { windows } from "../ipc/windows";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
 import { closesOnExit, findPane, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
-import { activeTabOf, type TabStore } from "./tabs";
+import { activeTabOf, type TabsState, type TabStore } from "./tabs";
 
 /** A pane's terminal as the status bar shows it. */
 export interface TerminalScreen {
@@ -105,6 +105,8 @@ export function createSessionRegistry(
       if (!found) throw new Error(`no pane ${key}`);
       // The last known state, for callbacks that come after the pane has closed.
       let last = found.pane;
+      // The tab state `output` last looked at.
+      let outputChecked: TabsState | undefined;
       const pane = () => (last = findPane(store.get().tabs, key)?.pane ?? last);
       const profile = () => {
         const { target } = pane();
@@ -167,10 +169,13 @@ export function createSessionRegistry(
           },
           close: () => close(key),
           retry: (at) => update({ retryAt: at }),
-          // Often: only a tab in the background that isn't marked yet changes the store.
+          // Often: only a tab in the background that isn't marked yet changes the store. The
+          // same state as last time gives the same answer.
           output: () => {
             if (!markOutput()) return;
             const state = store.get();
+            if (state === outputChecked) return;
+            outputChecked = state;
             const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
             if (tab && tab.key !== state.activeKey && !tab.attention) store.dispatch({ type: "attention", key, kind: "output" });
           },
