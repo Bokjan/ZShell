@@ -36,7 +36,7 @@ const sameWindows = (a: WindowInfo[], b: WindowInfo[]) =>
  * once its last tab is gone while other windows are open.
  *
  * A tab moves out as a `TabTransfer`, and stays here until each of its panes' sessions has
- * moved (`movedAway`, which the session registry calls): its terminals still show their
+ * moved (`movedAway`, heard from the session registry): its terminals still show their
  * sessions meanwhile, and hand their screens over as the sessions move. A pane whose session
  * couldn't move (the other window says so, or closes first) stays here, and the rest of the
  * tab goes.
@@ -240,5 +240,8 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
     [],
   );
 
-  return { others, canMove, moveTab, dropTab, movedAway, stayed, openInNewWindow };
+  useEffect(() => sessions.on("movedAway", movedAway), [sessions, movedAway]);
+  useEffect(() => sessions.on("stayed", stayed), [sessions, stayed]);
+
+  return { others, canMove, moveTab, dropTab, openInNewWindow };
 }

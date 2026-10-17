@@ -10,6 +10,7 @@ import { forwardMapping } from "../lib/format";
 import { matches } from "../lib/keymap";
 import { findPane, paneLabel, paneWork, tabTitle, type Pane, type PaneWork } from "../lib/panes";
 import { useShortcuts } from "../hooks/shortcuts";
+import type { SessionRegistry } from "../lib/sessionRegistry";
 import { activeTabOf, type TabStore } from "../lib/tabs";
 import { windows } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
@@ -58,7 +59,12 @@ async function busyReason(pane: Pane): Promise<Busy | null> {
  * whether port forwarding another tab of the session could take over should keep running.
  * `dialogs` is what to render for the questions.
  */
-export function useCloseFlow(store: TabStore, settings: Settings, update: (change: (settings: Settings) => Settings) => void) {
+export function useCloseFlow(
+  store: TabStore,
+  sessions: SessionRegistry,
+  settings: Settings,
+  update: (change: (settings: Settings) => Settings) => void,
+) {
   const { t } = useTranslation();
   const settingsRef = useLatest(settings);
   // Panes waiting for the user to confirm closing them, with why the first busy one is busy.
@@ -129,6 +135,9 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (chang
     },
     [store, requestClose],
   );
+
+  // A pane's session asks (Ctrl+D in a pane left open after its shell exited).
+  useEffect(() => sessions.on("close", closePane), [sessions, closePane]);
 
   /** ⌘W / Ctrl+Shift+W: the focused pane of a split tab, otherwise the tab (the window if there is none). */
   const closeFocused = useCallback(() => {

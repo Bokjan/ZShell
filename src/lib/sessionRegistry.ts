@@ -38,6 +38,19 @@ export interface PasteTarget {
   paste(text: string): void;
 }
 
+/**
+ * What a pane's session asks of those who own the tabs and the window, which they hear
+ * through `SessionRegistry.on`: the registry is made first, and they are made with it.
+ */
+export interface RegistryEvents {
+  /** The pane's session moved to another window, which has its screen now. */
+  movedAway(key: number): void;
+  /** The session of pane `key`, which came `from` another window, couldn't move here. */
+  stayed(key: number, from: Arrival["from"]): void;
+  /** Close pane `key` (or its tab, if it is the only pane) as the user would, asking if needed. */
+  close(key: number): void;
+}
+
 export interface SessionRegistry {
   /** Creates the session of a pane whose terminal is shown; call `connect` on it to start. */
   attach(key: number, view: PaneView): PaneSession;
@@ -69,6 +82,8 @@ export interface SessionRegistry {
   suspend(key: number): void;
   /** The pane couldn't move: it may connect again. */
   resume(key: number): void;
+  /** Calls `handler` on `event` (see `RegistryEvents`); returns what stops it. */
+  on<E extends keyof RegistryEvents>(event: E, handler: RegistryEvents[E]): () => void;
 }
 
 interface Options {
@@ -77,12 +92,6 @@ interface Options {
   t: SessionConfig["t"];
   /** Tells screen readers (see `announce`). */
   announce(message: string): void;
-  /** The pane's session moved to another window, which has its screen now. */
-  movedAway(key: number): void;
-  /** The session of pane `key`, which came `from` another window, couldn't move here. */
-  stayed(key: number, from: Arrival["from"]): void;
-  /** Closes pane `key` (or its tab, if it is the only pane) as the user would, asking if needed. */
-  close(key: number): void;
   /** Whether tabs in the background are marked when they have new output (a setting). */
   markOutput(): boolean;
   /** What a terminal's bell does (settings). */
@@ -98,16 +107,17 @@ const logOpen = (pane: Pane): LogOpen =>
  * forwarding and log into the tab store; a shell that the user exits closes its pane (see
  * `closesOnExit`).
  */
-export function createSessionRegistry(
-  store: TabStore,
-  { profiles, t, announce, movedAway, stayed, close, markOutput, bell }: Options,
-): SessionRegistry {
+export function createSessionRegistry(store: TabStore, { profiles, t, announce, markOutput, bell }: Options): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
   const zmodemPhases = new Map<number, ZmodemPhase>();
   const listeners = new Set<() => void>();
   const changed = () => {
     for (const listener of listeners) listener();
+  };
+  const handlers: { [E in keyof RegistryEvents]: Set<RegistryEvents[E]> } = { movedAway: new Set(), stayed: new Set(), close: new Set() };
+  const emit = <E extends keyof RegistryEvents>(event: E, ...args: Parameters<RegistryEvents[E]>) => {
+    for (const handler of handlers[event]) (handler as (...args: Parameters<RegistryEvents[E]>) => void)(...args);
   };
 
   return {
@@ -178,7 +188,7 @@ export function createSessionRegistry(
             store.dispatch({ type: "close", keys: [key] });
             return true;
           },
-          close: () => close(key),
+          close: () => emit("close", key),
           retry: (at) => update({ retryAt: at }),
           // Often: only a tab in the background that isn't marked yet changes the store. The
           // same state as last time gives the same answer.
@@ -205,9 +215,9 @@ export function createSessionRegistry(
             if (!document.hasFocus()) windows.requestAttention();
           },
           arrived: () => update({ arrival: undefined }),
-          movedAway: () => movedAway(key),
+          movedAway: () => emit("movedAway", key),
           stayed: () => {
-            if (found.pane.arrival) stayed(key, found.pane.arrival.from);
+            if (found.pane.arrival) emit("stayed", key, found.pane.arrival.from);
           },
         },
         found.pane.shareFrom,
@@ -242,5 +252,9 @@ export function createSessionRegistry(
     arriving: (key) => sessions.get(key)?.isArriving ?? false,
     suspend: (key) => sessions.get(key)?.suspend(),
     resume: (key) => sessions.get(key)?.resume(),
+    on(event, handler) {
+      handlers[event].add(handler);
+      return () => void handlers[event].delete(handler);
+    },
   };
 }

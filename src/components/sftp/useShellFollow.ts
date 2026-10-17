@@ -15,32 +15,44 @@ interface Options {
   /** Whether it follows the terminal's shell into each folder it goes to. */
   follow: boolean;
   cwdRef: RefObject<string | null>;
+  /** The shell's folder when the panel last went there (or opened there), from `useShellDir`. */
+  syncedRef: RefObject<string | null>;
   load(path: string, quiet?: boolean): Promise<boolean>;
   setError(message: string | null): void;
 }
 
 /**
- * The file panel going to the folder its terminal's shell is in: found by the backend where
- * the server allows (Linux), otherwise as the shell last reported it (OSC 7). `startDir` is
- * where the panel opens. While following, the panel goes to the shell's folder each time the
- * shell may have changed folders and has: browsing elsewhere meanwhile isn't undone until the
- * shell moves again.
+ * The folder the terminal's shell is in: found by the backend where the server allows (Linux),
+ * otherwise as the shell last reported it (OSC 7).
  */
-export function useShellFollow({ paneKey, sessionId, connected, active, follow, cwdRef, load, setError }: Options) {
-  const { t } = useTranslation();
-  /** The shell's folder when the panel last went there (or opened there). */
+const findShellDir = async (id: SessionId, paneKey: number) => (await sftp.shellDir(id).catch(() => null)) ?? shellDirs.reported(paneKey);
+
+/**
+ * Where the file panel of pane `paneKey` opens (`startDir`: the shell's folder), and
+ * `syncedRef`, the shell's folder when the panel last went there, which `useShellFollow` goes
+ * on from. Apart from it because the listing opens the panel, and following needs the listing.
+ */
+export function useShellDir(paneKey: number) {
   const syncedRef = useRef<string | null>(null);
-
-  const find = useCallback(async (id: SessionId) => (await sftp.shellDir(id).catch(() => null)) ?? shellDirs.reported(paneKey), [paneKey]);
-
   const startDir = useCallback(
     async (id: SessionId) => {
-      const dir = await find(id);
+      const dir = await findShellDir(id, paneKey);
       syncedRef.current = dir;
       return dir;
     },
-    [find],
+    [paneKey],
   );
+  return { startDir, syncedRef };
+}
+
+/**
+ * The file panel going to the folder its terminal's shell is in (see `findShellDir`). While
+ * following, the panel goes to the shell's folder each time the shell may have changed folders
+ * and has: browsing elsewhere meanwhile isn't undone until the shell moves again.
+ */
+export function useShellFollow({ paneKey, sessionId, connected, active, follow, cwdRef, syncedRef, load, setError }: Options) {
+  const { t } = useTranslation();
+  const find = useCallback((id: SessionId) => findShellDir(id, paneKey), [paneKey]);
 
   /** Goes to the shell's folder now (the toolbar button, turning following on). */
   const goToShellDir = useCallback(async () => {
@@ -51,7 +63,7 @@ export function useShellFollow({ paneKey, sessionId, connected, active, follow, 
       return;
     }
     if (await load(dir)) syncedRef.current = dir;
-  }, [sessionId, find, load, setError, t]);
+  }, [sessionId, find, load, setError, syncedRef, t]);
 
   const loadFollowed = useEffectEvent(load);
   useEffect(() => {
@@ -89,7 +101,7 @@ export function useShellFollow({ paneKey, sessionId, connected, active, follow, 
       live = false;
       stop();
     };
-  }, [follow, active, connected, sessionId, paneKey, find, cwdRef, t]);
+  }, [follow, active, connected, sessionId, paneKey, find, cwdRef, syncedRef, t]);
 
-  return { startDir, goToShellDir };
+  return { goToShellDir };
 }

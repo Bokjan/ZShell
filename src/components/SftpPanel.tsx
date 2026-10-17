@@ -2,7 +2,6 @@ import {
   useEffect,
   useEffectEvent,
   useId,
-  useInsertionEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -35,7 +34,7 @@ import { fileMenu, folderMenu, type FileActions } from "./sftp/menus";
 import { PathField } from "./sftp/PathField";
 import { useConfirmQueue } from "./sftp/useConfirmQueue";
 import { useSftpDragDrop } from "./sftp/useSftpDragDrop";
-import { useShellFollow } from "./sftp/useShellFollow";
+import { useShellDir, useShellFollow } from "./sftp/useShellFollow";
 import { useSftpListing } from "./sftp/useSftpListing";
 import { useRowWindow } from "./sftp/useRowWindow";
 import { parentPath, useTransfers } from "./sftp/useTransfers";
@@ -87,8 +86,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
 
   const sessionRef = useLatest(sessionId);
 
-  // Set below, once the listing it opens is there.
-  const startDirRef = useRef<(id: SessionId) => Promise<string | null>>(async () => null);
+  const { startDir, syncedRef } = useShellDir(paneKey);
   const listing = useSftpListing(
     sessionId,
     connected,
@@ -96,7 +94,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
       setSelection(NO_SELECTION);
       setFilter(null);
     },
-    (id) => startDirRef.current(id),
+    startDir,
   );
   const { cwd, entries, loading, error, fail, load, reload } = listing;
   const shellFollow = useShellFollow({
@@ -106,11 +104,9 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     active,
     follow: view.followTerminal,
     cwdRef: listing.cwdRef,
+    syncedRef,
     load,
     setError: listing.setError,
-  });
-  useInsertionEffect(() => {
-    startDirRef.current = shellFollow.startDir;
   });
   const { confirm, count: questions, ask, answered } = useConfirmQueue();
   const reportQuestions = useEffectEvent(onQuestions);

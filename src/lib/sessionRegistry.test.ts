@@ -18,9 +18,6 @@ function setUp() {
     profiles: () => [],
     t: ((key: string) => key) as unknown as TFunction,
     announce: () => {},
-    movedAway: () => {},
-    stayed: () => {},
-    close: () => {},
     markOutput: () => false,
     bell: () => ({ bellAlert: false, bellSound: false, bellFlash: false }),
   });

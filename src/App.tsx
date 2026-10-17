@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useInsertionEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
@@ -41,7 +41,6 @@ import {
   type QuickCommand,
   type SessionTarget,
   type SetAsideFile,
-  type Settings,
 } from "./ipc/api";
 import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./hooks/appMenu";
 import { basename } from "./lib/format";
@@ -55,6 +54,7 @@ import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
 import { useDirectory, useQuickCommands, useTabStore } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
+import { currentSettings } from "./lib/settings";
 import { useSettings } from "./hooks/settings";
 import { useShortcuts } from "./hooks/shortcuts";
 import { useStableHandlers } from "./hooks/stableHandlers";
@@ -68,13 +68,6 @@ import "./styles.css";
 const MENU_COMMANDS = 8;
 /** What terminal full screen hides, whose keys and menu items do nothing meanwhile. */
 const HIDDEN_IN_FULL_SCREEN = ["searchSessions", "composeBar", "filePanel", "forwardsPanel"] as const;
-
-/** What the session registry calls into that `App` makes after it, handed over after each render. */
-interface RegistryLater {
-  settings: Settings;
-  closePane(key: number): void;
-  windowing: Pick<ReturnType<typeof useWindows>, "movedAway" | "stayed"> | null;
-}
 
 function App() {
   const { t } = useTranslation();
@@ -105,22 +98,17 @@ function App() {
   const [localAllowed, setLocalAllowed] = useState(true);
   // For quick connections without a user name.
   const [username, setUsername] = useState("");
-  // The registry reads the settings and calls into what is made further down (closing panes,
-  // moving them between windows): those are handed over after each render (`handOver` below).
-  const [{ sessions, handOver }] = useState(() => {
-    let later: RegistryLater = { settings, closePane: () => {}, windowing: null };
-    const sessions = createSessionRegistry(store, {
+  // What closes panes and moves them between windows, made further down, hears the registry
+  // through `sessions.on`.
+  const [sessions] = useState(() =>
+    createSessionRegistry(store, {
       profiles: () => directory.get().profiles,
       t: i18n.t,
       announce,
-      movedAway: (key) => later.windowing?.movedAway(key),
-      stayed: (key, from) => later.windowing?.stayed(key, from),
-      close: (key) => later.closePane(key),
-      markOutput: () => later.settings.tabs.markOutput,
-      bell: () => later.settings.terminal,
-    });
-    return { sessions, handOver: (next: RegistryLater) => void (later = next) };
-  });
+      markOutput: () => currentSettings().tabs.markOutput,
+      bell: () => currentSettings().terminal,
+    }),
+  );
   const localTitleRef = useLatest(shellName ?? t("tabs.localTitle"));
 
   /** Moves the keyboard focus back to the active terminal (after a bar or the palette closes). */
@@ -144,7 +132,7 @@ function App() {
     focusTerminal: focusActiveTerminal,
   });
   const { compose, flashing, inScope } = composer;
-  const close = useCloseFlow(store, settings, update);
+  const close = useCloseFlow(store, sessions, settings, update);
   const { requestClose, closeFocused } = close;
 
   // Returned only once, so a second call (StrictMode) must not clear the first's result.
@@ -171,7 +159,6 @@ function App() {
   );
 
   const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: addTab });
-  useInsertionEffect(() => handOver({ settings, closePane: close.closePane, windowing }));
 
   /** Shows the pane: activates its tab and focuses it there. */
   const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);
