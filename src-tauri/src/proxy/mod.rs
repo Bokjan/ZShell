@@ -38,7 +38,7 @@ pub async fn connect(
         return command::spawn(proxy, host, port, user, io.sink()).await;
     }
     let saved = match proxy.uses_password() {
-        true => passwords.proxy(&proxy.id).await,
+        true => passwords.proxy(&proxy.id),
         false => None,
     };
     connect_with(proxy, host, port, keepalive, saved, io).await

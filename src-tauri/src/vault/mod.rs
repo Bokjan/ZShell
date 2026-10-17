@@ -317,22 +317,20 @@ impl SavedPasswords {
         Self(Some(vault))
     }
 
-    /// The password of `account`; `None` when there is none or the vault is locked. Blocks
-    /// while the vault is being written.
+    /// The password of `account`; `None` when there is none or the vault is locked. Doesn't
+    /// wait for a change of the vault (see [`Vault::data`]), so async code calls it as it is.
     pub fn get(&self, account: Account) -> Option<String> {
         self.0.as_ref()?.password(account).ok().flatten()
     }
 
-    /// A session's saved password (also Telnet's), from async code.
-    pub async fn profile(&self, id: &str) -> Option<String> {
-        let (this, id) = (self.clone(), id.to_owned());
-        tauri::async_runtime::spawn_blocking(move || this.get(Account::Profile(&id))).await.ok().flatten()
+    /// A session's saved password (SSH, Telnet).
+    pub fn profile(&self, id: &str) -> Option<String> {
+        self.get(Account::Profile(id))
     }
 
-    /// A proxy's saved password, from async code.
-    pub async fn proxy(&self, id: &str) -> Option<String> {
-        let (this, id) = (self.clone(), id.to_owned());
-        tauri::async_runtime::spawn_blocking(move || this.get(Account::Proxy(&id))).await.ok().flatten()
+    /// A proxy's saved password.
+    pub fn proxy(&self, id: &str) -> Option<String> {
+        self.get(Account::Proxy(id))
     }
 }
 

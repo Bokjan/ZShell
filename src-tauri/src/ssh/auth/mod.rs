@@ -249,7 +249,7 @@ impl<H: Handler> Auth<'_, H> {
         if self.saved_password.is_none() {
             let saved = match self.profile.id.as_str() {
                 "" => None,
-                id => self.passwords.profile(id).await,
+                id => self.passwords.profile(id),
             };
             self.saved_password = Some(saved);
         }

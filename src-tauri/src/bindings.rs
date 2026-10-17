@@ -378,8 +378,8 @@ mod tests {
         let mut collect = Collect { cfg: &cfg, declared: BTreeMap::new(), paths: Vec::new() };
         let visitor = &mut collect;
         visitor.visit::<error::Error>();
-        visitor.visit::<commands::session::SessionSpec>();
-        visitor.visit::<commands::session::SessionSnapshot>();
+        visitor.visit::<launch::SessionSpec>();
+        visitor.visit::<session::SessionSnapshot>();
         visitor.visit::<model::Folder>();
         visitor.visit::<model::Item>();
         visitor.visit::<model::Profile>();
@@ -416,7 +416,7 @@ mod tests {
         visitor.visit::<tab_drag::DropTarget>();
         visitor.visit::<tab_drag::Dropped>();
         visitor.visit::<tab_drag::TabDragNativeEnd>();
-        visitor.visit::<commands::Change>();
+        visitor.visit::<events::Change>();
         events::visit(visitor);
 
         let mut out = String::from(HEADER);

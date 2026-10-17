@@ -18,6 +18,7 @@ mod forward;
 mod import;
 #[cfg(unix)]
 mod instance;
+mod launch;
 mod local_name;
 mod logging;
 mod menu;

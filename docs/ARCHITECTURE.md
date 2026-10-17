@@ -68,6 +68,7 @@
 | `desktop.rs` | Linux 桌面的设置（配色方案、等宽字体），经设置 portal 读取 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
 | `events.rs` | 后端发给页面的事件：名字与 payload 类型在一处声明 |
+| `launch.rs` | 新会话运行什么：把前端的 `SessionSpec`（保存的会话、快速连接、复制标签、本地终端）解析成后端（`Backend`）、日志的命名与字符编码；`session/` 不认识具体的后端 |
 | `commands/` | Tauri 命令入口，按领域分文件：前端能调用的全部命令都在这里（也只在这里），只做检查调用方、交给所属模块、通知其他窗口；逻辑在各模块里 |
 | `bindings.rs` | 生成前端的 TypeScript 类型和共用常量（`src/ipc/bindings.ts`） |
 
@@ -89,7 +90,7 @@
 ### 会话与数据流
 
 - **前后端类型**：与前端交换的 Rust 类型派生 ts-rs 的 `TS`，生成一个提交到仓库的 `src/ipc/bindings.ts`，`cargo test` 在它过时时失败，只改了一边的类型在 CI 里就会发现。错误码是从英语语言包生成的联合类型 `ErrorCode`，前端按错误码分支由 `tsc` 检查。两边都要用的常量（可选的编码、新会话的默认终端类型和串口设置、默认快速命令分组的 id、默认设置、字号与回滚行数的范围、终端输出确认的批量）也从后端的定义写进这个文件，`api.ts` 转出，前端不再另写一份；确认的批量由后端恢复读取的阈值得出，两者的关系不靠注释维持。命令与事件同样不手写两份：`bindings.rs` 用 `syn` 读 `commands/` 里每个命令的签名，生成 `Commands`（每个命令的参数名与类型、返回类型，Tauri 注入的参数除外），并核对与 `lib.rs` 登记的命令一致；前端只经 `ipc/call.ts` 的 `call` 调用命令（`invoke` 只在那里），`tsc` 按命令名检查参数和结果。命令一律返回 `crate::error::Result`，前端总是拿到带错误码的 `CommandError`；接收会话 id 的命令必须带调用方的 webview（测试检查），以便按归属检查。后端发的事件在 `events.rs` 里各是一个带 payload 类型的类型，只经它发出，生成的 `Events` 让前端的 `listenHere` / `useWindowEvent` 按事件名得到 payload 的类型。选 ts-rs 而不是 specta 的理由见 `bindings.rs`。
-- **打开会话**：只有一个命令 `session_open`，参数是 `SessionSpec`（保存的会话、快速连接、复制标签、本地终端），先解析成后端（`Backend`），日志与会话任务只在一处建立。
+- **打开会话**：只有一个命令 `session_open`，参数是 `SessionSpec`（保存的会话、快速连接、复制标签、本地终端），由 `launch.rs` 解析成后端（`Backend`，所需的存储显式传入，可以单独测试），日志与会话任务只在一处建立。
 - **会话是一个后台任务**：`SessionManager` 为每个会话创建 `TermIo`（输出 / 事件 Channel、输入队列），后端任务持有它运行；新的后端只需实现同样的任务形态。
 - **会话的关闭**：`SessionManager::remove` 是唯一的入口。任务之外的资源（连接登记、等待回答的 ZMODEM、流控）登记在会话的 `Lifetime` 上，无论是关闭、会话自己结束还是任务被丢弃，都只释放一次，与调用顺序无关（`session/`）。
 - **会话属于 webview**：页面重新加载或窗口销毁时关闭该 webview 的全部会话，否则它们无人显示、也无人关闭；打开中途页面重载的会话被拒绝（`session.pageGone`）。按会话 id 操作的命令（输入、尺寸、关闭、日志、ZMODEM、SFTP、转发、复制标签用的共享连接）只接受归属窗口的调用，其他窗口得到 `session.notFound`，与会话不存在无从区分：id 从 1 递增，知道 id 不代表有权使用。会话可以移到另一个窗口（见「多窗口」），归属随之改变。文件面板的传输与用本地编辑器编辑的文件同样属于发起它们的 webview：按页面给的 id 登记，只有这个页面能取消、上传或停止，页面不在时随会话一起取消、停止监视（`lib.rs` 的 `page_gone`）。

@@ -37,7 +37,7 @@ mod manager;
 mod sink;
 mod term;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::Error;
@@ -51,6 +51,21 @@ pub use sink::SessionSink;
 pub use term::{Foreground, ForegroundProbe, TermIo};
 
 pub type SessionId = u32;
+
+/// What a session's terminal showed in the tab it moved from: written to the new tab's
+/// terminal before the output that came since.
+#[derive(Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSnapshot {
+    pub id: SessionId,
+    /// The move it was taken for (see [`SessionEvent::Moved`]).
+    pub move_id: String,
+    /// The screen and the scrollback, as escape sequences that draw them again.
+    pub data: String,
+    /// The size of the terminal it was taken from, which it is written into before fitting.
+    pub cols: u16,
+    pub rows: u16,
+}
 
 #[derive(Debug)]
 pub enum SessionInput {

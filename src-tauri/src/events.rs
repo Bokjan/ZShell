@@ -5,6 +5,7 @@
 
 use serde::Serialize;
 use tauri::{Emitter, EventTarget, Runtime, WebviewWindow};
+use ts_rs::TS;
 
 /// An event the backend sends the pages.
 pub trait Event {
@@ -77,11 +78,24 @@ macro_rules! events {
     };
 }
 
+/// What a window saved that the other windows show, which they read again when they hear of
+/// it (the `config-changed` event).
+#[derive(Clone, Copy, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum Change {
+    Settings,
+    /// Sessions, folders and proxies.
+    Profiles,
+    QuickCommands,
+    Vault,
+    AppLock,
+}
+
 events! {
     /// The app locked: by a window, when the system was idle, or when it locked its screen.
     AppLocked = "app-locked";
-    /// Another window saved this (see `commands::Change`), which this one reads again.
-    ConfigChanged(crate::commands::Change) = "config-changed";
+    /// Another window saved this, which this one reads again.
+    ConfigChanged(Change) = "config-changed";
     /// Quit was chosen in the native menu (macOS): the focused window asks first.
     QuitRequested = "quit-requested";
     /// An item of the native menu (macOS) was chosen, by the id the page gave it.
@@ -102,7 +116,7 @@ events! {
     /// answer (`window_busy_reply`) gives back.
     BusyQuery(u64) = "busy-query";
     /// The screen of a session that moved to this window, from the window it moved from.
-    SessionSnapshot(crate::commands::session::SessionSnapshot) = "session-snapshot";
+    SessionSnapshot(crate::session::SessionSnapshot) = "session-snapshot";
     /// Where a tab dragged from another window would go in this one's tab bar, in CSS pixels
     /// from the left; `null` once it would go elsewhere.
     TabDragOver(Option<f64>) = "tab-drag-over";

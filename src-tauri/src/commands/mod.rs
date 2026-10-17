@@ -29,9 +29,7 @@ pub mod zmodem;
 
 use std::path::PathBuf;
 
-use serde::Serialize;
 use tauri::{AppHandle, WebviewWindow};
-use ts_rs::TS;
 
 use crate::error::Result;
 use crate::events;
@@ -54,18 +52,7 @@ async fn blocking<T: Send + 'static>(app: AppHandle, work: impl FnOnce(&AppHandl
     tauri::async_runtime::spawn_blocking(move || work(&app)).await?
 }
 
-/// What a window saved that the other windows show, which they read again when they hear of
-/// it (the `config-changed` event).
-#[derive(Clone, Copy, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum Change {
-    Settings,
-    /// Sessions, folders and proxies.
-    Profiles,
-    QuickCommands,
-    Vault,
-    AppLock,
-}
+pub use crate::events::Change;
 
 /// Tells the windows other than `from` about `change` if `result` is a success; returns it.
 fn notified<T>(from: &WebviewWindow, change: Change, result: Result<T>) -> Result<T> {
