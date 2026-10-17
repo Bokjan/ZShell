@@ -8,7 +8,7 @@ import { announce } from "../lib/announce";
 import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../ipc/api";
 import { directory, recentProfiles as recentOf } from "../lib/directory";
 import { useDirectory } from "../hooks/stores";
-import { dragHorizontally, usePressDrag } from "../hooks/drag";
+import { usePressDrag } from "../hooks/drag";
 import { open as openDialog } from "../ipc/fileDialog";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
@@ -16,11 +16,7 @@ import { matches } from "../lib/keymap";
 import { isComposing, isMac } from "../lib/platform";
 import {
   address,
-  childItem,
-  childrenByFolder,
   folderPath,
-  isWithin,
-  itemKey,
   notesPreview,
   parseQuickConnect,
   rowKey,
@@ -33,10 +29,10 @@ import {
 } from "../lib/sessions";
 import { useSettings } from "../hooks/settings";
 import { useShortcuts } from "../hooks/shortcuts";
-import { storedString, storeString } from "../lib/storage";
+import { dropMove, dropOnRow, sameDrop, type Drop } from "../lib/treeDrop";
+import { useSidebarWidth } from "./useSidebarWidth";
 import { DRAG_REGION } from "../hooks/titleBar";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
-import { useLatest } from "../hooks/latest";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { useLocale } from "../hooks/locale";
@@ -78,13 +74,6 @@ interface Props {
   update: Release | null;
 }
 
-const DEFAULT_WIDTH = 260;
-// Room for the traffic lights and the three buttons of the title bar.
-const MIN_WIDTH = 176;
-const MAX_WIDTH = 480;
-/** Space always left for the terminal area. */
-const MIN_MAIN = 400;
-const WIDTH_KEY = "zshell.sidebarWidth";
 /**
  * Indentation per folder level, in pixels: a row's icon (a folder's disclosure triangle, a
  * session's protocol) and the gap after it, so that the rows in a folder start below its name.
@@ -92,24 +81,6 @@ const WIDTH_KEY = "zshell.sidebarWidth";
 const INDENT = 20;
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
-
-/** The width saved by the last resize; layout state, so kept per machine rather than in the settings. */
-function storedWidth(): number {
-  const width = Number(storedString(WIDTH_KEY));
-  // One saved under other limits (the minimum used to be smaller) is brought within these.
-  return width > 0 ? Math.min(Math.max(width, MIN_WIDTH), MAX_WIDTH) : DEFAULT_WIDTH;
-}
-
-const storeWidth = (width: number) => storeString(WIDTH_KEY, String(width));
-
-/** Where a dragged row would land: relative to a row, or at the end of the top level. */
-type Drop = { key: string; position: "before" | "after" | "into" } | { key: null };
-
-function sameDrop(a: Drop | null, b: Drop | null): boolean {
-  if (!a || !b) return a === b;
-  if (a.key === null || b.key === null) return a.key === b.key;
-  return a.key === b.key && a.position === b.position;
-}
 
 /**
  * The saved sessions and folders, with search and quick connect. It doesn't depend on the tabs,
@@ -128,9 +99,8 @@ export function Sidebar(props: Props) {
   const { settings } = useSettings();
   const state = useDirectory();
   const { profiles, folders } = state;
-  const [width, setWidth] = useState(storedWidth);
-  const widthRef = useLatest(width);
   const asideRef = useRef<HTMLElement>(null);
+  const { width, widthPercent, startResize, nudgeWidth, resetWidth } = useSidebarWidth(asideRef);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -182,28 +152,6 @@ export function Sidebar(props: Props) {
       storeCollapsed(next);
       return next;
     });
-
-  const clampWidth = (width: number) => Math.round(Math.max(MIN_WIDTH, Math.min(width, MAX_WIDTH, window.innerWidth - MIN_MAIN)));
-
-  const startResize = (e: ReactMouseEvent) => {
-    const left = asideRef.current!.getBoundingClientRect().left;
-    dragHorizontally(
-      e,
-      (x) => setWidth(clampWidth(x - left)),
-      () => storeWidth(widthRef.current),
-    );
-  };
-
-  const nudgeWidth = (pixels: number) => {
-    const next = clampWidth(widthRef.current + pixels);
-    setWidth(next);
-    storeWidth(next);
-  };
-
-  const resetWidth = () => {
-    setWidth(DEFAULT_WIDTH);
-    storeWidth(DEFAULT_WIDTH);
-  };
 
   /** The folder new things go in: the selected folder, or the selected session's. */
   const currentFolder = () => {
@@ -362,55 +310,22 @@ export function Sidebar(props: Props) {
   };
 
   // The folder a row is in (undefined: the top level), as the tree shows it.
-  const parentOf = (key: string) => {
-    const row = rows.find((row) => rowKey(row) === key);
-    if (row?.kind === "folder") return row.folder.parent;
-    const folder = row?.profile.folder;
-    return folder !== undefined && folders.some((f) => f.id === folder) ? folder : undefined;
-  };
-
-  // Drag and drop: rows move before or after other rows, sessions and folders mixed, into
-  // folders, and to the end of the top level below the last row. Not onto the Recent
-  // section, which only lists sessions. A folder can't go into itself or its subfolders.
+  // Drag and drop (see `lib/treeDrop`): over the rows, and below them for the end of the top
+  // level. Not onto the Recent section, which only lists sessions.
   const dropAt = (item: TreeItem, x: number, y: number): Drop | null => {
     const element = document.elementFromPoint(x, y);
     if (!listRef.current?.contains(element)) return null;
     if (element?.closest("[data-recent], .sidebar-section")) return null;
     const rowElement = element?.closest<HTMLElement>("[data-key]");
     if (!rowElement) return { key: null };
-    const key = rowElement.dataset.key!;
-    if (key === itemKey(item)) return null;
-    if (item.kind === "folder" && isWithin(parentOf(key), item.id, folders)) return null;
     const rect = rowElement.getBoundingClientRect();
-    const offset = (y - rect.top) / rect.height;
-    if (key.startsWith("f:")) {
-      const target = key.slice(2);
-      if (item.kind === "folder" && isWithin(target, item.id, folders)) return null;
-      // Right below an expanded folder are its own rows: "after" it means after all of them,
-      // which a line there would not show.
-      const index = rows.findIndex((row) => row.kind === "folder" && row.folder.id === target);
-      const open = index >= 0 && (rows[index + 1]?.depth ?? 0) > rows[index].depth;
-      return { key, position: offset < 0.25 ? "before" : offset > 0.75 && !open ? "after" : "into" };
-    }
-    return { key, position: offset < 0.5 ? "before" : "after" };
+    return dropOnRow(item, rowElement.dataset.key!, (y - rect.top) / rect.height, rows, folders);
   };
 
   const applyDrop = (item: TreeItem, drop: Drop) => {
-    if (drop.key === null) {
-      run(tree.move(item, null, null));
-      return;
-    }
-    const id = drop.key.slice(2);
-    if (drop.position === "into") {
-      setFolderCollapsed(id, false);
-      run(tree.move(item, id, null));
-      return;
-    }
-    // Before or after a row: in its folder, before it or the row that follows it there.
-    const parent = parentOf(drop.key);
-    const peers = (childrenByFolder(state).get(parent) ?? []).map(childItem).filter((peer) => itemKey(peer) !== itemKey(item));
-    const at = peers.findIndex((peer) => itemKey(peer) === drop.key) + (drop.position === "after" ? 1 : 0);
-    run(tree.move(item, parent ?? null, peers[at] ?? null));
+    const { parent, before } = dropMove(item, drop, state, rows);
+    if (drop.key !== null && drop.position === "into" && parent) setFolderCollapsed(parent, false);
+    run(tree.move(item, parent, before));
   };
 
   const pressDrag = usePressDrag();
@@ -665,7 +580,7 @@ export function Sidebar(props: Props) {
         label={t("sidebar.resize")}
         title={t("sidebar.resizeHint")}
         orientation="vertical"
-        value={((width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH)) * 100}
+        value={widthPercent}
         onMove={nudgeWidth}
         onReset={resetWidth}
         onMouseDown={startResize}
