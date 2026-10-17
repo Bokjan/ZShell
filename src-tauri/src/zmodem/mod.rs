@@ -126,6 +126,19 @@ impl Zmodem {
             }
             State::Idle { tail, held } => (tail, held),
         };
+        // Every header has a ZDLE, which ordinary output hardly ever does: then the chunk is
+        // shown as it is, keeping only its end in case a header starts there (`held` is 0, as
+        // what is held back has a ZDLE).
+        if !tail.contains(&frame::ZDLE) && memchr::memchr(frame::ZDLE, &bytes).is_none() {
+            let keep = frame::ZRQINIT_SIGNATURE.len() - 1;
+            if bytes.len() >= keep {
+                tail.clear();
+            } else {
+                tail.drain(..(tail.len() + bytes.len()).saturating_sub(keep).min(tail.len()));
+            }
+            tail.extend_from_slice(&bytes[bytes.len().saturating_sub(keep)..]);
+            return bytes;
+        }
         // How much of `scan` the terminal has shown.
         let shown = tail.len() - *held;
         let mut scan = std::mem::take(tail);
@@ -211,15 +224,12 @@ impl Zmodem {
 /// Where a transfer starts in `output`, and which way it goes. Includes the second ZPAD
 /// that lrzsz sends, so none of the header shows in the terminal.
 fn detect(output: &[u8]) -> Option<(usize, Direction)> {
-    let len = frame::ZRQINIT_SIGNATURE.len();
-    let (start, direction) = output.windows(len).enumerate().find_map(|(i, window)| {
-        if window == frame::ZRQINIT_SIGNATURE {
-            Some((i, Direction::Receive))
-        } else if window == frame::ZRINIT_SIGNATURE {
-            Some((i, Direction::Send))
-        } else {
-            None
-        }
+    // The two signatures differ only in their last byte.
+    let common = &frame::ZRQINIT_SIGNATURE[..frame::ZRQINIT_SIGNATURE.len() - 1];
+    let (start, direction) = memchr::memmem::find_iter(output, common).find_map(|i| match output.get(i + common.len()) {
+        Some(&last) if last == frame::ZRQINIT_SIGNATURE[common.len()] => Some((i, Direction::Receive)),
+        Some(&last) if last == frame::ZRINIT_SIGNATURE[common.len()] => Some((i, Direction::Send)),
+        _ => None,
     })?;
     let start = if start > 0 && output[start - 1] == ZPAD { start - 1 } else { start };
     Some((start, direction))

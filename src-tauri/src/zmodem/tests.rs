@@ -112,6 +112,25 @@ fn detects_transfers_in_output() {
     let output = b"rz waiting to receive.**\x18B0100000023be50\r\x8a\x11";
     assert_eq!(detect(output).map(|(i, d)| (i, d == Direction::Send)), Some((22, true)));
     assert!(detect(b"ls -l\r\nfile *.txt").is_none());
+    assert!(detect(b"*\x18B02*\x18B0").is_none());
+    assert_eq!(detect(b"*\x18B02*\x18B01").map(|(i, d)| (i, d == Direction::Send)), Some((5, true)));
+}
+
+/// Output without a ZDLE shows as it is, and a header split over chunks that came that way
+/// is still found.
+#[tokio::test(flavor = "multi_thread")]
+async fn finds_a_header_split_over_chunks() {
+    use crate::session::TermIo;
+    let (io, _input, output, events) = TermIo::detached((80, 24));
+    let sink = io.sink();
+    for chunk in [b"rz\r".as_slice(), b"*", b"*", b"\x18B0", b"0000000000000\r\x8a\x11"] {
+        sink.output(chunk.to_vec());
+    }
+    while !events.recv_timeout(std::time::Duration::from_secs(5)).unwrap().contains("chooseDestination") {}
+    let shown: Vec<u8> = output.try_iter().flatten().collect();
+    // The ZPADs were shown before the ZDLE arrived; then only what the transfer writes.
+    assert!(shown.starts_with(b"rz\r**") && !shown.contains(&0x18), "{shown:?}");
+    sink.zmodem().cancel();
 }
 
 #[test]
