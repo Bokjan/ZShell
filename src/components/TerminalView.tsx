@@ -187,11 +187,17 @@ export function TerminalView({
   };
   const optionsRef = useLatest(options);
 
+  // Shared by all terminals: what screen readers say for the input and for a flood of output,
+  // in the interface's language, which may change while the terminal is open. Before the
+  // terminal is made, which names its input then.
   useEffect(() => {
-    const container = containerRef.current!;
-    // Shared by all terminals; what screen readers say for the input and for a flood of output.
     Terminal.strings.promptLabel = t("terminal.inputLabel");
     Terminal.strings.tooMuchOutput = t("terminal.tooMuchOutput");
+    termRef.current?.textarea?.setAttribute("aria-label", Terminal.strings.promptLabel);
+  }, [t]);
+
+  useEffect(() => {
+    const container = containerRef.current!;
     const term = new Terminal({
       allowProposedApi: true, // required by the unicode11 addon
       ...optionsRef.current,
