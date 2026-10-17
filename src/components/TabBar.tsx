@@ -21,28 +21,21 @@ import { listenHere } from "../ipc/events";
 import { useWindowEvent } from "../hooks/windowEvents";
 import { useLatest } from "../hooks/latest";
 import { useLocale } from "../hooks/locale";
+import { useStableHandlers } from "../hooks/stableHandlers";
+import { useStableProps } from "../hooks/stableProps";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
 
-interface Props {
-  tabs: Tab[];
-  activeKey: number | null;
-  followRemoteTitle: boolean;
-  /** Whether tabs in the background with new output are marked (a setting). */
-  markOutput: boolean;
-  /** Whether tabs in the background whose terminal rang its bell are marked (a setting). */
-  bellAlert: boolean;
+export interface TabBarHandlers {
   onSelect(key: number): void;
-  /** Opens a local terminal tab ("+"); absent when the system doesn't allow them. */
-  onNew?(): void;
+  /** Opens a local terminal tab ("+"), when `canOpenLocal`. */
+  onNew(): void;
   /** Closes these tabs, asking first if needed. */
   onClose(keys: number[]): void;
   /** Moves the tab to `index` in the tab order. */
   onMove(key: number, index: number): void;
-  /** The other windows, which a tab can move to. */
-  windows: WindowInfo[];
   /** Whether the tab can move to another window now. */
   canMoveToWindow(key: number): boolean;
   /** Moves the tab to window `target`, or to a new window (null). */
@@ -68,10 +61,29 @@ interface Props {
   onLog(key: number, start: boolean): void;
   onShowLog(key: number): void;
   onTogglePanel(panel: SidePanel): void;
-  composeOpen: boolean;
   onToggleCompose(): void;
-  quickBarOpen: boolean;
   onToggleQuickBar(): void;
+}
+
+interface Props {
+  tabs: Tab[];
+  activeKey: number | null;
+  followRemoteTitle: boolean;
+  /** Whether tabs in the background with new output are marked (a setting). */
+  markOutput: boolean;
+  /** Whether tabs in the background whose terminal rang its bell are marked (a setting). */
+  bellAlert: boolean;
+  /**
+   * From `useStableHandlers`: a title changes several times a second in a busy terminal, and
+   * the tab bar renders again each time, but the tabs whose title didn't change don't.
+   */
+  handlers: TabBarHandlers;
+  /** Whether the system allows local terminals, which "+" opens. */
+  canOpenLocal: boolean;
+  /** The other windows, which a tab can move to. */
+  windows: WindowInfo[];
+  composeOpen: boolean;
+  quickBarOpen: boolean;
   /** Tabs that the compose bar sends to besides (or instead of) the active one; marked. */
   inScope: number[];
   /** Typing is synced to the tabs in scope; their marks turn to the warning color. */
@@ -96,28 +108,11 @@ export function TabBar({
   followRemoteTitle,
   markOutput,
   bellAlert,
-  onSelect,
-  onNew,
-  onClose,
-  onMove,
-  onRename,
-  onDuplicate,
+  handlers,
+  canOpenLocal,
   windows,
-  canMoveToWindow,
-  onMoveToWindow,
-  onDropOut,
-  onSplit,
-  canSplit,
-  onSaveAsSession,
-  onReconnect,
-  onBreak,
-  onLog,
-  onShowLog,
-  onTogglePanel,
   composeOpen,
-  onToggleCompose,
   quickBarOpen,
-  onToggleQuickBar,
   inScope,
   syncing,
   flashing,
@@ -126,6 +121,27 @@ export function TabBar({
 }: Props) {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
+  const {
+    onSelect,
+    onNew,
+    onClose,
+    onMove,
+    canMoveToWindow,
+    onMoveToWindow,
+    onDropOut,
+    onRename,
+    onDuplicate,
+    onSplit,
+    canSplit,
+    onSaveAsSession,
+    onReconnect,
+    onBreak,
+    onLog,
+    onShowLog,
+    onTogglePanel,
+    onToggleCompose,
+    onToggleQuickBar,
+  } = handlers;
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
   const stripRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLElement>(null);
@@ -367,9 +383,9 @@ export function TabBar({
    * one (and its terminal takes the focus), F2 renames, Shift+F10 or the menu key opens its
    * menu.
    */
-  const onTabKeyDown = (e: ReactKeyboardEvent<HTMLElement>, index: number) => {
+  const onTabKeyDown = (e: ReactKeyboardEvent<HTMLElement>, key: number) => {
     if (editing !== null || isComposing(e)) return;
-    const key = tabs[index].key;
+    const index = tabs.findIndex((tab) => tab.key === key);
     let next: number;
     if (e.key === "ArrowRight") next = (index + 1) % tabs.length;
     else if (e.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
@@ -390,33 +406,33 @@ export function TabBar({
     document.getElementById(tabId(tabs[next].key))?.focus();
   };
 
+  // The same from render to render, so that a tab renders again only when it changes.
+  const actions = useStableHandlers<TabActions>({
+    onKeyDown: onTabKeyDown,
+    onMouseDown: (e, key) => editing !== key && startDrag(e, key),
+    onSelect,
+    onEdit: setEditing,
+    onEdited: (key, value, title) => {
+      setEditing(null);
+      if (value !== null && value !== title) onRename(key, value || null);
+    },
+    onClose: (key) => onClose([key]),
+    onMenu: (key, x, y) => setMenu({ key, x, y }),
+  });
+
   /** Whether a pane of the tab has a question waiting in its file panel, out of sight. */
   const questionWaiting = (tab: Tab) =>
     tab.panes.some((p) => p.questions > 0 && !(tab.key === activeKey && tab.focused === p.key && tab.sidePanel === "files"));
 
-  /** Whether a pane of the tab had output while it was in the background. */
-  const newOutput = (tab: Tab) => markOutput && tab.attention === "output";
-  /** Whether a pane of the tab rang its bell while it was in the background. */
-  const bellRang = (tab: Tab) => bellAlert && tab.attention === "bell";
-
-  const statusLabel = (tab: Tab) => {
-    const pane = focusedPane(tab);
-    if (pane.status === "connecting") return t("tabs.status.connecting");
-    const parts = [
-      pane.status === "closed" && t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed"),
-      bellRang(tab) && t("tabs.bell"),
-      newOutput(tab) && t("tabs.newOutput"),
-      questionWaiting(tab) && t("tabs.questionWaiting"),
-    ].filter(Boolean);
-    return parts.length > 0 ? parts.join(". ") : null;
-  };
-
-  const segment = (panel: SidePanel, label: string, hint: string, badge?: ReactNode) => (
+  // Created here rather than in `segment`, so they stay the same from render to render.
+  const toggleFiles = () => onTogglePanel("files");
+  const toggleForwards = () => onTogglePanel("forwards");
+  const segment = (panel: SidePanel, onToggle: () => void, label: string, hint: string, badge?: ReactNode) => (
     <button
       className={activeTab?.sidePanel === panel ? "on" : undefined}
       aria-pressed={activeTab?.sidePanel === panel}
       disabled={!activeTab || (unavailable && activeTab.sidePanel !== panel)}
-      onClick={() => onTogglePanel(panel)}
+      onClick={onToggle}
       title={unavailable ? t("tabs.panelUnavailable") : hint}
     >
       {label}
@@ -428,90 +444,34 @@ export function TabBar({
   return (
     <nav className="tab-bar" ref={barRef} {...DRAG_REGION}>
       <div className="tab-strip" ref={stripRef} onWheel={onWheel} role="tablist" aria-label={t("tabs.listLabel")}>
-        {tabs.map((tab, index) => {
-          const pane = focusedPane(tab);
-          const title = tabTitle(tab, followRemoteTitle);
-          const color = colorOf(tab);
-          const where = addressOf(tab);
-          const status = statusLabel(tab);
-          return (
-            <div
-              key={tab.key}
-              data-key={tab.key}
-              id={tabId(tab.key)}
-              role="tab"
-              aria-selected={tab.key === activeKey}
-              aria-controls={tabPanelId(tab.key)}
-              // The active tab is the one Tab reaches; arrows move to the others.
-              tabIndex={tab.key === activeKey ? 0 : -1}
-              onKeyDown={(e) => onTabKeyDown(e, index)}
-              className={[
-                "tab",
-                tab.key === activeKey && "active",
-                tab.key === dragging && (leaving ? "dragging leaving" : "dragging"),
-                inScope.includes(tab.key) && (syncing ? "in-scope syncing" : "in-scope"),
-                flashing.includes(tab.key) && "flash",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onMouseDown={(e) => editing !== tab.key && startDrag(e, tab.key)}
-              onClick={() => onSelect(tab.key)}
-              onDoubleClick={() => setEditing(tab.key)}
-              onAuxClick={(e) => e.button === 1 && onClose([tab.key])}
-              onContextMenu={(e) => {
-                if (followsMenuKey(e)) return;
-                e.preventDefault();
-                setMenu({ key: tab.key, x: e.clientX, y: e.clientY });
-              }}
-              title={editing === tab.key ? undefined : [title, where, t("tabs.renameHint")].filter(Boolean).join("\n")}
-            >
-              {color && <span className="tab-color" style={{ background: color }} />}
-              <span
-                className={`status-dot ${pane.status}${newOutput(tab) ? " new-output" : ""}`}
-                title={newOutput(tab) ? t("tabs.newOutput") : undefined}
-              />
-              {bellRang(tab) && (
-                <span className="tab-bell" title={t("tabs.bell")}>
-                  <BellIcon />
-                </span>
-              )}
-              {isLogging(pane) && <span className="tab-log" title={t("tabs.logging", { path: pane.logPath })} />}
-              {questionWaiting(tab) && <span className="tab-question" title={t("tabs.questionWaiting")} />}
-              {editing === tab.key ? (
-                <TitleEditor
-                  initial={title}
-                  onDone={(value) => {
-                    setEditing(null);
-                    if (value !== null && value !== title) onRename(tab.key, value || null);
-                  }}
-                />
-              ) : (
-                <span className="tab-title">{title}</span>
-              )}
-              {status && <span className="visually-hidden">{status}</span>}
-              {/* For the mouse: the keyboard closes tabs with the shortcut or the tab's menu. */}
-              <button
-                className="tab-close"
-                tabIndex={-1}
-                aria-hidden="true"
-                title={tab.panes.length > 1 ? t("tabs.close") : t("tabs.closeWithShortcut", { shortcut: shortcutLabel("closeTab") })}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose([tab.key]);
-                }}
-              >
-                <CloseIcon size={12} />
-              </button>
-            </div>
-          );
-        })}
+        {tabs.map((tab) => (
+          <TabItem
+            key={tab.key}
+            tab={tab}
+            title={tabTitle(tab, followRemoteTitle)}
+            active={tab.key === activeKey}
+            marks={[
+              tab.key === dragging && (leaving ? "dragging leaving" : "dragging"),
+              inScope.includes(tab.key) && (syncing ? "in-scope syncing" : "in-scope"),
+              flashing.includes(tab.key) && "flash",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            editing={editing === tab.key}
+            color={colorOf(tab)}
+            where={addressOf(tab)}
+            newOutput={markOutput && tab.attention === "output"}
+            bellRang={bellAlert && tab.attention === "bell"}
+            questionWaiting={questionWaiting(tab)}
+            actions={actions}
+          />
+        ))}
         {dropLeft !== null && <span className="tab-drop-marker" style={{ left: dropLeft }} aria-hidden="true" />}
       </div>
       {menu && tabs.some((tab) => tab.key === menu.key) && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />
       )}
-      {onNew && (
+      {canOpenLocal && (
         <IconButton
           className="tab-new"
           label={t("tabs.newLocalTerminal", { shortcut: shortcutLabel("newLocalTerminal") })}
@@ -549,6 +509,7 @@ export function TabBar({
         <div className="panel-switch">
           {segment(
             "files",
+            toggleFiles,
             t("tabs.files"),
             activeTab && questionWaiting(activeTab)
               ? t("tabs.filesHintQuestion", { shortcut: shortcutLabel("filePanel") })
@@ -557,6 +518,7 @@ export function TabBar({
           )}
           {segment(
             "forwards",
+            toggleForwards,
             t("tabs.forwards"),
             failed
               ? t("tabs.forwardsHintFailed", { shortcut: shortcutLabel("forwardsPanel") })
@@ -567,6 +529,114 @@ export function TabBar({
       )}
       {!isMac && <WindowControls />}
     </nav>
+  );
+}
+
+/** What a tab does, the same object for every tab and every render. */
+interface TabActions {
+  onKeyDown(e: ReactKeyboardEvent<HTMLElement>, key: number): void;
+  onMouseDown(e: ReactMouseEvent, key: number): void;
+  onSelect(key: number): void;
+  onEdit(key: number): void;
+  /** The title editor closed with `value` (null: cancelled) over `title`. */
+  onEdited(key: number, value: string | null, title: string): void;
+  onClose(key: number): void;
+  onMenu(key: number, x: number, y: number): void;
+}
+
+interface TabItemProps {
+  tab: Tab;
+  title: string;
+  active: boolean;
+  /** Classes for the states the tab bar knows about: dragged, in the compose bar's scope… */
+  marks: string;
+  editing: boolean;
+  /** Its session's color, if any. */
+  color?: string;
+  /** Where its session connects, for the tooltip. */
+  where?: string;
+  newOutput: boolean;
+  bellRang: boolean;
+  questionWaiting: boolean;
+  actions: TabActions;
+}
+
+/**
+ * One tab, its own component so that React Compiler memoizes it: the others don't render
+ * again when a busy terminal changes its title, nor have their elements' handlers replaced.
+ */
+function TabItem(props: TabItemProps) {
+  useStableProps("TabItem", props, ["actions"]);
+  const { tab, title, active, marks, editing, color, where, newOutput, bellRang, questionWaiting, actions } = props;
+  const { t } = useTranslation();
+  const { shortcutLabel } = useLocale();
+  const { key } = tab;
+  const pane = focusedPane(tab);
+
+  const statusLabel = () => {
+    if (pane.status === "connecting") return t("tabs.status.connecting");
+    const parts = [
+      pane.status === "closed" && t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed"),
+      bellRang && t("tabs.bell"),
+      newOutput && t("tabs.newOutput"),
+      questionWaiting && t("tabs.questionWaiting"),
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(". ") : null;
+  };
+  const status = statusLabel();
+
+  return (
+    <div
+      data-key={key}
+      id={tabId(key)}
+      role="tab"
+      aria-selected={active}
+      aria-controls={tabPanelId(key)}
+      // The active tab is the one Tab reaches; arrows move to the others.
+      tabIndex={active ? 0 : -1}
+      onKeyDown={(e) => actions.onKeyDown(e, key)}
+      className={["tab", active && "active", marks].filter(Boolean).join(" ")}
+      onMouseDown={(e) => actions.onMouseDown(e, key)}
+      onClick={() => actions.onSelect(key)}
+      onDoubleClick={() => actions.onEdit(key)}
+      onAuxClick={(e) => e.button === 1 && actions.onClose(key)}
+      onContextMenu={(e) => {
+        if (followsMenuKey(e)) return;
+        e.preventDefault();
+        actions.onMenu(key, e.clientX, e.clientY);
+      }}
+      title={editing ? undefined : [title, where, t("tabs.renameHint")].filter(Boolean).join("\n")}
+    >
+      {color && <span className="tab-color" style={{ background: color }} />}
+      <span className={`status-dot ${pane.status}${newOutput ? " new-output" : ""}`} title={newOutput ? t("tabs.newOutput") : undefined} />
+      {bellRang && (
+        <span className="tab-bell" title={t("tabs.bell")}>
+          <BellIcon />
+        </span>
+      )}
+      {isLogging(pane) && <span className="tab-log" title={t("tabs.logging", { path: pane.logPath })} />}
+      {questionWaiting && <span className="tab-question" title={t("tabs.questionWaiting")} />}
+      {editing ? (
+        <TitleEditor initial={title} onDone={(value) => actions.onEdited(key, value, title)} />
+      ) : (
+        <span className="tab-title">{title}</span>
+      )}
+      {status && <span className="visually-hidden">{status}</span>}
+      {/* For the mouse: the keyboard closes tabs with the shortcut or the tab's menu. */}
+      <button
+        className="tab-close"
+        tabIndex={-1}
+        aria-hidden="true"
+        title={tab.panes.length > 1 ? t("tabs.close") : t("tabs.closeWithShortcut", { shortcut: shortcutLabel("closeTab") })}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          actions.onClose(key);
+        }}
+      >
+        <CloseIcon size={12} />
+      </button>
+    </div>
   );
 }
 

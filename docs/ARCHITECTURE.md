@@ -197,7 +197,7 @@
 - **渲染时不碰 ref**：Compiler 跳过渲染时读写 ref 的组件。要在事件里拿到最新的 props 或 state，用 `useLatest`（在 insertion effect 里赋值，早于所有 layout effect；名字以 `Ref` 结尾，Compiler 才当它是 ref），只在 effect 里调用的回调用 `useEffectEvent`；DOM 的尺寸、元素在事件、effect 或 ResizeObserver 里取得后存进 state；ref 与普通值放在一个对象里时（`useConfirmButton`、`useDialog` 的返回值），整个对象都被当作 ref，在使用处解构。手写的 `useCallback` / `useMemo` 的依赖要与 Compiler 推断的一致（`useLatest` 的 ref 也要列进去），否则整个组件被跳过。
 - **渲染时不读 React 之外的状态**：memo 之后，只有依赖变了才重新计算，靠「每次都重新渲染」才拿到新值的写法会显示旧值。外部 store 经 `useSyncExternalStore` 订阅（`hooks/stores.ts`）；随界面语言变化的文字（快捷键名称、大小与时间的格式、CJK 字体顺序）从 `useLocale` 取得，函数随语言变化，`locale.test.ts` 检查组件不直接引入 `lib/` 里的版本；会话注册表也是：它在窗格的会话与终端挂接、断开时通知订阅者，状态栏经 `useSyncExternalStore` 取流量表和终端尺寸。
 - **Compiler 尚不支持的语法**：带 `finally` 或没有 `catch` 的 `try`、`try` 里的条件表达式与 `?.` / `??`、`||=` / `??=`、对模块变量的 `++`，哪怕只出现在组件内的事件处理函数里，整个组件也会被跳过。`try` 语句经 `lib/attempt`（含义相同），其余写成显式形式或组件外的函数。
-- **热路径**：标签页 store 可能每秒变化多次（后台程序用 spinner 改标题），`App` 随之重新渲染。Compiler 按依赖 memo，依赖链上某处随标签页变化时（`openProfile` 用到 `useWindows` 的返回值，后者依赖 `tabs`），子组件仍会重新渲染，而且没有提示。所以不该随标签页重新渲染的组件，回调由 `useStableHandlers` 组成一个对象传入（侧栏的 `SidebarHandlers` 与应用菜单按钮 `AppMenuButton`、标签页的 `PaneHandlers`），会变的值另作 props，开发版的 `useStableProps` 在它们拿到新的函数或 handlers 对象时 `console.warn`。
+- **热路径**：标签页 store 可能每秒变化多次（后台程序用 spinner 改标题），`App` 随之重新渲染。Compiler 按依赖 memo，依赖链上某处随标签页变化时（`openProfile` 用到 `useWindows` 的返回值，后者依赖 `tabs`），子组件仍会重新渲染，而且没有提示。所以不该随标签页重新渲染的组件，回调由 `useStableHandlers` 组成一个对象传入（侧栏的 `SidebarHandlers` 与应用菜单按钮 `AppMenuButton`、标签页的 `PaneHandlers`），会变的值另作 props，开发版的 `useStableProps` 在它们拿到新的函数或 handlers 对象时 `console.warn`。要随标签页重新渲染的组件（标签栏），列表的每一项拆成单独的组件（`TabItem`）：Compiler 不 memo 循环里创建的元素与闭包，写在 `map` 里的每个元素每次都拿到新的 `onClick`，拆开后只有变了的那一项重新渲染；回调同样经 handlers 对象（`TabBarHandlers`）。
 
 ## 交互约定
 

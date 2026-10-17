@@ -79,7 +79,7 @@
   - 修改 hook 返回的 ref（`SftpPanel`）：改由 hook 提供 setter。
   - 手写 memo 的依赖与 Compiler 推断的不一致（`TerminalView` 的配色只依赖外观的两个字段）：先取出这两个字段再 memo。
 - **靠重新渲染才拿到新值的写法**（已完成）：Compiler 看不出这类写法，memo 之后会显示旧值。排查出两处：状态栏在渲染时向注册表取流量表，新窗格的终端在 effect 里才挂接会话，第一次渲染取不到，之前靠 `App` 随后的重新渲染再取一次（注册表改为在会话挂接、断开时通知订阅者，状态栏经 `useSyncExternalStore` 取流量表与终端尺寸，终端重新挂接时也会跟上）；快捷键名称、大小与时间的格式、CJK 字体顺序读的是语言设置的模块状态，切换语言后不会更新（组件改从 `hooks/locale` 的 `useLocale` 取得，函数随语言变化，`locale.test.ts` 检查组件与 hook 不直接引入）。菜单在打开时才算出菜单项，memo 后依赖 `menu` 状态，照样会重新计算；状态栏的流量计数是原地修改的对象，Compiler 每次渲染都会比较读到的字段，不受影响。
-- **Compiler 替代不了的**：它按依赖做 memo，依赖在变时如实生成新函数。`openProfile` 用到 `useWindows` 的返回值，后者依赖 `tabs`，所以只靠 Compiler，`Sidebar` 仍会随标题变化重新渲染，而且不会有任何提示。标签页 store 每次变化都不该重新渲染的组件（`Sidebar`、`TabPage`），回调仍由 `useStableHandlers` 组成 handlers 对象传入。
+- **Compiler 替代不了的**：它按依赖做 memo，依赖在变时如实生成新函数。`openProfile` 用到 `useWindows` 的返回值，后者依赖 `tabs`，所以只靠 Compiler，`Sidebar` 仍会随标题变化重新渲染，而且不会有任何提示。标签页 store 每次变化都不该重新渲染的组件（`Sidebar`、`TabPage`），回调仍由 `useStableHandlers` 组成 handlers 对象传入。`TabBar` 要显示标题，必须跟着重新渲染，但 Compiler 不 memo `map` 里的元素与闭包，每个标签和它的关闭按钮每次都被重设 `onclick`（手测时监听器计数仍在上涨）：拆出 `TabItem` 组件，回调经 `TabBarHandlers` 与标签栏内部的 handlers 对象，只有标题变了的那个标签重新渲染，`onClick` 也不变。
 - **检查**：`src/compiler.test.ts` 用 Compiler 编译 `src/` 下全部组件与 hook，有被跳过的就失败。开发版的 `useStableProps(name, props, objects)` 在上述组件的函数或对象 prop 引用变化时 `console.warn`，生产构建去掉；比较前后 props 的函数放在 `src/lib/` 并有单元测试。约定写进 CLAUDE.md，设计写进 ARCHITECTURE.md。
 - **风险**：Compiler 自身的问题可以对单个组件用 `"use no memo"` 退出，并在这里记下原因。
 - **验证**：用 CDP 确认后台标题变化时侧栏不再重设 `onclick`、监听器计数不再锯齿式上涨；在隔离 HOME 的开发版里做全界面回归（标签页、分屏、侧栏、各对话框的二次确认按钮、SFTP、撰写栏、全屏、应用菜单、应用锁、设置、切换语言）。

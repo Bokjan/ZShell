@@ -25,7 +25,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import type { SectionId } from "./components/settings/common";
 import { Sidebar, type OpenMode, type SidebarHandlers } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
-import { TabBar } from "./components/TabBar";
+import { TabBar, type TabBarHandlers } from "./components/TabBar";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n/index";
@@ -458,6 +458,34 @@ function App() {
     onSettings: () => openSettings(),
   });
 
+  const tabBarHandlers = useStableHandlers<TabBarHandlers>({
+    onSelect: activate,
+    onNew: openLocalTab,
+    onClose: (keys) => void requestClose({ kind: "tabs", keys }),
+    onSplit: (key, direction) => withFocused(key, (pane) => splitPane(pane.key, direction)),
+    canSplit: (key, direction) => {
+      const pane = focusedOf(key);
+      return !!pane && roomToSplit(pane.key, direction);
+    },
+    onMove: moveTab,
+    canMoveToWindow: (key) => {
+      const tab = store.get().tabs.find((t) => t.key === key);
+      return !!tab && windowing.canMove(tab);
+    },
+    onMoveToWindow: (key, target) => void windowing.moveTab(key, target),
+    onDropOut: windowing.dropTab,
+    onRename: (key, customTitle) => updateTab(key, { customTitle }),
+    onDuplicate: duplicateTab,
+    onSaveAsSession: (key) => withFocused(key, (pane) => saveAsSession(pane.key)),
+    onReconnect: (key) => withFocused(key, (pane) => sessions.reconnect(pane.key)),
+    onBreak: (key) => withFocused(key, (pane) => pane.sessionId != null && sendBreak(pane.sessionId).catch(console.error)),
+    onLog: (key, start) => withFocused(key, (pane) => setLogging(pane.key, start)),
+    onShowLog: (key) => withFocused(key, (pane) => showLog(pane.key)),
+    onTogglePanel: togglePanel,
+    onToggleCompose: composer.toggle,
+    onToggleQuickBar: quick.toggleBar,
+  });
+
   const handlers = useStableHandlers<PaneHandlers>({
     sessions,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
@@ -511,34 +539,11 @@ function App() {
           followRemoteTitle={settings.tabs.followRemoteTitle}
           markOutput={settings.tabs.markOutput}
           bellAlert={settings.terminal.bellAlert}
-          onSelect={activate}
-          onNew={localAllowed ? openLocalTab : undefined}
-          onClose={(keys) => void requestClose({ kind: "tabs", keys })}
-          onSplit={(key, direction) => withFocused(key, (pane) => splitPane(pane.key, direction))}
-          canSplit={(key, direction) => {
-            const pane = focusedOf(key);
-            return !!pane && roomToSplit(pane.key, direction);
-          }}
-          onMove={moveTab}
+          handlers={tabBarHandlers}
+          canOpenLocal={localAllowed}
           windows={windowing.others}
-          canMoveToWindow={(key) => {
-            const tab = store.get().tabs.find((t) => t.key === key);
-            return !!tab && windowing.canMove(tab);
-          }}
-          onMoveToWindow={(key, target) => void windowing.moveTab(key, target)}
-          onDropOut={windowing.dropTab}
-          onRename={(key, customTitle) => updateTab(key, { customTitle })}
-          onDuplicate={duplicateTab}
-          onSaveAsSession={(key) => withFocused(key, (pane) => saveAsSession(pane.key))}
-          onReconnect={(key) => withFocused(key, (pane) => sessions.reconnect(pane.key))}
-          onBreak={(key) => withFocused(key, (pane) => pane.sessionId != null && sendBreak(pane.sessionId).catch(console.error))}
-          onLog={(key, start) => withFocused(key, (pane) => setLogging(pane.key, start))}
-          onShowLog={(key) => withFocused(key, (pane) => showLog(pane.key))}
-          onTogglePanel={togglePanel}
           composeOpen={compose.open}
-          onToggleCompose={composer.toggle}
           quickBarOpen={quick.barOpen}
-          onToggleQuickBar={quick.toggleBar}
           inScope={tabsWith(inScopeKeys)}
           syncing={compose.open && compose.sync}
           flashing={tabsWith(flashing)}
