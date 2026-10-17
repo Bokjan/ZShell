@@ -13,9 +13,11 @@ use crate::model::AppLockSettings;
 
 use super::{blocking, notified, Change};
 
+/// `method`: whether to ask the system what it offers also while the app lock is off (see
+/// [`AppLock::status_asking`]), for the settings.
 #[tauri::command]
-pub async fn app_lock_status(app: AppHandle) -> Result<AppLockStatus> {
-    blocking(app, |app| Ok(app.state::<Arc<AppLock>>().status())).await
+pub async fn app_lock_status(app: AppHandle, method: bool) -> Result<AppLockStatus> {
+    blocking(app, move |app| Ok(app.state::<Arc<AppLock>>().status_asking(method))).await
 }
 
 /// Locks now (the "Lock" action), if the app lock is on; the other windows hear `app-locked`,

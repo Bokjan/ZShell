@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { appLock, errorCode, errorMessage, type AppLockSettings } from "../../ipc/api";
@@ -66,6 +66,11 @@ function AppLockSetting() {
   const [error, setError] = useState<string | null>(null);
   // The vault is unlocked while the settings show.
   const settings = status.settings!;
+  // While the app lock is off, the system isn't asked what it offers until it shows here.
+  const asked = status.method !== null || status.unavailable !== null;
+  useEffect(() => {
+    if (!asked) void appLock.status(true).then(setStatus, (e: unknown) => setError(errorMessage(e)));
+  }, [asked, setStatus]);
 
   const save = async (next: AppLockSettings) => {
     setBusy(true);
@@ -85,6 +90,7 @@ function AppLockSetting() {
     );
   };
 
+  if (!asked) return error && <ErrorText>{error}</ErrorText>;
   let hint: string;
   if (status.unavailable) hint = errorMessage(status.unavailable);
   else if (settings.enabled && vault.protection === "none") hint = t("settings.appLock.plainHint");

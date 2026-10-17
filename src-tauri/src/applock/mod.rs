@@ -136,11 +136,20 @@ impl AppLock {
 
     /// Blocks while the system is asked what it offers (Windows Hello may take a moment).
     pub fn status(&self) -> AppLockStatus {
-        let method = self.system.method();
+        self.status_asking(true)
+    }
+
+    /// [`AppLock::status`]; while the app lock is off, unless `always`, without asking the
+    /// system what it offers (`method` and `unavailable` then `None`): Windows Hello and polkit
+    /// take a moment to answer, which every window would wait for before showing anything.
+    pub fn status_asking(&self, always: bool) -> AppLockStatus {
+        let settings = self.vault.app_lock();
+        let ask = always || settings.as_ref().is_some_and(|settings| settings.enabled);
+        let method = if ask { self.system.method().map(Some) } else { Ok(None) };
         AppLockStatus {
             locked: self.is_locked(),
-            settings: self.vault.app_lock(),
-            method: method.as_ref().ok().copied(),
+            settings,
+            method: method.as_ref().ok().copied().flatten(),
             unavailable: method.err(),
             idle: self.system.idle_seconds().is_some(),
             system_lock: self.system.watches_system_lock(),
@@ -368,6 +377,19 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.dir);
         }
+    }
+
+    /// While off, the system is asked what it offers only when the settings want to know.
+    #[test]
+    fn asks_the_system_when_on_or_asked_to() {
+        let setup = Setup::new("asking", Target::None);
+        setup.fake.query_fails.store(true, Ordering::Relaxed);
+        let lock = setup.start();
+        let status = lock.status_asking(false);
+        assert!(status.method.is_none() && status.unavailable.is_none());
+        assert_eq!(lock.status_asking(true).unavailable.map(|e| e.code().to_owned()).as_deref(), Some("appLock.failed"));
+        setup.enable(AppLockSettings::default());
+        assert!(lock.status_asking(false).unavailable.is_some());
     }
 
     #[test]

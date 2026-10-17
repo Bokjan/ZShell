@@ -156,7 +156,11 @@ export const vault = {
 
 /** The app lock (see `applock/mod.rs`). */
 export const appLock = {
-  status: () => call<AppLockStatus>("app_lock_status"),
+  /**
+   * While the app lock is off, `method` and `unavailable` are null unless `method` asks for
+   * them: the system takes a moment to answer (Windows Hello, polkit).
+   */
+  status: (method = false) => call<AppLockStatus>("app_lock_status", { method }),
   /** Locks now, if the app lock is on. */
   lock: () => call<AppLockStatus>("app_lock_lock"),
   /**
