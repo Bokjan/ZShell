@@ -24,8 +24,9 @@ use crate::ssh::{self, JumpChain};
 use protocol::{Telnet, BREAK};
 
 const READ_BUFFER: usize = 16 << 10;
-/// What waits to be written to the server; beyond that, new input waits (a ZMODEM upload is
-/// paced by the connection), and so does reading the server's output (see [`bridge`]).
+/// What waits to be written to the server; beyond that, reading the server's output waits
+/// (see [`bridge`]), and so does a ZMODEM upload's data, paced by the connection, while
+/// keystrokes and resizes are still taken (see [`TermIo::recv`]).
 const OUTGOING_LIMIT: usize = 64 << 10;
 
 /// Session backend: connects to the session's host (by `route`) and bridges the Telnet
@@ -145,7 +146,7 @@ async fn bridge(
                     outgoing.extend(telnet.encode(&answer));
                 }
             },
-            input = io.recv(), if outgoing.len() < OUTGOING_LIMIT => match input {
+            input = io.recv(outgoing.len()) => match input {
                 // A ZMODEM transfer's data is neither typing to echo nor a login answer.
                 Some(SessionInput::Data(data)) if io.is_transfer_data() => outgoing.extend(telnet.encode(&data)),
                 Some(SessionInput::Data(data)) => {

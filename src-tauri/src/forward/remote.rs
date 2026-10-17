@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 
 use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
 use crate::error::Error;
-use crate::ssh::{Incoming, RemoteRoutes, SshHandle};
+use crate::ssh::{Incoming, RemoteRoutes, SshHandle, ROUTE_QUEUE};
 
 /// How long a stopping rule waits for the server to cancel its listener.
 const CANCEL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -28,7 +28,7 @@ struct Listening {
 }
 
 impl Listening {
-    fn new(ctx: &Ctx, address: String, port: u32, route: mpsc::UnboundedSender<Incoming>) -> Self {
+    fn new(ctx: &Ctx, address: String, port: u32, route: mpsc::Sender<Incoming>) -> Self {
         let routes = ctx.shared.routes.clone();
         routes.insert(address.clone(), port, route);
         Self { handle: ctx.handle(), routes, address, port, cancelled: false }
@@ -81,7 +81,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
     };
     let port = port(reply.context(Error::new("forward.remoteRefused").param("address", &requested))?);
 
-    let (sender, mut incoming) = mpsc::unbounded_channel();
+    let (sender, mut incoming) = mpsc::channel(ROUTE_QUEUE);
     let listening = Listening::new(ctx, rule.bind_host.clone(), port, sender);
     let mut tracker = Tracker::new(ctx, host_port(&rule.bind_host, port));
     loop {

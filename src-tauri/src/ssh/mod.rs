@@ -28,7 +28,7 @@ use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
 use crate::vault::SavedPasswords;
 pub use auth::{default_key_path, key_file_exists};
 pub use connection::{Connection, Shells, SshHandle};
-pub use forwarded::{Incoming, RemoteRoutes};
+pub use forwarded::{Incoming, RemoteRoutes, ROUTE_QUEUE};
 use handler::{ClientHandler, EndReason};
 use host_key::HostKeyMessage;
 
@@ -190,8 +190,10 @@ async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> 
 /// message goes through russh's bounded queue to the connection task, which may itself be
 /// waiting for this channel to be read (output paused while the terminal is behind), and the
 /// branch would keep the reader and the flow control from being polled for good. One message
-/// is in flight at a time ([`Sending`]); while it is, one keystroke or paste waits, and window
-/// changes are merged into the latest size (dragging the window edge sends many).
+/// is in flight at a time ([`Sending`]); while it is, input is gathered to send next (past a
+/// limit, a ZMODEM upload's data waits in its own queue while keystrokes are still read, see
+/// [`TermIo::recv`]), and window changes are merged into the latest size (dragging the
+/// window edge sends many).
 async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::Receiver<Option<EndReason>>) -> Outcome {
     let (mut reader, writer) = channel.split();
     let writer = Arc::new(writer);
@@ -200,7 +202,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
     let mut exit_status = None;
     let mut exit_signal = None;
     let mut sending: Option<Sending> = None;
-    let mut data = None;
+    let mut data: Vec<u8> = Vec::new();
     let mut resize = None;
     // A message taken while gathering output (see `gather`), to handle next.
     let mut next = None;
@@ -213,13 +215,13 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
             }
         }
         if sending.is_none() {
-            sending = match (data.take(), resize.take()) {
-                (Some(bytes), size) => {
+            sending = match (std::mem::take(&mut data), resize.take()) {
+                (bytes, size) if !bytes.is_empty() => {
                     resize = size;
                     Some(Box::pin(writer.data_bytes(bytes)))
                 }
-                (None, Some((cols, rows))) => Some(Box::pin(writer.window_change(cols, rows, 0, 0))),
-                (None, None) => None,
+                (_, Some((cols, rows))) => Some(Box::pin(writer.window_change(cols, rows, 0, 0))),
+                (_, None) => None,
             };
         }
         let paused = flow.is_paused();
@@ -245,9 +247,9 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
                 sending = None;
                 result
             }
-            input = io.recv(), if data.is_none() => match input {
+            input = io.recv(data.len()) => match input {
                 Some(SessionInput::Data(bytes) | SessionInput::Raw(bytes)) => {
-                    data = Some(bytes);
+                    data.extend_from_slice(&bytes);
                     Ok(())
                 }
                 Some(SessionInput::Resize { cols, rows }) => {

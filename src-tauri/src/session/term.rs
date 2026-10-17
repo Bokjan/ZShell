@@ -30,6 +30,10 @@ impl Foreground {
     }
 }
 
+/// How much input a backend holds for its writer before it stops taking a ZMODEM transfer's
+/// data (see [`TermIo::recv`]).
+pub const INPUT_BACKLOG: usize = 64 << 10;
+
 /// The terminal side of a session, as seen by its backend task.
 pub struct TermIo {
     pub(super) sink: SessionSink,
@@ -173,15 +177,14 @@ impl TermIo {
     /// Receives the next input for the remote side, keeping [`TermIo::size`] up to date.
     /// During a ZMODEM transfer that is the transfer's data; keystrokes only cancel it.
     /// Keystrokes are converted to the session's encoding.
-    pub async fn recv(&mut self) -> Option<SessionInput> {
-        self.next_input(true, true).await
-    }
-
-    /// [`TermIo::recv`] without taking more of a ZMODEM transfer's data, which waits for the
-    /// backend meanwhile: for a backend whose own queue is full, to still see resizes and
-    /// keystrokes (which may cancel the transfer).
-    pub async fn recv_typed(&mut self) -> Option<SessionInput> {
-        self.next_input(true, false).await
+    ///
+    /// `waiting`: the bytes of input the backend holds that its writer has no room for yet
+    /// (the remote side or the device isn't reading). Past [`INPUT_BACKLOG`], a ZMODEM
+    /// transfer's data is left to wait in its own bounded queue, while keystrokes (which may
+    /// cancel the transfer) and resizes are still taken: every backend reads its input this
+    /// way, so none stops seeing them however long the other side stalls.
+    pub async fn recv(&mut self, waiting: usize) -> Option<SessionInput> {
+        self.next_input(true, waiting < INPUT_BACKLOG).await
     }
 
     /// `convert`: whether keystrokes are converted to the session's encoding. Prompts read
@@ -392,8 +395,8 @@ mod tests {
         input.send(SessionInput::Data("中".as_bytes().to_vec())).unwrap();
         // A click at column 129 in the X10 mouse encoding.
         input.send(SessionInput::Raw(b"\x1b[M \xa1!".to_vec())).unwrap();
-        assert!(matches!(io.recv().await, Some(SessionInput::Data(data)) if data == [0xd6, 0xd0]));
-        assert!(matches!(io.recv().await, Some(SessionInput::Raw(data)) if data == b"\x1b[M \xa1!"));
+        assert!(matches!(io.recv(0).await, Some(SessionInput::Data(data)) if data == [0xd6, 0xd0]));
+        assert!(matches!(io.recv(0).await, Some(SessionInput::Raw(data)) if data == b"\x1b[M \xa1!"));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -403,7 +406,7 @@ mod tests {
         sink.output(b"**\x18B00".to_vec());
         assert!(sink.zmodem.is_active());
         sink.zmodem.input(b"\x03");
-        let sent = tokio::time::timeout(std::time::Duration::from_secs(2), io.recv()).await.unwrap();
+        let sent = tokio::time::timeout(std::time::Duration::from_secs(2), io.recv(0)).await.unwrap();
         assert!(matches!(sent, Some(SessionInput::Data(data)) if data == b"\x03"));
         assert_eq!(shown_until(&output, b"**\x18B00", std::time::Duration::from_secs(2)), b"**\x18B00");
     }

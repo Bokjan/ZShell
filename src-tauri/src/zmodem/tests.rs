@@ -575,7 +575,7 @@ async fn a_transfer_right_after_another_is_detected() {
     // with the end of the first transfer.
     let (mut sender, (to_sender, mut from_sender, _cancel)) = link();
     tokio::spawn(async move {
-        while let Some(input) = io.recv().await {
+        while let Some(input) = io.recv(0).await {
             if let SessionInput::Data(data) = input {
                 let _ = to_sender.send(data);
             }
@@ -626,7 +626,7 @@ async fn ctrl_c_cancels_a_streaming_upload() {
     tokio::spawn({
         let sent = sent.clone();
         async move {
-            while let Some(input) = io.recv().await {
+            while let Some(input) = io.recv(0).await {
                 if let SessionInput::Data(data) = input {
                     if data.windows(offer.len()).any(|w| w == offer) {
                         offered_tx.send_replace(true);

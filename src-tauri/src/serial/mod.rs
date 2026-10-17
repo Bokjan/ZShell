@@ -5,6 +5,7 @@
 //! session ends when the device goes away (a USB adapter unplugged); the frontend then
 //! reconnects as for a lost connection, which succeeds once the device is back.
 
+use std::collections::VecDeque;
 use std::io::{ErrorKind, Read};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -223,9 +224,15 @@ impl Line {
         Self { input, failed }
     }
 
+    /// Passes input to the writer thread until the device fails or the tab closes. Input the
+    /// writer has no room for yet (the device's flow control holds it back) waits here, so
+    /// keystrokes are still read: Ctrl+C cancels a ZMODEM upload that the line stalls (see
+    /// [`TermIo::recv`]).
     async fn bridge(mut self, device: &str, io: &mut TermIo) -> Outcome {
+        let mut pending: VecDeque<Output> = VecDeque::new();
+        let mut pending_bytes = 0;
         loop {
-            let write = tokio::select! {
+            tokio::select! {
                 reason = self.failed.recv() => {
                     let error = Error::new("serial.disconnected").param("device", device);
                     return Outcome::Lost(match reason {
@@ -233,16 +240,25 @@ impl Line {
                         None => error,
                     });
                 }
-                input = io.recv() => match input {
-                    Some(SessionInput::Data(data) | SessionInput::Raw(data)) => Output::Data(data),
-                    Some(SessionInput::Break) => Output::Break,
-                    Some(SessionInput::Resize { .. }) => continue,
+                // An error means the writer stopped; the reason arrives on `failed`.
+                Ok(permit) = self.input.reserve(), if !pending.is_empty() => {
+                    let output = pending.pop_front().unwrap();
+                    if let Output::Data(data) = &output {
+                        pending_bytes -= data.len();
+                    }
+                    permit.send(output);
+                }
+                input = io.recv(pending_bytes) => match input {
+                    Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
+                        pending_bytes += data.len();
+                        pending.push_back(Output::Data(data));
+                    }
+                    Some(SessionInput::Break) => pending.push_back(Output::Break),
+                    Some(SessionInput::Resize { .. }) => {}
                     // The tab is closing.
                     None => return Outcome::Exited(None),
                 },
-            };
-            // An error means the writer stopped; the reason arrives on `failed`.
-            let _ = self.input.send(write).await;
+            }
         }
     }
 }
@@ -422,6 +438,22 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert!(!Hold::is_held(&path));
+    }
+
+    /// Input keeps being read while the device takes no more: more writes than the writer's
+    /// queue holds still let the tab close (or a keystroke cancel a ZMODEM upload).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reads_input_while_the_device_holds_up_writes() {
+        let (_device, path) = fake_device();
+        let (io, input, _output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(run(SerialOptions { device: path, ..SerialOptions::default() }, io));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        for _ in 0..INPUT_QUEUE * 4 {
+            input.send(SessionInput::Data(vec![b'x'; 64 << 10])).unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drop(input);
+        tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]

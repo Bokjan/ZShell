@@ -20,14 +20,18 @@ pub struct Incoming {
 #[derive(Clone, Default)]
 pub struct RemoteRoutes(Arc<Mutex<HashMap<(String, u32), Route>>>);
 
-/// Where the channels for one remote forward go.
-pub type Route = mpsc::UnboundedSender<Incoming>;
+/// Where the channels for one remote forward go: a rule this far behind the server (which
+/// decides how many connections it opens) has the next ones rejected.
+pub type Route = mpsc::Sender<Incoming>;
+
+/// Channels a remote forward may have waiting for it to start them.
+pub const ROUTE_QUEUE: usize = 64;
 
 impl RemoteRoutes {
     /// Delivers a `forwarded-tcpip` channel to its rule; unknown ones are rejected.
     pub fn route(&self, address: &str, port: u32, incoming: Incoming) {
         if let Some(rule) = find_route(&self.0.lock().unwrap(), address, port) {
-            let _ = rule.send(incoming);
+            let _ = rule.try_send(incoming);
         }
     }
 

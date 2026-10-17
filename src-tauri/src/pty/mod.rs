@@ -43,8 +43,6 @@ const READ_WAIT: Duration = Duration::from_millis(200);
 /// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
 /// is paced by how fast the shell reads).
 const INPUT_QUEUE: usize = 16;
-/// Input bytes kept waiting in the session task once the writer's queue is full.
-const INPUT_PENDING: usize = 64 << 10;
 
 /// Session backend: runs `shell` in a pseudo terminal until it exits.
 pub async fn run(shell: Shell, mut io: TermIo) {
@@ -147,14 +145,12 @@ impl Pty {
     /// `None` if the tab is closing.
     ///
     /// Input the writer thread has no room for yet (the shell isn't reading) waits here, so
-    /// the shell exiting and resizes are still seen. Past [`INPUT_PENDING`] bytes, a ZMODEM
-    /// upload's data is left to wait in its own bounded queue.
+    /// the shell exiting and resizes are still seen (see [`TermIo::recv`]).
     async fn bridge(&mut self, io: &mut TermIo) -> Option<Option<ExitStatus>> {
         let mut pending: VecDeque<Vec<u8>> = VecDeque::new();
         let mut pending_bytes = 0;
         loop {
             let writer = self.input.clone();
-            let backed_up = pending_bytes >= INPUT_PENDING;
             tokio::select! {
                 status = &mut self.exit => return Some(status.ok().flatten()),
                 permit = async { writer?.reserve_owned().await.ok() }, if !pending.is_empty() => {
@@ -164,7 +160,7 @@ impl Pty {
                         permit.send(data);
                     }
                 }
-                input = async { if backed_up { io.recv_typed().await } else { io.recv().await } } => match input {
+                input = io.recv(pending_bytes) => match input {
                     Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
                         if self.input.is_some() {
                             pending_bytes += data.len();
