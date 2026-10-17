@@ -3,6 +3,8 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import type { TransferProgress } from "../ipc/api";
 import { useLocale } from "../hooks/locale";
+import { useStableHandlers } from "../hooks/stableHandlers";
+import { useStableProps } from "../hooks/stableProps";
 import { IconButton } from "./IconButton";
 import { ArrowIcon, CloseIcon, PencilIcon } from "./icons";
 
@@ -45,12 +47,48 @@ const KIND_ICONS = {
 const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
 
 export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, onReopen, onStopEditing }: Props) {
-  const { t, i18n } = useTranslation();
-  const { formatSize } = useLocale();
+  const { t } = useTranslation();
+  // The same from render to render, so that a transfer renders again only when it changes.
+  const actions = useStableHandlers<TransferActions>({ onCancel, onDismiss, onReopen, onStopEditing });
   if (transfers.length === 0) return null;
 
-  const detail = (transfer: Transfer) => {
-    const p = transfer.progress;
+  return (
+    <section className="transfers">
+      <header>
+        <span>{t("transfer.title")}</span>
+        {transfers.some(finished) && (
+          <button className="link-button" onClick={onClearFinished}>
+            {t("transfer.clearFinished")}
+          </button>
+        )}
+      </header>
+      <ul>
+        {transfers.map((transfer) => (
+          <TransferItem key={transfer.id} transfer={transfer} actions={actions} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** What a transfer's buttons do: one object for every transfer, the same from render to render. */
+type TransferActions = Pick<Props, "onCancel" | "onDismiss" | "onReopen" | "onStopEditing">;
+
+/**
+ * One transfer, its own component so that React Compiler memoizes it: the list renders again
+ * with each running transfer's progress, ten times a second, and the others keep their
+ * elements and handlers.
+ */
+function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
+  useStableProps("TransferItem", props, ["actions"]);
+  const { transfer, actions } = props;
+  const { t, i18n } = useTranslation();
+  const { formatSize } = useLocale();
+  const { id } = transfer;
+  const p = transfer.progress;
+  const percent = p && p.total > 0 ? (p.transferred / p.total) * 100 : transfer.status === "done" ? 100 : 0;
+
+  const detail = () => {
     if (transfer.status === "error") return transfer.error;
     if (transfer.status === "editing") {
       const save = transfer.save;
@@ -71,66 +109,48 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, 
   };
 
   return (
-    <section className="transfers">
-      <header>
-        <span>{t("transfer.title")}</span>
-        {transfers.some(finished) && (
-          <button className="link-button" onClick={onClearFinished}>
-            {t("transfer.clearFinished")}
+    <li className={transfer.status}>
+      <div className="transfer-row">
+        <span className="transfer-kind" role="img" aria-label={t(`transfer.kind.${transfer.kind}`)}>
+          {KIND_ICONS[transfer.kind]}
+        </span>
+        <span className="transfer-label" title={transfer.label}>
+          {transfer.label}
+        </span>
+        {transfer.status === "running" && (
+          <button className="link-button" onClick={() => actions.onCancel(id)}>
+            {t("transfer.cancel")}
           </button>
         )}
-      </header>
-      <ul>
-        {transfers.map((transfer) => {
-          const p = transfer.progress;
-          const percent = p && p.total > 0 ? (p.transferred / p.total) * 100 : transfer.status === "done" ? 100 : 0;
-          return (
-            <li key={transfer.id} className={transfer.status}>
-              <div className="transfer-row">
-                <span className="transfer-kind" role="img" aria-label={t(`transfer.kind.${transfer.kind}`)}>
-                  {KIND_ICONS[transfer.kind]}
-                </span>
-                <span className="transfer-label" title={transfer.label}>
-                  {transfer.label}
-                </span>
-                {transfer.status === "running" && (
-                  <button className="link-button" onClick={() => onCancel(transfer.id)}>
-                    {t("transfer.cancel")}
-                  </button>
-                )}
-                {transfer.status === "done" && transfer.results?.[0] && (
-                  <button className="link-button" onClick={() => void revealItemInDir(transfer.results![0])}>
-                    {t("transfer.show")}
-                  </button>
-                )}
-                {transfer.status === "editing" && (
-                  <>
-                    <button className="link-button" onClick={() => onReopen(transfer.id)}>
-                      {t("transfer.reopen")}
-                    </button>
-                    <button className="link-button" onClick={() => onStopEditing(transfer.id)}>
-                      {t("transfer.stopEditing")}
-                    </button>
-                  </>
-                )}
-                {finished(transfer) && (
-                  <IconButton className="link-button" label={t("transfer.remove")} onClick={() => onDismiss(transfer.id)}>
-                    <CloseIcon size={12} />
-                  </IconButton>
-                )}
-              </div>
-              {transfer.status !== "editing" && (
-                <div className="progress">
-                  <div style={{ width: `${percent}%` }} />
-                </div>
-              )}
-              <div className="transfer-detail" title={transfer.save?.state === "failed" ? transfer.save.error : transfer.error}>
-                {detail(transfer)}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+        {transfer.status === "done" && transfer.results?.[0] && (
+          <button className="link-button" onClick={() => void revealItemInDir(transfer.results![0])}>
+            {t("transfer.show")}
+          </button>
+        )}
+        {transfer.status === "editing" && (
+          <>
+            <button className="link-button" onClick={() => actions.onReopen(id)}>
+              {t("transfer.reopen")}
+            </button>
+            <button className="link-button" onClick={() => actions.onStopEditing(id)}>
+              {t("transfer.stopEditing")}
+            </button>
+          </>
+        )}
+        {finished(transfer) && (
+          <IconButton className="link-button" label={t("transfer.remove")} onClick={() => actions.onDismiss(id)}>
+            <CloseIcon size={12} />
+          </IconButton>
+        )}
+      </div>
+      {transfer.status !== "editing" && (
+        <div className="progress">
+          <div style={{ width: `${percent}%` }} />
+        </div>
+      )}
+      <div className="transfer-detail" title={transfer.save?.state === "failed" ? transfer.save.error : transfer.error}>
+        {detail()}
+      </div>
+    </li>
   );
 }

@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../ipc/api";
 import { announce } from "../lib/announce";
 import { usePressDrag } from "../hooks/drag";
+import { useStableHandlers } from "../hooks/stableHandlers";
+import { useStableProps } from "../hooks/stableProps";
 import type { SendResult } from "../lib/compose";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { addGroup, deleteCommand, deleteGroup, groupName, moveCommand, renameGroup, saveCommand } from "../lib/quickCommands";
@@ -144,6 +146,16 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) listRef.current!.scrollLeft += e.deltaY;
   };
 
+  // The same from render to render, so that a button renders again only when its command changes.
+  const actions = useStableHandlers<CommandActions>({
+    onMouseDown: startDrag,
+    onClick: (command) => {
+      if (dragged.current) dragged.current = false;
+      else run(command);
+    },
+    onMenu: commandMenu,
+  });
+
   const shown = order ? order.map((id) => group.commands.find((c) => c.id === id)).filter((c): c is QuickCommand => !!c) : group.commands;
   const tooltip = (command: QuickCommand) =>
     targets ? `${command.text}\n\n${t("quick.targets", { names: targets.join(", ") })}` : command.text;
@@ -160,32 +172,13 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
         <div className="quick-commands" ref={listRef} onWheel={onWheel}>
           {shown.length === 0 && <span className="quick-empty">{t("quick.empty")}</span>}
           {shown.map((command) => (
-            <button
+            <CommandButton
               key={command.id}
-              data-id={command.id}
-              className={`quick-command${command.id === dragging ? " dragging" : ""}`}
-              title={tooltip(command)}
-              onMouseDown={(e) => startDrag(e, command.id)}
-              onClick={() => {
-                if (dragged.current) dragged.current = false;
-                else run(command);
-              }}
-              onContextMenu={(e) => {
-                if (followsMenuKey(e)) return;
-                e.preventDefault();
-                commandMenu(e.clientX, e.clientY, command);
-              }}
-              onKeyDown={(e) => {
-                if (!isMenuKey(e)) return;
-                e.preventDefault();
-                openedByMenuKey();
-                const rect = e.currentTarget.getBoundingClientRect();
-                commandMenu(rect.left, rect.bottom, command);
-              }}
-            >
-              {command.name}
-              {!command.enter && <span className="quick-no-enter">…</span>}
-            </button>
+              command={command}
+              dragging={command.id === dragging}
+              tooltip={tooltip(command)}
+              actions={actions}
+            />
           ))}
         </div>
         {status && <span className="quick-status">{status}</span>}
@@ -240,5 +233,47 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
         />
       )}
     </>
+  );
+}
+
+/** What a command's button does: one object for every button, the same from render to render. */
+interface CommandActions {
+  onMouseDown(e: ReactMouseEvent, id: string): void;
+  onClick(command: QuickCommand): void;
+  /** Opens the command's menu at `x`, `y`. */
+  onMenu(x: number, y: number, command: QuickCommand): void;
+}
+
+/**
+ * A command's button, its own component so that React Compiler memoizes it: the bar renders
+ * again as the active pane changes (a busy terminal changes its title several times a second),
+ * and the buttons keep their elements and handlers.
+ */
+function CommandButton(props: { command: QuickCommand; dragging: boolean; tooltip: string; actions: CommandActions }) {
+  useStableProps("CommandButton", props, ["actions"]);
+  const { command, dragging, tooltip, actions } = props;
+  return (
+    <button
+      data-id={command.id}
+      className={`quick-command${dragging ? " dragging" : ""}`}
+      title={tooltip}
+      onMouseDown={(e) => actions.onMouseDown(e, command.id)}
+      onClick={() => actions.onClick(command)}
+      onContextMenu={(e) => {
+        if (followsMenuKey(e)) return;
+        e.preventDefault();
+        actions.onMenu(e.clientX, e.clientY, command);
+      }}
+      onKeyDown={(e) => {
+        if (!isMenuKey(e)) return;
+        e.preventDefault();
+        openedByMenuKey();
+        const rect = e.currentTarget.getBoundingClientRect();
+        actions.onMenu(rect.left, rect.bottom, command);
+      }}
+    >
+      {command.name}
+      {!command.enter && <span className="quick-no-enter">…</span>}
+    </button>
   );
 }

@@ -18,17 +18,18 @@ import { notConnected, sftp, type FileEntry, type SessionId } from "../ipc/api";
 import { open } from "../ipc/fileDialog";
 import { storeView, storedView, visibleEntries, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
-import { basename, formatMode } from "../lib/format";
+import { basename } from "../lib/format";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
 import { useLatest } from "../hooks/latest";
-import { useLocale } from "../hooks/locale";
+import { useStableHandlers } from "../hooks/stableHandlers";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
 import { IconButton } from "./IconButton";
-import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, FileIcon, FolderIcon, LinkIcon, RefreshIcon, SearchIcon, TerminalIcon } from "./icons";
+import { ArrowIcon, ChevronIcon, CloseIcon, EyeIcon, LinkIcon, RefreshIcon, SearchIcon, TerminalIcon } from "./icons";
 import { ChmodDialog } from "./sftp/ChmodDialog";
+import { FileRow, type RowActions } from "./sftp/FileRow";
 import { fileMenu, folderMenu, type FileActions } from "./sftp/menus";
 import { PathField } from "./sftp/PathField";
 import { useConfirmQueue } from "./sftp/useConfirmQueue";
@@ -61,16 +62,12 @@ interface Menu {
 
 const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name : `${dir}/${name}`);
 
-const rowClass = (selected: boolean, dropTarget: boolean) =>
-  [selected && "selected", dropTarget && "drop-target"].filter(Boolean).join(" ") || undefined;
-
 /**
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
  */
 export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, onEdits, onQuestions }: Props) {
   const { t } = useTranslation();
-  const { formatSize, formatTime } = useLocale();
   const [view, setView] = useState<FileView>(storedView);
   /** The name filter; null while the filter field is closed. */
   const [filter, setFilter] = useState<string | null>(null);
@@ -389,6 +386,21 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     e.stopPropagation();
   };
 
+  // The same from render to render, so that a row renders again only when it changes.
+  const rowActions = useStableHandlers<RowActions>({
+    onMouseDown: onRowMouseDown,
+    onClick: onRowClick,
+    onDoubleClick: (e, entry) => isDoubleClick(e, entry) && activate(entry),
+    onContextMenu: onRowContextMenu,
+    onRenameChange: (entry, value) => setRenaming({ path: entry.path, value }),
+    onRenameSubmit: (e) => void submitRename(e),
+    onRenameCancel: () => {
+      setRenaming(null);
+      listRef.current?.focus();
+    },
+    onRenameBlur: () => setRenaming(null),
+  });
+
   if (!connected && cwd == null) {
     return (
       <div className="sftp-panel" ref={panelRef}>
@@ -397,13 +409,15 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     );
   }
 
+  // One handler for the three, rather than a new one for each as the panel renders again.
+  const onSortClick = (e: MouseEvent<HTMLButtonElement>) => sortBy(e.currentTarget.dataset.sort as SortKey);
   const sortHeader = (key: SortKey, label: string, className?: string) => (
     <th
       className={className}
       role="columnheader"
       aria-sort={view.sort === key ? (view.descending ? "descending" : "ascending") : undefined}
     >
-      <button type="button" className="sort-button" onClick={() => sortBy(key)}>
+      <button type="button" className="sort-button" data-sort={key} onClick={onSortClick}>
         <span className="sort-label">{label}</span>
         {view.sort === key && <ChevronIcon direction={view.descending ? "down" : "up"} size={8} />}
       </button>
@@ -584,56 +598,15 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
               </tr>
             )}
             {visible.map((entry, index) => (
-              <tr
+              <FileRow
                 key={entry.path}
+                entry={entry}
                 id={`${gridId}-${index}`}
-                role="row"
-                aria-selected={selection.paths.has(entry.path)}
-                data-path={entry.path}
-                data-drop-dir={entry.isDir ? entry.path : undefined}
-                className={rowClass(selection.paths.has(entry.path), dropDir === entry.path)}
-                onMouseDown={(e) => onRowMouseDown(e, entry)}
-                onClick={(e) => onRowClick(e, entry)}
-                onDoubleClick={(e) => isDoubleClick(e, entry) && activate(entry)}
-                onContextMenu={(e) => onRowContextMenu(e, entry)}
-                title={`${entry.name}\n${formatMode(entry.permissions, entry.isDir, entry.isSymlink)}`}
-              >
-                <td role="gridcell">
-                  <div className="file-name">
-                    <span className={`file-icon${entry.isDir ? " folder" : ""}`} aria-hidden="true">
-                      {entry.isDir ? <FolderIcon /> : <FileIcon />}
-                    </span>
-                    {/* Before the name, which is the last child (see `.file-name`). */}
-                    {entry.isDir && <span className="visually-hidden">{t("sftp.folderKind")}</span>}
-                    {renaming?.path === entry.path ? (
-                      <form onSubmit={submitRename}>
-                        <input
-                          autoFocus
-                          value={renaming.value}
-                          onChange={(e) => setRenaming({ path: entry.path, value: e.target.value })}
-                          onBlur={() => setRenaming(null)}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Escape" || isComposing(e)) return;
-                            setRenaming(null);
-                            listRef.current?.focus();
-                          }}
-                          onFocus={(e) =>
-                            e.target.setSelectionRange(0, entry.name.lastIndexOf(".") > 0 ? entry.name.lastIndexOf(".") : entry.name.length)
-                          }
-                        />
-                      </form>
-                    ) : (
-                      <span className={entry.isSymlink ? "symlink" : undefined}>{entry.name}</span>
-                    )}
-                  </div>
-                </td>
-                <td className="file-size" role="gridcell">
-                  {entry.isDir ? "" : formatSize(entry.size)}
-                </td>
-                <td className="file-time" role="gridcell">
-                  {formatTime(entry.modified)}
-                </td>
-              </tr>
+                selected={selection.paths.has(entry.path)}
+                dropTarget={dropDir === entry.path}
+                renaming={renaming?.path === entry.path ? renaming.value : null}
+                actions={rowActions}
+              />
             ))}
           </tbody>
         </table>
