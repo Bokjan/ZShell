@@ -161,6 +161,7 @@ async fn sign_in_with_key(
     };
     // A prompt nothing answers would wait for ever.
     let result = tokio::time::timeout(Duration::from_secs(10), auth.run()).await.expect("authentication waits for input");
+    let _ = std::fs::remove_file(&key_path);
     let shown = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
     (result, shown)
 }

@@ -6,12 +6,37 @@ const ECDSA: &str = "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCLa00y
 /// `[127.0.0.1]:2222`, hashed by `ssh-keygen -H`.
 const HASHED: &str = "|1|sXYIBsr10rhd0b/NMnyf/gj1YxQ=|/yzMUScN42HQtI9V9p2rFEu00bU=";
 
-fn temp_file(content: &str) -> PathBuf {
+/// A `known_hosts` file in a folder of its own, which goes when this is dropped.
+struct TempFile(PathBuf);
+
+impl std::ops::Deref for TempFile {
+    type Target = PathBuf;
+
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TempFile {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.parent() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+}
+
+fn temp_file(content: &str) -> TempFile {
     let dir = std::env::temp_dir().join(format!("zshell-known-hosts-{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join("known_hosts");
     fs::write(&path, content).unwrap();
-    path
+    TempFile(path)
 }
 
 #[test]
@@ -110,13 +135,13 @@ fn checks_the_other_files_too() {
     // Revoked in any file.
     let revoked = temp_file(&format!("\n@revoked * ssh-ed25519 {KEY}\n"));
     let paths = [global.clone(), revoked.clone()];
-    assert_eq!(check_at(&paths, "127.0.0.1", 2222, &key).unwrap(), Check::Revoked { path: revoked, line: 2 });
+    assert_eq!(check_at(&paths, "127.0.0.1", 2222, &key).unwrap(), Check::Revoked { path: revoked.to_path_buf(), line: 2 });
     // A file of the system's that can't be read is skipped; the user's own is not. A
     // folder can't be read as one (`temp_dir` ends with a separator on Windows, where that
     // reads as not found).
     let directory = global.parent().unwrap().to_path_buf();
     assert_eq!(check_at(&[global.clone(), directory.clone()], "127.0.0.1", 2222, &key).unwrap(), Check::Known);
-    assert!(check_at(&[directory, global], "127.0.0.1", 2222, &key).is_err());
+    assert!(check_at(&[directory, global.to_path_buf()], "127.0.0.1", 2222, &key).is_err());
 }
 
 #[test]
@@ -136,7 +161,8 @@ fn learns_keys_as_openssh_writes_them() {
         assert!(learn_at(&path, host, 22, &key).is_err(), "{host}");
     }
     // Where there is no folder yet.
-    let path = temp_file("").with_file_name("new").join("known_hosts");
+    let beside = temp_file("");
+    let path = beside.with_file_name("new").join("known_hosts");
     learn_at(&path, "a", 22, &key).unwrap();
     assert!(path.is_file());
 }
@@ -205,7 +231,6 @@ fn reads_and_edits_files_that_are_not_utf8() {
     let entries = list_at(&path).unwrap();
     remove_at(&path, entries[1].line, &entries[1].text).unwrap();
     assert_eq!(fs::read(&path).unwrap(), [comment, format!("a ssh-ed25519 {KEY}\n").as_bytes()].concat());
-    fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
 #[test]
@@ -230,7 +255,6 @@ fn removes_a_line_and_keeps_the_rest() {
     remove_at(&path, 2, &entries[0].text).unwrap();
     assert_eq!(fs::read_to_string(&path).unwrap(), format!("# keep\r\nb ssh-ed25519 {OTHER}"));
     assert_eq!(fs::read_to_string(path.with_file_name("known_hosts.old")).unwrap(), content);
-    fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
 /// The copy of a private file is private too, and so is a new `~/.ssh`.
@@ -252,13 +276,12 @@ b ssh-ed25519 {OTHER}
     let entries = list_at(&path).unwrap();
     remove_at(&path, entries[0].line, &entries[0].text).unwrap();
     assert_eq!((mode(&path), mode(&old)), (0o600, 0o600));
-    fs::remove_dir_all(path.parent().unwrap()).unwrap();
 
     let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
-    let path = temp_file("").with_file_name(".ssh").join("known_hosts");
+    let beside = temp_file("");
+    let path = beside.with_file_name(".ssh").join("known_hosts");
     learn_at(&path, "a", 22, &key).unwrap();
     assert_eq!(mode(path.parent().unwrap()), 0o700);
-    fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
 
 /// Made with `ssh-keygen -s`: certificates for `HOST`'s key signed by `CA`, for `server.lan`

@@ -70,6 +70,7 @@ fn a_new_vault_uses_the_credential_store_if_it_can() {
     let id = crypto::key_id(&crypto::decode_key(&store.entries.lock().unwrap().values().next().unwrap().clone()).unwrap());
     assert_eq!(keys(&store), [format!("{KEY_ACCOUNT}{id}")]);
     assert!(text(&dir).contains(&format!(r#""keyId":"{id}""#)));
+    fs::remove_dir_all(&dir).unwrap();
 
     // Without it, in clear.
     let dir = self::dir("new-plain");
