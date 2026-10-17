@@ -44,6 +44,10 @@
   font-size: calc(13px * var(--text-scale));
   text-align: left;
 }
+/* The list clips what is drawn around its buttons: their focus ring is drawn inside. */
+.settings-nav-list button:focus-visible {
+  outline-offset: -2px;
+}
 .settings-nav-list button:hover:not(:disabled) {
   background: var(--bg-hover);
 }

@@ -69,6 +69,10 @@
 .quick-commands::-webkit-scrollbar {
   display: none;
 }
+/* The strip clips what is drawn around its buttons: their focus ring is drawn inside. */
+.quick-commands :focus-visible {
+  outline-offset: -2px;
+}
 .quick-empty {
   color: var(--text-muted);
   font-size: calc(12px * var(--text-scale));

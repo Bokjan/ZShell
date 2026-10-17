@@ -9,9 +9,14 @@
   display: flex;
   flex-direction: column;
 }
-.sftp-panel.drag-over {
-  outline: 2px dashed var(--accent);
-  outline-offset: -4px;
+/* Drawn above the file list's sticky header, which would cover an outline's top edge. */
+.sftp-panel.drag-over::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: 2;
+  border: 2px dashed var(--accent);
+  pointer-events: none;
 }
 .sftp-panel button:disabled {
   opacity: 0.4;

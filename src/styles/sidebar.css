@@ -169,6 +169,16 @@
 .sftp-list:focus-visible:not(:has(tr.selected)) {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
+/* The file list's sticky header covers the top of that ring: its cells draw the part they cover. */
+.sftp-list:focus-visible:not(:has(tr.selected)) thead th {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.sftp-list:focus-visible:not(:has(tr.selected)) thead th:first-child {
+  box-shadow: inset 2px 2px 0 var(--accent);
+}
+.sftp-list:focus-visible:not(:has(tr.selected)) thead th:last-child {
+  box-shadow: inset -2px 2px 0 var(--accent);
+}
 .tree-row.highlighted {
   background: var(--accent-soft);
 }
