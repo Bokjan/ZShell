@@ -4,22 +4,28 @@ import { initReactI18next } from "react-i18next";
 import { locales } from "../ipc/api";
 import { LANGUAGES, type Cjk, type Locales } from "../ipc/bindings";
 import { KEY_NAMES, setKeyNames, type KeyName } from "../lib/keymap";
-import de from "../locales/de.json";
 import en from "../locales/en.json";
-import fr from "../locales/fr.json";
-import ja from "../locales/ja.json";
-import zhHans from "../locales/zh-Hans.json";
 
 export type Language = (typeof LANGUAGES)[number];
 
-/** UI catalogs, one for each of the backend's. English is the source language and the fallback for missing keys. */
-export const resources = {
-  en: { translation: en },
-  "zh-Hans": { translation: zhHans },
-  ja: { translation: ja },
-  de: { translation: de },
-  fr: { translation: fr },
-} as const satisfies Record<Language, { translation: object }>;
+/**
+ * UI catalogs, one for each of the backend's. English is the source language and the fallback
+ * for missing keys, always there; the others are loaded once needed, as each window would
+ * otherwise parse all of them as it starts.
+ */
+const catalogs = {
+  en: async () => en,
+  "zh-Hans": async () => (await import("../locales/zh-Hans.json")).default,
+  ja: async () => (await import("../locales/ja.json")).default,
+  de: async () => (await import("../locales/de.json")).default,
+  fr: async () => (await import("../locales/fr.json")).default,
+} satisfies Record<Language, () => Promise<object>>;
+
+/** Makes the catalog of `language` available, if it isn't yet. */
+async function loadCatalog(language: Language) {
+  if (i18n.hasResourceBundle(language, "translation")) return;
+  i18n.addResourceBundle(language, "translation", await catalogs[language]());
+}
 
 export const isLanguage = (value: string): value is Language => (LANGUAGES as readonly string[]).includes(value);
 
@@ -40,8 +46,12 @@ export async function setupI18n() {
     return system;
   });
   const language = isLanguage(system.current) ? system.current : "en";
+  const catalog = await catalogs[language]().catch((e: unknown) => {
+    console.error("failed to load the catalog", e);
+    return en;
+  });
   await i18n.use(initReactI18next).init({
-    resources,
+    resources: { en: { translation: en }, [language]: { translation: catalog } },
     lng: language,
     fallbackLng: "en",
     supportedLngs: LANGUAGES,
@@ -58,6 +68,7 @@ export async function setupI18n() {
 export async function followLanguageSetting(setting: string) {
   const language = languageFor(setting);
   if (language === i18n.language) return;
+  await loadCatalog(language);
   applyLanguage(language);
   await i18n.changeLanguage(language);
 }
