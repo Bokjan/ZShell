@@ -225,14 +225,21 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
     reporter.progress.files_total = plan.files.len();
 
     let created = create_remote_dirs(sftp, &plan.dirs).await?;
+    let turns = same_name_turns(&plan.files);
     let run = Run::new(reporter);
     let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
     let result = copy_files(&sizes, &run, |i| {
         let (local, remote, _) = &plan.files[i];
-        // In a folder this upload created, nothing is there to replace.
-        let new = remote.rsplit_once('/').is_some_and(|(dir, _)| created.contains(dir));
-        let run = &run;
+        let (run, turn) = (&run, turns.get(&remote.to_lowercase()));
+        // In a folder this upload created, nothing is there to replace, unless another file of
+        // the same name went there first.
+        let new = turn.is_none() && remote.rsplit_once('/').is_some_and(|(dir, _)| created.contains(dir));
         async move {
+            // After the file of the same name before it, which this one replaces.
+            let _turn = match turn {
+                Some(turn) => Some(turn.lock().await),
+                None => None,
+            };
             run.start_file(file_name(remote));
             let mut src = tokio::fs::File::open(local).await.context(Error::new("transfer.openFailed").param("path", local.display()))?;
             let mut dst = match new {
@@ -254,6 +261,18 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
     .await;
     run.end();
     result
+}
+
+/// The remote paths that more than one file of an upload goes to (the same name dropped from
+/// different folders, or differing only in case, which a server may ignore), each with a lock
+/// that has them copied one at a time, in order: copied at once, they would be written over
+/// each other through two handles, and the file would be neither.
+fn same_name_turns(files: &[(PathBuf, String, u64)]) -> HashMap<String, tokio::sync::Mutex<()>> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for (_, remote, _) in files {
+        *counts.entry(remote.to_lowercase()).or_default() += 1;
+    }
+    counts.into_iter().filter(|(_, count)| *count > 1).map(|(remote, _)| (remote, tokio::sync::Mutex::new(()))).collect()
 }
 
 /// Creates an upload's folders, parents first and those of one depth at once; returns those
@@ -719,6 +738,14 @@ mod tests {
         // "later" may have arrived before "secret" failed, or not have started.
         left.retain(|name| name != "later");
         assert_eq!(left, ["empty"]);
+    }
+
+    #[test]
+    fn files_going_to_one_remote_name_take_turns() {
+        let files: Vec<(PathBuf, String, u64)> =
+            [("/a/x", "/r/x"), ("/b/x", "/r/x"), ("/c/X", "/r/X"), ("/a/y", "/r/y")].map(|(l, r)| (l.into(), r.into(), 0)).into();
+        let turns = same_name_turns(&files);
+        assert_eq!(turns.keys().collect::<Vec<_>>(), ["/r/x"]);
     }
 
     #[test]
