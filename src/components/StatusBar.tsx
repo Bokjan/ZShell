@@ -33,12 +33,13 @@ const LIGHT_REDUCED_MS = 400;
 export function StatusBar({ pane, profile, sessions }: Props) {
   const { t } = useTranslation();
   const screen = useScreen(sessions, pane.key);
+  const meter = useMeter(sessions, pane);
   const connection = profile?.connection;
   const serial = connection?.protocol === "serial" ? connection : null;
   return (
     <footer className="status-bar" role="group" aria-label={t("statusBar.label")}>
       <Connection pane={pane} profile={profile} />
-      <Activity meter={sessions.get(pane.key)?.traffic} />
+      <Activity meter={meter} />
       {serial ? (
         <Item
           text={serialSummary(serial)}
@@ -161,6 +162,17 @@ function useLights(meter: TrafficMeter | undefined, hold: number) {
 }
 
 /** The pane's terminal size and cursor, at most once a frame; null until its terminal is shown. */
+/**
+ * The pane's traffic meter, looked up after rendering: a new pane's terminal attaches its
+ * session in an effect, which has run by the time this one does (the terminals come before the
+ * status bar) but not when the status bar renders. Looked up again whenever the pane changes.
+ */
+function useMeter(sessions: SessionRegistry, pane: Pane): TrafficMeter | undefined {
+  const [meter, setMeter] = useState<TrafficMeter | undefined>(undefined);
+  useEffect(() => setMeter(sessions.get(pane.key)?.traffic), [sessions, pane]);
+  return meter;
+}
+
 function useScreen(sessions: SessionRegistry, key: number) {
   const [state, setState] = useState<{ cols: number; rows: number; row: number; column: number } | null>(null);
   useEffect(() => {
