@@ -369,11 +369,13 @@ impl<'a> Tracker<'a> {
 }
 
 /// Copies data both ways until both sides are done. Errors here are ordinary disconnects
-/// (resets, aborted transfers) and are not reported.
+/// (resets, aborted transfers) and are not reported. Each write to the channel is a packet
+/// of its own: buffers larger than the default 8 KiB send fewer when there is much to copy.
 async fn bridge(mut stream: TcpStream, channel: Channel<Msg>) {
+    const BUFFER: usize = 64 << 10;
     let _ = stream.set_nodelay(true);
     let mut channel = channel.into_stream();
-    let _ = tokio::io::copy_bidirectional(&mut stream, &mut channel).await;
+    let _ = tokio::io::copy_bidirectional_with_sizes(&mut stream, &mut channel, BUFFER, BUFFER).await;
 }
 
 #[cfg(test)]
