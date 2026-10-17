@@ -97,7 +97,7 @@
 - **背压**：每条数据通路都有上限。终端输出由前端按已处理字节确认，后端未确认过多时暂停读取（`Flow`），因为 Tauri 的 IPC 队列没有上限、xterm.js 积压过多会丢弃写入；SSH 写入等服务器窗口时仍持续读取，否则 russh 的有界队列会死锁；ZMODEM 与日志同样有界。代价是暂停读 SSH shell 会让同一连接上的 SFTP 和转发一起等，但比内存无限增长好。具体阈值见 `session/`。
 - **字符编码**：应用内部一律 UTF-8，只在与远端交界处按会话的 `encoding` 转换：输出（`SessionSink`，流式解码，日志记的是转码后的文本）、输入（`TermIo::recv`；二进制的鼠标报告原样发出）、SFTP 文件名（`sftp/names.rs`，有不可逆名字的已知限制）、ZMODEM 的文件名。快速连接、本地终端与认证提示总是 UTF-8。
 - **会话事件**：`Connected`、`Forward`、`Zmodem`、`Closed { reason, status, error }`；`reason` 区分 `exited`、`lost`、`failed`，前端据此决定重连、自动关闭或提示。
-- **命令在哪个线程上运行**：Tauri 的同步命令跑在主线程，等待会卡住窗口，所以碰文件、凭据存储或设备列表的命令是 async 的，阻塞部分放进 `spawn_blocking`（`commands/mod.rs`）；会话任务里读保存的密码也经阻塞线程池。例外：前端连续发出、整体替换的写入（设置、快速命令、转发规则）是同步命令，保证最后发出的最后写入。
+- **命令在哪个线程上运行**：Tauri 的同步命令跑在主线程，等待会卡住窗口，所以碰文件、凭据存储或设备列表的命令是 async 的，阻塞部分放进 `spawn_blocking`（`commands/mod.rs`）；会话任务里读保存的密码也经阻塞线程池。前端连续发出、整体替换的写入（设置、快速命令）也是 async 的，顺序由前端保证：`latestSave` 同一时间只有一个请求在后端，其余排队，等待保存的新值替换排在它前面的旧值，按住方向键调数字时不会每步都在主线程上写盘。例外：转发规则（一次操作一次写入）仍是同步命令，保证最后发出的最后写入。
 - **内容安全策略**：`tauri.conf.json` 设了严格的 CSP 作为纵深防御（IPC 能执行命令、写任意文件），资源只来自应用自身。样式需要 `unsafe-inline`（xterm.js 插入 `<style>`，`index.html` 有首帧的内联样式），为此关掉 Tauri 给 `style-src` 加的 nonce，有 nonce 时浏览器会忽略 `unsafe-inline`。
 
 ### SSH

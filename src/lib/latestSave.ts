@@ -11,6 +11,11 @@
  * key): the change is shown at once and stored once no other change has come for `delay`
  * ms. Anything else stores it first: a save that doesn't wait, `flush`, and `reload`, so that
  * the last change made here is not lost to a change from another window.
+ *
+ * One request is with the backend at a time, which keeps them in order (its commands run
+ * apart, off the main thread, as each writes a file): the others wait, a newer value taking
+ * the place of one waiting to be stored, so that changes made faster than the disk takes them
+ * (a number stepped with a key held down) are stored as they can be, the last one always.
  */
 export interface LatestSave<T> {
   /** Shows `value` and saves it, after `delay` ms without another change if given. */
@@ -29,16 +34,34 @@ export function latestSave<T>(options: {
 }): LatestSave<T> {
   let latest = 0;
   let waiting: { value: T; timer: ReturnType<typeof setTimeout> } | null = null;
-  const store = (value: T, request: number) => {
-    options.store(value).then(
-      (saved) => request === latest && options.show(saved),
-      (e: unknown) => {
-        if (request !== latest) return;
-        options.failed(e);
-        reload();
-      },
-    );
+  // The requests after the one with the backend, in order: stores and loads.
+  const queue: { kind: "store" | "load"; run(): Promise<void> }[] = [];
+  let busy = false;
+  const next = () => {
+    const request = queue.shift();
+    busy = request !== undefined;
+    request?.run().then(next, next);
   };
+  const enqueue = (kind: "store" | "load", run: () => Promise<void>) => {
+    // The value stored is whole: a newer one replaces one waiting right before it.
+    const last = queue[queue.length - 1];
+    if (last?.kind === kind) queue[queue.length - 1] = { kind, run };
+    else queue.push({ kind, run });
+    if (!busy) next();
+  };
+  const store = (value: T, request: number) =>
+    enqueue("store", () =>
+      options.store(value).then(
+        (saved) => {
+          if (request === latest) options.show(saved);
+        },
+        (e: unknown) => {
+          if (request !== latest) return;
+          options.failed(e);
+          reload();
+        },
+      ),
+    );
   const flush = () => {
     if (!waiting) return;
     clearTimeout(waiting.timer);
@@ -49,7 +72,11 @@ export function latestSave<T>(options: {
   const reload = () => {
     if (waiting) return flush();
     const request = ++latest;
-    options.load().then((stored) => request === latest && options.show(stored), console.error);
+    enqueue("load", () =>
+      options.load().then((stored) => {
+        if (request === latest) options.show(stored);
+      }, console.error),
+    );
   };
   return {
     save(value, delay) {

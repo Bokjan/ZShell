@@ -51,15 +51,19 @@ describe("latestSave", () => {
     expect(shown).toEqual(["a", "stored"]);
   });
 
-  it("ignores answers that a newer save overtook, failed or not", async () => {
+  it("stores one value at a time, the newest of those waiting next", async () => {
     const { saver, shown, failures, stores } = setup("stored");
     saver.save("a");
     saver.save("b");
     saver.save("c");
+    expect(stores).toHaveLength(1);
+    // Overtaken, failed or not: not shown or reported.
     stores[0].reject("disk full");
-    stores[1].resolve("b (saved)");
-    stores[2].resolve("c (saved)");
     await settle();
+    expect(stores).toHaveLength(2);
+    stores[1].resolve("c (saved)");
+    await settle();
+    expect(stores).toHaveLength(2);
     expect(failures).toEqual([]);
     expect(shown).toEqual(["a", "b", "c", "c (saved)"]);
   });
@@ -69,10 +73,32 @@ describe("latestSave", () => {
     saver.save("a");
     saver.save("b");
     stores[0].resolve("a (saved)");
+    await settle();
     stores[1].reject("read-only");
     await settle();
     expect(failures).toEqual(["read-only"]);
     expect(shown).toEqual(["a", "b", "stored"]);
+  });
+
+  it("loads after a save on its way, not before", async () => {
+    const shown: string[] = [];
+    let stored = "stored";
+    const saver = latestSave<string>({
+      show: (value) => shown.push(value),
+      store: async (value) => {
+        await settle();
+        stored = value;
+        return value;
+      },
+      load: async () => stored,
+      failed: () => {},
+    });
+    saver.save("a");
+    // Another window changed them meanwhile.
+    saver.reload();
+    await settle();
+    await settle();
+    expect(shown).toEqual(["a", "a"]);
   });
 
   it("lets a change made after a failure win over putting back", async () => {

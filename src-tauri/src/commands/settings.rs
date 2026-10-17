@@ -35,10 +35,13 @@ pub fn screen_reader_running() -> bool {
     crate::screen_reader::running()
 }
 
-/// Stores the settings; returns them as validated (e.g. with the font size clamped).
+/// Stores the settings; returns them as validated (e.g. with the font size clamped). Off the
+/// main thread, as writing the file waits for the disk: the frontend sends one request at a
+/// time, which keeps them in order (see `latestSave`).
 #[tauri::command]
-pub fn settings_set(app: AppHandle, window: WebviewWindow, store: State<'_, SettingsStore>, settings: Settings) -> Result<Settings> {
-    let settings = notified(&window, Change::Settings, store.set(settings))?;
+pub async fn settings_set(app: AppHandle, window: WebviewWindow, settings: Settings) -> Result<Settings> {
+    let stored = blocking(app.clone(), move |app| app.state::<SettingsStore>().set(settings)).await;
+    let settings = notified(&window, Change::Settings, stored)?;
     crate::i18n::apply(&settings.language);
     // A shorter retention applies right away; checking every log can take a while.
     let keep_days = settings.logs.keep_days;
@@ -69,8 +72,10 @@ pub fn quick_commands_get(store: State<'_, QuickCommandStore>) -> QuickCommands 
     store.get()
 }
 
-/// Stores the quick commands; returns them as stored (new ones get ids).
+/// Stores the quick commands; returns them as stored (new ones get ids). Off the main thread,
+/// one request at a time, as [`settings_set`].
 #[tauri::command]
-pub fn quick_commands_set(window: WebviewWindow, store: State<'_, QuickCommandStore>, commands: QuickCommands) -> Result<QuickCommands> {
-    notified(&window, Change::QuickCommands, store.set(commands))
+pub async fn quick_commands_set(app: AppHandle, window: WebviewWindow, commands: QuickCommands) -> Result<QuickCommands> {
+    let stored = blocking(app, move |app| app.state::<QuickCommandStore>().set(commands)).await;
+    notified(&window, Change::QuickCommands, stored)
 }
