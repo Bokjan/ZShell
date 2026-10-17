@@ -14,6 +14,7 @@ import {
 } from "../ipc/api";
 import type { Arrival } from "./panes";
 import {
+  ACK_BATCH,
   BELL_MS,
   ECHO_MS,
   LOGIN_COMMAND_IDLE_MS,
@@ -582,19 +583,20 @@ describe("flow control", () => {
     pane.connect();
     const session = opened[0].resolve();
     await settle();
-    opened[0].output("x".repeat(40_000));
+    const half = ACK_BATCH / 2 + 1;
+    opened[0].output("x".repeat(half));
     expect(session.acks).toEqual([]);
-    opened[0].output("y".repeat(40_000));
-    expect(session.acks).toEqual([80_000]);
+    opened[0].output("y".repeat(half));
+    expect(session.acks).toEqual([2 * half]);
   });
 
   it("acknowledges output that came before the session's id", async () => {
     const { pane, opened } = setup();
     pane.connect();
-    opened[0].output("z".repeat(70_000));
+    opened[0].output("z".repeat(ACK_BATCH + 1));
     const session = opened[0].resolve();
     await settle();
-    expect(session.acks).toEqual([70_000]);
+    expect(session.acks).toEqual([ACK_BATCH + 1]);
   });
 });
 

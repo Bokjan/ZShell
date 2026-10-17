@@ -95,8 +95,11 @@ const PERMANENT_PROXY_ERRORS = new Set(["proxy.authRequired", "proxy.authUnsuppo
 const isPermanent = (error: CommandError | null) =>
   !!error && (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected" || PERMANENT_PROXY_ERRORS.has(error.code));
 
-/** Acknowledge processed output in batches of this many bytes (see `Session.ack`). */
-const ACK_BATCH = 64 * 1024;
+/**
+ * Acknowledge processed output in batches of this many bytes (see `Session.ack`): well under
+ * where the backend resumes reading (512 KiB unacknowledged), so it always does.
+ */
+export const ACK_BATCH = 256 * 1024;
 
 /** How long the output must pause before the next login command is typed. */
 export const LOGIN_COMMAND_IDLE_MS = 300;
