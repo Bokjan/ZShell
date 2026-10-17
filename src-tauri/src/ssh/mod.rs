@@ -17,7 +17,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use futures_util::FutureExt;
 use russh::client::{self, Msg};
-use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelStream, ChannelWriteHalf, Disconnect, Sig};
+use russh::{Channel, ChannelMsg, ChannelStream, ChannelWriteHalf, Disconnect, Sig};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 
@@ -235,7 +235,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
             msg = reader.wait(), if !paused => {
                 let msg = match msg {
                     Some(ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. }) => {
-                        let (output, after) = gather(&mut reader, data.to_vec());
+                        let (output, after) = gather(|| reader.wait().now_or_never(), data.to_vec());
                         next = after;
                         io.output(output);
                         continue;
@@ -284,13 +284,13 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
 /// Output messages from the channel are passed on together up to this many bytes.
 const GATHER: usize = 64 << 10;
 
-/// `output` and the output messages already waiting after it, up to [`GATHER`] bytes, with
-/// the next message if another kind was taken (to handle after the output, in order). Each
-/// message is a packet from the server, often a few KiB, and the terminal gets each of its
-/// own as a message to the web view, which takes the main thread.
-fn gather(reader: &mut ChannelReadHalf, mut output: Vec<u8>) -> (Vec<u8>, Option<Option<ChannelMsg>>) {
+/// `output` and the output messages already waiting after it (`waiting`: the next one, if
+/// one is), up to [`GATHER`] bytes, with the next message if another kind was taken (to handle
+/// after the output, in order). Each message is a packet from the server, often a few KiB, and
+/// the terminal gets each of its own as a message to the web view, which takes the main thread.
+fn gather(mut waiting: impl FnMut() -> Option<Option<ChannelMsg>>, mut output: Vec<u8>) -> (Vec<u8>, Option<Option<ChannelMsg>>) {
     while output.len() < GATHER {
-        match reader.wait().now_or_never() {
+        match waiting() {
             Some(Some(ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. })) => output.extend_from_slice(&data),
             Some(msg) => return (output, Some(msg)),
             None => break,
@@ -710,8 +710,28 @@ mod tests {
         assert!(matches!(outcome, Outcome::Exited(Some(3))));
     }
 
-    /// Output waiting in many small packets reaches the terminal in fewer messages, whole and
-    /// in order, and before the shell's end.
+    /// Output messages waiting are passed on together, up to `GATHER` bytes, and another kind
+    /// of message among them waits for its turn.
+    #[test]
+    fn gathers_the_output_waiting() {
+        let data = |text: &str| Some(Some(ChannelMsg::Data { data: text.as_bytes().to_vec().into() }));
+        let mut waiting = std::collections::VecDeque::from([data("b"), data("c"), Some(Some(ChannelMsg::Eof)), data("d")]);
+        let (output, after) = gather(|| waiting.pop_front().unwrap_or(None), b"a".to_vec());
+        assert_eq!(output, b"abc");
+        assert!(matches!(after, Some(Some(ChannelMsg::Eof))));
+        let (output, after) = gather(|| waiting.pop_front().unwrap_or(None), Vec::new());
+        assert_eq!(output, b"d");
+        assert!(after.is_none());
+
+        let packet = vec![b'x'; 4096];
+        let mut packets = std::iter::repeat_with(|| Some(Some(ChannelMsg::Data { data: packet.clone().into() })));
+        let (output, after) = gather(|| packets.next().unwrap(), Vec::new());
+        assert_eq!(output.len(), GATHER);
+        assert!(after.is_none());
+    }
+
+    /// Output in many small packets reaches the terminal whole and in order, and before the
+    /// shell's end. (How many messages it takes depends on how fast it is read.)
     #[tokio::test]
     async fn output_waiting_is_passed_on_together() {
         let shell = Shell::start(false).await;
@@ -721,7 +741,6 @@ mod tests {
         let messages: Vec<Vec<u8>> = shell.output.try_iter().collect();
         let expected: String = (0..BURST).map(|i| format!("{i}\n")).collect();
         assert_eq!(String::from_utf8(messages.concat()).unwrap(), expected);
-        assert!(messages.len() < BURST / 4, "{} messages", messages.len());
     }
 
     /// Typing and pastes reach the shell whole and in order, with window changes in between.

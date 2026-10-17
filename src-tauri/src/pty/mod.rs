@@ -560,7 +560,29 @@ mod tests {
         assert!(end < exited, "{:?}", &shown[shown.len() - 200..]);
     }
 
-    /// A stream of output goes out in fewer messages than reads (about 1 KiB each on macOS).
+    /// What is ready to read comes in one read, though each read gives only part of it: a
+    /// terminal about 1 KiB on macOS, a datagram socket (here) one datagram. A terminal can't
+    /// be filled ahead (it holds 1 KiB on macOS), so it is read on as the shell writes.
+    #[test]
+    fn reads_on_while_more_is_ready() {
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+        let mut fds = [0; 2];
+        // SAFETY: plain syscall, into two descriptors that are then ours alone.
+        assert_eq!(unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_DGRAM, 0, fds.as_mut_ptr()) }, 0);
+        // SAFETY: just opened, and owned by nothing else.
+        let (read_end, write_end) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+        let mut writer = std::fs::File::from(write_end);
+        for _ in 0..6 {
+            writer.write_all(&[b'x'; 500]).unwrap();
+        }
+        let mut reader = OutputReader::from_master(read_end.as_raw_fd()).unwrap();
+        let mut buffer = vec![0; 16 << 10];
+        assert_eq!(reader.read(&mut buffer).unwrap(), 3000);
+        assert_eq!(reader.read(&mut buffer).unwrap_err().kind(), ErrorKind::TimedOut);
+    }
+
+    /// A stream of output reaches the terminal whole. (How many messages it takes depends on
+    /// how fast the shell writes it: see `reads_on_while_more_is_ready`.)
     #[tokio::test(flavor = "multi_thread")]
     async fn sends_what_is_ready_together() {
         const SIZE: usize = 4 << 20;
@@ -581,8 +603,7 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
-        assert!(bytes >= SIZE, "{bytes}");
-        assert!(messages < SIZE / 2048, "{messages} messages");
+        assert!(bytes >= SIZE && messages > 0, "{bytes}");
     }
 
     #[tokio::test(flavor = "multi_thread")]
