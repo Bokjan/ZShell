@@ -61,14 +61,19 @@ export async function setupI18n() {
   applyLanguage(language);
 }
 
+/** Counts the languages chosen, so that only the latest is switched to. */
+let languageRequest = 0;
+
 /**
  * Switches to the language the `language` setting chooses, once it changes here or in another
  * window. The backend switches itself when the settings are saved.
  */
 export async function followLanguageSetting(setting: string) {
   const language = languageFor(setting);
-  if (language === i18n.language) return;
+  const request = ++languageRequest;
   await loadCatalog(language);
+  // Chosen again since, while the catalog loaded: the newer choice decides.
+  if (request !== languageRequest || language === i18n.language) return;
   applyLanguage(language);
   await i18n.changeLanguage(language);
 }
