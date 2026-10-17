@@ -78,6 +78,37 @@
 - **验证方法**：Store 版要带调试端口启动，得在包的上下文里先启动 `cmd`，由它设置环境变量再启动应用（`Invoke-CommandInDesktopPackage` 不会传递调用方的环境变量）：`Invoke-CommandInDesktopPackage -PackageFamilyName BoyinChen.ZShell_0mrn21pkbrd8j -AppId ZShell -Command cmd.exe -Args '/c set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333&& start "" "<安装目录>\zshell.exe"'`。之后用 Node 直接连 `/json/list` 里的 `webSocketDebuggerUrl`（不带 Origin，WebView2 会拒绝带 Origin 的连接），用 `Runtime.evaluate` 在后台终端的 `.xterm-rows` 上挂 MutationObserver 计数，同时从 React fiber 找到它的 `Terminal`，订阅 `onScroll` 对照；没有输出时可以用 `term.scrollLines()` 触发滚动。Chrome 要看 DevTools，用 `chrome://inspect` 添加 `localhost:9333`。
 - **登记**：2026-10-17。
 
+### 前端：切换标签页后第一帧终端空白（已绕过，等 xterm.js 修复后去掉）
+
+- **现象**：切到一个标签页时，终端先空白一帧（约 16 毫秒），下一帧才显示内容。2026-10-17 在 Store 版 3.5.0 上用 CDP 的 `Page.startScreencast` 录到，隐藏页移出视口之前（只有 `visibility: hidden`）就有。
+- **原因**：后台终端交出 WebGL 上下文（`src/lib/webgl.ts`），显示时 `drawWithWebgl` 重新加载 `WebglAddon`。DOM 渲染器的行立刻被移除，新的 WebGL 画布是空的，xterm.js 6.0.0 要到下一个动画帧才画它。有两个原因让这一帧赶不上：
+  1. **画布差 1 像素被清空**：WebGL 渲染器的 `handleResize` 把画布设成「列数 × 单元格的设备像素」，CSS 尺寸是除以 dpr 后四舍五入的值；在小数缩放下，插件的 ResizeObserver（`device-pixel-content-box`）测出的实际尺寸差 1 像素（175% 时 1794×1140 → 1794×1139），`_setCanvasDevicePixelDimensions` 重设画布，画布被清空，只请求下一帧重画。整数缩放下没有这一条。
+  2. **显示时终端还在暂停**：隐藏页在视口外，RenderService 是暂停的；移回视口后，IntersectionObserver 的回调要等这一帧画完才到，这一帧里 `setRenderer` 请求的刷新因为暂停被推迟。任何缩放下都有，前提是隐藏页移出视口（`styles/terminals.css`）。
+- **上游**：
+  - 第 1 条是 [xtermjs/xterm.js#4922](https://github.com/xtermjs/xterm.js/issues/4922)，由 [xtermjs/xterm.js#5529](https://github.com/xtermjs/xterm.js/pull/5529) 修复（2025-12-28 合入 master，晚于 6.0.0）：重设画布后发出 `sync: true`，同步重画。6.1.0-beta 已包含，正式版尚未发布。
+  - 第 2 条上游没有人报过（2026-10-17 查过）。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到 6.1.0，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。我们附上复现和录屏，向上游提 issue 和 PR，提交后在这里补上链接。
+- **关注**：
+  - `@xterm/xterm` 6.1.0 正式版的发布。它只带第 1 条的修复，绕过要保留。
+  - 我们提的 issue 和 PR：是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
+  - 维护者如果选了别的修法，要看它能不能让显示的那一帧就有内容。例如只在 IntersectionObserver 恢复渲染时同步补画是不够的：回调本来就晚一帧，补画时那一帧已经空白地画出去了。
+- **绕过**：`webgl.ts` 加载插件后，给新的 WebGL 画布再挂一个 ResizeObserver。它创建在插件的之后，同一轮回调里排在插件后面，也就是画布刚被重设之后、这一帧绘制之前；第一次回调时断开，并调用私有的 `_core._renderService._renderRows` 同步画整屏，这个函数不看暂停。可选链访问，xterm.js 内部改名时什么都不做，空白帧又会出现，不会报错。图集重建时重新加载插件也走这里。
+- **验证**：在临时目录里搭测试页（用仓库里打过补丁的 xterm.js 和 `webgl.ts`，照应用的 `.tab-page` CSS 放两个终端，切换时先改 class，再释放旧终端的 WebGL、加载新终端的），在独立配置目录的 Chrome 里用 `--force-device-scale-factor` 设缩放，用 CDP 录屏，按两个终端的文字颜色把每帧分成「A」「B」「空白」。Chrome 要加 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`，否则窗口被遮住后 rAF 停止。每种情形切换 6 次，空白帧数：
+
+  | 缩放 / 隐藏方式 | 修改前 | 修改后 |
+  |---|---|---|
+  | 175%，visibility | 6 | 0 |
+  | 175%，移出视口 | 6 | 0 |
+  | 100%，visibility | 0 | 0 |
+  | 100%，移出视口 | 6 | 0 |
+
+  Windows 上不能用隔离的 HOME 跑开发版：配置目录取自系统的已知文件夹（`%APPDATA%\ZShell`），不看 `HOME`。
+- **每次升级 xterm.js 时**：先确认 `RenderService` 里还有 `_renderRows`，而且仍然不看暂停、直接绘制。改名或改了行为时绕过会静默失效（可选链什么都不做），要按新版本找到对应的同步绘制入口，改写调用。然后按上面的方法录屏，四种情形都应为 0。
+- **移除**（上游两条都修好、ZShell 已升到包含两处修复的版本之后）：
+  1. 删掉 `src/lib/webgl.ts` 里绕过的代码：`Internals` 接口，`drawWithWebgl` 里的 `sized` 变量，`load()` 里给新画布挂 ResizeObserver 的那段（连同上面的注释），以及 `release()` 里断开 `sized` 的两行。
+  2. 去掉绕过后录屏：四种情形都应为 0。任一情形出现空白帧，说明上游没修全，恢复绕过，到上游的 issue 里说明。
+  3. 删掉这一条，提交信息里写明上游修复的版本和 PR。
+- **登记**：2026-10-17。
+
 ## 未查明
 
 ### macOS：退出全屏后窗口不见了（偶现）

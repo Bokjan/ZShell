@@ -11,6 +11,11 @@ import type { Terminal } from "@xterm/xterm";
  */
 const ATLAS_PIXEL_LIMIT = 4096 * 4096;
 
+/** The part of xterm.js's internals used here, which may be missing in another version. */
+interface Internals {
+  _core?: { _renderService?: { _renderRows?(start: number, end: number): void } };
+}
+
 interface Renderer {
   /** The atlas pages this terminal's addon has added and not yet removed. */
   pages: Set<HTMLCanvasElement>;
@@ -52,6 +57,8 @@ export function drawWithWebgl(term: Terminal): () => void {
   let addon: WebglAddon | undefined;
   // The addon's context, while it is there to release.
   let gl: WebGL2RenderingContext | undefined;
+  // Waits for the new canvas's first layout, to draw it then.
+  let sized: ResizeObserver | undefined;
   const pages = new Set<HTMLCanvasElement>();
   const renderer: Renderer = {
     pages,
@@ -84,6 +91,24 @@ export function drawWithWebgl(term: Terminal): () => void {
         const added = [...(term.element?.querySelectorAll("canvas") ?? [])].filter((c) => !before.has(c));
         gl = added.map((c) => c.getContext("webgl2")).find((context) => context !== null) ?? undefined;
         addon = webgl;
+        // The new canvas is empty, and the terminal shows nothing until it is drawn. xterm.js
+        // draws it on the next animation frame, which a shown tab's frame doesn't wait for: its
+        // terminal is still paused until the IntersectionObserver reports it on screen, a frame
+        // late. At fractional pixel ratios the addon's ResizeObserver also fits the canvas to the
+        // device pixels on the first layout, which clears it again. Observing the canvas after
+        // the addon does, this is called right after that, and the frame is painted after it:
+        // drawing then, past the pause, keeps the frame from showing an empty terminal.
+        // (On xterm.js master the addon draws right away after fitting the canvas, but not
+        // while paused, and a new renderer still waits for the pause to end.)
+        const canvas = added[added.length - 1];
+        if (canvas) {
+          sized = new ResizeObserver(() => {
+            sized?.disconnect();
+            sized = undefined;
+            (term as unknown as Internals)._core?._renderService?._renderRows?.(0, term.rows - 1);
+          });
+          sized.observe(canvas);
+        }
       } catch (e) {
         // The terminal keeps an addon whose activation failed until it is disposed.
         webgl?.dispose();
@@ -92,6 +117,8 @@ export function drawWithWebgl(term: Terminal): () => void {
       }
     },
     release() {
+      sized?.disconnect();
+      sized = undefined;
       // Does nothing once the terminal has disposed it (unmounting).
       addon?.dispose();
       addon = undefined;
