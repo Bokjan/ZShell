@@ -51,10 +51,12 @@ struct Edit {
     stopped: Arc<AtomicBool>,
 }
 
-/// Files being edited, keyed by a frontend-chosen id.
+/// Files being edited, by the webview that opened each and the id its page chose. An edit
+/// belongs to its page, like a transfer: only that page uploads, reopens or stops it, and it
+/// stops when the page is gone (its local copy stays, as after [`Edits::stop`]).
 pub struct Edits {
     root: PathBuf,
-    edits: Mutex<HashMap<String, Arc<Edit>>>,
+    edits: Mutex<HashMap<(String, String), Arc<Edit>>>,
 }
 
 impl Edits {
@@ -79,7 +81,15 @@ impl Edits {
 
     /// Starts watching a file downloaded to `local`, reporting saves through `events`.
     /// `remote_stamp`: the remote file's, taken before downloading it (see `remote_stamp`).
-    pub fn start(&self, edit_id: String, remote: String, local: PathBuf, remote_stamp: Option<Stamp>, events: Channel<EditEvent>) {
+    pub fn start(
+        &self,
+        webview: &str,
+        edit_id: &str,
+        remote: String,
+        local: PathBuf,
+        remote_stamp: Option<Stamp>,
+        events: Channel<EditEvent>,
+    ) {
         let stopped = Arc::new(AtomicBool::new(false));
         let edit = Arc::new(Edit {
             remote,
@@ -88,24 +98,25 @@ impl Edits {
             uploading: tokio::sync::Mutex::new(()),
             stopped: stopped.clone(),
         });
-        if let Some(old) = self.edits.lock().unwrap().insert(edit_id, edit) {
+        if let Some(old) = self.edits.lock().unwrap().insert((webview.to_owned(), edit_id.to_owned()), edit) {
             old.stopped.store(true, Ordering::Relaxed);
         }
         tauri::async_runtime::spawn(watch(local, stopped, events));
     }
 
-    fn get(&self, edit_id: &str) -> Result<Arc<Edit>> {
-        self.edits.lock().unwrap().get(edit_id).cloned().ok_or_else(|| Error::new("edit.notFound"))
+    fn get(&self, webview: &str, edit_id: &str) -> Result<Arc<Edit>> {
+        let key = (webview.to_owned(), edit_id.to_owned());
+        self.edits.lock().unwrap().get(&key).cloned().ok_or_else(|| Error::new("edit.notFound"))
     }
 
-    pub fn local(&self, edit_id: &str) -> Result<PathBuf> {
-        Ok(self.get(edit_id)?.local.clone())
+    pub fn local(&self, webview: &str, edit_id: &str) -> Result<PathBuf> {
+        Ok(self.get(webview, edit_id)?.local.clone())
     }
 
     /// Uploads the local copy over the remote file. Unless `force`, fails with
     /// `edit.conflict` when the remote file changed since it was downloaded or last uploaded.
-    pub async fn upload(&self, sftp: &SftpSession, edit_id: &str, force: bool) -> Result<()> {
-        let edit = self.get(edit_id)?;
+    pub async fn upload(&self, sftp: &SftpSession, webview: &str, edit_id: &str, force: bool) -> Result<()> {
+        let edit = self.get(webview, edit_id)?;
         let _uploading = edit.uploading.lock().await;
         let remote = &edit.remote;
         let expected = *edit.remote_stamp.lock().unwrap();
@@ -146,10 +157,21 @@ impl Edits {
 
     /// Stops watching; the local copy stays until a later run cleans it up, in case the
     /// editor still has unsaved changes.
-    pub fn stop(&self, edit_id: &str) {
-        if let Some(edit) = self.edits.lock().unwrap().remove(edit_id) {
+    pub fn stop(&self, webview: &str, edit_id: &str) {
+        if let Some(edit) = self.edits.lock().unwrap().remove(&(webview.to_owned(), edit_id.to_owned())) {
             edit.stopped.store(true, Ordering::Relaxed);
         }
+    }
+
+    /// Stops the edits of `webview`, whose page is gone.
+    pub fn stop_webview(&self, webview: &str) {
+        self.edits.lock().unwrap().retain(|(owner, _), edit| {
+            let theirs = owner == webview;
+            if theirs {
+                edit.stopped.store(true, Ordering::Relaxed);
+            }
+            !theirs
+        });
     }
 }
 

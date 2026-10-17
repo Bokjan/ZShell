@@ -91,6 +91,18 @@ fn clean_up_logs(app: tauri::AppHandle) {
     });
 }
 
+/// A webview's page is gone (reloaded, or its window destroyed): what it started goes with it,
+/// since nothing shows it or would ever close it. Its sessions close, its transfers are
+/// cancelled and its edits stop being watched.
+fn page_gone(app: &tauri::AppHandle, webview: &str) {
+    app.state::<SessionManager>().remove_webview(webview);
+    app.state::<Transfers>().cancel_webview(webview);
+    // Managed in `setup`, which a page may not have reached.
+    if let Some(edits) = app.try_state::<Edits>() {
+        edits.stop_webview(webview);
+    }
+}
+
 /// The folder the sessions and settings are saved in: `ZShell` in the system's configuration
 /// folder (`~/Library/Application Support`, `%APPDATA%`, `~/.config`), named after the app as
 /// people expect there, rather than after the bundle identifier as Tauri's `app_config_dir`.
@@ -212,7 +224,7 @@ pub fn run() {
             }
             tauri::WindowEvent::Destroyed => {
                 // Its webview has the same label.
-                window.state::<SessionManager>().remove_webview(window.label());
+                page_gone(window.app_handle(), window.label());
                 window::destroyed(window);
             }
             _ => {}
@@ -221,7 +233,7 @@ pub fn run() {
         // none of the tabs the old one had: their sessions would run on unseen.
         .on_page_load(|webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
-                webview.state::<SessionManager>().remove_webview(webview.label());
+                page_gone(webview.app_handle(), webview.label());
             }
         })
         .manage(SessionManager::default())

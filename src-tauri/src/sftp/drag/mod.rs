@@ -88,6 +88,8 @@ const IDLE_LIMIT: Duration = Duration::from_secs(300);
 pub struct DropDownload {
     app: AppHandle,
     sftp: Arc<SftpSession>,
+    /// The webview that started the drag, which the transfer belongs to (see [`Transfers`]).
+    webview: String,
     transfer_id: String,
     events: Channel<DragEvent>,
     reporter: tokio::sync::Mutex<Reporter>,
@@ -119,14 +121,17 @@ struct Ended {
 }
 
 impl DropDownload {
-    fn new(app: &AppHandle, sftp: Arc<SftpSession>, transfer_id: String, count: usize, events: Channel<DragEvent>) -> Arc<Self> {
-        let cancelled = app.state::<Transfers>().start(&transfer_id);
+    fn new(window: &WebviewWindow, sftp: Arc<SftpSession>, transfer_id: String, count: usize, events: Channel<DragEvent>) -> Arc<Self> {
+        let app = window.app_handle();
+        let webview = window.label().to_owned();
+        let cancelled = app.state::<Transfers>().start(&webview, &transfer_id);
         let progress = events.clone();
         let reporter = Reporter::with_sink(move |p| drop(progress.send(DragEvent::Progress(p))), cancelled.clone());
         let state = State { pending: count, active: 0, last_activity: Instant::now(), failed: false, finished: false, paths: Vec::new() };
         Arc::new(Self {
             app: app.clone(),
             sftp,
+            webview,
             transfer_id,
             events,
             reporter: tokio::sync::Mutex::new(reporter),
@@ -183,6 +188,11 @@ impl DropDownload {
         result
     }
 
+    /// Lets go of the transfer's cancellation flag.
+    fn finish(&self) {
+        self.app.state::<Transfers>().finish(&self.webview, &self.transfer_id);
+    }
+
     /// Ends the drop, once (`None` if it already had).
     fn end(state: &mut State) -> Option<Ended> {
         if std::mem::replace(&mut state.finished, true) {
@@ -194,7 +204,7 @@ impl DropDownload {
     /// What ending the drop does once the lock is let go: reports it done unless it failed,
     /// and lets go of what the platform kept for it.
     fn ended(&self, ended: Ended) {
-        self.app.state::<Transfers>().finish(&self.transfer_id);
+        self.finish();
         if let Some(paths) = ended.paths {
             let _ = self.events.send(DragEvent::Done { paths });
         }
@@ -294,7 +304,7 @@ pub async fn drag_out(
     if let Some(item) = items.iter().find(|item| local_file_name(item.name()).is_none()) {
         return Err(Error::new("transfer.invalidName").param("name", &item.path));
     }
-    let download = DropDownload::new(window.app_handle(), sftp, transfer_id, items.len(), events);
+    let download = DropDownload::new(window, sftp, transfer_id, items.len(), events);
     let (done, result) = oneshot::channel();
     #[cfg(target_os = "macos")]
     macos::start(window, items, download.clone(), done)?;
@@ -309,7 +319,7 @@ pub async fn drag_out(
         download.state.lock().unwrap().last_activity = Instant::now();
         download.watch();
     } else {
-        download.app.state::<Transfers>().finish(&download.transfer_id);
+        download.finish();
     }
     Ok(result)
 }

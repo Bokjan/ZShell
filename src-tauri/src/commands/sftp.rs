@@ -125,9 +125,9 @@ pub async fn sftp_upload(
     on_progress: Channel<transfer::Progress>,
 ) -> Result<()> {
     let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
+    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &transfer_id));
     let result = transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await;
-    transfers.finish(&transfer_id);
+    transfers.finish(webview.label(), &transfer_id);
     Ok(result?)
 }
 
@@ -152,9 +152,9 @@ pub async fn sftp_download(
         Some(dir) => dir,
         None => download_dir(&app, &settings)?,
     };
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
+    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &transfer_id));
     let result = transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await;
-    transfers.finish(&transfer_id);
+    transfers.finish(webview.label(), &transfer_id);
     Ok(result?)
 }
 
@@ -172,9 +172,9 @@ pub async fn sftp_download_as(
     on_progress: Channel<transfer::Progress>,
 ) -> Result<PathBuf> {
     let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&transfer_id));
+    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &transfer_id));
     let result = transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter).await;
-    transfers.finish(&transfer_id);
+    transfers.finish(webview.label(), &transfer_id);
     result?;
     Ok(local_path)
 }
@@ -217,13 +217,13 @@ pub async fn sftp_edit_open(
     let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
     let local = edits.local_path(&edit_id, &remote_path)?;
     let remote_stamp = edit::remote_stamp(&sftp, &remote_path).await;
-    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(&edit_id));
+    let mut reporter = transfer::Reporter::new(on_progress, transfers.start(webview.label(), &edit_id));
     let result = transfer::download_to(&sftp, &[(remote_path.clone(), local.clone())], &mut reporter).await;
-    transfers.finish(&edit_id);
+    transfers.finish(webview.label(), &edit_id);
     result?;
-    edits.start(edit_id.clone(), remote_path, local.clone(), remote_stamp, on_event);
+    edits.start(webview.label(), &edit_id, remote_path, local.clone(), remote_stamp, on_event);
     if let Err(e) = open_editor(&app, &settings, local.clone()).await {
-        edits.stop(&edit_id);
+        edits.stop(webview.label(), &edit_id);
         return Err(e);
     }
     Ok(local)
@@ -231,8 +231,14 @@ pub async fn sftp_edit_open(
 
 /// Opens a file being edited again.
 #[tauri::command]
-pub async fn sftp_edit_reopen(app: AppHandle, edits: State<'_, Edits>, settings: State<'_, SettingsStore>, edit_id: String) -> Result<()> {
-    open_editor(&app, &settings, edits.local(&edit_id)?).await
+pub async fn sftp_edit_reopen(
+    app: AppHandle,
+    webview: Webview,
+    edits: State<'_, Edits>,
+    settings: State<'_, SettingsStore>,
+    edit_id: String,
+) -> Result<()> {
+    open_editor(&app, &settings, edits.local(webview.label(), &edit_id)?).await
 }
 
 async fn open_editor(app: &AppHandle, settings: &SettingsStore, path: PathBuf) -> Result<()> {
@@ -243,8 +249,9 @@ async fn open_editor(app: &AppHandle, settings: &SettingsStore, path: PathBuf) -
         .map_err(|e| Error::new("unexpected").detail(e))?
 }
 
-/// Uploads a saved file being edited; fails with `edit.conflict` unless `force` when the
-/// remote file changed meanwhile.
+/// Uploads a saved file being edited, through session `id`'s connection (the tab's current
+/// one, which may not be the one it was downloaded through); fails with `edit.conflict`
+/// unless `force` when the remote file changed meanwhile.
 #[tauri::command]
 pub async fn sftp_edit_upload(
     webview: Webview,
@@ -256,12 +263,12 @@ pub async fn sftp_edit_upload(
     force: bool,
 ) -> Result<()> {
     let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
-    edits.upload(&sftp, &edit_id, force).await
+    edits.upload(&sftp, webview.label(), &edit_id, force).await
 }
 
 #[tauri::command]
-pub fn sftp_edit_stop(edits: State<'_, Edits>, edit_id: String) {
-    edits.stop(&edit_id);
+pub fn sftp_edit_stop(webview: Webview, edits: State<'_, Edits>, edit_id: String) {
+    edits.stop(webview.label(), &edit_id);
 }
 
 /// Drags remote items out of the window (the mouse button must be down) and returns how the
@@ -285,6 +292,6 @@ pub async fn sftp_drag_out(
 }
 
 #[tauri::command]
-pub fn transfer_cancel(transfers: State<'_, transfer::Transfers>, transfer_id: String) {
-    transfers.cancel(&transfer_id);
+pub fn transfer_cancel(webview: Webview, transfers: State<'_, transfer::Transfers>, transfer_id: String) {
+    transfers.cancel(webview.label(), &transfer_id);
 }

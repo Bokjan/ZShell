@@ -36,25 +36,38 @@ pub struct Progress {
     pub current: String,
 }
 
-/// Cancellation flags of running transfers, keyed by frontend-chosen transfer id.
+/// Cancellation flags of running transfers, by the webview that started each and the id its
+/// page chose. A transfer belongs to its page: only that page cancels it, and it is cancelled
+/// when the page is gone (reloaded, or its window closed), with nobody left to show it.
 #[derive(Default)]
-pub struct Transfers(Mutex<HashMap<String, Arc<AtomicBool>>>);
+pub struct Transfers(Mutex<HashMap<(String, String), Arc<AtomicBool>>>);
 
 impl Transfers {
-    pub fn start(&self, id: &str) -> Arc<AtomicBool> {
+    pub fn start(&self, webview: &str, id: &str) -> Arc<AtomicBool> {
         let flag = Arc::new(AtomicBool::new(false));
-        self.0.lock().unwrap().insert(id.to_owned(), flag.clone());
+        self.0.lock().unwrap().insert((webview.to_owned(), id.to_owned()), flag.clone());
         flag
     }
 
-    pub fn finish(&self, id: &str) {
-        self.0.lock().unwrap().remove(id);
+    pub fn finish(&self, webview: &str, id: &str) {
+        self.0.lock().unwrap().remove(&(webview.to_owned(), id.to_owned()));
     }
 
-    pub fn cancel(&self, id: &str) {
-        if let Some(flag) = self.0.lock().unwrap().get(id) {
+    pub fn cancel(&self, webview: &str, id: &str) {
+        if let Some(flag) = self.0.lock().unwrap().get(&(webview.to_owned(), id.to_owned())) {
             flag.store(true, Ordering::Relaxed);
         }
+    }
+
+    /// Cancels the transfers of `webview`, whose page is gone.
+    pub fn cancel_webview(&self, webview: &str) {
+        self.0.lock().unwrap().retain(|(owner, _), flag| {
+            let theirs = owner == webview;
+            if theirs {
+                flag.store(true, Ordering::Relaxed);
+            }
+            !theirs
+        });
     }
 }
 
@@ -581,6 +594,28 @@ fn with_file_context(e: anyhow::Error, context: Error) -> anyhow::Error {
         e
     } else {
         e.context(context)
+    }
+}
+
+#[cfg(test)]
+mod owner_tests {
+    use super::*;
+
+    #[test]
+    fn a_transfer_is_cancelled_only_by_its_page_or_with_it() {
+        let transfers = Transfers::default();
+        let mine = transfers.start("main", "t1");
+        let other = transfers.start("window-2", "t1");
+        transfers.cancel("window-2", "t2");
+        assert!(!mine.load(Ordering::Relaxed) && !other.load(Ordering::Relaxed));
+        transfers.cancel("window-2", "t1");
+        assert!(!mine.load(Ordering::Relaxed) && other.load(Ordering::Relaxed));
+
+        let later = transfers.start("main", "t2");
+        transfers.cancel_webview("main");
+        assert!(mine.load(Ordering::Relaxed) && later.load(Ordering::Relaxed));
+        transfers.finish("window-2", "t1");
+        assert!(transfers.0.lock().unwrap().is_empty());
     }
 }
 
