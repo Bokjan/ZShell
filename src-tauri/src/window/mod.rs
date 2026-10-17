@@ -129,6 +129,21 @@ pub fn destroyed(window: &tauri::Window) {
     changed(window.app_handle());
 }
 
+/// Window `label`'s page loads again (see `page_gone`): the tabs its page had taken went with
+/// it, before their sessions moved there perhaps. Those stay with the windows that offered them,
+/// which hear (`offers-withdrawn`); the new page takes only what it hasn't yet.
+pub fn page_loading(app: &AppHandle, label: &str) {
+    let windows = app.state::<Windows>();
+    let withdrawn = {
+        // Held across, as when a tab is given: no offer for a tab not yet taken is lost.
+        let inbox = windows.inbox.lock().unwrap();
+        app.state::<SessionManager>().withdraw_offers(label, &inbox.untaken(label))
+    };
+    for (webview, sessions) in withdrawn {
+        events::emit_to(app, webview, events::OffersWithdrawn(sessions));
+    }
+}
+
 /// Where a new window goes: its top left corner in screen coordinates (see
 /// [`tab_drag::screen`]), and its size.
 type Place = (tauri::Position, tauri::LogicalSize<f64>);
@@ -197,7 +212,7 @@ pub async fn open(
 ) -> Result<String> {
     let label = format!("{LABEL_PREFIX}{}", windows.next.fetch_add(1, Ordering::Relaxed) + 1);
     session_manager.offer(window.label(), &sessions, &label)?;
-    windows.inbox.lock().unwrap().opened(&label, content);
+    windows.inbox.lock().unwrap().opened(&label, content, sessions);
     let at_drop = || Some((tab_drag::place_dropped(&app, &window, dropped?)?, size(&window).ok()?));
     let place = at_drop().or_else(|| cascade(&window).ok());
     if let Err(e) = build(&app, &label, place) {
@@ -283,7 +298,7 @@ pub fn send_tab(
             return Err(Error::new("window.notFound"));
         }
         session_manager.offer(&source, &sessions, &target)?;
-        inbox.give(&target, WindowContent::Tab { tab, at });
+        inbox.give(&target, WindowContent::Tab { tab, at }, sessions);
     }
     events::emit_to(&app, target, events::TabReceived);
     let _ = window.unminimize();

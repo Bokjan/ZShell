@@ -239,6 +239,7 @@ pub fn run() {
         .on_page_load(|webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 page_gone(webview.app_handle(), webview.label());
+                window::page_loading(webview.app_handle(), webview.label());
             }
         })
         .manage(SessionManager::default())

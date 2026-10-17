@@ -6,7 +6,7 @@
 //! session to another window takes the owner's say: it offers the session to that window
 //! ([`SessionManager::offer`]), which can then take it once ([`SessionManager::adopt`]).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -175,6 +175,21 @@ impl SessionManager {
         let from = std::mem::replace(&mut entry.webview, page.webview.clone());
         entry.moved_from = Some((from, move_id));
         Ok(())
+    }
+
+    /// Takes back the offers to `webview` (see [`offer`](Self::offer)) but for the sessions
+    /// `keep`: its page went before taking them. The sessions stay with their webviews, which
+    /// are returned with them.
+    pub fn withdraw_offers(&self, webview: &str, keep: &HashSet<SessionId>) -> HashMap<String, Vec<SessionId>> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let mut withdrawn: HashMap<String, Vec<SessionId>> = HashMap::new();
+        for (id, entry) in sessions.iter_mut() {
+            if entry.offered_to.as_deref() == Some(webview) && !keep.contains(id) {
+                entry.offered_to = None;
+                withdrawn.entry(entry.webview.clone()).or_default().push(*id);
+            }
+        }
+        withdrawn
     }
 
     /// The webview a session has moved to, for the screen that `webview`, which it moved from
@@ -412,6 +427,13 @@ mod tests {
         sessions.remove_webview("fourth");
         sessions.adopt(id, &sessions.page("fourth"), Channel::new(|_| Ok(())), "m3".into()).unwrap();
         assert!(sessions.owns("fourth", id));
+        // Offered to a page that went before taking it: the offer is taken back, unless kept.
+        sessions.offer("fourth", &[id], "fifth").unwrap();
+        assert!(sessions.withdraw_offers("fifth", &[id].into()).is_empty());
+        assert_eq!(sessions.withdraw_offers("fifth", &HashSet::new()), [("fourth".to_owned(), vec![id])].into());
+        assert!(sessions.withdraw_offers("fifth", &HashSet::new()).is_empty());
+        let page = sessions.page("fifth");
+        assert_eq!(sessions.adopt(id, &page, Channel::new(|_| Ok(())), "m4".into()).unwrap_err().code(), "session.notFound");
     }
 
     /// Only the window showing a session can act on it, or give it to another window.

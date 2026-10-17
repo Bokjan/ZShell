@@ -29,11 +29,18 @@ describe("TabMoves", () => {
     moves.start(1, null, [10, 11]);
     moves.start(2, "window-2", [20]);
     moves.resolve(10, false);
-    // Not yet known to be its window.
-    expect(moves.windowClosed("window-3")).toEqual([]);
+    expect(moves.windowClosed("window-1")).toEqual([]);
     moves.opened(1, "window-3");
     expect(moves.windowClosed("window-3")).toEqual([{ key: 1, stayed: new Set([11]) }]);
     expect(moves.has(2)).toBe(true);
+  });
+
+  it("keeps the sessions of a new window that closed before it was known to be the one", () => {
+    const moves = new TabMoves();
+    moves.start(1, null, [10]);
+    expect(moves.windowClosed("window-3")).toEqual([]);
+    expect(moves.opened(1, "window-3")).toEqual([{ key: 1, stayed: new Set([10]) }]);
+    expect(moves.has(1)).toBe(false);
   });
 
   it("forgets a move that failed to start", () => {

@@ -112,6 +112,9 @@ events! {
     TabReceived = "tab-received";
     /// A pane of the tab this window sent to another couldn't move there, by its key here.
     PaneStayed(u32) = "pane-stayed";
+    /// Sessions of this window offered to another for a tab given to it, whose page went
+    /// before taking them: they stay here.
+    OffersWithdrawn(Vec<crate::session::SessionId>) = "offers-withdrawn";
     /// How many of its tabs quitting would end, asked of each window by an id that its
     /// answer (`window_busy_reply`) gives back.
     BusyQuery(u64) = "busy-query";

@@ -982,6 +982,7 @@ export type Events = {
   "busy-query": number;
   "config-changed": Change;
   "menu-action": string;
+  "offers-withdrawn": Array<number>;
   "pane-stayed": number;
   "quit-requested": null;
   "screen-reader-changed": boolean;

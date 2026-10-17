@@ -7,19 +7,21 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::oneshot;
 
 use super::WindowContent;
+use crate::session::SessionId;
 
 /// What the windows are to show, until their pages take it.
 #[derive(Default)]
 pub(super) struct Inbox {
-    pending: HashMap<String, Vec<WindowContent>>,
+    /// Each with the sessions offered to the window for it (see `SessionManager::offer`).
+    pending: HashMap<String, Vec<(WindowContent, Vec<SessionId>)>>,
     /// Windows closing once their last tab has gone, which take nothing more.
     closing: HashSet<String>,
 }
 
 impl Inbox {
-    /// What new window `label` opens for, first.
-    pub fn opened(&mut self, label: &str, content: WindowContent) {
-        self.pending.insert(label.to_owned(), vec![content]);
+    /// What new window `label` opens for, first, and the sessions offered to it for that.
+    pub fn opened(&mut self, label: &str, content: WindowContent, sessions: Vec<SessionId>) {
+        self.pending.insert(label.to_owned(), vec![(content, sessions)]);
     }
 
     /// Whether window `label` still takes tabs: not once it is closing.
@@ -27,14 +29,23 @@ impl Inbox {
         !self.closing.contains(label)
     }
 
-    /// Gives `content` to window `label`, after what it has not taken yet.
-    pub fn give(&mut self, label: &str, content: WindowContent) {
-        self.pending.entry(label.to_owned()).or_default().push(content);
+    /// Gives `content` to window `label`, after what it has not taken yet, with the sessions
+    /// offered to it for that.
+    pub fn give(&mut self, label: &str, content: WindowContent, sessions: Vec<SessionId>) {
+        self.pending.entry(label.to_owned()).or_default().push((content, sessions));
     }
 
     /// What window `label` is to show and hasn't taken yet, in order. Each is taken once.
     pub fn take(&mut self, label: &str) -> Vec<WindowContent> {
-        self.pending.remove(label).unwrap_or_default()
+        let pending = self.pending.remove(label).unwrap_or_default();
+        pending.into_iter().map(|(content, _)| content).collect()
+    }
+
+    /// The sessions offered to window `label` for what it hasn't taken yet, which a page of it
+    /// loading now still takes.
+    pub fn untaken(&self, label: &str) -> HashSet<SessionId> {
+        let pending = self.pending.get(label).map(Vec::as_slice).unwrap_or_default();
+        pending.iter().flat_map(|(_, sessions)| sessions.iter().copied()).collect()
     }
 
     /// Whether window `label`, which has no tabs left, closes: not if it is the `last` one, nor
@@ -136,17 +147,20 @@ mod tests {
     #[test]
     fn a_window_takes_what_it_was_given_once_in_order() {
         let mut inbox = Inbox::default();
-        inbox.opened("window-1", profile("a"));
-        inbox.give("window-1", profile("b"));
+        inbox.opened("window-1", profile("a"), vec![1]);
+        inbox.give("window-1", profile("b"), vec![2, 3]);
+        assert_eq!(inbox.untaken("window-1"), [1, 2, 3].into());
         assert_eq!(titles(inbox.take("window-1")), ["a", "b"]);
         assert!(inbox.take("window-1").is_empty());
+        // Taken: a page loading again won't take their sessions.
+        assert!(inbox.untaken("window-1").is_empty());
     }
 
     #[test]
     fn a_window_given_a_tab_or_the_last_one_stays_open() {
         let mut inbox = Inbox::default();
         assert!(!inbox.close_empty("main", true));
-        inbox.give("window-1", profile("a"));
+        inbox.give("window-1", profile("a"), Vec::new());
         assert!(!inbox.close_empty("window-1", false));
         assert!(inbox.accepts("window-1"));
 

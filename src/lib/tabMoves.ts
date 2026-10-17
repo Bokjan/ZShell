@@ -6,6 +6,8 @@
  */
 export class TabMoves {
   private readonly moves = new Map<number, Move>();
+  /** Windows that have closed, which a move may learn is its own only after (see `opened`). */
+  private readonly closed = new Set<string>();
 
   /** Whether tab `key` is moving out. */
   has(key: number): boolean {
@@ -17,10 +19,15 @@ export class TabMoves {
     this.moves.set(key, { target, waiting: new Set(live), stayed: new Set() });
   }
 
-  /** The new window tab `key` moves to has opened, labelled `label`. */
-  opened(key: number, label: string) {
+  /**
+   * The new window tab `key` moves to has opened, labelled `label`: the moves over by now, if
+   * it has closed already.
+   */
+  opened(key: number, label: string): Settled[] {
     const move = this.moves.get(key);
-    if (move) move.target = label;
+    if (!move) return [];
+    move.target = label;
+    return this.closed.has(label) ? this.windowClosed(label) : [];
   }
 
   /** The move of tab `key` failed before the other window had it: the tab stays as it is. */
@@ -47,6 +54,7 @@ export class TabMoves {
 
   /** Window `label` closed: the moves to it are over, the sessions it hadn't taken staying here. */
   windowClosed(label: string): Settled[] {
+    this.closed.add(label);
     const settled: Settled[] = [];
     for (const [key, move] of this.moves) {
       if (move.target !== label) continue;

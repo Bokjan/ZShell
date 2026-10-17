@@ -189,7 +189,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
       const closed = tab.panes.filter((pane) => pane.sessionId === null).map((pane) => pane.key);
       closed.forEach((paneKey) => sessions.suspend(paneKey));
       try {
-        if (target === null) moves.current.opened(key, await windows.open({ kind: "tab", tab: transfer, at: null }, dropped));
+        if (target === null) settle(moves.current.opened(key, await windows.open({ kind: "tab", tab: transfer, at: null }, dropped)));
         else await windows.sendTab(target, transfer, at);
       } catch (e) {
         moves.current.cancel(key);
@@ -222,6 +222,16 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   useWindowEvent("pane-stayed", (paneKey) => settle(moves.current.resolve(paneKey, true)));
   // The window a tab was moving to closed before taking all its sessions: they are still here.
   useWindowEvent("window-closed", (label) => settle(moves.current.windowClosed(label)));
+  // The page of the window a tab was moving to loaded again before taking these sessions,
+  // which are still here.
+  useWindowEvent("offers-withdrawn", (ids) => {
+    const panes = store
+      .get()
+      .tabs.filter((tab) => tab.moving)
+      .flatMap((tab) => tab.panes)
+      .filter((pane) => pane.sessionId !== null && ids.includes(pane.sessionId));
+    settle(panes.flatMap((pane) => moves.current.resolve(pane.key, true)));
+  });
 
   /**
    * The session of pane `key`, which came from another window, couldn't move here (it ended,

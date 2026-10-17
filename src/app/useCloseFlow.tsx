@@ -83,7 +83,20 @@ export function useCloseFlow(
     setClosingWindow(pendingClose);
   }, [pendingClose, clearPendingClose]);
 
-  const closePanes = useCallback((keys: number[]) => store.dispatch({ type: "close", keys }), [store]);
+  // Not those of a tab that started moving to another window since closing was asked (see
+  // `requestClose`).
+  const closePanes = useCallback(
+    (keys: number[]) => {
+      const moving = new Set(
+        store
+          .get()
+          .tabs.filter((tab) => tab.moving)
+          .flatMap((tab) => tab.panes.map((pane) => pane.key)),
+      );
+      store.dispatch({ type: "close", keys: keys.filter((key) => !moving.has(key)) });
+    },
+    [store],
+  );
 
   /** Closes tabs or a pane, first asking if any pane is connected or running a program. */
   const requestClose = useCallback(
@@ -115,7 +128,7 @@ export function useCloseFlow(
           const follow = settingsRef.current.tabs.followRemoteTitle;
           // A split tab is named as a whole (see `message`).
           const name = request.kind === "tabs" && tab.panes.length > 1 ? tabTitle(tab, follow) : paneLabel(tab, pane, follow);
-          const tabs = request.kind === "tabs" ? request.keys.length : 0;
+          const tabs = request.kind === "tabs" ? new Set(panes.map(({ tab }) => tab.key)).size : 0;
           setClosing({ panes: keys, tabs, busy: reasons[index]!, name });
           return;
         }
