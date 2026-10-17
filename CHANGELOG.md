@@ -2,6 +2,13 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.5.1] - 2026-10-17
+
+### Bug Fixes
+
+- Terminals in background tabs no longer redraw their screen as their programs write output, which kept using CPU and memory while something ran in another tab (a build, a log being followed, a program with a spinner). They catch up when their tab is shown.
+- Switching to a tab no longer shows its terminal blank for a moment before the text appears.
+
 ## [3.5.0] - 2026-10-15
 
 The same app for users as 3.4.1: this version restructures the code, and saved sessions and settings are read and written as before.
