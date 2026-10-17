@@ -37,6 +37,7 @@ import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../hooks/titleBar";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { useLatest } from "../hooks/latest";
+import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { useLocale } from "../hooks/locale";
 import { ChevronIcon, DisclosureIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
@@ -104,6 +105,12 @@ const storeWidth = (width: number) => storeString(WIDTH_KEY, String(width));
 /** Where a dragged row would land: relative to a row, or at the end of the top level. */
 type Drop = { key: string; position: "before" | "after" | "into" } | { key: null };
 
+function sameDrop(a: Drop | null, b: Drop | null): boolean {
+  if (!a || !b) return a === b;
+  if (a.key === null || b.key === null) return a.key === b.key;
+  return a.key === b.key && a.position === b.position;
+}
+
 /**
  * The saved sessions and folders, with search and quick connect. It doesn't depend on the tabs,
  * so it shouldn't render again as they change (titles change several times a second while a
@@ -145,9 +152,11 @@ export function Sidebar(props: Props) {
   const [importing, setImporting] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  const rows = treeRows(state, collapsed);
+  // Not `state`, which also changes as sessions are opened (the recent ones).
+  const sessionTree = { profiles, folders, order: state.order };
+  const rows = treeRows(sessionTree, collapsed);
   const searching = query.trim() !== "";
-  const results = searching ? search(query, state) : [];
+  const results = searching ? search(query, sessionTree) : [];
   const quick = searching && results.length === 0 ? parseQuickConnect(query) : null;
   // The search results, then the quick connect line.
   const resultCount = results.length + (quick ? 1 : 0);
@@ -410,12 +419,17 @@ export function Sidebar(props: Props) {
   const startDrag = (e: ReactMouseEvent, item: TreeItem) => {
     if (e.button !== 0 || renaming) return;
     let current: Drop | null = null;
+    let moving = false;
     pressDrag(e, {
       threshold: DRAG_THRESHOLD,
       bodyClass: "dragging-row",
       onMove: (ev) => {
-        current = dropAt(item, ev.clientX, ev.clientY);
-        setDrag({ item, drop: current });
+        const drop = dropAt(item, ev.clientX, ev.clientY);
+        // On each move of the pointer: the list renders again only for another place to drop.
+        if (moving && sameDrop(drop, current)) return;
+        moving = true;
+        current = drop;
+        setDrag({ item, drop });
       },
       onEnd: (moved) => {
         setDrag(null);
@@ -438,82 +452,63 @@ export function Sidebar(props: Props) {
     return drop && drop.key === key ? ` drop-${drop.position}` : "";
   };
 
+  // The rows' callbacks, which stay the same so that a row renders again only when what it
+  // shows changes (see `SessionRow`).
+  const rowActions = useStableHandlers<RowActions>({
+    press: (e, key, item) => {
+      pressRow(e, key);
+      if (item) startDrag(e, item);
+    },
+    select: setSelected,
+    open: (key, profile) => {
+      if (firstClickRef.current === key) onOpen(profile, "connect");
+    },
+    profileMenu: (e, profile) => {
+      setSelected(`p:${profile.id}`);
+      openMenu(e, profileMenu(profile));
+    },
+    folderMenu: (e, folder, count) => {
+      setSelected(`f:${folder.id}`);
+      openMenu(e, folderMenu(folder, count));
+    },
+    toggle: (folder, expanded) => {
+      setSelected(`f:${folder.id}`);
+      setFolderCollapsed(folder.id, expanded);
+    },
+    finishRename,
+  });
+
   const profileRow = (profile: Profile, key: string, depth: number, meta?: string, extra = "") => (
-    <div
+    <SessionRow
       key={key}
       id={rowId(key)}
-      role={searching ? "option" : "treeitem"}
-      aria-selected={searching ? extra.includes("highlighted") : selected === key}
-      aria-level={searching ? undefined : depth + 1}
-      // Rather than the tooltip, which is also read, as a hint.
-      aria-label={t(key.startsWith("recent:") ? "sidebar.recentRowLabel" : "sidebar.rowLabel", {
-        name: profile.name,
-        address: meta ?? address(profile.connection),
-      })}
-      data-key={key.startsWith("p:") ? key : undefined}
-      data-recent={key.startsWith("recent:") || undefined}
-      className={`tree-row session${selected === `p:${profile.id}` ? " selected" : ""}${extra}`}
-      style={{ paddingLeft: 8 + depth * INDENT }}
-      onMouseDown={(e) => {
-        pressRow(e, key);
-        if (key.startsWith("p:")) startDrag(e, { kind: "profile", id: profile.id });
-      }}
-      onClick={() => setSelected(`p:${profile.id}`)}
-      onDoubleClick={() => firstClickRef.current === key && onOpen(profile, "connect")}
-      onContextMenu={(e) => {
-        setSelected(`p:${profile.id}`);
-        openMenu(e, profileMenu(profile));
-      }}
-      title={[profile.name, address(profile.connection), profile.notes && `\n${notesPreview(profile.notes)}\n`, t("sidebar.openHint")]
-        .filter(Boolean)
-        .join("\n")}
-    >
-      <span className="tree-icon">
-        <ProtocolIcon protocol={profile.connection.protocol} />
-      </span>
-      <span className="tree-name">{profile.name}</span>
-      <span className="tree-meta">{meta ?? address(profile.connection)}</span>
-    </div>
+      rowKey={key}
+      profile={profile}
+      depth={depth}
+      meta={meta}
+      searching={searching}
+      current={searching ? extra.includes("highlighted") : selected === key}
+      selected={selected === `p:${profile.id}`}
+      extra={extra}
+      actions={rowActions}
+    />
   );
 
   const folderRow = (row: Extract<Row, { kind: "folder" }>) => {
-    const { folder, depth, expanded, count } = row;
-    const key = `f:${folder.id}`;
+    const key = `f:${row.folder.id}`;
     return (
-      <div
+      <FolderRow
         key={key}
         id={rowId(key)}
-        role="treeitem"
-        aria-selected={selected === key}
-        aria-expanded={expanded}
-        aria-level={depth + 1}
-        aria-label={t("sidebar.folderLabel", { name: folder.name, count })}
-        data-key={key}
-        className={`tree-row folder${selected === key ? " selected" : ""}${dropClass(key)}`}
-        style={{ paddingLeft: 8 + depth * INDENT }}
-        onMouseDown={(e) => {
-          pressRow(e, key);
-          startDrag(e, { kind: "folder", id: folder.id });
-        }}
-        onClick={() => {
-          setSelected(key);
-          setFolderCollapsed(folder.id, expanded);
-        }}
-        onContextMenu={(e) => {
-          setSelected(key);
-          openMenu(e, folderMenu(folder, count));
-        }}
-      >
-        <span className="tree-icon">
-          <DisclosureIcon open={expanded} />
-        </span>
-        {renaming === folder.id ? (
-          <NameEditor initial={folder.name} onDone={(name) => finishRename(folder, name)} />
-        ) : (
-          <span className="tree-name">{folder.name}</span>
-        )}
-        <span className="tree-count">{count}</span>
-      </div>
+        folder={row.folder}
+        depth={row.depth}
+        expanded={row.expanded}
+        count={row.count}
+        selected={selected === key}
+        renaming={renaming === row.folder.id}
+        extra={dropClass(key)}
+        actions={rowActions}
+      />
     );
   };
 
@@ -718,6 +713,120 @@ export function Sidebar(props: Props) {
           />
         ))}
     </aside>
+  );
+}
+
+/** What a row of the list asks of the sidebar; one object that stays the same. */
+interface RowActions {
+  /** A press on the row, which may start dragging `item`. */
+  press(e: ReactMouseEvent, key: string, item: TreeItem | null): void;
+  select(key: string): void;
+  /** A double-click on the row. */
+  open(key: string, profile: Profile): void;
+  profileMenu(e: ReactMouseEvent, profile: Profile): void;
+  folderMenu(e: ReactMouseEvent, folder: Folder, count: number): void;
+  toggle(folder: Folder, expanded: boolean): void;
+  finishRename(folder: Folder, name: string | null): void;
+}
+
+/**
+ * A session's row, its own component so that React Compiler memoizes it: with thousands of
+ * sessions, the others don't render again as one is selected, dragged over or searched for.
+ */
+function SessionRow(props: {
+  id: string;
+  rowKey: string;
+  profile: Profile;
+  depth: number;
+  /** Shown after the name instead of the address. */
+  meta: string | undefined;
+  searching: boolean;
+  /** Selected in the tree, or highlighted among the search results. */
+  current: boolean;
+  /** Its session is selected (also as a recent one). */
+  selected: boolean;
+  /** More classes. */
+  extra: string;
+  actions: RowActions;
+}) {
+  useStableProps("SessionRow", props, ["actions"]);
+  const { id, rowKey: key, profile, depth, meta, searching, current, selected, extra, actions } = props;
+  const { t } = useTranslation();
+  return (
+    <div
+      id={id}
+      role={searching ? "option" : "treeitem"}
+      aria-selected={current}
+      aria-level={searching ? undefined : depth + 1}
+      // Rather than the tooltip, which is also read, as a hint.
+      aria-label={t(key.startsWith("recent:") ? "sidebar.recentRowLabel" : "sidebar.rowLabel", {
+        name: profile.name,
+        address: meta ?? address(profile.connection),
+      })}
+      data-key={key.startsWith("p:") ? key : undefined}
+      data-recent={key.startsWith("recent:") || undefined}
+      className={`tree-row session${selected ? " selected" : ""}${extra}`}
+      style={{ paddingLeft: 8 + depth * INDENT }}
+      onMouseDown={(e) => actions.press(e, key, key.startsWith("p:") ? { kind: "profile", id: profile.id } : null)}
+      onClick={() => actions.select(`p:${profile.id}`)}
+      onDoubleClick={() => actions.open(key, profile)}
+      onContextMenu={(e) => actions.profileMenu(e, profile)}
+      title={[profile.name, address(profile.connection), profile.notes && `\n${notesPreview(profile.notes)}\n`, t("sidebar.openHint")]
+        .filter(Boolean)
+        .join("\n")}
+    >
+      <span className="tree-icon">
+        <ProtocolIcon protocol={profile.connection.protocol} />
+      </span>
+      <span className="tree-name">{profile.name}</span>
+      <span className="tree-meta">{meta ?? address(profile.connection)}</span>
+    </div>
+  );
+}
+
+/** A folder's row, its own component as `SessionRow`. */
+function FolderRow(props: {
+  id: string;
+  folder: Folder;
+  depth: number;
+  expanded: boolean;
+  /** How many sessions it holds. */
+  count: number;
+  selected: boolean;
+  renaming: boolean;
+  /** More classes. */
+  extra: string;
+  actions: RowActions;
+}) {
+  useStableProps("FolderRow", props, ["actions"]);
+  const { id, folder, depth, expanded, count, selected, renaming, extra, actions } = props;
+  const { t } = useTranslation();
+  const key = `f:${folder.id}`;
+  return (
+    <div
+      id={id}
+      role="treeitem"
+      aria-selected={selected}
+      aria-expanded={expanded}
+      aria-level={depth + 1}
+      aria-label={t("sidebar.folderLabel", { name: folder.name, count })}
+      data-key={key}
+      className={`tree-row folder${selected ? " selected" : ""}${extra}`}
+      style={{ paddingLeft: 8 + depth * INDENT }}
+      onMouseDown={(e) => actions.press(e, key, { kind: "folder", id: folder.id })}
+      onClick={() => actions.toggle(folder, expanded)}
+      onContextMenu={(e) => actions.folderMenu(e, folder, count)}
+    >
+      <span className="tree-icon">
+        <DisclosureIcon open={expanded} />
+      </span>
+      {renaming ? (
+        <NameEditor initial={folder.name} onDone={(name) => actions.finishRename(folder, name)} />
+      ) : (
+        <span className="tree-name">{folder.name}</span>
+      )}
+      <span className="tree-count">{count}</span>
+    </div>
   );
 }
 
