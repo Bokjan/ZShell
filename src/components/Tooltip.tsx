@@ -47,7 +47,9 @@ export function Tooltips() {
     let saved = "";
     let timer: number | undefined;
 
+    // On every key typed, too: nothing to do unless the pointer is on an element with a title.
     const hide = () => {
+      if (!current) return;
       window.clearTimeout(timer);
       if (current && !current.hasAttribute("title")) current.setAttribute("title", saved);
       current = null;
