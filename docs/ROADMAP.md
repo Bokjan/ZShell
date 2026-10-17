@@ -70,17 +70,19 @@
 2026-10-17 排查渲染进程内存时发现：后台终端每改一次标题（Claude Code 的 spinner 每秒 5 次），标签页 store 就变一次，`App` 重新渲染，不依赖标签页的 `Sidebar` 也整体跟着重新渲染；内联的 `onClick` 每次都是新函数，React 每次给元素重设 `onclick`，监听器对象成批等待回收。主线程开销不大（整页约 2%），但这类问题靠手写 `memo` / `useCallback` 很难长期守住。
 
 - **接入**：走稳定的 Babel 路线，`@vitejs/plugin-react` 的 `reactCompilerPreset` 加上 `@rolldown/plugin-babel`、`@babel/core`、`babel-plugin-react-compiler`（都是开发依赖，MIT），不用实验性的 Rust 版（`oxc-transform-react`）。产物只多引用 React 19 自带的 `react/compiler-runtime`。已有的 `useCallback` / `useMemo` 先保留，以后逐步清理；`TabPage` 按值比较数组的 `memo` 比较函数保留。
-- **改写**：用 Compiler 1.0 试编译 `src/`，145 个组件与 hook 中 42 个被跳过，`App`、`Sidebar`、`TabBar`、`TabPage`、`TerminalView` 都在其中。按写法分类改写，每类单独提交，行为不变：
-  - 渲染时写 ref（`xRef.current = x`）：只在 effect 里用的改用 `useEffectEvent`，在事件处理里用的改为在 `useLayoutEffect` 里赋值；`useStableHandlers` 同样改写，接口不变。
-  - ref 与普通值放在同一个对象里（`useConfirmButton` 的返回值、`Sidebar` 的 `appMenu`）：Compiler 把整个对象当作 ref，读其中任何值都算渲染时读 ref。在使用处解构，ref 直接交给元素。
-  - 渲染时读 DOM（`TabPage` 的页面宽度、`TabBar` 拖动时的落点、`HelpTip` 与应用菜单的锚点）：改为在 ResizeObserver 或事件里测量后存进 state。这一类改变时序，回归时重点看。
-  - 创建时带着读 ref 的闭包（`App` 的会话注册表、`useCompose`、`SpinInput`）：先建好，最新的回调在 `useLayoutEffect` 里交给它。
-  - Compiler 尚不支持的语法（`try/finally`、无 `catch` 的 `try`、`try` 里的条件表达式、`||=`、`??=`、对全局变量的 `++`）：改用 `.finally()`、组件外的函数或显式 `if`，个别不值得改写的用 `"use no memo"` 明确跳过。即使 `try` 只出现在组件内的事件处理函数里，整个组件也会被跳过。
+- **改写**（已完成）：用 Compiler 1.0 试编译 `src/`，145 个组件与 hook 中 42 个被跳过，`App`、`Sidebar`、`TabBar`、`TabPage`、`TerminalView` 都在其中。Compiler 每个函数只报第一个问题，修掉一个常会露出下一个。按写法分类改写，每类单独提交，行为不变；改完后 148 个全部能编译，没有用 `"use no memo"` 跳过的：
+  - 渲染时写 ref（`xRef.current = x`）：只在 effect 里用的改用 `useEffectEvent`；其余用 `hooks/latest` 的 `useLatest`，在 insertion effect 里赋值（早于所有 layout effect，子组件的 layout effect 回调父组件时已能看到新值）。`useStableHandlers` 建在它上面，接口不变。Compiler 只认 `useRef` 的结果是稳定的，手写的 `useCallback` / `useMemo` 用到 `useLatest` 的 ref 时要列进依赖；只有名字以 `Ref` 结尾的才被当作 ref，在事件里写它才不会被当作修改 hook 的返回值。
+  - ref 与普通值放在同一个对象里（`useConfirmButton` 的返回值、`Sidebar` 的 `appMenu`、`useDialog` 的返回值）：Compiler 把整个对象当作 ref，读其中任何值都算渲染时读 ref。在使用处解构，ref 直接交给元素。
+  - 渲染时读 DOM 或 ref（`TabPage` 的页面宽度、`TabBar` 拖动时的落点、`HelpTip`、应用菜单与上传菜单的锚点、终端与搜索插件）：改为在 ResizeObserver、事件或 effect 里取得后存进 state。这一类改变时序，回归时重点看。
+  - 创建时带着读 ref 的闭包（`App` 的会话注册表）：注册表连同一个交接函数一起建好，最新的回调和设置在 insertion effect 里交给它（直接改 state 里的对象也会被拒绝）。`useCompose` 的窗格名改为由传入的值算出，`SpinInput` 解析正在渲染的值。
+  - Compiler 尚不支持的语法（`try/finally`、无 `catch` 的 `try`、`try` 里的条件表达式、`?.` 与 `??`、`||=`、`??=`、对模块变量的 `++`，以及 JSX 里 `[a && "x"].filter(…).join(…) || …` 这样的表达式）：`try` 语句改用 `lib/attempt` 的 `attempt` / `attemptSync`（含义相同；被改写的 `try` 都是所在函数的最后一句，`return` 的含义不变），运算符改为显式写法或组件外的函数。即使 `try` 只出现在组件内的事件处理函数里，整个组件也会被跳过。
   - 修改 hook 返回的 ref（`SftpPanel`）：改由 hook 提供 setter。
+  - 手写 memo 的依赖与 Compiler 推断的不一致（`TerminalView` 的配色只依赖外观的两个字段）：先取出这两个字段再 memo。
+- **靠重新渲染才拿到新值的写法**（已完成）：Compiler 看不出这类写法，memo 之后会显示旧值。排查出两处：状态栏在渲染时向注册表取流量表，新窗格的终端在 effect 里才挂接会话，第一次渲染取不到，之前靠 `App` 随后的重新渲染再取一次（改为在 effect 里取）；快捷键名称、大小与时间的格式、CJK 字体顺序读的是语言设置的模块状态，切换语言后不会更新（组件改从 `hooks/locale` 的 `useLocale` 取得，函数随语言变化，`locale.test.ts` 检查组件与 hook 不直接引入）。菜单在打开时才算出菜单项，memo 后依赖 `menu` 状态，照样会重新计算；状态栏的流量计数是原地修改的对象，Compiler 每次渲染都会比较读到的字段，不受影响。
 - **Compiler 替代不了的**：它按依赖做 memo，依赖在变时如实生成新函数。`openProfile` 用到 `useWindows` 的返回值，后者依赖 `tabs`，所以只靠 Compiler，`Sidebar` 仍会随标题变化重新渲染，而且不会有任何提示。标签页 store 每次变化都不该重新渲染的组件（`Sidebar`、`TabPage`），回调仍由 `useStableHandlers` 组成 handlers 对象传入。
-- **检查**：`src/compiler.test.ts` 用 Compiler 编译 `src/` 下全部组件与 hook，除写了 `"use no memo"` 的以外，有被跳过的就失败。开发版的 `useStableProps(props, name)` 在上述组件的函数或对象 prop 引用变化时 `console.warn`，生产构建去掉；比较前后 props 的函数放在 `src/lib/` 并有单元测试。约定写进 CLAUDE.md，设计写进 ARCHITECTURE.md。
-- **风险**：Compiler 看不出「靠重新渲染才拿到新值」的写法：渲染时读模块级的可变变量、调用 `store.get()`、原地修改对象。memo 之后这些地方会显示旧值，改写前先排查一遍。Compiler 自身的问题可以对单个组件用 `"use no memo"` 退出。
-- **验证**：用 CDP 确认后台标题变化时侧栏不再重设 `onclick`、监听器计数不再锯齿式上涨；在隔离 HOME 的开发版里做全界面回归（标签页、分屏、侧栏、各对话框的二次确认按钮、SFTP、撰写栏、全屏、应用菜单、应用锁、设置）。
+- **检查**：`src/compiler.test.ts` 用 Compiler 编译 `src/` 下全部组件与 hook，有被跳过的就失败。开发版的 `useStableProps(props, name)` 在上述组件的函数或对象 prop 引用变化时 `console.warn`，生产构建去掉；比较前后 props 的函数放在 `src/lib/` 并有单元测试。约定写进 CLAUDE.md，设计写进 ARCHITECTURE.md。
+- **风险**：Compiler 自身的问题可以对单个组件用 `"use no memo"` 退出，并在这里记下原因。
+- **验证**：用 CDP 确认后台标题变化时侧栏不再重设 `onclick`、监听器计数不再锯齿式上涨；在隔离 HOME 的开发版里做全界面回归（标签页、分屏、侧栏、各对话框的二次确认按钮、SFTP、撰写栏、全屏、应用菜单、应用锁、设置、切换语言）。
 
 ## 暂不排期（P2）
 
