@@ -40,6 +40,13 @@ const READ_BUFFER: usize = 64 << 10;
 /// How long a read waits for output before checking whether the session has shut down.
 #[cfg(unix)]
 const READ_WAIT: Duration = Duration::from_millis(200);
+/// How long a closed local session takes at most to let go of its output (and its log): its
+/// shell is killed after `KILL_GRACE`, which the reader sees within a read's wait (on Windows,
+/// as the pseudo console closes, before that).
+#[cfg(unix)]
+pub const RELEASED_WITHIN: Duration = KILL_GRACE.saturating_add(READ_WAIT);
+#[cfg(windows)]
+pub const RELEASED_WITHIN: Duration = KILL_GRACE;
 /// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
 /// is paced by how fast the shell reads).
 const INPUT_QUEUE: usize = 16;

@@ -375,8 +375,9 @@ pub fn run() {
         });
 }
 
-/// How long quitting waits for the session logs to be written to the end.
-const LOGS_CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
+/// How long quitting waits for the session logs to be written to the end: until the local
+/// shells that don't exit when their terminal closes have been killed, and a little more.
+const LOGS_CLOSE_TIMEOUT: std::time::Duration = pty::RELEASED_WITHIN.saturating_add(std::time::Duration::from_millis(300));
 
 /// The app is about to end: the sessions close as if their pages were gone, and their logs
 /// are written to the end, which would otherwise lose what they buffer (up to a second of
