@@ -80,6 +80,7 @@
 - **解锁**：`main.tsx` 里 `SettingsProvider` 之下是 `VaultGate`，保险库锁定时只显示 `UnlockScreen`，解锁后才挂载 `AppLockGate` 与其中的 `App`（见「加密保险库」「应用锁」）。
 - **对话框与快捷键**：对话框经 `useDialog`（`hooks/dialogs.ts`）登记到一个栈，只有最上层的响应 Esc 与点击背景；快捷键经 `useShortcuts`（`hooks/shortcuts.ts`）在捕获阶段统一分发，注册时说明何时生效。
 - **样式**：`styles.css` 只按顺序引入 `styles/` 下按区域分的各部分（主题变量在 `theme.css`）。部分的先后就是层叠的先后：后写的规则覆盖先写的同等特异性的规则，所以新规则写进它所属的部分，而部分不按字母排序，也不由各组件自己引入（那样 CSS 的顺序由导入图决定）。
+- **渲染**：组件与 hook 由 React Compiler 自动 memo，写法有约束，见下文「渲染与 memo」。
 - **其他**：纯逻辑模块有 vitest 单元测试（`*.test.ts`）。
 
 ## 设计决策
@@ -189,6 +190,14 @@
 - **何时查**：设置开启时（默认开启）由后端每天最多查一次，启动后稍等片刻再查。上次检查的时间和结果存在 `update.json` 里，只是缓存，读不出就当没查过；一天内多次启动不会重复检查。手动检查随时可以：帮助菜单（macOS 在 App 菜单）的"检查更新…"打开 设置 › 关于，结果显示在那里。每次检查的结果经 `update-status` 发给所有窗口。
 - **怎么提示**：没被跳过的新版本标在通往 设置 › 关于 的路上：Windows 的菜单按钮、帮助子菜单和"检查更新…"项，macOS 侧栏的设置按钮，以及设置导航里的"关于"。运行中新发现的版本在有焦点的窗口播报一次。跳过的版本存在设置里。
 - **Microsoft Store 版**：有包身份（`GetCurrentPackageFullName`）时不检查，相关界面都不显示，更新由 Store 负责。
+
+### 渲染与 memo
+
+- **React Compiler**：构建时经 Babel（`vite.config.ts`）给每个组件与 hook 自动 memo，依赖没变的部分不再重新计算和渲染。它跳过编不了的函数时不报错，那个函数就没有 memo，所以 `compiler.test.ts` 用同样的方式编译 `src/`，任何函数被跳过都失败；真编不了的写 `"use no memo"` 并在注释里说明原因。代价是构建多约 10 秒、产物多约 150 KB（运行时在 React 19 里）。
+- **渲染时不碰 ref**：Compiler 跳过渲染时读写 ref 的组件。要在事件里拿到最新的 props 或 state，用 `useLatest`（在 insertion effect 里赋值，早于所有 layout effect；名字以 `Ref` 结尾，Compiler 才当它是 ref），只在 effect 里调用的回调用 `useEffectEvent`；DOM 的尺寸、元素在事件、effect 或 ResizeObserver 里取得后存进 state；ref 与普通值放在一个对象里时（`useConfirmButton`、`useDialog` 的返回值），整个对象都被当作 ref，在使用处解构。手写的 `useCallback` / `useMemo` 的依赖要与 Compiler 推断的一致（`useLatest` 的 ref 也要列进去），否则整个组件被跳过。
+- **渲染时不读 React 之外的状态**：memo 之后，只有依赖变了才重新计算，靠「每次都重新渲染」才拿到新值的写法会显示旧值。外部 store 经 `useSyncExternalStore` 订阅（`hooks/stores.ts`）；随界面语言变化的文字（快捷键名称、大小与时间的格式、CJK 字体顺序）从 `useLocale` 取得，函数随语言变化，`locale.test.ts` 检查组件不直接引入 `lib/` 里的版本；注册表这类对象在 effect 里查（状态栏的流量表）。
+- **Compiler 尚不支持的语法**：带 `finally` 或没有 `catch` 的 `try`、`try` 里的条件表达式与 `?.` / `??`、`||=` / `??=`、对模块变量的 `++`，哪怕只出现在组件内的事件处理函数里，整个组件也会被跳过。`try` 语句经 `lib/attempt`（含义相同），其余写成显式形式或组件外的函数。
+- **热路径**：标签页 store 可能每秒变化多次（后台程序用 spinner 改标题），`App` 随之重新渲染。Compiler 按依赖 memo，依赖链上某处随标签页变化时（`openProfile` 用到 `useWindows` 的返回值，后者依赖 `tabs`），子组件仍会重新渲染，而且没有提示。所以不该随标签页重新渲染的组件，回调由 `useStableHandlers` 组成一个对象传入（侧栏的 `SidebarHandlers`、标签页的 `PaneHandlers`），开发版的 `useStableProps` 在它们拿到新的函数或 handlers 对象时 `console.warn`。
 
 ## 交互约定
 
