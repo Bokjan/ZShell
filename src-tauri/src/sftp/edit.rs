@@ -12,7 +12,7 @@ use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use ts_rs::TS;
 
 use super::file_name;
@@ -112,14 +112,21 @@ impl Edits {
         if !force && remote_stamp(sftp, remote).await != expected {
             return Err(Error::new("edit.conflict").param("name", file_name(remote)));
         }
-        let contents = tokio::fs::read(&edit.local)
-            .await
-            .map_err(|e| Error::new("transfer.readFailed").param("path", edit.local.display()).detail(e))?;
+        let read_failed = |e| Error::new("transfer.readFailed").param("path", edit.local.display()).detail(e);
+        let mut local = tokio::fs::File::open(&edit.local).await.map_err(read_failed)?;
         let result: anyhow::Result<()> = async {
             // Replaced only once complete, keeping its owner and mode (see `replace`).
             let mut target = RemoteTarget::create(sftp, remote).await?;
             let written: anyhow::Result<()> = async {
-                target.file.write_all(&contents).await?;
+                // Streamed: the file may be large.
+                let mut buf = vec![0; 256 << 10];
+                loop {
+                    let n = local.read(&mut buf).await.map_err(read_failed)?;
+                    if n == 0 {
+                        break;
+                    }
+                    target.file.write_all(&buf[..n]).await?;
+                }
                 target.file.flush().await?;
                 Ok(())
             }
