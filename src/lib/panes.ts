@@ -92,6 +92,8 @@ export interface Tab {
   sidePanel: SidePanel | null;
   /** Something happened in a pane while the tab was in the background (a bell outranks output). */
   attention?: Attention;
+  /** Moving out to another window (see `useWindows`): it neither moves again nor closes meanwhile. */
+  moving?: boolean;
 }
 
 /** What a pane's next session will be: a saved session's protocol may have been changed. */

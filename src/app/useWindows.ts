@@ -8,6 +8,7 @@ import { paneWork, tabTitle, type Arrival, type Pane, type Tab } from "../lib/pa
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import type { Dropped, Point } from "../ipc/bindings";
 import { tabIndexAt, tabStrip } from "../lib/tabStrip";
+import { TabMoves, type Settled } from "../lib/tabMoves";
 import { type TabStore, type TabTransfer } from "../lib/tabs";
 import { useTabStore } from "../hooks/stores";
 import { windows, type DropTarget, type WindowInfo } from "../ipc/windows";
@@ -29,16 +30,6 @@ const TITLE_MS = 500;
 const sameWindows = (a: WindowInfo[], b: WindowInfo[]) =>
   a.length === b.length && a.every((window, i) => window.label === b[i].label && window.title === b[i].title);
 
-/** A tab moving out of this window. */
-interface Moving {
-  /** The window it moves to, once known. */
-  target: string | null;
-  /** Its panes whose sessions haven't moved yet. */
-  waiting: Set<number>;
-  /** Its panes whose sessions couldn't move, which stay here. */
-  stayed: Set<number>;
-}
-
 /**
  * This window among the others: its title, the other windows (where tabs can move to), what
  * it is to show (what it opened for, tabs given to it), tabs moving in and out, and closing it
@@ -54,8 +45,8 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   const { t } = useTranslation();
   const { tabs, activeKey } = useTabStore(store);
   const [others, setOthers] = useState<WindowInfo[]>([]);
-  /** Tabs moving out, by key. */
-  const moving = useRef(new Map<number, Moving>());
+  /** Tabs moving out. */
+  const moves = useRef(new TabMoves());
   const openTabRef = useLatest(openTab);
 
   // While the app lock covers the window, the title shows no session either: it is in the
@@ -132,7 +123,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
    */
   const canMove = useCallback(
     (tab: Tab) =>
-      !moving.current.has(tab.key) &&
+      !tab.moving &&
       tab.panes.every(
         (pane) =>
           paneWork(pane) === null &&
@@ -144,29 +135,18 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
     [sessions],
   );
 
-  /** Every pane of a moving tab has moved or stayed: the tab goes, but for those that stayed. */
+  /** Moves that are over: each tab goes, but for its panes that stayed. */
   const settle = useCallback(
-    (key: number) => {
-      const move = moving.current.get(key);
-      if (!move) return;
-      moving.current.delete(key);
-      const tab = store.get().tabs.find((t) => t.key === key);
-      const gone = tab?.panes.filter((pane) => !move.stayed.has(pane.key)).map((pane) => pane.key) ?? [];
-      if (gone.length > 0) store.dispatch({ type: "close", keys: gone });
-    },
-    [store],
-  );
-
-  /** Pane `paneKey` of a moving tab has moved (or stayed) by now. */
-  const resolve = useCallback(
-    (paneKey: number, stayed: boolean) => {
-      for (const [key, move] of moving.current) {
-        if (!move.waiting.delete(paneKey)) continue;
-        if (stayed) move.stayed.add(paneKey);
-        if (move.waiting.size === 0) settle(key);
+    (settled: Settled[]) => {
+      for (const { key, stayed } of settled) {
+        const tab = store.get().tabs.find((t) => t.key === key);
+        if (!tab) continue;
+        const gone = tab.panes.filter((pane) => !stayed.has(pane.key)).map((pane) => pane.key);
+        store.dispatch({ type: "updateTab", key, patch: { moving: false } });
+        if (gone.length > 0) store.dispatch({ type: "close", keys: gone });
       }
     },
-    [settle],
+    [store],
   );
 
   /**
@@ -203,21 +183,22 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
         sidePanel: tab.sidePanel,
         panes,
       };
-      const move: Moving = { target, waiting: new Set(live), stayed: new Set() };
-      moving.current.set(key, move);
+      moves.current.start(key, target, live);
+      store.dispatch({ type: "updateTab", key, patch: { moving: true } });
       // The other window reconnects those that were waiting to; one connection is enough.
       const closed = tab.panes.filter((pane) => pane.sessionId === null).map((pane) => pane.key);
       closed.forEach((paneKey) => sessions.suspend(paneKey));
       try {
-        if (target === null) move.target = await windows.open({ kind: "tab", tab: transfer, at: null }, dropped);
+        if (target === null) moves.current.opened(key, await windows.open({ kind: "tab", tab: transfer, at: null }, dropped));
         else await windows.sendTab(target, transfer, at);
       } catch (e) {
-        moving.current.delete(key);
+        moves.current.cancel(key);
+        store.dispatch({ type: "updateTab", key, patch: { moving: false } });
         closed.forEach((paneKey) => sessions.resume(paneKey));
         console.error(e);
         return;
       }
-      if (live.length === 0) settle(key);
+      settle(moves.current.started(key));
     },
     [store, sessions, canMove, settle],
   );
@@ -236,18 +217,11 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   );
 
   /** The pane's session has moved to the other window (see `SessionRegistry`). */
-  const movedAway = useCallback((paneKey: number) => resolve(paneKey, false), [resolve]);
+  const movedAway = useCallback((paneKey: number) => settle(moves.current.resolve(paneKey, false)), [settle]);
   // The other window couldn't take the pane's session, which is still here.
-  useWindowEvent("pane-stayed", (paneKey) => resolve(paneKey, true));
+  useWindowEvent("pane-stayed", (paneKey) => settle(moves.current.resolve(paneKey, true)));
   // The window a tab was moving to closed before taking all its sessions: they are still here.
-  useWindowEvent("window-closed", (label) => {
-    for (const [key, move] of moving.current) {
-      if (move.target !== label) continue;
-      move.waiting.forEach((paneKey) => move.stayed.add(paneKey));
-      move.waiting.clear();
-      settle(key);
-    }
-  });
+  useWindowEvent("window-closed", (label) => settle(moves.current.windowClosed(label)));
 
   /**
    * The session of pane `key`, which came from another window, couldn't move here (it ended,

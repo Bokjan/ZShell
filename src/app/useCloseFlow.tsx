@@ -82,13 +82,17 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (chang
   /** Closes tabs or a pane, first asking if any pane is connected or running a program. */
   const requestClose = useCallback(
     async (request: CloseRequest) => {
-      const panes =
+      const found =
         request.kind === "tabs"
           ? store
               .get()
               .tabs.filter((t) => request.keys.includes(t.key))
               .flatMap((tab) => tab.panes.map((pane) => ({ tab, pane })))
           : [findPane(store.get().tabs, request.key)].filter((found) => found !== null);
+      // A tab moving to another window goes from here by itself, as its sessions get there:
+      // closing it would end those the other window was about to take.
+      const panes = found.filter(({ tab }) => !tab.moving);
+      if (panes.length === 0) return;
       const keys = panes.map(({ pane }) => pane.key);
       // Asking whether to keep the forwarding also asks whether to close.
       const ids = panes.flatMap(({ pane }) => (pane.status === "connected" && pane.sessionId != null ? [pane.sessionId] : []));
