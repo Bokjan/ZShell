@@ -405,7 +405,8 @@ where
         dst.write_all(&buf[..n]).await?;
         reporter.advance(n as u64);
     }
-    dst.flush().await?;
+    // Not flushed here: the targets do as they finish. A remote file's flush also has the
+    // server sync it to disk (`fsync@openssh.com`), a round trip and a wait for every file.
     Ok(())
 }
 

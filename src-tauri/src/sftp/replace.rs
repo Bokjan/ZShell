@@ -78,8 +78,15 @@ impl RemoteTarget {
 
     /// Closes the file, checking what the server says (some, like NFS or quotas, report a
     /// failed write only then), and puts it in place. Removes what was written if that fails.
+    /// A file replacing another is synced to the server's disk first (where the server can),
+    /// so that a crash of the server right after can't leave it in place incomplete; a new one
+    /// isn't, as `sftp put` doesn't, which would take a round trip and a wait on every file.
     pub async fn finish(mut self, sftp: &SftpSession) -> Result<()> {
-        if let Err(e) = self.file.shutdown().await {
+        let written = match self.temporary {
+            Some(_) => self.file.flush().await,
+            None => Ok(()),
+        };
+        if let Err(e) = written.and(self.file.shutdown().await) {
             self.remove_incomplete(sftp).await;
             return Err(e.into());
         }

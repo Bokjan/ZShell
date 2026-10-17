@@ -127,7 +127,6 @@ impl Edits {
                     }
                     target.file.write_all(&buf[..n]).await?;
                 }
-                target.file.flush().await?;
                 Ok(())
             }
             .await;
