@@ -67,6 +67,16 @@
 - **处理**：`.github/dependabot.yml` 已经忽略 `windows-core` 和 `windows-future`，两个 PR 已关闭。`windows` 0.100 发布后，Dependabot 会提它的升级。那时手动把三个 crate 一起升到同一版本，按新 API 改用到它们的代码（`sftp/drag/win.rs` 的拖放、`applock/win.rs` 的 Windows Hello、`pty/shell.rs` 的 `WindowsIntegrityPolicy`），交给 Windows 上的 CI 编译。`windows-sys` 0.61 版本号独立，不受影响。
 - **登记**：2026-10-15。
 
+### 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过，等 xterm.js 修复后去掉）
+
+- **现象**：后台标签页里的终端有输出、内容向上滚动时，每一帧都把整屏的行重新生成成 DOM 节点，切到后台也不停。2026-10-17 在 Store 版 3.5.0 上测量：后台终端（222×61，跑着 Claude Code）20 秒里重建约 460 个节点，每次滚动约 50 行；输出越快越多，最多每帧一屏。节点随后被回收，不算泄漏，但持续占用 CPU、制造 GC 压力。
+- **原因**：xterm.js 6.0.0 的 `CoreBrowserTerminal` 在每次滚动时调用 `SelectionService.refresh()`，不管有没有选区；下一帧 `RenderService.handleSelectionChanged` 不看 `_isPaused`，直接交给渲染器；`DomRenderer.handleSelectionChanged` 无条件 `renderRows(0, rows - 1)`。WebGL 渲染器走 `refreshRows`，暂停时不画，所以只有 DOM 渲染器受影响；而后台标签页的终端交出 WebGL 上下文、改用 DOM 渲染器（`src/lib/webgl.ts`），所以每个后台终端都受影响。同一次排查里更大的一处（隐藏的标签页只设了 `visibility: hidden`，xterm.js 的 IntersectionObserver 认为它仍然可见，后台终端一直不暂停，同一终端 20 秒重建约 8.3 万个节点）已经改为把隐藏页移出视口（`styles/terminals.css`），这里剩下的是绕过暂停的这一处。
+- **上游**：[xtermjs/xterm.js#6208](https://github.com/xtermjs/xterm.js/issues/6208)（2026-10-05 提出，未修复）就是这一处，建议的修法和我们的补丁相同；评论里还列出几条同样绕过暂停的路径：暂停时的 `handleBlur` / `handleFocus`、暂停前已排队的刷新、交出 WebGL 后 `DomRenderer.handleResize` 的重画。master 的提交 [`5c2b19f`](https://github.com/xtermjs/xterm.js/commit/5c2b19f2c)（2026-03-12）让 `DomRenderer` 只重画新旧选区所在的行、没有选区时不重画，6.1.0-beta 里的 OffscreenCanvas `WidthCache` 也让这些重画不再逐字测量 DOM，但正式版仍是 6.0.0（2025-12-22），6.1.0 尚无发布日期。
+- **绕过**：`pnpm patch` 给 `@xterm/xterm@6.0.0` 打补丁（`patches/@xterm__xterm@6.0.0.patch`，登记在 `pnpm-workspace.yaml`）：`RenderService.handleSelectionChanged` 在暂停时只记下选区，并置 `_needsSelectionRefresh` 和 `_needsFullRefresh` 后返回，恢复渲染时 `_renderRows` 按记下的状态补画选区（`setRenderer` 用的是同一套标记）。只改 Vite 用的 `lib/xterm.mjs`；那一行压缩代码约 160 KB，所以补丁文件有 300 多 KB。2026-10-17 在 Store 版里用运行时替换同样逻辑验证：后台终端滚动 10 次，原版重画 550 次，补丁后 0 次；后台期间设置的选区切回前台后画在正确的行上。
+- **处理**：升级 xterm.js 时 pnpm 会因补丁打不上而报错。届时看上游是否已在暂停时推迟 `handleSelectionChanged`：已修复就删掉 `patches/` 和 `pnpm-workspace.yaml` 里的 `patchedDependencies`；还没有就在新版本上重做补丁。都用下面的方法确认后台终端滚动时不再重建行。`@xterm/addon-*` 要和 xterm.js 一起升到配套的版本。
+- **验证方法**：Store 版要带调试端口启动，得在包的上下文里先启动 `cmd`，由它设置环境变量再启动应用（`Invoke-CommandInDesktopPackage` 不会传递调用方的环境变量）：`Invoke-CommandInDesktopPackage -PackageFamilyName BoyinChen.ZShell_0mrn21pkbrd8j -AppId ZShell -Command cmd.exe -Args '/c set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333&& start "" "<安装目录>\zshell.exe"'`。之后用 Node 直接连 `/json/list` 里的 `webSocketDebuggerUrl`（不带 Origin，WebView2 会拒绝带 Origin 的连接），用 `Runtime.evaluate` 在后台终端的 `.xterm-rows` 上挂 MutationObserver 计数，同时从 React fiber 找到它的 `Terminal`，订阅 `onScroll` 对照；没有输出时可以用 `term.scrollLines()` 触发滚动。Chrome 要看 DevTools，用 `chrome://inspect` 添加 `localhost:9333`。
+- **登记**：2026-10-17。
+
 ## 未查明
 
 ### macOS：退出全屏后窗口不见了（偶现）

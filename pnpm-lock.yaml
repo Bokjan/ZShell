@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@xterm/xterm@6.0.0': 726c12c2f05b766ee6454fc4ee0f692a57636d830a8edc2a3b9de217bab53c8e
+
 importers:
 
   .:
@@ -40,7 +43,7 @@ importers:
         version: 0.19.0
       '@xterm/xterm':
         specifier: ^6.0.0
-        version: 6.0.0
+        version: 6.0.0(patch_hash=726c12c2f05b766ee6454fc4ee0f692a57636d830a8edc2a3b9de217bab53c8e)
       i18next:
         specifier: ^26.4.4
         version: 26.4.4(typescript@7.0.2)
@@ -1004,7 +1007,7 @@ snapshots:
 
   '@xterm/addon-webgl@0.19.0': {}
 
-  '@xterm/xterm@6.0.0': {}
+  '@xterm/xterm@6.0.0(patch_hash=726c12c2f05b766ee6454fc4ee0f692a57636d830a8edc2a3b9de217bab53c8e)': {}
 
   assertion-error@2.0.1: {}
 

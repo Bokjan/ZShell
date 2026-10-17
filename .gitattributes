@@ -1,0 +1,2 @@
+# Applied byte for byte by pnpm: keep them out of line-ending conversion.
+/patches/** -text
