@@ -4,8 +4,9 @@
 //! frontend through a [`tauri::ipc::Channel`], reports lifecycle [`SessionEvent`]s, and
 //! consumes [`SessionInput`] (keystrokes, resizes) from the frontend.
 //!
-//! [`SessionManager::remove`] is the only way a session closes (the tab closing, its page
-//! reloading, its window going away): it releases what the session holds, then aborts its
+//! A session closes only through [`SessionManager`]: [`SessionManager::remove`] as its tab
+//! closes, [`SessionManager::remove_webview`] as its page reloads, its window goes away or the
+//! app quits, both the same way: it releases what the session holds, then aborts its
 //! task. What a session holds beyond its task registers its release on the session's
 //! [`Lifetime`], which also runs when the session ends by itself ([`TermIo::finish`]) or its
 //! task is dropped, whichever comes first, so nothing depends on the order of these.
