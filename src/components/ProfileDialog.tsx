@@ -84,7 +84,7 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
   const [ports, setPorts] = useState<SerialPortInfo[] | null>(null);
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
-  const deleteButton = useConfirmButton();
+  const { ref: deleteRef, armed: deleteArmed, setArmed: setDeleteArmed, onBlur: onDeleteBlur } = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
   const { protocol, authType } = form;
   const ssh = protocol === "ssh";
@@ -169,8 +169,8 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
 
   const remove = async () => {
     if (!profile) return;
-    if (!deleteButton.armed) {
-      deleteButton.setArmed(true);
+    if (!deleteArmed) {
+      setDeleteArmed(true);
       return;
     }
     await saving.submit(async () => {
@@ -268,15 +268,8 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
 
           <footer>
             {profile && (
-              <button
-                type="button"
-                className="danger"
-                ref={deleteButton.ref}
-                onClick={remove}
-                onBlur={deleteButton.onBlur}
-                disabled={saving.busy}
-              >
-                {deleteButton.armed ? t("profile.deleteConfirm") : t("common.delete")}
+              <button type="button" className="danger" ref={deleteRef} onClick={remove} onBlur={onDeleteBlur} disabled={saving.busy}>
+                {deleteArmed ? t("profile.deleteConfirm") : t("common.delete")}
               </button>
             )}
             <span className="grow" />

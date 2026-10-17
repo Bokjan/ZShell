@@ -112,7 +112,7 @@ export function useCloseFlow(store: TabStore, settings: Settings, update: (setti
       }
       closePanes(keys);
     },
-    [store, closePanes],
+    [store, closePanes, settingsRef],
   );
 
   /** Closes a pane of a split tab, otherwise the tab. */

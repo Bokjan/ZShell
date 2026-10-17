@@ -92,7 +92,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     coverNow();
     void appLock.lock().then(setStatus, console.error);
     return true;
-  }, [coverNow]);
+  }, [coverNow, statusRef]);
   const confirmClose = useCallback((close: PendingClose) => setClosing(close), []);
   const clearPendingClose = useCallback(() => setClosing(null), []);
 

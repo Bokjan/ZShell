@@ -92,7 +92,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
         taking.current--;
         closeIfEmpty();
       });
-  }, [store, closeIfEmpty]);
+  }, [store, closeIfEmpty, openTabRef]);
   useEffect(take, [take]);
   useWindowEvent("tab-received", take);
 

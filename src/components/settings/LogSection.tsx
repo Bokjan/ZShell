@@ -29,7 +29,7 @@ export function LogSection({
   const { t } = useTranslation();
   const [directory, setDirectory] = useState("");
   const [summary, setSummary] = useState<{ count: number; bytes: number } | null>(null);
-  const deleteButton = useConfirmButton();
+  const { ref: deleteRef, armed: deleteArmed, setArmed: setDeleteArmed, onBlur: onDeleteBlur } = useConfirmButton();
   // Saved trimmed, when the field is left.
   const [fileName, setFileName] = useFieldText(settings.fileName, (text, value) => text.trim() === value);
 
@@ -50,11 +50,11 @@ export function LogSection({
   };
 
   const deleteAll = () => {
-    if (!deleteButton.armed) {
-      deleteButton.setArmed(true);
+    if (!deleteArmed) {
+      setDeleteArmed(true);
       return;
     }
-    deleteButton.setArmed(false);
+    setDeleteArmed(false);
     logs.delete().then(refresh, console.error);
   };
 
@@ -140,11 +140,11 @@ export function LogSection({
           type="button"
           className="danger"
           disabled={!summary || summary.count === 0}
-          ref={deleteButton.ref}
+          ref={deleteRef}
           onClick={deleteAll}
-          onBlur={deleteButton.onBlur}
+          onBlur={onDeleteBlur}
         >
-          {deleteButton.armed ? t("settings.logDeleteAllConfirm", { count: summary?.count ?? 0 }) : t("settings.logDeleteAll")}
+          {deleteArmed ? t("settings.logDeleteAllConfirm", { count: summary?.count ?? 0 }) : t("settings.logDeleteAll")}
         </button>
       </div>
     </Section>

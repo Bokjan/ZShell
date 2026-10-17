@@ -81,7 +81,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const setLogs = (patch: Partial<LogSettings>) => update({ ...settings, logs: { ...settings.logs, ...patch } });
   const [licensesOpen, setLicensesOpen] = useState(false);
   const updates = useUpdates();
-  const resetButton = useConfirmButton();
+  const { ref: resetRef, armed: resetArmed, setArmed: setResetArmed, onBlur: onResetBlur } = useConfirmButton();
   const [query, setQuery] = useState("");
   const queryRef = useLatest(query);
   // The sections with settings matching the search: all of them without one.
@@ -140,7 +140,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const applySearch = useCallback(() => {
     const next = filterSettings(contentRef.current!, queryRef.current);
     setShown((prev) => (prev.join() === next.join() ? prev : next));
-  }, []);
+  }, [queryRef]);
 
   const restore = useCallback(() => {
     const content = contentRef.current!;
@@ -213,11 +213,11 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   };
 
   const reset = () => {
-    if (!resetButton.armed) {
-      resetButton.setArmed(true);
+    if (!resetArmed) {
+      setResetArmed(true);
       return;
     }
-    resetButton.setArmed(false);
+    setResetArmed(false);
     // Except the language: whoever chose one may not read the default.
     update({ ...DEFAULT_SETTINGS, language: settings.language });
   };
@@ -261,8 +261,8 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
               ))}
             </ul>
             <footer>
-              <button type="button" ref={resetButton.ref} onClick={reset} onBlur={resetButton.onBlur} title={t("settings.resetHint")}>
-                {resetButton.armed ? t("settings.resetConfirm") : t("settings.reset")}
+              <button type="button" ref={resetRef} onClick={reset} onBlur={onResetBlur} title={t("settings.resetHint")}>
+                {resetArmed ? t("settings.resetConfirm") : t("settings.reset")}
               </button>
             </footer>
           </nav>

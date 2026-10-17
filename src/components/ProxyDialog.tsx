@@ -44,7 +44,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [command, setCommand] = useState(proxy?.command ?? "");
-  const deleteButton = useConfirmButton();
+  const { ref: deleteRef, armed: deleteArmed, setArmed: setDeleteArmed, onBlur: onDeleteBlur } = useConfirmButton();
   const [error, setError] = useState<string | null>(null);
   // Saving and deleting, one at a time.
   const saving = useSubmitting();
@@ -101,8 +101,8 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
 
   const remove = async () => {
     if (!proxy) return;
-    if (!deleteButton.armed) {
-      deleteButton.setArmed(true);
+    if (!deleteArmed) {
+      setDeleteArmed(true);
       return;
     }
     await saving.submit(async () => {
@@ -111,7 +111,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
         void directory.reload();
         onClose();
       } catch (err) {
-        deleteButton.setArmed(false);
+        setDeleteArmed(false);
         setError(errorMessage(err));
       }
     });
@@ -211,12 +211,12 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
             <button
               type="button"
               className="danger"
-              ref={deleteButton.ref}
+              ref={deleteRef}
               onClick={() => void remove()}
-              onBlur={deleteButton.onBlur}
+              onBlur={onDeleteBlur}
               disabled={saving.busy}
             >
-              {deleteButton.armed ? t("profile.deleteConfirm") : t("common.delete")}
+              {deleteArmed ? t("profile.deleteConfirm") : t("common.delete")}
             </button>
           )}
           <span className="grow" />

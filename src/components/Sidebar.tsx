@@ -102,7 +102,9 @@ export function Sidebar(props: Props) {
   const { settings } = useSettings();
   const state = useDirectory();
   const { profiles, folders } = state;
-  const update = props.appMenu.update;
+  // Taken apart here: React Compiler treats an object holding a ref as a ref, and reading any of
+  // it while rendering would keep the whole component from being compiled.
+  const { ref: appMenuRef, open: appMenuOpen, update, toggle: toggleAppMenu } = props.appMenu;
   const [width, setWidth] = useState(storedWidth);
   const widthRef = useLatest(width);
   const asideRef = useRef<HTMLElement>(null);
@@ -509,20 +511,20 @@ export function Sidebar(props: Props) {
             keeps the focus where it was (a terminal), which the menu's actions act on and the
             focus goes back to. */}
         <button
-          ref={props.appMenu.ref}
+          ref={appMenuRef}
           type="button"
           className="sidebar-brand app-menu-button"
           aria-label={menuButtonLabel}
           title={menuButtonLabel}
           aria-haspopup="menu"
-          aria-expanded={props.appMenu.open}
+          aria-expanded={appMenuOpen}
           onMouseDown={(e) => e.preventDefault()}
           // Opened from the keyboard (Enter, Space) when the click has no pointer position.
-          onClick={(e) => props.appMenu.toggle(e.detail === 0)}
+          onClick={(e) => toggleAppMenu(e.detail === 0)}
           onKeyDown={(e) => {
             if (e.key !== "ArrowDown") return;
             e.preventDefault();
-            if (!props.appMenu.open) props.appMenu.toggle(true);
+            if (!appMenuOpen) toggleAppMenu(true);
           }}
         >
           <img src={appIcon} alt="" />
