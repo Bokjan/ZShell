@@ -19,6 +19,7 @@ import {
   ECHO_MS,
   LOGIN_COMMAND_IDLE_MS,
   PaneSession,
+  RESIZE_MS,
   type SessionConfig,
   type SessionEvents,
   type TerminalPort,
@@ -39,7 +40,7 @@ interface Opened {
   output(text: string): void;
   event(event: SessionEvent): void;
   /** Settles the call: a session, or an error. */
-  resolve(): Session & { writes: string[]; acks: number[]; closed: boolean };
+  resolve(): Session & { writes: string[]; acks: number[]; sizes: [number, number][]; closed: boolean };
   reject(error: unknown): void;
 }
 
@@ -597,6 +598,27 @@ describe("flow control", () => {
     const session = opened[0].resolve();
     await settle();
     expect(session.acks).toEqual([ACK_BATCH + 1]);
+  });
+});
+
+describe("resizing", () => {
+  it("passes on a size at once, then at most every interval while it keeps changing, and the last one", async () => {
+    const { pane, opened } = setup();
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    pane.resize(100, 30);
+    pane.resize(101, 30);
+    pane.resize(102, 30);
+    expect(session.sizes).toEqual([[100, 30]]);
+    await vi.advanceTimersByTimeAsync(RESIZE_MS);
+    expect(session.sizes).toEqual([
+      [100, 30],
+      [102, 30],
+    ]);
+    await vi.advanceTimersByTimeAsync(RESIZE_MS);
+    pane.resize(90, 20);
+    expect(session.sizes[session.sizes.length - 1]).toEqual([90, 20]);
   });
 });
 

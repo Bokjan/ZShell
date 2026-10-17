@@ -114,6 +114,12 @@ export const ECHO_MS = 300;
 export const BELL_MS = 1000;
 
 /**
+ * A new size goes to the session at most this often: each makes the remote program draw
+ * its screen again, and dragging the window's edge resizes on every frame.
+ */
+export const RESIZE_MS = 100;
+
+/**
  * Whether the text before the cursor looks like a shell prompt: not empty, and not ending
  * like the questions that come before one (passwords and passphrases end with ":", yes/no
  * questions with "?"), so `sudo -i` gets its password before the next command.
@@ -178,6 +184,9 @@ export class PaneSession {
   private nudgedAt = -Infinity;
   /** When the bell last rang (`performance.now()`). */
   private bellAt = -Infinity;
+  /** While set, sizes wait (see `RESIZE_MS`); the last one that did, to pass on then. */
+  private resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  private waitingSize: { cols: number; rows: number } | undefined;
 
   constructor(
     private readonly port: TerminalPort,
@@ -273,11 +282,25 @@ export class PaneSession {
     this.events.bell(now - this.nudgedAt < ECHO_MS);
   }
 
-  /** The terminal's new size. Not while a screen from another window is drawn: at its size. */
+  /**
+   * The terminal's new size. Not while a screen from another window is drawn: at its size.
+   * Passed on at most every `RESIZE_MS` while it keeps changing (dragging the window's edge),
+   * the last one always.
+   */
   resize(cols: number, rows: number) {
     if (this.arriving) return;
     this.nudgedAt = performance.now();
+    if (this.resizeTimer !== undefined) {
+      this.waitingSize = { cols, rows };
+      return;
+    }
     void this.session?.resize(cols, rows);
+    this.resizeTimer = setTimeout(() => {
+      this.resizeTimer = undefined;
+      const size = this.waitingSize;
+      this.waitingSize = undefined;
+      if (size) this.resize(size.cols, size.rows);
+    }, RESIZE_MS);
   }
 
   /**
@@ -323,6 +346,7 @@ export class PaneSession {
 
   dispose() {
     this.disposed = true;
+    clearTimeout(this.resizeTimer);
     this.cancelRetry();
     this.stopLoginCommands();
     window.removeEventListener("online", this.onOnline);
