@@ -195,6 +195,7 @@ pub fn run() {
             app.manage(Edits::new(scratch_dir(app.handle())?.join("ZShell-edit")));
             #[cfg(target_os = "linux")]
             {
+                desktop::read_monospace_font_ahead();
                 window::watch_buttons(app.handle());
                 window::watch_theme(app.handle());
             }

@@ -1,6 +1,8 @@
 //! The desktop's settings on Linux, read from the settings portal (`org.freedesktop.portal.Settings`)
 //! as GTK 4 and libadwaita apps read them: the color scheme, and GNOME's monospace font.
 
+use std::sync::Mutex;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use zbus::zvariant::{OwnedValue, Value};
@@ -32,6 +34,25 @@ fn read(namespace: &str, key: &str) -> Option<OwnedValue> {
 /// preference, 1 to prefer dark, 2 to prefer light.
 pub fn prefers_dark() -> bool {
     read("org.freedesktop.appearance", "color-scheme").and_then(|value| u32::try_from(value).ok()) == Some(1)
+}
+
+/// The monospace font being read as the app starts (see [`read_monospace_font_ahead`]).
+static AHEAD: Mutex<Option<JoinHandle<Option<String>>>> = Mutex::new(None);
+
+/// Starts reading the monospace font as the app starts: the first window waits for it before
+/// it shows anything, and the portal starts on demand.
+pub fn read_monospace_font_ahead() {
+    *AHEAD.lock().unwrap() = Some(std::thread::spawn(monospace_font));
+}
+
+/// [`monospace_font`]: read ahead for the first window, then read again for each, as it may
+/// have changed.
+pub fn current_monospace_font() -> Option<String> {
+    let ahead = AHEAD.lock().unwrap().take();
+    match ahead {
+        Some(reading) => reading.join().ok().flatten(),
+        None => monospace_font(),
+    }
 }
 
 /// The font families of GNOME's monospace font (`Ubuntu Sans Mono 11` on Ubuntu), without its

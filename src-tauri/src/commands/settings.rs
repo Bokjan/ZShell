@@ -24,7 +24,7 @@ pub fn settings_get(store: State<'_, SettingsStore>) -> Settings {
 #[tauri::command]
 pub async fn system_monospace_font() -> Option<String> {
     #[cfg(target_os = "linux")]
-    return tauri::async_runtime::spawn_blocking(crate::desktop::monospace_font).await.ok().flatten();
+    return tauri::async_runtime::spawn_blocking(crate::desktop::current_monospace_font).await.ok().flatten();
     #[cfg(not(target_os = "linux"))]
     None
 }
