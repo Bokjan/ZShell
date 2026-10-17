@@ -5,6 +5,7 @@ import { DialogsHidden } from "../hooks/dialogs";
 import { paneProfile } from "../lib/directory";
 import { useDirectory } from "../hooks/stores";
 import { useLatest } from "../hooks/latest";
+import { useStableProps } from "../hooks/stableProps";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../hooks/drag";
 import { dividers, equalize, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, moveDivider, paneRects, type Divider, type Size } from "../lib/layout";
@@ -78,7 +79,9 @@ export const TabPage = memo(TabPageView, (a, b) => {
   );
 });
 
-function TabPageView({ tab, active, syncing, inScope, flashing, refused, handlers: h }: Props) {
+function TabPageView(props: Props) {
+  useStableProps("TabPage", props, ["handlers"]);
+  const { tab, active, syncing, inScope, flashing, refused, handlers: h } = props;
   const { t } = useTranslation();
   // The panes' saved sessions, which their appearance and panels come from.
   const { profiles } = useDirectory();

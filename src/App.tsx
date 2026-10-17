@@ -23,7 +23,7 @@ import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog"
 import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import type { SectionId } from "./components/settings/common";
-import { Sidebar, type OpenMode } from "./components/Sidebar";
+import { Sidebar, type OpenMode, type SidebarHandlers } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar } from "./components/TabBar";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
@@ -448,6 +448,16 @@ function App() {
     if (path) revealItemInDir(path).catch(console.error);
   };
 
+  const sidebarHandlers = useStableHandlers<SidebarHandlers>({
+    onOpen: openProfile,
+    onOpenAll: openAll,
+    onQuickConnect: quickConnect,
+    onEdit: (profile) => setEditing({ profile }),
+    onNew: (folder) => setEditing({ profile: null, defaults: { folder } }),
+    onImportSshConfig: () => setImporting(true),
+    onSettings: () => openSettings(),
+  });
+
   const handlers = useStableHandlers<PaneHandlers>({
     sessions,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
@@ -487,17 +497,7 @@ function App() {
 
   return (
     <div className={`app${fullScreen.on ? " full-screen" : ""}`}>
-      <Sidebar
-        searchFocusKey={searchFocusKey}
-        onOpen={openProfile}
-        onOpenAll={openAll}
-        onQuickConnect={quickConnect}
-        onEdit={(profile) => setEditing({ profile })}
-        onNew={(folder) => setEditing({ profile: null, defaults: { folder } })}
-        onImportSshConfig={() => setImporting(true)}
-        onSettings={() => openSettings()}
-        appMenu={appMenu.button}
-      />
+      <Sidebar searchFocusKey={searchFocusKey} handlers={sidebarHandlers} appMenu={appMenu.button} />
       <main>
         <TabBar
           tabs={tabs}

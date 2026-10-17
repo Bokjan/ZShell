@@ -36,6 +36,7 @@ import { storedString, storeString } from "../lib/storage";
 import { DRAG_REGION } from "../hooks/titleBar";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { useLatest } from "../hooks/latest";
+import { useStableProps } from "../hooks/stableProps";
 import { useLocale } from "../hooks/locale";
 import { ChevronIcon, DisclosureIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -52,9 +53,8 @@ import { SessionImportDialog } from "./SessionImportDialog";
  */
 export type OpenMode = "connect" | "newTab" | "splitRight" | "splitDown" | "newWindow";
 
-interface Props {
-  /** Changes when the search shortcut is pressed, to focus the search box. */
-  searchFocusKey: number;
+/** What the sidebar asks of the app. One object that stays the same (see `useStableHandlers`). */
+export interface SidebarHandlers {
   onOpen(profile: Profile, mode: OpenMode): void;
   onOpenAll(folder: Folder): void;
   onQuickConnect(target: QuickTarget): void;
@@ -63,6 +63,12 @@ interface Props {
   onNew(folder: string | undefined): void;
   onImportSshConfig(): void;
   onSettings(): void;
+}
+
+interface Props {
+  /** Changes when the search shortcut is pressed, to focus the search box. */
+  searchFocusKey: number;
+  handlers: SidebarHandlers;
   /**
    * The app menu, opened by the app's icon and name outside macOS; a newer version marks it,
    * and on macOS the settings button, where the check is.
@@ -97,8 +103,15 @@ const storeWidth = (width: number) => storeString(WIDTH_KEY, String(width));
 /** Where a dragged row would land: relative to a row, or at the end of the top level. */
 type Drop = { key: string; position: "before" | "after" | "into" } | { key: null };
 
+/**
+ * The saved sessions and folders, with search and quick connect. It doesn't depend on the tabs,
+ * so it shouldn't render again as they change (titles change several times a second while a
+ * program shows a spinner): its handlers come as one stable object, checked in development.
+ */
 export function Sidebar(props: Props) {
-  const { searchFocusKey, onOpen, onOpenAll, onQuickConnect, onEdit, onNew } = props;
+  useStableProps("Sidebar", props, ["handlers"]);
+  const { searchFocusKey, handlers, appMenu } = props;
+  const { onOpen, onOpenAll, onQuickConnect, onEdit, onNew, onImportSshConfig, onSettings } = handlers;
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
   const { settings } = useSettings();
@@ -106,7 +119,7 @@ export function Sidebar(props: Props) {
   const { profiles, folders } = state;
   // Taken apart here: React Compiler treats an object holding a ref as a ref, and reading any of
   // it while rendering would keep the whole component from being compiled.
-  const { ref: appMenuRef, open: appMenuOpen, update, toggle: toggleAppMenu } = props.appMenu;
+  const { ref: appMenuRef, open: appMenuOpen, update, toggle: toggleAppMenu } = appMenu;
   const [width, setWidth] = useState(storedWidth);
   const widthRef = useLatest(width);
   const asideRef = useRef<HTMLElement>(null);
@@ -283,7 +296,7 @@ export function Sidebar(props: Props) {
       x: rect.left,
       y: rect.bottom + 2,
       items: [
-        { label: t("sidebar.importSshConfig"), onSelect: props.onImportSshConfig },
+        { label: t("sidebar.importSshConfig"), onSelect: onImportSshConfig },
         { label: t("sidebar.importSessions"), onSelect: () => void importSessions() },
         "separator",
         { label: t("sidebar.exportSessions"), disabled: profiles.length === 0, onSelect: () => setExporting(true) },
@@ -542,7 +555,7 @@ export function Sidebar(props: Props) {
                 ? t("sidebar.settingsUpdate", { shortcut: shortcutLabel("settings"), version: update.version })
                 : t("sidebar.settings", { shortcut: shortcutLabel("settings") })
             }
-            onClick={props.onSettings}
+            onClick={onSettings}
           >
             <SettingsIcon />
             {isMac && update && <DotIcon size={6} />}
