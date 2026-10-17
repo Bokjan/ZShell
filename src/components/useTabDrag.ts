@@ -39,8 +39,8 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
   // window, the tab goes where the backend says it is over when dropped (another window's tab
   // bar, or a window of its own); Escape puts it back.
   const startDrag = (e: ReactMouseEvent, key: number) => {
-    stopRef.current?.();
     if (e.button !== 0) return;
+    stopRef.current?.();
     e.preventDefault();
     const grab = { x: e.clientX, y: e.clientY };
     // Names the drag for the backend, which ignores answers that come back after it ended.
@@ -53,6 +53,8 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
     let asking = false;
     let askAgain = false;
     let ended = false;
+    // The tab bar went with the drag: nothing is left to drop the tab out of.
+    let gone = false;
     // Where the pointer last was: outside the page or not.
     let outside = false;
     // The system's drag took over (Wayland): the page hears no more of the mouse, and waits
@@ -138,7 +140,7 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
       setDragging(null);
       setLeaving(false);
       if (!movable) return;
-      void tabDrag.end(id, dropped, outside).then((target) => target && onDropOut(key, target, grab), console.error);
+      void tabDrag.end(id, dropped, outside).then((target) => target && !gone && onDropOut(key, target, grab), console.error);
     };
     const up = (ev: MouseEvent) => {
       outside = isOutside(ev);
@@ -147,13 +149,12 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
     window.addEventListener("keydown", keyDown, true);
-    // Gone with the tab bar mid-drag: its listeners go too.
+    // Gone with the tab bar mid-drag: its listeners go too, and the backend hears that the drag
+    // ended, which takes down the drop marker another window may show.
     stopRef.current = () => {
-      ended = true;
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      window.removeEventListener("keydown", keyDown, true);
       void stopNative?.then((f) => f());
+      gone = true;
+      finish(false);
     };
   };
 
