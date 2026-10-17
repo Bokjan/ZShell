@@ -26,6 +26,14 @@ describe("lib", () => {
     );
     expect(found).toEqual([]);
   });
+  it("depends on no layer above it, which would bring React and Tauri in through it", () => {
+    const found = Object.entries(lib).flatMap(([path, source]) =>
+      imports(source)
+        .filter((module) => /^\.\.\/(hooks|components|app)\//.test(module) || /^\.\.\/(App|main)\b/.test(module))
+        .map((module) => `${path}: ${module}`),
+    );
+    expect(found).toEqual([]);
+  });
 });
 
 describe("ipc", () => {
@@ -45,7 +53,16 @@ describe("ipc", () => {
     expect(found).toEqual([]);
   });
 
-  it("calls commands only through `call`, which checks their names", () => {
+  it("depends only on lib, below the React layers", () => {
+    const found = Object.entries(ipc).flatMap(([path, source]) =>
+      imports(source)
+        .filter((module) => /^\.\.\/(hooks|components|app)\//.test(module) || /^\.\.\/(App|main)\b/.test(module))
+        .map((module) => `${path}: ${module}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("calls commands only through `call`, which checks their names and arguments", () => {
     const found = Object.entries(ipc)
       .filter(([path, source]) => path !== "./ipc/call.ts" && /\binvoke\b/.test(source))
       .map(([path]) => path);

@@ -43,6 +43,8 @@ use ts_rs::TS;
 use crate::error::Error;
 use crate::zmodem;
 pub use flow::Flow;
+#[cfg(test)]
+pub use flow::ACK_BATCH;
 pub use lifetime::Lifetime;
 pub use manager::SessionManager;
 pub use sink::SessionSink;

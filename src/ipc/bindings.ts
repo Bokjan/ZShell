@@ -1,6 +1,8 @@
 // Generated from the Rust types and constants by `cargo test` (src-tauri/src/bindings.rs); do not edit.
 // After changing them, run `UPDATE_BINDINGS=1 cargo test bindings` in src-tauri.
 
+import type { Channel } from "@tauri-apps/api/core";
+
 /** The `code` of a `CommandError`. */
 export type ErrorCode =
   | "appLock.busy"
@@ -938,6 +940,13 @@ created: boolean, };
 export type WindowButton = "minimize" | "maximize" | "close";
 
 /**
+ * What a window is to show: a tab moved out of another window (dropped `at` that many CSS
+ * pixels from the left of the page, if dragged there), or a saved session to open. The tab
+ * is the frontend's (its panes, their layout and state), passed on without being read.
+ */
+export type WindowContent = { "kind": "tab", tab: unknown, at: number | null, } | { "kind": "profile", profileId: string, title: string, };
+
+/**
  * Another window, as the tab menu lists it.
  */
 export type WindowInfo = { label: string, title: string, };
@@ -979,123 +988,126 @@ export type Events = {
   "windows-changed": null;
 };
 
-/** The commands the frontend can call (see `commands/`). */
-export type Command =
-  | "app_bell"
-  | "app_busy_count"
-  | "app_lock_configure"
-  | "app_lock_lock"
-  | "app_lock_status"
-  | "app_lock_unlock"
-  | "app_menu_set"
-  | "app_menu_set_label"
-  | "app_quit"
-  | "config_directory"
-  | "config_set_aside"
-  | "credential_store_available"
-  | "downloads_directory"
-  | "folder_delete"
-  | "folder_save"
-  | "folders_list"
-  | "forward_carry"
-  | "forward_keep"
-  | "forward_keep_candidates"
-  | "forward_start"
-  | "forward_stop"
-  | "home_directory"
-  | "known_hosts_find"
-  | "known_hosts_list"
-  | "known_hosts_path"
-  | "known_hosts_remove"
-  | "local_shell_name"
-  | "local_username"
-  | "locale_get"
-  | "logs_count"
-  | "logs_delete"
-  | "logs_directory"
-  | "logs_summary"
-  | "profile_delete"
-  | "profile_duplicate"
-  | "profile_save"
-  | "profile_set_forwards"
-  | "profiles_list"
-  | "proxies_list"
-  | "proxy_delete"
-  | "proxy_save"
-  | "quick_commands_get"
-  | "quick_commands_set"
-  | "screen_reader_running"
-  | "serial_ports"
-  | "session_ack"
-  | "session_adopt"
-  | "session_break"
-  | "session_close"
-  | "session_foreground"
-  | "session_handover"
-  | "session_log_start"
-  | "session_log_stop"
-  | "session_open"
-  | "session_resize"
-  | "session_write"
-  | "session_write_bytes"
-  | "sessions_export"
-  | "sessions_import"
-  | "sessions_import_scan"
-  | "settings_get"
-  | "settings_set"
-  | "sftp_chmod"
-  | "sftp_download"
-  | "sftp_download_as"
-  | "sftp_drag_out"
-  | "sftp_edit_open"
-  | "sftp_edit_reopen"
-  | "sftp_edit_stop"
-  | "sftp_edit_upload"
-  | "sftp_list"
-  | "sftp_mkdir"
-  | "sftp_open"
-  | "sftp_remove"
-  | "sftp_rename"
-  | "sftp_shell_dir"
-  | "sftp_upload"
-  | "ssh_config_default_path"
-  | "ssh_config_import"
-  | "ssh_config_scan"
-  | "ssh_default_key_path"
-  | "ssh_key_file_exists"
-  | "system_monospace_font"
-  | "tab_drag_end"
-  | "tab_drag_move"
-  | "transfer_cancel"
-  | "tree_move"
-  | "tree_order"
-  | "update_check"
-  | "update_status"
-  | "vault_reset"
-  | "vault_set_protection"
-  | "vault_status"
-  | "vault_try_unlock"
-  | "vault_unlock"
-  | "window_busy_reply"
-  | "window_buttons"
-  | "window_close_empty"
-  | "window_file_dialog"
-  | "window_list"
-  | "window_open"
-  | "window_pane_stayed"
-  | "window_send_tab"
-  | "window_set_drag_area"
-  | "window_set_maximize_button"
-  | "window_set_snapped_border_color"
-  | "window_set_tab_bar"
-  | "window_set_theme"
-  | "window_set_title"
-  | "window_system_menu"
-  | "window_take"
-  | "window_title_double_click"
-  | "zmodem_cancel"
-  | "zmodem_save_to"
-  | "zmodem_send_files";
+/** The commands the frontend can call (see `commands/`): the arguments each takes, and what it returns. */
+export type Commands = {
+  app_bell: { args: Record<string, never>; result: void };
+  app_busy_count: { args: Record<string, never>; result: number };
+  app_lock_configure: { args: { settings: AppLockSettings }; result: AppLockStatus };
+  app_lock_lock: { args: Record<string, never>; result: AppLockStatus };
+  app_lock_status: { args: { method: boolean }; result: AppLockStatus };
+  app_lock_unlock: { args: { anyway: boolean }; result: AppLockStatus };
+  app_menu_set: { args: { sections: NativeMenuSection[] }; result: void };
+  app_menu_set_label: { args: { id: string; label: string }; result: void };
+  app_quit: { args: Record<string, never>; result: void };
+  config_directory: { args: Record<string, never>; result: string };
+  config_set_aside: { args: Record<string, never>; result: SetAsideFile[] };
+  credential_store_available: { args: Record<string, never>; result: boolean };
+  downloads_directory: { args: Record<string, never>; result: string };
+  folder_delete: { args: { id: string }; result: void };
+  folder_save: { args: { folder: Folder }; result: Folder };
+  folders_list: { args: Record<string, never>; result: Folder[] };
+  forward_carry: { args: { id: number }; result: string[] };
+  forward_keep: { args: { ids: number[] }; result: void };
+  forward_keep_candidates: { args: { ids: number[] }; result: ForwardRule[] };
+  forward_start: { args: { id: number; rule: ForwardRule }; result: void };
+  forward_stop: { args: { id: number; ruleId: string }; result: void };
+  home_directory: { args: Record<string, never>; result: string | null };
+  known_hosts_find: { args: { query: string }; result: number[] };
+  known_hosts_list: { args: Record<string, never>; result: KnownHost[] };
+  known_hosts_path: { args: Record<string, never>; result: string | null };
+  known_hosts_remove: { args: { line: number; text: string }; result: void };
+  local_shell_name: { args: Record<string, never>; result: string | null };
+  local_username: { args: Record<string, never>; result: string };
+  locale_get: { args: Record<string, never>; result: Locales };
+  logs_count: { args: { profileId: string }; result: number };
+  logs_delete: { args: { profileId?: string | null }; result: number };
+  logs_directory: { args: { create: boolean }; result: string };
+  logs_summary: { args: Record<string, never>; result: LogSummary };
+  profile_delete: { args: { id: string }; result: void };
+  profile_duplicate: { args: { id: string; name: string }; result: Profile };
+  profile_save: { args: { profile: Profile; password?: string | null }; result: Profile };
+  profile_set_forwards: { args: { profileId: string; forwards: ForwardRule[] }; result: Profile };
+  profiles_list: { args: Record<string, never>; result: Profile[] };
+  proxies_list: { args: Record<string, never>; result: Proxy[] };
+  proxy_delete: { args: { id: string }; result: void };
+  proxy_save: { args: { proxy: Proxy; password?: string | null }; result: Proxy };
+  quick_commands_get: { args: Record<string, never>; result: QuickCommands };
+  quick_commands_set: { args: { commands: QuickCommands }; result: QuickCommands };
+  screen_reader_running: { args: Record<string, never>; result: boolean };
+  serial_ports: { args: Record<string, never>; result: SerialPortInfo[] };
+  session_ack: { args: { id: number; bytes: number }; result: void };
+  session_adopt: { args: { id: number; channel: Channel<ArrayBuffer>; moveId: string }; result: void };
+  session_break: { args: { id: number }; result: void };
+  session_close: { args: { id: number }; result: void };
+  session_foreground: { args: { id: number }; result: string | null };
+  session_handover: { args: { snapshot: SessionSnapshot }; result: void };
+  session_log_start: { args: { id: number }; result: string };
+  session_log_stop: { args: { id: number }; result: void };
+  session_open: { args: { spec: SessionSpec; cols: number; rows: number; log?: LogOpen | null; channel: Channel<ArrayBuffer> }; result: number };
+  session_resize: { args: { id: number; cols: number; rows: number }; result: void };
+  session_write: { args: { id: number; data: string }; result: void };
+  session_write_bytes: { args: { id: number; data: number[] }; result: void };
+  sessions_export: { args: { path: string; passphrase?: string | null }; result: void };
+  sessions_import: { args: { path: string; ids: string[]; digest: string; passphrase?: string | null }; result: void };
+  sessions_import_scan: { args: { path: string; passphrase?: string | null }; result: SessionsScan };
+  settings_get: { args: Record<string, never>; result: Settings };
+  settings_set: { args: { settings: Settings }; result: Settings };
+  sftp_chmod: { args: { id: number; path: string; mode: number }; result: void };
+  sftp_download: { args: { id: number; transferId: string; remotePaths: string[]; localDir?: string | null; onProgress: Channel<TransferProgress> }; result: string[] };
+  sftp_download_as: { args: { id: number; transferId: string; remotePath: string; localPath: string; onProgress: Channel<TransferProgress> }; result: string };
+  sftp_drag_out: { args: { id: number; transferId: string; items: DragItem[]; sincePress: number; onEvent: Channel<DragOutEvent> }; result: DragResult };
+  sftp_edit_open: { args: { id: number; editId: string; remotePath: string; onProgress: Channel<TransferProgress>; onEvent: Channel<EditEvent> }; result: string };
+  sftp_edit_reopen: { args: { editId: string }; result: void };
+  sftp_edit_stop: { args: { editId: string }; result: void };
+  sftp_edit_upload: { args: { id: number; editId: string; force: boolean }; result: void };
+  sftp_list: { args: { id: number; path: string }; result: Listing };
+  sftp_mkdir: { args: { id: number; path: string }; result: void };
+  sftp_open: { args: { id: number }; result: string };
+  sftp_remove: { args: { id: number; path: string }; result: void };
+  sftp_rename: { args: { id: number; from: string; to: string }; result: void };
+  sftp_shell_dir: { args: { id: number }; result: string | null };
+  sftp_upload: { args: { id: number; transferId: string; localPaths: string[]; remoteDir: string; onProgress: Channel<TransferProgress> }; result: void };
+  ssh_config_default_path: { args: Record<string, never>; result: string | null };
+  ssh_config_import: { args: { path: string; aliases: string[] }; result: Profile[] };
+  ssh_config_scan: { args: { path: string }; result: ImportCandidate[] };
+  ssh_default_key_path: { args: Record<string, never>; result: string | null };
+  ssh_key_file_exists: { args: { path: string }; result: boolean };
+  system_monospace_font: { args: Record<string, never>; result: string | null };
+  tab_drag_end: { args: { id: string; dropped: boolean; outside: boolean }; result: DropTarget | null };
+  tab_drag_move: { args: { id: string; outside: boolean }; result: DropTarget };
+  transfer_cancel: { args: { transferId: string }; result: void };
+  tree_move: { args: { item: TreeItem; parent?: string | null; before?: TreeItem | null }; result: void };
+  tree_order: { args: Record<string, never>; result: TreeItem[] };
+  update_check: { args: Record<string, never>; result: UpdateStatus };
+  update_status: { args: Record<string, never>; result: UpdateStatus };
+  vault_reset: { args: Record<string, never>; result: VaultStatus };
+  vault_set_protection: { args: { change: ProtectionChange; current?: string | null }; result: VaultStatus };
+  vault_status: { args: Record<string, never>; result: VaultStatus };
+  vault_try_unlock: { args: Record<string, never>; result: VaultStatus };
+  vault_unlock: { args: { password: string }; result: VaultStatus };
+  window_busy_reply: { args: { query: number; count: number }; result: void };
+  window_buttons: { args: Record<string, never>; result: WindowButton[] };
+  window_close_empty: { args: Record<string, never>; result: boolean };
+  window_file_dialog: { args: { open: boolean }; result: void };
+  window_list: { args: Record<string, never>; result: WindowInfo[] };
+  window_open: { args: { content: WindowContent; sessions: number[]; dropped?: Dropped | null }; result: string };
+  window_pane_stayed: { args: { target: string; pane: number }; result: void };
+  window_send_tab: { args: { target: string; tab: unknown; sessions: number[]; at?: number | null }; result: void };
+  window_set_drag_area: { args: { rect?: Rect | null }; result: void };
+  window_set_maximize_button: { args: { rect?: Rect | null }; result: void };
+  window_set_snapped_border_color: { args: { color: string }; result: void };
+  window_set_tab_bar: { args: { rect: Rect }; result: void };
+  window_set_theme: { args: { theme?: "light" | "dark" | null }; result: void };
+  window_set_title: { args: { title: string }; result: void };
+  window_system_menu: { args: Record<string, never>; result: void };
+  window_take: { args: Record<string, never>; result: WindowContent[] };
+  window_title_double_click: { args: Record<string, never>; result: void };
+  zmodem_cancel: { args: { id: number }; result: void };
+  zmodem_save_to: { args: { id: number; dir?: string | null }; result: void };
+  zmodem_send_files: { args: { id: number; paths: string[] }; result: void };
+};
+
+export type Command = keyof Commands;
 
 /** The character encodings a session can use (WHATWG labels, as profiles store them). */
 export const ENCODINGS = ["utf-8", "gb18030", "gbk", "big5", "shift_jis", "euc-jp", "euc-kr", "windows-1252"] as const;
@@ -1111,3 +1123,18 @@ export const DEFAULT_GROUP = "default";
 
 /** The languages with a catalog, English first. */
 export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;
+
+/** The settings before any change, which "Restore Defaults" goes back to. */
+export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+
+/** The smallest terminal font size, in the settings and in sessions. */
+export const FONT_SIZE_MIN = 6;
+
+/** The largest terminal font size, in the settings and in sessions. */
+export const FONT_SIZE_MAX = 48;
+
+/** The most lines a terminal keeps above the screen. */
+export const SCROLLBACK_MAX = 100000;
+
+/** Processed terminal output is acknowledged in batches of this many bytes (see `session/flow.rs`). */
+export const ACK_BATCH = 262144;

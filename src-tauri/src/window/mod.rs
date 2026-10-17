@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{App, AppHandle, Manager, WebviewWindow, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 use ts_rs::TS;
@@ -61,10 +61,27 @@ pub struct Windows {
     busy: Mutex<HashMap<u64, BusyQuery>>,
 }
 
+/// What a window is to show: a tab moved out of another window (dropped `at` that many CSS
+/// pixels from the left of the page, if dragged there), or a saved session to open. The tab
+/// is the frontend's (its panes, their layout and state), passed on without being read.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum WindowContent {
+    Tab {
+        #[ts(type = "unknown")]
+        tab: serde_json::Value,
+        at: Option<f64>,
+    },
+    Profile {
+        profile_id: String,
+        title: String,
+    },
+}
+
 /// What the windows are to show, until their pages take it.
 #[derive(Default)]
 struct Inbox {
-    pending: HashMap<String, Vec<serde_json::Value>>,
+    pending: HashMap<String, Vec<WindowContent>>,
     /// Windows closing once their last tab has gone, which take nothing more.
     closing: HashSet<String>,
 }
@@ -198,7 +215,7 @@ pub async fn open(
     window: WebviewWindow,
     windows: &Windows,
     session_manager: &SessionManager,
-    content: serde_json::Value,
+    content: WindowContent,
     sessions: Vec<SessionId>,
     dropped: Option<Dropped>,
 ) -> Result<String> {
@@ -217,7 +234,7 @@ pub async fn open(
 
 /// What this window is to show and hasn't taken yet: what it opened for, and tabs given to it
 /// ([`send_tab`]), in order. Each is taken once.
-pub fn take(window: WebviewWindow, windows: &Windows) -> Vec<serde_json::Value> {
+pub fn take(window: WebviewWindow, windows: &Windows) -> Vec<WindowContent> {
     windows.inbox.lock().unwrap().pending.remove(window.label()).unwrap_or_default()
 }
 
@@ -293,7 +310,7 @@ pub fn send_tab(
             return Err(Error::new("window.notFound"));
         }
         session_manager.offer(&source, &sessions, &target)?;
-        inbox.pending.entry(target.clone()).or_default().push(serde_json::json!({ "kind": "tab", "tab": tab, "at": at }));
+        inbox.pending.entry(target.clone()).or_default().push(WindowContent::Tab { tab, at });
     }
     events::emit_to(&app, target, events::TabReceived);
     let _ = window.unminimize();
@@ -521,14 +538,7 @@ pub fn set_snapped_border_color(window: WebviewWindow, color: String) -> tauri::
 
 /// A part of the page (the maximize button, the drag area), in CSS pixels from the top left
 /// of the window.
-#[derive(Clone, Copy, serde::Deserialize)]
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-pub struct Rect {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-}
+pub use crate::tab_drag::Rect;
 
 /// Places the native window that makes the frontend's maximize button behave like a native
 /// one (the Windows 11 snap layouts), over `rect`; `None` hides it. Windows only.

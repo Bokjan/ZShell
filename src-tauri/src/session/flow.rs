@@ -6,6 +6,11 @@ use std::sync::{Condvar, Mutex};
 const FLOW_HIGH: usize = 2 << 20;
 /// ...and resume once the frontend has caught up to this many.
 const FLOW_LOW: usize = 512 << 10;
+/// The frontend acknowledges the output it has processed in batches of this many bytes
+/// (fewer messages than one per write): well under [`FLOW_LOW`], so that what it leaves
+/// unacknowledged never keeps reading paused. Only the frontend uses it (`bindings.rs`).
+#[cfg(test)]
+pub const ACK_BATCH: usize = FLOW_LOW / 2;
 
 /// Output flow control: counts the bytes sent to the frontend (or to a ZMODEM transfer) and
 /// not yet acknowledged. Every backend stops reading while the count is too high, so the

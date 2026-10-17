@@ -1,9 +1,15 @@
-import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 
-import type { Command } from "./bindings";
+import type { Command, Commands } from "./bindings";
+
+/** The arguments of command `C`: omitted when it takes none, or only optional ones. */
+type Args<C extends Command> =
+  Record<string, never> extends Commands[C]["args"] ? [args?: Commands[C]["args"]] : [args: Commands[C]["args"]];
 
 /**
- * Calls backend command `command`, one of those `lib.rs` registers (`Command` is generated
- * from them). The only call of `invoke`: the other modules of `ipc/` name what they send.
+ * Calls backend command `command`, one of those `lib.rs` registers, with the arguments it
+ * takes, resolving to what it returns (`Commands` is generated from the commands'
+ * signatures). The only call of `invoke`: the other modules of `ipc/` name what they send.
  */
-export const call = <T = void>(command: Command, args?: InvokeArgs) => invoke<T>(command, args);
+export const call = <C extends Command>(command: C, ...[args]: Args<C>): Promise<Commands[C]["result"]> =>
+  invoke<Commands[C]["result"]>(command, args);

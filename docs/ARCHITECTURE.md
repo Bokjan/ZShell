@@ -73,7 +73,7 @@
 
 前端（`src/`）：
 
-- **分层**：组件之外分三层。`lib/` 是不用 React 的逻辑，调用后端只经 `ipc/`；`ipc/` 是唯一调用后端命令、监听后端事件的地方，类型来自生成的 `ipc/bindings.ts`；`hooks/` 是组件共用的 React store、provider 与 hook（只属于 `App` 的在 `app/`）。`layers.test.ts` 检查 `lib/` 不引 React 与 Tauri。Tauri 自带的窗口与插件 API（有它们自己的类型）不受此限。
+- **分层**：组件之外分三层。`lib/` 是不用 React 的逻辑，调用后端只经 `ipc/`；`ipc/` 是唯一调用后端命令、监听后端事件的地方，类型来自生成的 `ipc/bindings.ts`；`hooks/` 是组件共用的 React store、provider 与 hook（只属于 `App` 的在 `app/`）。`layers.test.ts` 检查 `lib/` 不引 React 与 Tauri，`lib/` 与 `ipc/` 都不引 `hooks/`、`components/`、`app/`（否则会间接带进 React）。Tauri 自带的窗口与插件 API（有它们自己的类型）不受此限。
 - **标签页与窗格**：状态在 `lib/tabs.ts` 的 store 里（组件经 `hooks/stores.ts` 订阅），每个修改是一个 action，由纯函数 `reduceTabs` 处理，修改后立即生效，不等渲染。`App.tsx` 订阅并分发；关闭流程、撰写栏、快速命令、全屏各是 `app/` 下的一个 hook。`TabPage` 只在自己的标签变化时重绘。
 - **会话目录**：已保存的会话、文件夹、代理和最近打开的会话在 `lib/directory.ts` 的 store 里（每个窗口一个，写法同标签），用到它们的组件（侧栏、标签页、会话与代理的对话框）直接订阅，不经 `App` 传递。`app/useDirectorySync.ts` 在 `App` 挂载（即保险库解锁）后读入，收到其他窗口的 `config-changed` 时重读，卸载时清空；本窗口改了数据后由改的地方调用 `directory.reload()`，因为 `config-changed` 不会发回发起修改的窗口。最近打开的会话存在 `localStorage`，各窗口经 `storage` 事件同步。
 - **窗格的会话**：`lib/sessionRegistry.ts` 为每个窗格建一个 `PaneSession`（`lib/paneSession.ts`），负责打开会话、重连、共享连接、登录后命令和流控，只经一个小接口读写终端；`TerminalView` 只管终端本身。
@@ -88,7 +88,7 @@
 
 ### 会话与数据流
 
-- **前后端类型**：与前端交换的 Rust 类型派生 ts-rs 的 `TS`，生成一个提交到仓库的 `src/ipc/bindings.ts`，`cargo test` 在它过时时失败，只改了一边的类型在 CI 里就会发现。错误码是从英语语言包生成的联合类型 `ErrorCode`，前端按错误码分支由 `tsc` 检查。两边都要用的少量常量（可选的编码、新会话的默认终端类型和串口设置、默认快速命令分组的 id）也从后端的定义写进这个文件，`api.ts` 转出，前端不再另写一份。命令与事件的名字同样不手写两份：命令名的联合类型 `Command` 由 `lib.rs` 登记的命令生成，前端只经 `ipc/call.ts` 的 `call` 调用命令（`invoke` 只在那里）；后端发的事件在 `events.rs` 里各是一个带 payload 类型的类型，只经它发出，生成的 `Events` 让前端的 `listenHere` / `useWindowEvent` 按事件名得到 payload 的类型。命令的参数仍靠 `ipc/` 里各函数的签名对照，没有生成。选 ts-rs 而不是 specta 的理由见 `bindings.rs`。
+- **前后端类型**：与前端交换的 Rust 类型派生 ts-rs 的 `TS`，生成一个提交到仓库的 `src/ipc/bindings.ts`，`cargo test` 在它过时时失败，只改了一边的类型在 CI 里就会发现。错误码是从英语语言包生成的联合类型 `ErrorCode`，前端按错误码分支由 `tsc` 检查。两边都要用的常量（可选的编码、新会话的默认终端类型和串口设置、默认快速命令分组的 id、默认设置、字号与回滚行数的范围、终端输出确认的批量）也从后端的定义写进这个文件，`api.ts` 转出，前端不再另写一份；确认的批量由后端恢复读取的阈值得出，两者的关系不靠注释维持。命令与事件同样不手写两份：`bindings.rs` 用 `syn` 读 `commands/` 里每个命令的签名，生成 `Commands`（每个命令的参数名与类型、返回类型，Tauri 注入的参数除外），并核对与 `lib.rs` 登记的命令一致；前端只经 `ipc/call.ts` 的 `call` 调用命令（`invoke` 只在那里），`tsc` 按命令名检查参数和结果。命令一律返回 `crate::error::Result`，前端总是拿到带错误码的 `CommandError`；接收会话 id 的命令必须带调用方的 webview（测试检查），以便按归属检查。后端发的事件在 `events.rs` 里各是一个带 payload 类型的类型，只经它发出，生成的 `Events` 让前端的 `listenHere` / `useWindowEvent` 按事件名得到 payload 的类型。选 ts-rs 而不是 specta 的理由见 `bindings.rs`。
 - **打开会话**：只有一个命令 `session_open`，参数是 `SessionSpec`（保存的会话、快速连接、复制标签、本地终端），先解析成后端（`Backend`），日志与会话任务只在一处建立。
 - **会话是一个后台任务**：`SessionManager` 为每个会话创建 `TermIo`（输出 / 事件 Channel、输入队列），后端任务持有它运行；新的后端只需实现同样的任务形态。
 - **会话的关闭**：`SessionManager::remove` 是唯一的入口。任务之外的资源（连接登记、等待回答的 ZMODEM、流控）登记在会话的 `Lifetime` 上，无论是关闭、会话自己结束还是任务被丢弃，都只释放一次，与调用顺序无关（`session/`）。

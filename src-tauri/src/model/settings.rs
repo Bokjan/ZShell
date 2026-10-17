@@ -80,6 +80,8 @@ impl Default for StatusBarSettings {
 /// The terminal font sizes allowed, here and in session profiles.
 pub const FONT_SIZE_MIN: u16 = 6;
 pub const FONT_SIZE_MAX: u16 = 48;
+/// The most lines a terminal keeps above the screen.
+pub const SCROLLBACK_MAX: u32 = 100_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
@@ -324,7 +326,7 @@ impl Settings {
         let terminal = &mut self.terminal;
         terminal.font_family = terminal.font_family.trim().to_owned();
         terminal.font_size = terminal.font_size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
-        terminal.scrollback = terminal.scrollback.min(100_000);
+        terminal.scrollback = terminal.scrollback.min(SCROLLBACK_MAX);
         if terminal.color_scheme.trim().is_empty() {
             terminal.color_scheme = "auto".to_owned();
         }

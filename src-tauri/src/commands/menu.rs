@@ -2,12 +2,14 @@
 
 use tauri::{AppHandle, State, WebviewWindow};
 
+use crate::error::Result;
+
 use crate::menu::{self, NativeMenu, Section};
 
 /// See [`menu::set`].
 #[tauri::command]
-pub fn app_menu_set(app: AppHandle, menu: State<NativeMenu>, sections: Vec<Section>) -> tauri::Result<()> {
-    menu::set(app, menu.inner(), sections)
+pub fn app_menu_set(app: AppHandle, menu: State<NativeMenu>, sections: Vec<Section>) -> Result<()> {
+    Ok(menu::set(app, menu.inner(), sections)?)
 }
 
 /// See [`menu::set_label`].

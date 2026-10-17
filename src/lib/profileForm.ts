@@ -4,6 +4,8 @@ import {
   DEFAULT_GROUP,
   DEFAULT_SERIAL,
   DEFAULT_TERM_TYPE,
+  FONT_SIZE_MAX,
+  FONT_SIZE_MIN,
   profileForwards,
   type AuthMethod,
   type Connection,
@@ -16,7 +18,6 @@ import {
   type Remote,
 } from "../ipc/api";
 import { parsePort, wholeNumber } from "./format";
-import { FONT_SIZE_MAX, FONT_SIZE_MIN } from "../hooks/settings";
 
 /** Values to start a new profile with: from a quick connection, or the folder it goes in. */
 export interface ProfileDefaults {

@@ -8,10 +8,8 @@ import { useDialog } from "../hooks/dialogs";
 import { languageName } from "../lib/format";
 import { matches } from "../lib/keymap";
 import { isMac } from "../lib/platform";
+import { DEFAULT_SETTINGS, FONT_SIZE_MAX, FONT_SIZE_MIN, SCROLLBACK_MAX } from "../ipc/api";
 import {
-  DEFAULT_SETTINGS,
-  FONT_SIZE_MAX,
-  FONT_SIZE_MIN,
   TYPING_SAVE_DELAY,
   useSettings,
   type Appearance,
@@ -420,7 +418,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                     <NumberField
                       value={terminal.scrollback}
                       min={0}
-                      max={100000}
+                      max={SCROLLBACK_MAX}
                       step={1000}
                       onChange={(scrollback) => setTerminal({ scrollback })}
                     />

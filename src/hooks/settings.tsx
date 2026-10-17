@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { followLanguageSetting } from "../i18n/index";
-import { appSettings } from "../ipc/api";
+import { appSettings, DEFAULT_SETTINGS } from "../ipc/api";
 import type { Appearance, Settings, TextSize } from "../ipc/bindings";
 import { windows } from "../ipc/windows";
 import { latestSave } from "../lib/latestSave";
@@ -30,44 +30,8 @@ export type {
 
 const TEXT_SCALES: Record<TextSize, number> = { normal: 1, large: 1.15, larger: 1.3 };
 
-/** The terminal font sizes allowed, in the settings and in sessions. */
-export const FONT_SIZE_MIN = 6;
-export const FONT_SIZE_MAX = 48;
-
-export const DEFAULT_LOG_FILE_NAME = "{session}_{date}_{time}.log";
-
 /** How long a setting typed into a field waits for the next key before it is saved. */
 export const TYPING_SAVE_DELAY = 500;
-
-export const DEFAULT_SETTINGS: Settings = {
-  language: "system",
-  appearance: "system",
-  textSize: "normal",
-  appFont: "",
-  statusBar: { show: true },
-  terminal: {
-    colorScheme: "auto",
-    fontFamily: "",
-    fontSize: 13,
-    cursorStyle: "block",
-    cursorBlink: true,
-    scrollback: 5000,
-    copyOnSelect: false,
-    rightClick: "menu",
-    confirmMultilinePaste: true,
-    optionAsMeta: false,
-    screenReaderMode: "auto",
-    bellAlert: true,
-    bellSound: true,
-    bellFlash: false,
-  },
-  tabs: { followRemoteTitle: true, confirmClose: true, markOutput: true },
-  sidebar: { showRecent: true },
-  files: { downloadDirectory: "", editor: "" },
-  zmodem: { receive: "ask" },
-  logs: { directory: "", fileName: DEFAULT_LOG_FILE_NAME, format: "text", timestamps: false, autoLocal: false, keepDays: 0 },
-  updates: { check: true, skipped: null },
-};
 
 interface SettingsContextValue {
   settings: Settings;

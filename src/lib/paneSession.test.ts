@@ -2,6 +2,7 @@ import type { TFunction } from "i18next";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import {
+  ACK_BATCH,
   forwards,
   handOver,
   type adoptSession,
@@ -14,7 +15,6 @@ import {
 } from "../ipc/api";
 import type { Arrival } from "./panes";
 import {
-  ACK_BATCH,
   BELL_MS,
   ECHO_MS,
   LOGIN_COMMAND_IDLE_MS,

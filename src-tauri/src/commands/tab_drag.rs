@@ -2,6 +2,8 @@
 
 use tauri::{AppHandle, State, WebviewWindow};
 
+use crate::error::Result;
+
 use crate::tab_drag::{self, DropTarget, Rect, TabDrag};
 
 /// See [`tab_drag::set_tab_bar`].
@@ -12,8 +14,8 @@ pub fn window_set_tab_bar(window: WebviewWindow, drag: State<'_, TabDrag>, rect:
 
 /// See [`tab_drag::pointer_moved`].
 #[tauri::command]
-pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow, id: String, outside: bool) -> tauri::Result<DropTarget> {
-    tab_drag::pointer_moved(app, window, id, outside).await
+pub async fn tab_drag_move(app: AppHandle, window: WebviewWindow, id: String, outside: bool) -> Result<DropTarget> {
+    Ok(tab_drag::pointer_moved(app, window, id, outside).await?)
 }
 
 /// See [`tab_drag::end`].
@@ -25,6 +27,6 @@ pub async fn tab_drag_end(
     id: String,
     dropped: bool,
     outside: bool,
-) -> tauri::Result<Option<DropTarget>> {
-    tab_drag::end(app, window, drag.inner(), id, dropped, outside).await
+) -> Result<Option<DropTarget>> {
+    Ok(tab_drag::end(app, window, drag.inner(), id, dropped, outside).await?)
 }
