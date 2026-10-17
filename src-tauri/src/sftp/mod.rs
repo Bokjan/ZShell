@@ -11,6 +11,7 @@ pub mod transfer;
 use std::sync::Arc;
 
 use anyhow::Result;
+use futures_util::{stream, StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
 use serde::Serialize;
@@ -124,34 +125,53 @@ pub async fn chmod(sftp: &SftpSession, path: &str, mode: u32) -> Result<()> {
     Ok(())
 }
 
+/// Requests sent at once while removing a folder: one after another, removing 10,000 files
+/// took over a quarter of an hour from a server 100 ms away.
+const CONCURRENT_REMOVALS: usize = 16;
+
 /// Removes a file, symlink, or directory tree (symlinks are never followed).
 pub async fn remove(sftp: &SftpSession, path: &str) -> Result<()> {
     if !sftp.symlink_metadata(path).await?.file_type().is_dir() {
         sftp.remove_file(path).await?;
         return Ok(());
     }
-    // Delete files breadth-first while collecting directories, then remove the
-    // directories deepest-first.
-    let mut dirs = vec![path.to_owned()];
-    let mut next = 0;
-    while next < dirs.len() {
-        let dir = dirs[next].clone();
-        next += 1;
-        for entry in sftp.read_dir(&dir).await? {
-            let name = entry.file_name();
-            if !is_entry(&name) {
-                continue;
-            }
-            let full = join(&dir, &name);
-            if entry.file_type().is_dir() {
-                dirs.push(full);
-            } else {
-                sftp.remove_file(&full).await?;
+    // A level of the tree at a time: its folders listed and their files removed, each at once;
+    // then the folders, deepest first.
+    let mut levels = vec![vec![path.to_owned()]];
+    loop {
+        let level = levels.last().unwrap();
+        let listings: Vec<_> = stream::iter(0..level.len()).map(|i| sftp.read_dir(&level[i])).buffered(CONCURRENT_REMOVALS).collect().await;
+        let (mut files, mut dirs) = (Vec::new(), Vec::new());
+        for (dir, listing) in level.iter().zip(listings) {
+            for entry in listing? {
+                let name = entry.file_name();
+                if !is_entry(&name) {
+                    continue;
+                }
+                let full = join(dir, &name);
+                if entry.file_type().is_dir() {
+                    dirs.push(full);
+                } else {
+                    files.push(full);
+                }
             }
         }
+        stream::iter(files)
+            .map(|file| async move { sftp.remove_file(&file).await })
+            .buffer_unordered(CONCURRENT_REMOVALS)
+            .try_collect::<()>()
+            .await?;
+        if dirs.is_empty() {
+            break;
+        }
+        levels.push(dirs);
     }
-    for dir in dirs.iter().rev() {
-        sftp.remove_dir(dir).await?;
+    for level in levels.into_iter().rev() {
+        stream::iter(level)
+            .map(|dir| async move { sftp.remove_dir(&dir).await })
+            .buffer_unordered(CONCURRENT_REMOVALS)
+            .try_collect::<()>()
+            .await?;
     }
     Ok(())
 }
@@ -159,6 +179,30 @@ pub async fn remove(sftp: &SftpSession, path: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tree of folders and files goes, a link in it without what it points to. Skipped
+    /// without `sftp-server`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn removes_a_tree() {
+        let Some(sftp) = replace::tests::local_sftp_server().await else { return };
+        let root = std::env::temp_dir().join(format!("zshell-remove-{}", uuid::Uuid::new_v4()));
+        let kept = root.join("kept");
+        std::fs::create_dir_all(&kept).unwrap();
+        let tree = root.join("tree");
+        for dir in ["a/b/c", "a/d", "e"] {
+            std::fs::create_dir_all(tree.join(dir)).unwrap();
+            for n in 0..30 {
+                std::fs::write(tree.join(dir).join(n.to_string()), "x").unwrap();
+            }
+        }
+        std::os::unix::fs::symlink(&kept, tree.join("a/link")).unwrap();
+        let result = remove(&sftp, tree.to_str().unwrap()).await;
+        let (gone, kept) = (!tree.exists(), kept.exists());
+        std::fs::remove_dir_all(&root).unwrap();
+        result.unwrap();
+        assert!(gone && kept);
+    }
 
     #[test]
     fn folder_ids_are_plain() {
