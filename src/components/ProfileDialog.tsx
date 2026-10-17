@@ -159,8 +159,7 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
     await saving.submit(() =>
       attempt(
         async () => {
-          const saved = await saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update);
-          void directory.reload();
+          const saved = await directory.changed(saveProfile(toProfile(form, profile, defaults?.folder, shownGroup), update));
           onSaved?.(saved);
           onClose();
         },
@@ -180,8 +179,7 @@ export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSav
     await saving.submit(() =>
       attempt(
         async () => {
-          await deleteProfile(profile.id);
-          void directory.reload();
+          await directory.changed(deleteProfile(profile.id));
           onClose();
         },
         {

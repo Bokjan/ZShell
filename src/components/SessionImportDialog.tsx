@@ -68,8 +68,7 @@ export function SessionImportDialog({ path, onClose }: Props) {
     }
     return attempt(
       async () => {
-        await sessionsFile.import(path, [...selected], scan.digest, encrypted ? passphrase : undefined);
-        void directory.reload();
+        await directory.changed(sessionsFile.import(path, [...selected], scan.digest, encrypted ? passphrase : undefined));
         onClose();
       },
       {

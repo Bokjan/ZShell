@@ -76,7 +76,7 @@
 
 - **分层**：组件之外分三层。`lib/` 是不用 React 的逻辑，调用后端只经 `ipc/`；`ipc/` 是唯一调用后端命令、监听后端事件的地方，类型来自生成的 `ipc/bindings.ts`；`hooks/` 是组件共用的 React store、provider 与 hook（只属于 `App` 的在 `app/`）。`layers.test.ts` 检查 `lib/` 不引 React 与 Tauri，`lib/` 与 `ipc/` 都不引 `hooks/`、`components/`、`app/`（否则会间接带进 React）。Tauri 自带的窗口与插件 API（有它们自己的类型）不受此限。
 - **标签页与窗格**：状态在 `lib/tabs.ts` 的 store 里（组件经 `hooks/stores.ts` 订阅），每个修改是一个 action，由纯函数 `reduceTabs` 处理，修改后立即生效，不等渲染。`App.tsx` 订阅并分发；关闭流程、撰写栏、快速命令、全屏各是 `app/` 下的一个 hook。`TabPage` 只在自己的标签变化时重绘。
-- **会话目录**：已保存的会话、文件夹、代理和最近打开的会话在 `lib/directory.ts` 的 store 里（每个窗口一个，写法同标签），用到它们的组件（侧栏、标签页、会话与代理的对话框）直接订阅，不经 `App` 传递。`app/useDirectorySync.ts` 在 `App` 挂载（即保险库解锁）后读入，收到其他窗口的 `config-changed` 时重读，卸载时清空；本窗口改了数据后由改的地方调用 `directory.reload()`，因为 `config-changed` 不会发回发起修改的窗口。最近打开的会话存在 `localStorage`，各窗口经 `storage` 事件同步。
+- **会话目录**：已保存的会话、文件夹、代理和最近打开的会话在 `lib/directory.ts` 的 store 里（每个窗口一个，写法同标签），用到它们的组件（侧栏、标签页、会话与代理的对话框）直接订阅，不经 `App` 传递。`app/useDirectorySync.ts` 在 `App` 挂载（即保险库解锁）后读入，收到其他窗口的 `config-changed` 时重读，卸载时清空；本窗口的修改经 `directory.changed(写入)` 发出，完成后它自己重读，因为 `config-changed` 不会发回发起修改的窗口；只改了一个会话的（转发规则）用 `directory.profileSaved`，同时作废在它之前发出、还没回来的重读。最近打开的会话存在 `localStorage`，各窗口经 `storage` 事件同步。
 - **窗格的会话**：`lib/sessionRegistry.ts` 为每个窗格建一个 `PaneSession`（`lib/paneSession.ts`），负责打开会话、重连、共享连接、登录后命令和流控，只经一个小接口读写终端；`TerminalView` 只管终端本身。
 - **会话结束**：和 Xshell 一样，用户退出 shell（`exit`、Ctrl+D，即 `exited`）后窗格自动关闭，不看退出状态（bash 以上一条命令的状态退出）；本次连接里用户没在 shell 中输入过（服务器一连上就结束，信息要留着看）、shell 被信号结束（本地进程，或 SSH 服务器发来 exit-signal）、或文件面板有工作时不关（`closesOnExit`，`lib/panes.ts`）。不自动关闭的窗格里，Enter 重连，Ctrl+D 按关闭标签的流程关闭窗格。
 - **解锁**：`main.tsx` 里 `SettingsProvider` 之下是 `VaultGate`，保险库锁定时只显示 `UnlockScreen`，解锁后才挂载 `AppLockGate` 与其中的 `App`（见「加密保险库」「应用锁」）。

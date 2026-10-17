@@ -78,8 +78,7 @@ export function ImportDialog({ onClose }: Props) {
     e.preventDefault();
     setBusy(true);
     try {
-      await sshConfig.import(scanned, [...selected]);
-      void directory.reload();
+      await directory.changed(sshConfig.import(scanned, [...selected]));
       onClose();
     } catch (err) {
       setError(errorMessage(err));

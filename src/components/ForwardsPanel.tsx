@@ -33,7 +33,7 @@ interface Props {
 const isRunning = (state: ForwardState | undefined) => state?.type === "starting" || state?.type === "active";
 
 /** Puts the session with its new rules in this window's directory; the other windows read theirs again. */
-const profileSaved = (profile: Profile) => directory.dispatch({ type: "profileSaved", profile });
+const profileSaved = (profile: Profile) => directory.profileSaved(profile);
 
 export function ForwardsPanel({ sessionId, connected, profile, quick, states }: Props) {
   const { t } = useTranslation();

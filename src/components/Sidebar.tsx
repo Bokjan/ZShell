@@ -172,7 +172,7 @@ export function Sidebar(props: Props) {
   useEffect(() => setHighlight(0), [query]);
 
   const fail = (e: unknown) => setError(errorMessage(e));
-  const run = (action: Promise<unknown>) => void action.then(directory.reload, fail);
+  const run = (action: Promise<unknown>) => void directory.changed(action).catch(fail);
 
   const setFolderCollapsed = (id: string, value: boolean) =>
     setCollapsed((current) => {
@@ -213,9 +213,8 @@ export function Sidebar(props: Props) {
   };
 
   const createFolder = (parent: string | undefined) => {
-    tree.saveFolder({ id: "", name: t("sidebar.newFolderName"), parent }).then((folder) => {
+    directory.changed(tree.saveFolder({ id: "", name: t("sidebar.newFolderName"), parent })).then((folder) => {
       if (parent) setFolderCollapsed(parent, false);
-      void directory.reload();
       setSelected(`f:${folder.id}`);
       setRenaming(folder.id);
     }, fail);
@@ -228,8 +227,7 @@ export function Sidebar(props: Props) {
   };
 
   const duplicate = (profile: Profile) => {
-    duplicateProfile(profile.id, t("sidebar.copyName", { name: profile.name })).then((saved) => {
-      void directory.reload();
+    directory.changed(duplicateProfile(profile.id, t("sidebar.copyName", { name: profile.name }))).then((saved) => {
       setSelected(`p:${saved.id}`);
     }, fail);
   };
@@ -684,7 +682,7 @@ export function Sidebar(props: Props) {
           onConfirm={() => {
             const profile = deleting;
             setDeleting(null);
-            deleteProfile(profile.id).then(() => void directory.reload(), fail);
+            directory.changed(deleteProfile(profile.id)).catch(fail);
           }}
           onCancel={() => setDeleting(null)}
         />

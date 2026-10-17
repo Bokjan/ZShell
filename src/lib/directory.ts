@@ -63,11 +63,18 @@ export interface DirectoryStore {
   dispatch(action: DirectoryAction): void;
   subscribe(listener: () => void): () => void;
   /**
-   * Reads the sessions, folders and proxies again: after a change made here, which the other
-   * windows hear of (`config-changed`) but this one doesn't. A reply older than the latest
-   * request is dropped. Never fails; errors are logged.
+   * Reads the sessions, folders and proxies again (another window changed them). A reply
+   * older than the latest request or change is dropped. Never fails; errors are logged.
    */
   reload(): Promise<void>;
+  /**
+   * `write`, a change made here to the sessions, folders or proxies, which the other windows
+   * hear of (`config-changed`) but this one doesn't: reads them again once it is done, and
+   * resolves (or fails) as it does.
+   */
+  changed<T>(write: Promise<T>): Promise<T>;
+  /** One session saved here, known without reading them all again (its port forwards). */
+  profileSaved(profile: Profile): void;
   /** Puts a session first among the recent ones, which all windows share. */
   opened(profileId: string): void;
   /** Reads the recent sessions again (another window opened one). */
@@ -101,6 +108,16 @@ export function createDirectoryStore(initial: DirectoryState = INITIAL_DIRECTORY
       } catch (e) {
         console.error(e);
       }
+    },
+    async changed(write) {
+      const value = await write;
+      void this.reload();
+      return value;
+    },
+    profileSaved(profile) {
+      // A reply on its way was read before this was saved.
+      latest++;
+      dispatch({ type: "profileSaved", profile });
     },
     opened: (profileId) => dispatch({ type: "recent", ids: addRecent(profileId) }),
     recentChanged: () => dispatch({ type: "recent", ids: storedRecent() }),

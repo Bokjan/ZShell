@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { Folder, Profile, Proxy } from "../ipc/api";
+import { listProfiles, type Folder, type Profile, type Proxy } from "../ipc/api";
 import { createDirectoryStore, INITIAL_DIRECTORY, paneProfile, recentProfiles, reduceDirectory, type DirectoryAction } from "./directory";
 import type { Pane } from "./panes";
 
@@ -10,6 +10,13 @@ const folder: Folder = { id: "work", name: "Work" };
 const proxy = { id: "socks", name: "socks" } as Proxy;
 const loaded: DirectoryAction = { type: "loaded", profiles: [profile("a"), profile("b")], folders: [folder], order: [], proxies: [proxy] };
 const run = (...actions: DirectoryAction[]) => actions.reduce(reduceDirectory, INITIAL_DIRECTORY);
+
+vi.mock("../ipc/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ipc/api")>()),
+  listProfiles: vi.fn(async () => [] as Profile[]),
+  tree: { folders: async () => [], order: async () => [] },
+  proxies: { list: async () => [] },
+}));
 
 describe("reduceDirectory", () => {
   it("is loaded once read, with what was read", () => {
@@ -68,5 +75,27 @@ describe("createDirectoryStore", () => {
     unsubscribe();
     store.dispatch({ type: "reset" });
     expect([heard, store.get()]).toEqual([1, INITIAL_DIRECTORY]);
+  });
+
+  it("reads again once a change made here is done", async () => {
+    const store = createDirectoryStore();
+    vi.mocked(listProfiles).mockResolvedValueOnce([profile("new")]);
+    await expect(store.changed(Promise.resolve("saved"))).resolves.toBe("saved");
+    await new Promise((done) => setTimeout(done));
+    expect(store.get().profiles).toEqual([profile("new")]);
+    await expect(store.changed(Promise.reject(new Error("full")))).rejects.toThrow("full");
+  });
+
+  it("keeps a session saved here over a reply read before it", async () => {
+    const store = createDirectoryStore();
+    store.dispatch(loaded);
+    let reply!: (profiles: Profile[]) => void;
+    vi.mocked(listProfiles).mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+    const reading = store.reload();
+    const saved = profile("a", "saved");
+    store.profileSaved(saved);
+    reply([profile("a"), profile("b")]);
+    await reading;
+    expect(store.get().profiles).toEqual([saved, profile("b")]);
   });
 });

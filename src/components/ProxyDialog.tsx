@@ -80,19 +80,20 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
     await saving.submit(() =>
       attempt(
         async () => {
-          const saved = await proxies.save(
-            {
-              id: proxy?.id ?? "",
-              name,
-              kind,
-              host,
-              port: portNumber ?? proxy?.port ?? 0,
-              username,
-              command,
-            },
-            update,
+          const saved = await directory.changed(
+            proxies.save(
+              {
+                id: proxy?.id ?? "",
+                name,
+                kind,
+                host,
+                port: portNumber ?? proxy?.port ?? 0,
+                username,
+                command,
+              },
+              update,
+            ),
           );
-          void directory.reload();
           onSaved?.(saved);
           onClose();
         },
@@ -112,8 +113,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
     await saving.submit(() =>
       attempt(
         async () => {
-          await proxies.delete(proxy.id);
-          void directory.reload();
+          await directory.changed(proxies.delete(proxy.id));
           onClose();
         },
         {
