@@ -16,16 +16,18 @@ export default defineConfig(() => ({
   build: {
     chunkSizeWarningLimit: 1500,
   },
-  // 2. tauri expects a fixed port, fail if that port is not available
+  // 2. tauri expects a fixed port, fail if that port is not available. Ports below ~15000 can fall in the ranges
+  //    Windows reserves for Hyper-V / WinNAT when the dynamic port range starts low (listen fails with EACCES), and
+  //    49152 and above is the default dynamic range, so the ports sit between the two.
   server: {
-    port: 1420,
+    port: 31420,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: 31421,
         }
       : undefined,
     watch: {
