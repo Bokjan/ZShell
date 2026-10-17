@@ -50,7 +50,7 @@ fn long_lines_and_far_cursor_moves_stay_bounded() {
     assert!(line.cells.len() <= MAX_COLUMNS && line.cursor <= MAX_COLUMNS);
     parser.advance(&mut line, b"e");
     parser.advance(&mut line, "\u{301}".repeat(10_000).as_bytes());
-    assert!(line.cells.iter().all(|cell| cell.len() <= MAX_CELL_LEN));
+    assert!(line.cells.iter().all(|cell| cell.as_str().len() <= MAX_CELL_LEN));
     assert!(line.out.len() < 100 * MAX_COLUMNS, "{}", line.out.len());
 }
 
