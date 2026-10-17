@@ -10,7 +10,7 @@ import { useCompose } from "./app/useCompose";
 import { useDirectorySync } from "./app/useDirectorySync";
 import { usePaneActions } from "./app/usePaneActions";
 import { useFullScreen } from "./app/useFullScreen";
-import { useQuickCommands } from "./app/useQuickCommands";
+import { useQuickCommandBar } from "./app/useQuickCommandBar";
 import { useWindows } from "./app/useWindows";
 
 import { useAppLock } from "./hooks/appLock";
@@ -47,21 +47,21 @@ import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./hooks/appMenu";
 import { basename } from "./lib/format";
 import { actionOf, matches, paneSideOf, tabIndexOf, type MenuAction } from "./lib/keymap";
 import { neighbor } from "./lib/layout";
-import { tabGroup } from "./lib/quickCommands";
+import { quickCommandStore, tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
 import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { address, sessionsIn, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
-import { useDirectory } from "./hooks/stores";
+import { useDirectory, useQuickCommands, useTabStore } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { useSettings } from "./hooks/settings";
 import { useShortcuts } from "./hooks/shortcuts";
 import { useStableHandlers } from "./hooks/stableHandlers";
 import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
-import { useTabStore } from "./hooks/stores";
 import { tabMark } from "./lib/terminalSchemes";
-import { checkForUpdates, useUpdates } from "./hooks/updates";
+import { useUpdates } from "./hooks/updates";
+import { checkForUpdates } from "./lib/updates";
 import "./styles.css";
 
 /** Quick commands listed in the terminal's menu; the palette has them all. */
@@ -132,13 +132,13 @@ function App() {
       }),
     [store, sessions],
   );
-  const quick = useQuickCommands();
+  const quick = useQuickCommandBar();
+  const { commands, saveError: quickSaveError } = useQuickCommands();
   const fullScreen = useFullScreen(tabs.length > 0, (on) => {
     announce(on ? t("announce.fullScreen", { shortcut: shortcutLabel("fullScreen") }) : t("announce.fullScreenLeft"));
     focusActiveTerminal();
   });
   useNativeMenuLabel("fullScreen", t(fullScreen.on ? "appMenu.exitFullScreen" : "appMenu.items.fullScreen"));
-  const { commands } = quick;
   const composer = useCompose(store, sessions, tabs, activeKey, {
     followRemoteTitle: settings.tabs.followRemoteTitle,
     focusTerminal: focusActiveTerminal,
@@ -593,25 +593,15 @@ function App() {
         </div>
         {quick.barOpen && activePane && commands && activeGroup && (
           <QuickCommandBar
-            commands={commands}
             group={activeGroup}
             onPickGroup={(id) => updatePane(activePane.key, { commandGroup: id })}
-            onChange={quick.save}
             onRun={runCommand}
             targets={composer.targets}
           />
         )}
         {settings.statusBar.show && activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}
       </main>
-      {editing && (
-        <ProfileDialog
-          profile={editing.profile}
-          defaults={editing.defaults}
-          commandGroups={commands?.groups ?? null}
-          onClose={closeDialog}
-          onSaved={onProfileSaved}
-        />
-      )}
+      {editing && <ProfileDialog profile={editing.profile} defaults={editing.defaults} onClose={closeDialog} onSaved={onProfileSaved} />}
       {openingAll && (
         <ConfirmDialog
           title={t("sidebar.openAllTitle", { count: openingAll.profiles.length })}
@@ -626,7 +616,6 @@ function App() {
       )}
       {quick.paletteOpen && commands && activeGroup && (
         <CommandPalette
-          commands={commands}
           firstGroup={activeGroup.id}
           targets={composer.targets}
           onRun={runCommand}
@@ -675,14 +664,14 @@ function App() {
           onCancel={dismissSettingsSaveError}
         />
       )}
-      {quick.saveError !== null && (
+      {quickSaveError !== null && (
         <ConfirmDialog
           notice
           title={t("saveFailed.title")}
-          message={t("saveFailed.quickCommands", { error: errorMessage(quick.saveError) })}
+          message={t("saveFailed.quickCommands", { error: errorMessage(quickSaveError) })}
           confirmLabel={t("common.ok")}
-          onConfirm={quick.dismissSaveError}
-          onCancel={quick.dismissSaveError}
+          onConfirm={quickCommandStore.dismissSaveError}
+          onCancel={quickCommandStore.dismissSaveError}
         />
       )}
       <Tooltips />

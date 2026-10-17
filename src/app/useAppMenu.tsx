@@ -6,7 +6,7 @@ import { menuLabel } from "../hooks/appMenu";
 import { appMenu, matches, type MenuAction, type MenuEntry } from "../lib/keymap";
 import { isMac } from "../lib/platform";
 import { runAction, useShortcuts } from "../hooks/shortcuts";
-import type { Release } from "../hooks/updates";
+import type { Release } from "../ipc/bindings";
 import { useLocale } from "../hooks/locale";
 import { useStableHandlers } from "../hooks/stableHandlers";
 

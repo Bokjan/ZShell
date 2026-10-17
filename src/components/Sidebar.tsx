@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import type { AppMenuButton } from "../app/useAppMenu";
-import type { Release } from "../hooks/updates";
+import type { Release } from "../ipc/bindings";
 import { announce } from "../lib/announce";
 import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../ipc/api";
 import { directory, recentProfiles as recentOf } from "../lib/directory";

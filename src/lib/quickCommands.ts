@@ -1,7 +1,15 @@
 import type { TFunction } from "i18next";
 
-import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../ipc/api";
+import { DEFAULT_GROUP, quickCommands, type CommandGroup, type QuickCommand, type QuickCommands } from "../ipc/api";
+import { createSavedStore } from "./savedStore";
 import { storedString, storeString } from "./storage";
+
+/**
+ * This window's quick commands, kept up to date by `useQuickCommandSync` while the app is
+ * shown; components read them through `useQuickCommands`. The stored copy (with ids for new
+ * commands) replaces a change once it is saved.
+ */
+export const quickCommandStore = createSavedStore<QuickCommands>({ store: quickCommands.set, load: quickCommands.get });
 
 export const groupName = (group: CommandGroup, t: TFunction): string => (group.id === DEFAULT_GROUP ? t("quick.defaultGroup") : group.name);
 

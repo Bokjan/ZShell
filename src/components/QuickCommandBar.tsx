@@ -1,14 +1,24 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DEFAULT_GROUP, type CommandGroup, type QuickCommand, type QuickCommands } from "../ipc/api";
+import { DEFAULT_GROUP, type CommandGroup, type QuickCommand } from "../ipc/api";
 import { announce } from "../lib/announce";
 import { usePressDrag } from "../hooks/drag";
 import { useStableHandlers } from "../hooks/stableHandlers";
+import { useQuickCommands } from "../hooks/stores";
 import { useStableProps } from "../hooks/stableProps";
 import type { SendResult } from "../lib/compose";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
-import { addGroup, deleteCommand, deleteGroup, groupName, moveCommand, renameGroup, saveCommand } from "../lib/quickCommands";
+import {
+  addGroup,
+  deleteCommand,
+  deleteGroup,
+  groupName,
+  moveCommand,
+  quickCommandStore,
+  renameGroup,
+  saveCommand,
+} from "../lib/quickCommands";
 import { CommandDialog } from "./CommandDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -17,12 +27,9 @@ import { NameDialog } from "./NameDialog";
 import { ChevronIcon, PlusIcon } from "./icons";
 
 interface Props {
-  commands: QuickCommands;
   /** The active tab's group. */
   group: CommandGroup;
   onPickGroup(id: string): void;
-  /** Saves a change to the commands (see `latestSave`). */
-  onChange(change: (commands: QuickCommands) => QuickCommands): void;
   onRun(command: QuickCommand): SendResult;
   /**
    * Titles of the tabs a command goes to when that is more than the active tab (the compose
@@ -40,8 +47,9 @@ const STATUS_MS = 3000;
  * left (with group management), a button per command (right-click to edit, drag to
  * reorder), and + to add one.
  */
-export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun, targets }: Props) {
+export function QuickCommandBar({ group, onPickGroup, onRun, targets }: Props) {
   const { t } = useTranslation();
+  const { commands } = useQuickCommands();
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [editing, setEditing] = useState<{ command: QuickCommand | null } | null>(null);
   const [naming, setNaming] = useState<{ id: string | null; name: string } | null>(null);
@@ -77,7 +85,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
     const rect = e.currentTarget.getBoundingClientRect();
     const isDefault = group.id === DEFAULT_GROUP;
     const items: MenuItem[] = [
-      ...commands.groups.map((g) => ({
+      ...(commands?.groups ?? []).map((g) => ({
         label: groupName(g, t),
         checked: g.id === group.id,
         onSelect: () => onPickGroup(g.id),
@@ -103,7 +111,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
         {
           label: t("quick.duplicate"),
           onSelect: () =>
-            onChange((commands) =>
+            quickCommandStore.save((commands) =>
               saveCommand(commands, group.id, { ...command, id: "", name: t("quick.copyName", { name: command.name }) }),
             ),
         },
@@ -136,7 +144,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
       onEnd: (moved) => {
         if (moved) {
           dragged.current = true;
-          onChange((commands) => moveCommand(commands, id, ids.indexOf(id)));
+          quickCommandStore.save((commands) => moveCommand(commands, id, ids.indexOf(id)));
         }
         setOrder(null);
         setDragging(null);
@@ -194,8 +202,8 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
         <CommandDialog
           command={editing.command}
           groupId={group.id}
-          groups={commands.groups}
-          onSave={(groupId, command) => onChange((commands) => saveCommand(commands, groupId, command))}
+          groups={commands?.groups ?? [group]}
+          onSave={(groupId, command) => quickCommandStore.save((commands) => saveCommand(commands, groupId, command))}
           onClose={() => setEditing(null)}
         />
       )}
@@ -204,7 +212,9 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           title={naming.id ? t("quick.renameGroupTitle") : t("quick.newGroupTitle")}
           label={t("quick.groupName")}
           initial={naming.name}
-          onSave={(name) => onChange((commands) => (naming.id ? renameGroup(commands, naming.id, name) : addGroup(commands, name)))}
+          onSave={(name) =>
+            quickCommandStore.save((commands) => (naming.id ? renameGroup(commands, naming.id, name) : addGroup(commands, name)))
+          }
           onClose={() => setNaming(null)}
         />
       )}
@@ -215,7 +225,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           confirmLabel={t("common.delete")}
           danger
           onConfirm={() => {
-            onChange((commands) => deleteCommand(commands, deleting.command.id));
+            quickCommandStore.save((commands) => deleteCommand(commands, deleting.command.id));
             setDeleting(null);
           }}
           onCancel={() => setDeleting(null)}
@@ -228,7 +238,7 @@ export function QuickCommandBar({ commands, group, onPickGroup, onChange, onRun,
           confirmLabel={t("common.delete")}
           danger
           onConfirm={() => {
-            onChange((commands) => deleteGroup(commands, group.id));
+            quickCommandStore.save((commands) => deleteGroup(commands, group.id));
             onPickGroup(DEFAULT_GROUP);
             setDeleting(null);
           }}

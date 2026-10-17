@@ -1,6 +1,7 @@
 import { listProfiles, proxies as proxyApi, tree, type Folder, type Profile, type Proxy, type TreeItem } from "../ipc/api";
 import type { Pane } from "./panes";
 import { RECENT_LIMIT, addRecent, storedRecent } from "./sessions";
+import { createStore, type ReducerStore } from "./store";
 
 /**
  * The session directory: the saved sessions, their folders and the proxies, as this window
@@ -57,11 +58,7 @@ export const recentProfiles = (state: DirectoryState): Profile[] =>
     .filter((p): p is Profile => !!p)
     .slice(0, RECENT_LIMIT);
 
-export interface DirectoryStore {
-  /** The current state, also between a change and the next render. */
-  get(): DirectoryState;
-  dispatch(action: DirectoryAction): void;
-  subscribe(listener: () => void): () => void;
+export interface DirectoryStore extends ReducerStore<DirectoryState, DirectoryAction> {
   /**
    * Reads the sessions, folders and proxies again (another window changed them). A reply
    * older than the latest request or change is dropped. Never fails; errors are logged.
@@ -84,22 +81,11 @@ export interface DirectoryStore {
 }
 
 export function createDirectoryStore(initial: DirectoryState = INITIAL_DIRECTORY): DirectoryStore {
-  let state = initial;
+  const store = createStore(initial, reduceDirectory);
+  const { dispatch } = store;
   let latest = 0;
-  const listeners = new Set<() => void>();
-  const dispatch = (action: DirectoryAction) => {
-    const next = reduceDirectory(state, action);
-    if (next === state) return;
-    state = next;
-    for (const listener of listeners) listener();
-  };
   return {
-    get: () => state,
-    dispatch,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => void listeners.delete(listener);
-    },
+    ...store,
     async reload() {
       const request = ++latest;
       try {

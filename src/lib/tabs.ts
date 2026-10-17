@@ -1,6 +1,7 @@
 import type { SessionId, SessionTarget } from "../ipc/api";
 import { heirOf, mapLayout, removeFromLayout, splitLayout, type Direction } from "./layout";
 import { focusedPane, type Attention, type Layout, type Pane, type SidePanel, type Tab, type TabProtocol } from "./panes";
+import { createStore, type ReducerStore } from "./store";
 
 /** The tabs of the window, and which one is shown. */
 export interface TabsState {
@@ -232,27 +233,6 @@ function reduce(state: TabsState, action: TabsAction): TabsState {
   }
 }
 
-export interface TabStore {
-  /** The current state, also between a change and the next render. */
-  get(): TabsState;
-  dispatch(action: TabsAction): void;
-  subscribe(listener: () => void): () => void;
-}
+export type TabStore = ReducerStore<TabsState, TabsAction>;
 
-export function createTabStore(initial: TabsState = INITIAL_TABS): TabStore {
-  let state = initial;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => state,
-    dispatch(action) {
-      const next = reduceTabs(state, action);
-      if (next === state) return;
-      state = next;
-      for (const listener of listeners) listener();
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => void listeners.delete(listener);
-    },
-  };
-}
+export const createTabStore = (initial: TabsState = INITIAL_TABS): TabStore => createStore(initial, reduceTabs);

@@ -10,7 +10,6 @@ import {
   keyFileExists,
   saveProfile,
   serialPorts,
-  type CommandGroup,
   type Profile,
   type Protocol,
   type SerialPortInfo,
@@ -18,7 +17,7 @@ import {
 import { useConfirmButton } from "../hooks/confirm";
 import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
-import { useDirectory } from "../hooks/stores";
+import { useDirectory, useQuickCommands } from "../hooks/stores";
 import { open as openDialog } from "../ipc/fileDialog";
 import { rovingTarget } from "../lib/listNavigation";
 import { passwordUpdate } from "../lib/password";
@@ -52,8 +51,6 @@ interface Props {
   /** null creates a new profile. */
   profile: Profile | null;
   defaults?: ProfileDefaults;
-  /** To pick the quick command group its tabs show first; null until they have loaded. */
-  commandGroups: CommandGroup[] | null;
   onClose(): void;
   /** Called with the saved profile (not on delete). */
   onSaved?(profile: Profile): void;
@@ -65,8 +62,10 @@ interface Props {
  * page, with its field focused. Closing with Esc or a click outside asks first if anything
  * was changed.
  */
-export function ProfileDialog({ profile, defaults, commandGroups, onClose, onSaved }: Props) {
+export function ProfileDialog({ profile, defaults, onClose, onSaved }: Props) {
   const { t } = useTranslation();
+  // To pick the quick command group its tabs show first; null until they have loaded.
+  const commandGroups = useQuickCommands().commands?.groups ?? null;
   const [started] = useState(() => fromProfile(profile, defaults));
   const [form, setForm] = useState<ProfileForm>(started);
   const set = (patch: Partial<ProfileForm>) => setForm((current) => ({ ...current, ...patch }));

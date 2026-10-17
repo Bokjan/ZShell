@@ -1,14 +1,14 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { QuickCommand, QuickCommands } from "../ipc/api";
+import type { QuickCommand } from "../ipc/api";
 import { useDialog } from "../hooks/dialogs";
+import { useQuickCommands } from "../hooks/stores";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { groupName, searchCommands } from "../lib/quickCommands";
 import { Modal } from "./Modal";
 
 interface Props {
-  commands: QuickCommands;
   /** The active tab's group, listed first. */
   firstGroup: string;
   /** As for `QuickCommandBar`: the tabs a command goes to when more than the active one. */
@@ -18,14 +18,15 @@ interface Props {
 }
 
 /** Searches the quick commands of all groups; Enter (or a click) sends one. */
-export function CommandPalette({ commands, firstGroup, targets, onRun, onClose }: Props) {
+export function CommandPalette({ firstGroup, targets, onRun, onClose }: Props) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const optionId = (i: number) => `${listId}-${i}`;
-  const matches = searchCommands(commands, query, firstGroup, t);
+  const { commands } = useQuickCommands();
+  const matches = commands ? searchCommands(commands, query, firstGroup, t) : [];
   const index = clampIndex(selected, matches.length);
   const dialog = useDialog(onClose);
 

@@ -1,12 +1,12 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { followLanguageSetting } from "../i18n/index";
 import { appSettings, DEFAULT_SETTINGS } from "../ipc/api";
 import type { Appearance, Settings, TextSize } from "../ipc/bindings";
 import { windows } from "../ipc/windows";
-import { latestSave } from "../lib/latestSave";
 import { isWindows } from "../lib/platform";
+import { settingsStore } from "../lib/settings";
 import { setSystemFont } from "../lib/terminalSchemes";
 import { useConfigChanged, useWindowEvent } from "./windowEvents";
 
@@ -81,22 +81,10 @@ function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [system, setSystem] = useState<"dark" | "light">(systemTheme);
-
   // Applied immediately; the backend's validated copy replaces it once saved (see
   // `latestSave`).
-  const [saveError, setSaveError] = useState<unknown>(null);
-  const saver = useMemo(
-    () =>
-      latestSave<Settings>({
-        show: setSettings,
-        store: appSettings.set,
-        load: appSettings.get,
-        failed: (e) => setSaveError(() => e),
-      }),
-    [],
-  );
+  const { value: settings, saveError } = useSyncExternalStore(settingsStore.subscribe, settingsStore.get);
+  const [system, setSystem] = useState<"dark" | "light">(systemTheme);
 
   useEffect(() => {
     // With the desktop's monospace font (Linux), which terminals default to.
@@ -107,13 +95,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
     void Promise.all([stored, font]).then(([stored, font]) => {
       if (font) setSystemFont(font);
-      saver.loaded(stored);
+      settingsStore.loaded(stored);
     });
     const query = window.matchMedia("(prefers-color-scheme: light)");
     const onChange = () => setSystem(systemTheme());
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
-  }, [saver]);
+  }, []);
 
   const loaded = settings !== null;
   const appearance = settings?.appearance ?? "system";
@@ -162,7 +150,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }, console.error);
   }, []);
 
-  useConfigChanged("settings", saver.reload);
+  useConfigChanged("settings", settingsStore.reload);
 
   // Wait for the stored settings so terminals start with the right theme and font.
   if (!settings) return null;
@@ -172,10 +160,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     settings,
     theme,
     screenReader,
-    update: saver.save,
-    flush: saver.flush,
+    update: settingsStore.save,
+    flush: settingsStore.flush,
     saveError,
-    dismissSaveError: () => setSaveError(null),
+    dismissSaveError: settingsStore.dismissSaveError,
   };
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
