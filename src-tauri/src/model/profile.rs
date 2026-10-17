@@ -113,7 +113,7 @@ pub struct SshOptions {
     /// accepts those its `AcceptEnv` allows.
     #[serde(default)]
     pub env: Vec<EnvVar>,
-    /// Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
+    /// Edited separately, one at a time (`ProfileStore::save_forward`); `save` keeps them.
     #[serde(default)]
     pub forwards: Vec<ForwardRule>,
 }

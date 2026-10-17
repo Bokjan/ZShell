@@ -626,6 +626,11 @@ termType: string, };
 export type RightClick = "menu" | "paste";
 
 /**
+ * A forwarding rule just saved, with its session.
+ */
+export type SavedForward = { profile: Profile, rule: ForwardRule, };
+
+/**
  * When terminals are read for screen readers.
  */
 export type ScreenReaderMode = "auto" | "on" | "off";
@@ -774,7 +779,7 @@ forwardAgent: boolean,
  */
 env: Array<EnvVar>, 
 /**
- * Edited separately through [`ProfileStore::set_forwards`]; `save` keeps them.
+ * Edited separately, one at a time (`ProfileStore::save_forward`); `save` keeps them.
  */
 forwards: Array<ForwardRule>, host: string, port: number, 
 /**
@@ -1028,8 +1033,9 @@ export type Commands = {
   logs_summary: { args: Record<string, never>; result: LogSummary };
   profile_delete: { args: { id: string }; result: void };
   profile_duplicate: { args: { id: string; name: string }; result: Profile };
+  profile_forward_delete: { args: { profileId: string; ruleId: string }; result: Profile };
+  profile_forward_save: { args: { profileId: string; rule: ForwardRule }; result: SavedForward };
   profile_save: { args: { profile: Profile; password?: string | null }; result: Profile };
-  profile_set_forwards: { args: { profileId: string; forwards: ForwardRule[] }; result: Profile };
   profiles_list: { args: Record<string, never>; result: Profile[] };
   proxies_list: { args: Record<string, never>; result: Proxy[] };
   proxy_delete: { args: { id: string }; result: void };

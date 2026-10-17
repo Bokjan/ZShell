@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 import {
   errorMessage,
   forwards,
+  profileForwardRules,
   profileForwards,
-  setProfileForwards,
   type ForwardRule,
   type ForwardState,
   type Profile,
@@ -52,13 +52,10 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
   const save = async (rule: ForwardRule) => {
     if (!profile) return;
     const isNew = !rule.id;
-    const list = isNew ? [...rules, rule] : rules.map((r) => (r.id === rule.id ? rule : r));
-    const updated = await setProfileForwards(profile.id, list);
+    const { profile: updated, rule: saved } = await profileForwardRules.save(profile.id, rule);
     profileSaved(updated);
     // New rules start right away; edited ones restart with their new definition if running.
-    const updatedRules = profileForwards(updated);
-    const saved = isNew ? updatedRules[updatedRules.length - 1] : updatedRules.find((r) => r.id === rule.id);
-    if (live && saved && (isNew || isRunning(states[saved.id]))) void start(saved);
+    if (live && (isNew || isRunning(states[saved.id]))) void start(saved);
   };
 
   const remove = async (rule: ForwardRule) => {
@@ -68,12 +65,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
       async () => {
         // Also clears a failed state, so the tab's badge forgets the rule.
         if (live && states[rule.id]) await forwards.stop(sessionId, rule.id);
-        profileSaved(
-          await setProfileForwards(
-            profile.id,
-            rules.filter((r) => r.id !== rule.id),
-          ),
-        );
+        profileSaved(await profileForwardRules.delete(profile.id, rule.id));
       },
       {
         onError: fail,

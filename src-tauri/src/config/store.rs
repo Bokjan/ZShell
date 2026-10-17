@@ -243,25 +243,35 @@ impl ProfileStore {
         })
     }
 
-    /// Replaces a profile's port forwarding rules, assigning ids to new ones.
-    pub fn set_forwards(&self, id: &str, forwards: Vec<ForwardRule>) -> Result<Profile> {
-        let forwards = forwards
-            .into_iter()
-            .map(|rule| {
-                let mut rule = rule.normalize()?;
-                if rule.id.is_empty() {
-                    rule.id = uuid::Uuid::new_v4().to_string();
-                }
-                Ok(rule)
-            })
-            .collect::<Result<Vec<_>>>()?;
+    /// Saves forwarding rule `rule` of SSH session `id`: in place of the rule with its id, or
+    /// as a new rule after the others (without an id, or one deleted meanwhile). One rule at a
+    /// time, so that a window changing one doesn't put back the others as it last saw them.
+    /// Returns the session and the rule as saved (with its id).
+    pub fn save_forward(&self, id: &str, rule: ForwardRule) -> Result<(Profile, ForwardRule)> {
+        let mut rule = rule.normalize()?;
+        if rule.id.is_empty() {
+            rule.id = uuid::Uuid::new_v4().to_string();
+        }
+        self.update_forwards(id, |forwards| {
+            match forwards.iter_mut().find(|r| r.id == rule.id) {
+                Some(existing) => *existing = rule.clone(),
+                None => forwards.push(rule.clone()),
+            }
+            rule.clone()
+        })
+    }
+
+    /// Deletes forwarding rule `rule_id` of SSH session `id`, if it is there.
+    pub fn delete_forward(&self, id: &str, rule_id: &str) -> Result<Profile> {
+        self.update_forwards(id, |forwards| forwards.retain(|r| r.id != rule_id)).map(|(profile, ())| profile)
+    }
+
+    fn update_forwards<T>(&self, id: &str, change: impl FnOnce(&mut Vec<ForwardRule>) -> T) -> Result<(Profile, T)> {
         self.update(|state, _| {
             let profile = state.profiles.iter_mut().find(|p| p.id == id).ok_or_else(|| Error::new("profile.notFound"))?;
-            match &mut profile.connection {
-                Connection::Ssh(ssh) => ssh.forwards = forwards,
-                _ => return Err(Error::new("profile.forwardsNeedSsh")),
-            }
-            Ok(profile.clone())
+            let Connection::Ssh(ssh) = &mut profile.connection else { return Err(Error::new("profile.forwardsNeedSsh")) };
+            let value = change(&mut ssh.forwards);
+            Ok((profile.clone(), value))
         })
     }
 

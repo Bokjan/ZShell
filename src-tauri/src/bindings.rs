@@ -417,6 +417,7 @@ mod tests {
         visitor.visit::<tab_drag::Dropped>();
         visitor.visit::<tab_drag::TabDragNativeEnd>();
         visitor.visit::<events::Change>();
+        visitor.visit::<commands::profiles::SavedForward>();
         events::visit(visitor);
 
         let mut out = String::from(HEADER);

@@ -45,9 +45,8 @@ pub fn locale_get() -> i18n::Locales {
 /// blocking pool. Sync commands run on the main thread, where waiting freezes the window: on a
 /// slow or network disk, or while macOS asks about each keychain entry after an update.
 ///
-/// Async commands may run in any order, though. Those replacing a whole value that the
-/// frontend sends again before the last one is done (the settings, the quick commands, a
-/// session's forwarding rules) stay sync, so that the last one sent is the one kept.
+/// Async commands may run in any order, though: the frontend sends those replacing a whole
+/// value (the settings, the quick commands) one at a time (see `latestSave`).
 async fn blocking<T: Send + 'static>(app: AppHandle, work: impl FnOnce(&AppHandle) -> Result<T> + Send + 'static) -> Result<T> {
     tauri::async_runtime::spawn_blocking(move || work(&app)).await?
 }

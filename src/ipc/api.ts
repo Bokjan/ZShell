@@ -196,8 +196,13 @@ export const localUsername = () => call("local_username");
 export const profileForwards = (profile: Profile): ForwardRule[] =>
   profile.connection.protocol === "ssh" ? profile.connection.forwards : [];
 
-/** Replaces the SSH session's forwarding rules; resolves to the updated profile (with rule ids). */
-export const setProfileForwards = (profileId: string, forwards: ForwardRule[]) => call("profile_set_forwards", { profileId, forwards });
+/** Saving and deleting an SSH session's forwarding rules, one at a time. */
+export const profileForwardRules = {
+  /** Saves `rule` in place of the one with its id, or as a new one; resolves to the session and the rule as saved (with its id). */
+  save: (profileId: string, rule: ForwardRule) => call("profile_forward_save", { profileId, rule }),
+  /** Deletes the rule, which stops if it runs; resolves to the session. */
+  delete: (profileId: string, ruleId: string) => call("profile_forward_delete", { profileId, ruleId }),
+};
 
 export const sshConfig = {
   /** `~/.ssh/config`, whether or not it exists. */

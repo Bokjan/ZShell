@@ -1,6 +1,8 @@
 //! Commands for the saved sessions, their folders and forwarding rules, and the proxies.
 
+use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
+use ts_rs::TS;
 
 use crate::config::ProfileStore;
 use crate::connections::Connections;
@@ -30,19 +32,33 @@ pub async fn profile_save(app: AppHandle, window: WebviewWindow, profile: Profil
     notified(&window, Change::Profiles, result)
 }
 
+/// A forwarding rule just saved, with its session.
+#[derive(Serialize, TS)]
+pub struct SavedForward {
+    pub profile: Profile,
+    pub rule: ForwardRule,
+}
+
+/// Saves one forwarding rule of a session (see [`ProfileStore::save_forward`]).
 #[tauri::command]
-pub fn profile_set_forwards(
-    window: WebviewWindow,
-    store: State<'_, ProfileStore>,
-    connections: State<'_, Connections>,
-    profile_id: String,
-    forwards: Vec<ForwardRule>,
-) -> Result<Profile> {
-    let profile = notified(&window, Change::Profiles, store.set_forwards(&profile_id, forwards))?;
-    // A rule deleted while running (perhaps on another tab's connection) stops.
-    let ids: Vec<String> = profile.forwards().iter().map(|rule| rule.id.clone()).collect();
-    connections.retain_forwards(&profile_id, &ids);
-    Ok(profile)
+pub async fn profile_forward_save(app: AppHandle, window: WebviewWindow, profile_id: String, rule: ForwardRule) -> Result<SavedForward> {
+    let result = blocking(app, move |app| app.state::<ProfileStore>().save_forward(&profile_id, rule)).await;
+    let (profile, rule) = notified(&window, Change::Profiles, result)?;
+    Ok(SavedForward { profile, rule })
+}
+
+/// Deletes one forwarding rule of a session; it stops if it runs (perhaps on another tab's
+/// connection).
+#[tauri::command]
+pub async fn profile_forward_delete(app: AppHandle, window: WebviewWindow, profile_id: String, rule_id: String) -> Result<Profile> {
+    let result = blocking(app, move |app| {
+        let profile = app.state::<ProfileStore>().delete_forward(&profile_id, &rule_id)?;
+        let ids: Vec<String> = profile.forwards().iter().map(|rule| rule.id.clone()).collect();
+        app.state::<Connections>().retain_forwards(&profile_id, &ids);
+        Ok(profile)
+    })
+    .await;
+    notified(&window, Change::Profiles, result)
 }
 
 #[tauri::command]

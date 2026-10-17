@@ -329,15 +329,23 @@ fn keeps_forwarding_rules_of_ssh_sessions() {
         description: String::new(),
         auto_start: false,
     };
-    let web = store.set_forwards(&web.id, vec![rule]).unwrap();
-    assert!(!web.forwards()[0].id.is_empty());
+    let (web, saved) = store.save_forward(&web.id, rule.clone()).unwrap();
+    assert!(!saved.id.is_empty());
+    assert_eq!(web.forwards(), std::slice::from_ref(&saved));
+    // Saved again with its id: in its place. Another rule goes after it.
+    let (_, other) = store.save_forward(&web.id, rule.clone()).unwrap();
+    let edited = ForwardRule { bind_port: 8081, ..saved.clone() };
+    let (web, _) = store.save_forward(&web.id, edited.clone()).unwrap();
+    assert_eq!(web.forwards(), [edited, other.clone()]);
+    let web = store.delete_forward(&web.id, &saved.id).unwrap();
+    assert_eq!(web.forwards(), [other]);
     // The dialog sends no rules.
     let renamed = store.save(Profile { id: web.id.clone(), name: "renamed".into(), ..new_profile("web", None) }, None).unwrap();
     assert_eq!(renamed.forwards().len(), 1);
 
     let telnet = Profile { connection: Connection::Telnet(web.remote().unwrap().clone()), ..web.clone() };
     assert!(store.save(telnet, None).unwrap().forwards().is_empty());
-    assert_eq!(store.set_forwards(&web.id, Vec::new()).unwrap_err().code(), "profile.forwardsNeedSsh");
+    assert_eq!(store.save_forward(&web.id, rule).unwrap_err().code(), "profile.forwardsNeedSsh");
     let ssh_again = store.save(Profile { connection: web.connection.clone(), ..web.clone() }, None).unwrap();
     assert!(ssh_again.forwards().is_empty());
     fs::remove_dir_all(&dir).unwrap();
