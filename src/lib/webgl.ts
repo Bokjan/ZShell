@@ -24,7 +24,12 @@ interface Renderer {
   release(): void;
 }
 
+/** How long after losing its context a terminal tries WebGL again, and how many times. */
+const RETRY_MS = [1000, 5000, 30_000];
+
 const renderers = new Set<Renderer>();
+/** Releases put off until the effects of the commit that hid their terminals have run, by terminal. */
+const pendingReleases = new Map<Terminal, () => void>();
 let renewal: ReturnType<typeof setTimeout> | undefined;
 /** Set once loading the addon failed: WebGL2 is unavailable, and trying again won't help. */
 let unavailable = false;
@@ -51,10 +56,15 @@ function checkAtlases() {
 
 /**
  * Draws the terminal with WebGL until the returned function is called, and with the DOM
- * renderer when WebGL is unavailable or its context is lost.
+ * renderer when WebGL is unavailable or while its context is lost (it is tried again a few
+ * times: after the computer sleeps, or the system switches GPUs).
  */
 export function drawWithWebgl(term: Terminal): () => void {
+  // One addon at a time: a release still pending (hidden and shown again at once) goes first.
+  pendingReleases.get(term)?.();
   let addon: WebglAddon | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let losses = 0;
   // The addon's context, while it is there to release.
   let gl: WebGL2RenderingContext | undefined;
   // Waits for the new canvas's first layout, to draw it then.
@@ -71,6 +81,12 @@ export function drawWithWebgl(term: Terminal): () => void {
         webgl.onContextLoss(() => {
           gl = undefined;
           renderer.release();
+          const delay = RETRY_MS[losses++];
+          if (delay === undefined) return;
+          retry = setTimeout(() => {
+            retry = undefined;
+            if (renderers.has(renderer)) renderer.load();
+          }, delay);
         });
         webgl.onAddTextureAtlasCanvas((page) => {
           pages.add(page);
@@ -117,6 +133,8 @@ export function drawWithWebgl(term: Terminal): () => void {
       }
     },
     release() {
+      clearTimeout(retry);
+      retry = undefined;
       sized?.disconnect();
       sized = undefined;
       // Does nothing once the terminal has disposed it (unmounting).
@@ -133,6 +151,15 @@ export function drawWithWebgl(term: Terminal): () => void {
   renderer.load();
   return () => {
     renderers.delete(renderer);
-    renderer.release();
+    // After the other effects of the same commit: the terminals of a tab shown in place of
+    // this one load their addons first, and share this one's atlas (by font, colors and pixel
+    // ratio) rather than build it again from nothing once it is gone.
+    const release = () => {
+      clearTimeout(timer);
+      pendingReleases.delete(term);
+      renderer.release();
+    };
+    const timer = setTimeout(release, 0);
+    pendingReleases.set(term, release);
   };
 }
