@@ -188,12 +188,13 @@ function reduce(state: TabsState, action: TabsAction): TabsState {
       return mapTab(state, action.key, (tab) => ({ ...tab, ...action.patch }));
     case "updatePane": {
       const tab = tabOf(state.tabs, action.key);
-      if (!tab) return state;
-      const { patch } = action;
-      return mapTab(state, tab.key, (t) => ({
-        ...t,
-        panes: t.panes.map((p) => (p.key === action.key ? { ...p, ...(typeof patch === "function" ? patch(p, t) : patch) } : p)),
-      }));
+      const pane = tab?.panes.find((p) => p.key === action.key);
+      if (!tab || !pane) return state;
+      const patch = typeof action.patch === "function" ? action.patch(pane, tab) : action.patch;
+      // Nothing new (a shell setting the same title at every prompt): the same state, which
+      // renders nothing again.
+      if (Object.entries(patch).every(([name, value]) => Object.is(pane[name as keyof Pane], value))) return state;
+      return mapTab(state, tab.key, (t) => ({ ...t, panes: t.panes.map((p) => (p.key === action.key ? { ...p, ...patch } : p)) }));
     }
     case "togglePanel": {
       if (state.activeKey === null) return state;

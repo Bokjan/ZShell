@@ -168,6 +168,15 @@ describe("updatePane", () => {
     state = reduceTabs(state, { type: "updatePane", key, patch: (pane) => ({ transfers: pane.transfers + 1 }) });
     expect(state.tabs[0].panes[0].transfers).toBe(2);
   });
+
+  it("keeps the same state when nothing changes", () => {
+    const state = run({ type: "open", pane: ssh("a") });
+    const key = state.tabs[0].panes[0].key;
+    const titled = reduceTabs(state, { type: "updatePane", key, patch: { remoteTitle: "vim", transfers: 0 } });
+    expect(titled).not.toBe(state);
+    expect(reduceTabs(titled, { type: "updatePane", key, patch: { remoteTitle: "vim" } })).toBe(titled);
+    expect(reduceTabs(titled, { type: "updatePane", key, patch: () => ({ transfers: 0 }) })).toBe(titled);
+  });
 });
 
 describe("side panels", () => {
