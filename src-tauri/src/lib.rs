@@ -363,6 +363,27 @@ pub fn run() {
             commands::window::window_set_maximize_button,
             commands::window::window_set_snapped_border_color,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                quitting(app);
+            }
+        });
+}
+
+/// How long quitting waits for the session logs to be written to the end.
+const LOGS_CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// The app is about to end: the sessions close as if their pages were gone, and their logs
+/// are written to the end, which would otherwise lose what they buffer (up to a second of
+/// output) with the process.
+fn quitting(app: &tauri::AppHandle) {
+    for label in app.webview_windows().into_keys() {
+        page_gone(app, &label);
+    }
+    // Managed in `setup`, which may not have got that far.
+    if let Some(logs) = app.try_state::<Logs>() {
+        logs.wait_all_closed(LOGS_CLOSE_TIMEOUT);
+    }
 }

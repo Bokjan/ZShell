@@ -19,6 +19,12 @@ impl ActiveLogs {
         let _paths = self.closed.wait_timeout_while(paths, timeout, |paths| paths.contains_key(path)).unwrap();
     }
 
+    /// Waits until nothing writes any log, for at most `timeout`.
+    pub(super) fn wait_empty(&self, timeout: Duration) {
+        let paths = self.paths.lock().unwrap();
+        let _paths = self.closed.wait_timeout_while(paths, timeout, |paths| !paths.is_empty()).unwrap();
+    }
+
     /// Waits until one writer of `path` is left: the caller's.
     pub(super) fn wait_alone(&self, path: &Path) {
         let paths = self.paths.lock().unwrap();
@@ -80,6 +86,12 @@ pub struct Logs {
 }
 
 impl Logs {
+    /// Waits until every log being written has been closed and written to the end, for at
+    /// most `timeout`: as the app quits, once its sessions have closed.
+    pub fn wait_all_closed(&self, timeout: Duration) {
+        self.active.wait_empty(timeout);
+    }
+
     pub fn load(index_path: PathBuf, default_dir: PathBuf, set_aside: &SetAside) -> Self {
         let (index_file, index) = JsonFile::load(index_path, set_aside);
         Self { index_file, default_dir, index: Mutex::new(index), active: Arc::default() }

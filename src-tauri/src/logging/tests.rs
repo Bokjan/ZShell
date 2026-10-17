@@ -282,3 +282,22 @@ fn writes_appends_and_deletes_only_its_own_logs() {
     assert!(!path.exists() && dir.join("Logs").join("mine.txt").exists());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn waits_for_every_log_to_close() {
+    let set = Arc::new(ActiveLogs::default());
+    let (a, b) = (set.add("a.log".into()), set.add("b.log".into()));
+    let closing = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        drop(a);
+        drop(b);
+    });
+    let since = Instant::now();
+    set.wait_empty(Duration::from_secs(5));
+    assert!(set.paths.lock().unwrap().is_empty() && since.elapsed() < Duration::from_secs(5));
+    closing.join().unwrap();
+    // One that never closes: given up on.
+    let _stuck = set.add("c.log".into());
+    set.wait_empty(Duration::from_millis(20));
+    assert!(set.contains(Path::new("c.log")));
+}
