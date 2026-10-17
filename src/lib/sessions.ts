@@ -143,13 +143,17 @@ export function folderPath(folderId: string | undefined, folders: Folder[]): str
 export function search(query: string, tree: SessionTree): Profile[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const ordered = treeRows(tree, new Set()).flatMap((row) => (row.kind === "profile" ? [row.profile] : []));
-  const matches = (text: string) => words.every((word) => text.toLowerCase().includes(word));
+  const matches = (text: string) => {
+    const lower = text.toLowerCase();
+    return words.every((word) => lower.includes(word));
+  };
   const target = (p: Profile) => {
     const c = p.connection;
     return `${p.name} ${address(c)} ${c.protocol === "serial" ? "" : `${c.username} ${c.host}`}`;
   };
   const byTarget = ordered.filter((p) => matches(target(p)));
-  const byNotes = ordered.filter((p) => !byTarget.includes(p) && p.notes && matches(`${target(p)} ${p.notes}`));
+  const found = new Set(byTarget);
+  const byNotes = ordered.filter((p) => !found.has(p) && p.notes && matches(`${target(p)} ${p.notes}`));
   return [...byTarget, ...byNotes];
 }
 
