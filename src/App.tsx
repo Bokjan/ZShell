@@ -60,6 +60,7 @@ import { useTabStore } from "./hooks/stores";
 import { tabMark } from "./lib/terminalSchemes";
 import { checkForUpdates, useUpdates } from "./hooks/updates";
 import "./styles.css";
+import { useLatest } from "./hooks/latest";
 
 /** Quick commands listed in the terminal's menu; the palette has them all. */
 const MENU_COMMANDS = 8;
@@ -69,8 +70,7 @@ const HIDDEN_IN_FULL_SCREEN = ["searchSessions", "composeBar", "filePanel", "for
 function App() {
   const { t } = useTranslation();
   const { settings, update, saveError: settingsSaveError, dismissSaveError: dismissSettingsSaveError } = useSettings();
-  const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+  const settingsRef = useLatest(settings);
   useDirectorySync();
   const { profiles } = useDirectory();
   const [searchFocusKey, setSearchFocusKey] = useState(0);
@@ -112,8 +112,7 @@ function App() {
       bell: () => settingsRef.current.terminal,
     }),
   );
-  const localTitleRef = useRef("");
-  localTitleRef.current = shellName ?? t("tabs.localTitle");
+  const localTitleRef = useLatest(shellName ?? t("tabs.localTitle"));
 
   /** Moves the keyboard focus back to the active terminal (after a bar or the palette closes). */
   const focusActiveTerminal = useCallback(

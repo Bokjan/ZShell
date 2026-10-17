@@ -2,6 +2,7 @@ import { useEffect, useRef, type InputHTMLAttributes, type KeyboardEvent, type P
 import { useTranslation } from "react-i18next";
 
 import { ChevronIcon } from "./icons";
+import { useLatest } from "../hooks/latest";
 
 /** How long a held ▲ / ▼ waits before repeating, and how often it repeats. */
 const REPEAT_DELAY = 400;
@@ -26,20 +27,19 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | 
 export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDown, ...rest }: Props) {
   const { t } = useTranslation();
   // The latest value, for a held button's repeats.
-  const latest = useRef(value);
-  latest.current = value;
+  const valueRef = useLatest(value);
   const repeat = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(repeat.current), []);
 
   const current = () => {
-    const n = Number(latest.current);
-    return latest.current.trim() !== "" && Number.isFinite(n) ? Math.round(n) : start;
+    const n = Number(valueRef.current);
+    return valueRef.current.trim() !== "" && Number.isFinite(n) ? Math.round(n) : start;
   };
   /** Returns whether the value can go further this way. */
   const stepBy = (steps: number) => {
     const next = Math.min(max, Math.max(min, current() + steps * step));
-    latest.current = String(next);
-    onChange(latest.current, true);
+    valueRef.current = String(next);
+    onChange(valueRef.current, true);
     return steps > 0 ? next < max : next > min;
   };
 

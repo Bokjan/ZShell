@@ -1,4 +1,6 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
+
+import { useLatest } from "./latest";
 
 /**
  * `handlers` as one object that stays the same from render to render, whose functions call
@@ -6,13 +8,12 @@ import { useRef, useState } from "react";
  * props change. Values that aren't functions are those of the first render.
  */
 export function useStableHandlers<T extends object>(handlers: T): T {
-  const latest = useRef(handlers);
-  latest.current = handlers;
+  const latestRef = useLatest(handlers);
   const [stable] = useState(() => {
     const entries = Object.entries(handlers).map(([name, value]) => [
       name,
       typeof value === "function"
-        ? (...args: unknown[]) => (latest.current as Record<string, (...a: unknown[]) => unknown>)[name](...args)
+        ? (...args: unknown[]) => (latestRef.current as Record<string, (...a: unknown[]) => unknown>)[name](...args)
         : value,
     ]);
     return Object.fromEntries(entries) as T;

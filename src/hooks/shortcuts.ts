@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent } from "react";
 
 import { isAppLocked } from "../lib/appLock";
 import { isDialogOpen, type DialogHandle } from "./dialogs";
@@ -58,8 +58,7 @@ export function runAction(action: Action): boolean {
  * also get the actions chosen from menus (`runAction`), which `matches` takes for their keys.
  */
 export function useShortcuts(handle: ShortcutHandler, { when = "tabs", dialog, enabled = true }: Options = {}) {
-  const latest = useRef(handle);
-  latest.current = handle;
+  const onShortcut = useEffectEvent(handle);
 
   useEffect(() => {
     if (!enabled) return;
@@ -68,7 +67,7 @@ export function useShortcuts(handle: ShortcutHandler, { when = "tabs", dialog, e
       listening = true;
     }
     const registration: Registration = {
-      handle: (e) => latest.current(e),
+      handle: (e) => onShortcut(e),
       applies: () => (dialog ? dialog.isTop() : when === "always" || !isDialogOpen()),
     };
     registrations.add(registration);

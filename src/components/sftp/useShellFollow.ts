@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import { announce } from "../../lib/announce";
@@ -53,8 +53,7 @@ export function useShellFollow({ paneKey, sessionId, connected, active, follow, 
     if (await load(dir)) syncedRef.current = dir;
   }, [sessionId, find, load, setError, t]);
 
-  const loadRef = useRef(load);
-  loadRef.current = load;
+  const loadFollowed = useEffectEvent(load);
   useEffect(() => {
     if (!follow || !active || !connected || sessionId == null) return;
     let live = true;
@@ -75,7 +74,7 @@ export function useShellFollow({ paneKey, sessionId, connected, active, follow, 
           if (dir === cwdRef.current) syncedRef.current = dir;
           // Only once there: a folder that couldn't be listed (an error, or a reconnection
           // meanwhile) is tried again the next time the shell may have moved.
-          else if ((await loadRef.current(dir, true)) && live) {
+          else if ((await loadFollowed(dir, true)) && live) {
             syncedRef.current = dir;
             announce(t("sftp.followedTerminal", { path: dir }));
           }

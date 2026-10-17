@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { CheckIcon, ChevronIcon, DotIcon } from "./icons";
@@ -61,11 +61,10 @@ const SUBMENU_DELAY = 200;
 export function ContextMenu({ x, y, items, onClose, anchor, highlightFirst }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [opener] = useState(() => document.activeElement);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const onCloseEvent = useEffectEvent(onClose);
 
   useEffect(() => {
-    const close = () => onCloseRef.current();
+    const close = () => onCloseEvent();
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (!ref.current?.contains(target) && !anchor?.contains(target)) close();

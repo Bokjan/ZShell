@@ -13,6 +13,7 @@ import { ForwardsPanel } from "./ForwardsPanel";
 import { Separator } from "./Separator";
 import { SftpPanel } from "./SftpPanel";
 import { TerminalView, type PasteTarget } from "./TerminalView";
+import { useLatest } from "../hooks/latest";
 
 /** What a tab page reports about its panes, and asks for them; each by pane key. */
 export interface PaneHandlers {
@@ -87,8 +88,7 @@ function TabPageView({ tab, active, syncing, inScope, flashing, refused, handler
   const [mounted, setMounted] = useState<Record<number, SidePanel[]>>({});
   const pageRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
-  const tabRef = useRef(tab);
-  tabRef.current = tab;
+  const tabRef = useLatest(tab);
   const split = tab.panes.length > 1;
   const rects = paneRects(tab.layout);
 

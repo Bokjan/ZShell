@@ -12,6 +12,7 @@ import { type TabStore, type TabTransfer } from "../lib/tabs";
 import { useTabStore } from "../hooks/stores";
 import { windows, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
+import { useLatest } from "../hooks/latest";
 
 interface Options {
   followRemoteTitle: boolean;
@@ -46,8 +47,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   const [others, setOthers] = useState<WindowInfo[]>([]);
   /** Tabs moving out, by key. */
   const moving = useRef(new Map<number, Moving>());
-  const openTabRef = useRef(openTab);
-  openTabRef.current = openTab;
+  const openTabRef = useLatest(openTab);
 
   // While the app lock covers the window, the title shows no session either: it is in the
   // Dock, the taskbar and the window switchers.

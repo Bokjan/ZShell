@@ -42,6 +42,7 @@ import { KnownHostsSection } from "./settings/KnownHostsSection";
 import { LogSection } from "./settings/LogSection";
 import { ProxySection } from "./settings/ProxySection";
 import { SecuritySection } from "./settings/SecuritySection";
+import { useLatest } from "../hooks/latest";
 
 interface Props {
   /** Whether the system allows local terminals (not Windows in S mode). */
@@ -82,8 +83,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const updates = useUpdates();
   const resetButton = useConfirmButton();
   const [query, setQuery] = useState("");
-  const queryRef = useRef(query);
-  queryRef.current = query;
+  const queryRef = useLatest(query);
   // The sections with settings matching the search: all of them without one.
   const [shown, setShown] = useState<readonly SectionId[]>(SECTIONS);
   // The section scrolled to, highlighted in the navigation; none when the search finds nothing.

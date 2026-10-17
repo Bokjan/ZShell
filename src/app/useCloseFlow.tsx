@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
@@ -13,6 +13,7 @@ import { useShortcuts } from "../hooks/shortcuts";
 import { activeTabOf, type TabStore } from "../lib/tabs";
 import { windows } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
+import { useLatest } from "../hooks/latest";
 
 /**
  * Why closing a pane needs confirmation: its file panel is at work (even disconnected), a
@@ -59,8 +60,7 @@ async function busyReason(pane: Pane): Promise<Busy | null> {
  */
 export function useCloseFlow(store: TabStore, settings: Settings, update: (settings: Settings) => void) {
   const { t } = useTranslation();
-  const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+  const settingsRef = useLatest(settings);
   // Panes waiting for the user to confirm closing them, with why the first busy one is busy.
   const [closing, setClosing] = useState<Closing | null>(null);
   // Closing panes whose connections run port forwarding another tab of the session could take over.

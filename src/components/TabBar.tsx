@@ -24,6 +24,7 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
+import { useLatest } from "../hooks/latest";
 
 interface Props {
   tabs: Tab[];
@@ -135,8 +136,7 @@ export function TabBar({
   useWindowEvent("tab-drag-over", setDropX);
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
-  const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
+  const tabsRef = useLatest(tabs);
 
   // Keep the active tab in view, e.g. after Ctrl+Tab or opening a tab.
   useEffect(() => {

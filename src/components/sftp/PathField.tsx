@@ -5,6 +5,7 @@ import { sftp, type FileEntry, type SessionId } from "../../ipc/api";
 import { completionTarget, folderCandidates, tabCompletion } from "../../lib/pathCompletion";
 import { isComposing } from "../../lib/platform";
 import { FolderIcon } from "../icons";
+import { useLatest } from "../../hooks/latest";
 
 interface Props {
   sessionId: SessionId | null;
@@ -71,8 +72,7 @@ export function PathField({ sessionId, value, onChange, onGo, onEditing, showHid
     };
   }, [typing, sessionId, dir]);
 
-  const onEditingRef = useRef(onEditing);
-  onEditingRef.current = onEditing;
+  const onEditingRef = useLatest(onEditing);
   // Typing stops with the field.
   useEffect(() => () => onEditingRef.current(false), []);
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
@@ -10,6 +10,7 @@ import { isComposing } from "../../lib/platform";
 import type { LogFormat, LogSettings } from "../../hooks/settings";
 import { useWindowFocus } from "../../hooks/windowEvents";
 import { FolderField, Section, Setting, useFieldText } from "./common";
+import { useLatest } from "../../hooks/latest";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
 /** Retention choices, in days; 0 keeps logs. */
@@ -63,9 +64,8 @@ export function LogSection({
   const commitFileName = () => {
     if (fileName.trim() !== settings.fileName) onChange({ fileName: fileName.trim() });
   };
-  const commitLatest = useRef(commitFileName);
-  commitLatest.current = commitFileName;
-  useEffect(() => () => commitLatest.current(), []);
+  const commitRef = useLatest(commitFileName);
+  useEffect(() => () => commitRef.current(), []);
 
   return (
     <Section id="logs">

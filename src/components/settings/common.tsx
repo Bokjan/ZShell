@@ -7,6 +7,7 @@ import { wholeNumber } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
 import { useSettings } from "../../hooks/settings";
 import { SpinInput } from "../SpinInput";
+import { useLatest } from "../../hooks/latest";
 
 /**
  * The text of a field showing a stored `value`, which can also change in another window: a
@@ -15,8 +16,7 @@ import { SpinInput } from "../SpinInput";
 export function useFieldText(value: string, same?: (text: string, value: string) => boolean) {
   const [text, setText] = useState(value);
   const previous = useRef(value);
-  const sameRef = useRef(same);
-  sameRef.current = same;
+  const sameRef = useLatest(same);
   useEffect(() => {
     const before = previous.current;
     previous.current = value;
@@ -116,9 +116,8 @@ export function NumberField({
       setText(String(n));
     } else setText(String(value));
   };
-  const commitLatest = useRef(() => {});
-  commitLatest.current = () => commit(text);
-  useEffect(() => () => commitLatest.current(), []);
+  const commitRef = useLatest(() => commit(text));
+  useEffect(() => () => commitRef.current(), []);
   return (
     <SpinInput
       value={text}

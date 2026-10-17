@@ -5,6 +5,7 @@ import { CLOSED_COMPOSE, scopePanes, sendsToMany, syncTargets, type Compose, typ
 import { findPane, paneLabel, type Pane, type Tab } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import type { TabStore } from "../lib/tabs";
+import { useLatest } from "../hooks/latest";
 
 /** How long panes that received text from the compose bar flash. */
 const FLASH_MS = 700;
@@ -22,12 +23,10 @@ interface Options {
  */
 export function useCompose(store: TabStore, sessions: SessionRegistry, tabs: Tab[], activeKey: number | null, options: Options) {
   const [compose, setCompose] = useState<Compose>(CLOSED_COMPOSE);
-  const composeRef = useRef(compose);
-  composeRef.current = compose;
+  const composeRef = useLatest(compose);
   const [flashing, setFlashing] = useState<number[]>([]);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  const optionsRef = useLatest(options);
 
   // Closing the bar turns syncing off; the scope stays for the next time, shown on the bar.
   const toggle = useCallback(() => {

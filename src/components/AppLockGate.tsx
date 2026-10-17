@@ -9,6 +9,7 @@ import { listenHere } from "../ipc/events";
 import { useConfigChanged } from "../hooks/windowEvents";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
+import { useLatest } from "../hooks/latest";
 
 interface AppLockContextValue {
   status: AppLockStatus;
@@ -58,8 +59,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   // Locked by the user in this window: they are about to leave, so the system isn't asked
   // until the window comes back.
   const [byHand, setByHand] = useState(false);
-  const statusRef = useRef(status);
-  statusRef.current = status;
+  const statusRef = useLatest(status);
 
   const refresh = useCallback(() => void appLock.status().then(setStatus, (e) => setFailure(errorMessage(e))), []);
 

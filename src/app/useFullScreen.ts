@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useLatest } from "../hooks/latest";
 
 /** How long the hint with the keys that leave full screen stays. */
 const HINT_MS = 3000;
@@ -16,13 +17,12 @@ export function useFullScreen(hasTabs: boolean, onChange: (on: boolean) => void)
   const [hint, setHint] = useState(false);
   // The window was in full screen before (macOS ⌃⌘F), so leaving keeps it there.
   const wasFullScreen = useRef(false);
-  const latest = useRef(onChange);
-  latest.current = onChange;
+  const onChangeRef = useLatest(onChange);
 
   const change = (next: boolean) => {
     setOn(next);
     setHint(next);
-    latest.current(next);
+    onChangeRef.current(next);
   };
 
   const enter = async () => {

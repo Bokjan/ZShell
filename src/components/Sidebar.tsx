@@ -43,6 +43,7 @@ import { IconButton } from "./IconButton";
 import { Separator } from "./Separator";
 import { ExportDialog } from "./ExportDialog";
 import { SessionImportDialog } from "./SessionImportDialog";
+import { useLatest } from "../hooks/latest";
 
 /**
  * How a session is opened: switch to a pane it already has, always in a new tab, or in a
@@ -103,8 +104,7 @@ export function Sidebar(props: Props) {
   const { profiles, folders } = state;
   const update = props.appMenu.update;
   const [width, setWidth] = useState(storedWidth);
-  const widthRef = useRef(width);
-  widthRef.current = width;
+  const widthRef = useLatest(width);
   const asideRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
