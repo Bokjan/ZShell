@@ -79,9 +79,8 @@
   font-size: calc(12px * var(--text-scale));
   text-align: center;
 }
+/* Running text rather than flex, where `.help-tip` would center on the line box, which sits
+   below the glyphs of CJK fonts. */
 .known-hosts-summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin: 0;
 }
