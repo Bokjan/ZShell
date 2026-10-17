@@ -100,22 +100,26 @@ function Connection({ pane, profile }: { pane: Pane; profile: Profile | undefine
 }
 
 /**
- * The send and receive lights, with what the connection has carried in the tooltip. Drawn
- * again each second, for the tooltip's "last received" (taken when the pointer arrives).
+ * The send and receive lights, with what the connection has carried in the tooltip. Its text
+ * is worked out each second, for "last received" (taken when the pointer arrives), and drawn
+ * again only when it has changed.
  */
 function Activity({ meter }: { meter: TrafficMeter | undefined }) {
   const { t } = useTranslation();
   const { formatSize, formatAgo } = useLocale();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const { send, receive } = useLights(meter, reduced ? LIGHT_REDUCED_MS : LIGHT_MS);
-  const now = useTick(1000);
-  const sent = formatSize(meter?.sent ?? 0);
-  const received = formatSize(meter?.received ?? 0);
-  const last = meter?.lastReceived;
-  const lines = [
-    t("statusBar.traffic", { sent, received }),
-    last == null ? t("statusBar.nothingReceived") : t("statusBar.lastReceived", { time: formatAgo(now - last) }),
-  ];
+  const summary = () => {
+    const sent = formatSize(meter?.sent ?? 0);
+    const received = formatSize(meter?.received ?? 0);
+    const last = meter?.lastReceived;
+    return [
+      t("statusBar.traffic", { sent, received }),
+      last == null ? t("statusBar.nothingReceived") : t("statusBar.lastReceived", { time: formatAgo(Date.now() - last) }),
+    ].join("\n");
+  };
+  const text = useEverySecond(summary);
+  const lines = text.split("\n");
   return (
     <span className="status-activity" title={[...lines, t("statusBar.trafficScope")].join("\n")}>
       <span className={send ? "send on" : "send"}>
@@ -222,12 +226,14 @@ function useCountdown(at: number | null): number | null {
   return at === null ? null : Math.max(1, Math.ceil((at - now) / 1000));
 }
 
-/** The time, updated every `interval` milliseconds. */
-function useTick(interval: number): number {
-  const [now, setNow] = useState(Date.now);
+/** What `compute` returns, worked out again every second: a render only when it changes. */
+function useEverySecond(compute: () => string): string {
+  const [value, setValue] = useState(compute);
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), interval);
+    const update = () => setValue(compute());
+    update();
+    const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [interval]);
-  return now;
+  }, [compute]);
+  return value;
 }
