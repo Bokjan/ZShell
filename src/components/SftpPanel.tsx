@@ -438,6 +438,8 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
   );
 
   const parent = cwd && cwd !== "/" ? parentPath(cwd) : null;
+  // Counted from 1, after the header row and the new folder's, if any (see `aria-rowcount`).
+  const firstRowIndex = newFolder != null ? 3 : 2;
   const fileRow = (index: number) => {
     const entry = visible[index];
     return (
@@ -445,8 +447,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         key={entry.path}
         entry={entry}
         id={`${gridId}-${index}`}
-        // After the header row, counted from 1.
-        rowIndex={rowWindow ? index + 2 : undefined}
+        rowIndex={rowWindow ? firstRowIndex + index : undefined}
         selected={selection.paths.has(entry.path)}
         dropTarget={dropDir === entry.path}
         renaming={renaming?.path === entry.path ? renaming.value : null}
@@ -584,7 +585,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         aria-multiselectable="true"
         aria-busy={loading}
         aria-activedescendant={cursorIndex >= 0 ? `${gridId}-${cursorIndex}` : undefined}
-        aria-rowcount={rowWindow ? visible.length + 1 : undefined}
+        aria-rowcount={rowWindow ? firstRowIndex - 1 + visible.length : undefined}
         tabIndex={0}
         onKeyDown={onListKeyDown}
         onMouseDownCapture={(e) => {
@@ -603,7 +604,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
             <col className="col-time" />
           </colgroup>
           <thead role="rowgroup">
-            <tr role="row">
+            <tr role="row" aria-rowindex={rowWindow ? 1 : undefined}>
               {sortHeader("name", t("sftp.columnName"))}
               {sortHeader("size", t("sftp.columnSize"), "file-size")}
               {sortHeader("modified", t("sftp.columnModified"))}
@@ -611,7 +612,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
           </thead>
           <tbody role="rowgroup">
             {newFolder != null && (
-              <tr role="row">
+              <tr role="row" aria-rowindex={rowWindow ? 2 : undefined}>
                 <td colSpan={3} role="gridcell">
                   <form onSubmit={submitNewFolder}>
                     <input
@@ -627,14 +628,15 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
               </tr>
             )}
             {rowWindow
-              ? rowWindow.segments.map((segment, i) =>
-                  segment.kind === "rows" ? (
-                    Array.from({ length: segment.end - segment.start }, (_, j) => fileRow(segment.start + j))
-                  ) : (
-                    <tr key={`gap-${i}`} className="sftp-gap" aria-hidden="true">
-                      <td colSpan={3} style={{ height: segment.rows * rowWindow.rowHeight }} />
-                    </tr>
-                  ),
+              ? // One list, keyed by path: rows stay as gaps come and go before them.
+                rowWindow.segments.flatMap((segment, i) =>
+                  segment.kind === "rows"
+                    ? Array.from({ length: segment.end - segment.start }, (_, j) => fileRow(segment.start + j))
+                    : [
+                        <tr key={`gap-${i}`} className="sftp-gap" aria-hidden="true">
+                          <td colSpan={3} style={{ height: segment.rows * rowWindow.rowHeight }} />
+                        </tr>,
+                      ],
                 )
               : visible.map((_, index) => fileRow(index))}
           </tbody>
