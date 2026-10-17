@@ -92,13 +92,8 @@ struct Drag {
 impl Drag {
     fn result(&self) -> DragResult {
         let (x, y) = self.position.get();
-        if self.dropped_inside.get() {
-            DragResult { outcome: Outcome::Inside, x: f64::from(x), y: f64::from(y) }
-        } else if self.failed.get() || !self.asked.get() {
-            DragResult::cancelled()
-        } else {
-            DragResult { outcome: Outcome::Outside, x: 0.0, y: 0.0 }
-        }
+        let (inside, asked) = (self.dropped_inside.get(), self.asked.get());
+        DragResult::ended(inside || asked, inside, asked && !self.failed.get(), f64::from(x), f64::from(y))
     }
 
     fn disconnect(&self) {

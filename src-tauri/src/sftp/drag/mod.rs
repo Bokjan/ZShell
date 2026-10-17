@@ -66,6 +66,18 @@ impl DragResult {
     fn cancelled() -> Self {
         Self { outcome: Outcome::Cancelled, x: 0.0, y: 0.0 }
     }
+
+    /// How a drag ended, from what the platform saw: whether the items were `dropped` at all,
+    /// whether on this window (`inside`, released at `x`, `y` in the page), and whether the
+    /// application they were dropped on `took` them (accepted the drop, or asked for the
+    /// files). One dropped elsewhere that nobody took was refused, which is no drop.
+    fn ended(dropped: bool, inside: bool, took: bool, x: f64, y: f64) -> Self {
+        match (dropped, inside, took) {
+            (true, true, _) => Self { outcome: Outcome::Inside, x, y },
+            (true, false, true) => Self { outcome: Outcome::Outside, x: 0.0, y: 0.0 },
+            _ => Self::cancelled(),
+        }
+    }
 }
 
 /// The download of a drop, reported to the frontend as one transfer.
@@ -322,4 +334,21 @@ pub async fn drag_out(
         download.finish();
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_drop_counts_where_it_was_taken() {
+        let ended = |dropped, inside, took| DragResult::ended(dropped, inside, took, 5.0, 6.0);
+        let inside = ended(true, true, false);
+        assert_eq!((inside.outcome, inside.x, inside.y), (Outcome::Inside, 5.0, 6.0));
+        assert_eq!(ended(true, false, true).outcome, Outcome::Outside);
+        // Refused by the window it was dropped on, or not dropped.
+        assert_eq!(ended(true, false, false).outcome, Outcome::Cancelled);
+        assert_eq!(ended(false, true, true).outcome, Outcome::Cancelled);
+        assert_eq!(ended(false, false, true).outcome, Outcome::Cancelled);
+    }
 }

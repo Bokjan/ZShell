@@ -166,16 +166,12 @@ define_class!(
                 && point.y >= frame.origin.y
                 && point.y <= frame.origin.y + frame.size.height
                 && NSWindow::windowNumberAtPoint_belowWindowWithWindowNumber(point, 0, self.mtm()) == self.ivars().window_number;
-            let outcome = if operation == NSDragOperation::None {
-                Outcome::Cancelled
-            } else if inside {
-                Outcome::Inside
-            } else {
-                Outcome::Outside
-            };
             // The page fills the window (the title bar overlays it); screen coordinates grow
-            // upwards.
-            let result = DragResult { outcome, x: point.x - frame.origin.x, y: frame.origin.y + frame.size.height - point.y };
+            // upwards. An operation means the receiver accepted the drop.
+            let (x, y) = (point.x - frame.origin.x, frame.origin.y + frame.size.height - point.y);
+            let accepted = operation != NSDragOperation::None;
+            let result = DragResult::ended(accepted, inside, accepted, x, y);
+            let outcome = result.outcome;
             if let Some(done) = self.ivars().done.borrow_mut().take() {
                 let _ = done.send(result);
             }

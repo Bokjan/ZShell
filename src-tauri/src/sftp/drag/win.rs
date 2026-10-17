@@ -30,7 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WindowFromPoint, GA_ROOT, MSG, PM_REMOVE, QS_ALLINPUT, WM_QUIT,
 };
 
-use super::{placeholders, DragResult, DropDownload, Item, Outcome};
+use super::{placeholders, DragResult, DropDownload, Item};
 use crate::error::{Error, Result};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -323,10 +323,8 @@ pub(super) fn start(
             let refused =
                 effect == DROPEFFECT_NONE && *shared.fetch.lock().unwrap() == Fetch::Idle && !shared.started.load(Ordering::Relaxed);
             let result = match release {
-                Some(Release { inside, x, y }) if hr == DRAGDROP_S_DROP && (inside || !refused) => {
-                    DragResult { outcome: if inside { Outcome::Inside } else { Outcome::Outside }, x, y }
-                }
-                _ => DragResult::cancelled(),
+                Some(Release { inside, x, y }) => DragResult::ended(hr == DRAGDROP_S_DROP, inside, !refused, x, y),
+                None => DragResult::cancelled(),
             };
             let _ = done.send(result);
         })
