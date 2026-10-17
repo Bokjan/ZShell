@@ -1,4 +1,4 @@
-import { useEffect, useInsertionEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -120,6 +120,8 @@ export function TerminalView({
   const termRef = useRef<Terminal | null>(null);
   // Fits the terminal to the pane, except while a screen from another window is drawn.
   const fitRef = useRef<{ fit(): void } | null>(null);
+  // Resized while hidden: to fit once shown.
+  const unfittedRef = useRef(false);
   const searchRef = useRef<SearchAddon | null>(null);
   // The same two for rendering (the context menu, the search bar), which can't read refs.
   const [terminal, setTerminal] = useState<Terminal | null>(null);
@@ -443,7 +445,18 @@ export function TerminalView({
       term.onTitleChange((title) => onTitleRef.current(title)),
       term.onBell(() => session.bell()),
     ];
-    const observer = new ResizeObserver(() => fitRef.current?.fit());
+    // A hidden tab keeps its size, and resizing the window would refit (and reflow) every
+    // terminal in every tab on each frame: those out of sight fit once shown again, except
+    // the first time (a tab opened in the background starts its session at its size).
+    let fitted = false;
+    const observer = new ResizeObserver(() => {
+      if (visibleRef.current || !fitted) {
+        fitted = true;
+        fitRef.current?.fit();
+      } else {
+        unfittedRef.current = true;
+      }
+    });
     observer.observe(container);
     // A tick later: React's StrictMode (in development) mounts, unmounts and mounts again at
     // once, which would open a backend session (and a log file, or a serial device that is
@@ -504,6 +517,13 @@ export function TerminalView({
     minimumContrastRatio,
     screenReaderMode,
   ]);
+
+  // Before the page is painted, so that it doesn't show the terminal at its old size first.
+  useLayoutEffect(() => {
+    if (!visible || !unfittedRef.current) return;
+    unfittedRef.current = false;
+    fitRef.current?.fit();
+  }, [visible]);
 
   // The web view allows only so many WebGL contexts (about 16), and drops the oldest beyond
   // that: terminals of hidden tabs release theirs (drawing with the DOM renderer meanwhile)
