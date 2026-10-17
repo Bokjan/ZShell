@@ -1,20 +1,27 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [react()],
+  // React Compiler memoizes the components and hooks; every one of them must compile
+  // (src/compiler.test.ts checks, and "渲染与 memo" in docs/ARCHITECTURE.md says why).
+  plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
-  // xterm.js alone is ~500 kB; bundle size matters little for a locally loaded desktop app.
+  // xterm.js alone is ~500 kB, and React Compiler's memoization adds ~150 kB; bundle size
+  // matters little for a locally loaded desktop app.
   build: {
-    chunkSizeWarningLimit: 1500,
+    chunkSizeWarningLimit: 2000,
+    // React Compiler runs through Babel and takes most of the build's time on every build:
+    // known, so not reported each time.
+    rolldownOptions: { checks: { bundlerTimings: false } },
   },
   // 2. tauri expects a fixed port, fail if that port is not available. Ports below ~15000 can fall in the ranges
   //    Windows reserves for Hyper-V / WinNAT when the dynamic port range starts low (listen fails with EACCES), and
