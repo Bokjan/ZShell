@@ -1,6 +1,6 @@
 /* Less motion, when the system asks for it. */
 
-/* The system asks for less motion: no transitions, and flashes are skipped. */
+/* The system asks for less motion: no transitions or animations, but for the visual bell. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
