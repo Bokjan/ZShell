@@ -12,7 +12,7 @@ const FLASH_MS = 700;
 
 interface Options {
   /** Whether panes are named after the title their program sets (the settings). */
-  followRemoteTitle(): boolean;
+  followRemoteTitle: boolean;
   /** Moves the keyboard focus back to the active terminal (once the bar closes). */
   focusTerminal(): void;
 }
@@ -33,13 +33,13 @@ export function useCompose(store: TabStore, sessions: SessionRegistry, tabs: Tab
     const open = !composeRef.current.open;
     setCompose({ ...composeRef.current, open, sync: false });
     if (!open) optionsRef.current.focusTerminal();
-  }, []);
+  }, [composeRef, optionsRef]);
 
-  /** Names of panes, as listed for the compose bar and quick commands. */
-  const labelsOf = (panes: Pane[]) =>
+  /** Names of panes among `all`, as listed for the compose bar and quick commands. */
+  const labelsOf = (panes: Pane[], all: Tab[], followRemoteTitle: boolean) =>
     panes.flatMap((pane) => {
-      const found = findPane(store.get().tabs, pane.key);
-      return found ? [paneLabel(found.tab, pane, optionsRef.current.followRemoteTitle())] : [];
+      const found = findPane(all, pane.key);
+      return found ? [paneLabel(found.tab, pane, followRemoteTitle)] : [];
     });
 
   /** Sends text as if typed to the panes in scope (see `scopePanes`); panes beyond the focused one flash. */
@@ -51,7 +51,7 @@ export function useCompose(store: TabStore, sessions: SessionRegistry, tabs: Tab
       setFlashing(sent.map((pane) => pane.key));
       flashTimer.current = setTimeout(() => setFlashing([]), FLASH_MS);
     }
-    return { sent: labelsOf(sent), skipped: targets.length - sent.length };
+    return { sent: labelsOf(sent, store.get().tabs, optionsRef.current.followRemoteTitle), skipped: targets.length - sent.length };
   };
 
   // Syncing: what is typed in the focused terminal goes to the other connected panes in scope.
@@ -69,7 +69,7 @@ export function useCompose(store: TabStore, sessions: SessionRegistry, tabs: Tab
 
   const inScope = useMemo(() => (sendsToMany(compose) ? scopePanes(compose, tabs, activeKey) : []), [compose, tabs, activeKey]);
   // Who a quick command goes to, when that is more than the focused pane.
-  const targets = sendsToMany(compose) ? labelsOf(inScope) : null;
+  const targets = sendsToMany(compose) ? labelsOf(inScope, tabs, options.followRemoteTitle) : null;
 
   return { compose, setCompose, toggle, send, onInput, registerPaste, syncedPasteTargets, flashing, inScope, targets };
 }

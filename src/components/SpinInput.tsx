@@ -31,10 +31,11 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
   const repeat = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(repeat.current), []);
 
-  const current = () => {
-    const n = Number(valueRef.current);
-    return valueRef.current.trim() !== "" && Number.isFinite(n) ? Math.round(n) : start;
+  const parse = (text: string) => {
+    const n = Number(text);
+    return text.trim() !== "" && Number.isFinite(n) ? Math.round(n) : start;
   };
+  const current = () => parse(valueRef.current);
   /** Returns whether the value can go further this way. */
   const stepBy = (steps: number) => {
     const next = Math.min(max, Math.max(min, current() + steps * step));
@@ -65,7 +66,7 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
     if (stepBy(steps)) again(REPEAT_DELAY);
   };
 
-  const n = current();
+  const n = parse(value);
   return (
     <span className="spin-input">
       <input {...rest} value={value} inputMode="numeric" onChange={(e) => onChange(e.target.value, false)} onKeyDown={keyDown} />

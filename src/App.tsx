@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useInsertionEffect, useRef, useState } from "react";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
@@ -39,6 +39,7 @@ import {
   type QuickCommand,
   type SessionTarget,
   type SetAsideFile,
+  type Settings,
 } from "./ipc/api";
 import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./hooks/appMenu";
 import { basename } from "./lib/format";
@@ -67,10 +68,16 @@ const MENU_COMMANDS = 8;
 /** What terminal full screen hides, whose keys and menu items do nothing meanwhile. */
 const HIDDEN_IN_FULL_SCREEN = ["searchSessions", "composeBar", "filePanel", "forwardsPanel"] as const;
 
+/** What the session registry calls into that `App` makes after it, handed over after each render. */
+interface RegistryLater {
+  settings: Settings;
+  closePane(key: number): void;
+  windowing: Pick<ReturnType<typeof useWindows>, "movedAway" | "stayed"> | null;
+}
+
 function App() {
   const { t } = useTranslation();
   const { settings, update, saveError: settingsSaveError, dismissSaveError: dismissSettingsSaveError } = useSettings();
-  const settingsRef = useLatest(settings);
   useDirectorySync();
   const { profiles } = useDirectory();
   const [searchFocusKey, setSearchFocusKey] = useState(0);
@@ -96,22 +103,22 @@ function App() {
   const [localAllowed, setLocalAllowed] = useState(true);
   // For quick connections without a user name.
   const [username, setUsername] = useState("");
-  // Set once `useWindows` has run below.
-  const windowingRef = useRef<Pick<ReturnType<typeof useWindows>, "movedAway" | "stayed">>(undefined);
-  // Set once `useCloseFlow` has run below.
-  const closePaneRef = useRef<(key: number) => void>(undefined);
-  const [sessions] = useState(() =>
-    createSessionRegistry(store, {
+  // The registry reads the settings and calls into what is made further down (closing panes,
+  // moving them between windows): those are handed over after each render (`handOver` below).
+  const [{ sessions, handOver }] = useState(() => {
+    let later: RegistryLater = { settings, closePane: () => {}, windowing: null };
+    const sessions = createSessionRegistry(store, {
       profiles: () => directory.get().profiles,
       t: i18n.t,
       announce,
-      movedAway: (key) => windowingRef.current?.movedAway(key),
-      stayed: (key, from) => windowingRef.current?.stayed(key, from),
-      close: (key) => closePaneRef.current?.(key),
-      markOutput: () => settingsRef.current.tabs.markOutput,
-      bell: () => settingsRef.current.terminal,
-    }),
-  );
+      movedAway: (key) => later.windowing?.movedAway(key),
+      stayed: (key, from) => later.windowing?.stayed(key, from),
+      close: (key) => later.closePane(key),
+      markOutput: () => later.settings.tabs.markOutput,
+      bell: () => later.settings.terminal,
+    });
+    return { sessions, handOver: (next: RegistryLater) => void (later = next) };
+  });
   const localTitleRef = useLatest(shellName ?? t("tabs.localTitle"));
 
   /** Moves the keyboard focus back to the active terminal (after a bar or the palette closes). */
@@ -131,13 +138,12 @@ function App() {
   useNativeMenuLabel("fullScreen", t(fullScreen.on ? "appMenu.exitFullScreen" : "appMenu.items.fullScreen"));
   const { commands } = quick;
   const composer = useCompose(store, sessions, tabs, activeKey, {
-    followRemoteTitle: () => settingsRef.current.tabs.followRemoteTitle,
+    followRemoteTitle: settings.tabs.followRemoteTitle,
     focusTerminal: focusActiveTerminal,
   });
   const { compose, flashing, inScope } = composer;
   const close = useCloseFlow(store, settings, update);
   const { requestClose, closeFocused } = close;
-  closePaneRef.current = close.closePane;
 
   // Returned only once, so a second call (StrictMode) must not clear the first's result.
   useEffect(() => {
@@ -163,7 +169,7 @@ function App() {
   );
 
   const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: addTab });
-  windowingRef.current = windowing;
+  useInsertionEffect(() => handOver({ settings, closePane: close.closePane, windowing }));
 
   /** Shows the pane: activates its tab and focuses it there. */
   const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);
@@ -206,7 +212,7 @@ function App() {
   const quickConnect = (target: QuickTarget) =>
     addTab({ kind: "quick", ...target }, address({ ...target, username: target.username || (target.protocol === "ssh" ? username : "") }));
 
-  const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab]);
+  const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab, localTitleRef]);
 
   const moveTab = (key: number, index: number) => dispatch({ type: "move", key, index });
 
