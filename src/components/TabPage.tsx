@@ -20,7 +20,7 @@ import {
 import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type Tab } from "../lib/panes";
 import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { GripIcon } from "./icons";
-import { place, type PaneHosts } from "./paneHosts";
+import { holdOnly, place, type PaneHosts } from "./paneHosts";
 import { Separator } from "./Separator";
 
 /** What a tab page reports about its panes, and asks for them; each by pane key. */
@@ -132,11 +132,13 @@ function TabPageView(props: Props) {
   const focused = focusedPane(tab);
   const panelHere = tab.sidePanel !== null && focused.protocol === "ssh";
 
-  // The panes' side panels, each pane's shown while it has the focus (see `PaneHost`).
+  // The panes' side panels, each pane's shown while it has the focus (see `PaneHost`). Only
+  // the hosts of panes that come or go move: a split leaves the open panel as it was. Those
+  // still here when the page goes go with it, and a pane moving on takes its host along.
   const paneKeys = tab.panes.map((pane) => pane.key).join(" ");
   useLayoutEffect(() => {
     const keys = paneKeys.split(" ").map(Number);
-    return place(
+    holdOnly(
       panelPagesRef.current!,
       keys.map((key) => h.hosts.panels(key)),
     );

@@ -49,3 +49,14 @@ export function place(container: HTMLElement, hosts: HTMLElement[]): () => void 
   container.prepend(...hosts);
   return () => hosts.forEach((host) => host.parentNode === container && host.remove());
 }
+
+/**
+ * Makes `container`, which holds nothing of its own, hold `hosts` and no others: it takes out
+ * those that have gone and puts in those that came, leaving the others where they are. Taking
+ * an element out of the page and back takes the focus from what is in it, and may reset its
+ * scroll positions.
+ */
+export function holdOnly(container: HTMLElement, hosts: HTMLElement[]) {
+  for (const child of [...container.children]) if (!hosts.includes(child as HTMLElement)) child.remove();
+  container.append(...hosts.filter((host) => host.parentNode !== container));
+}
