@@ -1,5 +1,40 @@
+import type { Point } from "../ipc/bindings";
 import { listenHere } from "../ipc/events";
 import { tabDrag, type DropTarget } from "../ipc/windows";
+
+/** How far the pointer moves before a press on a tab or on a pane's grip becomes a drag. */
+const DRAG_THRESHOLD = 5;
+
+/**
+ * The press at `grab` has become a drag, the pointer at `ev` having moved far enough any way:
+ * straight down out of the window too.
+ */
+export const pastThreshold = (grab: Point, ev: MouseEvent) => Math.hypot(ev.clientX - grab.x, ev.clientY - grab.y) >= DRAG_THRESHOLD;
+
+/** The pointer is outside the page. */
+export const isOutside = (ev: MouseEvent) =>
+  ev.clientX < 0 || ev.clientY < 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight;
+
+/**
+ * Follows the mouse over the window for a drag: where it moves, where it is released, and
+ * Escape, which the terminal doesn't get then. Returns what stops following it.
+ */
+export function followMouse(on: { move(ev: MouseEvent): void; up(ev: MouseEvent): void; escape(): void }): () => void {
+  const keyDown = (ev: KeyboardEvent) => {
+    if (ev.key !== "Escape") return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    on.escape();
+  };
+  window.addEventListener("mousemove", on.move);
+  window.addEventListener("mouseup", on.up);
+  window.addEventListener("keydown", keyDown, true);
+  return () => {
+    window.removeEventListener("mousemove", on.move);
+    window.removeEventListener("mouseup", on.up);
+    window.removeEventListener("keydown", keyDown, true);
+  };
+}
 
 /** What a `WindowDrag` tells the drag it is part of. */
 export interface WindowDragEvents {

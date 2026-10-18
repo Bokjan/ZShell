@@ -1,14 +1,24 @@
 /**
  * Where among the tabs of a tab strip a tab dropped at `x` (CSS pixels from the left of the
- * page) goes: past each tab whose middle is left of it. `except`: the tab being dragged,
- * which doesn't count.
+ * page) goes: past each tab whose middle is left of it.
  */
-export function tabIndexAt(strip: HTMLElement, x: number, except?: number): number {
+export function tabIndexAt(strip: HTMLElement, x: number): number {
   return [...strip.querySelectorAll<HTMLElement>(".tab")].filter((tab) => {
-    if (except !== undefined && tab.dataset.key === String(except)) return false;
     const rect = tab.getBoundingClientRect();
     return rect.left + rect.width / 2 < x;
   }).length;
+}
+
+/**
+ * Where a tab put at `index` among the tabs of a strip goes, as a drop marker shows it: the
+ * left edge of the tab there, or the right edge of the last one, in CSS pixels from the start
+ * of the strip's content.
+ */
+export function tabEdgeAt(strip: HTMLElement, index: number): number {
+  const tabs = strip.querySelectorAll<HTMLElement>(".tab");
+  if (index < tabs.length) return tabs[index].offsetLeft;
+  const last = tabs[tabs.length - 1];
+  return last ? last.offsetLeft + last.offsetWidth : 0;
 }
 
 /** The window's tab strip (there is one). */

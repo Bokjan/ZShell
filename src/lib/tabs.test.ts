@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PaneSpec, TabsAction, TabsState } from "./tabs";
-import { activeTabOf, createTabStore, INITIAL_TABS, reduceTabs, transferSessions } from "./tabs";
+import { activeTabOf, createTabStore, INITIAL_TABS, leavesSomething, reduceTabs, transferSessions } from "./tabs";
 
 const local: PaneSpec = { target: { kind: "local" }, protocol: "local", title: "zsh" };
 const ssh = (profileId: string): PaneSpec => ({ target: { kind: "profile", profileId }, protocol: "ssh", title: profileId });
@@ -179,6 +179,21 @@ describe("movePane", () => {
     const moving = reduceTabs(before, { type: "updateTab", key: before.tabs[1].key, patch: { moving: true } });
     expect(reduceTabs(moving, { type: "movePane", key: b, to: { kind: "pane", key: d, side: "left" } })).toBe(moving);
     expect(reduceTabs(moving, { type: "movePane", key: d, to: { kind: "pane", key: b, side: "left" } })).toBe(moving);
+  });
+});
+
+describe("leavesSomething", () => {
+  it("leaves a window's only tab whole, but lets one of its panes go", () => {
+    let state = run({ type: "open", pane: ssh("a") });
+    const tab = state.tabs[0];
+    const a = tab.panes[0].key;
+    expect(leavesSomething(state.tabs, tab.key)).toBe(false);
+    expect(leavesSomething(state.tabs, tab.key, a)).toBe(false);
+    state = reduceTabs(state, { type: "split", key: a, direction: "row", pane: ssh("b") });
+    expect(leavesSomething(state.tabs, tab.key)).toBe(false);
+    expect(leavesSomething(state.tabs, tab.key, a)).toBe(true);
+    state = reduceTabs(state, { type: "open", pane: ssh("c") });
+    expect(leavesSomething(state.tabs, tab.key)).toBe(true);
   });
 });
 

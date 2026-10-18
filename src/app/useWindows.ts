@@ -9,7 +9,7 @@ import type { SessionRegistry } from "../lib/sessionRegistry";
 import type { Dropped, Point } from "../ipc/bindings";
 import { tabIndexAt, tabStrip } from "../lib/tabStrip";
 import { TabMoves, type Settled } from "../lib/tabMoves";
-import { type TabStore, type TabTransfer } from "../lib/tabs";
+import { leavesSomething, type TabStore, type TabTransfer } from "../lib/tabs";
 import { useTabStore } from "../hooks/stores";
 import { windows, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
@@ -29,13 +29,6 @@ const TITLE_MS = 500;
 
 /** The panes of the tab that move: all of them, or only pane `only`. */
 const panesMoving = (tab: Tab, only?: number) => (only === undefined ? tab.panes : tab.panes.filter((pane) => pane.key === only));
-
-/**
- * Whether moving tab `key` (or only its pane `pane`) to a new window leaves anything in this
- * one: a window's only tab, as a whole, has nowhere new to go.
- */
-export const leavesSomething = (tabs: Tab[], key: number, pane?: number) =>
-  tabs.length > 1 || (pane !== undefined && (tabs.find((tab) => tab.key === key)?.panes.length ?? 0) > 1);
 
 const sameWindows = (a: WindowInfo[], b: WindowInfo[]) =>
   a.length === b.length && a.every((window, i) => window.label === b[i].label && window.title === b[i].title);

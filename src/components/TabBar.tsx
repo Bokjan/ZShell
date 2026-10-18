@@ -18,7 +18,7 @@ import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
 import type { Point } from "../ipc/bindings";
 import { REST_MS, type TabRest } from "../lib/tabRest";
-import { slideTabs, tabIndexAt } from "../lib/tabStrip";
+import { slideTabs, tabEdgeAt, tabIndexAt } from "../lib/tabStrip";
 import { DRAG_REGION } from "../hooks/titleBar";
 import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
@@ -161,10 +161,7 @@ export function TabBar({
   useWindowEvent("tab-drag-over", (x) => {
     const strip = stripRef.current;
     if (x === null || !strip) return setDropLeft(null);
-    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")];
-    const index = tabIndexAt(strip, x);
-    const last = elements[elements.length - 1];
-    setDropLeft(index < elements.length ? elements[index].offsetLeft : last ? last.offsetLeft + last.offsetWidth : 0);
+    setDropLeft(tabEdgeAt(strip, tabIndexAt(strip, x)));
   });
 
   // A dragged tab dropped in a new place: the tabs slide from where they were shown (see

@@ -39,6 +39,13 @@ export interface TabTransfer {
 /** The sessions a moving tab's panes take over: the window it goes to is offered them. */
 export const transferSessions = (tab: TabTransfer): SessionId[] => tab.panes.flatMap((pane) => pane.arrival?.sessionId ?? []);
 
+/**
+ * Whether moving tab `key` (or only its pane `pane`) to a new window leaves anything in this
+ * one: a window's only tab, as a whole, has nowhere new to go.
+ */
+export const leavesSomething = (tabs: Tab[], key: number, pane?: number) =>
+  tabs.length > 1 || (pane !== undefined && (tabs.find((tab) => tab.key === key)?.panes.length ?? 0) > 1);
+
 /** A place next to pane `key`, on its `side`, where a pane or a tab's panes go. */
 export interface PaneSide {
   key: number;

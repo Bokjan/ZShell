@@ -4,12 +4,11 @@ import type { Point } from "../ipc/bindings";
 import { halfOn, sideAt, type Rect } from "../lib/layout";
 import { findPane, type Layout } from "../lib/panes";
 import { createStore, type PatchStore } from "../lib/store";
-import type { PanePlace, PaneSide, TabStore } from "../lib/tabs";
+import { leavesSomething, type PanePlace, type PaneSide, type TabStore } from "../lib/tabs";
 import type { TabRest } from "../lib/tabRest";
-import { tabIndexAt, tabStrip } from "../lib/tabStrip";
-import { WindowDrag } from "../lib/windowDrag";
-import { DRAG_THRESHOLD } from "../components/useTabDrag";
-import { leavesSomething, type useWindows } from "./useWindows";
+import { tabEdgeAt, tabIndexAt, tabStrip } from "../lib/tabStrip";
+import { followMouse, isOutside, pastThreshold, WindowDrag } from "../lib/windowDrag";
+import type { useWindows } from "./useWindows";
 import type { usePaneActions } from "./usePaneActions";
 
 /** What the page shows of a drag, in CSS pixels of the page. */
@@ -98,8 +97,6 @@ export function usePaneDrag(
     let frame = 0;
     let last: MouseEvent | null = null;
     const tabOfPane = () => findPane(store.get().tabs, key)?.tab;
-    const isOutside = (ev: MouseEvent) =>
-      ev.clientX < 0 || ev.clientY < 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight;
 
     const drag = new WindowDrag({
       target: (target) => {
@@ -107,7 +104,7 @@ export function usePaneDrag(
         const leaves = !!tab && (target.kind === "window" || (target.kind !== "here" && leavesSomething(store.get().tabs, tab.key, key)));
         if (!ended) view.set({ leaving: leaves });
       },
-      native: () => removeListeners(),
+      native: () => stopFollowing(),
       nativeEnd: (dropped) => finish(dropped),
     });
 
@@ -130,12 +127,8 @@ export function usePaneDrag(
         const index = tabIndexAt(strip, x);
         drop = tab.panes.length > 1 ? { kind: "tab", index } : null;
         if (drop) {
-          const elements = [...strip.querySelectorAll(".tab")];
-          const lastTab = elements[elements.length - 1];
-          const edge =
-            index < elements.length
-              ? elements[index].getBoundingClientRect().left
-              : (lastTab?.getBoundingClientRect().right ?? bounds.left);
+          // Within the part of the strip in sight, scrolled as it may be.
+          const edge = Math.max(bounds.left + 1, Math.min(bounds.left - strip.scrollLeft + tabEdgeAt(strip, index), bounds.right - 1));
           marker = { x: edge - 1, y: bounds.top + 4, w: 2, h: bounds.height - 8 };
         }
       } else {
@@ -155,7 +148,7 @@ export function usePaneDrag(
         return;
       }
       if (!moved) {
-        if (Math.hypot(ev.clientX - grab.x, ev.clientY - grab.y) < DRAG_THRESHOLD) return;
+        if (!pastThreshold(grab, ev)) return;
         moved = true;
         const tab = tabOfPane();
         movable = !!tab && windowing.canMove(tab, key);
@@ -171,27 +164,16 @@ export function usePaneDrag(
         });
       }
     };
-    const keyDown = (ev: KeyboardEvent) => {
-      if (ev.key !== "Escape") return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      finish(false);
-    };
     const up = (ev: MouseEvent) => {
       outside = isOutside(ev);
       // Where it was released, which may not have been looked at yet.
       if (moved && !outside) update(ev.clientX, ev.clientY);
       finish(true);
     };
-    const removeListeners = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      window.removeEventListener("keydown", keyDown, true);
-    };
     const finish = (dropped: boolean) => {
       if (ended) return;
       ended = true;
-      removeListeners();
+      stopFollowing();
       cancelAnimationFrame(frame);
       tabRest.rest(null);
       document.body.classList.remove("dragging-pane");
@@ -206,9 +188,7 @@ export function usePaneDrag(
       void drag.end(target?.kind === "out", outside).then((to) => to && tab && windowing.dropTab(tab.key, to, grab, key), console.error);
     };
 
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    window.addEventListener("keydown", keyDown, true);
+    const stopFollowing = followMouse({ move, up, escape: () => finish(false) });
     stopRef.current = () => finish(false);
   };
 

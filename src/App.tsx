@@ -12,7 +12,7 @@ import { usePaneActions } from "./app/usePaneActions";
 import { PaneDragLayer, usePaneDrag } from "./app/usePaneDrag";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommandBar } from "./app/useQuickCommandBar";
-import { leavesSomething, useWindows } from "./app/useWindows";
+import { useWindows } from "./app/useWindows";
 
 import { useAppLock } from "./hooks/appLock";
 import { CommandPalette } from "./components/CommandPalette";
@@ -62,7 +62,7 @@ import { currentSettings } from "./lib/settings";
 import { useSettings } from "./hooks/settings";
 import { useShortcuts } from "./hooks/shortcuts";
 import { useStableHandlers } from "./hooks/stableHandlers";
-import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
+import { activeTabOf, createTabStore, leavesSomething, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
 import { useUpdates } from "./hooks/updates";
 import { checkForUpdates } from "./lib/updates";

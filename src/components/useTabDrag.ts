@@ -3,12 +3,11 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type R
 import type { Point } from "../ipc/bindings";
 import type { DropTarget } from "../ipc/windows";
 import type { Tab } from "../lib/panes";
+import { leavesSomething } from "../lib/tabs";
 import type { TabRest } from "../lib/tabRest";
 import { dragSlot, slideTabs, tabLefts, type TabSlot } from "../lib/tabStrip";
-import { WindowDrag } from "../lib/windowDrag";
+import { followMouse, isOutside, pastThreshold, WindowDrag } from "../lib/windowDrag";
 
-/** How far the pointer moves before a press on a tab becomes a drag. */
-export const DRAG_THRESHOLD = 5;
 /** While dragging a tab this close to an edge of the strip, the strip scrolls. */
 const DRAG_SCROLL_EDGE = 24;
 const DRAG_SCROLL_STEP = 12;
@@ -144,16 +143,14 @@ export function useTabDrag({
     const drag = new WindowDrag({
       target: (target) => {
         // A window's only tab has nowhere new to go.
-        const leaves = target.kind === "window" || (target.kind !== "here" && tabsRef.current.length > 1);
+        const leaves = target.kind === "window" || (target.kind !== "here" && leavesSomething(tabsRef.current, key));
         if (!ended) setLeaving(leaves);
       },
       native: () => {
         inStrip = false;
         tabRest.rest(null);
         show(null);
-        window.removeEventListener("mousemove", move);
-        window.removeEventListener("mouseup", up);
-        window.removeEventListener("keydown", keyDown, true);
+        stopFollowing();
       },
       // Dropped outside the page, or cancelled (Escape).
       nativeEnd: (dropped) => finish(dropped),
@@ -166,8 +163,7 @@ export function useTabDrag({
         return;
       }
       if (!moved) {
-        // Any way: straight down out of the window too.
-        if (Math.hypot(ev.clientX - grab.x, ev.clientY - grab.y) < DRAG_THRESHOLD) return;
+        if (!pastThreshold(grab, ev)) return;
         moved = true;
         movable = canMoveToWindow(key);
         layout = measure();
@@ -194,10 +190,7 @@ export function useTabDrag({
       tabRest.rest(slot.resting);
       show(Math.max(0, Math.min(x - grabOffset, layout.end - layout.size)));
     };
-    const keyDown = (ev: KeyboardEvent) => {
-      if (ev.key !== "Escape") return;
-      ev.preventDefault();
-      ev.stopPropagation();
+    const escape = () => {
       overPanes = false;
       inStrip = false;
       finish(false);
@@ -205,9 +198,7 @@ export function useTabDrag({
     const finish = (dropped: boolean) => {
       if (ended) return;
       ended = true;
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      window.removeEventListener("keydown", keyDown, true);
+      stopFollowing();
       setDragging(null);
       setLeaving(false);
       tabRest.rest(null);
@@ -238,9 +229,7 @@ export function useTabDrag({
       if (outside) inStrip = false;
       finish(true);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    window.addEventListener("keydown", keyDown, true);
+    const stopFollowing = followMouse({ move, up, escape });
     // Gone with the tab bar mid-drag: its listeners go too, and the backend hears that the drag
     // ended, which takes down the drop marker another window may show.
     stopRef.current = () => {
@@ -251,6 +240,3 @@ export function useTabDrag({
 
   return { dragging, leaving, startDrag };
 }
-
-const isOutside = (ev: MouseEvent) =>
-  ev.clientX < 0 || ev.clientY < 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight;
