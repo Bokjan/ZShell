@@ -16,16 +16,22 @@
   color: var(--text-muted);
   box-shadow: 0 2px 6px var(--shadow);
   cursor: grab;
+  /* Hidden rather than only transparent, so that it can't be pressed while out of sight; it
+     hides once it has faded out. */
+  visibility: hidden;
   opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s;
+  transition:
+    opacity 0.12s,
+    visibility 0s 0.12s;
 }
 /* A short wait before it shows, so that it doesn't flash as the pointer passes on its way into
-   the terminal. */
+   the terminal; meanwhile a press there goes to the terminal. */
 .pane-grip.near {
+  visibility: visible;
   opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0.15s;
+  transition:
+    opacity 0.12s 0.15s,
+    visibility 0s 0.15s;
 }
 .pane-grip:hover {
   color: var(--text);

@@ -63,7 +63,7 @@ interface Props {
   flashing: number[];
   /** A pane that couldn't be split; its border flashes, anew for each `count`. */
   refused: { key: number; count: number } | null;
-  /** The panes have somewhere else to go (the tab is split, or there are other tabs): they have grips. */
+  /** The panes have somewhere else to go (the tab is split, or there are other tabs or windows): they have grips. */
   draggable: boolean;
   /** Stable: the page renders again only when one of the other props changes. */
   handlers: PaneHandlers;

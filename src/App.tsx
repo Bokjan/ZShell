@@ -626,7 +626,7 @@ function App() {
               inScope={inScopeKeys}
               flashing={flashing}
               refused={refused}
-              draggable={tabs.length > 1 || tab.panes.length > 1}
+              draggable={tabs.length > 1 || tab.panes.length > 1 || windowing.others.length > 0}
               handlers={handlers}
             />
           ))}

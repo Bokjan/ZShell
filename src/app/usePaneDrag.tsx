@@ -181,11 +181,18 @@ export function usePaneDrag(
       stopRef.current = null;
       const target = dropped && moved ? drop : null;
       const tab = tabOfPane();
+      // Not dropped anywhere, nor out of the window after all: the tab it came from is shown again.
+      const showBack = () => {
+        if (moved && startTab !== null && store.get().activeKey !== startTab) store.dispatch({ type: "activate", key: startTab });
+      };
       if (target?.kind === "tab" || target?.kind === "pane") actions.movePane(key, target);
-      // Not dropped anywhere: the tab it came from is shown again.
-      else if (target === null && moved && startTab !== null) store.dispatch({ type: "activate", key: startTab });
+      else if (target === null) showBack();
       if (!movable) return;
-      void drag.end(target?.kind === "out", outside).then((to) => to && tab && windowing.dropTab(tab.key, to, grab, key), console.error);
+      void drag.end(target?.kind === "out", outside).then((to) => {
+        if (target?.kind !== "out") return;
+        if (to && to.kind !== "here" && tab) windowing.dropTab(tab.key, to, grab, key);
+        else showBack();
+      }, console.error);
     };
 
     const stopFollowing = followMouse({ move, up, escape: () => finish(false) });
