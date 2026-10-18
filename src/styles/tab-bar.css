@@ -39,8 +39,20 @@
   color: var(--text);
 }
 .tab.dragging {
-  opacity: 0.7;
   cursor: grabbing;
+}
+/* While a tab is dragged along the strip, the others slide over to make room for it, and it
+   follows the pointer, raised above them (see `useTabDrag`). */
+.tab-strip.reordering .tab:not(.following) {
+  transition: transform 0.15s ease-out;
+}
+.tab.following {
+  z-index: 2;
+  background: var(--bg-elevated);
+  box-shadow: 0 2px 10px var(--shadow);
+}
+.tab.following.active {
+  background: var(--bg);
 }
 /* A dragged tab or pane rests on it: it is shown once the bar along its bottom is full. */
 .tab.resting {

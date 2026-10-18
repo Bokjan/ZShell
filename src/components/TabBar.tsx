@@ -18,7 +18,7 @@ import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
 import type { Point } from "../ipc/bindings";
 import { REST_MS, type TabRest } from "../lib/tabRest";
-import { tabIndexAt } from "../lib/tabStrip";
+import { slideTabs, tabIndexAt } from "../lib/tabStrip";
 import { DRAG_REGION } from "../hooks/titleBar";
 import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
@@ -155,42 +155,30 @@ export function TabBar({
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
   const stripRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLElement>(null);
-  // Where a dragged tab would go, from this window or another one, while it is over this tab
-  // bar: the marker's left edge in the strip, measured when the drag moves rather than while
-  // rendering. `index` is among the tabs but `except` (the one dragged here).
+  // Where a tab dragged from another window would go, while it is over this tab bar: the
+  // marker's left edge in the strip, measured when the drag moves rather than while rendering.
   const [dropLeft, setDropLeft] = useState<number | null>(null);
-  const showDrop = (index: number | null, except?: number) => {
-    const strip = stripRef.current;
-    if (index === null || !strip) return setDropLeft(null);
-    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")].filter((tab) => tab.dataset.key !== String(except));
-    const last = elements[elements.length - 1];
-    setDropLeft(index < elements.length ? elements[index].offsetLeft : last ? last.offsetLeft + last.offsetWidth : 0);
-  };
   useWindowEvent("tab-drag-over", (x) => {
     const strip = stripRef.current;
-    showDrop(x === null || !strip ? null : tabIndexAt(strip, x));
+    if (x === null || !strip) return setDropLeft(null);
+    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")];
+    const index = tabIndexAt(strip, x);
+    const last = elements[elements.length - 1];
+    setDropLeft(index < elements.length ? elements[index].offsetLeft : last ? last.offsetLeft + last.offsetWidth : 0);
   });
 
-  // Tabs that moved slide from where they were (see `moveTab`), as the tab bar shows them again.
+  // A dragged tab dropped in a new place: the tabs slide from where they were shown (see
+  // `useTabDrag`) once the tab bar shows the new order.
   const slideFrom = useRef<Map<string, number> | null>(null);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const moveTab = (key: number, index: number) => {
-    const strip = stripRef.current;
-    if (strip && !reducedMotion) {
-      slideFrom.current = new Map([...strip.querySelectorAll<HTMLElement>(".tab")].map((tab) => [tab.dataset.key!, tab.offsetLeft]));
-    }
+  const moveTab = (key: number, index: number, from: Map<string, number>) => {
+    if (!reducedMotion) slideFrom.current = from;
     onMove(key, index);
   };
   useLayoutEffect(() => {
-    const before = slideFrom.current;
+    const from = slideFrom.current;
     slideFrom.current = null;
-    if (!before) return;
-    for (const tab of stripRef.current?.querySelectorAll<HTMLElement>(".tab") ?? []) {
-      const from = before.get(tab.dataset.key!);
-      const dx = from === undefined ? 0 : from - tab.offsetLeft;
-      if (Math.abs(dx) >= 1)
-        tab.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }], { duration: SLIDE_MS, easing: "ease-out" });
-    }
+    if (from && stripRef.current) slideTabs(stripRef.current, from, SLIDE_MS);
   }, [tabs]);
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
@@ -250,7 +238,7 @@ export function TabBar({
     tabRest,
     stripRef,
     onMove: moveTab,
-    onDropAt: (key, index) => showDrop(index, key),
+    slideMs: reducedMotion ? 0 : SLIDE_MS,
     canMoveToWindow,
     onDropOut,
     onOverPanes,
