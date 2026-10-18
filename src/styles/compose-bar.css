@@ -117,15 +117,16 @@
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
-  font:
-    calc(12px * var(--text-scale)) / calc(16px * var(--text-scale)) Menlo,
-    "Cascadia Mono",
-    Consolas,
-    monospace;
+  font: calc(12px * var(--text-scale)) / calc(16px * var(--text-scale)) var(--font-mono);
   resize: none;
   outline: none;
   user-select: text;
   -webkit-user-select: text;
+}
+/* A sentence, in the interface font like the buttons beside it; the line height stays the
+   field's. */
+.compose-input::placeholder {
+  font-family: var(--app-font,) var(--font-ui);
 }
 .compose-input:focus {
   border-color: var(--accent);

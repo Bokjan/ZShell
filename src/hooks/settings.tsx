@@ -7,7 +7,7 @@ import type { Appearance, Settings, TextSize } from "../ipc/bindings";
 import { windows } from "../ipc/windows";
 import { isWindows } from "../lib/platform";
 import { settingsStore } from "../lib/settings";
-import { setSystemFont } from "../lib/terminalSchemes";
+import { setSystemFont, systemFontFamilies } from "../lib/terminalSchemes";
 import { useConfigChanged, useWindowEvent } from "./windowEvents";
 
 export type {
@@ -80,6 +80,19 @@ function applyWindowTheme(appearance: Appearance, theme: "dark" | "light") {
   }
 }
 
+/**
+ * Puts a font list the user set before the default ones of a stack (`var(--name,) …`), with its
+ * comma. A list the page can't read is left out: it would take the default ones with it. It is
+ * checked as the start of a list, where a value valid alone (`inherit`) may not be, and before a
+ * line break, which ends a string left open by a stray quote: `CSS.supports` closes it at the end
+ * of the value, so the rest of the stack would read as part of the name.
+ */
+function setFontList(name: string, fonts: string) {
+  const style = document.documentElement.style;
+  if (fonts && CSS.supports("font-family", `${fonts}\n, sans-serif`)) style.setProperty(name, `${fonts},`);
+  else style.removeProperty(name);
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
   // Applied immediately; the backend's validated copy replaces it once saved (see
   // `latestSave`).
@@ -126,15 +139,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALES[textSize] ?? 1));
   }, [textSize]);
 
-  // The app font before the default ones (see styles/theme.css), also before painting. A list the
-  // page can't read (a stray quote) is left out: it would take the default ones with it. It is
-  // checked as the start of a list, where a value valid alone (`inherit`) may not be.
+  // The app font before the default ones (see styles/theme.css), also before painting.
   const appFont = settings?.appFont ?? "";
-  useLayoutEffect(() => {
-    const style = document.documentElement.style;
-    if (appFont && CSS.supports("font-family", `${appFont}, sans-serif`)) style.setProperty("--app-font", `${appFont},`);
-    else style.removeProperty("--app-font");
-  }, [appFont]);
+  useLayoutEffect(() => setFontList("--app-font", appFont), [appFont]);
+
+  // The terminal font before the interface's monospace ones (`--font-mono`), so commands and
+  // paths look as in the terminal; on Linux, without one, the desktop's monospace font as there.
+  // Only the setting's: a session's own font is not the interface's. The desktop's font is known
+  // once the settings have loaded.
+  const terminalFont = settings?.terminal.fontFamily ?? "";
+  useLayoutEffect(() => setFontList("--terminal-font", terminalFont || (loaded ? systemFontFamilies() : "")), [terminalFont, loaded]);
 
   // Whether the system's screen reader is running, which the web view can't tell. An answer
   // to the question that comes after a change was told is out of date.

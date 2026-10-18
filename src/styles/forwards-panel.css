@@ -93,7 +93,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: var(--rule-line);
-  font-family: Menlo, "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: calc(12px * var(--text-scale));
   user-select: text;
   -webkit-user-select: text;

@@ -443,11 +443,13 @@
   opacity: 0.4;
   cursor: default;
 }
-/* A text area for commands: drawn like the other text areas, in a monospace font. */
+/* A text area for commands: drawn like the other text areas, in a monospace font. The
+   placeholder, a sentence, is in the interface font like the other fields' (the two line
+   heights match, so the field doesn't move as typing starts). */
 .dialog textarea.command-text {
-  font:
-    calc(12px * var(--text-scale)) / 1.5 Menlo,
-    "Cascadia Mono",
-    Consolas,
-    monospace;
+  font: calc(12px * var(--text-scale)) / 1.5 var(--font-mono);
+}
+.dialog textarea.command-text::placeholder {
+  font-family: var(--app-font,) var(--font-ui);
+  font-size: calc(13px * var(--text-scale));
 }

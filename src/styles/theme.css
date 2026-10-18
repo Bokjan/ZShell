@@ -78,6 +78,14 @@
   --font-ui: "Segoe UI", var(--font-cjk), system-ui, sans-serif;
 }
 
+/* Commands, paths and keys: the terminal font setting (`--terminal-font`, with its comma), the
+   monospace fonts of macOS and Windows, then the desktop's (Linux). Han characters these lack come
+   from `--font-cjk` as in the rest of the interface; it goes after `monospace`, since a CJK font
+   draws Latin letters too, but not in fixed width. */
+:root {
+  --font-mono: var(--terminal-font,) Menlo, "Cascadia Mono", Consolas, monospace, var(--font-cjk);
+}
+
 /* CJK fonts of macOS, Windows and Linux by the language whose glyphs they draw (`data-cjk`, set
    in i18n/index.ts): a Han character has different forms in Chinese and Japanese fonts. */
 :root {

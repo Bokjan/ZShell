@@ -109,11 +109,7 @@
   border: 1px solid var(--input-border);
   border-radius: 4px;
   background: var(--bg);
-  font:
-    calc(12px * var(--text-scale)) / 1.4 Menlo,
-    "Cascadia Mono",
-    Consolas,
-    monospace;
+  font: calc(12px * var(--text-scale)) / 1.4 var(--font-mono);
   /* Some license files keep each paragraph on one line. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;

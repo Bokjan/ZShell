@@ -39,7 +39,7 @@
   border-radius: 4px;
   background: none;
   color: var(--text-muted);
-  font-family: Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: calc(11px * var(--text-scale));
 }
 .search-flag:hover {

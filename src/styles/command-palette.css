@@ -69,11 +69,7 @@
 .palette-text {
   grid-column: 1 / -1;
   overflow: hidden;
-  font:
-    calc(11px * var(--text-scale)) / 1.4 Menlo,
-    "Cascadia Mono",
-    Consolas,
-    monospace;
+  font: calc(11px * var(--text-scale)) / 1.4 var(--font-mono);
   opacity: 0.75;
   text-overflow: ellipsis;
   white-space: nowrap;

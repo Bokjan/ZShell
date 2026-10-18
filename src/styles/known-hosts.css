@@ -60,11 +60,7 @@
 .known-hosts-key {
   overflow: hidden;
   color: var(--text-muted);
-  font:
-    calc(11px * var(--text-scale)) Menlo,
-    "Cascadia Mono",
-    Consolas,
-    monospace;
+  font: calc(11px * var(--text-scale)) var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: text;
