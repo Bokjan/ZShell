@@ -1,12 +1,9 @@
-import { Fragment, memo, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DialogsHidden } from "../hooks/dialogs";
-import { paneProfile } from "../lib/directory";
-import { useDirectory } from "../hooks/stores";
 import { useLatest } from "../hooks/latest";
 import { useStableProps } from "../hooks/stableProps";
-import type { ProfileAppearance } from "../ipc/api";
 import type { MenuItem } from "./ContextMenu";
 import { dragHorizontally, dragSplitter } from "../hooks/drag";
 import {
@@ -20,17 +17,18 @@ import {
   type Rect,
   type Size,
 } from "../lib/layout";
-import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type SidePanel, type Tab } from "../lib/panes";
+import { focusedPane, tabId, tabPanelId, type Layout, type Pane, type Tab } from "../lib/panes";
 import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
-import { ForwardsPanel } from "./ForwardsPanel";
+import { GripIcon } from "./icons";
+import { place, type PaneHosts } from "./paneHosts";
 import { Separator } from "./Separator";
-import { SftpPanel } from "./SftpPanel";
-import { TerminalView } from "./TerminalView";
 
 /** What a tab page reports about its panes, and asks for them; each by pane key. */
 export interface PaneHandlers {
   /** The panes' sessions. */
   sessions: SessionRegistry;
+  /** Where the panes' terminals and side panels are drawn (see `PaneHostList`). */
+  hosts: PaneHosts;
   onTitle(key: number, title: string): void;
   /** What the user typed in the pane's terminal (see `TerminalView`). */
   onInput(key: number, data: string): void;
@@ -50,6 +48,8 @@ export interface PaneHandlers {
   onQuestions(key: number, count: number): void;
   /** Added to the end of the pane's terminal menu, when it opens. */
   menuItems(pane: Pane): MenuItem[];
+  /** The pane's grip was pressed: it may be dragged elsewhere (see `usePaneDrag`). */
+  onGrab(e: MouseEvent, key: number): void;
 }
 
 interface Props {
@@ -63,6 +63,8 @@ interface Props {
   flashing: number[];
   /** A pane that couldn't be split; its border flashes, anew for each `count`. */
   refused: { key: number; count: number } | null;
+  /** The panes have somewhere else to go (the tab is split, or there are other tabs): they have grips. */
+  draggable: boolean;
   /** Stable: the page renders again only when one of the other props changes. */
   handlers: PaneHandlers;
 }
@@ -76,7 +78,8 @@ const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 
 /**
  * One tab's content: its panes, each a terminal, plus a side panel (files or port forwards)
- * on the focused pane's SSH connection.
+ * on the focused pane's SSH connection. The terminals and panels themselves are drawn
+ * elsewhere (`PaneHostList`) into hosts that the page puts in place.
  */
 export const TabPage = memo(TabPageView, (a, b) => {
   const same = (x: number[], y: number[]) => x.length === y.length && x.every((key, i) => key === y[i]);
@@ -87,22 +90,19 @@ export const TabPage = memo(TabPageView, (a, b) => {
     same(a.inScope, b.inScope) &&
     same(a.flashing, b.flashing) &&
     a.refused === b.refused &&
+    a.draggable === b.draggable &&
     a.handlers === b.handlers
   );
 });
 
 function TabPageView(props: Props) {
   useStableProps("TabPage", props, ["handlers"]);
-  const { tab, active, syncing, inScope, flashing, refused, handlers: h } = props;
+  const { tab, active, syncing, inScope, flashing, refused, draggable, handlers: h } = props;
   const { t } = useTranslation();
-  // The panes' saved sessions, which their appearance and panels come from.
-  const { profiles } = useDirectory();
   const [panelWidth, setPanelWidth] = useState(420);
-  // Keep each pane's panels mounted once opened, so their state (directory, transfers)
-  // survives switching panels and panes.
-  const [mounted, setMounted] = useState<Record<number, SidePanel[]>>({});
   const pageRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
+  const panelPagesRef = useRef<HTMLDivElement>(null);
   const tabRef = useLatest(tab);
   const split = tab.panes.length > 1;
   const rects = paneRects(tab.layout);
@@ -131,9 +131,16 @@ function TabPageView(props: Props) {
   }, [panelShown]);
   const focused = focusedPane(tab);
   const panelHere = tab.sidePanel !== null && focused.protocol === "ssh";
-  if (panelHere && !mounted[focused.key]?.includes(tab.sidePanel!)) {
-    setMounted({ ...mounted, [focused.key]: [...(mounted[focused.key] ?? []), tab.sidePanel!] });
-  }
+
+  // The panes' side panels, each pane's shown while it has the focus (see `PaneHost`).
+  const paneKeys = tab.panes.map((pane) => pane.key).join(" ");
+  useLayoutEffect(() => {
+    const keys = paneKeys.split(" ").map(Number);
+    return place(
+      panelPagesRef.current!,
+      keys.map((key) => h.hosts.panels(key)),
+    );
+  }, [h, paneKeys]);
 
   const startResize = (e: ReactMouseEvent) => {
     const rect = pageRef.current!.getBoundingClientRect();
@@ -170,47 +177,6 @@ function TabPageView(props: Props) {
     const page = pageRef.current!.getBoundingClientRect();
     setPanelWidth((width) => Math.max(MIN_PANEL, Math.min(width - pixels, page.width - MIN_TERMINAL)));
   };
-
-  const panels = (pane: Pane) => {
-    const shown = (panel: SidePanel) => pane.key === focused.key && tab.sidePanel === panel;
-    const connected = pane.status === "connected" && pane.sessionId != null;
-    const list = mounted[pane.key] ?? [];
-    const profile = paneProfile(profiles, pane);
-    return (
-      <Fragment key={pane.key}>
-        {list.includes("files") && (
-          <div className="side-panel-page" style={{ display: shown("files") ? undefined : "none" }}>
-            <DialogsHidden.Provider value={!active || !shown("files")}>
-              <SftpPanel
-                paneKey={pane.key}
-                sessionId={pane.sessionId}
-                connected={connected}
-                active={active && shown("files")}
-                onTransfers={(count) => h.onTransfers(pane.key, count)}
-                onEdits={(count) => h.onEdits(pane.key, count)}
-                onQuestions={(count) => h.onQuestions(pane.key, count)}
-              />
-            </DialogsHidden.Provider>
-          </div>
-        )}
-        {list.includes("forwards") && (
-          <div className="side-panel-page" style={{ display: shown("forwards") ? undefined : "none" }}>
-            <DialogsHidden.Provider value={!active || !shown("forwards")}>
-              <ForwardsPanel
-                sessionId={pane.sessionId}
-                connected={connected}
-                profile={profile}
-                quick={pane.target.kind === "quick"}
-                states={pane.forwards}
-              />
-            </DialogsHidden.Provider>
-          </div>
-        )}
-      </Fragment>
-    );
-  };
-
-  const anyMounted = tab.panes.some((pane) => (mounted[pane.key] ?? []).length > 0);
 
   // Dialogs of an inactive tab (a background save's conflict) wait for it to be shown.
   return (
@@ -251,32 +217,30 @@ function TabPageView(props: Props) {
             <PaneItem
               key={pane.key}
               pane={pane}
-              appearance={paneProfile(profiles, pane)?.appearance}
               rect={rects.get(pane.key) ?? FULL}
               focused={pane.key === focused.key}
               syncing={syncing === pane.key}
               inScope={inScope.includes(pane.key)}
-              visible={active}
               flashing={split && flashing.includes(pane.key)}
               refused={refused?.key === pane.key ? refused.count : null}
+              draggable={draggable}
               handlers={h}
             />
           ))}
         </div>
-        {(anyMounted || tab.sidePanel) && (
-          <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>
-            <Separator
-              className="splitter"
-              label={t("tabs.panelDivider")}
-              orientation="vertical"
-              value={pageWidth > 0 ? ((pageWidth - panelWidth) / pageWidth) * 100 : 50}
-              onMove={nudgePanel}
-              onMouseDown={startResize}
-            />
-            {tab.panes.map(panels)}
-            {tab.sidePanel && !panelHere && <div className="side-panel-empty">{t("tabs.panelUnavailable")}</div>}
-          </div>
-        )}
+        {/* Always there, for the panes' panels that stay mounted while out of sight. */}
+        <div className="side-panel" style={{ width: panelWidth, display: tab.sidePanel ? undefined : "none" }}>
+          <Separator
+            className="splitter"
+            label={t("tabs.panelDivider")}
+            orientation="vertical"
+            value={pageWidth > 0 ? ((pageWidth - panelWidth) / pageWidth) * 100 : 50}
+            onMove={nudgePanel}
+            onMouseDown={startResize}
+          />
+          <div className="pane-host" ref={panelPagesRef} />
+          {tab.sidePanel && !panelHere && <div className="side-panel-empty">{t("tabs.panelUnavailable")}</div>}
+        </div>
       </div>
     </DialogsHidden.Provider>
   );
@@ -284,46 +248,92 @@ function TabPageView(props: Props) {
 
 interface PaneItemProps {
   pane: Pane;
-  appearance: ProfileAppearance | undefined;
   /** Where the pane is in the tab's area, as fractions of it. */
   rect: Rect;
   focused: boolean;
   syncing: boolean;
   inScope: boolean;
-  visible: boolean;
   flashing: boolean;
   /** Each time the pane couldn't be split, a new count. */
   refused: number | null;
+  /** It has a grip to drag it by. */
+  draggable: boolean;
   handlers: PaneHandlers;
 }
 
+/** How near the pane's top edge the pointer brings up its grip, in CSS pixels. */
+const GRIP_ZONE = 24;
+
 /**
- * One pane, its own component so that React Compiler memoizes it: the other panes' terminals
- * don't render again when one pane changes, nor get new handlers.
+ * One pane's place in the tab, with its marks; its own component so that React Compiler
+ * memoizes it. Its terminal is drawn into a host (see `PaneHost`), put here as the pane
+ * comes: React's events from it go to `PaneHost`, so the focus is followed with the DOM's.
  */
 function PaneItem(props: PaneItemProps) {
   useStableProps("PaneItem", props, ["handlers"]);
-  const { pane, appearance, rect, focused, syncing, inScope, visible, flashing, refused, handlers: h } = props;
+  const { pane, rect, focused, syncing, inScope, flashing, refused, draggable, handlers: h } = props;
+  const { t } = useTranslation();
   const { key } = pane;
+  const ref = useRef<HTMLDivElement>(null);
+  // The pointer is near the top edge, not pressing a button (selecting text, say).
+  const [near, setNear] = useState(false);
+
+  useLayoutEffect(() => {
+    const div = ref.current!;
+    const focus = () => h.onFocus(key);
+    div.addEventListener("mousedown", focus, true);
+    div.addEventListener("focusin", focus);
+    const unplace = place(div, [h.hosts.terminal(key)]);
+    return () => {
+      div.removeEventListener("mousedown", focus, true);
+      div.removeEventListener("focusin", focus);
+      unplace();
+    };
+  }, [h, key]);
+
+  // Where the top edge is, measured as the pointer comes in or the pane moves, rather than on
+  // each move of the pointer over the terminal.
+  useEffect(() => {
+    if (!draggable) return;
+    const div = ref.current!;
+    let top = div.getBoundingClientRect().top;
+    let shown = false;
+    const show = (value: boolean) => {
+      if (value === shown) return;
+      shown = value;
+      setNear(value);
+    };
+    const enter = () => void (top = div.getBoundingClientRect().top);
+    const move = (e: MouseEvent) => show(e.buttons === 0 && e.clientY - top < GRIP_ZONE);
+    const leave = () => show(false);
+    div.addEventListener("mouseenter", enter);
+    div.addEventListener("mousemove", move, { passive: true });
+    div.addEventListener("mouseleave", leave);
+    return () => {
+      div.removeEventListener("mouseenter", enter);
+      div.removeEventListener("mousemove", move);
+      div.removeEventListener("mouseleave", leave);
+    };
+  }, [draggable, rect.y]);
+
   return (
     <div
+      ref={ref}
       data-pane={key}
       className={["pane", focused && "focused", syncing && "syncing", inScope && "in-scope"].filter(Boolean).join(" ")}
       style={{ left: percent(rect.x), top: percent(rect.y), width: percent(rect.w), height: percent(rect.h) }}
-      onMouseDownCapture={() => h.onFocus(key)}
-      onFocus={() => h.onFocus(key)}
     >
-      <TerminalView
-        paneKey={key}
-        sessions={h.sessions}
-        visible={visible}
-        active={visible && focused}
-        onTitle={(title) => h.onTitle(key, title)}
-        onInput={(data) => h.onInput(key, data)}
-        pasteTargets={() => h.pasteTargets(key)}
-        menuItems={() => h.menuItems(pane)}
-        appearance={appearance}
-      />
+      {draggable && (
+        // Only for the pointer: the terminal's menu moves the pane from the keyboard.
+        <div
+          className={`pane-grip${near ? " near" : ""}`}
+          aria-hidden="true"
+          title={t("tabs.dragPane")}
+          onMouseDown={(e) => h.onGrab(e.nativeEvent, key)}
+        >
+          <GripIcon />
+        </div>
+      )}
       {flashing && <div className="pane-flash" />}
       {refused !== null && <div key={refused} className="pane-refused" />}
     </div>

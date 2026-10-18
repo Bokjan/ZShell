@@ -14,6 +14,7 @@
 @import "./styles/window-controls.css";
 @import "./styles/status-dot.css";
 @import "./styles/terminals.css";
+@import "./styles/pane-drag.css";
 @import "./styles/zmodem-bar.css";
 @import "./styles/search-bar.css";
 @import "./styles/layout.css";

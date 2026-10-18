@@ -147,6 +147,13 @@
     "splitRight": "Split Right",
     "splitDown": "Split Down",
     "closePane": "Close Pane",
+    "movePaneToNewTab": "Move Pane to New Tab",
+    "movePaneTo": "Move Pane to",
+    "dragPane": "Drag to move this pane to another place, tab or window",
+    "paneTo": {
+      "newWindow": "New Window",
+      "window": "Window “{name}”"
+    },
     "reconnect": "Reconnect",
     "sendBreak": "Send Break",
     "closeOthers": "Close Other Tabs",

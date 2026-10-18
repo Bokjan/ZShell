@@ -32,6 +32,11 @@
   position: absolute;
   display: flex;
 }
+/* Where a pane's terminal or side panels are drawn, which moves with the pane from tab to tab
+   (see `PaneHosts`): no box of its own, its content laid out as the page's. */
+.pane-host {
+  display: contents;
+}
 /* Between panes: a 1px line, with a wider area to grab. */
 .pane-divider {
   position: absolute;

@@ -46,6 +46,8 @@ interface Props {
 const MARGIN = 4;
 /** How long the pointer rests on an item before its submenu opens, or another one closes. */
 const SUBMENU_DELAY = 200;
+/** Letters typed within this long of each other make one prefix to look for. */
+const TYPEAHEAD_MS = 700;
 
 /**
  * A context menu drawn in the page, so it follows the theme on both platforms. Closes on
@@ -57,6 +59,9 @@ const SUBMENU_DELAY = 200;
  * Items may open submenus, beside them: from the keyboard with → (or Enter), back with ← or
  * Escape; with the pointer after it rests on the item, so that moving across other items
  * on the way to a submenu doesn't switch it.
+ *
+ * A menu taller than the window scrolls, keeping the highlighted item in sight, and typing
+ * the start of an item's label highlights it (a long list of tabs).
  */
 export function ContextMenu({ x, y, items, onClose, anchor, highlightFirst }: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -131,6 +136,8 @@ function MenuPanel({ items, at, focus, highlightFirst, id, labelledBy, onChoose,
   const [open, setOpen] = useState<{ index: number; item: HTMLElement; focus: boolean } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  /** What was typed to find an item, and when last. */
+  const typed = useRef({ text: "", at: 0 });
 
   const x = "beside" in at ? null : at.x;
   const y = "beside" in at ? null : at.y;
@@ -167,6 +174,11 @@ function MenuPanel({ items, at, focus, highlightFirst, id, labelledBy, onChoose,
   }, [focus]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // Only what is needed: the pointer's item is in sight already.
+  useLayoutEffect(() => {
+    if (highlight >= 0) itemRefs.current[highlight]?.scrollIntoView({ block: "nearest" });
+  }, [highlight]);
 
   const later = (f: () => void) => {
     clearTimeout(timer.current);
@@ -209,8 +221,36 @@ function MenuPanel({ items, at, focus, highlightFirst, id, labelledBy, onChoose,
     }
   };
 
+  /**
+   * Highlights the next item whose label starts with what was typed: from the highlighted
+   * one while the same prefix grows, else after it.
+   */
+  const typeAhead = (key: string) => {
+    const now = Date.now();
+    const growing = now - typed.current.at < TYPEAHEAD_MS;
+    const text = (growing ? typed.current.text : "") + key.toLowerCase();
+    typed.current = { text, at: now };
+    const count = items.length;
+    const start = growing && text.length > 1 ? highlight : highlight + 1;
+    for (let i = 0; i < count; i++) {
+      const index = (Math.max(start, 0) + i) % count;
+      const item = items[index];
+      if (choosable(item) && item.label.toLowerCase().startsWith(text)) {
+        move(0, index);
+        return;
+      }
+    }
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
     e.stopPropagation();
+    // A space continues a prefix being typed; otherwise it chooses.
+    const typing = Date.now() - typed.current.at < TYPEAHEAD_MS && typed.current.text !== "";
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key !== " " || typing)) {
+      typeAhead(e.key);
+      e.preventDefault();
+      return;
+    }
     const item = highlight >= 0 ? items[highlight] : null;
     const submenu = item !== null && choosable(item) && isSubmenu(item);
     if (e.key === "Escape") (onBack ?? onCloseAll)();

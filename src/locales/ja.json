@@ -143,6 +143,13 @@
     "splitRight": "右に分割",
     "splitDown": "下に分割",
     "closePane": "ペインを閉じる",
+    "movePaneToNewTab": "ペインを新しいタブに移動",
+    "movePaneTo": "ペインの移動先",
+    "dragPane": "ドラッグしてこのペインを別の場所、タブ、ウィンドウに移動",
+    "paneTo": {
+      "newWindow": "新しいウィンドウ",
+      "window": "ウィンドウ「{name}」"
+    },
     "reconnect": "再接続",
     "sendBreak": "ブレーク信号を送信",
     "closeOthers": "ほかのタブを閉じる",

@@ -147,6 +147,13 @@
     "splitRight": "Rechts teilen",
     "splitDown": "Unten teilen",
     "closePane": "Bereich schließen",
+    "movePaneToNewTab": "Bereich in neuen Tab verschieben",
+    "movePaneTo": "Bereich verschieben nach",
+    "dragPane": "Ziehen, um diesen Bereich an eine andere Stelle, in einen anderen Tab oder in ein anderes Fenster zu verschieben",
+    "paneTo": {
+      "newWindow": "Neues Fenster",
+      "window": "Fenster „{name}“"
+    },
     "reconnect": "Neu verbinden",
     "sendBreak": "Break-Signal senden",
     "closeOthers": "Andere Tabs schließen",

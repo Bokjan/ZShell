@@ -6,6 +6,11 @@
   position: fixed;
   z-index: 20;
   min-width: 180px;
+  /* Long lists (the tabs a pane can move to) scroll, and long titles are cut short. */
+  max-width: min(420px, calc(100vw - 8px));
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -34,6 +39,8 @@
 }
 .context-menu-label {
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .context-menu-check {
   width: 10px;

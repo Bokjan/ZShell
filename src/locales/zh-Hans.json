@@ -143,6 +143,13 @@
     "splitRight": "向右拆分",
     "splitDown": "向下拆分",
     "closePane": "关闭窗格",
+    "movePaneToNewTab": "将窗格移到新标签页",
+    "movePaneTo": "将窗格移到",
+    "dragPane": "拖动可将此窗格移到别处、其他标签页或窗口",
+    "paneTo": {
+      "newWindow": "新窗口",
+      "window": "窗口“{name}”"
+    },
     "reconnect": "重新连接",
     "sendBreak": "发送 Break 信号",
     "closeOthers": "关闭其他标签页",

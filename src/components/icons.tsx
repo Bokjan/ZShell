@@ -344,6 +344,15 @@ export function TerminalIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** Two rows of dots, for something to drag by (a pane's grip). */
+export function GripIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      {[4, 8, 12].flatMap((x) => [6, 10].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.1" fill="currentColor" stroke="none" />))}
+    </Svg>
+  );
+}
+
 /** Two links of a chain, for the file panel following the terminal. */
 export function LinkIcon({ size = 14 }: { size?: number }) {
   return (

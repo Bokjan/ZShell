@@ -27,6 +27,16 @@ interface Options {
  */
 const TITLE_MS = 500;
 
+/** The panes of the tab that move: all of them, or only pane `only`. */
+const panesMoving = (tab: Tab, only?: number) => (only === undefined ? tab.panes : tab.panes.filter((pane) => pane.key === only));
+
+/**
+ * Whether moving tab `key` (or only its pane `pane`) to a new window leaves anything in this
+ * one: a window's only tab, as a whole, has nowhere new to go.
+ */
+export const leavesSomething = (tabs: Tab[], key: number, pane?: number) =>
+  tabs.length > 1 || (pane !== undefined && (tabs.find((tab) => tab.key === key)?.panes.length ?? 0) > 1);
+
 const sameWindows = (a: WindowInfo[], b: WindowInfo[]) =>
   a.length === b.length && a.every((window, i) => window.label === b[i].label && window.title === b[i].title);
 
@@ -117,14 +127,15 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   useWindowEvent("tab-received", take);
 
   /**
-   * Whether the tab can move now: not while its file panel transfers files, edits them in a
-   * local editor or asks something (those belong to this window's page), nor during a ZMODEM
-   * transfer, nor while a pane opens its session or its session is still moving here.
+   * Whether the tab (or only its pane `pane`) can move now: not while its file panel transfers
+   * files, edits them in a local editor or asks something (those belong to this window's page),
+   * nor during a ZMODEM transfer, nor while a pane opens its session or its session is still
+   * moving here.
    */
   const canMove = useCallback(
-    (tab: Tab) =>
+    (tab: Tab, only?: number) =>
       !tab.moving &&
-      tab.panes.every(
+      panesMoving(tab, only).every(
         (pane) =>
           paneWork(pane) === null &&
           !sessions.inZmodem(pane.key) &&
@@ -135,13 +146,11 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
     [sessions],
   );
 
-  /** Moves that are over: each tab goes, but for its panes that stayed. */
+  /** Moves that are over: the panes that moved go, but for those that stayed. */
   const settle = useCallback(
     (settled: Settled[]) => {
-      for (const { key, stayed } of settled) {
-        const tab = store.get().tabs.find((t) => t.key === key);
-        if (!tab) continue;
-        const gone = tab.panes.filter((pane) => !stayed.has(pane.key)).map((pane) => pane.key);
+      for (const { key, gone } of settled) {
+        if (!store.get().tabs.some((t) => t.key === key)) continue;
         store.dispatch({ type: "updateTab", key, patch: { moving: false } });
         if (gone.length > 0) store.dispatch({ type: "close", keys: gone });
       }
@@ -150,17 +159,21 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   );
 
   /**
-   * Moves a tab to window `target`, or to a new window (null). Dragged there: dropped `at`
-   * that many CSS pixels from the left of the target's page, or `dropped` outside the windows,
-   * where the new one opens.
+   * Moves a tab to window `target`, or to a new window (null); with `pane`, only that pane,
+   * which goes there as a tab of its own and leaves the rest of its tab here. Dragged there:
+   * dropped `at` that many CSS pixels from the left of the target's page, or `dropped` outside
+   * the windows, where the new one opens.
    */
   const moveTab = useCallback(
-    async (key: number, target: string | null, { at, dropped }: { at?: number; dropped?: Dropped } = {}) => {
+    async (key: number, target: string | null, { at, dropped, pane: only }: { at?: number; dropped?: Dropped; pane?: number } = {}) => {
       const tab = store.get().tabs.find((t) => t.key === key);
-      if (!tab || !canMove(tab)) return;
+      if (!tab || !canMove(tab, only)) return;
       const here = getCurrentWindow().label;
-      const live = tab.panes.filter((pane) => pane.sessionId !== null).map((pane) => pane.key);
-      const panes = tab.panes.map((pane): Pane => ({
+      const moving = panesMoving(tab, only);
+      // The pane closed meanwhile (a drag dropped after its shell exited).
+      if (moving.length === 0) return;
+      const live = moving.filter((pane) => pane.sessionId !== null).map((pane) => pane.key);
+      const panes = moving.map((pane): Pane => ({
         ...pane,
         // The other window's once it has taken it over (see `arrival`): its panels don't use
         // it before, which the backend would refuse.
@@ -176,17 +189,25 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
           from: { window: here, pane: pane.key },
         },
       }));
-      const transfer: TabTransfer = {
-        layout: tab.layout,
-        focused: tab.focused,
-        customTitle: tab.customTitle,
-        sidePanel: tab.sidePanel,
-        panes,
-      };
-      moves.current.start(key, target, live);
+      const transfer: TabTransfer =
+        only === undefined || tab.panes.length === 1
+          ? { layout: tab.layout, focused: tab.focused, customTitle: tab.customTitle, sidePanel: tab.sidePanel, panes }
+          : {
+              layout: { kind: "pane", key: only },
+              focused: only,
+              customTitle: null,
+              sidePanel: tab.focused === only ? tab.sidePanel : null,
+              panes,
+            };
+      moves.current.start(
+        key,
+        target,
+        moving.map((pane) => pane.key),
+        live,
+      );
       store.dispatch({ type: "updateTab", key, patch: { moving: true } });
       // The other window reconnects those that were waiting to; one connection is enough.
-      const closed = tab.panes.filter((pane) => pane.sessionId === null).map((pane) => pane.key);
+      const closed = moving.filter((pane) => pane.sessionId === null).map((pane) => pane.key);
       closed.forEach((paneKey) => sessions.suspend(paneKey));
       try {
         if (target === null) settle(moves.current.opened(key, await windows.open({ kind: "tab", tab: transfer, at: null }, dropped)));
@@ -204,14 +225,15 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { followR
   );
 
   /**
-   * A tab dragged out of the window and dropped on `target`: into another window's tab bar, or
-   * anywhere else into a window of its own, unless it is this window's only tab.
+   * A tab (or its pane `pane`) dragged out of the window and dropped on `target`: into another
+   * window's tab bar, or anywhere else into a window of its own, unless it is this window's
+   * only tab.
    */
   const dropTab = useCallback(
-    (key: number, target: DropTarget, grab: Point) => {
-      if (target.kind === "window") void moveTab(key, target.label, { at: target.x });
-      else if (target.kind === "elsewhere" && store.get().tabs.length > 1)
-        void moveTab(key, null, { dropped: { cursor: target.cursor, grab } });
+    (key: number, target: DropTarget, grab: Point, pane?: number) => {
+      if (target.kind === "window") void moveTab(key, target.label, { at: target.x, pane });
+      else if (target.kind === "elsewhere" && leavesSomething(store.get().tabs, key, pane))
+        void moveTab(key, null, { dropped: { cursor: target.cursor, grab }, pane });
     },
     [store, moveTab],
   );

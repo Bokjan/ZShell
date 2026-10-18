@@ -1,5 +1,5 @@
 import type { SessionId, SessionTarget } from "../ipc/api";
-import { heirOf, mapLayout, removeFromLayout, splitLayout, type Direction } from "./layout";
+import { heirOf, insertLayout, mapLayout, removeFromLayout, splitLayout, type Direction, type Side } from "./layout";
 import { focusedPane, type Attention, type Layout, type Pane, type SidePanel, type Tab, type TabProtocol } from "./panes";
 import { createStore, type ReducerStore } from "./store";
 
@@ -39,6 +39,15 @@ export interface TabTransfer {
 /** The sessions a moving tab's panes take over: the window it goes to is offered them. */
 export const transferSessions = (tab: TabTransfer): SessionId[] => tab.panes.flatMap((pane) => pane.arrival?.sessionId ?? []);
 
+/** A place next to pane `key`, on its `side`, where a pane or a tab's panes go. */
+export interface PaneSide {
+  key: number;
+  side: Side;
+}
+
+/** Where a pane moves: to a tab of its own (at `index` among the tabs, else after its tab), or next to another pane. */
+export type PanePlace = { kind: "tab"; index?: number } | ({ kind: "pane" } & PaneSide);
+
 /** A change to a pane: its fields, or a function of the pane and its tab giving them. */
 export type PanePatch = Partial<Pane> | ((pane: Pane, tab: Tab) => Partial<Pane>);
 
@@ -49,6 +58,15 @@ export type TabsAction =
   | { type: "insert"; tab: TabTransfer; index?: number }
   /** Splits pane `key`, opening `pane` right of it (`row`) or below it (`column`), and focuses it. */
   | { type: "split"; key: number; direction: Direction; pane: PaneSpec }
+  /**
+   * Moves pane `key` to a tab of its own, or next to another pane (of its tab, or of another,
+   * which it joins), and focuses it there; a tab left without panes goes. Its terminal goes on
+   * as it was (see `PaneHosts`). Not a tab's only pane to a tab of its own, nor a pane of a tab
+   * that is moving to another window or to one.
+   */
+  | { type: "movePane"; key: number; to: PanePlace }
+  /** Moves tab `key`'s panes, as they are arranged, next to a pane of another tab, which shows them; the tab goes. */
+  | { type: "mergeTab"; key: number; to: PaneSide }
   /** Closes panes, and the tabs left without any. */
   | { type: "close"; keys: number[] }
   | { type: "activate"; key: number | null }
@@ -128,6 +146,37 @@ export function reduceTabs(state: TabsState, action: TabsAction): TabsState {
   return seen(reduce(state, action));
 }
 
+/** See the `movePane` action. */
+function movePane(state: TabsState, key: number, to: PanePlace): TabsState {
+  const from = tabOf(state.tabs, key);
+  if (!from || from.moving) return state;
+  const pane = from.panes.find((p) => p.key === key)!;
+  const leaf: Layout = { kind: "pane", key };
+  if (to.kind === "tab") {
+    if (from.panes.length === 1) return state;
+    const rest = close(state, [key]);
+    const tab: Tab = {
+      key: state.nextKey,
+      layout: leaf,
+      panes: [pane],
+      focused: key,
+      customTitle: null,
+      // The panel the pane showed goes on showing.
+      sidePanel: from.focused === key && pane.protocol === "ssh" ? from.sidePanel : null,
+    };
+    const index = to.index ?? rest.tabs.findIndex((t) => t.key === from.key) + 1;
+    const tabs = [...rest.tabs.slice(0, index), tab, ...rest.tabs.slice(index)];
+    return { tabs, activeKey: tab.key, nextKey: state.nextKey + 1 };
+  }
+  const target = tabOf(state.tabs, to.key);
+  if (!target || target.moving || to.key === key) return state;
+  const rest = close(state, [key]);
+  // Within its tab, it keeps its place in the list of panes, which the page's order follows.
+  const panes = target === from ? from.panes : [...target.panes, pane];
+  const next = mapTab(rest, target.key, (t) => ({ ...t, panes, layout: insertLayout(t.layout, to.key, to.side, leaf), focused: key }));
+  return { ...next, activeKey: target.key };
+}
+
 function reduce(state: TabsState, action: TabsAction): TabsState {
   switch (action.type) {
     case "open": {
@@ -168,6 +217,21 @@ function reduce(state: TabsState, action: TabsAction): TabsState {
       };
       const index = action.index ?? state.tabs.length;
       return { tabs: [...state.tabs.slice(0, index), tab, ...state.tabs.slice(index)], activeKey: key, nextKey: key + 1 };
+    }
+    case "movePane":
+      return movePane(state, action.key, action.to);
+    case "mergeTab": {
+      const from = state.tabs.find((t) => t.key === action.key);
+      const target = tabOf(state.tabs, action.to.key);
+      if (!from || !target || from === target || from.moving || target.moving) return state;
+      const merged: Tab = {
+        ...target,
+        panes: [...target.panes, ...from.panes],
+        layout: insertLayout(target.layout, action.to.key, action.to.side, from.layout),
+        focused: from.focused,
+      };
+      const tabs = state.tabs.filter((t) => t !== from).map((t) => (t === target ? merged : t));
+      return { ...state, tabs, activeKey: target.key };
     }
     case "close":
       return close(state, action.keys);

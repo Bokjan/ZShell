@@ -100,6 +100,108 @@ describe("split", () => {
   });
 });
 
+describe("movePane", () => {
+  /** Tab "a" split into a | b | c, and tab "d". */
+  const setup = () => {
+    let state = run({ type: "open", pane: ssh("a") }, { type: "open", pane: ssh("d") });
+    const a = state.tabs[0].panes[0].key;
+    state = reduceTabs(state, { type: "split", key: a, direction: "row", pane: ssh("b") });
+    state = reduceTabs(state, { type: "split", key: state.tabs[0].panes[1].key, direction: "row", pane: ssh("c") });
+    const [b, c] = state.tabs[0].panes.slice(1).map((pane) => pane.key);
+    return { state, a, b, c, d: state.tabs[1].panes[0].key };
+  };
+  const titles = (state: TabsState) => state.tabs.map((tab) => tab.panes.map((pane) => pane.title).join(""));
+
+  it("moves a pane to a tab of its own after its tab, the same pane, and shows it", () => {
+    const { state: before, a, b, c } = setup();
+    const pane = before.tabs[0].panes[1];
+    const state = reduceTabs(before, { type: "movePane", key: b, to: { kind: "tab" } });
+    expect(titles(state)).toEqual(["ac", "b", "d"]);
+    expect(state.tabs[1].panes[0]).toBe(pane);
+    expect(state.tabs[1]).toMatchObject({ focused: b, layout: { kind: "pane", key: b }, customTitle: null });
+    expect(state.activeKey).toBe(state.tabs[1].key);
+    // Its tab keeps the focus where it was; one the pane had goes to its neighbor.
+    expect(state.tabs[0].focused).toBe(c);
+    const focusedAway = reduceTabs(reduceTabs(before, { type: "focusPane", key: b }), { type: "movePane", key: b, to: { kind: "tab" } });
+    expect(focusedAway.tabs[0].focused).toBe(a);
+    expect(paneKeys(state).flat().length).toBe(4);
+    // Where it was asked to go, and keys stay unique.
+    const last = reduceTabs(before, { type: "movePane", key: b, to: { kind: "tab", index: 2 } });
+    expect(titles(last)).toEqual(["ac", "d", "b"]);
+    const keys = last.tabs.flatMap((tab) => [tab.key, ...tab.panes.map((p) => p.key)]);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("takes the side panel along when the pane showed it", () => {
+    let { state, c } = setup();
+    state = reduceTabs(state, { type: "togglePanel", panel: "files" });
+    state = reduceTabs(state, { type: "movePane", key: c, to: { kind: "tab" } });
+    expect(state.tabs.map((tab) => tab.sidePanel)).toEqual(["files", "files", null]);
+  });
+
+  it("leaves a tab's only pane where it is", () => {
+    const { state, d } = setup();
+    expect(reduceTabs(state, { type: "movePane", key: d, to: { kind: "tab" } })).toBe(state);
+  });
+
+  it("moves a pane next to another of its tab, keeping the order of the panes", () => {
+    const { state: before, a, c } = setup();
+    const state = reduceTabs(before, { type: "movePane", key: a, to: { kind: "pane", key: c, side: "down" } });
+    expect(titles(state)).toEqual(["abc", "d"]);
+    expect(state.tabs[0].layout).toMatchObject({
+      kind: "split",
+      direction: "row",
+      children: [
+        { kind: "pane", key: state.tabs[0].panes[1].key },
+        { kind: "split", direction: "column", children: [{ key: c }, { key: a }] },
+      ],
+    });
+    expect(state.tabs[0].focused).toBe(a);
+    expect(reduceTabs(before, { type: "movePane", key: a, to: { kind: "pane", key: a, side: "down" } })).toBe(before);
+  });
+
+  it("moves a pane into another tab, which shows it; a tab left empty goes", () => {
+    const { state: before, b, d } = setup();
+    let state = reduceTabs(before, { type: "movePane", key: b, to: { kind: "pane", key: d, side: "left" } });
+    expect(titles(state)).toEqual(["ac", "db"]);
+    expect(state.tabs[1].layout).toMatchObject({ kind: "split", children: [{ key: b }, { key: d }] });
+    expect(state.tabs[1].focused).toBe(b);
+    expect(state.activeKey).toBe(state.tabs[1].key);
+    state = reduceTabs(state, { type: "movePane", key: d, to: { kind: "pane", key: state.tabs[0].panes[0].key, side: "right" } });
+    expect(titles(state)).toEqual(["acd", "b"]);
+    state = reduceTabs(state, { type: "movePane", key: b, to: { kind: "pane", key: d, side: "up" } });
+    expect(titles(state)).toEqual(["acdb"]);
+    expect(state.activeKey).toBe(state.tabs[0].key);
+  });
+
+  it("leaves the panes of a tab moving to another window", () => {
+    const { state: before, b, d } = setup();
+    const moving = reduceTabs(before, { type: "updateTab", key: before.tabs[1].key, patch: { moving: true } });
+    expect(reduceTabs(moving, { type: "movePane", key: b, to: { kind: "pane", key: d, side: "left" } })).toBe(moving);
+    expect(reduceTabs(moving, { type: "movePane", key: d, to: { kind: "pane", key: b, side: "left" } })).toBe(moving);
+  });
+});
+
+describe("mergeTab", () => {
+  it("brings a tab's panes in next to a pane of another, as they were, and the tab goes", () => {
+    let state = run({ type: "open", pane: ssh("a") }, { type: "open", pane: ssh("b") }, { type: "open", pane: ssh("c") });
+    const [a, b, c] = state.tabs.map((tab) => tab.panes[0].key);
+    state = reduceTabs(state, { type: "split", key: b, direction: "column", pane: ssh("e") });
+    state = reduceTabs(state, { type: "focusPane", key: b });
+    const merged = reduceTabs(state, { type: "mergeTab", key: state.tabs[1].key, to: { key: a, side: "right" } });
+    expect(merged.tabs.map((tab) => tab.panes.map((pane) => pane.title).join(""))).toEqual(["abe", "c"]);
+    expect(merged.tabs[0].focused).toBe(b);
+    expect(merged.activeKey).toBe(merged.tabs[0].key);
+    expect(merged.tabs[0].layout).toMatchObject({
+      kind: "split",
+      direction: "row",
+      children: [{ key: a }, { kind: "split", direction: "column" }],
+    });
+    // Not into itself.
+    expect(reduceTabs(state, { type: "mergeTab", key: state.tabs[2].key, to: { key: c, side: "left" } })).toBe(state);
+  });
+});
+
 describe("close", () => {
   it("activates the next tab to the right, else the one to the left", () => {
     let state = run({ type: "open", pane: local }, { type: "open", pane: local }, { type: "open", pane: local });

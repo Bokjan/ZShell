@@ -9,9 +9,10 @@ import { useCloseFlow } from "./app/useCloseFlow";
 import { useCompose } from "./app/useCompose";
 import { useDirectorySync } from "./app/useDirectorySync";
 import { usePaneActions } from "./app/usePaneActions";
+import { PaneDragLayer, usePaneDrag } from "./app/usePaneDrag";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommandBar } from "./app/useQuickCommandBar";
-import { useWindows } from "./app/useWindows";
+import { leavesSomething, useWindows } from "./app/useWindows";
 
 import { useAppLock } from "./hooks/appLock";
 import { CommandPalette } from "./components/CommandPalette";
@@ -26,6 +27,8 @@ import type { SectionId } from "./components/settings/common";
 import { Sidebar, type OpenMode, type SidebarHandlers } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar, type TabBarHandlers } from "./components/TabBar";
+import { PaneHostList } from "./components/PaneHost";
+import { createPaneHosts } from "./components/paneHosts";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n/index";
@@ -48,7 +51,7 @@ import { actionOf, matches, paneSideOf, tabIndexOf, type MenuAction } from "./li
 import { neighbor } from "./lib/layout";
 import { quickCommandStore, tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
-import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
+import { findPane, focusedPane, tabTitle, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { address, sessionsIn, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
@@ -151,7 +154,8 @@ function App() {
 
   /** What a tab's next session will be: a saved session's protocol may have been changed. */
   const protocolOf = useCallback((target: SessionTarget) => targetProtocol(target, directory.get().profiles), []);
-  const { refused, onAreaSize, roomToSplit, splitPane, duplicateTab } = usePaneActions(store, protocolOf);
+  const paneActions = usePaneActions(store, sessions, protocolOf);
+  const { refused, onAreaSize, roomToSplit, splitPane, duplicateTab } = paneActions;
 
   const addTab = useCallback(
     (target: SessionTarget, title: string) => dispatch({ type: "open", pane: { target, protocol: protocolOf(target), title } }),
@@ -159,6 +163,7 @@ function App() {
   );
 
   const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: addTab });
+  const paneDrag = usePaneDrag(store, paneActions, windowing);
 
   /** Shows the pane: activates its tab and focuses it there. */
   const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);
@@ -399,12 +404,53 @@ function App() {
             },
           ]
         : []),
+      ...moveMenu(pane),
       "separator",
       {
         label: t(fullScreen.on ? "terminal.menu.exitFullScreen" : "terminal.menu.fullScreen"),
         shortcut: shortcutLabel("fullScreen"),
         onSelect: fullScreen.toggle,
       },
+    ];
+  };
+
+  /**
+   * Moving the pane: to a tab of its own, or next to the focused pane of another tab (where
+   * there is room), or to another window. The tabs are listed as in the tab bar.
+   */
+  const moveMenu = (pane: Pane): MenuItem[] => {
+    const tab = findPane(tabs, pane.key)?.tab;
+    const others = tabs.filter((other) => other.key !== tab?.key);
+    if (!tab || (tab.panes.length === 1 && others.length === 0 && windowing.others.length === 0)) return [];
+    const toWindow = windowing.canMove(tab, pane.key);
+    const moveToWindow = (target: string | null) => void windowing.moveTab(tab.key, target, { pane: pane.key });
+    const targets: MenuItem[] = [
+      {
+        label: t("tabs.paneTo.newWindow"),
+        disabled: !toWindow || !leavesSomething(tabs, tab.key, pane.key),
+        onSelect: () => moveToWindow(null),
+      },
+      ...windowing.others.map((other) => ({
+        label: t("tabs.paneTo.window", { name: other.title || t("app.name") }),
+        disabled: !toWindow,
+        onSelect: () => moveToWindow(other.label),
+      })),
+    ];
+    if (others.length > 0) targets.push("separator");
+    for (const other of others) {
+      const place = tab.moving ? null : paneActions.placeIn(other.key);
+      targets.push({
+        label: tabTitle(other, settings.tabs.followRemoteTitle),
+        disabled: !place,
+        onSelect: () => place && paneActions.movePane(pane.key, { kind: "pane", ...place }),
+      });
+    }
+    return [
+      "separator",
+      ...(tab.panes.length > 1
+        ? [{ label: t("tabs.movePaneToNewTab"), disabled: !!tab.moving, onSelect: () => paneActions.movePane(pane.key, { kind: "tab" }) }]
+        : []),
+      { label: t("tabs.movePaneTo"), submenu: targets },
     ];
   };
 
@@ -463,6 +509,8 @@ function App() {
     },
     onMoveToWindow: (key, target) => void windowing.moveTab(key, target),
     onDropOut: windowing.dropTab,
+    onOverPanes: paneDrag.overPanes,
+    onDropOnPanes: paneDrag.dropOnPanes,
     onRename: (key, customTitle) => updateTab(key, { customTitle }),
     onDuplicate: duplicateTab,
     onSaveAsSession: (key) => withFocused(key, (pane) => saveAsSession(pane.key)),
@@ -475,8 +523,10 @@ function App() {
     onToggleQuickBar: quick.toggleBar,
   });
 
+  const [hosts] = useState(createPaneHosts);
   const handlers = useStableHandlers<PaneHandlers>({
     sessions,
+    hosts,
     onTitle: (key, title) => updatePane(key, { remoteTitle: title || null }),
     onInput: composer.onInput,
     pasteTargets: composer.syncedPasteTargets,
@@ -490,6 +540,7 @@ function App() {
     onEdits: (key, count) => updatePane(key, { edits: count }),
     onQuestions: (key, count) => updatePane(key, { questions: count }),
     menuItems: terminalMenu,
+    onGrab: paneDrag.start,
   });
 
   const closeDialog = useCallback(() => setEditing(null), []);
@@ -567,9 +618,11 @@ function App() {
               inScope={inScopeKeys}
               flashing={flashing}
               refused={refused}
+              draggable={tabs.length > 1 || tab.panes.length > 1}
               handlers={handlers}
             />
           ))}
+          <PaneHostList tabs={tabs} activeKey={activeKey} profiles={profiles} handlers={handlers} />
           {fullScreen.hint && (
             // Announced as well, when it starts.
             <div className="full-screen-hint" aria-hidden="true">
@@ -661,6 +714,7 @@ function App() {
           onCancel={quickCommandStore.dismissSaveError}
         />
       )}
+      <PaneDragLayer view={paneDrag.view} />
       <Tooltips />
     </div>
   );

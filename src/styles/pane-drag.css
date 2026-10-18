@@ -1,0 +1,64 @@
+/* Moving panes by dragging them (see `usePaneDrag`): each pane's grip, and what shows where a
+   pane or a tab dragged over the panes would go. */
+
+/* At the top of a pane, shown while the pointer is near the pane's top edge. */
+.pane-grip {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  z-index: 8;
+  translate: -50% 0;
+  display: flex;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  box-shadow: 0 2px 6px var(--shadow);
+  cursor: grab;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+/* A short wait before it shows, so that it doesn't flash as the pointer passes on its way into
+   the terminal. */
+.pane-grip.near {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0.15s;
+}
+.pane-grip:hover {
+  color: var(--text);
+}
+
+body.dragging-pane,
+body.dragging-pane * {
+  cursor: grabbing !important;
+}
+body.dragging-pane .terminal-view {
+  pointer-events: none;
+}
+.pane-drag-source,
+.pane-drop-preview,
+.pane-drop-marker {
+  position: fixed;
+  z-index: 9;
+  pointer-events: none;
+}
+/* The pane being dragged, faded; more so when it would leave the window. */
+.pane-drag-source {
+  background: var(--bg);
+  opacity: 0.4;
+}
+.pane-drag-source.leaving {
+  opacity: 0.65;
+}
+.pane-drop-preview {
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+}
+.pane-drop-marker {
+  background: var(--accent);
+  border-radius: 1px;
+}

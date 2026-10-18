@@ -60,6 +60,7 @@
   .pane-divider::before,
   .progress,
   .tab-drop-marker,
+  .pane-drop-marker,
   .tree-row.drop-before::before,
   .tree-row.drop-after::after,
   .pane-area.split .pane.in-scope:not(.syncing)::before,

@@ -151,6 +151,13 @@
     "splitRight": "Diviser à droite",
     "splitDown": "Diviser en bas",
     "closePane": "Fermer le volet",
+    "movePaneToNewTab": "Déplacer le volet vers un nouvel onglet",
+    "movePaneTo": "Déplacer le volet vers",
+    "dragPane": "Faites glisser pour déplacer ce volet vers un autre endroit, onglet ou fenêtre",
+    "paneTo": {
+      "newWindow": "Nouvelle fenêtre",
+      "window": "Fenêtre « {name} »"
+    },
     "reconnect": "Reconnecter",
     "sendBreak": "Envoyer un signal Break",
     "closeOthers": "Fermer les autres onglets",

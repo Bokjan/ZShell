@@ -45,6 +45,9 @@ export interface TabBarHandlers {
    * top left of the window.
    */
   onDropOut(key: number, target: DropTarget, grab: Point): void;
+  /** See `useTabDrag`: a tab dragged over the panes of the tab shown, which it may join. */
+  onOverPanes(key: number, at: Point | null): boolean;
+  onDropOnPanes(key: number): void;
   /** `title` null goes back to the automatic title. */
   onRename(key: number, title: string | null): void;
   onDuplicate(key: number): void;
@@ -123,6 +126,8 @@ export function TabBar({
     canMoveToWindow,
     onMoveToWindow,
     onDropOut,
+    onOverPanes,
+    onDropOnPanes,
     onRename,
     onDuplicate,
     onSplit,
@@ -199,7 +204,15 @@ export function TabBar({
   // Files and forwards work on an SSH connection.
   const unavailable = !!activePane && activePane.protocol !== "ssh";
 
-  const { dragging, leaving, startDrag } = useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropOut });
+  const { dragging, leaving, startDrag } = useTabDrag({
+    tabsRef,
+    stripRef,
+    onMove,
+    canMoveToWindow,
+    onDropOut,
+    onOverPanes,
+    onDropOnPanes,
+  });
 
   const menuItems = (key: number): MenuItem[] => {
     const index = tabs.findIndex((tab) => tab.key === key);

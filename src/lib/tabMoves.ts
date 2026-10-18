@@ -1,8 +1,8 @@
 /**
  * Tabs moving out of this window to another (see `useWindows`), as plain state: a tab moving
- * out stays here until each of its panes' sessions has moved, or stayed because the other
- * window couldn't take it (it says so, or closes first). Then the move is over, and the tab
- * goes but for the panes that stayed.
+ * out (or one of its panes) stays here until each of its panes' sessions has moved, or stayed
+ * because the other window couldn't take it (it says so, or closes first). Then the move is
+ * over, and the panes that moved go, but for those that stayed.
  */
 export class TabMoves {
   private readonly moves = new Map<number, Move>();
@@ -14,9 +14,12 @@ export class TabMoves {
     return this.moves.has(key);
   }
 
-  /** Tab `key` starts moving to window `target` (null: a new one), the sessions of panes `live` with it. */
-  start(key: number, target: string | null, live: number[]) {
-    this.moves.set(key, { target, waiting: new Set(live), stayed: new Set() });
+  /**
+   * Panes `panes` of tab `key` (all of them, or one) start moving to window `target` (null: a
+   * new one), the sessions of those `live` with them.
+   */
+  start(key: number, target: string | null, panes: number[], live: number[]) {
+    this.moves.set(key, { target, panes, waiting: new Set(live), stayed: new Set() });
   }
 
   /**
@@ -67,21 +70,23 @@ export class TabMoves {
 
   private settle(key: number, move: Move): Settled {
     this.moves.delete(key);
-    return { key, stayed: move.stayed };
+    return { key, gone: move.panes.filter((pane) => !move.stayed.has(pane)) };
   }
 }
 
 interface Move {
   /** The window it moves to, once known. */
   target: string | null;
+  /** Its panes that move. */
+  panes: number[];
   /** Its panes whose sessions haven't moved yet. */
   waiting: Set<number>;
   /** Its panes whose sessions couldn't move, which stay here. */
   stayed: Set<number>;
 }
 
-/** A move that is over: the tab, and its panes that stay here. */
+/** A move that is over: the tab, and its panes that have gone. */
 export interface Settled {
   key: number;
-  stayed: Set<number>;
+  gone: number[];
 }

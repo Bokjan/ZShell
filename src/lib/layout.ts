@@ -42,11 +42,6 @@ const childRect = (rect: Rect, direction: Direction, offset: number, size: numbe
     ? { x: rect.x + offset * rect.w, y: rect.y, w: size * rect.w, h: rect.h }
     : { x: rect.x, y: rect.y + offset * rect.h, w: rect.w, h: size * rect.h };
 
-/**
- * Splits pane `key` in two along `direction`, putting pane `added` right of or below it.
- * Within a split of the same direction the new pane becomes a sibling, sharing the space
- * the pane had.
- */
 /** A pane is kept at least this large, in pixels: dragging a divider, and splitting it. */
 export const MIN_PANE_WIDTH = 120;
 export const MIN_PANE_HEIGHT = 60;
@@ -66,20 +61,96 @@ export function canSplit(layout: Layout, key: number, area: Size | undefined, di
   return direction === "row" ? rect.w * area.width >= 2 * MIN_PANE_WIDTH : rect.h * area.height >= 2 * MIN_PANE_HEIGHT;
 }
 
-export function splitLayout(layout: Layout, key: number, direction: Direction, added: number): Layout {
+/** The direction of a split with a pane on `side` of another. */
+export const directionOf = (side: Side): Direction => (side === "left" || side === "right" ? "row" : "column");
+
+/**
+ * Puts `added` (a pane, or a tab's panes) on `side` of pane `key`, the two sharing the space
+ * the pane had. Within a split of the same direction, `added` becomes a sibling of the pane,
+ * and so do its own children when it is split that way too.
+ */
+export function insertLayout(layout: Layout, key: number, side: Side, added: Layout): Layout {
+  const direction = directionOf(side);
+  const first = side === "left" || side === "up";
+  // What `added` brings to a split of `direction` taking `share` of it, with their shares.
+  const parts = (share: number): [Layout[], number[]] =>
+    added.kind === "split" && added.direction === direction
+      ? [added.children, added.sizes.map((size) => size * share)]
+      : [[added], [share]];
   if (layout.kind === "pane") {
-    return layout.key === key ? { kind: "split", direction, children: [layout, leaf(added)], sizes: [0.5, 0.5] } : layout;
+    if (layout.key !== key) return layout;
+    const [children, sizes] = parts(0.5);
+    return first
+      ? { kind: "split", direction, children: [...children, layout], sizes: [...sizes, 0.5] }
+      : { kind: "split", direction, children: [layout, ...children], sizes: [0.5, ...sizes] };
   }
   const index = layout.children.findIndex((child) => child.kind === "pane" && child.key === key);
   if (index >= 0 && layout.direction === direction) {
     const half = layout.sizes[index] / 2;
+    const [children, sizes] = parts(half);
+    const own = layout.sizes.map((size, i) => (i === index ? half : size));
+    const at = first ? index : index + 1;
     return {
       ...layout,
-      children: [...layout.children.slice(0, index + 1), leaf(added), ...layout.children.slice(index + 1)],
-      sizes: [...layout.sizes.slice(0, index), half, half, ...layout.sizes.slice(index + 1)],
+      children: [...layout.children.slice(0, at), ...children, ...layout.children.slice(at)],
+      sizes: [...own.slice(0, at), ...sizes, ...own.slice(at)],
     };
   }
-  return { ...layout, children: layout.children.map((child) => splitLayout(child, key, direction, added)) };
+  return { ...layout, children: layout.children.map((child) => insertLayout(child, key, side, added)) };
+}
+
+/**
+ * Splits pane `key` in two along `direction`, putting pane `added` right of or below it.
+ * Within a split of the same direction the new pane becomes a sibling, sharing the space
+ * the pane had.
+ */
+export const splitLayout = (layout: Layout, key: number, direction: Direction, added: number): Layout =>
+  insertLayout(layout, key, direction === "row" ? "right" : "down", leaf(added));
+
+/**
+ * Whether panes `keys` of `layout`, in a pane area of `area` pixels, are each at least the
+ * minimum size. Unknown sizes allow it.
+ */
+export function fits(layout: Layout, keys: number[], area: Size | undefined): boolean {
+  if (!area) return true;
+  const rects = paneRects(layout);
+  return keys.every((key) => {
+    const rect = rects.get(key);
+    return !rect || (rect.w * area.width >= MIN_PANE_WIDTH - EPSILON && rect.h * area.height >= MIN_PANE_HEIGHT - EPSILON);
+  });
+}
+
+/**
+ * The side a pane added next to pane `key` goes on by itself: right of it when the pane is
+ * at least as wide as it is tall (in pixels), else below, or the other if only that has room;
+ * null when neither has.
+ */
+export function autoSide(layout: Layout, key: number, area: Size | undefined): "right" | "down" | null {
+  const rect = paneRects(layout).get(key);
+  if (!rect) return null;
+  const wide = !area || rect.w * area.width >= rect.h * area.height;
+  const sides = wide ? (["right", "down"] as const) : (["down", "right"] as const);
+  return sides.find((side) => canSplit(layout, key, area, directionOf(side))) ?? null;
+}
+
+/**
+ * The side of `rect` nearest the point (`x`, `y`), all in the same units: the rect is cut
+ * along its diagonals, as where a pane dropped on another one goes.
+ */
+export function sideAt(rect: Rect, x: number, y: number): Side {
+  // Where the point is, from -1 to 1 across the rect each way.
+  const dx = ((x - rect.x) / rect.w) * 2 - 1;
+  const dy = ((y - rect.y) / rect.h) * 2 - 1;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? "left" : "right";
+  return dy < 0 ? "up" : "down";
+}
+
+/** The part of `rect` that a pane put on `side` of it takes: its half on that side. */
+export function halfOn(rect: Rect, side: Side): Rect {
+  if (side === "left") return { ...rect, w: rect.w / 2 };
+  if (side === "right") return { ...rect, x: rect.x + rect.w / 2, w: rect.w / 2 };
+  if (side === "up") return { ...rect, h: rect.h / 2 };
+  return { ...rect, y: rect.y + rect.h / 2, h: rect.h / 2 };
 }
 
 /**

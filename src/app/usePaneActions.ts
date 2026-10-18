@@ -3,15 +3,16 @@ import { useTranslation } from "react-i18next";
 
 import type { SessionTarget } from "../ipc/api";
 import { announce } from "../lib/announce";
-import { canSplit, type Direction, type Size } from "../lib/layout";
-import { findPane, focusedPane, type Pane, type TabProtocol } from "../lib/panes";
-import type { PaneSpec, TabStore } from "../lib/tabs";
+import { autoSide, canSplit, fits, insertLayout, paneKeys, removeFromLayout, type Direction, type Size } from "../lib/layout";
+import { findPane, focusedPane, type Layout, type Pane, type TabProtocol } from "../lib/panes";
+import type { SessionRegistry } from "../lib/sessionRegistry";
+import type { PanePlace, PaneSide, PaneSpec, TabStore } from "../lib/tabs";
 
 /** How long a pane that can't be split flashes. */
 const REFUSED_MS = 400;
 
-/** Splitting panes and copying them into new tabs. */
-export function usePaneActions(store: TabStore, protocolOf: (target: SessionTarget) => TabProtocol) {
+/** Splitting panes, copying them into new tabs, and moving them between tabs. */
+export function usePaneActions(store: TabStore, sessions: SessionRegistry, protocolOf: (target: SessionTarget) => TabProtocol) {
   const { t } = useTranslation();
   // The pane that couldn't be split, flashing; `count` restarts the flash on each refusal.
   const [refused, setRefused] = useState<{ key: number; count: number } | null>(null);
@@ -72,5 +73,44 @@ export function usePaneActions(store: TabStore, protocolOf: (target: SessionTarg
     store.dispatch({ type: "split", key, direction, pane: added ?? copyOf(found.pane) });
   };
 
-  return { refused, onAreaSize, roomToSplit, splitPane, duplicateTab };
+  /**
+   * Where a pane moved into tab `tabKey` from a menu goes: next to the tab's focused pane, on
+   * the side that has room (see `autoSide`); null when neither has.
+   */
+  const placeIn = (tabKey: number): PaneSide | null => {
+    const tab = store.get().tabs.find((t) => t.key === tabKey);
+    if (!tab || tab.moving) return null;
+    const side = autoSide(tab.layout, tab.focused, areas.current.get(tab.key));
+    return side && { key: tab.focused, side };
+  };
+
+  /**
+   * Whether panes arranged as `added` fit next to pane `to.key` on its side, the pane and each
+   * of them at least the minimum size; `moving` is a pane that leaves its place first (in the
+   * same tab, it frees its space).
+   */
+  const fitsBeside = (added: Layout, to: PaneSide, moving?: number) => {
+    const found = findPane(store.get().tabs, to.key);
+    if (!found) return false;
+    const { layout } = found.tab;
+    const left = moving !== undefined && found.tab.panes.some((pane) => pane.key === moving) ? removeFromLayout(layout, moving) : layout;
+    if (!left) return false;
+    return fits(insertLayout(left, to.key, to.side, added), [to.key, ...paneKeys(added)], areas.current.get(found.tab.key));
+  };
+
+  /** Moves a pane to a tab of its own or next to another pane; its terminal keeps the keyboard. */
+  const movePane = (key: number, to: PanePlace) => {
+    store.dispatch({ type: "movePane", key, to });
+    requestAnimationFrame(() => sessions.focus(key));
+  };
+
+  /** Moves a tab's panes next to a pane of another tab, its focused pane keeping the keyboard. */
+  const mergeTab = (key: number, to: PaneSide) => {
+    const tab = store.get().tabs.find((t) => t.key === key);
+    if (!tab) return;
+    store.dispatch({ type: "mergeTab", key, to });
+    requestAnimationFrame(() => sessions.focus(tab.focused));
+  };
+
+  return { refused, onAreaSize, roomToSplit, splitPane, duplicateTab, placeIn, fitsBeside, movePane, mergeTab };
 }
