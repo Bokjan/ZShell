@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type R
 import type { Point } from "../ipc/bindings";
 import type { DropTarget } from "../ipc/windows";
 import type { Tab } from "../lib/panes";
-import { tabIndexAt } from "../lib/tabStrip";
+import type { TabRest } from "../lib/tabRest";
+import { tabIndexAt, tabRestingAt } from "../lib/tabStrip";
 import { WindowDrag } from "../lib/windowDrag";
 
 /** How far the pointer moves before a press on a tab becomes a drag. */
@@ -13,10 +14,18 @@ const DRAG_SCROLL_EDGE = 24;
 const DRAG_SCROLL_STEP = 12;
 
 interface Options {
-  /** The tabs as they are now. */
+  /** The tabs as they are now, and the one shown. */
   tabsRef: RefObject<Tab[]>;
+  activeKeyRef: RefObject<number | null>;
+  /** Shows a tab. */
+  onShow(key: number): void;
+  /** The tab a dragged one rests on, shown after a moment. */
+  tabRest: TabRest;
   stripRef: RefObject<HTMLDivElement | null>;
+  /** Moves tab `key` to `index` among the others, where it was dropped. */
   onMove(key: number, index: number): void;
+  /** Where among the other tabs the dragged tab `key` goes if dropped now, or nowhere (null). */
+  onDropAt(key: number, index: number | null): void;
   canMoveToWindow(key: number): boolean;
   onDropOut(key: number, target: DropTarget, grab: Point): void;
   /**
@@ -32,7 +41,19 @@ interface Options {
  * Dragging the tab bar's tabs: `startDrag` on a press, and the tab being dragged, which
  * `leaving` the window if dropped now. What a drag listens to goes with the tab bar.
  */
-export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropOut, onOverPanes, onDropOnPanes }: Options) {
+export function useTabDrag({
+  tabsRef,
+  activeKeyRef,
+  onShow,
+  tabRest,
+  stripRef,
+  onMove,
+  onDropAt,
+  canMoveToWindow,
+  onDropOut,
+  onOverPanes,
+  onDropOnPanes,
+}: Options) {
   const [dragging, setDragging] = useState<number | null>(null);
   // The dragged tab would leave the window if dropped now.
   const [leaving, setLeaving] = useState(false);
@@ -40,23 +61,34 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
   const stopRef = useRef<(() => void) | null>(null);
   useEffect(() => () => stopRef.current?.(), []);
 
-  // Reorders live while dragging: the tab moves past each neighbor whose middle the pointer
-  // crosses. Pressing doesn't take focus from the terminal. Mouse events rather than HTML5
-  // drag and drop, which Tauri's file drop handling intercepts on Windows. Dragged out of the
-  // window, the tab goes where the backend says it is over when dropped (another window's tab
-  // bar, or a window of its own); dragged over the panes of the tab shown, it joins them
-  // there. Escape puts it back.
+  // The tab stays in its place while dragged: over the edge of another tab, a line shows where
+  // it goes if dropped (`onDropAt`), as it does for a tab coming from another window; over the
+  // middle half of another tab, it rests on it, which shows that tab after a moment, to drop
+  // the dragged one on its panes, where it joins them. Dragged out of the window, the tab goes
+  // where the backend says it is over when dropped (another window's tab bar, or a window of
+  // its own). Dropped anywhere else, or after Escape, it stays where it was. Unless it joins
+  // another tab or leaves the window, the tab shown before is shown again. Pressing doesn't
+  // take focus from the terminal. Mouse events rather than HTML5 drag and drop, which Tauri's
+  // file drop handling intercepts on Windows.
   const startDrag = (e: ReactMouseEvent, key: number) => {
     if (e.button !== 0) return;
     stopRef.current?.();
     e.preventDefault();
     const grab = { x: e.clientX, y: e.clientY };
     const startIndex = tabsRef.current.findIndex((tab) => tab.key === key);
+    const startActive = activeKeyRef.current;
     let moved = false;
     // Whether it can go to another window, as the drag starts.
     let movable = false;
     // It would join the panes of the tab shown if dropped now.
     let overPanes = false;
+    // Where among the other tabs it goes if dropped now, if anywhere.
+    let dropIndex: number | null = null;
+    const dropAt = (index: number | null) => {
+      if (index === dropIndex) return;
+      dropIndex = index;
+      onDropAt(key, index);
+    };
     let ended = false;
     // The tab bar went with the drag: nothing is left to drop the tab out of.
     let gone = false;
@@ -75,9 +107,9 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
         window.removeEventListener("mouseup", up);
         window.removeEventListener("keydown", keyDown, true);
       },
-      // Cancelled (Escape): back where it was, as in the page.
+      // Dropped outside the page, or cancelled (Escape).
       nativeEnd: (dropped) => {
-        if (!dropped && moved) onMove(key, startIndex);
+        dropAt(null);
         finish(dropped);
       },
     });
@@ -99,18 +131,22 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
       const strip = stripRef.current!;
       const bounds = strip.getBoundingClientRect();
       overPanes = !outside && ev.clientY > bounds.bottom && onOverPanes(key, { x: ev.clientX, y: ev.clientY });
-      if (outside || overPanes) return;
+      const inStrip = !outside && ev.clientY >= bounds.top && ev.clientY <= bounds.bottom;
+      const over = inStrip ? tabRestingAt(strip, ev.clientX, key) : null;
+      tabRest.rest(over);
+      if (!inStrip || over !== null) return dropAt(null);
       if (ev.clientX < bounds.left + DRAG_SCROLL_EDGE) strip.scrollLeft -= DRAG_SCROLL_STEP;
       else if (ev.clientX > bounds.right - DRAG_SCROLL_EDGE) strip.scrollLeft += DRAG_SCROLL_STEP;
+      // Where it is already: no line.
       const index = tabIndexAt(strip, ev.clientX, key);
-      if (tabsRef.current.findIndex((tab) => tab.key === key) !== index) onMove(key, index);
+      dropAt(index === startIndex ? null : index);
     };
     const keyDown = (ev: KeyboardEvent) => {
       if (ev.key !== "Escape") return;
       ev.preventDefault();
       ev.stopPropagation();
-      if (moved) onMove(key, startIndex);
       overPanes = false;
+      dropAt(null);
       finish(false);
     };
     const finish = (dropped: boolean) => {
@@ -121,15 +157,27 @@ export function useTabDrag({ tabsRef, stripRef, onMove, canMoveToWindow, onDropO
       window.removeEventListener("keydown", keyDown, true);
       setDragging(null);
       setLeaving(false);
+      tabRest.rest(null);
+      const index = dropped && !gone ? dropIndex : null;
+      dropAt(null);
+      if (index !== null) onMove(key, index);
       // Joining takes the place `onOverPanes` last found, which clearing it would forget.
       const joins = dropped && overPanes && !outside && !gone;
       if (joins) onDropOnPanes(key);
       else onOverPanes(key, null);
-      if (!movable) return;
-      void drag.end(dropped && !joins, outside).then((target) => target && !gone && onDropOut(key, target, grab), console.error);
+      // A tab shown on the way, where nothing was dropped: the one shown before comes back.
+      const showBack = () => {
+        if (!joins && !gone && startActive !== null && activeKeyRef.current !== startActive) onShow(startActive);
+      };
+      if (!movable) return showBack();
+      void drag.end(dropped && !joins, outside).then((target) => {
+        if (target && target.kind !== "here" && !gone) onDropOut(key, target, grab);
+        else showBack();
+      }, console.error);
     };
     const up = (ev: MouseEvent) => {
       outside = isOutside(ev);
+      if (outside) dropAt(null);
       finish(true);
     };
     window.addEventListener("mousemove", move);

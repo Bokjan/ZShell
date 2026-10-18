@@ -42,6 +42,27 @@
   opacity: 0.7;
   cursor: grabbing;
 }
+/* A dragged tab or pane rests on it: it is shown once the bar along its bottom is full. */
+.tab.resting {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.tab.resting::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  animation: tab-rest var(--rest-ms) linear;
+}
+@keyframes tab-rest {
+  from {
+    transform: scaleX(0);
+  }
+}
 /* Dropped now, it would leave the window. */
 .tab.dragging.leaving {
   opacity: 0.4;

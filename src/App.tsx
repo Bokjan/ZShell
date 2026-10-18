@@ -57,6 +57,7 @@ import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
 import { useDirectory, useQuickCommands, useTabStore } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
+import { createTabRest } from "./lib/tabRest";
 import { currentSettings } from "./lib/settings";
 import { useSettings } from "./hooks/settings";
 import { useShortcuts } from "./hooks/shortcuts";
@@ -163,7 +164,13 @@ function App() {
   );
 
   const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: addTab });
-  const paneDrag = usePaneDrag(store, paneActions, windowing);
+  const [tabRest] = useState(() =>
+    createTabRest(
+      () => store.get().activeKey,
+      (key) => store.dispatch({ type: "activate", key }),
+    ),
+  );
+  const paneDrag = usePaneDrag(store, paneActions, windowing, tabRest);
 
   /** Shows the pane: activates its tab and focuses it there. */
   const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);
@@ -579,6 +586,7 @@ function App() {
           markOutput={settings.tabs.markOutput}
           bellAlert={settings.terminal.bellAlert}
           handlers={tabBarHandlers}
+          tabRest={tabRest}
           canOpenLocal={localAllowed}
           windows={windowing.others}
           composeOpen={compose.open}

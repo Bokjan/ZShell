@@ -5,14 +5,12 @@ import { halfOn, sideAt, type Rect } from "../lib/layout";
 import { findPane, type Layout } from "../lib/panes";
 import { createStore, type PatchStore } from "../lib/store";
 import type { PanePlace, PaneSide, TabStore } from "../lib/tabs";
+import type { TabRest } from "../lib/tabRest";
 import { tabIndexAt, tabStrip } from "../lib/tabStrip";
 import { WindowDrag } from "../lib/windowDrag";
 import { DRAG_THRESHOLD } from "../components/useTabDrag";
 import { leavesSomething, type useWindows } from "./useWindows";
 import type { usePaneActions } from "./usePaneActions";
-
-/** How long a pane dragged over a tab rests there before that tab is shown, to drop it on its panes. */
-const HOVER_MS = 500;
 
 /** What the page shows of a drag, in CSS pixels of the page. */
 interface DragView {
@@ -46,6 +44,7 @@ export function usePaneDrag(
   store: TabStore,
   actions: Pick<ReturnType<typeof usePaneActions>, "fitsBeside" | "movePane" | "mergeTab">,
   windowing: Pick<ReturnType<typeof useWindows>, "canMove" | "dropTab">,
+  tabRest: TabRest,
 ) {
   const [view] = useState(() => createStore<DragView>(NO_VIEW));
   /** Where a tab dragged over the panes would join them. */
@@ -96,8 +95,6 @@ export function usePaneDrag(
     let movable = false;
     let outside = false;
     let drop: Drop = null;
-    // The tab the pointer rests on, and since when.
-    let hovered: { key: number; timer: ReturnType<typeof setTimeout> } | null = null;
     let frame = 0;
     let last: MouseEvent | null = null;
     const tabOfPane = () => findPane(store.get().tabs, key)?.tab;
@@ -114,15 +111,6 @@ export function usePaneDrag(
       nativeEnd: (dropped) => finish(dropped),
     });
 
-    const rest = (tabKey: number | null) => {
-      if (hovered?.key === tabKey) return;
-      if (hovered) clearTimeout(hovered.timer);
-      hovered =
-        tabKey === null || tabKey === store.get().activeKey
-          ? null
-          : { key: tabKey, timer: setTimeout(() => store.dispatch({ type: "activate", key: tabKey }), HOVER_MS) };
-    };
-
     /** Where the pane would go with the pointer at (`x`, `y`), and what shows it. */
     const update = (x: number, y: number) => {
       const tab = tabOfPane();
@@ -134,10 +122,10 @@ export function usePaneDrag(
       let marker: Rect | null = null;
       if (outside) {
         drop = movable ? { kind: "out" } : null;
-        rest(null);
+        tabRest.rest(null);
       } else if (strip && bounds && y >= bounds.top && y <= bounds.bottom) {
         const over = document.elementFromPoint(x, y)?.closest<HTMLElement>(".tab");
-        rest(over ? Number(over.dataset.key) : null);
+        tabRest.rest(over ? Number(over.dataset.key) : null);
         // A tab's only pane is a tab of its own already.
         const index = tabIndexAt(strip, x);
         drop = tab.panes.length > 1 ? { kind: "tab", index } : null;
@@ -151,7 +139,7 @@ export function usePaneDrag(
           marker = { x: edge - 1, y: bounds.top + 4, w: 2, h: bounds.height - 8 };
         }
       } else {
-        rest(null);
+        tabRest.rest(null);
         const found = paneAt(x, y, leaf, key);
         drop = found && { kind: "pane", ...found.to };
         preview = found?.preview ?? null;
@@ -205,7 +193,7 @@ export function usePaneDrag(
       ended = true;
       removeListeners();
       cancelAnimationFrame(frame);
-      rest(null);
+      tabRest.rest(null);
       document.body.classList.remove("dragging-pane");
       view.set(NO_VIEW);
       stopRef.current = null;

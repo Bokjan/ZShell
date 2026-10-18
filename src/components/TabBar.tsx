@@ -1,7 +1,10 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -14,12 +17,14 @@ import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
 import type { Point } from "../ipc/bindings";
+import { REST_MS, type TabRest } from "../lib/tabRest";
 import { tabIndexAt } from "../lib/tabStrip";
 import { DRAG_REGION } from "../hooks/titleBar";
 import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
 import { useLatest } from "../hooks/latest";
 import { useLocale } from "../hooks/locale";
+import { useMediaQuery } from "../hooks/settings";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -27,6 +32,9 @@ import { IconButton } from "./IconButton";
 import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
 import { useTabDrag } from "./useTabDrag";
 import { WindowControls } from "./WindowControls";
+
+/** How long tabs dropped in a new order take to slide into their places. */
+const SLIDE_MS = 160;
 
 export interface TabBarHandlers {
   onSelect(key: number): void;
@@ -97,6 +105,8 @@ interface Props {
   colorOf(tab: Tab): string | undefined;
   /** Where the tab's session connects (see `address`), for its tooltip; none for local terminals. */
   addressOf(tab: Tab): string | undefined;
+  /** The tab a dragged tab or pane rests on, marked until it is shown. */
+  tabRest: TabRest;
 }
 
 export function TabBar({
@@ -115,6 +125,7 @@ export function TabBar({
   flashing,
   colorOf,
   addressOf,
+  tabRest,
 }: Props) {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
@@ -144,20 +155,48 @@ export function TabBar({
   // Tabs that don't fit scroll sideways, without a scroll bar (see `.tab-strip`).
   const stripRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLElement>(null);
-  // Where a tab dragged from another window would go, while it is over this tab bar: the
-  // marker's left edge in the strip, measured when the drag moves rather than while rendering.
+  // Where a dragged tab would go, from this window or another one, while it is over this tab
+  // bar: the marker's left edge in the strip, measured when the drag moves rather than while
+  // rendering. `index` is among the tabs but `except` (the one dragged here).
   const [dropLeft, setDropLeft] = useState<number | null>(null);
-  useWindowEvent("tab-drag-over", (x) => {
+  const showDrop = (index: number | null, except?: number) => {
     const strip = stripRef.current;
-    if (x === null || !strip) return setDropLeft(null);
-    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")];
-    const index = tabIndexAt(strip, x);
+    if (index === null || !strip) return setDropLeft(null);
+    const elements = [...strip.querySelectorAll<HTMLElement>(".tab")].filter((tab) => tab.dataset.key !== String(except));
     const last = elements[elements.length - 1];
     setDropLeft(index < elements.length ? elements[index].offsetLeft : last ? last.offsetLeft + last.offsetWidth : 0);
+  };
+  useWindowEvent("tab-drag-over", (x) => {
+    const strip = stripRef.current;
+    showDrop(x === null || !strip ? null : tabIndexAt(strip, x));
   });
+
+  // Tabs that moved slide from where they were (see `moveTab`), as the tab bar shows them again.
+  const slideFrom = useRef<Map<string, number> | null>(null);
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const moveTab = (key: number, index: number) => {
+    const strip = stripRef.current;
+    if (strip && !reducedMotion) {
+      slideFrom.current = new Map([...strip.querySelectorAll<HTMLElement>(".tab")].map((tab) => [tab.dataset.key!, tab.offsetLeft]));
+    }
+    onMove(key, index);
+  };
+  useLayoutEffect(() => {
+    const before = slideFrom.current;
+    slideFrom.current = null;
+    if (!before) return;
+    for (const tab of stripRef.current?.querySelectorAll<HTMLElement>(".tab") ?? []) {
+      const from = before.get(tab.dataset.key!);
+      const dx = from === undefined ? 0 : from - tab.offsetLeft;
+      if (Math.abs(dx) >= 1)
+        tab.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }], { duration: SLIDE_MS, easing: "ease-out" });
+    }
+  }, [tabs]);
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
   const tabsRef = useLatest(tabs);
+  const activeKeyRef = useLatest(activeKey);
+  const resting = useSyncExternalStore(tabRest.subscribe, tabRest.get);
 
   // Keep the active tab in view, e.g. after Ctrl+Tab or opening a tab.
   useEffect(() => {
@@ -206,8 +245,12 @@ export function TabBar({
 
   const { dragging, leaving, startDrag } = useTabDrag({
     tabsRef,
+    activeKeyRef,
+    onShow: onSelect,
+    tabRest,
     stripRef,
-    onMove,
+    onMove: moveTab,
+    onDropAt: (key, index) => showDrop(index, key),
     canMoveToWindow,
     onDropOut,
     onOverPanes,
@@ -344,7 +387,14 @@ export function TabBar({
   // The window's title bar: always shown, so "+" and room to move the window stay available.
   return (
     <nav className="tab-bar" ref={barRef} {...DRAG_REGION}>
-      <div className="tab-strip" ref={stripRef} onWheel={onWheel} role="tablist" aria-label={t("tabs.listLabel")}>
+      <div
+        className="tab-strip"
+        ref={stripRef}
+        onWheel={onWheel}
+        role="tablist"
+        aria-label={t("tabs.listLabel")}
+        style={{ "--rest-ms": `${REST_MS}ms` } as CSSProperties}
+      >
         {tabs.map((tab) => (
           <TabItem
             key={tab.key}
@@ -353,6 +403,7 @@ export function TabBar({
             active={tab.key === activeKey}
             marks={[
               tab.key === dragging && (leaving ? "dragging leaving" : "dragging"),
+              tab.key === resting && "resting",
               inScope.includes(tab.key) && (syncing ? "in-scope syncing" : "in-scope"),
               flashing.includes(tab.key) && "flash",
             ]
