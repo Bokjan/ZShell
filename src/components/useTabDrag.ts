@@ -86,6 +86,10 @@ export function useTabDrag({
     let movable = false;
     // It would join the panes of the tab shown if dropped now.
     let overPanes = false;
+    // Where over the panes the pointer last was, looked at once a frame (`panesFrame`): which
+    // pane it is over takes a hit test and a layout.
+    let panesAt: Point | null = null;
+    let panesFrame = 0;
     // The pointer is over the strip, where the tab follows it.
     let inStrip = false;
     // Where it goes among the other tabs if dropped in the strip now.
@@ -140,6 +144,11 @@ export function useTabDrag({
       element.style.transform = x === null ? "" : `translateX(${x - left}px)`;
     };
 
+    const lookAtPanes = () => {
+      panesFrame = 0;
+      overPanes = onOverPanes(key, panesAt);
+    };
+
     const drag = new WindowDrag({
       target: (target) => {
         // A window's only tab has nowhere new to go.
@@ -176,7 +185,14 @@ export function useTabDrag({
       if (!layout || tabsRef.current.length !== layout.count) return finish(false);
       if (movable) drag.move(outside);
       const bounds = strip.getBoundingClientRect();
-      overPanes = !outside && ev.clientY > bounds.bottom && onOverPanes(key, { x: ev.clientX, y: ev.clientY });
+      // Back in the strip or out of the window, the place found over the panes goes at once.
+      panesAt = !outside && ev.clientY > bounds.bottom ? { x: ev.clientX, y: ev.clientY } : null;
+      if (panesAt === null) {
+        cancelAnimationFrame(panesFrame);
+        lookAtPanes();
+      } else if (panesFrame === 0) {
+        panesFrame = requestAnimationFrame(lookAtPanes);
+      }
       inStrip = !outside && ev.clientY >= bounds.top && ev.clientY <= bounds.bottom;
       if (!inStrip) {
         tabRest.rest(null);
@@ -199,6 +215,11 @@ export function useTabDrag({
       if (ended) return;
       ended = true;
       stopFollowing();
+      // Dropped where the panes weren't looked at yet.
+      if (panesFrame !== 0) {
+        cancelAnimationFrame(panesFrame);
+        if (dropped) lookAtPanes();
+      }
       setDragging(null);
       setLeaving(false);
       tabRest.rest(null);
