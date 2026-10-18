@@ -2,6 +2,24 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.7.0] - 2026-10-18
+
+### Features
+
+- Panes can move to another tab or window. The terminal's menu moves a pane to a tab of its own, next to the focused pane of another tab (right of it or below, wherever there is room), or to another window. A pane can also be dragged by its grip, which shows near its top edge: within its tab, onto the tab bar as a new tab, onto the panes of another tab, or out of the window. A tab dragged from the tab bar onto the panes of the tab shown joins them. A pane moving between tabs keeps its terminal, its screen, its side panels and their file transfers as they were.
+- A tab or pane dragged to rest on another tab shows that tab after a moment, with a bar filling along the tab's bottom meanwhile, so that it can be dropped on that tab's panes. Unless it joins them or leaves the window, the tab shown before comes back.
+- Tabs are dragged along the tab bar as in browsers: the dragged tab follows the pointer, the others slide over to make room, and once dropped it slides into its new place, or back into its old one after Escape.
+- Menus taller than the window scroll, and typing the start of an item highlights it.
+
+### Bug Fixes
+
+- Commands, paths and keys in the interface (a session's login commands and environment, the compose bar, the command palette, paste previews, path lists, host keys, forwarding rules) are drawn in the terminal font set in Settings, falling back to one monospace font stack; on Linux, Latin letters stay fixed-width beside Han characters. The placeholders of command fields and of the compose bar, which are sentences, are in the interface font.
+- An app font setting with a stray quote no longer replaces the whole interface font with the browser's default.
+
+### Internal
+
+- Terminals and side panels are drawn into elements that move with their pane rather than by the tab's page, so that a pane changes tabs without its terminal being mounted again. Dragging tabs and dragging panes share their mouse handling.
+
 ## [3.6.1] - 2026-10-17
 
 ### Bug Fixes
