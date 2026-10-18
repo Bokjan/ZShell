@@ -60,7 +60,7 @@ const TYPEAHEAD_MS = 700;
  * Escape; with the pointer after it rests on the item, so that moving across other items
  * on the way to a submenu doesn't switch it.
  *
- * A menu taller than the window scrolls, keeping the highlighted item in sight, and typing
+ * A menu taller than the window scrolls, keeping the item the keys highlight in sight, and typing
  * the start of an item's label highlights it (a long list of tabs).
  */
 export function ContextMenu({ x, y, items, onClose, anchor, highlightFirst }: Props) {
@@ -175,11 +175,6 @@ function MenuPanel({ items, at, focus, highlightFirst, id, labelledBy, onChoose,
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  // Only what is needed: the pointer's item is in sight already.
-  useLayoutEffect(() => {
-    if (highlight >= 0) itemRefs.current[highlight]?.scrollIntoView({ block: "nearest" });
-  }, [highlight]);
-
   const later = (f: () => void) => {
     clearTimeout(timer.current);
     timer.current = setTimeout(f, SUBMENU_DELAY);
@@ -204,8 +199,10 @@ function MenuPanel({ items, at, focus, highlightFirst, id, labelledBy, onChoose,
   };
 
   /**
-   * Highlights the next item that can be chosen, `step` items on from `from`; a submenu shown
-   * (on hover) closes as its item loses the highlight.
+   * Highlights the next item that can be chosen, `step` items on from `from`, from the keyboard,
+   * and scrolls it into sight if need be; a submenu shown (on hover) closes as its item loses
+   * the highlight. Not as the pointer highlights an item: one only partly in sight would scroll
+   * under it.
    */
   const move = (step: number, from = highlight) => {
     const count = items.length;
@@ -215,6 +212,7 @@ function MenuPanel({ items, at, focus, highlightFirst, id, labelledBy, onChoose,
       if (choosable(items[index])) {
         clearTimeout(timer.current);
         setHighlight(index);
+        itemRefs.current[index]?.scrollIntoView({ block: "nearest" });
         if (open && open.index !== index) setOpen(null);
         return;
       }
