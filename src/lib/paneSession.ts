@@ -120,7 +120,10 @@ export const BELL_MS = 1000;
  */
 export const PROGRESS_MS = 30_000;
 
-/** Notifications closer together than this are dropped, so that a program can't flood the user. */
+/**
+ * Notifications are passed on at most this often, so that a program can't flood the user: of
+ * those that come in between, the last, which usually matters most ("failed" after "started").
+ */
 export const NOTIFY_MS = 3000;
 
 /**
@@ -197,8 +200,9 @@ export class PaneSession {
   /** A program's progress, and the wait for its news (see `PROGRESS_MS`). */
   private taskProgress: TaskProgress | null = null;
   private progressTimer: ReturnType<typeof setTimeout> | undefined;
-  /** When the last notification was passed on (`performance.now()`). */
-  private notifiedAt = -Infinity;
+  /** While set, notifications wait (see `NOTIFY_MS`); the last one that did, to pass on then. */
+  private notifyTimer: ReturnType<typeof setTimeout> | undefined;
+  private waitingNotice: Notice | undefined;
   /** While set, sizes wait (see `RESIZE_MS`); the last one that did, to pass on then. */
   private resizeTimer: ReturnType<typeof setTimeout> | undefined;
   private waitingSize: { cols: number; rows: number } | undefined;
@@ -311,12 +315,19 @@ export class PaneSession {
     this.events.progress(progress);
   }
 
-  /** A program asks to notify the user: passed on unless another came within `NOTIFY_MS`. */
+  /** A program asks to notify the user: passed on at once, or at the end of `NOTIFY_MS`. */
   notify(notice: Notice) {
-    const now = performance.now();
-    if (now - this.notifiedAt < NOTIFY_MS) return;
-    this.notifiedAt = now;
+    if (this.notifyTimer !== undefined) {
+      this.waitingNotice = notice;
+      return;
+    }
     this.events.notify(notice);
+    this.notifyTimer = setTimeout(() => {
+      this.notifyTimer = undefined;
+      const waiting = this.waitingNotice;
+      this.waitingNotice = undefined;
+      if (waiting) this.notify(waiting);
+    }, NOTIFY_MS);
   }
 
   /**
@@ -385,6 +396,7 @@ export class PaneSession {
     this.disposed = true;
     clearTimeout(this.resizeTimer);
     clearTimeout(this.progressTimer);
+    clearTimeout(this.notifyTimer);
     this.cancelRetry();
     this.stopLoginCommands();
     window.removeEventListener("online", this.onOnline);

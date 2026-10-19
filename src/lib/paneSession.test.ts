@@ -508,17 +508,19 @@ describe("traffic", () => {
     expect(events.progress).toHaveBeenCalledTimes(6);
   });
 
-  it("drops notifications that come too soon after another", () => {
-    let now = 10_000;
-    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
-    onTestFinished(() => clock.mockRestore());
+  it("passes on notifications at most every NOTIFY_MS, the last of those in between", () => {
     const { pane, events } = setup();
-    pane.notify({ title: "", body: "one" });
-    now += NOTIFY_MS - 1;
-    pane.notify({ title: "", body: "two" });
-    now += 1;
-    pane.notify({ title: "", body: "three" });
-    expect(events.notify.mock.calls).toEqual([[{ title: "", body: "one" }], [{ title: "", body: "three" }]]);
+    const notice = (body: string) => ({ title: "", body });
+    pane.notify(notice("one"));
+    vi.advanceTimersByTime(NOTIFY_MS - 1);
+    pane.notify(notice("two"));
+    pane.notify(notice("three"));
+    expect(events.notify.mock.calls).toEqual([[notice("one")]]);
+    vi.advanceTimersByTime(1);
+    expect(events.notify).toHaveBeenLastCalledWith(notice("three"));
+    vi.advanceTimersByTime(NOTIFY_MS);
+    pane.notify(notice("four"));
+    expect(events.notify.mock.calls).toEqual([[notice("one")], [notice("three")], [notice("four")]]);
   });
 });
 
