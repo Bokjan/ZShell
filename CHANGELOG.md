@@ -2,6 +2,27 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.8.0] - 2026-10-19
+
+### Features
+
+- Terminals can draw programming ligatures, chosen in Settings › Terminal › Ligatures (off by default). Common sequences joins a fixed list of the usual operators (`->`, `!=`, `===` and the rest of Iosevka's set, as VS Code does), which a font with programming ligatures, such as Fira Code, JetBrains Mono or Cascadia Code, draws as one symbol. From the font joins exactly what the terminal's font joins, by the rules read from the installed font, and falls back to the common sequences where the font can't be read. While ligatures are off, terminals drawn without WebGL no longer show them either.
+
+### Bug Fixes
+
+- The custom background color is chosen with a color field of the app's own on every platform: a swatch that opens a popup with a saturation and brightness area, a hue bar, the color in hex and an eyedropper that picks a color from anywhere on the screen (on Windows also from the keyboard, with the arrow keys and Enter). The eyedropper of WebView2's color popup did nothing, GTK's had none, and the three popups looked different.
+
+### Performance
+
+- With more terminals visible than the web view has WebGL contexts for (about 16), terminals no longer take them from each other and fall back to slower drawing in turn: at most 12 draw with WebGL, and the least recently used of the rest draw without it until focused or until there is room again.
+- Saving a file opened from the file panel in a local editor uploads it about 0.3 seconds after the editor writes it, rather than 0.5 to 1 second, and an idle edit no longer wakes the app. Starting or stopping an edit no longer holds up other sessions.
+- Local shells and serial lines on macOS and Linux no longer use threads of their own, one of which woke five times a second even while idle, and a serial device is let go of as soon as its session ends.
+- Folder listings are sorted once, by the file panel, instead of also in the backend.
+
+### Internal
+
+- The largest components are split, moving out the parts that stand on their own: the sidebar's rows, the terminal's ZMODEM handling and menu items, and the file panel's file operations and Upload button. Local shells and serial lines on Unix share their non-blocking reads and writes, and the SFTP transfer tests are in a file of their own.
+
 ## [3.7.0] - 2026-10-18
 
 ### Features
