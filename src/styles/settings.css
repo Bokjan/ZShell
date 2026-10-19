@@ -210,6 +210,11 @@
   /* As `.help-tip`. */
   vertical-align: calc(0.35em - 5.5px);
 }
+/* Wide enough for its label, rather than the whole row. */
+.settings-dialog .clipboard-limit {
+  width: calc(200px * var(--text-scale));
+  margin-left: 22px;
+}
 .settings-dialog button.link:hover {
   text-decoration: underline;
 }

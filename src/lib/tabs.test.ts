@@ -363,6 +363,11 @@ describe("attention", () => {
     const before = state;
     state = reduceTabs(state, { type: "attention", key, kind: "output" });
     expect(state).toBe(before);
+    // Of a bell and a notification, the first stays.
+    state = reduceTabs(state, { type: "attention", key, kind: "notice" });
+    expect(state).toBe(before);
+    state = reduceTabs(twoTabs(), { type: "attention", key, kind: "notice" });
+    expect(state.tabs[0].attention).toBe("notice");
   });
 
   it("clears the mark once the tab is shown, however it comes to be", () => {

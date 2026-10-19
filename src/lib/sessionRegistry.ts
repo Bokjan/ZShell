@@ -96,6 +96,8 @@ interface Options {
   markOutput(): boolean;
   /** What a terminal's bell does (settings). */
   bell(): Pick<TerminalSettings, "bellAlert" | "bellSound" | "bellFlash">;
+  /** Whether programs can notify the user (a setting). */
+  notifications(): boolean;
 }
 
 /** How a pane's next session starts logging (see `Pane.logPath`). */
@@ -107,7 +109,10 @@ const logOpen = (pane: Pane): LogOpen =>
  * forwarding and log into the tab store; a shell that the user exits closes its pane (see
  * `closesOnExit`).
  */
-export function createSessionRegistry(store: TabStore, { profiles, t, announce, markOutput, bell }: Options): SessionRegistry {
+export function createSessionRegistry(
+  store: TabStore,
+  { profiles, t, announce, markOutput, bell, notifications }: Options,
+): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
   const zmodemPhases = new Map<number, ZmodemPhase>();
@@ -213,6 +218,26 @@ export function createSessionRegistry(store: TabStore, { profiles, t, announce, 
               announce(t("announce.bell", { name: pane().title }));
             }
             if (!document.hasFocus()) windows.requestAttention();
+          },
+          // A tab in the background whose program fails tells screen readers; the tab shows it.
+          progress: (progress) => {
+            const failed = progress?.state === "error" && pane().progress?.state !== "error";
+            update({ progress });
+            if (failed && activeTabOf(store.get())?.panes.every((p) => p.key !== key))
+              announce(t("announce.progressFailed", { name: pane().title }));
+          },
+          // Not while the user sees the pane's tab. A tab in the background is marked, as for
+          // a bell; out of the window, the system shows the notification.
+          notify: ({ title, body }) => {
+            if (!notifications()) return;
+            const state = store.get();
+            const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
+            const focused = document.hasFocus();
+            if (!tab || (focused && tab.key === state.activeKey)) return;
+            const name = pane().title;
+            if (tab.key !== state.activeKey) store.dispatch({ type: "attention", key, kind: "notice" });
+            if (focused) announce(t("announce.notice", { name, text: [title, body].filter(Boolean).join(": ") }));
+            else windows.notify(title || name, title ? body : body);
           },
           arrived: () => update({ arrival: undefined }),
           movedAway: () => emit("movedAway", key),

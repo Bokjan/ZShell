@@ -13,6 +13,7 @@ import { PaneDragLayer, usePaneDrag } from "./app/usePaneDrag";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommandBar } from "./app/useQuickCommandBar";
 import { useStartupInfo } from "./app/useStartupInfo";
+import { useTaskbarProgress } from "./app/useTaskbarProgress";
 import { useTerminalMenu } from "./app/useTerminalMenu";
 import { useWindows } from "./app/useWindows";
 
@@ -91,6 +92,7 @@ function App() {
       announce,
       markOutput: () => currentSettings().tabs.markOutput,
       bell: () => currentSettings().terminal,
+      notifications: () => currentSettings().terminal.notifications,
     }),
   );
   const localTitleRef = useLatest(shellName ?? t("tabs.localTitle"));
@@ -104,6 +106,7 @@ function App() {
       }),
     [store, sessions],
   );
+  useTaskbarProgress(tabs);
   const quick = useQuickCommandBar();
   const { commands, saveError: quickSaveError } = useQuickCommands();
   const fullScreen = useFullScreen(tabs.length > 0, (on) => {

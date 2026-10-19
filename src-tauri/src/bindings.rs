@@ -362,6 +362,7 @@ mod tests {
             ("The smallest terminal font size, in the settings and in sessions.", "FONT_SIZE_MIN", js(model::FONT_SIZE_MIN)),
             ("The largest terminal font size, in the settings and in sessions.", "FONT_SIZE_MAX", js(model::FONT_SIZE_MAX)),
             ("The most lines a terminal keeps above the screen.", "SCROLLBACK_MAX", js(model::SCROLLBACK_MAX)),
+            ("The most a program can copy to the clipboard at once, in KiB.", "CLIPBOARD_LIMIT_MAX", js(model::CLIPBOARD_LIMIT_MAX)),
             (
                 "The kinds of subtables in a font's ligature rules (see `fonts/rules.rs`).",
                 "LIGATURE_SUBTABLES",
@@ -414,6 +415,7 @@ mod tests {
         visitor.visit::<window::WindowInfo>();
         visitor.visit::<window::WindowContent>();
         visitor.visit::<window::WindowButton>();
+        visitor.visit::<window::progress::TaskProgress>();
         visitor.visit::<menu::Section>();
         visitor.visit::<update::Status>();
         visitor.visit::<i18n::Locales>();

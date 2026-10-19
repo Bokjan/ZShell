@@ -108,6 +108,7 @@ const newPane = (key: number, spec: PaneSpec): Pane => ({
   transfers: 0,
   edits: 0,
   questions: 0,
+  progress: null,
 });
 
 const mapTab = (state: TabsState, key: number, f: (tab: Tab) => Tab): TabsState => ({
@@ -220,7 +221,7 @@ function reduce(state: TabsState, action: TabsAction): TabsState {
         key,
         layout: mapLayout(action.tab.layout, (old) => keys.get(old)!),
         focused: keys.get(action.tab.focused)!,
-        panes: action.tab.panes.map((pane) => ({ ...pane, key: keys.get(pane.key)! })),
+        panes: action.tab.panes.map((pane) => ({ ...pane, key: keys.get(pane.key)!, progress: null })),
       };
       const index = action.index ?? state.tabs.length;
       return { tabs: [...state.tabs.slice(0, index), tab, ...state.tabs.slice(index)], activeKey: key, nextKey: key + 1 };
@@ -298,7 +299,8 @@ function reduce(state: TabsState, action: TabsAction): TabsState {
     }
     case "attention": {
       const tab = tabOf(state.tabs, action.key);
-      if (!tab || tab.key === state.activeKey || tab.attention === "bell" || tab.attention === action.kind) return state;
+      const outranked = tab?.attention && (tab.attention !== "output" || action.kind === "output");
+      if (!tab || tab.key === state.activeKey || outranked) return state;
       return mapTab(state, tab.key, (t) => ({ ...t, attention: action.kind }));
     }
   }

@@ -5,7 +5,7 @@ import { useConfirmButton } from "../hooks/confirm";
 import { useDialog } from "../hooks/dialogs";
 import { matches } from "../lib/keymap";
 import { isMac } from "../lib/platform";
-import { DEFAULT_SETTINGS } from "../ipc/api";
+import { CLIPBOARD_LIMIT_MAX, DEFAULT_SETTINGS } from "../ipc/api";
 import {
   useSettings,
   type FileSettings,
@@ -22,13 +22,14 @@ import { useUpdates } from "../hooks/updates";
 import { useLatest } from "../hooks/latest";
 import { useLocale } from "../hooks/locale";
 import { CloseIcon, DotIcon } from "./icons";
+import { HelpTip } from "./HelpTip";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
 import { RadioGroup } from "./RadioGroup";
 import { AboutSection } from "./settings/AboutSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { TerminalSection } from "./settings/TerminalSection";
-import { filterSettings, Section, SECTION_REACHED, SECTIONS, Setting, type SectionId } from "./settings/common";
+import { filterSettings, NumberField, Section, SECTION_REACHED, SECTIONS, Setting, type SectionId } from "./settings/common";
 import { FileSection } from "./settings/FileSection";
 import { KnownHostsSection } from "./settings/KnownHostsSection";
 import { LogSection } from "./settings/LogSection";
@@ -295,6 +296,32 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                   {t("settings.confirmMultilinePaste")}
                 </label>
                 <p className="hint">{t("settings.confirmMultilinePasteHint")}</p>
+              </Setting>
+              <Setting>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={terminal.clipboardWrite}
+                    onChange={(e) => setTerminal({ clipboardWrite: e.target.checked })}
+                  />
+                  {t("settings.clipboardWrite")}
+                  <HelpTip text={t("settings.clipboardWriteTip")} />
+                </label>
+                {terminal.clipboardWrite && (
+                  <label className="clipboard-limit">
+                    <span>
+                      {t("settings.clipboardLimit")}
+                      <HelpTip text={t("settings.clipboardLimitTip")} />
+                    </span>
+                    <NumberField
+                      value={terminal.clipboardLimit}
+                      min={1}
+                      max={CLIPBOARD_LIMIT_MAX}
+                      step={256}
+                      onChange={(clipboardLimit) => setTerminal({ clipboardLimit })}
+                    />
+                  </label>
+                )}
               </Setting>
               {isMac && (
                 <Setting>

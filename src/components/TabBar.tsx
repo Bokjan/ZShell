@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
-import { focusedPane, isLogging, tabId, tabPanelId, tabTitle, type SidePanel, type Tab } from "../lib/panes";
+import { focusedPane, isLogging, mergeProgress, tabId, tabPanelId, tabTitle, type SidePanel, type Tab } from "../lib/panes";
 import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
@@ -29,7 +29,7 @@ import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
-import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, QuickIcon } from "./icons";
+import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, ProgressIcon, QuickIcon } from "./icons";
 import { useTabDrag } from "./useTabDrag";
 import { WindowControls } from "./WindowControls";
 
@@ -399,6 +399,7 @@ export function TabBar({
             where={addressOf(tab)}
             newOutput={markOutput && tab.attention === "output"}
             bellRang={bellAlert && tab.attention === "bell"}
+            noticed={tab.attention === "notice"}
             questionWaiting={questionWaiting(tab)}
             actions={actions}
           />
@@ -494,6 +495,8 @@ interface TabItemProps {
   where?: string;
   newOutput: boolean;
   bellRang: boolean;
+  /** A program in it sent a notification while it was in the background. */
+  noticed: boolean;
   questionWaiting: boolean;
   actions: TabActions;
 }
@@ -504,17 +507,21 @@ interface TabItemProps {
  */
 function TabItem(props: TabItemProps) {
   useStableProps("TabItem", props, ["actions"]);
-  const { tab, title, active, marks, editing, color, where, newOutput, bellRang, questionWaiting, actions } = props;
+  const { tab, title, active, marks, editing, color, where, newOutput, bellRang, noticed, questionWaiting, actions } = props;
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
   const { key } = tab;
   const pane = focusedPane(tab);
+  const progress = mergeProgress(tab.panes.map((p) => p.progress));
+  const progressLabel = progress && t(`tabs.progress.${progress.state}`, { percent: progress.percent });
 
   const statusLabel = () => {
     if (pane.status === "connecting") return t("tabs.status.connecting");
     const parts = [
       pane.status === "closed" && t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed"),
       bellRang && t("tabs.bell"),
+      noticed && t("tabs.notice"),
+      progressLabel,
       newOutput && t("tabs.newOutput"),
       questionWaiting && t("tabs.questionWaiting"),
     ].filter(Boolean);
@@ -546,8 +553,13 @@ function TabItem(props: TabItemProps) {
     >
       {color && <span className="tab-color" style={{ background: color }} />}
       <span className={`status-dot ${pane.status}${newOutput ? " new-output" : ""}`} title={newOutput ? t("tabs.newOutput") : undefined} />
-      {bellRang && (
-        <span className="tab-bell" title={t("tabs.bell")}>
+      {progress && progressLabel && (
+        <span className={`tab-progress ${progress.state}`} title={progressLabel}>
+          <ProgressIcon percent={progress.percent} indeterminate={progress.state === "indeterminate"} />
+        </span>
+      )}
+      {(bellRang || noticed) && (
+        <span className="tab-bell" title={t(bellRang ? "tabs.bell" : "tabs.notice")}>
           <BellIcon />
         </span>
       )}

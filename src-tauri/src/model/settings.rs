@@ -82,6 +82,9 @@ pub const FONT_SIZE_MIN: u16 = 6;
 pub const FONT_SIZE_MAX: u16 = 48;
 /// The most lines a terminal keeps above the screen.
 pub const SCROLLBACK_MAX: u32 = 100_000;
+/// The most a program can copy at once (OSC 52), in KiB: xterm.js drops OSC sequences past
+/// 10 MB, about 7 MiB of text once decoded from base64.
+pub const CLIPBOARD_LIMIT_MAX: u32 = 7168;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
@@ -104,6 +107,12 @@ pub struct TerminalSettings {
     pub confirm_multiline_paste: bool,
     /// macOS: the Option key sends Meta (Esc-prefixed) sequences instead of special characters.
     pub option_as_meta: bool,
+    /// Programs in the terminal can copy text to the clipboard (OSC 52); they can never read it.
+    pub clipboard_write: bool,
+    /// The most text they copy at once, in KiB; more is ignored.
+    pub clipboard_limit: u32,
+    /// Programs in the terminal can notify the user (OSC 9, 777 and 99) when it is out of sight.
+    pub notifications: bool,
     /// Whether screen readers can read the terminal and hear new output (xterm.js's
     /// `screenReaderMode`), which slows down terminals with much output: by default while the
     /// system's screen reader runs.
@@ -317,6 +326,9 @@ impl Default for TerminalSettings {
             right_click: RightClick::Menu,
             confirm_multiline_paste: true,
             option_as_meta: false,
+            clipboard_write: true,
+            clipboard_limit: 1024,
+            notifications: true,
             screen_reader_mode: ScreenReaderMode::Auto,
             screen_reader: None,
             bell_alert: true,
@@ -342,6 +354,7 @@ impl Settings {
         terminal.font_family = terminal.font_family.trim().to_owned();
         terminal.font_size = terminal.font_size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
         terminal.scrollback = terminal.scrollback.min(SCROLLBACK_MAX);
+        terminal.clipboard_limit = terminal.clipboard_limit.clamp(1, CLIPBOARD_LIMIT_MAX);
         if terminal.color_scheme.trim().is_empty() {
             terminal.color_scheme = "auto".to_owned();
         }
@@ -385,6 +398,8 @@ mod tests {
         assert_eq!(settings.terminal.color_scheme, "auto");
         assert_eq!(settings.terminal.scrollback, 5000);
         assert_eq!(settings.terminal.ligatures, Ligatures::Off);
+        assert!(settings.terminal.clipboard_write && settings.terminal.notifications);
+        assert_eq!(settings.terminal.clipboard_limit, 1024);
         assert!(settings.terminal.confirm_multiline_paste && settings.tabs.confirm_close);
         assert!(settings.status_bar.show);
         assert_eq!(settings.language, "system");

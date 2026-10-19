@@ -31,6 +31,7 @@ import type {
 export type * from "./bindings";
 export {
   ACK_BATCH,
+  CLIPBOARD_LIMIT_MAX,
   DEFAULT_GROUP,
   DEFAULT_SERIAL,
   DEFAULT_SETTINGS,

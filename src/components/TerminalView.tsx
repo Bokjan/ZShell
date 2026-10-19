@@ -19,6 +19,8 @@ import { isMac } from "../lib/platform";
 import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../hooks/settings";
 import { parseOsc7, shellDirs } from "../lib/shellDirs";
+import { announce } from "../lib/announce";
+import { KittyNotices, PointerShapes, osc52Text, parseOsc777, parseOsc9 } from "../lib/osc";
 import { useShortcuts } from "../hooks/shortcuts";
 import { fontLigatureRules } from "../lib/fontLigatureRules";
 import { ligatureRanges } from "../lib/ligatures";
@@ -142,6 +144,9 @@ export function TerminalView({
   const transfer = useZmodem({ sessionRef, active, wrapRef, focus: () => termRef.current?.focus() });
   const { settings, theme, screenReader, update } = useSettings();
   const settingsRef = useLatest(settings);
+  const tRef = useLatest(t);
+  /** Puts back the terminal's own pointer shape, over any a program set (OSC 22). */
+  const resetPointerRef = useRef<() => void>(ignore);
   // Only these two of the session's appearance choose its colors.
   const ownScheme = appearance?.colorScheme;
   const ownBackground = appearance?.background;
@@ -289,7 +294,10 @@ export function TerminalView({
           if (text && !session.isClosed) term.paste(text);
         },
       },
-      session: () => transfer.reset(),
+      session: () => {
+        transfer.reset();
+        resetPointerRef.current();
+      },
       focus: () => term.focus(),
       hasSelection: () => term.hasSelection(),
       flash: () => setFlashes((count) => count + 1),
@@ -409,6 +417,20 @@ export function TerminalView({
       }, PROMPT_SETTLE_MS);
     };
 
+    // The pointer shape programs set (OSC 22), for each screen; a link's hand and column
+    // selection's crosshair still show over it (see `.program-pointer`).
+    const pointers = new PointerShapes();
+    const showPointer = () => {
+      const shape = pointers.shape(term.buffer.active.type);
+      container.classList.toggle("program-pointer", shape !== "");
+      container.style.setProperty("--program-pointer", shape || null);
+    };
+    resetPointerRef.current = () => {
+      pointers.reset();
+      showPointer();
+    };
+    const kittyNotices = new KittyNotices();
+
     const subscriptions: IDisposable[] = [
       // Reports are for the program in this pane only, so not synced to other panes.
       term.onData((data) => {
@@ -427,6 +449,41 @@ export function TerminalView({
         const path = parseOsc7(data);
         if (path) shellDirs.report(paneKey, path);
         return true;
+      }),
+      // Text a program copies (OSC 52), as far as the settings allow. Asking for the
+      // clipboard's text is never answered.
+      term.parser.registerOscHandler(52, (data) => {
+        const { clipboardWrite, clipboardLimit } = settingsRef.current.terminal;
+        const text = clipboardWrite ? osc52Text(data, clipboardLimit * 1024) : null;
+        if (text !== null) void writeText(text).then(() => announce(tRef.current("announce.copied")), console.error);
+        return true;
+      }),
+      // Progress (ConEmu's OSC 9;4) and notifications (iTerm2's OSC 9, OSC 777, kitty's OSC 99).
+      term.parser.registerOscHandler(9, (data) => {
+        const parsed = parseOsc9(data);
+        if (parsed && "progress" in parsed) session.progress(parsed.progress);
+        else if (parsed) session.notify({ title: "", body: parsed.notify });
+        return true;
+      }),
+      term.parser.registerOscHandler(777, (data) => {
+        const notice = parseOsc777(data);
+        if (notice) session.notify(notice);
+        return true;
+      }),
+      term.parser.registerOscHandler(99, (data) => {
+        const notice = kittyNotices.feed(data);
+        if (notice) session.notify(notice);
+        return true;
+      }),
+      term.parser.registerOscHandler(22, (data) => {
+        if (pointers.feed(data, term.buffer.active.type)) showPointer();
+        return true;
+      }),
+      term.buffer.onBufferChange(showPointer),
+      // A full reset (RIS) puts back the terminal's own pointer too; xterm.js resets the rest.
+      term.parser.registerEscHandler({ final: "c" }, () => {
+        resetPointerRef.current();
+        return false;
       }),
       term.onBinary((data) => session.inputBinary(data)),
       term.onResize(({ cols, rows }) => {
@@ -466,7 +523,7 @@ export function TerminalView({
       container.removeEventListener("paste", onPaste, true);
       container.removeEventListener("mousedown", onMouseDown, true);
       container.removeEventListener("contextmenu", onContextMenu);
-      pasteRef.current = pasteAllRef.current = ignore;
+      pasteRef.current = pasteAllRef.current = resetPointerRef.current = ignore;
       observer.disconnect();
       subscriptions.forEach((s) => s.dispose());
       sessionsRef.current.detach(paneKey, session);
@@ -615,7 +672,13 @@ export function TerminalView({
       { label: t("terminal.menu.find"), shortcut: shortcutLabel("find"), onSelect: () => setSearchKey((key) => key + 1) },
       "separator" as const,
       { label: t("terminal.menu.clear"), onSelect: () => term.clear() },
-      { label: t("terminal.menu.reset"), onSelect: () => term.reset() },
+      {
+        label: t("terminal.menu.reset"),
+        onSelect: () => {
+          term.reset();
+          resetPointerRef.current();
+        },
+      },
       ...extraMenuItems(),
     ];
   };

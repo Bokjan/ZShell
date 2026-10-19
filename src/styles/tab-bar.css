@@ -114,6 +114,28 @@
   margin-left: -2px;
   color: var(--accent);
 }
+/* A program's progress (OSC 9;4), of the pane furthest from done. */
+.tab-progress {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: -2px;
+  color: var(--accent);
+}
+.tab-progress.error {
+  color: var(--danger);
+}
+.tab-progress.paused {
+  color: var(--warn);
+}
+/* Still where the system asks for less motion (`reduced-motion.css`). */
+.progress-icon.indeterminate {
+  animation: progress-turn 1s linear infinite;
+}
+@keyframes progress-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
 /* A question waiting in the file panel, out of sight. */
 .tab-question {
   width: 6px;

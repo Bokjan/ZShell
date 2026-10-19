@@ -16,6 +16,8 @@ import {
 import type { Arrival } from "./panes";
 import {
   BELL_MS,
+  NOTIFY_MS,
+  PROGRESS_MS,
   ECHO_MS,
   LOGIN_COMMAND_IDLE_MS,
   PaneSession,
@@ -155,6 +157,8 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     movedAway: vi.fn(),
     output: vi.fn(),
     bell: vi.fn(),
+    progress: vi.fn(),
+    notify: vi.fn(),
   } satisfies SessionEvents;
   const pane = new PaneSession(
     port,
@@ -478,6 +482,43 @@ describe("traffic", () => {
     now += ECHO_MS - 1;
     pane.bell();
     expect(events.bell).toHaveBeenLastCalledWith(true);
+  });
+
+  it("keeps a program's progress until it ends, goes quiet or the session ends", async () => {
+    const { pane, opened, events } = setup();
+    pane.connect();
+    opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    pane.progress({ state: "normal", percent: 40 });
+    pane.progress({ state: "normal", percent: 40 });
+    // Without a percentage, the one before stays.
+    pane.progress({ state: "error", percent: null });
+    expect(events.progress.mock.calls).toEqual([[{ state: "normal", percent: 40 }], [{ state: "error", percent: 40 }]]);
+    vi.advanceTimersByTime(PROGRESS_MS - 1);
+    pane.progress({ state: "normal", percent: 50 });
+    vi.advanceTimersByTime(PROGRESS_MS - 1);
+    expect(events.progress).toHaveBeenLastCalledWith({ state: "normal", percent: 50 });
+    vi.advanceTimersByTime(1);
+    expect(events.progress).toHaveBeenLastCalledWith(null);
+    pane.progress({ state: "indeterminate", percent: null });
+    expect(events.progress).toHaveBeenLastCalledWith({ state: "indeterminate", percent: 0 });
+    opened[0].event(lost());
+    expect(events.progress).toHaveBeenLastCalledWith(null);
+    expect(events.progress).toHaveBeenCalledTimes(6);
+  });
+
+  it("drops notifications that come too soon after another", () => {
+    let now = 10_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    onTestFinished(() => clock.mockRestore());
+    const { pane, events } = setup();
+    pane.notify({ title: "", body: "one" });
+    now += NOTIFY_MS - 1;
+    pane.notify({ title: "", body: "two" });
+    now += 1;
+    pane.notify({ title: "", body: "three" });
+    expect(events.notify.mock.calls).toEqual([[{ title: "", body: "one" }], [{ title: "", body: "three" }]]);
   });
 });
 

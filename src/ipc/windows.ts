@@ -1,7 +1,8 @@
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 
 import { call } from "./call";
-import type { Dropped, Rect, WindowContent as Content } from "./bindings";
+import type { Dropped, Rect, TaskProgress, WindowContent as Content } from "./bindings";
 import { transferSessions, type TabTransfer } from "../lib/tabs";
 
 export type { Change, DropTarget, WindowInfo } from "./bindings";
@@ -11,6 +12,18 @@ export type { Change, DropTarget, WindowInfo } from "./bindings";
  * window, which the backend passes on without reading, or a saved session to open.
  */
 export type WindowContent = Exclude<Content, { kind: "tab" }> | (Omit<Extract<Content, { kind: "tab" }>, "tab"> & { tab: TabTransfer });
+
+/** Whether the system lets the app show notifications: asked the first time, until it does. */
+let notificationsAllowed: Promise<boolean> | undefined;
+const allowsNotifications = () => {
+  const allowed = (notificationsAllowed ??= isPermissionGranted().then(
+    async (granted) => granted || (await requestPermission()) === "granted",
+  ));
+  return allowed.then((yes) => {
+    if (!yes) notificationsAllowed = undefined;
+    return yes;
+  });
+};
 
 export const windows = {
   /** Where this window's maximize button is (Windows, which snaps windows to it), or none. */
@@ -29,6 +42,13 @@ export const windows = {
   systemMenu: () => void call("window_system_menu").catch(console.error),
   /** Asks the system to draw attention to this window (the Dock icon bounces, the taskbar button flashes). */
   requestAttention: () => void getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(console.error),
+  /** The progress this window's taskbar button shows (the Dock icon, the launcher: merged with the other windows'), or none. */
+  setProgress: (progress: TaskProgress | null) => void call("window_set_progress", { progress }).catch(console.error),
+  /** Shows a system notification, if the system lets the app. */
+  notify: (title: string, body: string) =>
+    void allowsNotifications()
+      .then((allowed) => allowed && sendNotification({ title, body }))
+      .catch(console.error),
   /**
    * Opens a window showing `content`, and returns its label: next to this one, or where a tab
    * was `dropped` outside the windows.

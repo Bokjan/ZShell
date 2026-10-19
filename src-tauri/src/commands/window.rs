@@ -5,6 +5,7 @@ use tauri::{AppHandle, State, WebviewWindow};
 use crate::error::Result;
 use crate::session::{SessionId, SessionManager};
 use crate::tab_drag::Dropped;
+use crate::window::progress::TaskProgress;
 use crate::window::{self, Rect, WindowButton, WindowContent, WindowInfo, Windows};
 
 /// See [`window::open`].
@@ -83,6 +84,12 @@ pub fn window_busy_reply(window: WebviewWindow, windows: State<'_, Windows>, que
 #[tauri::command]
 pub fn app_bell(app: AppHandle) {
     window::bell(app)
+}
+
+/// See [`window::progress::show`].
+#[tauri::command]
+pub fn window_set_progress(window: WebviewWindow, progress: Option<TaskProgress>) -> Result<()> {
+    Ok(window::progress::show(&window, progress)?)
 }
 
 /// See [`window::quit`].

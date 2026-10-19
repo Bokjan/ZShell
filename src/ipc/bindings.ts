@@ -886,6 +886,20 @@ confirmClose: boolean,
  */
 markOutput: boolean, };
 
+/**
+ * A program's progress, or a window's: the merge of its tabs'.
+ */
+export type TaskProgress = { state: TaskState, 
+/**
+ * From 0 to 100; not shown while indeterminate.
+ */
+percent: number, };
+
+/**
+ * The states of OSC 9;4 (besides 0, which removes the progress).
+ */
+export type TaskState = "normal" | "error" | "indeterminate" | "paused";
+
 export type TerminalSettings = { 
 /**
  * A built-in color scheme id, or "auto" to follow the appearance.
@@ -912,6 +926,18 @@ confirmMultilinePaste: boolean,
  * macOS: the Option key sends Meta (Esc-prefixed) sequences instead of special characters.
  */
 optionAsMeta: boolean, 
+/**
+ * Programs in the terminal can copy text to the clipboard (OSC 52); they can never read it.
+ */
+clipboardWrite: boolean, 
+/**
+ * The most text they copy at once, in KiB; more is ignored.
+ */
+clipboardLimit: number, 
+/**
+ * Programs in the terminal can notify the user (OSC 9, 777 and 99) when it is out of sight.
+ */
+notifications: boolean, 
 /**
  * Whether screen readers can read the terminal and hear new output (xterm.js's
  * `screenReaderMode`), which slows down terminals with much output: by default while the
@@ -1156,6 +1182,7 @@ export type Commands = {
   window_send_tab: { args: { target: string; tab: unknown; sessions: number[]; at?: number | null }; result: void };
   window_set_drag_area: { args: { rect?: Rect | null }; result: void };
   window_set_maximize_button: { args: { rect?: Rect | null }; result: void };
+  window_set_progress: { args: { progress?: TaskProgress | null }; result: void };
   window_set_snapped_border_color: { args: { color: string }; result: void };
   window_set_tab_bar: { args: { rect: Rect }; result: void };
   window_set_theme: { args: { theme?: "light" | "dark" | null }; result: void };
@@ -1186,7 +1213,7 @@ export const DEFAULT_GROUP = "default";
 export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;
 
 /** The settings before any change, which "Restore Defaults" goes back to. */
-export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
 
 /** The smallest terminal font size, in the settings and in sessions. */
 export const FONT_SIZE_MIN = 6;
@@ -1196,6 +1223,9 @@ export const FONT_SIZE_MAX = 48;
 
 /** The most lines a terminal keeps above the screen. */
 export const SCROLLBACK_MAX = 100000;
+
+/** The most a program can copy to the clipboard at once, in KiB. */
+export const CLIPBOARD_LIMIT_MAX = 7168;
 
 /** The kinds of subtables in a font's ligature rules (see `fonts/rules.rs`). */
 export const LIGATURE_SUBTABLES = { classRules: 5, coverageRules: 6, glyphRules: 4, ligature: 3, multiple: 2, reverse: 7, single: 1 } as const;

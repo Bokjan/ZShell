@@ -156,6 +156,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config_dir = config_dir(app.handle())?;
             // Before anything is read or written: another instance may have the folder.
@@ -363,6 +364,7 @@ pub fn run() {
             commands::window::app_busy_count,
             commands::window::app_quit,
             commands::window::app_bell,
+            commands::window::window_set_progress,
             commands::window::window_title_double_click,
             commands::window::window_system_menu,
             commands::window::window_file_dialog,

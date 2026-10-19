@@ -11,6 +11,7 @@ import {
 } from "../../hooks/settings";
 import { useLocale } from "../../hooks/locale";
 import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies } from "../../lib/terminalSchemes";
+import { HelpTip } from "../HelpTip";
 import { RadioGroup } from "../RadioGroup";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
 import { LiveTextField, NumberField, Section, Setting } from "./common";
@@ -19,7 +20,7 @@ const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const SCREEN_READER_MODES: ScreenReaderMode[] = ["auto", "on", "off"];
 const LIGATURE_MODES: Ligatures[] = ["off", "rules", "full"];
 
-/** The terminals: color scheme, font, ligatures, cursor, scrollback, screen readers and the bell. */
+/** The terminals: color scheme, font, ligatures, cursor, scrollback, screen readers, the bell and programs' notifications. */
 export function TerminalSection() {
   const { t } = useTranslation();
   const { cjk } = useLocale();
@@ -158,6 +159,11 @@ export function TerminalSection() {
           </label>
         </fieldset>
       </Setting>
+      <label className="checkbox">
+        <input type="checkbox" checked={terminal.notifications} onChange={(e) => set({ notifications: e.target.checked })} />
+        {t("settings.notifications")}
+        <HelpTip text={t("settings.notificationsTip")} />
+      </label>
     </Section>
   );
 }

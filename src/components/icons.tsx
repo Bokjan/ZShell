@@ -242,6 +242,27 @@ export function BellIcon({ size = 12 }: { size?: number }) {
   );
 }
 
+/**
+ * A ring filled to `percent` from the top, clockwise: a program's progress. `indeterminate`
+ * draws a quarter that the stylesheet turns (`.progress-icon.indeterminate`).
+ */
+export function ProgressIcon({ percent, indeterminate = false, size = 12 }: { percent: number; indeterminate?: boolean; size?: number }) {
+  return (
+    <Svg size={size} strokeWidth={2} className={indeterminate ? "progress-icon indeterminate" : "progress-icon"}>
+      <circle cx="8" cy="8" r="6" opacity="0.3" />
+      <circle
+        cx="8"
+        cy="8"
+        r="6"
+        pathLength={100}
+        strokeDasharray={`${indeterminate ? 25 : percent} 100`}
+        strokeLinecap="butt"
+        transform="rotate(-90 8 8)"
+      />
+    </Svg>
+  );
+}
+
 /** A chevron pointing right, turned down when `open`: a folder in the session list. */
 export function DisclosureIcon({ open, size = 10 }: { open: boolean; size?: number }) {
   return (

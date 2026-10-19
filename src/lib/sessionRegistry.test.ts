@@ -20,6 +20,7 @@ function setUp() {
     announce: () => {},
     markOutput: () => false,
     bell: () => ({ bellAlert: false, bellSound: false, bellFlash: false }),
+    notifications: () => true,
   });
   return { key, sessions };
 }

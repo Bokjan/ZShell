@@ -15,8 +15,10 @@ import {
   type SessionEvent,
   type SessionId,
   type SessionTarget,
+  type TaskProgress,
   type ZmodemPhase,
 } from "../ipc/api";
+import type { Notice, ProgressReport } from "./osc";
 import type { Arrival, Snapshot } from "./panes";
 import { isTerminalReport } from "./terminalReports";
 import { TrafficMeter, utf8Length } from "./traffic";
@@ -63,6 +65,10 @@ export interface SessionEvents {
   output(): void;
   /** The terminal rang its bell, in answer to typing (`echo`, see `ECHO_MS`) or not. */
   bell(echo: boolean): void;
+  /** A program reports its progress (OSC 9;4), or none any more (null). */
+  progress(progress: TaskProgress | null): void;
+  /** A program asks to notify the user (OSC 9, 777 or 99). */
+  notify(notice: Notice): void;
   /** The pane that came from another window has started here (see `PaneSession.start`). */
   arrived(): void;
   /** The pane's session couldn't move here from the other window, which still shows it. */
@@ -107,6 +113,15 @@ export const ECHO_MS = 300;
 
 /** Bells closer together than this ring once. */
 export const BELL_MS = 1000;
+
+/**
+ * A program's progress goes after this long without news: one that crashed or was
+ * interrupted (Ctrl+C) never says it is done.
+ */
+export const PROGRESS_MS = 30_000;
+
+/** Notifications closer together than this are dropped, so that a program can't flood the user. */
+export const NOTIFY_MS = 3000;
 
 /**
  * A new size goes to the session at most this often: each makes the remote program draw
@@ -179,6 +194,11 @@ export class PaneSession {
   private nudgedAt = -Infinity;
   /** When the bell last rang (`performance.now()`). */
   private bellAt = -Infinity;
+  /** A program's progress, and the wait for its news (see `PROGRESS_MS`). */
+  private taskProgress: TaskProgress | null = null;
+  private progressTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When the last notification was passed on (`performance.now()`). */
+  private notifiedAt = -Infinity;
   /** While set, sizes wait (see `RESIZE_MS`); the last one that did, to pass on then. */
   private resizeTimer: ReturnType<typeof setTimeout> | undefined;
   private waitingSize: { cols: number; rows: number } | undefined;
@@ -278,6 +298,28 @@ export class PaneSession {
   }
 
   /**
+   * A program's progress (OSC 9;4), or none any more (null). A state without a percentage
+   * keeps the one before. It goes with the session, or after `PROGRESS_MS` without news.
+   */
+  progress(report: ProgressReport) {
+    clearTimeout(this.progressTimer);
+    const progress = report && { state: report.state, percent: report.percent ?? this.taskProgress?.percent ?? 0 };
+    if (progress) this.progressTimer = setTimeout(() => this.progress(null), PROGRESS_MS);
+    const before = this.taskProgress;
+    if (progress?.state === before?.state && progress?.percent === before?.percent) return;
+    this.taskProgress = progress;
+    this.events.progress(progress);
+  }
+
+  /** A program asks to notify the user: passed on unless another came within `NOTIFY_MS`. */
+  notify(notice: Notice) {
+    const now = performance.now();
+    if (now - this.notifiedAt < NOTIFY_MS) return;
+    this.notifiedAt = now;
+    this.events.notify(notice);
+  }
+
+  /**
    * The terminal's new size. Not while a screen from another window is drawn: at its size.
    * Passed on at most every `RESIZE_MS` while it keeps changing (dragging the window's edge),
    * the last one always.
@@ -342,6 +384,7 @@ export class PaneSession {
   dispose() {
     this.disposed = true;
     clearTimeout(this.resizeTimer);
+    clearTimeout(this.progressTimer);
     this.cancelRetry();
     this.stopLoginCommands();
     window.removeEventListener("online", this.onOnline);
@@ -379,6 +422,7 @@ export class PaneSession {
     this.connected = false;
     this.typed = false;
     this.traffic.reset();
+    this.progress(null);
     this.events.status("connecting");
     const target = this.config.target();
     const source = this.shareFrom;
@@ -596,6 +640,7 @@ export class PaneSession {
     this.closed = true;
     this.connected = false;
     this.stopLoginCommands();
+    this.progress(null);
     this.session = undefined;
     this.events.session(null);
   }

@@ -6,6 +6,8 @@ import {
   type SessionId,
   type SessionSnapshot,
   type SessionTarget,
+  type TaskProgress,
+  type TaskState,
 } from "../ipc/api";
 import type { SessionStatus } from "./paneSession";
 
@@ -50,6 +52,11 @@ export interface Pane {
    * marked on its tab while the panel is out of sight.
    */
   questions: number;
+  /**
+   * The progress a program in the pane reports (OSC 9;4), while it does. Not taken to another
+   * window, whose session for the pane starts without it.
+   */
+  progress: TaskProgress | null;
   /** For a pane that came from another window, until its terminal takes over. */
   arrival?: Arrival;
 }
@@ -76,8 +83,28 @@ export interface Arrival {
 /** How a tab's panes are arranged: one pane, or several side by side (`row`) or stacked (`column`). */
 export type Layout = { kind: "pane"; key: number } | { kind: "split"; direction: "row" | "column"; children: Layout[]; sizes: number[] };
 
-/** Why a tab in the background asks to be looked at, until it is shown. */
-export type Attention = "output" | "bell";
+/** Which of several progresses shows: what most needs the user's eyes first. */
+const PROGRESS_RANK: Record<TaskState, number> = { error: 3, paused: 2, normal: 1, indeterminate: 0 };
+
+/**
+ * The progress shown for several (a tab's panes, a window's tabs): the state that ranks
+ * highest, and of several in progress the one furthest from done; null for none. Kept the same
+ * as `merge` in `window/progress.rs`, which merges the windows'.
+ */
+export function mergeProgress(all: (TaskProgress | null)[]): TaskProgress | null {
+  return all.reduce<TaskProgress | null>((merged, progress) => {
+    if (!progress || !merged) return merged ?? progress;
+    if (PROGRESS_RANK[progress.state] !== PROGRESS_RANK[merged.state])
+      return PROGRESS_RANK[progress.state] > PROGRESS_RANK[merged.state] ? progress : merged;
+    return { state: merged.state, percent: Math.min(merged.percent, progress.percent) };
+  }, null);
+}
+
+/**
+ * Why a tab in the background asks to be looked at, until it is shown: new output, or (which
+ * outranks it) a bell or a program's notification.
+ */
+export type Attention = "output" | "bell" | "notice";
 
 export interface Tab {
   key: number;

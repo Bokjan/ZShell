@@ -37,6 +37,7 @@ use inbox::{BusyQueries, Inbox};
 mod inbox;
 #[cfg(target_os = "linux")]
 mod linux;
+pub mod progress;
 #[cfg(target_os = "linux")]
 use linux as platform;
 #[cfg(target_os = "linux")]
@@ -69,6 +70,7 @@ pub struct Windows {
     /// The window that last had the focus, which menu items act on.
     focused: Mutex<String>,
     busy: Mutex<BusyQueries>,
+    progress: Mutex<progress::Progresses>,
 }
 
 /// What a window is to show: a tab moved out of another window (dropped `at` that many CSS
@@ -124,6 +126,7 @@ pub fn destroyed(window: &tauri::Window) {
     // Its sessions closed with it.
     windows.busy.lock().unwrap().gone(window.label());
     tab_drag::forget(window.app_handle(), window.label());
+    progress::forget(window.app_handle(), window.label());
     events::emit(window, events::WindowClosed(window.label().to_owned()));
     platform::forget(window);
     changed(window.app_handle());
@@ -133,6 +136,7 @@ pub fn destroyed(window: &tauri::Window) {
 /// it, before their sessions moved there perhaps. Those stay with the windows that offered them,
 /// which hear (`offers-withdrawn`); the new page takes only what it hasn't yet.
 pub fn page_loading(app: &AppHandle, label: &str) {
+    progress::forget(app, label);
     let windows = app.state::<Windows>();
     let withdrawn = {
         // Held across, as when a tab is given: no offer for a tab not yet taken is lost.

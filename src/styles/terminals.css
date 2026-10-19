@@ -134,3 +134,8 @@
 .terminal-view.no-ligatures {
   font-variant-ligatures: none;
 }
+/* The pointer shape a program set (OSC 22), over the text cursor and the arrow of mouse mode;
+   a link's hand and column selection's crosshair still show. */
+.terminal-view.program-pointer .xterm:not(.xterm-cursor-pointer, .column-select) {
+  cursor: var(--program-pointer);
+}

@@ -67,6 +67,7 @@ sys-locale = "0.3.2"
 # through serde_json, futures-util and vte).
 memchr = "2"
 notify = "8.2"
+tauri-plugin-notification = "2.7.0"
 
 [dev-dependencies]
 tokio = { version = "1.53.2", features = ["test-util"] }
