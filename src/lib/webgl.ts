@@ -1,6 +1,8 @@
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { Terminal } from "@xterm/xterm";
 
+import { beyondBudget, WEBGL_BUDGET } from "./webglBudget";
+
 /**
  * The pixels the glyph atlases may hold in all, about 64 MB, before the terminals drawing
  * with WebGL start over with new ones. An atlas keeps every glyph it has drawn, once for each
@@ -19,9 +21,13 @@ interface Internals {
 interface Renderer {
   /** The atlas pages this terminal's addon has added and not yet removed. */
   pages: Set<HTMLCanvasElement>;
+  /** When the terminal was last shown or focused, in `clock` ticks. */
+  used: number;
   drawing(): boolean;
   load(): void;
   release(): void;
+  /** Releases the context to make room for another terminal's, until this one is focused. */
+  evict(): void;
 }
 
 /** How long after losing its context a terminal tries WebGL again, and how many times. */
@@ -31,6 +37,7 @@ const renderers = new Set<Renderer>();
 /** Releases put off until the effects of the commit that hid their terminals have run, by terminal. */
 const pendingReleases = new Map<Terminal, () => void>();
 let renewal: ReturnType<typeof setTimeout> | undefined;
+let clock = 0;
 /** Set once loading the addon failed: WebGL2 is unavailable, and trying again won't help. */
 let unavailable = false;
 
@@ -69,6 +76,8 @@ export function drawWithWebgl(term: Terminal): () => void {
   let gl: WebGL2RenderingContext | undefined;
   // Waits for the new canvas's first layout, to draw it then.
   let sized: ResizeObserver | undefined;
+  // Drawing with the DOM renderer to leave the context to terminals used more recently.
+  let evicted = false;
   const pages = new Set<HTMLCanvasElement>();
   // After a lost context: tries WebGL again later, while tries are left.
   const retryLater = () => {
@@ -81,9 +90,17 @@ export function drawWithWebgl(term: Terminal): () => void {
   };
   const renderer: Renderer = {
     pages,
+    used: 0,
     drawing: () => addon !== undefined,
     load() {
       if (unavailable) return;
+      // Room for this one, unless the others were all used since (trying again after a lost
+      // context, say).
+      const drawing = [...renderers].filter((other) => other === renderer || other.drawing());
+      const beyond = beyondBudget(drawing, WEBGL_BUDGET);
+      evicted = beyond.includes(renderer);
+      if (evicted) return;
+      beyond.forEach((other) => other.evict());
       let webgl: WebglAddon | undefined;
       try {
         webgl = new WebglAddon();
@@ -157,10 +174,22 @@ export function drawWithWebgl(term: Terminal): () => void {
       gl?.getExtension("WEBGL_lose_context")?.loseContext();
       gl = undefined;
     },
+    evict() {
+      renderer.release();
+      evicted = true;
+    },
   };
+  // A terminal drawing with the DOM renderer to make room takes a context again once focused.
+  const focused = () => {
+    renderer.used = ++clock;
+    if (evicted) renderer.load();
+  };
+  term.element?.addEventListener("focusin", focused);
+  renderer.used = ++clock;
   renderers.add(renderer);
   renderer.load();
   return () => {
+    term.element?.removeEventListener("focusin", focused);
     renderers.delete(renderer);
     // After the other effects of the same commit: the terminals of a tab shown in place of
     // this one load their addons first, and share this one's atlas (by font, colors and pixel
