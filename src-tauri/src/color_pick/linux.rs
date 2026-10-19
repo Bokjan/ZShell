@@ -2,8 +2,8 @@
 //! desktop's portal backend implements with its own picker (GNOME's and KDE's, on X11 and
 //! Wayland alike). Like every portal request, the call returns at once with a request
 //! object, whose `Response` signal brings the color once the user has picked or cancelled;
-//! the request's path is known ahead from the `handle_token` option, so the signal is
-//! listened for before the call and can't be missed.
+//! the request's path is known ahead from the `handle_token` option (since portal 0.9), so
+//! the signal is listened for before the call and can't be missed.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -51,12 +51,21 @@ fn pick() -> Result<Option<Rgb>> {
     let screenshot = Proxy::new(&bus, PORTAL, PORTAL_PATH, "org.freedesktop.portal.Screenshot").map_err(failed)?;
     let options = HashMap::from([("handle_token", Value::from(token.as_str()))]);
     // No parent window: the picker isn't a dialog.
-    let _request: OwnedObjectPath = screenshot.call("PickColor", &("", options)).map_err(|e| match &e {
+    let handle: OwnedObjectPath = screenshot.call("PickColor", &("", options)).map_err(|e| match &e {
         zbus::Error::MethodError(name, _, _) if UNAVAILABLE.contains(&name.as_str()) => Error::new("colorPick.unavailable").detail(e),
         _ => failed(e),
     })?;
 
-    let response = responses.next().ok_or_else(|| failed("no response"))?;
+    let response = if handle.as_str() == path {
+        responses.next()
+    } else {
+        // Before xdg-desktop-portal 0.9 the request has a path of its own, whatever the token:
+        // listened for only now, which a response would only beat if the user picked at once.
+        drop(responses);
+        let request = Proxy::new(&bus, PORTAL, handle.as_str(), "org.freedesktop.portal.Request").map_err(failed)?;
+        request.receive_signal("Response").map_err(failed)?.next()
+    };
+    let response = response.ok_or_else(|| failed("no response"))?;
     let body = response.body();
     // 0: picked, 1: cancelled, 2: failed some other way.
     let (code, results): (u32, HashMap<String, Value>) = body.deserialize().map_err(failed)?;
