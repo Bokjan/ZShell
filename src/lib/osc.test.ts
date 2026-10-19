@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KittyNotices, PointerShapes, osc52Text, parseOsc777, parseOsc9 } from "./osc";
+import { KittyNotices, NOTICE_TEXT_MAX, PointerShapes, osc52Text, parseOsc777, parseOsc9 } from "./osc";
 
 const base64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 
@@ -44,8 +44,8 @@ describe("parseOsc9", () => {
   });
 
   it("takes anything else as a notification", () => {
-    expect(parseOsc9("Build finished")).toEqual({ notify: "Build finished" });
-    expect(parseOsc9("3 tests failed")).toEqual({ notify: "3 tests failed" });
+    expect(parseOsc9("Build finished")).toEqual({ notice: { title: "", body: "Build finished" } });
+    expect(parseOsc9("3 tests failed ")).toEqual({ notice: { title: "", body: "3 tests failed" } });
     expect(parseOsc9("  ")).toBeNull();
   });
 });
@@ -56,6 +56,18 @@ describe("parseOsc777", () => {
     expect(parseOsc777("notify;Done")).toEqual({ title: "Done", body: "" });
     expect(parseOsc777("notify;;")).toBeNull();
     expect(parseOsc777("preexec")).toBeNull();
+  });
+});
+
+describe("notifications", () => {
+  it("are cut to the most shown, never inside a character", () => {
+    const long = "a".repeat(NOTICE_TEXT_MAX + 10);
+    expect(parseOsc9(long)).toEqual({ notice: { title: "", body: "a".repeat(NOTICE_TEXT_MAX) } });
+    const emoji = `${"a".repeat(NOTICE_TEXT_MAX - 1)}😀`;
+    expect(parseOsc777(`notify;${emoji};x`)).toEqual({ title: "a".repeat(NOTICE_TEXT_MAX - 1), body: "x" });
+    const notices = new KittyNotices();
+    for (let i = 0; i < 3; i++) notices.feed(`i=1:d=0;${"b".repeat(NOTICE_TEXT_MAX)}`);
+    expect(notices.feed("i=1;b")).toEqual({ title: "b".repeat(NOTICE_TEXT_MAX), body: "" });
   });
 });
 

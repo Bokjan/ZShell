@@ -462,7 +462,7 @@ export function TerminalView({
       term.parser.registerOscHandler(9, (data) => {
         const parsed = parseOsc9(data);
         if (parsed && "progress" in parsed) session.progress(parsed.progress);
-        else if (parsed) session.notify({ title: "", body: parsed.notify });
+        else if (parsed) session.notify(parsed.notice);
         return true;
       }),
       term.parser.registerOscHandler(777, (data) => {

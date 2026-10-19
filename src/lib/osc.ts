@@ -35,8 +35,11 @@ const PROGRESS_STATES: (TaskState | null)[] = [null, "normal", "error", "indeter
  * OSC 9: ConEmu's commands, which begin with a number (only progress, `4;state;percent`, is
  * used), or else iTerm2's notification with its text. Null for anything else.
  */
-export function parseOsc9(data: string): { progress: ProgressReport } | { notify: string } | null {
-  if (!/^\d+(;|$)/.test(data)) return data.trim() ? { notify: data } : null;
+export function parseOsc9(data: string): { progress: ProgressReport } | { notice: Notice } | null {
+  if (!/^\d+(;|$)/.test(data)) {
+    const text = notice("", data);
+    return text && { notice: text };
+  }
   const [command, state = "0", percent] = data.split(";");
   if (command !== "4" || !/^\d$/.test(state) || Number(state) >= PROGRESS_STATES.length) return null;
   const kind = PROGRESS_STATES[Number(state)];
@@ -51,16 +54,33 @@ export interface Notice {
   body: string;
 }
 
+/** The most of a notification's title, and of its text, in characters; the rest is cut. */
+export const NOTICE_TEXT_MAX = 4096;
+
+/**
+ * The notification of `title` and `body`, trimmed and cut to `NOTICE_TEXT_MAX`: a sequence
+ * can be up to 10 MB, all of which would go to screen readers and the system. Null for one
+ * with neither.
+ */
+function notice(title: string, body: string): Notice | null {
+  const cut = (text: string) => {
+    const trimmed = text.trim();
+    if (trimmed.length <= NOTICE_TEXT_MAX) return trimmed;
+    // Not between the two halves of a character outside the BMP (an emoji).
+    const end = /[\uD800-\uDBFF]/.test(trimmed[NOTICE_TEXT_MAX - 1]) ? NOTICE_TEXT_MAX - 1 : NOTICE_TEXT_MAX;
+    return trimmed.slice(0, end).trimEnd();
+  };
+  const done = { title: cut(title), body: cut(body) };
+  return done.title || done.body ? done : null;
+}
+
 /** OSC 777 (urxvt, Ghostty): `notify;title;body`; null for its other commands. */
 export function parseOsc777(data: string): Notice | null {
   const [command, title = "", ...body] = data.split(";");
-  if (command !== "notify") return null;
-  const notice = { title: title.trim(), body: body.join(";").trim() };
-  return notice.title || notice.body ? notice : null;
+  return command === "notify" ? notice(title, body.join(";")) : null;
 }
 
-/** The most text a kitty notification gathers, in characters, and how many can be unfinished at once. */
-const KITTY_TEXT_MAX = 4096;
+/** How many kitty notifications can be unfinished at once. */
 const KITTY_PENDING_MAX = 8;
 
 /**
@@ -88,17 +108,17 @@ export class KittyNotices {
     }
     const text = meta.get("e") === "1" ? decodeBase64(data.slice(split + 1)) : data.slice(split + 1);
     if (text === null) return null;
-    const notice = this.pending.get(id) ?? { title: "", body: "" };
+    const parts = this.pending.get(id) ?? { title: "", body: "" };
     this.pending.delete(id);
-    notice[part] = (notice[part] + text).slice(0, KITTY_TEXT_MAX);
+    // Room for spaces that `notice` trims before it cuts; no more, so that parts can't fill memory.
+    parts[part] = (parts[part] + text).slice(0, 2 * NOTICE_TEXT_MAX);
     if (meta.get("d") === "0") {
-      this.pending.set(id, notice);
+      this.pending.set(id, parts);
       // The oldest unfinished one goes first: a program that never finishes can't fill memory.
       if (this.pending.size > KITTY_PENDING_MAX) this.pending.delete(this.pending.keys().next().value!);
       return null;
     }
-    const done = { title: notice.title.trim(), body: notice.body.trim() };
-    return done.title || done.body ? done : null;
+    return notice(parts.title, parts.body);
   }
 }
 
