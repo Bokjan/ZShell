@@ -159,11 +159,13 @@ export function TerminalSection() {
           </label>
         </fieldset>
       </Setting>
-      <label className="checkbox">
-        <input type="checkbox" checked={terminal.notifications} onChange={(e) => set({ notifications: e.target.checked })} />
-        {t("settings.notifications")}
-        <HelpTip text={t("settings.notificationsTip")} />
-      </label>
+      <Setting>
+        <label className="checkbox">
+          <input type="checkbox" checked={terminal.notifications} onChange={(e) => set({ notifications: e.target.checked })} />
+          {t("settings.notifications")}
+          <HelpTip text={t("settings.notificationsTip")} />
+        </label>
+      </Setting>
     </Section>
   );
 }
