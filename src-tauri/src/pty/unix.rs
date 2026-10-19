@@ -15,6 +15,7 @@ use tokio::sync::oneshot;
 
 use super::{drain_output, pty_size, Shell, KILL_GRACE, READ_BUFFER};
 use crate::error::Error;
+use crate::fd::{read_on, set_non_blocking, write_fd};
 use crate::session::{Flow, Foreground, ForegroundProbe, SessionInput, SessionSink, TermIo};
 
 /// A running shell. Dropping it (the shell exited, or the tab was closed and the session
@@ -227,12 +228,7 @@ fn non_blocking_copy(fd: RawFd) -> io::Result<OwnedFd> {
     }
     // SAFETY: `copy` was just opened, and nothing else owns it.
     let copy = unsafe { OwnedFd::from_raw_fd(copy) };
-    // SAFETY: plain syscall on a descriptor we own.
-    let flags = unsafe { libc::fcntl(copy.as_raw_fd(), libc::F_GETFL) };
-    // SAFETY: as above.
-    if flags < 0 || unsafe { libc::fcntl(copy.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-        return Err(io::Error::last_os_error());
-    }
+    set_non_blocking(copy.as_raw_fd())?;
     Ok(copy)
 }
 
@@ -267,37 +263,6 @@ async fn read_ready(terminal: &AsyncFd<OwnedFd>, buffer: &mut [u8]) -> io::Resul
     }
 }
 
-/// Reads on while more is ready: a read from a terminal returns at most about 1 KiB on
-/// macOS, and each read becomes a message to the web view, which takes the main thread
-/// (`cat` of a large file sent a thousand of them per MiB). Fails with `WouldBlock` only when
-/// nothing was ready.
-fn read_on(fd: RawFd, buffer: &mut [u8]) -> io::Result<usize> {
-    let mut read = 0;
-    while read < buffer.len() {
-        match read_fd(fd, &mut buffer[read..]) {
-            Ok(0) => break,
-            Ok(n) => read += n,
-            Err(e) if e.kind() == ErrorKind::Interrupted => {}
-            Err(e) if read == 0 => return Err(e),
-            // What was read is passed on now; a failure (EIO at the end) comes again next time.
-            Err(_) => break,
-        }
-    }
-    Ok(read)
-}
-
-fn read_fd(fd: RawFd, buffer: &mut [u8]) -> io::Result<usize> {
-    // SAFETY: `buffer` is valid for writes of its length.
-    let read = unsafe { libc::read(fd, buffer.as_mut_ptr().cast(), buffer.len()) };
-    usize::try_from(read).map_err(|_| io::Error::last_os_error())
-}
-
-fn write_fd(fd: RawFd, data: &[u8]) -> io::Result<usize> {
-    // SAFETY: `data` is valid for reads of its length.
-    let written = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
-    usize::try_from(written).map_err(|_| io::Error::last_os_error())
-}
-
 /// The terminal's foreground process group, when it is not the shell's: a program started
 /// from the shell is running (background jobs don't count).
 fn foreground_probe(master: &dyn MasterPty, shell: Option<u32>) -> Option<ForegroundProbe> {
@@ -327,27 +292,6 @@ fn process_name(pid: libc::pid_t) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// What is ready to read comes in one read, though each read gives only part of it: a
-    /// terminal about 1 KiB on macOS, a datagram socket (here) one datagram. A terminal can't
-    /// be filled ahead (it holds 1 KiB on macOS), so it is read on as the shell writes.
-    #[test]
-    fn reads_on_while_more_is_ready() {
-        use std::io::Write;
-        let mut fds = [0; 2];
-        // SAFETY: plain syscall, into two descriptors that are then ours alone.
-        assert_eq!(unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_DGRAM, 0, fds.as_mut_ptr()) }, 0);
-        // SAFETY: just opened, and owned by nothing else.
-        let (read_end, write_end) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let mut writer = std::fs::File::from(write_end);
-        for _ in 0..6 {
-            writer.write_all(&[b'x'; 500]).unwrap();
-        }
-        let reader = non_blocking_copy(read_end.as_raw_fd()).unwrap();
-        let mut buffer = vec![0; 16 << 10];
-        assert_eq!(read_on(reader.as_raw_fd(), &mut buffer).unwrap(), 3000);
-        assert_eq!(read_on(reader.as_raw_fd(), &mut buffer).unwrap_err().kind(), ErrorKind::WouldBlock);
-    }
 
     /// Reading stops once the session has shut down, though something still has the
     /// terminal open (on Linux, a program that ignores the hangup).

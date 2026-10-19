@@ -187,28 +187,16 @@ fn open(options: &SerialOptions) -> Result<NativePort> {
         })
         .timeout(READ_TIMEOUT);
     let port = builder.open_native().map_err(open_failed)?;
+    // Reads and writes on Unix never block: the session's task waits for the device instead
+    // (`unix.rs`). On threads (see [`Line`]), serialport waits (up to the port's timeout) for
+    // room to write, then writes blocking: more than there is room for would wait as long as
+    // flow control holds the line, and a closed tab's writer couldn't let go of the device.
+    // Without blocking, a write takes what fits and `write_data` looks again; reads too wait
+    // for data first. The setting is the open file's, which the writer thread's handle shares.
     #[cfg(unix)]
-    non_blocking(&port).map_err(|e| Error::new("serial.openFailed").param("device", &options.device).detail(e))?;
+    crate::fd::set_non_blocking(std::os::fd::AsRawFd::as_raw_fd(&port))
+        .map_err(|e| Error::new("serial.openFailed").param("device", &options.device).detail(e))?;
     Ok(port)
-}
-
-/// Reads and writes on Unix never block: the session's task waits for the device instead
-/// (`unix.rs`). On threads (see [`Line`]), serialport waits (up to the port's timeout) for
-/// room to write, then writes blocking: more than there is room for would wait as long as
-/// flow control holds the line, and a closed tab's writer couldn't let go of the device.
-/// Without blocking, a write takes what fits and `write_data` looks again; reads too wait for
-/// data first. The setting is the open file's, which the writer thread's handle shares.
-#[cfg(unix)]
-fn non_blocking(port: &serialport::TTYPort) -> std::io::Result<()> {
-    use std::os::fd::AsRawFd;
-    let fd = port.as_raw_fd();
-    // SAFETY: `fd` is the port's, open as long as `port` is.
-    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-    // SAFETY: as above.
-    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(())
 }
 
 /// serialport duplicates the handle as inheritable, and `std::process::Command` lets child
@@ -374,7 +362,7 @@ fn write_input(mut port: Box<dyn SerialPort>, mut inputs: mpsc::Receiver<Output>
 
 /// Writes all of `data`, waiting as long as flow control holds the line, unless the line is
 /// dropped (`failed` closes): each write returns within the port's timeout (see
-/// `non_blocking` on Unix).
+/// `open` on Unix).
 fn write_data(port: &mut dyn SerialPort, mut data: &[u8], failed: &mpsc::UnboundedSender<String>) -> std::io::Result<()> {
     while !data.is_empty() && !failed.is_closed() {
         match port.write(data) {

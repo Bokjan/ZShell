@@ -31,7 +31,6 @@ pub(super) struct Pty {
     /// Completes when the reader thread reaches the end of the output.
     output_done: Option<oneshot::Receiver<()>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
-    pid: Option<u32>,
     exited: Arc<Exited>,
     /// Set once the session has shut down, to stop the reader.
     shut: Arc<AtomicBool>,
@@ -66,9 +65,8 @@ impl Pty {
         thread::spawn(move || write_input(writer, inputs, &writer_exited));
 
         let killer = child.clone_killer();
-        let pid = child.process_id();
         let foreground = io.foreground();
-        foreground.set(foreground_probe(&*pair.master, pid));
+        foreground.set(foreground_probe(&*pair.master, child.process_id()));
         let (exit_tx, exit) = oneshot::channel();
         let exited_flag = exited.clone();
         thread::spawn(move || {
@@ -83,7 +81,6 @@ impl Pty {
             exit,
             output_done: Some(output_done),
             killer,
-            pid,
             exited,
             shut,
             flow,
@@ -156,23 +153,17 @@ impl Drop for Pty {
         let master = self.master.take();
         let killer = self.killer.clone_killer();
         let exited = self.exited.clone();
-        let pid = self.pid;
         let shut = self.shut.clone();
         // Waiting for the shell to exit (and closing a pseudo console) blocks.
         thread::spawn(move || {
-            shut_down(master, killer, &exited, pid);
+            shut_down(master, killer, &exited);
             shut.store(true, Ordering::Relaxed);
         });
     }
 }
 
 /// Ends the shell if it is still running, the way closing a terminal window does.
-fn shut_down(
-    master: Option<Box<dyn MasterPty + Send>>,
-    mut killer: Box<dyn ChildKiller + Send + Sync>,
-    exited: &Exited,
-    _pid: Option<u32>,
-) {
+fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn ChildKiller + Send + Sync>, exited: &Exited) {
     // Closing the pseudo console sends CTRL_CLOSE_EVENT to the processes attached to it,
     // so they can exit cleanly.
     drop(master);

@@ -1,11 +1,11 @@
 //! Serial lines on Unix driven by the session's task: tokio waits for the device to be
 //! readable or writable ([`AsyncFd`]), so a session takes no thread and wakes nothing while
 //! the line is quiet. Reads and writes go straight to the descriptor (non-blocking, see
-//! `non_blocking`): serialport's own wait for data first would hold up tokio's thread.
+//! `open`): serialport's own wait for data first would hold up tokio's thread.
 
 use std::collections::VecDeque;
 use std::io::{self, ErrorKind};
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::AsRawFd;
 use std::pin::Pin;
 
 use serialport::{SerialPort, TTYPort};
@@ -14,6 +14,7 @@ use tokio::time::Sleep;
 
 use super::{Output, BREAK_DURATION, READ_BUFFER};
 use crate::error::Error;
+use crate::fd::{read_on, write_fd};
 use crate::session::{Outcome, SessionInput, TermIo};
 
 /// Bridges the port to the terminal until the device fails or the tab closes. Input the
@@ -97,35 +98,4 @@ pub(super) async fn bridge(port: AsyncFd<TTYPort>, device: &str, io: &mut TermIo
             },
         }
     }
-}
-
-/// Reads on while more is ready: an adapter hands over a few dozen bytes at a time, and
-/// each read becomes a message to the web view. Fails with `WouldBlock` only when nothing
-/// was ready.
-fn read_on(fd: RawFd, buffer: &mut [u8]) -> io::Result<usize> {
-    let mut read = 0;
-    while read < buffer.len() {
-        // SAFETY: the rest of `buffer` is valid for writes of its length.
-        let n = unsafe { libc::read(fd, buffer[read..].as_mut_ptr().cast(), buffer.len() - read) };
-        match usize::try_from(n) {
-            Ok(0) => break,
-            Ok(n) => read += n,
-            Err(_) => {
-                let e = io::Error::last_os_error();
-                match e.kind() {
-                    ErrorKind::Interrupted => {}
-                    _ if read == 0 => return Err(e),
-                    // What was read is passed on now; a failure comes again next time.
-                    _ => break,
-                }
-            }
-        }
-    }
-    Ok(read)
-}
-
-fn write_fd(fd: RawFd, data: &[u8]) -> io::Result<usize> {
-    // SAFETY: `data` is valid for reads of its length.
-    let written = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
-    usize::try_from(written).map_err(|_| io::Error::last_os_error())
 }

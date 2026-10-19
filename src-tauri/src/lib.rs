@@ -17,6 +17,8 @@ mod encoding;
 mod envelope;
 mod error;
 mod events;
+#[cfg(unix)]
+mod fd;
 mod forward;
 #[cfg(windows)]
 mod hidden_window;
