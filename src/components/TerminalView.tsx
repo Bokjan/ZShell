@@ -20,6 +20,7 @@ import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../hooks/settings";
 import { parseOsc7, shellDirs } from "../lib/shellDirs";
 import { useShortcuts } from "../hooks/shortcuts";
+import { ligatureRanges } from "../lib/ligatures";
 import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
@@ -506,6 +507,22 @@ export function TerminalView({
     screenReaderMode,
   ]);
 
+  // The sequences drawn together, as ligatures in fonts that have them (see `lib/ligatures`).
+  // The DOM renderer joins every run of cells in one style, so it shows all the font's
+  // ligatures while they are on, and none while off (`.no-ligatures`).
+  const ligatures = settings.terminal.ligatures;
+  useEffect(() => {
+    if (!terminal || ligatures === "off") return;
+    const joiner = terminal.registerCharacterJoiner(ligatureRanges);
+    terminal.refresh(0, terminal.rows - 1);
+    return () => {
+      // Not once the terminal is gone (unmounting), whose cleanup runs before this one.
+      if (termRef.current !== terminal) return;
+      terminal.deregisterCharacterJoiner(joiner);
+      terminal.refresh(0, terminal.rows - 1);
+    };
+  }, [terminal, ligatures]);
+
   // Before the page is painted, so that it doesn't show the terminal at its old size first.
   useLayoutEffect(() => {
     if (!visible || !unfittedRef.current) return;
@@ -613,7 +630,7 @@ export function TerminalView({
   return (
     // The scheme's background also fills the padding around the terminal.
     <div className="terminal-wrap" ref={wrapRef} style={{ background: scheme.theme.background }}>
-      <div className="terminal-view" ref={containerRef} />
+      <div className={ligatures === "off" ? "terminal-view no-ligatures" : "terminal-view"} ref={containerRef} />
       {flashes > 0 && <div key={flashes} className="bell-flash" aria-hidden="true" style={{ background: scheme.theme.foreground }} />}
       {sizeShown && (
         // The status bar has the size for screen readers.

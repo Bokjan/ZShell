@@ -672,6 +672,12 @@
     "fontFamilyPlaceholderSystem": "Par défaut ({font})",
     "fontSize": "Taille",
     "fontHint": "Les caractères absents de la police, comme le chinois, sont pris dans les polices du système.",
+    "ligatures": "Ligatures",
+    "ligatureModes": {
+      "off": "Désactivées",
+      "rules": "Séquences courantes"
+    },
+    "ligaturesHint": "Avec une police dotée de ligatures de programmation, comme Fira Code, JetBrains Mono ou Iosevka, les séquences comme -> et != sont dessinées en un seul symbole. « Séquences courantes » relie une liste fixe d’opérateurs usuels.",
     "cursorStyle": "Curseur",
     "cursorStyles": {
       "block": "Bloc",

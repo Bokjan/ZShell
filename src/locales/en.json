@@ -653,6 +653,12 @@
     "fontFamilyPlaceholderSystem": "Default ({font})",
     "fontSize": "Size",
     "fontHint": "Missing characters, such as Chinese, fall back to system fonts.",
+    "ligatures": "Ligatures",
+    "ligatureModes": {
+      "off": "Off",
+      "rules": "Common sequences"
+    },
+    "ligaturesHint": "With a font that has programming ligatures, such as Fira Code, JetBrains Mono or Iosevka, sequences such as -> and != are drawn as one symbol. Common sequences joins a fixed list of the usual operators.",
     "cursorStyle": "Cursor",
     "cursorStyles": {
       "block": "Block",

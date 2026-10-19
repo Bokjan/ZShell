@@ -128,3 +128,9 @@
   user-select: text;
   -webkit-user-select: text;
 }
+/* Ligatures off. The DOM renderer (hidden tabs, or no WebGL) draws each run of cells in one
+   style as one piece of text, which a font with ligatures would join; the WebGL renderer draws
+   each cell apart unless told to join them. */
+.terminal-view.no-ligatures {
+  font-variant-ligatures: none;
+}

@@ -92,6 +92,7 @@ pub struct TerminalSettings {
     /// fonts) are always appended by the frontend.
     pub font_family: String,
     pub font_size: u16,
+    pub ligatures: Ligatures,
     pub cursor_style: CursorStyle,
     pub cursor_blink: bool,
     /// Lines kept above the screen.
@@ -132,6 +133,17 @@ pub enum ScreenReaderMode {
     Auto,
     On,
     Off,
+}
+
+/// Which character sequences the terminal draws together, so that a font with programming
+/// ligatures draws them as one (the font still decides how they look).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum Ligatures {
+    #[default]
+    Off,
+    /// A fixed list of the usual ones (`->`, `!=`, `===`), whatever the font.
+    Rules,
 }
 
 /// What right-clicking the terminal does.
@@ -295,6 +307,7 @@ impl Default for TerminalSettings {
             color_scheme: "auto".to_owned(),
             font_family: String::new(),
             font_size: 13,
+            ligatures: Ligatures::Off,
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
             scrollback: 5000,
@@ -369,6 +382,7 @@ mod tests {
         assert_eq!(settings.terminal.font_size, 48);
         assert_eq!(settings.terminal.color_scheme, "auto");
         assert_eq!(settings.terminal.scrollback, 5000);
+        assert_eq!(settings.terminal.ligatures, Ligatures::Off);
         assert!(settings.terminal.confirm_multiline_paste && settings.tabs.confirm_close);
         assert!(settings.status_bar.show);
         assert_eq!(settings.language, "system");

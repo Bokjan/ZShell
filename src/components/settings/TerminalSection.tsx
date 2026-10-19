@@ -1,7 +1,14 @@
 import { useTranslation } from "react-i18next";
 
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, SCROLLBACK_MAX } from "../../ipc/api";
-import { TYPING_SAVE_DELAY, useSettings, type CursorStyle, type ScreenReaderMode, type TerminalSettings } from "../../hooks/settings";
+import {
+  TYPING_SAVE_DELAY,
+  useSettings,
+  type CursorStyle,
+  type Ligatures,
+  type ScreenReaderMode,
+  type TerminalSettings,
+} from "../../hooks/settings";
 import { useLocale } from "../../hooks/locale";
 import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies } from "../../lib/terminalSchemes";
 import { RadioGroup } from "../RadioGroup";
@@ -10,8 +17,9 @@ import { LiveTextField, NumberField, Section, Setting } from "./common";
 
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const SCREEN_READER_MODES: ScreenReaderMode[] = ["auto", "on", "off"];
+const LIGATURE_MODES: Ligatures[] = ["off", "rules"];
 
-/** The terminals: color scheme, font, cursor, scrollback, screen readers and the bell. */
+/** The terminals: color scheme, font, ligatures, cursor, scrollback, screen readers and the bell. */
 export function TerminalSection() {
   const { t } = useTranslation();
   const { cjk } = useLocale();
@@ -75,6 +83,19 @@ export function TerminalSection() {
           </label>
         </div>
         <p className="hint">{t("settings.fontHint")}</p>
+      </Setting>
+      <Setting>
+        <div className="field">
+          <span>{t("settings.ligatures")}</span>
+          <RadioGroup
+            className="segmented"
+            label={t("settings.ligatures")}
+            value={terminal.ligatures}
+            options={LIGATURE_MODES.map((mode) => ({ value: mode, content: t(`settings.ligatureModes.${mode}`) }))}
+            onChange={(ligatures) => set({ ligatures })}
+          />
+        </div>
+        <p className="hint">{t("settings.ligaturesHint")}</p>
       </Setting>
 
       <Setting>

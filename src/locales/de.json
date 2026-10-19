@@ -653,6 +653,12 @@
     "fontFamilyPlaceholderSystem": "Standard ({font})",
     "fontSize": "Größe",
     "fontHint": "Fehlende Zeichen, etwa chinesische, werden mit Systemschriften dargestellt.",
+    "ligatures": "Ligaturen",
+    "ligatureModes": {
+      "off": "Aus",
+      "rules": "Übliche Zeichenfolgen"
+    },
+    "ligaturesHint": "Mit einer Schriftart mit Programmierligaturen wie Fira Code, JetBrains Mono oder Iosevka werden Zeichenfolgen wie -> und != als ein Symbol dargestellt. „Übliche Zeichenfolgen“ verbindet eine feste Liste gängiger Operatoren.",
     "cursorStyle": "Cursor",
     "cursorStyles": {
       "block": "Block",

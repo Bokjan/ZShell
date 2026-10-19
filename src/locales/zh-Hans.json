@@ -634,6 +634,12 @@
     "fontFamilyPlaceholderSystem": "默认（{font}）",
     "fontSize": "字号",
     "fontHint": "字体中缺少的字符（如中文）会使用系统字体显示。",
+    "ligatures": "连字",
+    "ligatureModes": {
+      "off": "关",
+      "rules": "常用序列"
+    },
+    "ligaturesHint": "使用带编程连字的字体（如 Fira Code、JetBrains Mono、Iosevka）时，-> 和 != 这样的字符序列会画成一个符号。“常用序列”只连接一份固定的常用运算符列表。",
     "cursorStyle": "光标",
     "cursorStyles": {
       "block": "方块",

@@ -14,6 +14,7 @@ export type {
   Appearance,
   CursorStyle,
   FileSettings,
+  Ligatures,
   LogFormat,
   LogSettings,
   RightClick,

@@ -386,6 +386,12 @@ algorithm: string,
  */
 fingerprint: string | null, comment: string | null, };
 
+/**
+ * Which character sequences the terminal draws together, so that a font with programming
+ * ligatures draws them as one (the font still decides how they look).
+ */
+export type Ligatures = "off" | "rules";
+
 export type Listing = { 
 /**
  * Canonical path of the listed directory.
@@ -853,7 +859,7 @@ colorScheme: string,
  * Preferred font family; empty uses the platform default. Fallbacks (including CJK
  * fonts) are always appended by the frontend.
  */
-fontFamily: string, fontSize: number, cursorStyle: CursorStyle, cursorBlink: boolean, 
+fontFamily: string, fontSize: number, ligatures: Ligatures, cursorStyle: CursorStyle, cursorBlink: boolean, 
 /**
  * Lines kept above the screen.
  */
@@ -1143,7 +1149,7 @@ export const DEFAULT_GROUP = "default";
 export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;
 
 /** The settings before any change, which "Restore Defaults" goes back to. */
-export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
 
 /** The smallest terminal font size, in the settings and in sessions. */
 export const FONT_SIZE_MIN = 6;

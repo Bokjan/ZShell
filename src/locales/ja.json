@@ -634,6 +634,12 @@
     "fontFamilyPlaceholderSystem": "デフォルト（{font}）",
     "fontSize": "サイズ",
     "fontHint": "日本語など、フォントにない文字はシステムフォントで表示されます。",
+    "ligatures": "合字",
+    "ligatureModes": {
+      "off": "オフ",
+      "rules": "よく使う組み合わせ"
+    },
+    "ligaturesHint": "Fira Code、JetBrains Mono、Iosevkaなど、プログラミング用の合字を持つフォントでは、->や!=のような文字の並びが1つの記号として表示されます。「よく使う組み合わせ」では、よく使われる演算子の決まった一覧だけを合字にします。",
     "cursorStyle": "カーソル",
     "cursorStyles": {
       "block": "ブロック",
