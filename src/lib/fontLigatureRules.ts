@@ -1,12 +1,12 @@
 import { appSettings } from "../ipc/api";
+import { cachedRanges, fontLigatures } from "./fontLigatures";
 import { fontFamilies, ligatureRanges } from "./ligatures";
 
 /**
- * Where ligatures form by a font's own rules (its `calt` GSUB lookups), for the "full"
- * ligatures setting. The backend reads the rules from the installed font (`fonts/` there),
- * and `fontLigatures/` (from xterm.js's ligatures addon) finds where they apply. Parsing them
- * takes a moment and some memory (about 13 MB and 50 ms for Sarasa Gothic, whose CJK glyphs
- * make it large), so the terminals with the same font share them while any uses them.
+ * Where ligatures form by a font's own rules (its substitutions), for the "full" ligatures
+ * setting. The backend reads the rules from the installed font (`fonts/` there), and
+ * `fontLigatures.ts` applies them. The terminals with the same font share them while any uses
+ * them, and the results for the lines drawn last, which come back as the screen scrolls.
  */
 
 type Ranges = (text: string) => [number, number][];
@@ -27,13 +27,10 @@ const fonts = new Map<string, Shared>();
 const CACHE_SIZE = 100_000;
 
 async function load(fontFamily: string): Promise<Ranges | null> {
-  const font = await appSettings.ligatureFont(fontFamilies(fontFamily));
-  if (!font) return null;
-  const bytes = Uint8Array.from(atob(font.data), (c) => c.charCodeAt(0));
-  const { loadBuffer } = await import("./fontLigatures/index");
-  const rules = loadBuffer(bytes.buffer, { cacheSize: CACHE_SIZE });
-  // A copy: xterm.js turns the ranges into cells in place, which would change the cached ones.
-  return (text) => rules.findLigatureRanges(text).map(([start, end]) => [start, end]);
+  const rules = await appSettings.ligatureRules(fontFamilies(fontFamily));
+  if (!rules) return null;
+  const font = fontLigatures(rules);
+  return cachedRanges((text) => font.ranges(text), CACHE_SIZE);
 }
 
 /**

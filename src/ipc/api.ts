@@ -441,8 +441,8 @@ export const appSettings = {
   systemMonospaceFont: () => call("system_monospace_font"),
   /** Whether a screen reader is running now. */
   screenReaderRunning: () => call("screen_reader_running"),
-  /** The ligature rules of the first installed of `families` (a font list, in order), or null. */
-  ligatureFont: (families: string[]) => call("terminal_ligature_font", { families }),
+  /** The substitutions of the first installed of `families` (a font list, in order), or null. */
+  ligatureRules: (families: string[]) => call("terminal_ligature_rules", { families }),
 };
 
 /** The languages in effect: the backend's follows the `language` setting. */

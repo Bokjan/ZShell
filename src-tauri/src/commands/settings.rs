@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::error::Result;
-use crate::fonts::LigatureFont;
+use crate::fonts::LigatureRules;
 use crate::logging::Logs;
 use crate::model::QuickCommands;
 use crate::model::Settings;
@@ -33,8 +33,8 @@ pub async fn system_monospace_font() -> Option<String> {
 /// The ligature rules of a terminal's font: of the first installed of `families`, its font
 /// list in order. Reading the font takes a moment, so off the async threads.
 #[tauri::command]
-pub async fn terminal_ligature_font(families: Vec<String>) -> Option<LigatureFont> {
-    tauri::async_runtime::spawn_blocking(move || crate::fonts::ligature_font(&families)).await.ok().flatten()
+pub async fn terminal_ligature_rules(families: Vec<String>) -> Option<LigatureRules> {
+    tauri::async_runtime::spawn_blocking(move || crate::fonts::ligature_rules(&families)).await.ok().flatten()
 }
 
 /// Whether the system's screen reader is running; then `screen-reader-changed` tells.

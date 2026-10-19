@@ -6,8 +6,7 @@
 // - Rust crates: cargo-about's JSON output, with src-tauri/about.toml (accepted licenses,
 //   release targets, clarifications).
 // - npm packages: the runtime dependencies (not devDependencies) from
-//   `pnpm licenses list --prod`, with the license files each package ships, and the code
-//   copied into src/ from other projects (`VENDORED`), with its license file.
+//   `pnpm licenses list --prod`, with the license files each package ships.
 //
 // The output lists every package with the indices of its license texts; identical texts
 // are stored once. A package whose license isn't in about.toml's `accepted` list fails the
@@ -183,27 +182,7 @@ function npmPackages() {
     });
 }
 
-// Code copied into the frontend from other projects, each folder with the project's license.
-const VENDORED = [
-  {
-    name: "@xterm/addon-ligatures (fontLigatures)",
-    version: "991857a",
-    license: "MIT",
-    url: "https://github.com/xtermjs/xterm.js/tree/master/addons/addon-ligatures",
-    path: "src/lib/fontLigatures",
-  },
-];
-
-function vendoredPackages() {
-  return VENDORED.map(({ path, ...pkg }) => {
-    const dir = join(root, path);
-    const files = readdirSync(dir).filter(isLicenseFile).sort();
-    if (files.length === 0) throw new Error(`${path} has no license file`);
-    return { ...pkg, texts: files.map((file) => addText(readFileSync(join(dir, file), "utf8"))) };
-  });
-}
-
-const npm = [...npmPackages(), ...vendoredPackages()];
+const npm = npmPackages();
 const refused = npm.filter((pkg) => !isAccepted(pkg.license ?? ""));
 if (refused.length > 0) {
   for (const pkg of refused) {

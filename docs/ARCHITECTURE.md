@@ -26,7 +26,7 @@
 | Telnet | 自己实现（协议与选项协商） |
 | 前端 | Vite + React + TypeScript |
 | 终端渲染 | `@xterm/xterm` + fit / webgl / unicode11 / web-links / search 插件 |
-| 终端连字 | `opentype.js` 与 xterm.js 连字插件的 GSUB 解析代码（`lib/fontLigatures/`）；字体文件经 DirectWrite / CoreText（`objc2-core-text`）/ `fontconfig` |
+| 终端连字 | 自己实现的 `cmap` / `GDEF` / `GSUB` 读取（后端 `fonts/`）与替换（`lib/fontLigatures.ts`）；字体的表经 DirectWrite / CoreText（`objc2-core-text`）/ `fontconfig` 读取 |
 
 ## 总体结构
 
@@ -68,7 +68,7 @@
 | `window/` | 窗口：按平台创建，新窗口要显示的内容与退出前询问各窗口（`inbox.rs`，不依赖窗口、可单独测试）；各平台文件（`macos.rs`、`win.rs`、`linux.rs`）提供同一组函数，`mod.rs` 经 `platform` 调用，缺了哪个都编译不过：macOS 的红绿灯，Windows 的窗口按钮与贴靠边框，Linux 的空标题栏、窗口菜单与主题 |
 | `desktop.rs` | Linux 桌面的设置（配色方案、等宽字体），经设置 portal 读取 |
 | `hidden_window.rs` | Windows：接收只发给顶层窗口的系统广播（设置变化、挂起、会话锁定）的隐藏窗口，应用锁与读屏检测共用 |
-| `fonts/` | 终端字体的连字规则：按字体名找到已安装的字体，取出连字要用的表（见「终端连字」） |
+| `fonts/` | 终端字体的连字规则：按字体名找到已安装的字体，读出 `cmap`、`GDEF` 与 `GSUB`（`cmap.rs`、`gsub.rs`），编成前端应用的紧凑规则（`rules.rs`，见「终端连字」） |
 | `screen_reader/` | 系统的读屏软件是否在运行，变化时通知各窗口（见「无障碍」） |
 | `tab_drag/` | 把标签拖出窗口：落点在哪个窗口、哪里（见「多窗口」） |
 | `menu.rs` | macOS 的原生菜单栏，由页面给出的结构构建（见「快捷键、菜单与侧栏」） |
@@ -216,8 +216,10 @@
 
 - **分组与字形**：xterm.js 按单元格绘制，连字要由 character joiner 告诉渲染器哪几格合在一起画；合并后的文字交给浏览器绘制，字形由字体自己的 `calt` 规则决定，joiner 只决定分组。WebGL 渲染器只合并 joiner 给出的格子；DOM 渲染器（隐藏的标签页、腾出 WebGL 的终端、没有 WebGL 时）把同一样式的一段整体交给浏览器，所以关闭时给终端加 `font-variant-ligatures: none`，开启时 DOM 渲染器显示字体的全部连字。光标所在的格子与部分选中的范围不合并。
 - **三档**（`terminal.ligatures`，默认关闭）：「常用序列」用固定的序列表（`lib/ligatures.ts`，Iosevka 的 `calt` 集合，与 VS Code 的默认值相同），不读字体；脱离上下文后与字体的规则可能不同（更纱单独的 `<=` 不连，按列表会连成 ≤）。「按字体规则」按字体的 GSUB 规则分组，读不到字体时退回常用序列。
-- **按字体规则的数据流**：xterm.js 的连字插件不直接用：它经 `queryLocalFonts` 读字体，macOS 与 Linux 的 WebView 没有这个接口，Windows 上读到的是整个 TTC（opentype.js 不支持），而且每个终端各解析一次（更纱每个终端约 190 MB）。改为后端 `fonts/` 按终端的字体列表找第一个已安装的字体（DirectWrite 能找到 Microsoft Store 安装的字体，它们不在任何字体文件夹里；CoreText；fontconfig 给出文件与 TTC 序号），只取 `cmap`、`GSUB` 与 opentype.js 必需的几张表，合成一个没有轮廓的字体（`sfnt.rs`，更纱 43 MB → 0.6 MB），经 `terminal_ligature_font` 以 base64 交给前端。前端 `lib/fontLigatureRules.ts` 用插件的解析代码（`lib/fontLigatures/`，MIT，列入第三方声明）以 opentype.js 的 `lowMemory` 解析，同一字体列表的终端共用一份，没有终端使用时释放（更纱约 13 MB、50 ms）。解析代码与 opentype.js 在单独的 chunk，只在选了这一档时加载。
-- **代价**：分组结果按文字缓存（10 万字符），内容不变的重绘不再计算；大量新输出时每帧（50×200）约 3–16 ms，常用序列约 2 ms。
+- **按字体规则的数据流**：xterm.js 的连字插件不直接用：它经 `queryLocalFonts` 读字体，macOS 与 Linux 的 WebView 没有这个接口，Windows 上读到的是整个 TTC，每个终端各解析一次，而且它只实现了 `calt` 里的一部分规则，分组常与浏览器画出的不符。改为后端 `fonts/` 按终端的字体列表找第一个已安装的字体（DirectWrite 能找到 Microsoft Store 安装的字体，它们不在任何字体文件夹里；CoreText；fontconfig 给出文件与 TTC 序号），只读 `cmap`、`GDEF` 与 `GSUB`，编成紧凑的规则（`rules.rs`）：只有规则区分得开的字形保留编号，其余字形都算作同一个，各表写进一个数字数组，经 `terminal_ligature_rules` 交给前端（更纱约 80 KB 的 JSON）。前端 `lib/fontLigatures.ts` 用 typed array 同步地应用规则，同一字体列表的终端共用一份（`lib/fontLigatureRules.ts`），没有终端使用时释放。前后端对格式的理解由一份 fixture 检查（见 [DEVELOPMENT.md](DEVELOPMENT.md)「常用命令」）。
+- **怎样应用**：照 HarfBuzz（WebView2 与 WebKitGTK 的排版引擎）处理不指定特性的横排拉丁文字：选 `cmap` 子表的顺序；`latn`（没有时 `DFLT`）脚本的默认语言系统；先 `rvrn`，再把 `ccmp`、`locl`、`rlig`、`rclt`、`calt`、`clig`、`liga`、`ltra`、`ltrm` 与必需特性的查找表按序号一起应用；lookupFlag 按 `GDEF` 的字形类别跳过字形，匹配时跳过默认可忽略字符（零宽不连字只在上下文里跳过）；嵌套的查找表增删字形时调整匹配位置。canvas 关不掉这些特性，合并后 WebGL 画出的是它们全部的结果，所以都要算进去。CoreText（macOS）的排版结果可能与 HarfBuzz 有细微差别。
+- **合并哪些格子**：规则改了字形的地方，连同它匹配时的上下文（从回溯的第一个字形到前瞻的最后一个）合成一段；与一段部分重叠的其他规则匹配（包括什么都不改、只为阻止连字的规则）把这段扩大到自己的上下文，直到不再变化。渲染器把一段当作一串文字重新排版，上下文都在段里才得到同样的字形；只涉及一个字符的替换不用合并。重写时用 harfbuzzjs 对照过更纱、Cascadia Code、Consolas、Fira Code、JetBrains Mono 与一个没有 `GSUB` 的字体，各 8 万行文字：替换后的字形逐个相同，每一段（以及段外的每个字符）单独排版的结果都与整行排版时一样。
+- **代价**：后端读表与编译几毫秒，前端建表约 1 ms、占几百 KB。分组结果按文字缓存（10 万字符），内容不变的重绘不再计算；大量新输出时每帧（50×200）约 1–15 ms，视字体与内容而定，常用序列约 2 ms。
 
 ## 交互约定
 

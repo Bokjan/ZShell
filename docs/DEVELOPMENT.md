@@ -39,7 +39,7 @@ ZMODEM 的测试除了自己的收发互测，还与 lrzsz 的 `lsz` / `lrz` 对
 
 `cargo test` 中的 `catalog_covers_all_keys_in_sources` 会检查后端源码用到的消息 key 都在英语语言包中（见 [I18N.md](I18N.md)）。
 
-`cargo test` 中的 `bindings_are_up_to_date` 检查 `src/ipc/bindings.ts` 与 Rust 类型一致；改了与前端交换的类型、错误码或 `bindings.rs` 里列出的常量后，在 `src-tauri/` 下重新生成并提交：
+`cargo test` 中的 `bindings_are_up_to_date` 检查 `src/ipc/bindings.ts` 与 Rust 类型一致；改了与前端交换的类型、错误码或 `bindings.rs` 里列出的常量后，在 `src-tauri/` 下重新生成并提交。同一条命令也重新生成 `src/lib/fontLigatures.fixture.json`（`bindings_fixture_is_up_to_date` 检查）：后端为测试编出的一个字体的连字规则，前端的测试拿它检查两边对规则格式的理解一致，改了 `fonts/rules.rs` 的格式后要一起更新：
 
 ```bash
 UPDATE_BINDINGS=1 cargo test bindings
@@ -189,6 +189,6 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 - Creative Commons 只接受 CC-BY 与 CC0：CC-BY 要求的署名与许可证链接由声明满足，CC0 没有条件。CC-BY-SA 要求改编作品沿用同一许可证，CC-BY-NC 禁止商用，CC-BY-ND 禁止演绎，都不接受。OFL-1.1 的字体可以随应用分发，只是不能单独出售。
 - 带例外的表达式（`Apache-2.0 WITH LLVM-exception`）还没有加进列表：`generate-licenses.mjs` 解析表达式时不认识 `WITH`，cargo-about 的写法也要先确认。遇到时再处理（例外只增加许可，判断看前面的许可证）。
 
-**第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.json`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置「关于」里的许可证对话框读取显示。Rust 依赖用 `cargo-about`（配置 `src-tauri/about.toml`，覆盖五个发布目标，不含 build / dev 依赖），前端只收运行时依赖（`pnpm licenses list --prod`），以及从其他项目拷进 `src/` 的代码（脚本里的 `VENDORED`，目录里放着该项目的许可证文件，如 `src/lib/fontLigatures/`）。本地需 `cargo install --locked cargo-about --features cli`，未安装时只生成前端部分，设置里注明；CI 中未安装则报错，release workflow 打包前生成。cargo-about 认不出许可证文件的 crate 在 `about.toml` 里按校验和 `clarify`，Dependabot 升级后文件变了会生成失败，更新校验和即可。
+**第三方许可证声明**：依赖的许可证要求随二进制附上其文本。`pnpm licenses:generate`（`scripts/generate-licenses.mjs`）生成 `public/third-party-licenses.json`（不进仓库），Vite 把它复制进前端产物、随 exe 内嵌，设置「关于」里的许可证对话框读取显示。Rust 依赖用 `cargo-about`（配置 `src-tauri/about.toml`，覆盖五个发布目标，不含 build / dev 依赖），前端只收运行时依赖（`pnpm licenses list --prod`）。本地需 `cargo install --locked cargo-about --features cli`，未安装时只生成前端部分，设置里注明；CI 中未安装则报错，release workflow 打包前生成。cargo-about 认不出许可证文件的 crate 在 `about.toml` 里按校验和 `clarify`，Dependabot 升级后文件变了会生成失败，更新校验和即可。
 
 **签名**：尚未签名。macOS 只做 ad-hoc 签名（`APPLE_SIGNING_IDENTITY=-`，保证 Apple Silicon 能运行），下载后需在"隐私与安全性"中放行或去掉 quarantine；Windows 未签名，SmartScreen 会提示。以后接入证书只需给 workflow 配 secret。

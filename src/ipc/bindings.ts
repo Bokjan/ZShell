@@ -387,18 +387,40 @@ algorithm: string,
 fingerprint: string | null, comment: string | null, };
 
 /**
- * A font's ligature rules: the font with only the tables they are found with (see
- * [`sfnt::ligature_font`]), a few hundred KB.
+ * The substitutions of a terminal's font (see the module).
  */
-export type LigatureFont = { 
+export type LigatureRules = { 
 /**
  * The family found, one of those asked for.
  */
 family: string, 
 /**
- * The font file, in base64.
+ * The number of glyphs the rules tell apart, which also stands for any other.
  */
-data: string, };
+glyphCount: number, 
+/**
+ * The glyphs of characters, by runs of characters in triples: the first, the last, and the
+ * first's glyph, which the others' follow on from (unless it is `glyph_count`, the glyph of
+ * all). Only where a glyph the rules tell apart, or `glyph_count` for `missing_glyph`, is.
+ */
+chars: Array<number>, 
+/**
+ * The glyph of characters not in `chars` (that of glyph 0, which characters the font lacks get).
+ */
+missingGlyph: number, 
+/**
+ * HarfBuzz's properties of each glyph (and of `glyph_count`), as far as lookup flags look
+ * at them; empty if none does.
+ */
+props: Array<number>, 
+/**
+ * Where each lookup starts in `data`.
+ */
+lookups: Array<number>, 
+/**
+ * The lookups applied, in order.
+ */
+applied: Array<number>, data: Array<number>, };
 
 /**
  * Which character sequences the terminal draws together, so that a font with programming
@@ -1113,7 +1135,7 @@ export type Commands = {
   system_monospace_font: { args: Record<string, never>; result: string | null };
   tab_drag_end: { args: { id: string; dropped: boolean; outside: boolean }; result: DropTarget | null };
   tab_drag_move: { args: { id: string; outside: boolean }; result: DropTarget };
-  terminal_ligature_font: { args: { families: string[] }; result: LigatureFont | null };
+  terminal_ligature_rules: { args: { families: string[] }; result: LigatureRules | null };
   transfer_cancel: { args: { transferId: string }; result: void };
   tree_move: { args: { item: TreeItem; parent?: string | null; before?: TreeItem | null }; result: void };
   tree_order: { args: Record<string, never>; result: TreeItem[] };
@@ -1174,6 +1196,12 @@ export const FONT_SIZE_MAX = 48;
 
 /** The most lines a terminal keeps above the screen. */
 export const SCROLLBACK_MAX = 100000;
+
+/** The kinds of subtables in a font's ligature rules (see `fonts/rules.rs`). */
+export const LIGATURE_SUBTABLES = { classRules: 5, coverageRules: 6, glyphRules: 4, ligature: 3, multiple: 2, reverse: 7, single: 1 } as const;
+
+/** No table, glyph or lookup in a font's ligature rules. */
+export const LIGATURE_NONE = 4294967295;
 
 /** Processed terminal output is acknowledged in batches of this many bytes (see `session/flow.rs`). */
 export const ACK_BATCH = 262144;

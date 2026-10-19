@@ -363,6 +363,12 @@ mod tests {
             ("The largest terminal font size, in the settings and in sessions.", "FONT_SIZE_MAX", js(model::FONT_SIZE_MAX)),
             ("The most lines a terminal keeps above the screen.", "SCROLLBACK_MAX", js(model::SCROLLBACK_MAX)),
             (
+                "The kinds of subtables in a font's ligature rules (see `fonts/rules.rs`).",
+                "LIGATURE_SUBTABLES",
+                format!("{} as const", js(fonts::rules::KINDS)),
+            ),
+            ("No table, glyph or lookup in a font's ligature rules.", "LIGATURE_NONE", js(fonts::rules::NONE)),
+            (
                 "Processed terminal output is acknowledged in batches of this many bytes (see `session/flow.rs`).",
                 "ACK_BATCH",
                 js(session::ACK_BATCH),
@@ -411,7 +417,7 @@ mod tests {
         visitor.visit::<menu::Section>();
         visitor.visit::<update::Status>();
         visitor.visit::<i18n::Locales>();
-        visitor.visit::<fonts::LigatureFont>();
+        visitor.visit::<fonts::LigatureRules>();
         visitor.visit::<tab_drag::Rect>();
         visitor.visit::<tab_drag::Point>();
         visitor.visit::<tab_drag::DropTarget>();
