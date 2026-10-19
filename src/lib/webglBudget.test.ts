@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { beyondBudget } from "./webglBudget";
+import { beyondBudget, withinBudget } from "./webglBudget";
 
 const terminal = (name: string, used: number) => ({ name, used });
 
@@ -20,5 +20,18 @@ describe("beyondBudget", () => {
     const drawing = [terminal("a", 1), terminal("b", 2)];
     beyondBudget(drawing, 1);
     expect(drawing.map((t) => t.name)).toEqual(["a", "b"]);
+  });
+});
+
+describe("withinBudget", () => {
+  it("gives contexts back to the most recently used, as many as there is room for", () => {
+    const evicted = [terminal("a", 5), terminal("b", 1), terminal("c", 9)];
+    expect(withinBudget(evicted, 10, 12).map((t) => t.name)).toEqual(["c", "a"]);
+    expect(withinBudget(evicted, 0, 12).map((t) => t.name)).toEqual(["c", "a", "b"]);
+  });
+
+  it("gives none back while the budget is full", () => {
+    expect(withinBudget([terminal("a", 1)], 12, 12)).toEqual([]);
+    expect(withinBudget([terminal("a", 1)], 14, 12)).toEqual([]);
   });
 });

@@ -516,7 +516,8 @@ export function TerminalView({
   // The web view allows only so many WebGL contexts (about 16), and drops the oldest beyond
   // that: terminals of hidden tabs release theirs (drawing with the DOM renderer meanwhile)
   // and create one again when shown. A lost context is replaced the next time too. Past a
-  // budget, the visible terminals used least recently give theirs up too (`lib/webglBudget`).
+  // budget, the visible terminals used least recently give theirs up too, until focused or
+  // there is room again (`lib/webglBudget`).
   useEffect(() => {
     const term = termRef.current;
     if (!term || !visible) return;

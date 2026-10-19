@@ -1,7 +1,7 @@
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { Terminal } from "@xterm/xterm";
 
-import { beyondBudget, WEBGL_BUDGET } from "./webglBudget";
+import { beyondBudget, WEBGL_BUDGET, withinBudget } from "./webglBudget";
 
 /**
  * The pixels the glyph atlases may hold in all, about 64 MB, before the terminals drawing
@@ -26,8 +26,9 @@ interface Renderer {
   drawing(): boolean;
   load(): void;
   release(): void;
-  /** Releases the context to make room for another terminal's, until this one is focused. */
+  /** Releases the context to make room for another terminal's, until this one is focused or there is room again. */
   evict(): void;
+  isEvicted(): boolean;
 }
 
 /** How long after losing its context a terminal tries WebGL again, and how many times. */
@@ -59,6 +60,20 @@ function checkAtlases() {
     drawing.forEach((renderer) => renderer.release());
     drawing.forEach((renderer) => renderer.load());
   }, 0);
+}
+
+/**
+ * Gives the terminals that made room for others their contexts back, the most recently used
+ * first, while there is room again (a pane closed, say).
+ */
+function restoreEvicted() {
+  const all = [...renderers];
+  const drawing = all.filter((renderer) => renderer.drawing()).length;
+  withinBudget(
+    all.filter((renderer) => renderer.isEvicted()),
+    drawing,
+    WEBGL_BUDGET,
+  ).forEach((renderer) => renderer.load());
 }
 
 /**
@@ -178,8 +193,10 @@ export function drawWithWebgl(term: Terminal): () => void {
       renderer.release();
       evicted = true;
     },
+    isEvicted: () => evicted,
   };
-  // A terminal drawing with the DOM renderer to make room takes a context again once focused.
+  // A terminal drawing with the DOM renderer to make room takes a context again once focused
+  // (or once there is room, see `restoreEvicted`).
   const focused = () => {
     renderer.used = ++clock;
     if (evicted) renderer.load();
@@ -199,7 +216,11 @@ export function drawWithWebgl(term: Terminal): () => void {
       pendingReleases.delete(term);
       renderer.release();
     };
-    const timer = setTimeout(release, 0);
+    // Not when the terminal is shown again at once: it takes the room back itself.
+    const timer = setTimeout(() => {
+      release();
+      restoreEvicted();
+    }, 0);
     pendingReleases.set(term, release);
   };
 }
