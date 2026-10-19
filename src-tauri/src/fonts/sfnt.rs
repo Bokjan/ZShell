@@ -51,9 +51,13 @@ pub fn read_tables(file: &mut (impl Read + Seek), index: u32, tags: &[Tag]) -> i
         }
         let offset = u32::from_be_bytes(record[8..12].try_into().unwrap());
         let length = u32::from_be_bytes(record[12..16].try_into().unwrap());
-        let mut data = vec![0; length as usize];
+        // Read as far as the file goes, not into a buffer of the length a broken file gives.
+        let mut data = Vec::new();
         file.seek(SeekFrom::Start(u64::from(offset)))?;
-        file.read_exact(&mut data)?;
+        file.by_ref().take(u64::from(length)).read_to_end(&mut data)?;
+        if data.len() != length as usize {
+            return Err(invalid("a table past the end of the file"));
+        }
         tables.push((tag, data));
     }
     Ok(tables)
@@ -124,5 +128,9 @@ mod tests {
         let single = font(&[(*b"cmap", vec![1])]);
         assert!(read_tables(&mut Cursor::new(&single), 1, &[*b"cmap"]).is_err());
         assert!(read_tables(&mut Cursor::new(b"not a font"), 0, &[*b"cmap"]).is_err());
+        // A table longer than the file.
+        let mut long = font(&[(*b"cmap", vec![1, 2])]);
+        long[12 + 12..12 + 16].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(read_tables(&mut Cursor::new(&long), 0, &[*b"cmap"]).is_err());
     }
 }

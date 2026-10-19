@@ -640,7 +640,7 @@
       "rules": "常用序列",
       "full": "按字体规则"
     },
-    "ligaturesHint": "使用带编程连字的字体（如 Fira Code、JetBrains Mono、Iosevka）时，-> 和 != 这样的字符序列会画成一个符号。“常用序列”只连接一份固定的常用运算符列表；“按字体规则”遵循字体自己的规则，字体较大时会多占一些内存。",
+    "ligaturesHint": "使用带编程连字的字体（如 Fira Code、JetBrains Mono、Iosevka）时，-> 和 != 这样的字符序列会画成一个符号。“常用序列”只连接一份固定的常用运算符列表；“按字体规则”遵循字体自己的规则，读不到字体时按常用序列。",
     "cursorStyle": "光标",
     "cursorStyles": {
       "block": "方块",

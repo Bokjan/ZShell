@@ -13,6 +13,11 @@ import { LIGATURE_NONE as NONE, LIGATURE_SUBTABLES as KIND, type LigatureRules }
  * than one character gives a range, from the first glyph of its rule's backtrack to the last
  * of its lookahead; any rule found over part of a range, changing glyphs or not (one that
  * keeps a ligature from forming), widens it to its own context, until none does.
+ *
+ * Two steps of HarfBuzz's are left out, as they only concern accented letters, not the
+ * operators programming ligatures join: the normalization before the substitutions (`e` and
+ * U+0301 become `é` where the font has it), and the glyph classes it guesses for a font whose
+ * `GDEF` has none (fonts with ligatures have them, and most of their lookups skip no glyphs).
  */
 
 export interface FontLigatures {
@@ -379,6 +384,12 @@ export function fontLigatures(rules: LigatureRules): FontLigatures {
         const sequence = data[subtable + 3 + index]!;
         const count = data[sequence]!;
         const [start, end] = [starts[at]!, ends[at]!];
+        // One glyph for one moves none.
+        if (count === 1) {
+          replace(at, data[sequence + 1]!);
+          if (depth === 0) addSpan(start, end, glyph !== glyphs[at]);
+          return at + 1;
+        }
         changes++;
         if (depth === 0) addSpan(start, end, true);
         moved = true;
@@ -422,7 +433,8 @@ export function fontLigatures(rules: LigatureRules): FontLigatures {
           moved = true;
           glyphs[at] = data[ligature]!;
           for (let c = components; c >= 1; c--) remove(input[c]!);
-          if (depth === 0) addSpan(start, end, true);
+          // Also when a rule applied it: its components may reach past the rule's context.
+          addSpan(start, end, true);
           return last - components + 1;
         }
         return -1;

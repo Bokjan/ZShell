@@ -168,7 +168,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 ] }
 block2 = "0.6"
 # A font's tables for its ligature rules (already in the tree through tauri).
-objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFData", "CFDictionary", "CFString"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFData", "CFDictionary", "CFSet", "CFString"] }
 objc2-core-text = { version = "0.3", default-features = false, features = ["std", "CTFont", "CTFontDescriptor"] }
 # The app lock: Touch ID or the login password.
 objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }

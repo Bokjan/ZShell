@@ -659,7 +659,7 @@
       "rules": "Common sequences",
       "full": "From the font"
     },
-    "ligaturesHint": "With a font that has programming ligatures, such as Fira Code, JetBrains Mono or Iosevka, sequences such as -> and != are drawn as one symbol. Common sequences joins a fixed list of the usual operators; From the font follows the font's own rules, which takes more memory with large fonts.",
+    "ligaturesHint": "With a font that has programming ligatures, such as Fira Code, JetBrains Mono or Iosevka, sequences such as -> and != are drawn as one symbol. Common sequences joins a fixed list of the usual operators; From the font follows the font's own rules, or the common sequences where the font can't be read.",
     "cursorStyle": "Cursor",
     "cursorStyles": {
       "block": "Block",

@@ -15,7 +15,9 @@ const FIRST_FEATURES: [[u8; 4]; 1] = [*b"rvrn"];
 /// The features applied after them: those that ligatures and contextual forms come from,
 /// those always applied before them (`ccmp`, `locl`), and the left-to-right forms.
 const FEATURES: [[u8; 4]; 9] = [*b"ltra", *b"ltrm", *b"ccmp", *b"locl", *b"rlig", *b"rclt", *b"calt", *b"clig", *b"liga"];
-/// The scripts tried, as HarfBuzz does for Latin text.
+/// The scripts tried, as HarfBuzz does for Latin text. It takes `DFLT` first for punctuation
+/// alone (a joined `->` that WebGL draws apart), but fonts with ligatures list the same
+/// features under both.
 const SCRIPTS: [[u8; 4]; 3] = [*b"latn", *b"DFLT", *b"dflt"];
 
 /// Glyphs by ranges of ids, sorted, each with a value: a coverage index, or a class.
@@ -178,7 +180,9 @@ fn read_substitutions(gsub: Data) -> Option<Substitutions> {
 }
 
 /// The language system used of the script `tag`: a `dflt` one if listed, as HarfBuzz looks for,
-/// or the default.
+/// or the default. Not the page's language: the DOM renderer shapes with the document's and
+/// WebGL's canvas with its own, and in the interface's languages fonts with ligatures differ
+/// at most by `locl` forms of single letters (Sarasa's for Japanese and Chinese).
 fn script<'a>(scripts: Data<'a>, tag: &[u8; 4]) -> Option<Data<'a>> {
     let count = usize::from(scripts.u16(0)?);
     let script = (0..count).find(|&i| scripts.tag(2 + i * 6) == Some(*tag)).and_then(|i| scripts.offset16(2 + i * 6 + 4))?;

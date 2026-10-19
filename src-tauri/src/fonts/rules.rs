@@ -375,7 +375,7 @@ mod tests {
     use crate::fonts::testing::{chain, classes, coverage, gsub, ligatures, lookup, single, Table};
 
     /// The characters of the font made up below, and their glyphs.
-    const CHARS: [(u32, u16); 11] = [
+    const CHARS: [(u32, u16); 13] = [
         ('-' as u32, 1),
         ('<' as u32, 3),
         ('=' as u32, 4),
@@ -386,6 +386,8 @@ mod tests {
         ('q' as u32, 16),
         ('w' as u32, 10),
         ('x' as u32, 9),
+        ('y' as u32, 18),
+        ('z' as u32, 19),
         (0x301, 8),
     ];
 
@@ -397,7 +399,8 @@ mod tests {
     /// - `a` before `w` becomes 14, from the end of the text;
     /// - `<` before `=` becomes 15 (by classes);
     /// - `q` becomes two glyphs (16, 17);
-    /// - an arrow before `=` (`->=`) is a rule that changes nothing.
+    /// - an arrow before `=` (`->=`) is a rule that changes nothing;
+    /// - `y` alone is a rule that ligates it with the `z` after it (20), past the rule's input.
     fn font() -> (Substitutions, GlyphClasses) {
         let ignore = chain(&[&[1]], &[&[1], &[2]], &[], &[]);
         let arrow = chain(&[], &[&[1], &[2]], &[], &[(0, 3), (1, 4)]);
@@ -421,8 +424,10 @@ mod tests {
             lookup(1, 0, vec![single(&[(3, 15)])]),
             lookup(2, 0, vec![multiple]),
             lookup(6, 0, vec![chain(&[], &[&[12]], &[&[4]], &[])]),
+            lookup(6, 0, vec![chain(&[], &[&[18]], &[], &[(0, 10)])]),
+            lookup(4, 0, vec![ligatures(18, &[(20, &[19])])]),
         ];
-        let table = gsub(&[(b"ccmp", &[7]), (b"liga", &[1]), (b"calt", &[0, 2, 5, 8])], lookups);
+        let table = gsub(&[(b"ccmp", &[7]), (b"liga", &[1]), (b"calt", &[0, 2, 5, 8, 9])], lookups);
         let classes = GlyphClasses { classes: gsub::Ranges(vec![GlyphRange { start: 8, end: 8, value: 3 }]), ..Default::default() };
         (gsub::substitutions(&table), classes)
     }
@@ -432,13 +437,13 @@ mod tests {
         let (substitutions, classes) = font();
         let (rules, ids) = compile_keeping("Test", &CHARS, &substitutions, &classes, false);
         // Not 9 (`x`), nor the glyphs only substituted, nor glyph 0.
-        assert_eq!(ids, [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]);
-        assert_eq!((rules.glyph_count, rules.missing_glyph), (11, 11));
+        assert_eq!(ids, [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 18, 19]);
+        assert_eq!((rules.glyph_count, rules.missing_glyph), (13, 13));
         // In runs: `-`, then `<` and `=` (glyphs 3 and 4) together, but not `>` (glyph 2).
         assert_eq!(&rules.chars[..9], [0x2d, 0x2d, 0, 0x3c, 0x3d, 2, 0x3e, 0x3e, 1]);
         assert_eq!(&rules.chars[9..18], [0x61, 0x61, 6, 0x66, 0x66, 4, 0x69, 0x69, 5]);
         assert!(!rules.chars.chunks(3).any(|run| run[0] == 'x' as u32));
-        assert_eq!(rules.applied, [0, 1, 2, 5, 7, 8]);
+        assert_eq!(rules.applied, [0, 1, 2, 5, 7, 8, 9]);
     }
 
     #[test]

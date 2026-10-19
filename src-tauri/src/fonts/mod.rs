@@ -46,17 +46,27 @@ const GENERIC_FAMILIES: [&str; 13] = [
     "fangsong",
 ];
 
+/// A family as the system's font APIs find it, when they can tell.
+pub enum Found {
+    /// Not installed (under that name): the web view goes on to the next family of the list.
+    Missing,
+    /// Installed, with those of the tables asked for that its regular face has.
+    Tables(Vec<(sfnt::Tag, Vec<u8>)>),
+}
+
 /// The substitutions of the first of `families` (a font list, in order) that is installed,
 /// as the web view picks the font it draws with: its regular face, whose rules the others
-/// share. `None` when none is, or when a generic family comes first, or when the font has no
-/// characters this can read.
+/// share. `None` when none is, or when a generic family comes first, or when the first
+/// installed one can't be read or has no characters this can read: the next one's rules
+/// would be those of a font the terminal isn't drawn with.
 pub fn ligature_rules(families: &[String]) -> Option<LigatureRules> {
     for family in families.iter().map(|family| family.trim()).filter(|family| !family.is_empty()) {
         if GENERIC_FAMILIES.iter().any(|generic| generic.eq_ignore_ascii_case(family)) {
             return None;
         }
-        if let Some(tables) = platform::tables(family, &sfnt::TABLES) {
-            return rules_of(family, &tables);
+        match platform::tables(family, &sfnt::TABLES)? {
+            Found::Missing => continue,
+            Found::Tables(tables) => return rules_of(family, &tables),
         }
     }
     None
@@ -72,7 +82,8 @@ fn rules_of(family: &str, tables: &[(sfnt::Tag, Vec<u8>)]) -> Option<LigatureRul
     Some(rules::compile(family, &chars, &gsub::substitutions(table(b"GSUB")), &gsub::glyph_classes(table(b"GDEF"))))
 }
 
-#[cfg(test)]
+// Fonts are found by name only on Windows and macOS: Linux has no font every system has.
+#[cfg(all(test, any(windows, target_os = "macos")))]
 mod tests {
     use super::*;
 
@@ -82,18 +93,27 @@ mod tests {
     #[cfg(target_os = "macos")]
     const INSTALLED: &str = "Menlo";
 
-    #[cfg(any(windows, target_os = "macos"))]
+    fn families(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
     #[test]
     fn finds_the_first_installed_family() {
-        let families = |names: &[&str]| names.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+        // Its rules may be none (Menlo has no substitutions).
         let rules = ligature_rules(&families(&["No Such Font ZShell", INSTALLED, "monospace"])).unwrap();
         assert_eq!(rules.family, INSTALLED);
-        assert!(!rules.chars.is_empty());
         // DirectWrite matches names ignoring case, as CSS does.
         #[cfg(windows)]
         assert!(ligature_rules(&families(&[&INSTALLED.to_uppercase()])).is_some());
         // Which font a generic family is isn't known.
         assert!(ligature_rules(&families(&["monospace", INSTALLED])).is_none());
         assert!(ligature_rules(&families(&["No Such Font ZShell"])).is_none());
+    }
+
+    /// WebKit also finds a face by its PostScript name.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn finds_a_face_by_its_postscript_name() {
+        assert!(ligature_rules(&families(&["Menlo-Regular", "No Such Font ZShell"])).is_some());
     }
 }

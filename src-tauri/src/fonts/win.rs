@@ -10,10 +10,11 @@ use windows::Win32::Graphics::DirectWrite::{
 };
 
 use super::sfnt::Tag;
+use super::Found;
 
 /// The tables among `tags` of `family`'s regular face (or the nearest one), if the family is
-/// installed under that name (in any language).
-pub fn tables(family: &str, tags: &[Tag]) -> Option<Vec<(Tag, Vec<u8>)>> {
+/// installed under that name (in any language), as Chromium finds it; `None` if DirectWrite fails.
+pub fn tables(family: &str, tags: &[Tag]) -> Option<Found> {
     // SAFETY: plain COM calls; the out pointers are valid for each call.
     let face = unsafe {
         let factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()?;
@@ -23,7 +24,7 @@ pub fn tables(family: &str, tags: &[Tag]) -> Option<Vec<(Tag, Vec<u8>)>> {
         let (mut index, mut exists) = (0, BOOL(0));
         collection.FindFamilyName(&HSTRING::from(family), &mut index, &mut exists).ok()?;
         if !exists.as_bool() {
-            return None;
+            return Some(Found::Missing);
         }
         let font = collection
             .GetFontFamily(index)
@@ -45,5 +46,5 @@ pub fn tables(family: &str, tags: &[Tag]) -> Option<Vec<(Tag, Vec<u8>)>> {
             }
         }
     }
-    Some(tables)
+    Some(Found::Tables(tables))
 }

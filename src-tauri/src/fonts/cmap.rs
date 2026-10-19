@@ -35,6 +35,9 @@ pub fn mappings(cmap: &[u8]) -> Vec<(u32, u16)> {
     all
 }
 
+/// No more characters than Unicode has: a broken subtable may list ranges over and over.
+const MAX_MAPPINGS: usize = 0x11_0000;
+
 /// Adds the mappings of a subtable; one of an unsupported format, or cut short, adds those read.
 fn read_subtable(table: Data, out: &mut Vec<(u32, u16)>) -> Option<()> {
     match table.u16(0)? {
@@ -47,10 +50,13 @@ fn read_subtable(table: Data, out: &mut Vec<(u32, u16)>) -> Option<()> {
             let segments = usize::from(table.u16(6)? / 2);
             let (ends, starts, deltas, range_offsets) = (14, 16 + segments * 2, 16 + segments * 4, 16 + segments * 6);
             for segment in 0..segments {
+                if out.len() >= MAX_MAPPINGS {
+                    break;
+                }
                 let (start, end) = (table.u16(starts + segment * 2)?, table.u16(ends + segment * 2)?);
                 let delta = table.u16(deltas + segment * 2)?;
                 let range_offset = usize::from(table.u16(range_offsets + segment * 2)?);
-                for c in start..=end.max(start) {
+                for c in start..=end {
                     let glyph = if range_offset == 0 {
                         c.wrapping_add(delta)
                     } else {
@@ -76,8 +82,11 @@ fn read_subtable(table: Data, out: &mut Vec<(u32, u16)>) -> Option<()> {
             for group in 0..groups {
                 let at = 16 + group * 12;
                 let (start, end, glyph) = (table.u32(at)?, table.u32(at + 4)?.min(0x10_FFFF), table.u32(at + 8)?);
+                if out.len() + (end.saturating_sub(start) as usize) >= MAX_MAPPINGS {
+                    break;
+                }
                 for c in start..=end {
-                    let glyph = if format == 12 { glyph + (c - start) } else { glyph };
+                    let glyph = if format == 12 { glyph.checked_add(c - start)? } else { glyph };
                     out.push((c, u16::try_from(glyph).ok()?));
                 }
             }
@@ -179,6 +188,10 @@ mod tests {
         assert!(mappings(&cmap(&[(1, 0, vec![0; 262])])).is_empty());
         let cut = format12(&[(0x41, 0x41, 5), (0x42, 0x42, 6)]);
         assert_eq!(mappings(&cmap(&[(3, 10, cut[..cut.len() - 4].to_vec())])), [(0x41, 5)]);
+        // Glyph ids past the last, then the same characters over and over (read only so far).
+        let past = format12(&[(0x41, 0x42, 7), (0x50, 0x51, u32::MAX)]);
+        assert_eq!(mappings(&cmap(&[(3, 10, past)])), [(0x41, 7), (0x42, 8)]);
+        assert_eq!(mappings(&cmap(&[(3, 10, format12(&[(0, 0xFFFE, 1); 100]))])).len(), 0xFFFF);
         assert!(mappings(b"").is_empty());
     }
 }

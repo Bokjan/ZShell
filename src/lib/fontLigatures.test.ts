@@ -15,9 +15,9 @@ function glyphs(text: string): number[] {
 
 describe("fontLigatures", () => {
   it("joins what a rule changed with its context", () => {
-    expect(font.ranges("x->y")).toEqual([[1, 3]]);
+    expect(font.ranges("x->b")).toEqual([[1, 3]]);
     // The arrow's start is only substituted; its end is matched by another rule.
-    expect(glyphs("x->y")).toEqual([-1, -1, 12, -1]);
+    expect(glyphs("x->b")).toEqual([-1, -1, 12, -1]);
     expect(font.ranges("a <= b")).toEqual([[2, 4]]);
     expect(font.ranges("aaw")).toEqual([[1, 3]]);
     expect(glyphs("aaw")).toEqual([7, -1, 10]);
@@ -38,6 +38,12 @@ describe("fontLigatures", () => {
     expect(font.ranges("fi")).toEqual([[0, 2]]);
     expect(font.shape("f́i")).toEqual({ glyphs: [font.shape("fi").glyphs[0], fixture.glyphs.indexOf(8)], clusters: [0, 0] });
     expect(font.ranges("f́i")).toEqual([[0, 3]]);
+  });
+
+  it("joins a ligature a rule applied up to its last component, past the rule's context", () => {
+    expect(font.shape("yz").glyphs).toHaveLength(1);
+    expect(font.ranges("yz")).toEqual([[0, 2]]);
+    expect(font.ranges("y z")).toEqual([]);
   });
 
   it("gives each glyph of a multiple substitution the character's place, and joins nothing for one character", () => {
