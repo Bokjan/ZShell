@@ -7,20 +7,31 @@ use std::collections::VecDeque;
 use std::io::{self, ErrorKind};
 use std::os::fd::AsRawFd;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use serialport::{SerialPort, TTYPort};
 use tokio::io::unix::AsyncFd;
 use tokio::time::Sleep;
 
-use super::{Output, BREAK_DURATION, READ_BUFFER};
+use super::{Hold, Output, BREAK_DURATION, READ_BUFFER};
 use crate::error::Error;
 use crate::fd::{read_on, write_fd};
 use crate::session::{Outcome, SessionInput, TermIo};
+
+/// The port and our hold on it, let go of only once the port is closed (fields drop in
+/// order): closing a tab aborts its task, which is dropped on some worker thread maybe after
+/// a reconnecting session has looked whether the device is free.
+struct Held {
+    port: AsyncFd<TTYPort>,
+    _hold: Arc<Hold>,
+}
 
 /// Bridges the port to the terminal until the device fails or the tab closes. Input the
 /// device takes no more of (its flow control holds the line) waits here, so keystrokes are
 /// still read: Ctrl+C cancels a ZMODEM upload that the line stalls (see [`TermIo::recv`]).
 pub(super) async fn bridge(port: AsyncFd<TTYPort>, device: &str, io: &mut TermIo) -> Outcome {
+    let held = Held { port, _hold: Hold::new(device) };
+    let port = &held.port;
     let lost = |detail: &dyn std::fmt::Display| Outcome::Lost(Error::new("serial.disconnected").param("device", device).detail(detail));
     let sink = io.sink();
     let flow = sink.flow();

@@ -41,13 +41,15 @@ const INPUT_QUEUE: usize = 16;
 /// How long opening a device waits for a closed session of ours to let go of it.
 const RELEASE_WAIT: Duration = Duration::from_secs(1);
 
-/// The devices our sessions' threads still hold, once per session. A closed session's
-/// threads let go of the port within `READ_TIMEOUT` (a session in its task, as it ends), and
-/// only one handle can have a port open (exclusive on macOS, always on Windows), so
-/// reconnecting, which opens the device again at once, would otherwise find it busy.
+/// The devices our sessions still hold, once per session. A closed session's threads let go
+/// of the port within `READ_TIMEOUT` (a session in its task once the task is dropped, which
+/// can come a moment after it is aborted), and only one handle can have a port open
+/// (exclusive on macOS, always on Windows), so reconnecting, which opens the device again at
+/// once, would otherwise find it busy.
 static HELD: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// A session's hold on its device, shared by its reader and writer threads.
+/// A session's hold on its device, shared by its reader and writer threads (or kept with the
+/// port by its task, see `unix::Held`).
 struct Hold(String);
 
 impl Hold {
