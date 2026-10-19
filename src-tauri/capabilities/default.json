@@ -27,6 +27,8 @@
     "core:window:allow-set-fullscreen",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
-    "notification:default"
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify"
   ]
 }
