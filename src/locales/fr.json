@@ -675,9 +675,10 @@
     "ligatures": "Ligatures",
     "ligatureModes": {
       "off": "Désactivées",
-      "rules": "Séquences courantes"
+      "rules": "Séquences courantes",
+      "full": "Selon la police"
     },
-    "ligaturesHint": "Avec une police dotée de ligatures de programmation, comme Fira Code, JetBrains Mono ou Iosevka, les séquences comme -> et != sont dessinées en un seul symbole. « Séquences courantes » relie une liste fixe d’opérateurs usuels.",
+    "ligaturesHint": "Avec une police dotée de ligatures de programmation, comme Fira Code, JetBrains Mono ou Iosevka, les séquences comme -> et != sont dessinées en un seul symbole. « Séquences courantes » relie une liste fixe d’opérateurs usuels ; « Selon la police » suit les règles de la police, ce qui demande plus de mémoire avec les grandes polices.",
     "cursorStyle": "Curseur",
     "cursorStyles": {
       "block": "Bloc",

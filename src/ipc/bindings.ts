@@ -387,10 +387,24 @@ algorithm: string,
 fingerprint: string | null, comment: string | null, };
 
 /**
+ * A font's ligature rules: the font with only the tables they are found with (see
+ * [`sfnt::ligature_font`]), a few hundred KB.
+ */
+export type LigatureFont = { 
+/**
+ * The family found, one of those asked for.
+ */
+family: string, 
+/**
+ * The font file, in base64.
+ */
+data: string, };
+
+/**
  * Which character sequences the terminal draws together, so that a font with programming
  * ligatures draws them as one (the font still decides how they look).
  */
-export type Ligatures = "off" | "rules";
+export type Ligatures = "off" | "rules" | "full";
 
 export type Listing = { 
 /**
@@ -1099,6 +1113,7 @@ export type Commands = {
   system_monospace_font: { args: Record<string, never>; result: string | null };
   tab_drag_end: { args: { id: string; dropped: boolean; outside: boolean }; result: DropTarget | null };
   tab_drag_move: { args: { id: string; outside: boolean }; result: DropTarget };
+  terminal_ligature_font: { args: { families: string[] }; result: LigatureFont | null };
   transfer_cancel: { args: { transferId: string }; result: void };
   tree_move: { args: { item: TreeItem; parent?: string | null; before?: TreeItem | null }; result: void };
   tree_order: { args: Record<string, never>; result: TreeItem[] };

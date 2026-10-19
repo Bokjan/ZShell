@@ -20,6 +20,7 @@ import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../hooks/settings";
 import { parseOsc7, shellDirs } from "../lib/shellDirs";
 import { useShortcuts } from "../hooks/shortcuts";
+import { fontLigatureRules } from "../lib/fontLigatureRules";
 import { ligatureRanges } from "../lib/ligatures";
 import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
@@ -513,15 +514,19 @@ export function TerminalView({
   const ligatures = settings.terminal.ligatures;
   useEffect(() => {
     if (!terminal || ligatures === "off") return;
-    const joiner = terminal.registerCharacterJoiner(ligatureRanges);
-    terminal.refresh(0, terminal.rows - 1);
+    const redraw = () => terminal.refresh(0, terminal.rows - 1);
+    // The font's own rules, once read (`lib/fontLigatureRules`).
+    const rules = ligatures === "full" ? fontLigatureRules(fontFamily, redraw) : null;
+    const joiner = terminal.registerCharacterJoiner(rules ? rules.ranges : ligatureRanges);
+    redraw();
     return () => {
+      rules?.release();
       // Not once the terminal is gone (unmounting), whose cleanup runs before this one.
       if (termRef.current !== terminal) return;
       terminal.deregisterCharacterJoiner(joiner);
-      terminal.refresh(0, terminal.rows - 1);
+      redraw();
     };
-  }, [terminal, ligatures]);
+  }, [terminal, ligatures, fontFamily]);
 
   // Before the page is painted, so that it doesn't show the terminal at its old size first.
   useLayoutEffect(() => {

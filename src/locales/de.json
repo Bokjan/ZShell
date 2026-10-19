@@ -656,9 +656,10 @@
     "ligatures": "Ligaturen",
     "ligatureModes": {
       "off": "Aus",
-      "rules": "Übliche Zeichenfolgen"
+      "rules": "Übliche Zeichenfolgen",
+      "full": "Nach Schriftart"
     },
-    "ligaturesHint": "Mit einer Schriftart mit Programmierligaturen wie Fira Code, JetBrains Mono oder Iosevka werden Zeichenfolgen wie -> und != als ein Symbol dargestellt. „Übliche Zeichenfolgen“ verbindet eine feste Liste gängiger Operatoren.",
+    "ligaturesHint": "Mit einer Schriftart mit Programmierligaturen wie Fira Code, JetBrains Mono oder Iosevka werden Zeichenfolgen wie -> und != als ein Symbol dargestellt. „Übliche Zeichenfolgen“ verbindet eine feste Liste gängiger Operatoren, „Nach Schriftart“ folgt den Regeln der Schriftart und braucht bei großen Schriftarten mehr Speicher.",
     "cursorStyle": "Cursor",
     "cursorStyles": {
       "block": "Block",

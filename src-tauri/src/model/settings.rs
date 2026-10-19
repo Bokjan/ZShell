@@ -144,6 +144,8 @@ pub enum Ligatures {
     Off,
     /// A fixed list of the usual ones (`->`, `!=`, `===`), whatever the font.
     Rules,
+    /// Those the font's own rules make (`crate::fonts`), or the list where its rules can't be read.
+    Full,
 }
 
 /// What right-clicking the terminal does.

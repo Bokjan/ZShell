@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { LIGATURE_SEQUENCES, ligatureRanges } from "./ligatures";
+import { LIGATURE_SEQUENCES, fontFamilies, ligatureRanges } from "./ligatures";
+
+describe("fontFamilies", () => {
+  it("lists the families in order, unquoted", () => {
+    expect(fontFamilies("Fira Code, \"Ubuntu Sans Mono\", 'Noto Mono', monospace")).toEqual([
+      "Fira Code",
+      "Ubuntu Sans Mono",
+      "Noto Mono",
+      "monospace",
+    ]);
+  });
+
+  it("keeps commas within quotes, and skips empty entries", () => {
+    expect(fontFamilies('Menlo, "A, B" ,, C')).toEqual(["Menlo", "A, B", "C"]);
+    expect(fontFamilies("")).toEqual([]);
+  });
+});
 
 describe("ligatureRanges", () => {
   it("finds each sequence on its own", () => {

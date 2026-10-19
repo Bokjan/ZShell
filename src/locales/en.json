@@ -656,9 +656,10 @@
     "ligatures": "Ligatures",
     "ligatureModes": {
       "off": "Off",
-      "rules": "Common sequences"
+      "rules": "Common sequences",
+      "full": "From the font"
     },
-    "ligaturesHint": "With a font that has programming ligatures, such as Fira Code, JetBrains Mono or Iosevka, sequences such as -> and != are drawn as one symbol. Common sequences joins a fixed list of the usual operators.",
+    "ligaturesHint": "With a font that has programming ligatures, such as Fira Code, JetBrains Mono or Iosevka, sequences such as -> and != are drawn as one symbol. Common sequences joins a fixed list of the usual operators; From the font follows the font's own rules, which takes more memory with large fonts.",
     "cursorStyle": "Cursor",
     "cursorStyles": {
       "block": "Block",

@@ -26,6 +26,7 @@
 | Telnet | 自己实现（协议与选项协商） |
 | 前端 | Vite + React + TypeScript |
 | 终端渲染 | `@xterm/xterm` + fit / webgl / unicode11 / web-links / search 插件 |
+| 终端连字 | `opentype.js` 与 xterm.js 连字插件的 GSUB 解析代码（`lib/fontLigatures/`）；字体文件经 DirectWrite / CoreText（`objc2-core-text`）/ `fontconfig` |
 
 ## 总体结构
 
@@ -67,6 +68,7 @@
 | `window/` | 窗口：按平台创建，新窗口要显示的内容与退出前询问各窗口（`inbox.rs`，不依赖窗口、可单独测试）；各平台文件（`macos.rs`、`win.rs`、`linux.rs`）提供同一组函数，`mod.rs` 经 `platform` 调用，缺了哪个都编译不过：macOS 的红绿灯，Windows 的窗口按钮与贴靠边框，Linux 的空标题栏、窗口菜单与主题 |
 | `desktop.rs` | Linux 桌面的设置（配色方案、等宽字体），经设置 portal 读取 |
 | `hidden_window.rs` | Windows：接收只发给顶层窗口的系统广播（设置变化、挂起、会话锁定）的隐藏窗口，应用锁与读屏检测共用 |
+| `fonts/` | 终端字体的连字规则：按字体名找到已安装的字体，取出连字要用的表（见「终端连字」） |
 | `screen_reader/` | 系统的读屏软件是否在运行，变化时通知各窗口（见「无障碍」） |
 | `tab_drag/` | 把标签拖出窗口：落点在哪个窗口、哪里（见「多窗口」） |
 | `menu.rs` | macOS 的原生菜单栏，由页面给出的结构构建（见「快捷键、菜单与侧栏」） |
@@ -209,6 +211,13 @@
 - **渲染时不读 React 之外的状态**：memo 之后，只有依赖变了才重新计算，靠「每次都重新渲染」才拿到新值的写法会显示旧值。外部 store 经 `useSyncExternalStore` 订阅（`hooks/stores.ts`）；随界面语言变化的文字（快捷键名称、大小与时间的格式、CJK 字体顺序）从 `useLocale` 取得，函数随语言变化，`locale.test.ts` 检查组件不直接引入 `lib/` 里的版本；会话注册表也是：它在窗格的会话与终端挂接、断开时通知订阅者，状态栏经 `useSyncExternalStore` 取流量表和终端尺寸。
 - **Compiler 尚不支持的语法**：带 `finally` 或没有 `catch` 的 `try`、`try` 里的条件表达式与 `?.` / `??`、`||=` / `??=`、对模块变量的 `++`，哪怕只出现在组件内的事件处理函数里，整个组件也会被跳过。`try` 语句经 `lib/attempt`（含义相同），其余写成显式形式或组件外的函数。
 - **热路径**：标签页 store 可能每秒变化多次（后台程序用 spinner 改标题），`App` 随之重新渲染。Compiler 按依赖 memo，依赖链上某处随标签页变化时（`openProfile` 用到 `useWindows` 的返回值，后者依赖 `tabs`），子组件仍会重新渲染，而且没有提示。所以不该随标签页重新渲染的组件，回调由 `useStableHandlers` 组成一个对象传入（侧栏的 `SidebarHandlers` 与应用菜单按钮 `AppMenuButton`、标签页的 `PaneHandlers`），会变的值另作 props，开发版的 `useStableProps` 在它们拿到新的函数或 handlers 对象时 `console.warn`。频繁重新渲染的列表（随标题变化的标签栏、随活动窗格变化的快速命令栏、随传输进度每秒十次的文件列表与传输列表），每一项拆成单独的组件（`TabItem`、`CommandButton`、`FileRow`、`TransferItem`）：Compiler 不 memo 循环里创建的元素与闭包，写在 `map` 里的每个元素每次都拿到新的 `onClick`，React 随之重设元素的 `onclick`；拆开后只有变了的那一项重新渲染。各项的回调同样经 handlers 对象，标签栏的由 `App` 传入（`TabBarHandlers`）。
+
+### 终端连字
+
+- **分组与字形**：xterm.js 按单元格绘制，连字要由 character joiner 告诉渲染器哪几格合在一起画；合并后的文字交给浏览器绘制，字形由字体自己的 `calt` 规则决定，joiner 只决定分组。WebGL 渲染器只合并 joiner 给出的格子；DOM 渲染器（隐藏的标签页、腾出 WebGL 的终端、没有 WebGL 时）把同一样式的一段整体交给浏览器，所以关闭时给终端加 `font-variant-ligatures: none`，开启时 DOM 渲染器显示字体的全部连字。光标所在的格子与部分选中的范围不合并。
+- **三档**（`terminal.ligatures`，默认关闭）：「常用序列」用固定的序列表（`lib/ligatures.ts`，Iosevka 的 `calt` 集合，与 VS Code 的默认值相同），不读字体；脱离上下文后与字体的规则可能不同（更纱单独的 `<=` 不连，按列表会连成 ≤）。「按字体规则」按字体的 GSUB 规则分组，读不到字体时退回常用序列。
+- **按字体规则的数据流**：xterm.js 的连字插件不直接用：它经 `queryLocalFonts` 读字体，macOS 与 Linux 的 WebView 没有这个接口，Windows 上读到的是整个 TTC（opentype.js 不支持），而且每个终端各解析一次（更纱每个终端约 190 MB）。改为后端 `fonts/` 按终端的字体列表找第一个已安装的字体（DirectWrite 能找到 Microsoft Store 安装的字体，它们不在任何字体文件夹里；CoreText；fontconfig 给出文件与 TTC 序号），只取 `cmap`、`GSUB` 与 opentype.js 必需的几张表，合成一个没有轮廓的字体（`sfnt.rs`，更纱 43 MB → 0.6 MB），经 `terminal_ligature_font` 以 base64 交给前端。前端 `lib/fontLigatureRules.ts` 用插件的解析代码（`lib/fontLigatures/`，MIT，列入第三方声明）以 opentype.js 的 `lowMemory` 解析，同一字体列表的终端共用一份，没有终端使用时释放（更纱约 13 MB、50 ms）。解析代码与 opentype.js 在单独的 chunk，只在选了这一档时加载。
+- **代价**：分组结果按文字缓存（10 万字符），内容不变的重绘不再计算；大量新输出时每帧（50×200）约 3–16 ms，常用序列约 2 ms。
 
 ## 交互约定
 

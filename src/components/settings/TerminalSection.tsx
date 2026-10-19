@@ -17,7 +17,7 @@ import { LiveTextField, NumberField, Section, Setting } from "./common";
 
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const SCREEN_READER_MODES: ScreenReaderMode[] = ["auto", "on", "off"];
-const LIGATURE_MODES: Ligatures[] = ["off", "rules"];
+const LIGATURE_MODES: Ligatures[] = ["off", "rules", "full"];
 
 /** The terminals: color scheme, font, ligatures, cursor, scrollback, screen readers and the bell. */
 export function TerminalSection() {

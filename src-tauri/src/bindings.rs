@@ -411,6 +411,7 @@ mod tests {
         visitor.visit::<menu::Section>();
         visitor.visit::<update::Status>();
         visitor.visit::<i18n::Locales>();
+        visitor.visit::<fonts::LigatureFont>();
         visitor.visit::<tab_drag::Rect>();
         visitor.visit::<tab_drag::Point>();
         visitor.visit::<tab_drag::DropTarget>();

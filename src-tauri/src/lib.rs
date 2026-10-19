@@ -19,6 +19,7 @@ mod error;
 mod events;
 #[cfg(unix)]
 mod fd;
+mod fonts;
 mod forward;
 #[cfg(windows)]
 mod hidden_window;
@@ -259,6 +260,7 @@ pub fn run() {
             commands::update::update_check,
             commands::settings::settings_get,
             commands::settings::system_monospace_font,
+            commands::settings::terminal_ligature_font,
             commands::settings::screen_reader_running,
             commands::settings::settings_set,
             commands::settings::config_directory,

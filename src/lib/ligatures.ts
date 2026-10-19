@@ -30,6 +30,12 @@ for (const sequence of [...LIGATURE_SEQUENCES].sort((a, b) => b.length - a.lengt
   byFirst.set(first, [...(byFirst.get(first) ?? []), sequence]);
 }
 
+/** The families of a CSS font list, in order and unquoted (`"Fira Code", Menlo` gives both). */
+export function fontFamilies(list: string): string[] {
+  const families = [...list.matchAll(/\s*("[^"]*"|'[^']*'|[^,]+)/g)].map((match) => match[1]!.trim());
+  return families.map((family) => family.replace(/^(["'])(.*)\1$/, "$2").trim()).filter(Boolean);
+}
+
 /**
  * The parts of `text` to draw together, as [start, end) offsets: the longest sequence at each
  * place, from the left, without overlapping (`<!---` in `<!----`, then `-` alone).
