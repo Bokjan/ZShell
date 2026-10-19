@@ -51,7 +51,7 @@
 | `connections/` | 连接注册表：会话 id → 连接及其上的 SFTP 与转发规则；同一会话的转发规则在哪条连接上运行、连接关闭时如何移交。ssh、sftp、forward 在这里组合 |
 | `sftp/` | 浏览与文件操作（`mod.rs`）、一条连接上的 SFTP 通道（`channels.rs`）、传输（`transfer/`）、本地编辑（`edit.rs`）、拖出（`drag/`）、替换写入（`replace.rs`）、文件名转码（`names.rs`） |
 | `forward/` | 转发规则的运行（`mod.rs`）、`-L` / `-R` / `-D`（`local.rs` / `remote.rs` / `dynamic.rs`）、SOCKS（`socks.rs`） |
-| `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
+| `pty/` | 本地终端（`mod.rs`）、Unix 与 Windows 各自的读写与结束（`unix.rs`、`windows.rs`）、默认 shell 与环境变量（`shell.rs`） |
 | `telnet/` | Telnet 会话与自动登录（`mod.rs`）、协议与选项协商（`protocol.rs`） |
 | `serial/` | 串口会话与设备列表（`mod.rs`） |
 | `net.rs` / `proxy/` | 出站连接（直连或经代理）、`Route`；代理：SOCKS5、HTTP CONNECT、ProxyCommand |
@@ -157,6 +157,7 @@
 - 作为 `SessionManager` 的另一种后端，输入、resize、关闭沿用 SSH 会话的命令。
 - **前台进程**：`session_foreground` 报告 shell 之外在前台运行的程序，用于关闭前确认。
 - **默认 shell 与结束**：macOS 与 Linux 以用户的登录 shell（`$SHELL`）启动，macOS 还补全从 Finder 启动时缺失的 PATH；Windows 优先 PowerShell 7（`pty/shell.rs`）。以子进程退出为准判断结束，之后按上文「会话结束」关闭窗格或按 Enter 重启。
+- **线程**：Unix 上读写伪终端和等 shell 退出都在 tokio 里（非阻塞的终端句柄交给 `AsyncFd`，退出靠 SIGCHLD），会话不占线程，空闲时不唤醒；关闭时先 SIGHUP，2 秒后还在就 SIGKILL。Windows 上 ConPTY 的管道只能阻塞读写，每个会话用三个线程（读、写、等退出）。
 
 ### 配置与设置
 

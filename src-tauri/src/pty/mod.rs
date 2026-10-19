@@ -1,33 +1,36 @@
 //! Local shells in a pseudo terminal (portable-pty; ConPTY on Windows).
 //!
-//! portable-pty's handles block, so each session runs three threads beside its task: one
-//! reads output (pausing while the frontend is behind, see [`Flow`]), one writes input
-//! (writes block while the shell isn't reading), and one waits for the shell to exit. The
-//! session ends when the shell exits rather than at the end of the output: background jobs
-//! can keep the terminal open after that, and ConPTY only closes its output when the
-//! pseudo console is closed.
+//! On Unix the session's tasks drive the terminal (`unix.rs`): tokio waits for it to be
+//! readable or writable and for the shell to exit. ConPTY's pipes only block, so on Windows
+//! each session runs three threads beside its task (`windows.rs`): one reads output (pausing
+//! while the frontend is behind, see [`Flow`]), one writes input (writes block while the
+//! shell isn't reading), and one waits for the shell to exit. The session ends when the shell
+//! exits rather than at the end of the output: background jobs can keep the terminal open
+//! after that, and ConPTY only closes its output when the pseudo console is closed.
 //!
-//! Once the session has shut down, the reader stops, and with it our last handle to the
+//! Once the session has shut down, reading stops, and with it our last handle to the
 //! terminal, which then closes for whatever still has it open. macOS closes it anyway when
 //! the shell exits (the shell's session loses its terminal), Linux doesn't: a program that
 //! ignores the hangup (`nohup`) would keep the reader waiting as long as it runs.
 
 mod shell;
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
 
-use std::collections::VecDeque;
-use std::io::{ErrorKind, Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
-use portable_pty::{native_pty_system, ChildKiller, ExitStatus, MasterPty, PtySize};
-use tokio::sync::{mpsc, oneshot};
+use portable_pty::{ExitStatus, PtySize};
+use tokio::sync::oneshot;
 
 use crate::error::Error;
-use crate::session::{Flow, Foreground, ForegroundProbe, Outcome, SessionEvent, SessionInput, SessionSink, TermIo};
+use crate::session::{Flow, Outcome, SessionEvent, TermIo};
 pub use shell::{default_shell, local_shells_allowed, Shell};
+#[cfg(unix)]
+use unix::Pty;
+#[cfg(windows)]
+use windows::Pty;
 
 /// How long to wait for the rest of the output once the shell has exited.
 #[cfg(unix)]
@@ -37,19 +40,10 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a shell gets to exit after its terminal is closed before it is killed.
 const KILL_GRACE: Duration = Duration::from_secs(2);
 const READ_BUFFER: usize = 64 << 10;
-/// How long a read waits for output before checking whether the session has shut down.
-#[cfg(unix)]
-const READ_WAIT: Duration = Duration::from_millis(200);
 /// How long a closed local session takes at most to let go of its output (and its log): its
-/// shell is killed after `KILL_GRACE`, which the reader sees within a read's wait (on Windows,
-/// as the pseudo console closes, before that).
-#[cfg(unix)]
-pub const RELEASED_WITHIN: Duration = KILL_GRACE.saturating_add(READ_WAIT);
-#[cfg(windows)]
+/// shell is killed after `KILL_GRACE`, and reading stops then (on Windows, as the pseudo
+/// console closes, before that).
 pub const RELEASED_WITHIN: Duration = KILL_GRACE;
-/// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
-/// is paced by how fast the shell reads).
-const INPUT_QUEUE: usize = 16;
 
 /// Session backend: runs `shell` in a pseudo terminal until it exits.
 pub async fn run(shell: Shell, mut io: TermIo) {
@@ -74,422 +68,25 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize { cols, rows, pixel_width: 0, pixel_height: 0 }
 }
 
-/// A running shell. Dropping it (the shell exited, or the tab was closed and the session
-/// task aborted) ends the shell if it is still running.
-struct Pty {
-    master: Option<Box<dyn MasterPty + Send>>,
-    /// Feeds the writer thread; dropping it stops the thread (see [`write_input`]).
-    input: Option<mpsc::Sender<Vec<u8>>>,
-    /// The exit status, once the shell exits (`None` if it could not be determined).
-    exit: oneshot::Receiver<Option<ExitStatus>>,
-    /// Completes when the reader thread reaches the end of the output.
-    output_done: Option<oneshot::Receiver<()>>,
-    killer: Box<dyn ChildKiller + Send + Sync>,
-    pid: Option<u32>,
-    exited: Arc<Exited>,
-    /// Set once the session has shut down, to stop the reader.
-    shut: Arc<AtomicBool>,
-    flow: Arc<Flow>,
-    foreground: Foreground,
-}
-
-impl Pty {
-    fn start(shell: Shell, io: &TermIo) -> Result<Self> {
-        let (cols, rows) = io.size;
-        let pair = native_pty_system().openpty(pty_size(cols, rows)).context(Error::new("pty.openFailed"))?;
-        #[cfg(unix)]
-        let reader: Box<dyn Read + Send> = Box::new(OutputReader::new(&*pair.master).context(Error::new("pty.openFailed"))?);
-        #[cfg(windows)]
-        let reader = pair.master.try_clone_reader().context(Error::new("pty.openFailed"))?;
-        let writer = pair.master.take_writer().context(Error::new("pty.openFailed"))?;
-        let mut child = pair.slave.spawn_command(shell.command).context(Error::new("pty.spawnFailed").param("shell", &shell.program))?;
-        // The shell has its own handles to the terminal; ours would keep it open after the
-        // shell exits (and on Windows, keep the pseudo console alive).
-        drop(pair.slave);
-
-        let sink = io.sink();
-        let flow = sink.flow();
-        let (output_done_tx, output_done) = oneshot::channel();
-        let shut = Arc::new(AtomicBool::new(false));
-        let reader_shut = shut.clone();
-        thread::spawn(move || {
-            read_output(reader, &sink, &reader_shut);
-            let _ = output_done_tx.send(());
-        });
-
-        let exited = Arc::new(Exited::default());
-        let (input, inputs) = mpsc::channel(INPUT_QUEUE);
-        let writer_exited = exited.clone();
-        thread::spawn(move || write_input(writer, inputs, &writer_exited));
-
-        let killer = child.clone_killer();
-        let pid = child.process_id();
-        let foreground = io.foreground();
-        foreground.set(foreground_probe(&*pair.master, pid));
-        let (exit_tx, exit) = oneshot::channel();
-        let exited_flag = exited.clone();
-        thread::spawn(move || {
-            let status = child.wait().ok();
-            exited_flag.set();
-            let _ = exit_tx.send(status);
-        });
-
-        Ok(Self {
-            master: Some(pair.master),
-            input: Some(input),
-            exit,
-            output_done: Some(output_done),
-            killer,
-            pid,
-            exited,
-            shut,
-            flow,
-            foreground,
-        })
-    }
-
-    /// Passes input and resizes to the shell until it exits; returns its exit status, or
-    /// `None` if the tab is closing.
-    ///
-    /// Input the writer thread has no room for yet (the shell isn't reading) waits here, so
-    /// the shell exiting and resizes are still seen (see [`TermIo::recv`]).
-    async fn bridge(&mut self, io: &mut TermIo) -> Option<Option<ExitStatus>> {
-        let mut pending: VecDeque<Vec<u8>> = VecDeque::new();
-        let mut pending_bytes = 0;
-        loop {
-            let writer = self.input.clone();
-            tokio::select! {
-                status = &mut self.exit => return Some(status.ok().flatten()),
-                permit = async { writer?.reserve_owned().await.ok() }, if !pending.is_empty() => {
-                    let data = pending.pop_front().unwrap_or_default();
-                    pending_bytes -= data.len();
-                    if let Some(permit) = permit {
-                        permit.send(data);
-                    }
-                }
-                input = io.recv(pending_bytes) => match input {
-                    Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
-                        if self.input.is_some() {
-                            pending_bytes += data.len();
-                            pending.push_back(data);
-                        }
-                    }
-                    Some(SessionInput::Resize { cols, rows }) => {
-                        if let Some(master) = &self.master {
-                            let _ = master.resize(pty_size(cols, rows));
-                        }
-                    }
-                    Some(SessionInput::Break) => {}
-                    None => return None,
-                },
-            }
-        }
-    }
-
-    /// After the shell has exited, gives the reader a moment to pass on the rest of the
-    /// output (a background job may keep the terminal open indefinitely). Time the reader
-    /// spends waiting for the frontend to catch up (`cat big.log; exit`) doesn't count: the
-    /// rest of the output would otherwise follow the message that the shell exited.
-    async fn drain(&mut self) {
-        // ConPTY keeps its output pipe open until the pseudo console is closed, which also
-        // flushes what it has not sent yet. Closing blocks until that output is read.
-        #[cfg(windows)]
-        if let Some(master) = self.master.take() {
-            thread::spawn(move || drop(master));
-        }
-        let Some(mut done) = self.output_done.take() else { return };
-        const STEP: Duration = Duration::from_millis(20);
-        let mut left = DRAIN_TIMEOUT;
-        while !left.is_zero() {
-            if self.flow.is_paused() {
-                tokio::select! {
-                    _ = &mut done => return,
-                    () = self.flow.ready() => continue,
-                }
-            }
-            let step = left.min(STEP);
+/// After the shell has exited, gives the reader a moment to pass on the rest of the output
+/// (`done` completes at its end; a background job may keep the terminal open indefinitely).
+/// Time the reader spends waiting for the frontend to catch up (`cat big.log; exit`) doesn't
+/// count: the rest of the output would otherwise follow the message that the shell exited.
+async fn drain_output(mut done: oneshot::Receiver<()>, flow: &Flow) {
+    const STEP: Duration = Duration::from_millis(20);
+    let mut left = DRAIN_TIMEOUT;
+    while !left.is_zero() {
+        if flow.is_paused() {
             tokio::select! {
                 _ = &mut done => return,
-                () = tokio::time::sleep(step) => left -= step,
+                () = flow.ready() => continue,
             }
         }
-    }
-}
-
-impl Drop for Pty {
-    fn drop(&mut self) {
-        // Before the terminal is closed: the probe uses its handle.
-        self.foreground.set(None);
-        // The reader must keep reading: closing a pseudo console blocks until its output is
-        // read, and the frontend no longer acknowledges anything.
-        self.flow.close();
-        self.input.take();
-        let master = self.master.take();
-        let killer = self.killer.clone_killer();
-        let exited = self.exited.clone();
-        let pid = self.pid;
-        let shut = self.shut.clone();
-        // Waiting for the shell to exit (and closing a pseudo console) blocks.
-        thread::spawn(move || {
-            shut_down(master, killer, &exited, pid);
-            shut.store(true, Ordering::Relaxed);
-        });
-    }
-}
-
-/// Ends the shell if it is still running, the way closing a terminal window does.
-#[cfg(unix)]
-fn shut_down(master: Option<Box<dyn MasterPty + Send>>, mut killer: Box<dyn ChildKiller + Send + Sync>, exited: &Exited, pid: Option<u32>) {
-    if !exited.get() {
-        // portable-pty sends SIGHUP, which shells pass on to their jobs.
-        let _ = killer.kill();
-        if !exited.wait(KILL_GRACE) {
-            if let Some(pid) = pid.and_then(|pid| libc::pid_t::try_from(pid).ok()) {
-                // SAFETY: plain syscall; the shell has not been reaped (`exited` is unset), so
-                // the pid still refers to it.
-                unsafe { libc::kill(pid, libc::SIGKILL) };
-            }
+        let step = left.min(STEP);
+        tokio::select! {
+            _ = &mut done => return,
+            () = tokio::time::sleep(step) => left -= step,
         }
-    }
-    drop(master);
-}
-
-/// Ends the shell if it is still running, the way closing a terminal window does.
-#[cfg(windows)]
-fn shut_down(
-    master: Option<Box<dyn MasterPty + Send>>,
-    mut killer: Box<dyn ChildKiller + Send + Sync>,
-    exited: &Exited,
-    _pid: Option<u32>,
-) {
-    // Closing the pseudo console sends CTRL_CLOSE_EVENT to the processes attached to it,
-    // so they can exit cleanly.
-    drop(master);
-    if !exited.wait(KILL_GRACE) {
-        let _ = killer.kill();
-    }
-}
-
-/// The terminal's foreground process group, when it is not the shell's: a program started
-/// from the shell is running (background jobs don't count).
-#[cfg(unix)]
-fn foreground_probe(master: &dyn MasterPty, shell: Option<u32>) -> Option<ForegroundProbe> {
-    let fd = master.as_raw_fd()?;
-    let shell = libc::pid_t::try_from(shell?).ok()?;
-    Some(Box::new(move || {
-        // SAFETY: plain syscall on the terminal's descriptor, which stays open while the probe
-        // is installed (`Pty::drop` removes it first).
-        let group = unsafe { libc::tcgetpgrp(fd) };
-        (group > 0 && group != shell).then(|| process_name(group))
-    }))
-}
-
-#[cfg(target_os = "macos")]
-fn process_name(pid: libc::pid_t) -> String {
-    let mut buffer = [0u8; 256];
-    // SAFETY: the buffer is valid for writes of its full length.
-    let len = unsafe { libc::proc_name(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
-    String::from_utf8_lossy(&buffer[..usize::try_from(len).unwrap_or(0)]).into_owned()
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn process_name(pid: libc::pid_t) -> String {
-    std::fs::read_to_string(format!("/proc/{pid}/comm")).map(|name| name.trim_end().to_owned()).unwrap_or_default()
-}
-
-/// A child process of the shell. Windows has no foreground process groups, and ConPTY's
-/// own conhost is not the shell's child.
-#[cfg(windows)]
-fn foreground_probe(_master: &dyn MasterPty, shell: Option<u32>) -> Option<ForegroundProbe> {
-    let shell = shell?;
-    Some(Box::new(move || child_process_name(shell)))
-}
-
-#[cfg(windows)]
-fn child_process_name(parent: u32) -> Option<String> {
-    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
-    };
-
-    // SAFETY: plain Win32 calls; `entry` is initialized with its size as the API requires, and
-    // the snapshot handle is closed once.
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot == INVALID_HANDLE_VALUE {
-            return None;
-        }
-        let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
-        let mut found = None;
-        // Windows reuses process ids and doesn't give orphans a new parent: a process whose
-        // parent was an earlier holder of the shell's id started before the shell.
-        let shell_created = created(parent);
-        let mut more = Process32FirstW(snapshot, &mut entry) != 0;
-        while more {
-            let is_child = entry.th32ParentProcessID == parent
-                && !matches!((shell_created, created(entry.th32ProcessID)), (Some(shell), Some(child)) if child < shell);
-            if is_child {
-                let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
-                found = Some(shell::display_name(&String::from_utf16_lossy(&entry.szExeFile[..len])));
-                break;
-            }
-            more = Process32NextW(snapshot, &mut entry) != 0;
-        }
-        CloseHandle(snapshot);
-        found
-    }
-}
-
-/// When process `pid` started (in 100 ns units), if that can be asked.
-#[cfg(windows)]
-fn created(pid: u32) -> Option<u64> {
-    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
-    use windows_sys::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-
-    // SAFETY: plain Win32 calls with valid out-pointers; the process handle is closed once.
-    unsafe {
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if process.is_null() {
-            return None;
-        }
-        let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-        let (mut creation, mut exit, mut kernel, mut user) = (zero, zero, zero, zero);
-        let ok = GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) != 0;
-        CloseHandle(process);
-        ok.then(|| (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
-    }
-}
-
-/// Whether the shell has exited, which the threads shutting the terminal down wait for.
-#[derive(Default)]
-struct Exited {
-    exited: Mutex<bool>,
-    changed: Condvar,
-}
-
-impl Exited {
-    fn set(&self) {
-        *self.exited.lock().unwrap() = true;
-        self.changed.notify_all();
-    }
-
-    #[cfg(unix)]
-    fn get(&self) -> bool {
-        *self.exited.lock().unwrap()
-    }
-
-    /// Waits until the shell exits or `timeout` passes; returns whether it exited.
-    fn wait(&self, timeout: Duration) -> bool {
-        let (exited, _) = self.changed.wait_timeout_while(self.exited.lock().unwrap(), timeout, |exited| !*exited).unwrap();
-        *exited
-    }
-}
-
-/// Reads until the end of the output, or until the session has shut down (`shut`).
-fn read_output(mut reader: Box<dyn Read + Send>, sink: &SessionSink, shut: &AtomicBool) {
-    let flow = sink.flow();
-    let mut buffer = vec![0; READ_BUFFER];
-    loop {
-        flow.wait_ready();
-        match reader.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(n) => sink.output(buffer[..n].to_vec()),
-            Err(e) if e.kind() == ErrorKind::Interrupted => {}
-            Err(e) if matches!(e.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) => {
-                if shut.load(Ordering::Relaxed) {
-                    break;
-                }
-            }
-            // EIO on macOS once the shell and its children have all closed the terminal.
-            Err(_) => break,
-        }
-    }
-}
-
-/// The terminal's output, read through a handle of our own that waits at most [`READ_WAIT`]
-/// (portable-pty's reader waits for ever), so that reading can stop (see the module comment).
-#[cfg(unix)]
-struct OutputReader(std::os::fd::OwnedFd);
-
-#[cfg(unix)]
-impl OutputReader {
-    fn new(master: &dyn MasterPty) -> std::io::Result<Self> {
-        let fd = master.as_raw_fd().ok_or(ErrorKind::Unsupported)?;
-        Self::from_master(fd)
-    }
-
-    fn from_master(fd: std::os::fd::RawFd) -> std::io::Result<Self> {
-        use std::os::fd::FromRawFd;
-        // SAFETY: plain syscall; `fd` is open, and the new descriptor is ours alone.
-        let copy = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
-        if copy < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        // SAFETY: `copy` was just opened, and nothing else owns it.
-        Ok(Self(unsafe { std::os::fd::OwnedFd::from_raw_fd(copy) }))
-    }
-}
-
-#[cfg(unix)]
-impl OutputReader {
-    /// Waits up to `wait` for output to read; false when none came.
-    fn ready(&self, wait: Duration) -> std::io::Result<bool> {
-        use std::os::fd::AsRawFd;
-        let mut ready = libc::pollfd { fd: self.0.as_raw_fd(), events: libc::POLLIN, revents: 0 };
-        let wait = libc::c_int::try_from(wait.as_millis()).unwrap_or(libc::c_int::MAX);
-        // SAFETY: one valid pollfd.
-        match unsafe { libc::poll(&mut ready, 1, wait) } {
-            -1 => Err(std::io::Error::last_os_error()),
-            0 => Ok(false),
-            _ => Ok(true),
-        }
-    }
-
-    fn read_once(&self, buf: &mut [u8]) -> std::io::Result<usize> {
-        use std::os::fd::AsRawFd;
-        // SAFETY: `buf` is valid for writes of its length.
-        let read = unsafe { libc::read(self.0.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
-        usize::try_from(read).map_err(|_| std::io::Error::last_os_error())
-    }
-}
-
-#[cfg(unix)]
-impl Read for OutputReader {
-    /// Fails with `TimedOut` when nothing comes within [`READ_WAIT`], and with EIO (macOS)
-    /// or reads nothing at the end of the output.
-    ///
-    /// Reads on while more is ready: a read from a terminal returns at most about 1 KiB on
-    /// macOS, and each read becomes a message to the web view, which takes the main thread
-    /// (`cat` of a large file sent a thousand of them per MiB).
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if !self.ready(READ_WAIT)? {
-            return Err(ErrorKind::TimedOut.into());
-        }
-        let mut read = self.read_once(buf)?;
-        // What this reads is passed on now; a failure (EIO at the end) comes again next time.
-        while read > 0 && read < buf.len() && self.ready(Duration::ZERO).unwrap_or(false) {
-            match self.read_once(&mut buf[read..]) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => read += n,
-            }
-        }
-        Ok(read)
-    }
-}
-
-/// Writes input until the session closes. The writer is then kept until the shell has
-/// exited: portable-pty's Unix writer sends a newline and EOF when dropped, which would
-/// submit a line typed but not entered (a program in the foreground gets SIGHUP only after
-/// the shell does). `shut_down` kills the shell within `KILL_GRACE`.
-fn write_input(mut writer: Box<dyn Write + Send>, mut inputs: mpsc::Receiver<Vec<u8>>, exited: &Exited) {
-    while let Some(data) = inputs.blocking_recv() {
-        if writer.write_all(&data).and_then(|()| writer.flush()).is_err() {
-            break;
-        }
-    }
-    if !exited.wait(KILL_GRACE * 2) {
-        // The shell outlived SIGKILL (no pid to kill): leaking the handle is the lesser harm.
-        std::mem::forget(writer);
     }
 }
 
@@ -500,6 +97,7 @@ mod tests {
     use portable_pty::CommandBuilder;
 
     use super::*;
+    use crate::session::SessionInput;
 
     fn sh(script: &str) -> Shell {
         let mut command = CommandBuilder::new("/bin/sh");
@@ -558,27 +156,6 @@ mod tests {
         let end = shown.find("END").expect("all the output");
         let exited = shown.find(&t!("terminal.processExited").to_string()).expect("the exit message");
         assert!(end < exited, "{:?}", &shown[shown.len() - 200..]);
-    }
-
-    /// What is ready to read comes in one read, though each read gives only part of it: a
-    /// terminal about 1 KiB on macOS, a datagram socket (here) one datagram. A terminal can't
-    /// be filled ahead (it holds 1 KiB on macOS), so it is read on as the shell writes.
-    #[test]
-    fn reads_on_while_more_is_ready() {
-        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-        let mut fds = [0; 2];
-        // SAFETY: plain syscall, into two descriptors that are then ours alone.
-        assert_eq!(unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_DGRAM, 0, fds.as_mut_ptr()) }, 0);
-        // SAFETY: just opened, and owned by nothing else.
-        let (read_end, write_end) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let mut writer = std::fs::File::from(write_end);
-        for _ in 0..6 {
-            writer.write_all(&[b'x'; 500]).unwrap();
-        }
-        let mut reader = OutputReader::from_master(read_end.as_raw_fd()).unwrap();
-        let mut buffer = vec![0; 16 << 10];
-        assert_eq!(reader.read(&mut buffer).unwrap(), 3000);
-        assert_eq!(reader.read(&mut buffer).unwrap_err().kind(), ErrorKind::TimedOut);
     }
 
     /// A stream of output reaches the terminal whole. (How many messages it takes depends on
@@ -660,37 +237,6 @@ mod tests {
         assert_eq!(foreground.get(), None);
     }
 
-    /// Reading stops once the session has shut down, though something still has the
-    /// terminal open (on Linux, a program that ignores the hangup).
-    #[tokio::test(flavor = "multi_thread")]
-    async fn reading_stops_once_shut_down() {
-        let (mut master, mut slave) = (0, 0);
-        // SAFETY: openpty fills in two descriptors; null name, termios and size are allowed.
-        let result = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
-        assert_eq!(result, 0);
-        let reader = OutputReader::from_master(master).unwrap();
-        let (io, _input, output, _events) = TermIo::detached((80, 24));
-        let sink = io.sink();
-        let shut = Arc::new(AtomicBool::new(false));
-        let reading = thread::spawn({
-            let shut = shut.clone();
-            move || read_output(Box::new(reader), &sink, &shut)
-        });
-        // SAFETY: the slave is open; the buffer is valid for its length.
-        unsafe { libc::write(slave, b"out".as_ptr().cast(), 3) };
-        tokio::time::sleep(READ_WAIT * 2).await;
-        assert_eq!(text(&output), "out");
-        assert!(!reading.is_finished());
-        shut.store(true, Ordering::Relaxed);
-        tokio::time::sleep(READ_WAIT * 2).await;
-        assert!(reading.is_finished());
-        // SAFETY: both descriptors are open and ours.
-        unsafe {
-            libc::close(slave);
-            libc::close(master);
-        }
-    }
-
     /// Closing the tab must not submit a line that was typed but not entered, here to a
     /// program in the foreground (which gets SIGHUP only after the shell).
     #[tokio::test(flavor = "multi_thread")]
@@ -709,6 +255,29 @@ mod tests {
         let submitted = out.exists();
         let _ = std::fs::remove_file(&out);
         assert!(!submitted, "the typed line was submitted");
+    }
+
+    /// Closing the tab hangs up on the shell, and kills it once `KILL_GRACE` has passed if
+    /// it ignores the hangup.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn closing_kills_a_shell_that_ignores_the_hangup() {
+        let (io, _input, output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(run(sh("trap '' HUP; echo \"pid $$\"; exec sleep 30"), io));
+        let mut shown = String::new();
+        let pid = loop {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            shown.push_str(&text(&output));
+            if let Some(pid) = shown.split_whitespace().skip_while(|word| *word != "pid").nth(1) {
+                break pid.parse::<libc::pid_t>().unwrap();
+            }
+        };
+        // SAFETY: plain syscalls; signal 0 only asks whether the process is there.
+        let running = || unsafe { libc::kill(pid, 0) } == 0;
+        session.abort();
+        tokio::time::sleep(KILL_GRACE / 2).await;
+        assert!(running(), "killed before the grace period");
+        tokio::time::sleep(KILL_GRACE).await;
+        assert!(!running(), "still running (or not reaped) after the grace period");
     }
 
     /// Without acknowledgements the reader stops after about `FLOW_HIGH` bytes, and the
