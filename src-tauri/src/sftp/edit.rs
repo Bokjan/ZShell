@@ -263,9 +263,18 @@ async fn watch(edit: Arc<Edit>, watcher: Arc<Watcher>, events: Channel<EditEvent
     let mut reported = tokio::fs::metadata(&edit.local).await.ok().map(stamp);
     let mut previous = reported;
     // The real path, which is what the system reports changes in (macOS's temporary folder is
-    // behind a symlink).
-    let folder = edit.local.parent().and_then(|folder| std::fs::canonicalize(folder).ok());
-    let watched = folder.filter(|folder| watcher.add(folder, &edit.wake));
+    // behind a symlink). Off tokio's threads: starting and stopping a watch waits for the
+    // watcher's thread.
+    let watched = match edit.local.parent() {
+        Some(folder) => {
+            let (folder, watcher, wake) = (folder.to_owned(), watcher.clone(), edit.wake.clone());
+            tokio::task::spawn_blocking(move || std::fs::canonicalize(folder).ok().filter(|folder| watcher.add(folder, &wake)))
+                .await
+                .ok()
+                .flatten()
+        }
+        None => None,
+    };
     while !edit.stopped.load(Ordering::Relaxed) {
         if watched.is_some() {
             edit.wake.notified().await;
@@ -286,7 +295,8 @@ async fn watch(edit: Arc<Edit>, watcher: Arc<Watcher>, events: Channel<EditEvent
         previous = current;
     }
     if let Some(folder) = watched {
-        watcher.remove(&folder, &edit.wake);
+        let wake = edit.wake.clone();
+        let _ = tokio::task::spawn_blocking(move || watcher.remove(&folder, &wake)).await;
     }
 }
 
