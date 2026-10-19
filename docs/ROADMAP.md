@@ -72,8 +72,8 @@
 
 xterm.js 自己处理标题、调色板、链接与颜色查询（OSC 0–2、4、8、10–12、104、110–112），其余由我们在 `TerminalView` 里用 `registerOscHandler` 接上，解析是 `lib/osc.ts` 里的纯函数（单元测试），不经后端。都只作用于发出序列的窗格，与同步输入无关；文本日志本来就去掉 OSC 序列。
 
-- **剪贴板（OSC 52）**：`52;Pc;Pd`，`Pd` 为 base64，按 UTF-8 解码（`atob` 得到的是字节）后经 `writeText` 写入系统剪贴板，并 `announce()`。`Pc` 不论是 `c`、`s`、`p` 还是空都写系统剪贴板（剪贴板插件没有 Linux 的 primary selection）。只写不读：`Pd` 为 `?` 的查询不回应，远端程序不能读到本地剪贴板；空的 `Pd`（清空）、不合法的 base64 或 UTF-8、解码后超过 1 MB 的都忽略。设置 `terminal.clipboardWrite`（默认开）。tmux 3.3 起在 `TERM` 为 `xterm*` 时默认把复制转发成 OSC 52，无需配置。
-- **进度（OSC 9;4）**：`9;4;状态;百分比`，状态 0 清除、1 进行中、2 错误、3 不确定、4 暂停（ConEmu 的定义，Windows Terminal 等沿用）。窗格记住最近一次的状态，会话结束、断开或 15 秒没有更新时清除，程序崩溃或被 Ctrl+C 打断不会留下一直挂着的进度。
+- **剪贴板（OSC 52）**：`52;Pc;Pd`，`Pd` 为 base64，按 UTF-8 解码（`atob` 得到的是字节）后经 `writeText` 写入系统剪贴板，并 `announce()`。`Pc` 不论是 `c`、`s`、`p` 还是空都写系统剪贴板（剪贴板插件没有 Linux 的 primary selection）。只写不读：`Pd` 为 `?` 的查询不回应，远端程序不能读到本地剪贴板；空的 `Pd`（清空）、不合法的 base64 或 UTF-8、解码后超过上限的都忽略。设置 `terminal.clipboardWrite`（默认开）与上限 `terminal.clipboardLimit`（KB，默认 1024；xterm.js 丢弃超过 10 MB 的 OSC 负载，base64 解码后约 7 MB，所以最多 7168）。tmux 3.3 起在 `TERM` 为 `xterm*` 时默认把复制转发成 OSC 52，无需配置。
+- **进度（OSC 9;4）**：`9;4;状态;百分比`，状态 0 清除、1 进行中、2 错误、3 不确定、4 暂停（ConEmu 的定义，Windows Terminal 等沿用）。窗格记住最近一次的状态，会话结束、断开或 30 秒没有更新时清除，程序崩溃或被 Ctrl+C 打断不会留下一直挂着的进度。
   - 标签：状态灯换成环形进度，错误红、暂停黄，不确定时转圈（减少动态效果时静止）；分屏时取优先级最高的窗格（错误 > 暂停 > 进行中 > 不确定），同为进行中取最小的百分比。状态灯的无障碍名称带上进度，后台标签进入错误状态时 `announce()`。
   - 任务栏与 Dock：Tauri 的 `setProgressBar`，Windows 每个窗口各自显示，取窗口里各标签合并的状态；macOS 的 Dock 与 Linux 的 libunity（GNOME 的 Dash to Dock、Ubuntu Dock）整个应用只有一个，由后端合并各窗口上报的状态。tao 在 macOS 上把 Dock 图标换成画着进度条的 `NSImageView`，要检查清除后图标（深色与着色图标）能否恢复。
 - **通知（OSC 9、777、99）**：
@@ -82,7 +82,7 @@ xterm.js 自己处理标题、调色板、链接与颜色查询（OSC 0–2、4�
   - 插件在桌面上不回报点击，点通知只能激活应用，不能切到对应标签。macOS 首次发送时系统询问权限；Windows 的 dev 构建下通知显示为 PowerShell 发出，安装版与 Store 版用各自的 AppUserModelID。
 - **鼠标指针（OSC 22）**：`22;名称`，名称是 CSS 的 cursor 值，kitty 还接受 X11 的名称（`hand2`、`xterm` 等），按表换成 CSS 值，不认识的忽略，空名称恢复默认；查询（`?`）不回应。主屏与备用屏各记一份（与 kitty 相同），全屏程序退出后恢复。按住 ⌘ / Ctrl 悬停链接时的手形与鼠标模式下的指针优先于程序的设置。
 
-两个新设置都有默认值，旧的 `settings.json` 照常读取。不涉及存储与网络连接，`PRIVACY.md` 不变。
+新设置都有默认值，旧的 `settings.json` 照常读取；设置界面里的说明放在设置旁的问号（`HelpTip`）里，悬停或聚焦时显示。不涉及存储与网络连接，`PRIVACY.md` 不变。
 
 ## 暂不排期（P2）
 
