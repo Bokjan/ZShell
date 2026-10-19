@@ -125,6 +125,13 @@
 - **何时再看**：保险库到了 MiB 级，或者出现高频写入（比如每次连接都记录点什么）时。
 - **登记**：2026-10-19（评审 R14）。
 
+### 串口：Windows 上改用重叠 I/O
+
+- **现状**：Windows 上每个串口会话用两个线程，句柄是同步的，读和写轮流占用：读超时设成 10 ms，好让打字不必等读完，代价是每个会话每秒醒 100 次（`serial/mod.rs` 的 `READ_TIMEOUT`）。写入用的第二个句柄要用 `not_inherited` 防止被子进程继承。
+- **要做时**：自己 `CreateFileW(..., FILE_FLAG_OVERLAPPED)` 打开，用 `COMPort::from_raw_handle` 包起来，继续用 serialport 设 DCB、break、查可读字节数（`from_raw_handle` 不做 `open` 里的 DCB 初始化，要自己补）。读超时设成「有一个字节就返回，否则一直等」，读写两个线程都等 `WaitForMultipleObjects([完成事件, 停止事件])`，关闭时置停止事件再 `CancelIoEx`。不用 tokio：它在 Windows 上不支持任意句柄的 IOCP。结果是空闲时不再唤醒，读写不再轮流，第二个句柄和 `not_inherited` 都不再需要。
+- **为什么暂缓**：只能在 Windows 上用真实设备或 com0com 这类虚拟串口对实测，2026-10-19 手边没有；CI 只能确认能编译。Unix 那一半（tokio）已经做了，见提交「perf(serial)」。
+- **登记**：2026-10-19（评审 T3）。
+
 ## 未查明
 
 ### macOS：退出全屏后窗口不见了（偶现）

@@ -1,9 +1,14 @@
 //! Serial sessions (serialport): the terminal talks to a device over a serial line.
 //!
-//! serialport's handles block, so each session reads and writes on threads of its own, like
-//! local terminals. Reads wake up periodically to notice that the session has closed. A
-//! session ends when the device goes away (a USB adapter unplugged); the frontend then
-//! reconnects as for a lost connection, which succeeds once the device is back.
+//! On Unix the session's task drives the line (`unix.rs`). serialport's handles block on
+//! Windows, so there each session reads and writes on threads of its own ([`Line`]), whose
+//! reads wake up periodically to notice that the session has closed; so does a Unix device
+//! that tokio can't watch (one whose driver doesn't support kqueue or epoll). A session ends
+//! when the device goes away (a USB adapter unplugged); the frontend then reconnects as for
+//! a lost connection, which succeeds once the device is back.
+
+#[cfg(unix)]
+mod unix;
 
 use std::collections::VecDeque;
 use std::io::{ErrorKind, Read};
@@ -37,9 +42,9 @@ const INPUT_QUEUE: usize = 16;
 const RELEASE_WAIT: Duration = Duration::from_secs(1);
 
 /// The devices our sessions' threads still hold, once per session. A closed session's
-/// threads let go of the port within `READ_TIMEOUT`, and only one handle can have a port
-/// open (exclusive on macOS, always on Windows), so reconnecting, which opens the device
-/// again at once, would otherwise find it busy.
+/// threads let go of the port within `READ_TIMEOUT` (a session in its task, as it ends), and
+/// only one handle can have a port open (exclusive on macOS, always on Windows), so
+/// reconnecting, which opens the device again at once, would otherwise find it busy.
 static HELD: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// A session's hold on its device, shared by its reader and writer threads.
@@ -98,28 +103,65 @@ pub fn ports() -> Vec<PortInfo> {
 
 /// Session backend: opens the device and bridges it to the terminal until the device goes
 /// away or the tab closes.
-pub async fn run(options: SerialOptions, mut io: TermIo) {
+pub async fn run(options: SerialOptions, io: TermIo) {
+    run_with(options, io, false).await;
+}
+
+/// [`run`], on threads even where the session's task could drive the line if `on_threads`.
+async fn run_with(options: SerialOptions, mut io: TermIo, on_threads: bool) {
     let since = Instant::now();
     while Hold::is_held(&options.device) && since.elapsed() < RELEASE_WAIT {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     let outcome = match open(&options) {
-        Ok((port, writer)) => {
-            // Before the reader starts, so that what the device already sent comes after.
+        Ok(port) => {
+            // Before reading starts, so that what the device already sent comes after.
             let opened = t!("terminal.serialOpened", device = &options.device, settings = options.summary());
             io.print(&format!("\x1b[2m{opened}\x1b[0m\n"));
-            let line = Line::start(port, writer, &options.device, &io);
-            io.event(SessionEvent::Connected);
-            line.bridge(&options.device, &mut io).await
+            if on_threads {
+                bridge_on_threads(port, &options.device, &mut io).await
+            } else {
+                bridge(port, &options.device, &mut io).await
+            }
         }
         Err(e) => Outcome::Failed(e),
     };
     io.finish(outcome);
 }
 
-/// Opens the device with the session's line settings: the port, and a second handle to it
-/// for the writer thread.
-fn open(options: &SerialOptions) -> Result<(Box<dyn SerialPort>, Box<dyn SerialPort>)> {
+#[cfg(unix)]
+async fn bridge(port: NativePort, device: &str, io: &mut TermIo) -> Outcome {
+    match tokio::io::unix::AsyncFd::try_new(port) {
+        Ok(port) => {
+            io.event(SessionEvent::Connected);
+            unix::bridge(port, device, io).await
+        }
+        Err(e) => bridge_on_threads(e.into_parts().0, device, io).await,
+    }
+}
+
+#[cfg(windows)]
+async fn bridge(port: NativePort, device: &str, io: &mut TermIo) -> Outcome {
+    bridge_on_threads(port, device, io).await
+}
+
+async fn bridge_on_threads(port: NativePort, device: &str, io: &mut TermIo) -> Outcome {
+    match Line::start(port, device, io) {
+        Ok(line) => {
+            io.event(SessionEvent::Connected);
+            line.bridge(device, io).await
+        }
+        Err(e) => Outcome::Failed(Error::new("serial.openFailed").param("device", device).detail(e)),
+    }
+}
+
+#[cfg(unix)]
+type NativePort = serialport::TTYPort;
+#[cfg(windows)]
+type NativePort = serialport::COMPort;
+
+/// Opens the device with the session's line settings.
+fn open(options: &SerialOptions) -> Result<NativePort> {
     let open_failed = |e: serialport::Error| Error::new("serial.openFailed").param("device", &options.device).detail(e);
     let baud_rate = if is_pseudo_terminal(&options.device) { 0 } else { options.baud_rate };
     let builder = serialport::new(&options.device, baud_rate)
@@ -144,30 +186,19 @@ fn open(options: &SerialOptions) -> Result<(Box<dyn SerialPort>, Box<dyn SerialP
             FlowControl::Hardware => serialport::FlowControl::Hardware,
         })
         .timeout(READ_TIMEOUT);
-    #[cfg(windows)]
-    {
-        let port = builder.open_native().map_err(open_failed)?;
-        let writer = port.try_clone_native().map_err(open_failed)?;
-        not_inherited(&writer);
-        let (port, writer): (Box<dyn SerialPort>, Box<dyn SerialPort>) = (Box::new(port), Box::new(writer));
-        Ok((port, writer))
-    }
-    #[cfg(not(windows))]
-    {
-        let port = builder.open_native().map_err(open_failed)?;
-        let writer = port.try_clone_native().map_err(open_failed)?;
-        non_blocking(&writer).map_err(|e| Error::new("serial.openFailed").param("device", &options.device).detail(e))?;
-        let (port, writer): (Box<dyn SerialPort>, Box<dyn SerialPort>) = (Box::new(port), Box::new(writer));
-        Ok((port, writer))
-    }
+    let port = builder.open_native().map_err(open_failed)?;
+    #[cfg(unix)]
+    non_blocking(&port).map_err(|e| Error::new("serial.openFailed").param("device", &options.device).detail(e))?;
+    Ok(port)
 }
 
-/// serialport waits (up to the port's timeout) for room to write, then writes blocking: more
-/// than there is room for would wait as long as flow control holds the line, and a closed
-/// tab's writer couldn't let go of the device. Without blocking, a write takes what fits and
-/// `write_data` looks again. The setting is the open file's, so reads don't block either,
-/// which changes nothing: they too wait for data first.
-#[cfg(not(windows))]
+/// Reads and writes on Unix never block: the session's task waits for the device instead
+/// (`unix.rs`). On threads (see [`Line`]), serialport waits (up to the port's timeout) for
+/// room to write, then writes blocking: more than there is room for would wait as long as
+/// flow control holds the line, and a closed tab's writer couldn't let go of the device.
+/// Without blocking, a write takes what fits and `write_data` looks again; reads too wait for
+/// data first. The setting is the open file's, which the writer thread's handle shares.
+#[cfg(unix)]
 fn non_blocking(port: &serialport::TTYPort) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
     let fd = port.as_raw_fd();
@@ -197,9 +228,9 @@ enum Output {
     Break,
 }
 
-/// An open serial port and its reader and writer threads, which stop when it is dropped:
-/// the writer once its input closes, the reader (whose reads time out) once nothing receives
-/// its failures.
+/// An open serial port and its reader and writer threads (on Windows, or for a device tokio
+/// can't watch), which stop when it is dropped: the writer once its input closes, the reader
+/// (whose reads time out) once nothing receives its failures.
 struct Line {
     input: mpsc::Sender<Output>,
     /// Why the reader or writer stopped, if the device failed.
@@ -207,7 +238,12 @@ struct Line {
 }
 
 impl Line {
-    fn start(port: Box<dyn SerialPort>, writer: Box<dyn SerialPort>, device: &str, io: &TermIo) -> Self {
+    /// Fails if the port can't be opened a second time, for the writer.
+    fn start(port: NativePort, device: &str, io: &TermIo) -> serialport::Result<Self> {
+        let writer = port.try_clone_native()?;
+        #[cfg(windows)]
+        not_inherited(&writer);
+        let (port, writer): (Box<dyn SerialPort>, Box<dyn SerialPort>) = (Box::new(port), Box::new(writer));
         let hold = Hold::new(device);
         let (failed_tx, failed) = mpsc::unbounded_channel();
         let sink = io.sink();
@@ -221,7 +257,7 @@ impl Line {
             write_input(writer, inputs, &failed_tx);
             drop(hold);
         });
-        Self { input, failed }
+        Ok(Self { input, failed })
     }
 
     /// Passes input to the writer thread until the device fails or the tab closes. Input the
@@ -381,81 +417,118 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn talks_to_a_device() {
-        let (mut device, path) = fake_device();
-        let (io, input, output, events) = TermIo::detached((80, 24));
-        let options = SerialOptions { device: path.clone(), ..SerialOptions::default() };
-        let session = tokio::spawn(run(options, io));
+        // In the session's task, then on threads (for a device tokio can't watch).
+        for on_threads in [false, true] {
+            let (mut device, path) = fake_device();
+            let (io, input, output, events) = TermIo::detached((80, 24));
+            let options = SerialOptions { device: path.clone(), ..SerialOptions::default() };
+            let session = tokio::spawn(run_with(options, io, on_threads));
 
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        input.send(SessionInput::Data(b"help\r".to_vec())).unwrap();
-        let mut buffer = [0; 64];
-        let n = device.read(&mut buffer).unwrap();
-        assert_eq!(&buffer[..n], b"help\r");
-        device.write_all(b"U-Boot> ").unwrap();
-        tokio::time::sleep(Duration::from_millis(300)).await;
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            input.send(SessionInput::Data(b"help\r".to_vec())).unwrap();
+            let mut buffer = [0; 64];
+            let n = device.read(&mut buffer).unwrap();
+            assert_eq!(&buffer[..n], b"help\r");
+            device.write_all(b"U-Boot> ").unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
 
-        // The device goes away.
-        drop(device);
-        tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
-        let text = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
-        assert!(text.contains("115200 8N1") && text.contains("U-Boot> "), "{text:?}");
-        let events: Vec<String> = events.try_iter().collect();
-        assert!(events[0].contains(r#""type":"connected""#), "{events:?}");
-        assert!(events.last().unwrap().contains(r#""reason":"lost""#), "{events:?}");
+            // The device goes away.
+            drop(device);
+            tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
+            let text = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
+            assert!(text.contains("115200 8N1") && text.contains("U-Boot> "), "{text:?}");
+            let events: Vec<String> = events.try_iter().collect();
+            assert!(events[0].contains(r#""type":"connected""#), "{events:?}");
+            assert!(events.last().unwrap().contains(r#""reason":"lost""#), "{events:?}");
+        }
     }
 
     /// Reconnecting closes the session and opens the device again at once, while the old
     /// session's threads may still hold the port, which only one can open at a time.
     #[tokio::test(flavor = "multi_thread")]
     async fn reopens_a_device_just_closed() {
-        let (_device, path) = fake_device();
-        let options = SerialOptions { device: path, ..SerialOptions::default() };
-        let (io, _input, _output, _events) = TermIo::detached((80, 24));
-        let first = tokio::spawn(run(options.clone(), io));
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        first.abort();
-        let (io, _input, _output, events) = TermIo::detached((80, 24));
-        let second = tokio::spawn(run(options, io));
-        tokio::time::sleep(Duration::from_millis(1500)).await;
-        let events: Vec<String> = events.try_iter().collect();
-        assert!(events.first().is_some_and(|e| e.contains(r#""type":"connected""#)), "{events:?}");
-        second.abort();
+        // In the session's task, then on threads (for a device tokio can't watch).
+        for on_threads in [false, true] {
+            let (_device, path) = fake_device();
+            let options = SerialOptions { device: path, ..SerialOptions::default() };
+            let (io, _input, _output, _events) = TermIo::detached((80, 24));
+            let first = tokio::spawn(run_with(options.clone(), io, on_threads));
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            first.abort();
+            let (io, _input, _output, events) = TermIo::detached((80, 24));
+            let second = tokio::spawn(run_with(options, io, on_threads));
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            let events: Vec<String> = events.try_iter().collect();
+            assert!(events.first().is_some_and(|e| e.contains(r#""type":"connected""#)), "{events:?}");
+            second.abort();
+        }
     }
 
     /// A tab closed while a write waits for a device that takes no more (flow control holding
     /// the line) lets go of the device, so that it can be opened again.
     #[tokio::test(flavor = "multi_thread")]
     async fn lets_go_of_a_device_holding_up_a_write() {
-        // Never read: the line fills up.
-        let (_device, path) = fake_device();
-        let (io, input, _output, _events) = TermIo::detached((80, 24));
-        let session = tokio::spawn(run(SerialOptions { device: path.clone(), ..SerialOptions::default() }, io));
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        input.send(SessionInput::Data(vec![b'x'; 1 << 20])).unwrap();
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        drop(input);
-        tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
-        let since = Instant::now();
-        while Hold::is_held(&path) && since.elapsed() < RELEASE_WAIT {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+        // In the session's task, then on threads (for a device tokio can't watch).
+        for on_threads in [false, true] {
+            // Never read: the line fills up.
+            let (_device, path) = fake_device();
+            let (io, input, _output, _events) = TermIo::detached((80, 24));
+            let session = tokio::spawn(run_with(SerialOptions { device: path.clone(), ..SerialOptions::default() }, io, on_threads));
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            input.send(SessionInput::Data(vec![b'x'; 1 << 20])).unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            drop(input);
+            tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
+            let since = Instant::now();
+            while Hold::is_held(&path) && since.elapsed() < RELEASE_WAIT {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            assert!(!Hold::is_held(&path));
         }
-        assert!(!Hold::is_held(&path));
     }
 
     /// Input keeps being read while the device takes no more: more writes than the writer's
     /// queue holds still let the tab close (or a keystroke cancel a ZMODEM upload).
     #[tokio::test(flavor = "multi_thread")]
     async fn reads_input_while_the_device_holds_up_writes() {
-        let (_device, path) = fake_device();
-        let (io, input, _output, _events) = TermIo::detached((80, 24));
-        let session = tokio::spawn(run(SerialOptions { device: path, ..SerialOptions::default() }, io));
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        for _ in 0..INPUT_QUEUE * 4 {
-            input.send(SessionInput::Data(vec![b'x'; 64 << 10])).unwrap();
+        // In the session's task, then on threads (for a device tokio can't watch).
+        for on_threads in [false, true] {
+            let (_device, path) = fake_device();
+            let (io, input, _output, _events) = TermIo::detached((80, 24));
+            let session = tokio::spawn(run_with(SerialOptions { device: path, ..SerialOptions::default() }, io, on_threads));
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            for _ in 0..INPUT_QUEUE * 4 {
+                input.send(SessionInput::Data(vec![b'x'; 64 << 10])).unwrap();
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            drop(input);
+            tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
         }
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        drop(input);
-        tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
+    }
+
+    /// The other tests run in the session's task only if tokio can watch the fake device.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_task_drives_a_device_tokio_can_watch() {
+        let (_device, path) = fake_device();
+        let port = open(&SerialOptions { device: path, ..SerialOptions::default() }).unwrap();
+        assert!(tokio::io::unix::AsyncFd::try_new(port).is_ok());
+    }
+
+    /// What is typed after a break goes out after it, and the line keeps working.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sends_input_after_a_break() {
+        for on_threads in [false, true] {
+            let (mut device, path) = fake_device();
+            let (io, input, _output, _events) = TermIo::detached((80, 24));
+            let session = tokio::spawn(run_with(SerialOptions { device: path, ..SerialOptions::default() }, io, on_threads));
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            input.send(SessionInput::Break).unwrap();
+            input.send(SessionInput::Data(b"after".to_vec())).unwrap();
+            let mut buffer = [0; 64];
+            let n = device.read(&mut buffer).unwrap();
+            assert_eq!(&buffer[..n], b"after");
+            session.abort();
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
