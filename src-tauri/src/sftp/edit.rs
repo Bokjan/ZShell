@@ -8,11 +8,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::Notify;
 use ts_rs::TS;
 
 use super::file_name;
@@ -20,6 +22,10 @@ use super::replace::RemoteTarget;
 use crate::error::{Error, Result};
 use crate::local_name::local_file_name;
 
+/// How long a local copy goes without changing before a change is taken as a finished save,
+/// so that one still being written is not uploaded half-way.
+const SETTLE: Duration = Duration::from_millis(300);
+/// How often a local copy is checked where the system can't tell when it changes.
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Edit folders left by an earlier run are deleted once untouched for this long; not right
 /// away, since another instance of the app may still be using its own.
@@ -48,7 +54,73 @@ struct Edit {
     /// Held for a whole upload: two at once would each see the other's partial write as
     /// someone else's change, and both truncate the file.
     uploading: tokio::sync::Mutex<()>,
-    stopped: Arc<AtomicBool>,
+    stopped: AtomicBool,
+    /// Woken by changes in the local copy's folder, and to stop.
+    wake: Arc<Notify>,
+}
+
+impl Edit {
+    fn stop(&self) {
+        self.stopped.store(true, Ordering::Relaxed);
+        self.wake.notify_one();
+    }
+}
+
+/// Tells edits when their folders change: one watcher for all of them, since it is a thread on
+/// most systems (and Linux limits how many there are). It watches each edit's folder, not the
+/// file: editors that save by writing a new file and renaming it over the old one would leave
+/// a watch on the file following the old one.
+#[derive(Default)]
+struct Watcher {
+    /// Made with the first edit; none until then, or while the system won't make one.
+    watcher: Mutex<Option<RecommendedWatcher>>,
+    /// The folders watched, as the system names them (see `watch`), with the edits to wake.
+    /// Locked only briefly: the watcher's thread locks it for each change, and stopping a
+    /// watch waits for that thread on macOS.
+    folders: Arc<Mutex<HashMap<PathBuf, Vec<Arc<Notify>>>>>,
+}
+
+impl Watcher {
+    /// Wakes `wake` on each change in `folder`, unless the system can't watch it.
+    fn add(&self, folder: &Path, wake: &Arc<Notify>) -> bool {
+        let mut watcher = self.watcher.lock().unwrap();
+        if watcher.is_none() {
+            let folders = self.folders.clone();
+            *watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                let folders = folders.lock().unwrap();
+                // Changes may have been missed when the system's queue overflowed.
+                let everywhere = event.as_ref().map_or(true, |event| event.need_rescan());
+                let paths = event.map(|event| event.paths).unwrap_or_default();
+                for (folder, wakes) in folders.iter() {
+                    if everywhere || paths.iter().any(|path| path.starts_with(folder)) {
+                        wakes.iter().for_each(|wake| wake.notify_one());
+                    }
+                }
+            })
+            .ok();
+        }
+        let Some(watcher) = watcher.as_mut() else { return false };
+        let watched = self.folders.lock().unwrap().contains_key(folder);
+        if !watched && watcher.watch(folder, RecursiveMode::NonRecursive).is_err() {
+            return false;
+        }
+        self.folders.lock().unwrap().entry(folder.to_owned()).or_default().push(wake.clone());
+        true
+    }
+
+    fn remove(&self, folder: &Path, wake: &Arc<Notify>) {
+        let mut watcher = self.watcher.lock().unwrap();
+        let mut folders = self.folders.lock().unwrap();
+        let Some(wakes) = folders.get_mut(folder) else { return };
+        wakes.retain(|other| !Arc::ptr_eq(other, wake));
+        if wakes.is_empty() {
+            folders.remove(folder);
+            drop(folders);
+            if let Some(watcher) = watcher.as_mut() {
+                let _ = watcher.unwatch(folder);
+            }
+        }
+    }
 }
 
 /// Files being edited, by the webview that opened each and the id its page chose. An edit
@@ -57,6 +129,7 @@ struct Edit {
 pub struct Edits {
     root: PathBuf,
     edits: Mutex<HashMap<(String, String), Arc<Edit>>>,
+    watcher: Arc<Watcher>,
 }
 
 impl Edits {
@@ -64,7 +137,7 @@ impl Edits {
         // Not before the first window: a folder deleted meanwhile is one no edit uses now.
         let old = root.clone();
         std::thread::spawn(move || remove_old(&old));
-        Self { root, edits: Mutex::new(HashMap::new()) }
+        Self { root, edits: Mutex::new(HashMap::new()), watcher: Arc::default() }
     }
 
     /// Where `remote` is downloaded to for editing, in a folder of its own so the editor
@@ -90,18 +163,18 @@ impl Edits {
         remote_stamp: Option<Stamp>,
         events: Channel<EditEvent>,
     ) {
-        let stopped = Arc::new(AtomicBool::new(false));
         let edit = Arc::new(Edit {
             remote,
-            local: local.clone(),
+            local,
             remote_stamp: Mutex::new(remote_stamp),
             uploading: tokio::sync::Mutex::new(()),
-            stopped: stopped.clone(),
+            stopped: AtomicBool::new(false),
+            wake: Arc::default(),
         });
-        if let Some(old) = self.edits.lock().unwrap().insert((webview.to_owned(), edit_id.to_owned()), edit) {
-            old.stopped.store(true, Ordering::Relaxed);
+        if let Some(old) = self.edits.lock().unwrap().insert((webview.to_owned(), edit_id.to_owned()), edit.clone()) {
+            old.stop();
         }
-        tauri::async_runtime::spawn(watch(local, stopped, events));
+        tauri::async_runtime::spawn(watch(edit, self.watcher.clone(), events));
     }
 
     fn get(&self, webview: &str, edit_id: &str) -> Result<Arc<Edit>> {
@@ -159,7 +232,7 @@ impl Edits {
     /// editor still has unsaved changes.
     pub fn stop(&self, webview: &str, edit_id: &str) {
         if let Some(edit) = self.edits.lock().unwrap().remove(&(webview.to_owned(), edit_id.to_owned())) {
-            edit.stopped.store(true, Ordering::Relaxed);
+            edit.stop();
         }
     }
 
@@ -168,7 +241,7 @@ impl Edits {
         self.edits.lock().unwrap().retain(|(owner, _), edit| {
             let theirs = owner == webview;
             if theirs {
-                edit.stopped.store(true, Ordering::Relaxed);
+                edit.stop();
             }
             !theirs
         });
@@ -182,24 +255,38 @@ pub async fn remote_stamp(sftp: &SftpSession, remote: &str) -> Option<Stamp> {
     Some(Stamp { size: metadata.size.unwrap_or(0), modified: metadata.mtime })
 }
 
-/// Polls the local copy, reporting a change once it has stayed the same for one interval, so
-/// a save still being written is not uploaded half-way.
-async fn watch(local: PathBuf, stopped: Arc<AtomicBool>, events: Channel<EditEvent>) {
+/// Reports each change of the local copy once it has stopped changing: after [`SETTLE`]
+/// without changes in its folder, or where the system can't watch the folder, once it is the
+/// same in two checks in a row.
+async fn watch(edit: Arc<Edit>, watcher: Arc<Watcher>, events: Channel<EditEvent>) {
     let stamp = |metadata: std::fs::Metadata| (metadata.len(), metadata.modified().ok());
-    let mut reported = tokio::fs::metadata(&local).await.ok().map(stamp);
+    let mut reported = tokio::fs::metadata(&edit.local).await.ok().map(stamp);
     let mut previous = reported;
-    while !stopped.load(Ordering::Relaxed) {
-        tokio::time::sleep(POLL_INTERVAL).await;
+    // The real path, which is what the system reports changes in (macOS's temporary folder is
+    // behind a symlink).
+    let folder = edit.local.parent().and_then(|folder| std::fs::canonicalize(folder).ok());
+    let watched = folder.filter(|folder| watcher.add(folder, &edit.wake));
+    while !edit.stopped.load(Ordering::Relaxed) {
+        if watched.is_some() {
+            edit.wake.notified().await;
+            while tokio::time::timeout(SETTLE, edit.wake.notified()).await.is_ok() {}
+        } else {
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
         // Missing for a moment while editors that save by renaming replace it.
-        let Ok(metadata) = tokio::fs::metadata(&local).await else { continue };
+        let Ok(metadata) = tokio::fs::metadata(&edit.local).await else { continue };
         let current = Some(stamp(metadata));
-        if current == previous && current != reported && !stopped.load(Ordering::Relaxed) {
+        let settled = watched.is_some() || current == previous;
+        if settled && current != reported && !edit.stopped.load(Ordering::Relaxed) {
             reported = current;
             if events.send(EditEvent::Changed).is_err() {
                 break;
             }
         }
         previous = current;
+    }
+    if let Some(folder) = watched {
+        watcher.remove(&folder, &edit.wake);
     }
 }
 
@@ -382,6 +469,74 @@ pub(crate) fn remove_old(root: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn edit_folder() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("zshell-edit-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Saves as editors that write a new file and rename it over the old one do.
+    fn save_by_renaming(path: &Path, text: &str) {
+        let staged = path.with_extension("swp");
+        std::fs::write(&staged, text).unwrap();
+        std::fs::rename(staged, path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_watcher_wakes_an_edit_when_its_folder_changes() {
+        let dir = edit_folder();
+        // As `watch` passes it: the temporary folder is behind a symlink on macOS, and the
+        // system reports the real path.
+        let folder = std::fs::canonicalize(&dir).unwrap();
+        let watcher = Watcher::default();
+        let wake = Arc::new(Notify::new());
+        assert!(watcher.add(&folder, &wake));
+        save_by_renaming(&dir.join("a.txt"), "saved");
+        tokio::time::timeout(Duration::from_secs(10), wake.notified()).await.expect("woken by the save");
+        watcher.remove(&folder, &wake);
+        assert!(watcher.folders.lock().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn each_save_is_reported_once() {
+        let dir = edit_folder();
+        let local = dir.join("a.txt");
+        std::fs::write(&local, "downloaded").unwrap();
+        let (sent, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let events = Channel::new(move |_| {
+            let _ = sent.send(());
+            Ok(())
+        });
+        let edits = Edits { root: dir.clone(), edits: Mutex::default(), watcher: Arc::default() };
+        edits.start("main", "e1", "/remote/a.txt".into(), local.clone(), None, events);
+        // Until the watch is set up: a save before it would be taken as what was downloaded.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while edits.watcher.folders.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the folder watched");
+
+        save_by_renaming(&local, "first save");
+        tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("first save reported");
+        std::fs::write(&local, "second save, written in place").unwrap();
+        tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("second save reported");
+        tokio::time::sleep(SETTLE * 3).await;
+        assert!(received.try_recv().is_err(), "a save reported twice");
+
+        edits.stop("main", "e1");
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !edits.watcher.folders.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the folder unwatched once stopped");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn kinds_are_matched_by_extension_ignoring_case() {

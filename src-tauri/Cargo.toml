@@ -66,6 +66,7 @@ sys-locale = "0.3.2"
 # Looking for the start of a ZMODEM transfer in all terminal output (already in the tree
 # through serde_json, futures-util and vte).
 memchr = "2"
+notify = "8.2"
 
 [dev-dependencies]
 tokio = { version = "1.53.2", features = ["test-util"] }
