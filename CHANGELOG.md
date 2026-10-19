@@ -2,6 +2,24 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.9.0] - 2026-10-19
+
+### Features
+
+- Programs in the terminal can do more, as in other modern terminals:
+  - Copy to the clipboard (OSC 52), for example from tmux or Neovim on a server, up to a size set in Settings › Mouse and Clipboard (1024 KB by default). Programs can never read the clipboard, and copying can be turned off there.
+  - Report their progress (OSC 9;4), shown as a ring on their tab and on the window's taskbar button, or on the Dock icon and the Linux launcher, combined across windows. It goes away when the session ends or after 30 seconds without news.
+  - Send notifications (OSC 9, 777 and 99, as iTerm2, urxvt and kitty do), for example when a long command finishes. A tab in the background is marked, and while ZShell is in the background the system shows the notification, at most one every 3 seconds for each pane (the last of a burst rather than the first), cut to 4096 characters. While the app is locked the notification only says that a program sent one, without its text or the pane's title. Notifications can be turned off in Settings › Terminal.
+  - Set the pointer's shape over the terminal (OSC 22), by its CSS or X11 name, kept separately for the main and the alternate screen as kitty does.
+
+### Bug Fixes
+
+- The Option key is capitalized in the Japanese interface.
+
+### Internal
+
+- The setting for notifications from programs is laid out with the same component as every other setting.
+
 ## [3.8.0] - 2026-10-19
 
 ### Features
