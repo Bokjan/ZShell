@@ -75,6 +75,9 @@
     "reasonMacos": "afficher vos sessions",
     "reasonWindows": "Confirmez votre identité pour déverrouiller ZShell"
   },
+  "colorPick": {
+    "instructions": "Cliquez n’importe où pour prélever une couleur, ou déplacez le pointeur avec les touches fléchées et appuyez sur Entrée. Appuyez sur Échap pour annuler."
+  },
   "errors": {
     "unexpected": "Erreur inattendue",
     "knownHosts": {
@@ -270,6 +273,12 @@
       "busy": "Une authentification est déjà en cours",
       "locked": "ZShell est verrouillé. Déverrouillez-le d’abord.",
       "gone": "Il n’y a plus aucun moyen de s’authentifier sur cet ordinateur"
+    },
+    "colorPick": {
+      "busy": "Une couleur est déjà en cours de prélèvement",
+      "failed": "Impossible de prélever une couleur à l’écran",
+      "unavailable": "Prélever une couleur à l’écran nécessite le portail de capture d’écran du bureau (xdg-desktop-portal), qui n’est pas disponible",
+      "unsupported": "Prélever une couleur à l’écran nécessite macOS 10.15 ou une version ultérieure"
     }
   },
   "zmodem": {

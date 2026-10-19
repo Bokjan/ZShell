@@ -11,6 +11,15 @@
     "dontAskAgain": "不再询问",
     "opensInBrowser": "（在浏览器中打开）"
   },
+  "colorPicker": {
+    "swatch": "{label}：{color}",
+    "area": "饱和度和亮度",
+    "areaValue": "饱和度 {saturation}%，亮度 {brightness}%",
+    "hue": "色相",
+    "hex": "十六进制",
+    "pick": "从屏幕取色",
+    "picked": "已取色：{color}"
+  },
   "app": {
     "name": "ZShell",
     "placeholder": "在左侧选择一个会话进行连接，或打开本地终端",

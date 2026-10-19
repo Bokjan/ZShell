@@ -75,6 +75,9 @@
     "reasonMacos": "show your sessions",
     "reasonWindows": "Verify it's you to unlock ZShell"
   },
+  "colorPick": {
+    "instructions": "Click anywhere to pick a color, or move the pointer with the arrow keys and press Enter. Press Escape to cancel."
+  },
   "errors": {
     "unexpected": "Unexpected error",
     "knownHosts": {
@@ -270,6 +273,12 @@
       "busy": "Authentication is already in progress",
       "locked": "ZShell is locked. Unlock it first.",
       "gone": "There is no longer a way to authenticate on this computer"
+    },
+    "colorPick": {
+      "busy": "A color is already being picked",
+      "failed": "Could not pick a color from the screen",
+      "unavailable": "Picking a color from the screen needs the desktop's screenshot portal (xdg-desktop-portal), which is not available",
+      "unsupported": "Picking a color from the screen needs macOS 10.15 or later"
     }
   },
   "zmodem": {

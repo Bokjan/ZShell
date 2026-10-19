@@ -6,6 +6,7 @@ mod i18n;
 mod applock;
 mod backup;
 mod bindings;
+mod color_pick;
 mod commands;
 mod config;
 mod connections;
@@ -290,6 +291,7 @@ pub fn run() {
             commands::applock::app_lock_unlock,
             commands::applock::app_lock_configure,
             commands::local_username,
+            commands::color_pick,
             commands::home_directory,
             commands::ssh_files::ssh_config_default_path,
             commands::ssh_files::ssh_default_key_path,

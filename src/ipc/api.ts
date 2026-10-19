@@ -231,6 +231,9 @@ export const forwards = {
 
 export const serialPorts = () => call("serial_ports");
 
+/** Lets the user pick a color from anywhere on the screen: `#rrggbb`, or `null` if they cancelled. */
+export const pickColor = () => call("color_pick");
+
 /** Sends a break: on a serial line, or Telnet's BRK. */
 export const sendBreak = (id: SessionId) => call("session_break", { id });
 

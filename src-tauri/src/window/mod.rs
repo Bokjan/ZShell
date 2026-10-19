@@ -50,7 +50,7 @@ mod win;
 #[cfg(windows)]
 use win as platform;
 #[cfg(windows)]
-pub use win::keep_behind;
+pub use win::{keep_behind, need_pointer};
 
 const MAIN: &str = "main";
 const LABEL_PREFIX: &str = "window-";

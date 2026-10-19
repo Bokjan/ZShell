@@ -75,6 +75,9 @@
     "reasonMacos": "Ihre Sitzungen anzuzeigen",
     "reasonWindows": "Bestätigen Sie Ihre Identität, um ZShell zu entsperren"
   },
+  "colorPick": {
+    "instructions": "Klicken Sie irgendwo, um eine Farbe aufzunehmen, oder bewegen Sie den Zeiger mit den Pfeiltasten und drücken Sie die Eingabetaste. Mit Esc brechen Sie ab."
+  },
   "errors": {
     "unexpected": "Unerwarteter Fehler",
     "knownHosts": {
@@ -270,6 +273,12 @@
       "busy": "Es läuft bereits eine Authentifizierung",
       "locked": "ZShell ist gesperrt. Entsperren Sie es zuerst.",
       "gone": "Auf diesem Computer gibt es keine Möglichkeit mehr, sich zu authentifizieren"
+    },
+    "colorPick": {
+      "busy": "Es wird bereits eine Farbe aufgenommen",
+      "failed": "Die Farbe konnte nicht vom Bildschirm aufgenommen werden",
+      "unavailable": "Zum Aufnehmen einer Farbe vom Bildschirm wird das Screenshot-Portal des Desktops (xdg-desktop-portal) benötigt, das nicht verfügbar ist",
+      "unsupported": "Zum Aufnehmen einer Farbe vom Bildschirm ist macOS 10.15 oder neuer erforderlich"
     }
   },
   "zmodem": {

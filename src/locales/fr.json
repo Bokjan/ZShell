@@ -11,6 +11,15 @@
     "dontAskAgain": "Ne plus demander",
     "opensInBrowser": "(s’ouvre dans votre navigateur)"
   },
+  "colorPicker": {
+    "swatch": "{label} : {color}",
+    "area": "Saturation et luminosité",
+    "areaValue": "Saturation {saturation} %, luminosité {brightness} %",
+    "hue": "Teinte",
+    "hex": "Hex",
+    "pick": "Prélever une couleur à l’écran",
+    "picked": "Couleur prélevée : {color}"
+  },
   "app": {
     "name": "ZShell",
     "placeholder": "Sélectionnez une session à gauche pour vous connecter, ou ouvrez un terminal local",

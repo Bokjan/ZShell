@@ -11,6 +11,15 @@
     "dontAskAgain": "今後は確認しない",
     "opensInBrowser": "（ブラウザーで開きます）"
   },
+  "colorPicker": {
+    "swatch": "{label}：{color}",
+    "area": "彩度と明度",
+    "areaValue": "彩度{saturation}%、明度{brightness}%",
+    "hue": "色相",
+    "hex": "16進数",
+    "pick": "画面から色を取得",
+    "picked": "{color}を取得しました"
+  },
   "app": {
     "name": "ZShell",
     "placeholder": "左のセッションを選択して接続するか、ローカルターミナルを開いてください",

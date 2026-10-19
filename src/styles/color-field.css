@@ -1,0 +1,93 @@
+/* A color field (ColorField.tsx): its swatch, and the popup it opens. The gradients and the
+   thumbs' rings are the colors being chosen, or must show on any of them, not the theme's. */
+
+.color-swatch {
+  width: 44px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  /* A margin of the field's background around the color, so that it shows against the border. */
+  box-shadow: inset 0 0 0 2px var(--bg);
+  cursor: pointer;
+}
+.color-swatch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.color-popup {
+  position: fixed;
+  z-index: 1;
+  width: calc(220px * var(--text-scale));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+/* Saturation from left to right, brightness from bottom to top, over the hue (set inline). */
+.color-area {
+  position: relative;
+  height: 140px;
+  border-radius: 4px;
+  background-image: linear-gradient(to top, black, transparent), linear-gradient(to right, white, transparent);
+  cursor: crosshair;
+  touch-action: none;
+}
+.color-hue {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    to right,
+    hsl(0 100% 50%),
+    hsl(60 100% 50%),
+    hsl(120 100% 50%),
+    hsl(180 100% 50%),
+    hsl(240 100% 50%),
+    hsl(300 100% 50%),
+    hsl(360 100% 50%)
+  );
+  cursor: pointer;
+  touch-action: none;
+}
+.color-thumb {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.5),
+    inset 0 0 0 1px rgb(0 0 0 / 0.5);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.color-hue .color-thumb {
+  top: 50%;
+}
+.color-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dialog label.color-hex {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.dialog .color-hex input {
+  width: 0;
+  flex: 1;
+  font-family: var(--font-mono);
+}
+.color-popup .error {
+  margin: 0;
+}

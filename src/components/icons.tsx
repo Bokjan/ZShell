@@ -297,6 +297,15 @@ export function TrashIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** An eyedropper, for picking a color from the screen. */
+export function EyedropperIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size} strokeWidth={1.3}>
+      <path d="M9.3 6.3L3.8 11.8 3 14l2.2-.8 5.5-5.5M7.5 4.5l4 4M9 6l2.3-2.3a1.414 1.414 0 0 1 2 2L11 8" />
+    </Svg>
+  );
+}
+
 /** A padlock, on the unlock screen. */
 export function LockIcon({ size = 14 }: { size?: number }) {
   return (

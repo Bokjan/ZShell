@@ -48,8 +48,12 @@
   .status-activity > .receive.on {
     color: Highlight;
   }
-  /* Status and color marks are their color. */
+  /* Status and color marks are their color, and so is a color field's every part. */
   .status-dot,
+  .color-swatch,
+  .color-area,
+  .color-hue,
+  .color-thumb,
   .tab-color,
   .tab-log,
   .tab-question,

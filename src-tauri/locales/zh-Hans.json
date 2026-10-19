@@ -75,6 +75,9 @@
     "reasonMacos": "显示你的会话",
     "reasonWindows": "请验证你的身份以解锁 ZShell"
   },
+  "colorPick": {
+    "instructions": "点击任意位置取色，或用方向键移动指针后按 Enter。按 Esc 取消。"
+  },
   "errors": {
     "unexpected": "意外错误",
     "knownHosts": {
@@ -270,6 +273,12 @@
       "busy": "身份验证正在进行中",
       "locked": "ZShell 已锁定。请先解锁。",
       "gone": "此电脑上已没有可用的身份验证方式"
+    },
+    "colorPick": {
+      "busy": "已经在取色了",
+      "failed": "无法从屏幕取色",
+      "unavailable": "从屏幕取色需要桌面的截图 portal（xdg-desktop-portal），但它不可用",
+      "unsupported": "从屏幕取色需要 macOS 10.15 或更高版本"
     }
   },
   "zmodem": {

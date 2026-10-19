@@ -23,6 +23,7 @@
 @import "./styles/forwards-panel.css";
 @import "./styles/context-menu.css";
 @import "./styles/dialogs.css";
+@import "./styles/color-field.css";
 @import "./styles/settings.css";
 @import "./styles/licenses.css";
 @import "./styles/known-hosts.css";

@@ -4,6 +4,7 @@ import { appearanceOf, type ProfileForm } from "../../lib/profileForm";
 import { useSettings } from "../../hooks/settings";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from "../../ipc/api";
 import { sessionScheme, TERMINAL_SCHEMES } from "../../lib/terminalSchemes";
+import { ColorField } from "../ColorField";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
 import { SpinInput } from "../SpinInput";
 
@@ -40,12 +41,11 @@ export function AppearancePage({ form, set }: Props) {
           <input type="checkbox" checked={form.customBackground} onChange={(e) => set({ customBackground: e.target.checked })} />
           {t("profile.customBackground")}
         </label>
-        <input
-          type="color"
+        <ColorField
           value={form.background}
           disabled={!form.customBackground}
-          onChange={(e) => set({ background: e.target.value })}
-          aria-label={t("profile.customBackground")}
+          onChange={(background) => set({ background })}
+          label={t("profile.customBackground")}
         />
       </div>
       <p className="hint">{t("profile.customBackgroundHint")}</p>

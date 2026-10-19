@@ -11,6 +11,15 @@
     "dontAskAgain": "Nicht mehr fragen",
     "opensInBrowser": "(wird im Browser geöffnet)"
   },
+  "colorPicker": {
+    "swatch": "{label}: {color}",
+    "area": "Sättigung und Helligkeit",
+    "areaValue": "Sättigung {saturation} %, Helligkeit {brightness} %",
+    "hue": "Farbton",
+    "hex": "Hex",
+    "pick": "Farbe vom Bildschirm aufnehmen",
+    "picked": "{color} aufgenommen"
+  },
   "app": {
     "name": "ZShell",
     "placeholder": "Wählen Sie links eine Sitzung zum Verbinden aus, oder öffnen Sie ein lokales Terminal",

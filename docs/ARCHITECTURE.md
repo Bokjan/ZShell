@@ -228,6 +228,11 @@
 - **只用 SVG**：图标全部是 `components/icons.tsx` 里的 SVG 组件，不用文字字形或 emoji：×、▾、⟳、📁 这类字符在各平台字体里的形状和基线都不同，过去多次因此错位。`icons.test.ts` 在 `icons.tsx` 之外出现 `<svg>` 或这类字符时失败（例外见测试）。
 - **画法**：16×16 网格，`currentColor` 描边，`aria-hidden`，名称由所在的按钮给出（只有图标的按钮用 `IconButton`，它的 `label` 也是悬停提示）。对齐规则见 `icons.tsx`。
 
+### 颜色选择
+
+- **不用原生颜色框**：`<input type="color">` 弹出的是各平台自己的颜色窗口：WebView2 里吸管按钮点了没反应（取色要宿主实现，WebView2 没有实现，`window.EyeDropper` 也一样，`open()` 会立即以取消告终），GTK 的对话框没有吸管，三个平台的外观也各不相同。颜色字段统一用 `components/ColorField.tsx`：点色块打开页面内的弹层，里面有饱和度/亮度区、色相条、十六进制输入框和吸管按钮。弹层不引入第三方组件，因为常见的组件把读屏文字写死成英文。
+- **吸管**：从屏幕取色由后端的 `color_pick` 命令完成（`color_pick/`）。Windows 用自己的全屏窗口显示虚拟桌面的截图，macOS 用系统的 `NSColorSampler`，Linux 用截图 portal 的 `PickColor`。命令返回 `#rrggbb`，用户取消时返回 `null`。同一时间只能有一次取色，重复调用返回 `colorPick.busy`。
+
 ### 快捷键、菜单与侧栏
 
 - **快捷键**：在捕获阶段拦截，终端收不到。所有快捷键在 `lib/keymap.ts` 的一张表里声明，按物理按键匹配，应用菜单（包括 macOS 的原生菜单栏）、右键菜单的文字和设置里的列表都由它得出，改快捷键只改这一处。Windows 上与 shell 冲突的快捷键加 Shift（Ctrl+F、Ctrl+W 留给 shell）。对话框打开时只有"打开设置"生效，免得操作对话框背后的标签。

@@ -29,6 +29,10 @@ export type ErrorCode =
   | "auth.moreRequired"
   | "auth.notOffered"
   | "auth.passwordFailed"
+  | "colorPick.busy"
+  | "colorPick.failed"
+  | "colorPick.unavailable"
+  | "colorPick.unsupported"
   | "config.unreadable"
   | "config.writeFailed"
   | "credentialStore"
@@ -1011,6 +1015,7 @@ export type Commands = {
   app_menu_set: { args: { sections: NativeMenuSection[] }; result: void };
   app_menu_set_label: { args: { id: string; label: string }; result: void };
   app_quit: { args: Record<string, never>; result: void };
+  color_pick: { args: Record<string, never>; result: string | null };
   config_directory: { args: Record<string, never>; result: string };
   config_set_aside: { args: Record<string, never>; result: SetAsideFile[] };
   credential_store_available: { args: Record<string, never>; result: boolean };

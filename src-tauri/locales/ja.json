@@ -75,6 +75,9 @@
     "reasonMacos": "セッションを表示",
     "reasonWindows": "ZShellのロックを解除するには、本人確認を行ってください"
   },
+  "colorPick": {
+    "instructions": "任意の場所をクリックして色を取得します。矢印キーでポインターを動かしてEnterキーを押しても取得できます。Escキーでキャンセルします。"
+  },
   "errors": {
     "unexpected": "予期しないエラーが発生しました",
     "knownHosts": {
@@ -270,6 +273,12 @@
       "busy": "認証はすでに進行中です",
       "locked": "ZShellはロックされています。先にロックを解除してください。",
       "gone": "このコンピューターで認証する方法がなくなりました"
+    },
+    "colorPick": {
+      "busy": "すでに色を取得しています",
+      "failed": "画面から色を取得できませんでした",
+      "unavailable": "画面から色を取得するにはデスクトップのスクリーンショットポータル（xdg-desktop-portal）が必要ですが、利用できません",
+      "unsupported": "画面から色を取得するにはmacOS 10.15以降が必要です"
     }
   },
   "zmodem": {

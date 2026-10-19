@@ -273,23 +273,24 @@ unsafe fn show_system_menu(hwnd: HWND) {
 
 // Only touched on the main thread, whose input queue the web view's and the dialogs' windows share.
 thread_local! {
-    /// The file dialogs open, and how many times the pointer was shown for them.
-    static FILE_DIALOGS: Cell<(u32, u32)> = const { Cell::new((0, 0)) };
+    /// The windows open that need the pointer, and how many times it was shown for them.
+    static POINTER_WINDOWS: Cell<(u32, u32)> = const { Cell::new((0, 0)) };
 }
 
-/// A file dialog is opening (`open`) or has closed: the pointer shows while one is open.
+/// A window that needs the pointer (a file dialog, the color picker's) is opening (`open`) or
+/// has closed: the pointer shows while one is open. On the main thread.
 ///
 /// WebView2 follows the "Hide pointer while typing" mouse setting by lowering the cursor
 /// display count with `ShowCursor(FALSE)`, and raises it again only once the pointer moves
 /// over the web view. The count belongs to the input queue, which the dialogs share, so a
 /// dialog opened right after typing (`rz` in the terminal) had no pointer. Raising the count
-/// to 0 shows it; lowering it as much once the last dialog has closed leaves it where
+/// to 0 shows it; lowering it as much once the last window has closed leaves it where
 /// WebView2 expects it. Chromium stopped calling `ShowCursor` for this in October 2026;
 /// TODO.md says when this can go.
-fn count_file_dialog(open: bool) {
-    let (mut dialogs, mut shown) = FILE_DIALOGS.get();
+pub fn need_pointer(open: bool) {
+    let (mut windows, mut shown) = POINTER_WINDOWS.get();
     if open {
-        dialogs += 1;
+        windows += 1;
         // Each call raises the count by one and returns it.
         loop {
             shown += 1;
@@ -298,9 +299,9 @@ fn count_file_dialog(open: bool) {
                 break;
             }
         }
-    } else if dialogs > 0 {
-        dialogs -= 1;
-        if dialogs == 0 {
+    } else if windows > 0 {
+        windows -= 1;
+        if windows == 0 {
             for _ in 0..shown {
                 // SAFETY: takes no pointers.
                 unsafe { ShowCursor(0) };
@@ -308,7 +309,7 @@ fn count_file_dialog(open: bool) {
             shown = 0;
         }
     }
-    FILE_DIALOGS.set((dialogs, shown));
+    POINTER_WINDOWS.set((windows, shown));
 }
 
 /// One of the app's windows coming to the foreground: the window, the one in the foreground
@@ -451,9 +452,9 @@ pub(super) fn system_menu(window: WebviewWindow) -> tauri::Result<()> {
     window.run_on_main_thread(move || unsafe { show_system_menu(hwnd as _) })
 }
 
-/// See `count_file_dialog`.
+/// See [`need_pointer`].
 pub(super) fn file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()> {
-    window.run_on_main_thread(move || count_file_dialog(open))
+    window.run_on_main_thread(move || need_pointer(open))
 }
 
 /// Windows has no drag area: a press always brings the window forward, and a drag out of it

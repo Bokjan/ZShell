@@ -67,6 +67,12 @@ pub fn home_directory() -> Option<PathBuf> {
     std::env::home_dir()
 }
 
+/// See [`crate::color_pick::pick`].
+#[tauri::command]
+pub async fn color_pick(window: WebviewWindow) -> Result<Option<String>> {
+    crate::color_pick::pick(window).await
+}
+
 /// The user name `ssh` uses when none is given.
 #[tauri::command]
 pub fn local_username() -> String {
