@@ -1,2 +1,5 @@
+# Text files are LF everywhere, also in Windows checkouts whatever `core.autocrlf` says, as
+# Prettier and rustfmt write them: otherwise formatting rewrites every file a CRLF checkout has.
+* text=auto eol=lf
 # Applied byte for byte by pnpm: keep them out of line-ending conversion.
 /patches/** -text

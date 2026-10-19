@@ -69,8 +69,7 @@ jobs:
           }
           Write-Output "pnpm $version"
       - run: pnpm install --frozen-lockfile
-      # Formatting doesn't depend on the platform, and Windows checks out CRLF line endings,
-      # which Prettier would report in every file.
+      # Formatting doesn't depend on the platform (.gitattributes checks out LF everywhere).
       - if: runner.os == 'macOS'
         run: pnpm format:check
       # tauri::generate_context! embeds the built frontend.

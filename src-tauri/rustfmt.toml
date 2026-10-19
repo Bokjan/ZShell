@@ -3,3 +3,5 @@
 style_edition = "2021"
 max_width = 140
 use_small_heuristics = "Max"
+# LF on every platform, as .gitattributes checks files out (rustfmt otherwise keeps what a file has).
+newline_style = "Unix"
