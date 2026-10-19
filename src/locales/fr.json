@@ -1066,7 +1066,8 @@
       "polkit": "Authentifiez-vous avec le mot de passe du compte pour déverrouiller."
     },
     "goneHint": "ZShell peut être déverrouillé sans authentification.",
-    "unlockAnyway": "Déverrouiller sans authentification"
+    "unlockAnyway": "Déverrouiller sans authentification",
+    "notice": "Un programme du terminal a envoyé une notification."
   },
   "protection": {
     "title": "Modifier la protection",

@@ -1030,7 +1030,8 @@
       "polkit": "Authenticate with the account password to unlock."
     },
     "goneHint": "ZShell can be unlocked without authenticating.",
-    "unlockAnyway": "Unlock Without Authenticating"
+    "unlockAnyway": "Unlock Without Authenticating",
+    "notice": "A program in a terminal sent a notification."
   },
   "protection": {
     "title": "Change Protection",

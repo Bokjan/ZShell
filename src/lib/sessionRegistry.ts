@@ -1,6 +1,7 @@
 import { playBell, type LogOpen, type Profile, type SessionId, type ZmodemPhase } from "../ipc/api";
 import type { TerminalSettings } from "../ipc/bindings";
 import { windows } from "../ipc/windows";
+import { isAppLocked } from "./appLock";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
 import { closesOnExit, findPane, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
 import { activeTabOf, type TabsState, type TabStore } from "./tabs";
@@ -227,17 +228,20 @@ export function createSessionRegistry(
               announce(t("announce.progressFailed", { name: pane().title }));
           },
           // Not while the user sees the pane's tab. A tab in the background is marked, as for
-          // a bell; out of the window, the system shows the notification.
+          // a bell; out of the window, the system shows the notification. While the app is
+          // locked, without its text or the pane's title, which the lock screen hides.
           notify: ({ title, body }) => {
             if (!notifications()) return;
             const state = store.get();
             const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
-            const focused = document.hasFocus();
-            if (!tab || (focused && tab.key === state.activeKey)) return;
+            const locked = isAppLocked();
+            const seen = document.hasFocus() && !locked;
+            if (!tab || (seen && tab.key === state.activeKey)) return;
             const name = pane().title;
             if (tab.key !== state.activeKey) store.dispatch({ type: "attention", key, kind: "notice" });
-            if (focused) announce(t("announce.notice", { name, text: [title, body].filter(Boolean).join(": ") }));
-            else windows.notify(title || name, title ? body : body);
+            if (seen) announce(t("announce.notice", { name, text: [title, body].filter(Boolean).join(": ") }));
+            else if (locked) windows.notify(t("appLock.notice"), "");
+            else windows.notify(title || name, body);
           },
           arrived: () => update({ arrival: undefined }),
           movedAway: () => emit("movedAway", key),

@@ -994,7 +994,8 @@
       "polkit": "使用账户密码进行身份验证以解锁。"
     },
     "goneHint": "无需身份验证即可解锁 ZShell。",
-    "unlockAnyway": "不经身份验证直接解锁"
+    "unlockAnyway": "不经身份验证直接解锁",
+    "notice": "终端里的程序发来了通知。"
   },
   "protection": {
     "title": "更改保护方式",

@@ -1030,7 +1030,8 @@
       "polkit": "Authentifizieren Sie sich zum Entsperren mit dem Kontopasswort."
     },
     "goneHint": "ZShell kann ohne Authentifizierung entsperrt werden.",
-    "unlockAnyway": "Ohne Authentifizierung entsperren"
+    "unlockAnyway": "Ohne Authentifizierung entsperren",
+    "notice": "Ein Programm im Terminal hat eine Mitteilung gesendet."
   },
   "protection": {
     "title": "Schutz ändern",
