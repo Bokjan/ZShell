@@ -222,12 +222,17 @@ function ColorPopup({ anchor, value, label, onChange, onClose }: PopupProps) {
       role="dialog"
       aria-label={label}
       style={position ? { left: position.left, top: position.top } : { visibility: "hidden" }}
+      // WebKit on macOS doesn't focus a button that is clicked but the nearest focusable
+      // element around it: this popup rather than the dialog, so that Escape still reaches it.
+      tabIndex={-1}
       onKeyDown={onKeyDown}
       onBlur={(e) => {
         // Not when the window loses the focus (`relatedTarget` is null), as it does to the
-        // eyedropper.
+        // eyedropper, nor when it goes to an element around the popup, which is a click on
+        // the swatch there (a press elsewhere closes it by itself): closing on the press would
+        // have the swatch's click open it again.
         const next = e.relatedTarget as Node | null;
-        if (next && !ref.current?.contains(next) && !anchor.current?.contains(next)) onClose();
+        if (next && !ref.current?.contains(next) && !anchor.current?.contains(next) && !next.contains(ref.current)) onClose();
       }}
     >
       <div
