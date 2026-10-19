@@ -386,7 +386,11 @@ export type Listing = {
 /**
  * Canonical path of the listed directory.
  */
-path: string, entries: Array<FileEntry>, };
+path: string, 
+/**
+ * In the server's order: the file panel sorts them as the user chose.
+ */
+entries: Array<FileEntry>, };
 
 /**
  * The languages in effect, for the frontend.

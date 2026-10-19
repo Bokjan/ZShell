@@ -41,6 +41,7 @@ pub struct FileEntry {
 pub struct Listing {
     /// Canonical path of the listed directory.
     pub path: String,
+    /// In the server's order: the file panel sorts them as the user chose.
     pub entries: Vec<FileEntry>,
 }
 
@@ -115,8 +116,6 @@ pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
             None => break,
         }
     }
-    // Each name lowered once rather than at every comparison: folders can hold many thousands.
-    entries.sort_by_cached_key(|entry| (!entry.is_dir, entry.name.to_lowercase()));
     Ok(Listing { path, entries })
 }
 
