@@ -49,7 +49,7 @@
 | `session/` | 会话抽象：`TermIo`、`SessionManager`、`SessionSink`、输出流控 `Flow` |
 | `ssh/` | 连接与 shell（`mod.rs`）、认证好的连接及其上各窗格 shell 的顺序（`connection.rs`）、russh 回调（`handler.rs`）、服务器为远程转发开的通道交给谁（`forwarded.rs`）、主机密钥确认（`host_key.rs`）、known_hosts 与主机证书（`known_hosts/`）、认证（`auth/`）。不认识连接上跑的其他功能 |
 | `connections/` | 连接注册表：会话 id → 连接及其上的 SFTP 与转发规则；同一会话的转发规则在哪条连接上运行、连接关闭时如何移交。ssh、sftp、forward 在这里组合 |
-| `sftp/` | 浏览与文件操作（`mod.rs`）、一条连接上的 SFTP 通道（`channels.rs`）、传输（`transfer.rs`）、本地编辑（`edit.rs`）、拖出（`drag/`）、替换写入（`replace.rs`）、文件名转码（`names.rs`） |
+| `sftp/` | 浏览与文件操作（`mod.rs`）、一条连接上的 SFTP 通道（`channels.rs`）、传输（`transfer/`）、本地编辑（`edit.rs`）、拖出（`drag/`）、替换写入（`replace.rs`）、文件名转码（`names.rs`） |
 | `forward/` | 转发规则的运行（`mod.rs`）、`-L` / `-R` / `-D`（`local.rs` / `remote.rs` / `dynamic.rs`）、SOCKS（`socks.rs`） |
 | `pty/` | 本地终端（`mod.rs`）、默认 shell 与环境变量（`shell.rs`） |
 | `telnet/` | Telnet 会话与自动登录（`mod.rs`）、协议与选项协商（`protocol.rs`） |
