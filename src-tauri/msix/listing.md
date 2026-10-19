@@ -32,7 +32,7 @@ Port forwarding
 Sessions, tabs and terminals
 • Nested folders, search and quick connect, export and import.
 • Per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login, environment variables and notes.
-• Local terminals (PowerShell), split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, copy on select, right-click paste and session logs.
+• Local terminals (PowerShell), split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, the programming ligatures of fonts such as Fira Code and Cascadia Code, copy on select, right-click paste and session logs.
 • Quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 
 Security
@@ -67,12 +67,13 @@ ZShell runs entirely on your computer: no account, no telemetry, nothing collect
 9. Session folders, search, quick connect, export and import
 10. Per-session character encodings, colors, fonts, login commands and environment variables
 11. Local PowerShell terminals, split panes and several windows
-12. Quick commands, a command palette and a compose bar that sends to several terminals
-13. Session logs
-14. Sessions and passwords encrypted with a master password or the Windows Credential Manager
-15. App lock with Windows Hello
-16. Terminals readable with Narrator, NVDA and JAWS; everything works from the keyboard
-17. In English, Simplified Chinese, Japanese, German and French
+12. Programming ligatures, as fonts such as Cascadia Code and Fira Code draw them
+13. Quick commands, a command palette and a compose bar that sends to several terminals
+14. Session logs
+15. Sessions and passwords encrypted with a master password or the Windows Credential Manager
+16. App lock with Windows Hello
+17. Terminals readable with Narrator, NVDA and JAWS; everything works from the keyboard
+18. In English, Simplified Chinese, Japanese, German and French
 
 ## Screenshots
 
