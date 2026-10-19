@@ -121,6 +121,10 @@ describe("PointerShapes", () => {
     expect(shapes.shape("alternate")).toBe("crosshair");
     shapes.feed("<", "normal");
     expect(shapes.shape("normal")).toBe("text");
+    shapes.clear("alternate");
+    expect(shapes.shape("alternate")).toBe("");
+    expect(shapes.shape("normal")).toBe("text");
+    shapes.feed("crosshair", "alternate");
     shapes.reset();
     expect(shapes.shape("normal")).toBe("");
     expect(shapes.shape("alternate")).toBe("");

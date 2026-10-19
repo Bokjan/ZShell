@@ -236,6 +236,11 @@ export class PointerShapes {
     return stack[stack.length - 1] ?? "";
   }
 
+  /** The shapes set on `screen` go: the alternate screen's when a full-screen program leaves it. */
+  clear(screen: "normal" | "alternate") {
+    this.stacks[screen] = [];
+  }
+
   /** The terminal is reset: every shape goes. */
   reset() {
     this.stacks = { normal: [], alternate: [] };

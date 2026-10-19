@@ -479,7 +479,12 @@ export function TerminalView({
         if (pointers.feed(data, term.buffer.active.type)) showPointer();
         return true;
       }),
-      term.buffer.onBufferChange(showPointer),
+      // The alternate screen's shapes go with its text, so that the next full-screen program
+      // doesn't start with those the last one left.
+      term.buffer.onBufferChange((buffer) => {
+        if (buffer.type === "normal") pointers.clear("alternate");
+        showPointer();
+      }),
       // A full reset (RIS) puts back the terminal's own pointer too; xterm.js resets the rest.
       term.parser.registerEscHandler({ final: "c" }, () => {
         resetPointerRef.current();
