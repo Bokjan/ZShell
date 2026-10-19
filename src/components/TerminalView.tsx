@@ -1,4 +1,4 @@
-import { useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -8,13 +8,10 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
-import { type ProfileAppearance, type ZmodemPhase, zmodem } from "../ipc/api";
-import { isAppLocked, whenUnlocked } from "../lib/appLock";
+import type { ProfileAppearance } from "../ipc/api";
 import { afterDialogs, isDialogOpen } from "../hooks/dialogs";
-import { open as openDialog } from "../ipc/fileDialog";
 import { chosenAction, clipboardKeyOf, matches } from "../lib/keymap";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import type { PaneSession } from "../lib/paneSession";
@@ -34,7 +31,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 import { TOOLTIP_DELAY, TooltipPopup } from "./Tooltip";
-import { ZmodemBar } from "./ZmodemBar";
+import { useZmodem } from "./terminal/useZmodem";
 
 interface Props {
   /** The pane whose terminal this is; its session is in `sessions`. */
@@ -126,7 +123,6 @@ export function TerminalView({
   const pasteAllRef = useRef<(text: string) => void>(ignore);
   /** The pane's session, for answering ZMODEM transfers. */
   const sessionRef = useRef<PaneSession | null>(null);
-  const onZmodemRef = useRef<(phase: ZmodemPhase) => void>(ignore);
   // Incremented by the find shortcut; 0 means the search bar is closed.
   const [searchKey, setSearchKey] = useState(0);
   // `link`: the link the menu was opened on.
@@ -135,15 +131,13 @@ export function TerminalView({
   const [linkHint, setLinkHint] = useState<{ anchor: Pick<Element, "getBoundingClientRect">; uri: string | null } | null>(null);
   // Multi-line text waiting for the user to confirm the paste.
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
-  // A ZMODEM transfer waiting for files or running; null when there is none.
-  const [zmodemPhase, setZmodemPhase] = useState<Exclude<ZmodemPhase, "idle"> | null>(null);
-  const [dragOver, setDragOver] = useState(false);
   // The size shown while the terminal is resized; `count` starts its fade-out over at each change.
   const [sizeShown, setSizeShown] = useState<{ cols: number; rows: number; count: number } | null>(null);
   // Counts the visual bells, each a new flash.
   const [flashes, setFlashes] = useState(0);
   const visibleRef = useLatest(visible);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const transfer = useZmodem({ sessionRef, active, wrapRef, focus: () => termRef.current?.focus() });
   const { settings, theme, screenReader, update } = useSettings();
   const settingsRef = useLatest(settings);
   // Only these two of the session's appearance choose its colors.
@@ -286,14 +280,14 @@ export function TerminalView({
           return () => events.forEach((e) => e.dispose());
         },
       },
-      zmodem: (phase) => onZmodemRef.current(phase),
+      zmodem: (phase) => transfer.onPhaseRef.current(phase),
       paste: {
         bracketed: () => term.modes.bracketedPasteMode,
         paste: (text) => {
           if (text && !session.isClosed) term.paste(text);
         },
       },
-      session: () => setZmodemPhase(null),
+      session: () => transfer.reset(),
       focus: () => term.focus(),
       hasSelection: () => term.hasSelection(),
       flash: () => setFlashes((count) => count + 1),
@@ -572,86 +566,6 @@ export function TerminalView({
 
   const focus = () => termRef.current?.focus();
 
-  // ZMODEM: `sz` asks where to save: the bar asks (download folder, another folder or
-  // cancel) unless the settings say to use the download folder, or to open the folder picker
-  // right away. `rz` asks for files: the picker opens right away. Either way the bar stays,
-  // for choosing again (or dropping files) or cancelling, after the picker is closed.
-  const chooseFiles = () => {
-    const id = sessionRef.current?.id;
-    if (id == null) return;
-    void openDialog({ multiple: true, title: t("zmodem.chooseFilesTitle") }).then((picked) => {
-      if (picked && picked.length > 0) void zmodem.sendFiles(id, picked).catch(console.error);
-      focus();
-    });
-  };
-
-  const saveReceived = (dir: string | null) => {
-    const id = sessionRef.current?.id;
-    if (id != null) void zmodem.saveTo(id, dir).catch(console.error);
-  };
-
-  const chooseFolder = () => {
-    void openDialog({ directory: true, title: t("zmodem.chooseFolderTitle") }).then((dir) => {
-      if (typeof dir === "string") saveReceived(dir);
-      focus();
-    });
-  };
-
-  const cancelZmodem = () => {
-    const id = sessionRef.current?.id;
-    if (id != null) void zmodem.cancel(id).catch(console.error);
-  };
-
-  // A file dialog that `rz` or `sz` opened while the app was locked, waiting to be shown:
-  // shown at once, it would be over the lock screen.
-  const pendingDialogRef = useRef<() => void>(null);
-  useInsertionEffect(() => {
-    onZmodemRef.current = (phase) => {
-      const id = sessionRef.current?.id;
-      if (id == null) return;
-      setZmodemPhase(phase === "idle" ? null : phase);
-      pendingDialogRef.current?.();
-      pendingDialogRef.current = null;
-      if (phase === "chooseFiles") pendingDialogRef.current = whenUnlocked(chooseFiles);
-      else if (phase === "chooseDestination") {
-        if (settings.zmodem.receive === "downloads") saveReceived(null);
-        else if (settings.zmodem.receive === "chooseFolder") pendingDialogRef.current = whenUnlocked(chooseFolder);
-      }
-    };
-  });
-
-  // While `rz` waits, files dropped on this terminal are sent.
-  const waitingForFiles = active && zmodemPhase === "chooseFiles";
-  useEffect(() => {
-    if (!waitingForFiles) return;
-    const inside = (pos: { x: number; y: number }) => {
-      const rect = wrapRef.current?.getBoundingClientRect();
-      const x = pos.x / window.devicePixelRatio;
-      const y = pos.y / window.devicePixelRatio;
-      return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-    };
-    const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
-      // Native events, which the lock screen doesn't stop: nothing is dropped while locked.
-      if (isAppLocked()) {
-        setDragOver(false);
-        return;
-      }
-      if (payload.type === "leave") setDragOver(false);
-      else if (payload.type === "enter" || payload.type === "over") setDragOver(inside(payload.position));
-      else if (payload.type === "drop") {
-        setDragOver(false);
-        const id = sessionRef.current?.id;
-        if (inside(payload.position) && id != null && payload.paths.length > 0) {
-          void zmodem.sendFiles(id, payload.paths).catch(console.error);
-        }
-      }
-    });
-    return () => {
-      setDragOver(false);
-      void unlisten.then((f) => f());
-    };
-  }, [waitingForFiles]);
-
   const menuItems = (term: Terminal, link?: string): MenuItem[] => {
     const linkItems: MenuItem[] = link
       ? [
@@ -706,16 +620,7 @@ export function TerminalView({
           {t("terminal.size", { cols: sizeShown.cols, rows: sizeShown.rows })}
         </div>
       )}
-      {zmodemPhase && (
-        <ZmodemBar
-          phase={zmodemPhase}
-          dragOver={dragOver}
-          onChooseFiles={chooseFiles}
-          onSaveToDownloads={() => saveReceived(null)}
-          onChooseFolder={chooseFolder}
-          onCancel={cancelZmodem}
-        />
-      )}
+      {transfer.bar}
       {menu && terminal && (
         <ContextMenu
           x={menu.x}

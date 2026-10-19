@@ -10,11 +10,10 @@ import { storedString, storeString } from "../../lib/storage";
 import type { Transfer } from "../TransferList";
 import { useLatest } from "../../hooks/latest";
 import { attempt } from "../../lib/attempt";
+import { parentPath } from "../../lib/remotePath";
 import type { Confirm } from "./useConfirmQueue";
 
 const DOWNLOAD_TO_KEY = "zshell.downloadToDirectory";
-
-export const parentPath = (path: string) => path.replace(/\/[^/]+\/?$/, "") || "/";
 
 interface Options {
   sessionId: SessionId | null;

@@ -12,12 +12,13 @@ import { usePaneActions } from "./app/usePaneActions";
 import { PaneDragLayer, usePaneDrag } from "./app/usePaneDrag";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommandBar } from "./app/useQuickCommandBar";
+import { useStartupInfo } from "./app/useStartupInfo";
+import { useTerminalMenu } from "./app/useTerminalMenu";
 import { useWindows } from "./app/useWindows";
 
 import { useAppLock } from "./hooks/appLock";
 import { CommandPalette } from "./components/CommandPalette";
 import { ComposeBar } from "./components/ComposeBar";
-import type { MenuItem } from "./components/ContextMenu";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ImportDialog } from "./components/ImportDialog";
 import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog";
@@ -32,26 +33,13 @@ import { createPaneHosts } from "./components/paneHosts";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n/index";
-import {
-  configSetAside,
-  errorMessage,
-  localShellName,
-  localUsername,
-  sendBreak,
-  sessionLog,
-  type Folder,
-  type Profile,
-  type QuickCommand,
-  type SessionTarget,
-  type SetAsideFile,
-} from "./ipc/api";
+import { errorMessage, sendBreak, sessionLog, type Folder, type Profile, type QuickCommand, type SessionTarget } from "./ipc/api";
 import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./hooks/appMenu";
-import { basename } from "./lib/format";
 import { actionOf, matches, paneSideOf, tabIndexOf, type MenuAction } from "./lib/keymap";
 import { neighbor } from "./lib/layout";
 import { quickCommandStore, tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
-import { findPane, focusedPane, tabTitle, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
+import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { address, sessionsIn, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
@@ -62,14 +50,12 @@ import { currentSettings } from "./lib/settings";
 import { useSettings } from "./hooks/settings";
 import { useShortcuts } from "./hooks/shortcuts";
 import { useStableHandlers } from "./hooks/stableHandlers";
-import { activeTabOf, createTabStore, leavesSomething, type PanePatch } from "./lib/tabs";
+import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
 import { useUpdates } from "./hooks/updates";
 import { checkForUpdates } from "./lib/updates";
 import "./styles.css";
 
-/** Quick commands listed in the terminal's menu; the palette has them all. */
-const MENU_COMMANDS = 8;
 /** What terminal full screen hides, whose keys and menu items do nothing meanwhile. */
 const HIDDEN_IN_FULL_SCREEN = ["searchSessions", "composeBar", "filePanel", "forwardsPanel"] as const;
 
@@ -82,7 +68,6 @@ function App() {
   const [searchFocusKey, setSearchFocusKey] = useState(0);
   // A folder's sessions waiting for confirmation to open them all.
   const [openingAll, setOpeningAll] = useState<{ folder: Folder; profiles: Profile[] } | null>(null);
-  const [setAside, setSetAside] = useState<SetAsideFile[]>([]);
   const [store] = useState(() => createTabStore());
   const { tabs, activeKey } = useTabStore(store);
   const { dispatch } = store;
@@ -96,12 +81,7 @@ function App() {
   // open is shown too.
   const [settingsOpen, setSettingsOpen] = useState<false | { section?: SectionId }>(false);
   const openSettings = useCallback((section?: SectionId) => setSettingsOpen({ section }), []);
-  // Title for local terminal tabs, e.g. "zsh".
-  const [shellName, setShellName] = useState<string | null>(null);
-  // False on Windows in S mode, which blocks local shells.
-  const [localAllowed, setLocalAllowed] = useState(true);
-  // For quick connections without a user name.
-  const [username, setUsername] = useState("");
+  const { shellName, localAllowed, username, setAsideDialog } = useStartupInfo();
   // What closes panes and moves them between windows, made further down, hears the registry
   // through `sessions.on`.
   const [sessions] = useState(() =>
@@ -138,20 +118,6 @@ function App() {
   const { compose, flashing, inScope } = composer;
   const close = useCloseFlow(store, sessions, settings, update);
   const { requestClose, closeFocused } = close;
-
-  // Returned only once, so a second call (StrictMode) must not clear the first's result.
-  useEffect(() => {
-    configSetAside()
-      .then((files) => files.length > 0 && setSetAside(files))
-      .catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    localShellName()
-      .then((name) => (name === null ? setLocalAllowed(false) : setShellName(name)))
-      .catch(console.error);
-    localUsername().then(setUsername).catch(console.error);
-  }, []);
 
   /** What a tab's next session will be: a saved session's protocol may have been changed. */
   const protocolOf = useCallback((target: SessionTarget) => targetProtocol(target, directory.get().profiles), []);
@@ -381,95 +347,20 @@ function App() {
     }
   }, [updates.loaded, updates.available?.version, settingsOpen, t]);
 
-  /** Splitting and closing the pane, then quick commands: those of the pane's group, and the palette. */
-  const terminalMenu = (pane: Pane): MenuItem[] => [...paneMenu(pane), ...commandMenu(pane)];
-
-  const paneMenu = (pane: Pane): MenuItem[] => {
-    const split = (tabs.find((tab) => tab.panes.some((p) => p.key === pane.key))?.panes.length ?? 0) > 1;
-    // A serial device can only be open once.
-    const serial = pane.protocol === "serial";
-    return [
-      "separator",
-      {
-        label: t("tabs.splitRight"),
-        shortcut: shortcutLabel("splitRight"),
-        disabled: serial || !roomToSplit(pane.key, "row"),
-        onSelect: () => splitPane(pane.key, "row"),
-      },
-      {
-        label: t("tabs.splitDown"),
-        shortcut: shortcutLabel("splitDown"),
-        disabled: serial || !roomToSplit(pane.key, "column"),
-        onSelect: () => splitPane(pane.key, "column"),
-      },
-      ...(split
-        ? [
-            {
-              label: t("tabs.closePane"),
-              shortcut: shortcutLabel("closeTab"),
-              onSelect: () => void requestClose({ kind: "pane", key: pane.key }),
-            },
-          ]
-        : []),
-      ...moveMenu(pane),
-      "separator",
-      {
-        label: t(fullScreen.on ? "terminal.menu.exitFullScreen" : "terminal.menu.fullScreen"),
-        shortcut: shortcutLabel("fullScreen"),
-        onSelect: fullScreen.toggle,
-      },
-    ];
-  };
-
-  /**
-   * Moving the pane: to a tab of its own, or next to the focused pane of another tab (where
-   * there is room), or to another window. The tabs are listed as in the tab bar.
-   */
-  const moveMenu = (pane: Pane): MenuItem[] => {
-    const tab = findPane(tabs, pane.key)?.tab;
-    const others = tabs.filter((other) => other.key !== tab?.key);
-    if (!tab || (tab.panes.length === 1 && others.length === 0 && windowing.others.length === 0)) return [];
-    const toWindow = windowing.canMove(tab, pane.key);
-    const moveToWindow = (target: string | null) => void windowing.moveTab(tab.key, target, { pane: pane.key });
-    const targets: MenuItem[] = [
-      {
-        label: t("tabs.paneTo.newWindow"),
-        disabled: !toWindow || !leavesSomething(tabs, tab.key, pane.key),
-        onSelect: () => moveToWindow(null),
-      },
-      ...windowing.others.map((other) => ({
-        label: t("tabs.paneTo.window", { name: other.title || t("app.name") }),
-        disabled: !toWindow,
-        onSelect: () => moveToWindow(other.label),
-      })),
-    ];
-    if (others.length > 0) targets.push("separator");
-    for (const other of others) {
-      const place = tab.moving ? null : paneActions.placeIn(other.key);
-      targets.push({
-        label: tabTitle(other, settings.tabs.followRemoteTitle),
-        disabled: !place,
-        onSelect: () => place && paneActions.movePane(pane.key, { kind: "pane", ...place }),
-      });
-    }
-    return [
-      "separator",
-      ...(tab.panes.length > 1
-        ? [{ label: t("tabs.movePaneToNewTab"), disabled: !!tab.moving, onSelect: () => paneActions.movePane(pane.key, { kind: "tab" }) }]
-        : []),
-      { label: t("tabs.movePaneTo"), submenu: targets },
-    ];
-  };
-
-  const commandMenu = (pane: Pane): MenuItem[] => {
-    const group = groupOf(pane);
-    if (!commands || !group || commands.groups.every((g) => g.commands.length === 0)) return [];
-    return [
-      "separator",
-      ...group.commands.slice(0, MENU_COMMANDS).map((command) => ({ label: command.name, onSelect: () => runCommand(command) })),
-      { label: t("quick.paletteMenu"), shortcut: shortcutLabel("quickCommands"), onSelect: () => quick.setPaletteOpen(true) },
-    ];
-  };
+  const terminalMenu = useTerminalMenu({
+    tabs,
+    paneActions,
+    windowing,
+    requestClose,
+    fullScreen,
+    followRemoteTitle: settings.tabs.followRemoteTitle,
+    commandsOf: (pane) => {
+      const group = groupOf(pane);
+      return !commands || !group || commands.groups.every((g) => g.commands.length === 0) ? null : group.commands;
+    },
+    runCommand,
+    openPalette: () => quick.setPaletteOpen(true),
+  });
 
   /** Starts or stops logging a pane's session. */
   const setLogging = (key: number, start: boolean) => {
@@ -677,30 +568,6 @@ function App() {
       {settingsOpen && <SettingsDialog localAllowed={localAllowed} request={settingsOpen} onClose={closeSettings} />}
       {close.dialogs}
       {appMenu.menu}
-      {setAside.length > 0 && (
-        <ConfirmDialog
-          title={t("setAside.title")}
-          message={t("setAside.message")}
-          confirmLabel={t("setAside.show")}
-          cancelLabel={t("common.close")}
-          onConfirm={() => {
-            revealItemInDir(setAside[0].movedTo ?? setAside[0].path).catch(console.error);
-            setSetAside([]);
-          }}
-          onCancel={() => setSetAside([])}
-        >
-          <ul className="set-aside-list">
-            {setAside.map((file) => (
-              <li key={file.path}>
-                {file.movedTo
-                  ? t("setAside.moved", { name: basename(file.path), movedTo: basename(file.movedTo) })
-                  : t("setAside.notMoved", { name: basename(file.path) })}
-                <span className="hint">{file.error}</span>
-              </li>
-            ))}
-          </ul>
-        </ConfirmDialog>
-      )}
       {/* A change that couldn't be saved was undone, maybe after its dialog closed. */}
       {settingsSaveError !== null && (
         <ConfirmDialog
@@ -722,6 +589,7 @@ function App() {
           onCancel={quickCommandStore.dismissSaveError}
         />
       )}
+      {setAsideDialog}
       <PaneDragLayer view={paneDrag.view} />
       <Tooltips />
     </div>

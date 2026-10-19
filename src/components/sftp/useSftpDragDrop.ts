@@ -10,7 +10,7 @@ import { isMac, isWindows } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
 import { attempt } from "../../lib/attempt";
 import { useLatest } from "../../hooks/latest";
-import { parentPath } from "./useTransfers";
+import { parentPath } from "../../lib/remotePath";
 
 const DRAG_DISTANCE = 5;
 /** How near the top or bottom of the list's rows a drag scrolls it, in pixels. */

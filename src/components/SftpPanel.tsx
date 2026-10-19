@@ -1,27 +1,14 @@
-import {
-  useEffect,
-  useEffectEvent,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-  type MouseEvent,
-} from "react";
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { announce } from "../lib/announce";
-import { notConnected, sftp, type FileEntry, type SessionId } from "../ipc/api";
+import { sftp, type FileEntry, type SessionId } from "../ipc/api";
 import { open } from "../ipc/fileDialog";
 import { filterEntries, sortedEntries, storeView, storedView, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
-import { basename } from "../lib/format";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
-import { useLatest } from "../hooks/latest";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -32,12 +19,15 @@ import { ChmodDialog } from "./sftp/ChmodDialog";
 import { FileRow, type RowActions } from "./sftp/FileRow";
 import { fileMenu, folderMenu, type FileActions } from "./sftp/menus";
 import { PathField } from "./sftp/PathField";
+import { UploadButton } from "./sftp/UploadButton";
 import { useConfirmQueue } from "./sftp/useConfirmQueue";
+import { useFileOps } from "./sftp/useFileOps";
 import { useSftpDragDrop } from "./sftp/useSftpDragDrop";
 import { useShellDir, useShellFollow } from "./sftp/useShellFollow";
 import { useSftpListing } from "./sftp/useSftpListing";
 import { useRowWindow } from "./sftp/useRowWindow";
-import { parentPath, useTransfers } from "./sftp/useTransfers";
+import { useTransfers } from "./sftp/useTransfers";
+import { parentPath } from "../lib/remotePath";
 import { TransferList } from "./TransferList";
 
 interface Props {
@@ -61,8 +51,6 @@ interface Menu {
   items: MenuItem[];
 }
 
-const joinPath = (dir: string, name: string) => (dir.endsWith("/") ? dir + name : `${dir}/${name}`);
-
 /**
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
@@ -74,17 +62,12 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
   const [filter, setFilter] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);
   const gridId = useId();
-  const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
-  const [newFolder, setNewFolder] = useState<string | null>(null);
-  const [chmodTarget, setChmodTarget] = useState<FileEntry | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
   /** The rows the last two presses in the list were on (null elsewhere). */
   const pressedRowsRef = useRef<[string | null, string | null]>([null, null]);
-
-  const sessionRef = useLatest(sessionId);
 
   const { startDir, syncedRef } = useShellDir(paneKey);
   const listing = useSftpListing(
@@ -141,18 +124,13 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
 
   const select = (paths: string[]) => setSelection(selectOnly(paths));
 
-  /** Moves remote `paths` into folder `dir`, then lists the folder shown again. */
-  const move = async (paths: string[], dir: string) => {
-    if (sessionId == null) return;
-    for (const path of paths) {
-      try {
-        await sftp.rename(sessionId, path, joinPath(dir, basename(path)));
-      } catch (err) {
-        fail(err);
-        break;
-      }
-    }
-    reload();
+  const fileOps = useFileOps({ sessionId, cwd, listRef, select, reload, fail, ask });
+  const { renaming, setRenaming, newFolder, setNewFolder, chmodTarget, setChmodTarget, startRename, askRemove } = fileOps;
+
+  const pickAndUpload = async (directory: boolean) => {
+    if (!cwd) return;
+    const picked = await open({ multiple: true, directory, title: directory ? t("sftp.chooseFolders") : t("sftp.chooseFiles") });
+    if (picked) void transfers.upload(Array.isArray(picked) ? picked : [picked], cwd);
   };
 
   const drag = useSftpDragDrop({
@@ -163,104 +141,11 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     connected,
     cwdRef: listing.cwdRef,
     upload: transfers.upload,
-    move,
+    move: fileOps.move,
     transfers,
     fail,
   });
   const { dragOver, dropDir } = drag;
-
-  // Uploading files or a folder, from the menu of the Upload button: one button rather than
-  // two keeps the row on one line in languages with longer words.
-  const uploadButtonRef = useRef<HTMLButtonElement>(null);
-  // `anchor` is the button, taken when the menu opens (see `ContextMenu`).
-  const [uploadMenu, setUploadMenu] = useState<{ x: number; y: number; fromKeyboard: boolean; anchor: HTMLButtonElement } | null>(null);
-  const toggleUploadMenu = (fromKeyboard: boolean) => {
-    const anchor = uploadButtonRef.current;
-    const rect = anchor?.getBoundingClientRect();
-    setUploadMenu(uploadMenu || !anchor || !rect ? null : { x: rect.left, y: rect.bottom + 2, fromKeyboard, anchor });
-  };
-
-  const pickAndUpload = async (directory: boolean) => {
-    if (!cwd) return;
-    const picked = await open({ multiple: true, directory, title: directory ? t("sftp.chooseFolders") : t("sftp.chooseFiles") });
-    if (picked) void transfers.upload(Array.isArray(picked) ? picked : [picked], cwd);
-  };
-
-  const submitRename = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!renaming || sessionId == null || !cwd) return;
-    const name = renaming.value.trim();
-    setRenaming(null);
-    listRef.current?.focus();
-    if (!name || name === basename(renaming.path)) return;
-    try {
-      const path = joinPath(cwd, name);
-      await sftp.rename(sessionId, renaming.path, path);
-      select([path]);
-      reload();
-    } catch (err) {
-      fail(err);
-    }
-  };
-
-  const submitNewFolder = async (e: FormEvent) => {
-    e.preventDefault();
-    const name = newFolder?.trim();
-    setNewFolder(null);
-    listRef.current?.focus();
-    if (!name || sessionId == null || !cwd) return;
-    try {
-      const path = joinPath(cwd, name);
-      await sftp.mkdir(sessionId, path);
-      select([path]);
-      reload();
-    } catch (err) {
-      fail(err);
-    }
-  };
-
-  const chmod = async (entry: FileEntry, mode: number) => {
-    setChmodTarget(null);
-    if (sessionId == null) return;
-    try {
-      await sftp.chmod(sessionId, entry.path, mode);
-      reload();
-    } catch (err) {
-      fail(err);
-    }
-  };
-
-  const askRemove = (targets: FileEntry[]) => {
-    if (targets.length === 0) return;
-    const [first] = targets;
-    ask({
-      title: t("sftp.deleteTitle"),
-      message:
-        targets.length > 1
-          ? t("sftp.deleteItemsMessage", { count: targets.length })
-          : first.isDir && !first.isSymlink
-            ? t("sftp.deleteFolderMessage", { name: first.name })
-            : t("sftp.deleteFileMessage", { name: first.name }),
-      confirmLabel: t("common.delete"),
-      danger: true,
-      // Through the connection there is when the user confirms: it may have been replaced.
-      action: async () => {
-        const current = sessionRef.current;
-        if (current == null) return fail(notConnected(t("sftp.disconnected")));
-        for (const entry of targets) {
-          try {
-            await sftp.remove(current, entry.path);
-          } catch (err) {
-            fail(err);
-            break;
-          }
-        }
-        reload();
-      },
-    });
-  };
-
-  const startRename = (entry: FileEntry) => setRenaming({ path: entry.path, value: entry.name });
 
   const activate = (entry: FileEntry) => (entry.isDir ? void load(entry.path) : transfers.download([entry]));
 
@@ -400,7 +285,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
     onDoubleClick: (e, entry) => isDoubleClick(e, entry) && activate(entry),
     onContextMenu: onRowContextMenu,
     onRenameChange: (entry, value) => setRenaming({ path: entry.path, value }),
-    onRenameSubmit: (e) => void submitRename(e),
+    onRenameSubmit: (e) => void fileOps.submitRename(e),
     onRenameCancel: () => {
       setRenaming(null);
       listRef.current?.focus();
@@ -535,22 +420,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         </div>
       </div>
       <div className="sftp-actions">
-        <button
-          ref={uploadButtonRef}
-          disabled={!connected || !cwd}
-          aria-haspopup="menu"
-          aria-expanded={uploadMenu !== null}
-          // Opened from the keyboard (Enter, Space) when the click has no pointer position.
-          onClick={(e) => toggleUploadMenu(e.detail === 0)}
-          onKeyDown={(e) => {
-            if (e.key !== "ArrowDown" || uploadMenu) return;
-            e.preventDefault();
-            toggleUploadMenu(true);
-          }}
-        >
-          {t("sftp.upload")}
-          <ChevronIcon />
-        </button>
+        <UploadButton disabled={!connected || !cwd} onUpload={(directory) => void pickAndUpload(directory)} />
         <button disabled={!connected || !cwd} onClick={() => setNewFolder("")}>
           {t("sftp.newFolder")}
         </button>
@@ -614,7 +484,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
             {newFolder != null && (
               <tr role="row" aria-rowindex={rowWindow ? 2 : undefined}>
                 <td colSpan={3} role="gridcell">
-                  <form onSubmit={submitNewFolder}>
+                  <form onSubmit={fileOps.submitNewFolder}>
                     <input
                       autoFocus
                       placeholder={t("sftp.newFolderPlaceholder")}
@@ -659,21 +529,8 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
       />
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
-      {uploadMenu && (
-        <ContextMenu
-          x={uploadMenu.x}
-          y={uploadMenu.y}
-          items={[
-            { label: t("sftp.uploadFiles"), onSelect: () => void pickAndUpload(false) },
-            { label: t("sftp.uploadFolder"), onSelect: () => void pickAndUpload(true) },
-          ]}
-          anchor={uploadMenu.anchor}
-          highlightFirst={uploadMenu.fromKeyboard}
-          onClose={() => setUploadMenu(null)}
-        />
-      )}
       {chmodTarget && (
-        <ChmodDialog entry={chmodTarget} onSubmit={(mode) => void chmod(chmodTarget, mode)} onClose={() => setChmodTarget(null)} />
+        <ChmodDialog entry={chmodTarget} onSubmit={(mode) => void fileOps.chmod(chmodTarget, mode)} onClose={() => setChmodTarget(null)} />
       )}
       {confirm && (
         <ConfirmDialog
