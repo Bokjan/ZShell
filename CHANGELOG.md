@@ -2,6 +2,23 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.10.0] - 2026-10-20
+
+### Features
+
+- Password and passphrase fields have a button at their right end that shows or hides what is typed, the same on every platform (WebView2's own reveal button, which the other web views lack, is hidden). It works from the keyboard, and a disabled field always shows dots.
+
+### Bug Fixes
+
+- Drop-down lists are drawn in the app's own style and colors on every platform, rather than each platform's. The terminal type, serial device and baud rate fields have a button that lists every suggestion, where before a field showing `xterm-256color` offered nothing else. A list placed for a few suggestions moves and widens when it shows more, and a click on the label of an open drop-down closes it rather than opening it again. Typing the same letter again in a menu or a drop-down goes through the items that start with it.
+- Checkboxes and radio buttons are drawn in the theme's colors, rather than in Chromium's blue on Windows, the system accent color on macOS or GTK's on Linux; Windows contrast themes keep the system's colors.
+- The multi-line fields of dialogs (login commands, environment variables, quick commands, proxy commands and notes) grow with their text up to twelve lines, then scroll, instead of having a handle to drag, and fit their text again when the window or the text size changes.
+- Empty fields in the port forwarding dialog are reported in the app's own words and language, rather than with the web view's bubble in the system's language.
+- Screen readers no longer read the buttons inside text fields as part of the fields' names ("Password Show password", "Baud rate Increase Decrease").
+- On Windows, the web view's own tooltip no longer shows alongside the app's when the pointer moves within an element, from its icon onto its text for example.
+- On Windows, a window starting up shows the theme's background color rather than white until the page has painted.
+- The session list no longer says there are no sessions while they are still being read at startup.
+
 ## [3.9.0] - 2026-10-19
 
 ### Features
