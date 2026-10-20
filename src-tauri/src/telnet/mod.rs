@@ -485,13 +485,31 @@ mod tests {
         let remote = Remote::new("127.0.0.1".into(), port, String::new());
         let (io, input, output, _events) = TermIo::detached((80, 24));
         let session = tokio::spawn(run(remote, Route::default(), || None, io));
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Typed once each prompt shows, as a user would: whether to echo follows what was shown
+        // last.
+        let mut shown = Vec::new();
+        let mut shown_until = async |end: &[u8]| {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            while !shown.ends_with(end) {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "{:?} never shown: {:?}",
+                    String::from_utf8_lossy(end),
+                    String::from_utf8_lossy(&shown)
+                );
+                // Lets the session run, on this test's one thread.
+                tokio::time::sleep(Duration::from_millis(2)).await;
+                shown.extend(output.try_iter().flatten());
+            }
+        };
+        shown_until(b"login: ").await;
         input.send(SessionInput::Data(b"bob\r".to_vec())).unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        shown_until(b"Password: ").await;
         input.send(SessionInput::Data(b"hunter2\r".to_vec())).unwrap();
         server.await.unwrap();
         session.await.unwrap();
-        let text = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
+        shown.extend(output.try_iter().flatten());
+        let text = String::from_utf8_lossy(&shown).into_owned();
         assert!(text.contains("login: bob\r\nPassword: \r\n\r\n$ "), "{text:?}");
         assert!(!text.contains("hunter2"), "{text:?}");
     }

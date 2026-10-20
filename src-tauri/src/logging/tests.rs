@@ -78,19 +78,50 @@ fn output_reaches_the_file_within_the_flush_interval() {
     #[cfg(unix)]
     assert_eq!(std::os::unix::fs::PermissionsExt::mode(&path.metadata().unwrap().permissions()) & 0o777, 0o600);
 
-    // Not flushed on every chunk, but once the output pauses.
+    // Flushed once the output pauses, while the log goes on (see the next test for the chunks
+    // in between).
     slot.write(b"one ");
     slot.write(b"two");
-    std::thread::sleep(Duration::from_millis(200));
-    assert_eq!(std::fs::read(&path).unwrap(), header);
-    std::thread::sleep(FLUSH_INTERVAL * 2);
-    assert_eq!(std::fs::read(&path).unwrap(), [header.as_slice(), b"one two"].concat());
+    until("the output is flushed", || std::fs::read(&path).unwrap() == [header.as_slice(), b"one two"].concat());
 
     // Its writer ends with the slot.
     drop(slot);
     logs.active.wait_closed(&path, Duration::from_secs(5));
     assert!(logs.active.paths.lock().unwrap().is_empty());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Waits until `done`, for long enough that only a writer that never gets there fails.
+fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(Instant::now() < deadline, "timed out waiting until {what}");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Chunks of output stay in the buffer until the flush interval has passed since the last flush.
+#[test]
+fn output_is_not_flushed_with_every_chunk() {
+    let path = std::env::temp_dir().join(format!("zshell-log-chunks-{}", std::process::id()));
+    let mut writer = LogWriter {
+        file: BufWriter::new(File::create(&path).unwrap()),
+        text: None,
+        // Just flushed, as far as it can tell, however long the test takes.
+        flushed: Instant::now() + Duration::from_secs(3600),
+        dirty: false,
+        _active: Arc::new(ActiveLogs::default()).add(path.clone()),
+        failure: Arc::default(),
+        left_out: Arc::default(),
+    };
+    writer.write(b"one ").unwrap();
+    writer.write(b"two").unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"");
+    writer.flushed = Instant::now() - FLUSH_INTERVAL;
+    writer.write(b"!").unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"one two!");
+    drop(writer);
+    std::fs::remove_file(&path).unwrap();
 }
 
 /// Output the writer has no room for is left out, and the log says how much.
@@ -226,9 +257,8 @@ fn appending_waits_for_the_previous_writer() {
     // Still writing.
     let previous = logs.active.add(path.clone());
     let slot = LogSlot::new(LogInfo::default());
-    let started = Instant::now();
+    // Waiting for `previous`, which this thread holds, would never end.
     logs.open(&slot, LogOpen::Append { path: path.clone() }, false, &settings).unwrap().unwrap();
-    assert!(started.elapsed() < Duration::from_secs(1));
     slot.write(b"after");
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -276,6 +306,8 @@ fn writes_appends_and_deletes_only_its_own_logs() {
     assert_ne!(started, mine);
     assert_eq!(std::fs::read_to_string(&mine).unwrap(), "keep");
     drop(other);
+    // On Windows a folder can't go while a file in it is still open.
+    logs.active.wait_closed(&started, Duration::from_secs(5));
     std::fs::remove_file(started).unwrap();
     assert_eq!(logs.count("p1"), 1);
     assert_eq!(logs.delete_for("p1"), 1);

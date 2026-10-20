@@ -530,12 +530,17 @@ mod tests {
         .await
         .expect("the folder watched");
 
-        save_by_renaming(&local, "first save");
+        // The copy changes at once (the rename), however long writing the staged file takes; a
+        // length other than the download's tells them apart without the modification time.
+        save_by_renaming(&local, "first save, by renaming");
         tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("first save reported");
-        std::fs::write(&local, "second save, written in place").unwrap();
-        tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("second save reported");
         tokio::time::sleep(SETTLE * 3).await;
         assert!(received.try_recv().is_err(), "a save reported twice");
+        // Written in place, a save truncates, then writes: a pause between the two longer than
+        // `SETTLE` (a busy machine) would rightly be taken as two saves, so only its report is
+        // waited for.
+        std::fs::write(&local, "second save, written in place").unwrap();
+        tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("second save reported");
 
         edits.stop("main", "e1");
         tokio::time::timeout(Duration::from_secs(10), async {

@@ -195,11 +195,13 @@ fn matches_wildcards_as_openssh() {
             assert_eq!(glob_matches(&pattern, text), reference(&pattern, text), "{pattern:?} {text:?}");
         }
     }
-    // Many stars that can't match take no time to give up on.
+    // Many stars that can't match take no time to give up on: microseconds, where trying every
+    // way to split the text among them would never end. The bound only has to tell the two apart,
+    // and leaves room for a busy machine.
     let pattern = format!("{}x", "*".repeat(64));
     let started = std::time::Instant::now();
     assert!(!glob_matches(pattern.as_bytes(), b"[server.lan]:2222"));
-    assert!(started.elapsed() < std::time::Duration::from_millis(100));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }
 
 #[test]

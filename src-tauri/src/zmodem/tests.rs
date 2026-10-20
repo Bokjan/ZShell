@@ -229,7 +229,9 @@ where
 
 const SHORT_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(300);
 
-#[tokio::test(flavor = "multi_thread")]
+// In paused time, which only moves on while every task waits (file operations hold it), so
+// the timeouts tell a pause from a busy machine.
+#[tokio::test(start_paused = true)]
 async fn receiving_survives_a_pause_in_the_data() {
     let src = temp_dir("pause-src");
     let dst = temp_dir("pause-dst");
@@ -289,7 +291,9 @@ async fn receiving_drops_control_characters_the_sender_did_not_escape() {
     std::fs::remove_dir_all(&dst).unwrap();
 }
 
-#[tokio::test(flavor = "multi_thread")]
+// In paused time (see `receiving_survives_a_pause_in_the_data`): only waiting for a timeout
+// takes any.
+#[tokio::test(start_paused = true)]
 async fn a_damaged_data_header_is_asked_for_again_at_once() {
     let src = temp_dir("header-src");
     let dst = temp_dir("header-dst");
@@ -314,7 +318,7 @@ async fn a_damaged_data_header_is_asked_for_again_at_once() {
     let dst2 = dst.clone();
     let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
     let rinit = sender.header(TIMEOUT).await.unwrap();
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     send::send(&mut sender, rinit, &files, &mut Log::default()).await.unwrap();
     receiving.await.unwrap().unwrap();
     // Not after waiting for the data until the receiver's timeout.
@@ -447,17 +451,38 @@ async fn cancelling_deletes_the_partial_file() {
     let files = make_files(&src);
     let (mut sender, (to_sender, from_sender, _cancel_s)) = link();
     let (mut receiver, (to_receiver, from_receiver, cancel)) = link();
-    pipe(from_sender, to_receiver);
+    // Partway through the large file, the rest is held back until the end of the test.
+    let (reached, held) = tokio::sync::oneshot::channel();
+    let mut reached = Some(reached);
+    let mut forwarded = 0;
+    pipe_through(from_sender, to_receiver, move |chunk| {
+        let hold = forwarded >= 100_000;
+        forwarded += chunk.len();
+        let reached = if hold { reached.take() } else { None };
+        async move {
+            if hold {
+                if let Some(reached) = reached {
+                    let _ = reached.send(());
+                }
+                std::future::pending::<()>().await;
+            }
+            chunk
+        }
+    });
     pipe(from_receiver, to_sender);
 
     let dst2 = dst.clone();
     let receiving = tokio::spawn(async move { receive::receive(&mut receiver, &dst2, &mut Log::default()).await });
     let rinit = sender.header(TIMEOUT).await.unwrap();
     let sending = tokio::spawn(async move { send::send(&mut sender, rinit, &files[3..], &mut Log::default()).await });
-    // Partway through the large file.
-    while std::fs::read_dir(&dst).unwrap().next().is_none() {
-        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-    }
+    tokio::time::timeout(TIMEOUT, held).await.expect("the data held back").unwrap();
+    tokio::time::timeout(TIMEOUT, async {
+        while std::fs::read_dir(&dst).unwrap().next().is_none() {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("the partial file made");
     cancel.send(true).unwrap();
     let error = receiving.await.unwrap().unwrap_err();
     assert!(format!("{error:#}").contains(&t!("errors.zmodem.cancelled")), "{error:#}");
