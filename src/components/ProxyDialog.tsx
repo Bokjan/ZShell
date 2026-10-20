@@ -10,6 +10,7 @@ import { hostPort, parsePort } from "../lib/format";
 import { passwordUpdate } from "../lib/password";
 import { useSubmitting } from "../hooks/submitting";
 import { attempt } from "../lib/attempt";
+import { AutoTextarea } from "./AutoTextarea";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordField } from "./PasswordField";
@@ -192,7 +193,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
           <>
             <label>
               {t("proxy.command")}
-              <textarea
+              <AutoTextarea
                 className="command-text"
                 rows={2}
                 value={command}

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { CommandGroup, QuickCommand } from "../ipc/api";
 import { useDialog } from "../hooks/dialogs";
 import { groupName } from "../lib/quickCommands";
+import { AutoTextarea } from "./AutoTextarea";
 import { Modal } from "./Modal";
 import { Select } from "./Select";
 
@@ -44,7 +45,7 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
         </label>
         <label>
           {t("quick.text")}
-          <textarea
+          <AutoTextarea
             className="command-text"
             rows={5}
             value={text}

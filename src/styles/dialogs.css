@@ -67,8 +67,10 @@
   font-size: calc(13px * var(--text-scale));
   outline: none;
 }
+/* Grown with its text (`AutoTextarea`) rather than dragged taller. */
 .dialog textarea {
-  resize: vertical;
+  box-sizing: border-box;
+  resize: none;
   user-select: text;
   -webkit-user-select: text;
 }

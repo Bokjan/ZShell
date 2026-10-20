@@ -5,6 +5,7 @@ import type { Profile, Protocol, SerialPortInfo } from "../../ipc/api";
 import { expandHome, startsWithHome } from "../../lib/paths";
 import { isMac, isWindows } from "../../lib/platform";
 import type { ProfileForm } from "../../lib/profileForm";
+import { AutoTextarea } from "../AutoTextarea";
 import { ComboBox } from "../ComboBox";
 import { HelpTip } from "../HelpTip";
 import { IconButton } from "../IconButton";
@@ -264,7 +265,7 @@ export function GeneralPage({
       {protocol === "ssh" ? sshFields : protocol === "telnet" ? telnetFields : serialFields}
       <label>
         {t("profile.notes")}
-        <textarea
+        <AutoTextarea
           rows={3}
           value={form.notes}
           onChange={(e) => set({ notes: e.target.value })}

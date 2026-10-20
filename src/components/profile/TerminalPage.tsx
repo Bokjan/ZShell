@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { DEFAULT_TERM_TYPE, ENCODINGS, type CommandGroup } from "../../ipc/api";
 import type { ProfileForm } from "../../lib/profileForm";
 import { groupName } from "../../lib/quickCommands";
+import { AutoTextarea } from "../AutoTextarea";
 import { ComboBox } from "../ComboBox";
 import { Select } from "../Select";
 
@@ -50,7 +51,7 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
       <p className="hint">{t("profile.encodingHint")}</p>
       <label>
         {t("profile.loginCommands")}
-        <textarea
+        <AutoTextarea
           className="command-text"
           rows={3}
           value={form.loginCommands}
@@ -65,7 +66,7 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
         <>
           <label>
             {t("profile.env")}
-            <textarea
+            <AutoTextarea
               name="env"
               className="command-text"
               rows={2}
