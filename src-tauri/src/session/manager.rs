@@ -285,11 +285,13 @@ mod tests {
         (count, move || read.load(Ordering::SeqCst))
     }
 
-    /// Starts a session for `webview` whose backend holds a release and runs until aborted;
-    /// returns how often its release ran, and whether its task has been dropped.
+    /// Starts a session for `webview` whose backend holds a release and runs until aborted,
+    /// once its task has registered the release; returns how often its release ran, and whether
+    /// its task has been dropped.
     fn hold(sessions: &SessionManager, webview: &str) -> (SessionId, impl Fn() -> usize, impl Fn() -> usize) {
         let (released, released_count) = counter();
         let (dropped, dropped_count) = counter();
+        let (started, started_rx) = std::sync::mpsc::channel();
         let page = sessions.page(webview);
         let id = sessions
             .spawn(
@@ -310,10 +312,13 @@ mod tests {
                     }
                     let _dropped = Dropped(dropped);
                     let _io = io;
+                    let _ = started.send(());
                     std::future::pending::<()>().await;
                 },
             )
             .unwrap();
+        // The task runs on Tauri's runtime, not the test's.
+        started_rx.recv_timeout(std::time::Duration::from_secs(10)).expect("the session's task never started");
         (id, released_count, dropped_count)
     }
 
@@ -334,8 +339,6 @@ mod tests {
         let (_, a_released, a_dropped) = hold(&sessions, "main");
         let (_, b_released, b_dropped) = hold(&sessions, "main");
         let (other, other_released, _) = hold(&sessions, "other");
-        // The tasks register their releases once running.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         sessions.remove_webview("main");
         assert_eq!(sessions.len(), 1);
@@ -442,8 +445,6 @@ mod tests {
         let sessions = SessionManager::default();
         let (id, released, _) = hold(&sessions, "main");
         let (theirs, _, _) = hold(&sessions, "other");
-        // The tasks register their releases once running.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let not_found = |result: Result<()>| result.unwrap_err().code();
         assert_eq!(not_found(sessions.send("other", id, SessionInput::Break)), "session.notFound");
         assert_eq!(not_found(sessions.sink("other", id).map(drop)), "session.notFound");
