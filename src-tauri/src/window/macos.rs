@@ -31,6 +31,7 @@ use objc2_foundation::{NSNotification, NSNotificationCenter};
 use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
 
 use super::{DoubleClick, Rect, WindowButton};
+use crate::model::Appearance;
 
 // Only touched on the main thread, where AppKit asks about presses and posts the window's
 // notifications.
@@ -190,6 +191,15 @@ const TRAFFIC_LIGHTS: tauri::LogicalPosition<f64> = tauri::LogicalPosition { x: 
 /// The title bar: the page draws under it, the traffic lights over the page.
 pub(super) fn title_bar(builder: WebviewWindowBuilder<'_, Wry, AppHandle>) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
     builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(TRAFFIC_LIGHTS)
+}
+
+/// The web view's own background until the page paints; only Windows sets one (see
+/// `win::background`).
+pub(super) fn background(
+    builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
+    _appearance: Appearance,
+) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
+    builder
 }
 
 /// Nothing to do before the window is first shown.

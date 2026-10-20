@@ -31,6 +31,7 @@ use ts_rs::TS;
 use crate::error::{Error, Result};
 use crate::events;
 use crate::session::{SessionId, SessionManager};
+use crate::settings::SettingsStore;
 use crate::tab_drag::{self, Dropped};
 use inbox::{BusyQueries, Inbox};
 
@@ -161,6 +162,7 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
     // WebView2 would otherwise offer values typed into earlier forms, and doesn't always honor
     // `autocomplete="off"`. A no-op on the other platforms, whose web views have no such list.
     let builder = platform::title_bar(WebviewWindowBuilder::from_config(app, &config)?.general_autofill_enabled(false));
+    let builder = platform::background(builder, app.state::<SettingsStore>().get().appearance);
     // Placed once created, then shown: the builder takes a logical position, which on Windows
     // means a different place on each display. Some platforms prepare the window before it is
     // first shown too.

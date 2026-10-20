@@ -18,12 +18,14 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
+use tauri::window::Color;
 use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
 use windows_sys::core::BOOL;
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
 use windows_sys::Win32::Graphics::Gdi::{GetStockObject, NULL_BRUSH};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
 use windows_sys::Win32::System::SystemInformation::GetTickCount;
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
@@ -39,6 +41,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::{DoubleClick, Rect, WindowButton};
+use crate::model::Appearance;
 
 /// For reporting the button's state to the frontend from the window procedure.
 type IsWindowArranged = unsafe extern "system" fn(HWND) -> BOOL;
@@ -409,6 +412,42 @@ fn class_name(hwnd: HWND) -> String {
 /// No decorations: the page draws the title bar and the window buttons.
 pub(super) fn title_bar(builder: WebviewWindowBuilder<'_, Wry, AppHandle>) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
     builder.decorations(false)
+}
+
+/// Until the page paints, the window shows the theme's background (`--bg` in `theme.css`, as
+/// `index.html` does) rather than WebView2's white, which on a cold start stays for as long as
+/// WebView2 takes to start its processes. The page sets it again once the settings load.
+pub(super) fn background(
+    builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
+    appearance: Appearance,
+) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
+    let dark = match appearance {
+        Appearance::Dark => true,
+        Appearance::Light => false,
+        Appearance::System => !apps_use_light_theme(),
+    };
+    builder.background_color(if dark { Color(0x1e, 0x1e, 0x1e, 255) } else { Color(0xff, 0xff, 0xff, 255) })
+}
+
+/// The system's "Choose your app mode" (light unless the setting says dark, as on Windows
+/// versions without it).
+fn apps_use_light_theme() -> bool {
+    let mut value: u32 = 1;
+    let mut size = size_of::<u32>() as u32;
+    // SAFETY: NUL-terminated wide strings; `value` is a DWORD with its size in `size`, the only
+    // type RRF_RT_REG_DWORD lets through.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize").as_ptr(),
+            wide("AppsUseLightTheme").as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&raw mut value).cast(),
+            &mut size,
+        )
+    };
+    status != ERROR_SUCCESS || value != 0
 }
 
 /// Nothing to do before the window is first shown.

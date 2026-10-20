@@ -21,6 +21,7 @@ use gtk::prelude::*;
 use tauri::{AppHandle, Manager, Theme, WebviewWindow, WebviewWindowBuilder, Wry};
 
 use super::{DoubleClick, Rect, WindowButton};
+use crate::model::Appearance;
 
 thread_local! {
     /// The last button press on a web view (on the main thread, where GTK runs). Wayland only
@@ -158,6 +159,15 @@ pub fn watch_theme(app: &AppHandle) {
 /// GTK's client-side decorations, with the title bar replaced before the window is shown
 /// ([`prepare`]).
 pub(super) fn title_bar(builder: WebviewWindowBuilder<'_, Wry, AppHandle>) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
+    builder
+}
+
+/// The web view's own background until the page paints; only Windows sets one (see
+/// `win::background`).
+pub(super) fn background(
+    builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
+    _appearance: Appearance,
+) -> WebviewWindowBuilder<'_, Wry, AppHandle> {
     builder
 }
 
