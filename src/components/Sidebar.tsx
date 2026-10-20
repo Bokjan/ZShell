@@ -566,7 +566,8 @@ export function Sidebar(props: Props) {
             {rows.map((row) =>
               row.kind === "folder" ? folderRow(row) : profileRow(row.profile, rowKey(row), row.depth, undefined, dropClass(rowKey(row))),
             )}
-            {profiles.length === 0 && folders.length === 0 && <p className="sidebar-empty">{t("sidebar.empty")}</p>}
+            {/* Not before the first read: the sessions would seem gone while it comes back. */}
+            {state.loaded && profiles.length === 0 && folders.length === 0 && <p className="sidebar-empty">{t("sidebar.empty")}</p>}
           </>
         )}
       </div>
