@@ -1,0 +1,51 @@
+/* The list a drop-down field opens (ListPopup.tsx: `Select`, `ComboBox`), like a context menu. */
+
+.list-popup {
+  position: fixed;
+  z-index: 20;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+  /* Lowered to the room below or above the field when it is placed. */
+  max-height: calc(320px * var(--text-scale));
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px var(--shadow);
+  list-style: none;
+  font-size: calc(13px * var(--text-scale));
+  cursor: default;
+}
+.list-popup-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.list-popup-option.highlighted {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+.list-popup-check {
+  display: flex;
+  width: 10px;
+  flex-shrink: 0;
+}
+.list-popup-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.list-popup-detail {
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale));
+}
+.list-popup-option.highlighted .list-popup-detail {
+  color: inherit;
+  opacity: 0.8;
+}

@@ -10,6 +10,7 @@ import type { LogFormat, LogSettings } from "../../hooks/settings";
 import { useWindowFocus } from "../../hooks/windowEvents";
 import { useLatest } from "../../hooks/latest";
 import { useLocale } from "../../hooks/locale";
+import { Select } from "../Select";
 import { FolderField, Section, Setting, useFieldText } from "./common";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
@@ -97,24 +98,23 @@ export function LogSection({
       <div className="row">
         <label className="grow">
           {t("settings.logFormat")}
-          <select value={settings.format} onChange={(e) => onChange({ format: e.target.value as LogFormat })}>
-            {LOG_FORMATS.map((format) => (
-              <option key={format} value={format}>
-                {t(`settings.logFormats.${format}`)}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={settings.format}
+            onChange={(format) => onChange({ format })}
+            options={LOG_FORMATS.map((format) => ({ value: format, label: t(`settings.logFormats.${format}`) }))}
+          />
         </label>
         <label className="grow">
           {t("settings.logKeep")}
-          <select value={settings.keepDays} onChange={(e) => onChange({ keepDays: Number(e.target.value) })}>
-            {/* A value set by hand in the file stays selectable. */}
-            {[...new Set([...KEEP_DAYS, settings.keepDays])].map((days) => (
-              <option key={days} value={days}>
-                {days === 0 ? t("settings.logKeepForever") : t("settings.logKeepDays", { count: days })}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={settings.keepDays}
+            onChange={(keepDays) => onChange({ keepDays })}
+            // A value set by hand in the file stays selectable.
+            options={[...new Set([...KEEP_DAYS, settings.keepDays])].map((days) => ({
+              value: days,
+              label: days === 0 ? t("settings.logKeepForever") : t("settings.logKeepDays", { count: days }),
+            }))}
+          />
         </label>
       </div>
       <label className="checkbox">

@@ -5,6 +5,7 @@ import { LANGUAGES } from "../../ipc/bindings";
 import { TYPING_SAVE_DELAY, useSettings, type Appearance, type TextSize } from "../../hooks/settings";
 import { languageName } from "../../lib/format";
 import { RadioGroup } from "../RadioGroup";
+import { Select } from "../Select";
 import { LiveTextField, Section, Setting } from "./common";
 
 const APPEARANCES: Appearance[] = ["system", "dark", "light"];
@@ -65,14 +66,14 @@ export function AppearanceSection() {
       <Setting>
         <label className="field">
           {t("settings.language")}
-          <select value={settings.language} onChange={(e) => update((settings) => ({ ...settings, language: e.target.value }))}>
-            <option value="system">{t("settings.languageSystem", { language: languageName(systemLanguage()) })}</option>
-            {LANGUAGES.map((language) => (
-              <option key={language} value={language} lang={language}>
-                {languageName(language)}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={settings.language}
+            onChange={(language) => update((settings) => ({ ...settings, language }))}
+            options={[
+              { value: "system", label: t("settings.languageSystem", { language: languageName(systemLanguage()) }) },
+              ...LANGUAGES.map((language) => ({ value: language, label: languageName(language), lang: language })),
+            ]}
+          />
         </label>
         <p className="hint">{t("settings.languageHint")}</p>
       </Setting>

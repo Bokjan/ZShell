@@ -44,3 +44,41 @@ export function rovingTarget(key: string, at: number, count: number, horizontalO
   if (key === "End") return last;
   return null;
 }
+
+/** Letters typed within this long of each other make one prefix to look for in a list. */
+export const TYPEAHEAD_MS = 700;
+
+/** What was typed to find an item in a list, and when last. */
+export interface TypeAhead {
+  text: string;
+  at: number;
+}
+
+/**
+ * Type-ahead in a list (a menu, a drop-down): `key` typed at `now` after `typed`, the prefix it
+ * makes, and the item it highlights, if any. While the prefix grows the search starts at the
+ * highlighted item (`at`), so that it stays as long as it still matches; a first letter, or the
+ * same letter typed again and again, starts after it, going through the items that start with it.
+ * `labels` has null for items that can't be chosen.
+ */
+export function typeAhead(typed: TypeAhead, key: string, now: number, labels: readonly (string | null)[], at: number) {
+  const growing = now - typed.at < TYPEAHEAD_MS && typed.text !== "";
+  const text = (growing ? typed.text : "") + key.toLowerCase();
+  // The same letter again and again goes through the items that start with it.
+  const repeated = [...text].every((c) => c === text[0]);
+  const prefix = repeated ? text[0] : text;
+  const start = Math.max(repeated ? at + 1 : at, 0);
+  const count = labels.length;
+  let index = -1;
+  for (let i = 0; i < count; i++) {
+    const label = labels[(start + i) % count];
+    if (label?.toLowerCase().startsWith(prefix)) {
+      index = (start + i) % count;
+      break;
+    }
+  }
+  return { typed: { text, at: now }, index };
+}
+
+/** Whether a space typed now continues a type-ahead prefix rather than choosing the item. */
+export const continuesTypeAhead = (typed: TypeAhead, now: number) => typed.text !== "" && now - typed.at < TYPEAHEAD_MS;

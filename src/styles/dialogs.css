@@ -56,7 +56,7 @@
   gap: 6px;
 }
 .dialog input:not([type="checkbox"]),
-.dialog select,
+.dialog .select,
 .dialog textarea {
   padding: 6px 8px;
   border: 1px solid var(--input-border);
@@ -72,28 +72,74 @@
   user-select: text;
   -webkit-user-select: text;
 }
-/* Drawn like the text inputs instead of the native pop-up button, which is shorter and
-   ignores the theme; the menu that opens stays native (keyboard and accessibility). */
-.dialog select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 28px;
-  background-image: var(--select-arrow);
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 10px 6px;
-  cursor: pointer;
+/* A drop-down list (`Select`), drawn like the text inputs. */
+.dialog .select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-align: start;
 }
-.dialog select:hover:not(:disabled):not(:focus) {
+.dialog .select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dialog .select-placeholder {
+  color: var(--text-muted);
+}
+.dialog .select svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.dialog .select:hover:not(:disabled):not(:focus) {
   border-color: var(--text-muted);
 }
+/* A text field with suggestions (`ComboBox`), with the button that shows them all inside its right end. */
+.dialog .combo-box {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.dialog .combo-box input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 28px;
+}
+.dialog .combo-box button {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 0 3px 3px 0;
+  background: none;
+  color: var(--text-muted);
+}
+.dialog .combo-box button:hover:not(:disabled) {
+  color: var(--text);
+}
+.dialog .combo-box button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dialog .input-with-button .combo-box {
+  flex: 1;
+}
 .dialog input:focus,
-.dialog select:focus,
+.dialog .select:focus,
 .dialog textarea:focus {
   border-color: var(--accent);
 }
 .dialog input:disabled,
-.dialog select:disabled,
+.dialog .select:disabled,
 .dialog textarea:disabled {
   opacity: 0.5;
   cursor: default;

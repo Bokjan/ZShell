@@ -26,6 +26,7 @@ import { HelpTip } from "./HelpTip";
 import { LicensesDialog } from "./LicensesDialog";
 import { Modal } from "./Modal";
 import { RadioGroup } from "./RadioGroup";
+import { Select } from "./Select";
 import { AboutSection } from "./settings/AboutSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { TerminalSection } from "./settings/TerminalSection";
@@ -386,13 +387,11 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
               <Setting>
                 <label>
                   {t("settings.zmodemReceive")}
-                  <select value={settings.zmodem.receive} onChange={(e) => setZmodem({ receive: e.target.value as ZmodemReceive })}>
-                    {ZMODEM_RECEIVE.map((receive) => (
-                      <option key={receive} value={receive}>
-                        {t(`settings.zmodemReceiveOptions.${receive}`)}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={settings.zmodem.receive}
+                    onChange={(receive) => setZmodem({ receive })}
+                    options={ZMODEM_RECEIVE.map((receive) => ({ value: receive, label: t(`settings.zmodemReceiveOptions.${receive}`) }))}
+                  />
                 </label>
                 <p className="hint">{t("settings.zmodemReceiveHint")}</p>
               </Setting>

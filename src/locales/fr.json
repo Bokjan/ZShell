@@ -8,6 +8,7 @@
     "dismiss": "Masquer",
     "increase": "Augmenter",
     "decrease": "Diminuer",
+    "showSuggestions": "Afficher les suggestions",
     "dontAskAgain": "Ne plus demander",
     "opensInBrowser": "(s’ouvre dans votre navigateur)"
   },

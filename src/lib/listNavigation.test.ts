@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { clampIndex, navigateList, rovingTarget } from "./listNavigation";
+import { clampIndex, continuesTypeAhead, navigateList, rovingTarget, TYPEAHEAD_MS, typeAhead } from "./listNavigation";
 
 const key = (name: string) =>
   ({ key: name, keyCode: 0, nativeEvent: { isComposing: false }, preventDefault: vi.fn() }) as unknown as KeyboardEvent;
@@ -55,5 +55,46 @@ describe("rovingTarget", () => {
   it("leaves ↑ / ↓ and other keys alone when asked to", () => {
     expect(rovingTarget("ArrowDown", 0, 3, true)).toBeNull();
     expect(rovingTarget("Enter", 0, 3)).toBeNull();
+  });
+});
+
+describe("typeAhead", () => {
+  const labels = ["Apple", "Banana", null, "Blueberry", "Cherry"];
+  const fresh = { text: "", at: 0 };
+
+  it("finds the next item that starts with a letter, after the highlighted one", () => {
+    expect(typeAhead(fresh, "b", 10_000, labels, -1).index).toBe(1);
+    expect(typeAhead(fresh, "B", 10_000, labels, 1).index).toBe(3);
+    // Around to the start.
+    expect(typeAhead(fresh, "b", 10_000, labels, 3).index).toBe(1);
+    expect(typeAhead(fresh, "z", 10_000, labels, 0).index).toBe(-1);
+  });
+
+  it("keeps the highlighted item while the prefix grows, and starts over after a pause", () => {
+    const first = typeAhead(fresh, "b", 10_000, labels, -1);
+    expect(first.typed).toEqual({ text: "b", at: 10_000 });
+    const second = typeAhead(first.typed, "l", 10_100, labels, first.index);
+    expect(second).toEqual({ typed: { text: "bl", at: 10_100 }, index: 3 });
+    expect(typeAhead(first.typed, "l", 10_000 + TYPEAHEAD_MS, labels, first.index).typed.text).toBe("l");
+  });
+
+  it("goes through the items that start with a letter typed again and again", () => {
+    const first = typeAhead(fresh, "b", 10_000, labels, 0);
+    const second = typeAhead(first.typed, "b", 10_100, labels, first.index);
+    expect([first.index, second.index]).toEqual([1, 3]);
+    expect(typeAhead(second.typed, "b", 10_200, labels, second.index)).toEqual({ typed: { text: "bbb", at: 10_200 }, index: 1 });
+  });
+
+  it("skips items that can't be chosen", () => {
+    expect(typeAhead(fresh, "x", 10_000, ["x", null], 0).index).toBe(0);
+    expect(typeAhead(fresh, "x", 10_000, [null, null], -1).index).toBe(-1);
+  });
+});
+
+describe("continuesTypeAhead", () => {
+  it("is only while letters are being typed", () => {
+    expect(continuesTypeAhead({ text: "", at: 10_000 }, 10_100)).toBe(false);
+    expect(continuesTypeAhead({ text: "b", at: 10_000 }, 10_100)).toBe(true);
+    expect(continuesTypeAhead({ text: "b", at: 10_000 }, 10_000 + TYPEAHEAD_MS)).toBe(false);
   });
 });

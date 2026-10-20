@@ -14,6 +14,7 @@ import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies }
 import { HelpTip } from "../HelpTip";
 import { RadioGroup } from "../RadioGroup";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
+import { Select } from "../Select";
 import { LiveTextField, NumberField, Section, Setting } from "./common";
 
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
@@ -103,13 +104,11 @@ export function TerminalSection() {
         <div className="row">
           <label className="grow">
             {t("settings.cursorStyle")}
-            <select value={terminal.cursorStyle} onChange={(e) => set({ cursorStyle: e.target.value as CursorStyle })}>
-              {CURSOR_STYLES.map((style) => (
-                <option key={style} value={style}>
-                  {t(`settings.cursorStyles.${style}`)}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={terminal.cursorStyle}
+              onChange={(cursorStyle) => set({ cursorStyle })}
+              options={CURSOR_STYLES.map((style) => ({ value: style, label: t(`settings.cursorStyles.${style}`) }))}
+            />
           </label>
           <label className="grow">
             {t("settings.scrollback")}

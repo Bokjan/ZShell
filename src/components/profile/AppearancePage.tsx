@@ -6,6 +6,7 @@ import { FONT_SIZE_MAX, FONT_SIZE_MIN } from "../../ipc/api";
 import { sessionScheme, TERMINAL_SCHEMES } from "../../lib/terminalSchemes";
 import { ColorField } from "../ColorField";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
+import { Select } from "../Select";
 import { SpinInput } from "../SpinInput";
 
 interface Props {
@@ -24,15 +25,15 @@ export function AppearancePage({ form, set }: Props) {
       <div className="row profile-scheme">
         <label className="grow">
           {t("profile.colorScheme")}
-          <select value={form.colorScheme} onChange={(e) => set({ colorScheme: e.target.value })}>
-            <option value="">{t("profile.sameAsSettings")}</option>
-            <option value="auto">{t("settings.schemeAuto")}</option>
-            {TERMINAL_SCHEMES.map((scheme) => (
-              <option key={scheme.id} value={scheme.id}>
-                {schemeLabel(scheme, t)}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={form.colorScheme}
+            onChange={(colorScheme) => set({ colorScheme })}
+            options={[
+              { value: "", label: t("profile.sameAsSettings") },
+              { value: "auto", label: t("settings.schemeAuto") },
+              ...TERMINAL_SCHEMES.map((scheme) => ({ value: scheme.id, label: schemeLabel(scheme, t) })),
+            ]}
+          />
         </label>
         <SchemePreview scheme={preview} />
       </div>

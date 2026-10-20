@@ -8,6 +8,7 @@ import { hostPort, parsePort } from "../lib/format";
 import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { Select } from "./Select";
 
 interface Props {
   /** null creates a new rule. */
@@ -108,11 +109,11 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
 
         <label>
           {t("forwards.dialog.type")}
-          <select value={kind} onChange={(e) => changeKind(e.target.value as ForwardKind)}>
-            <option value="local">{t("forwards.kindName.local")}</option>
-            <option value="remote">{t("forwards.kindName.remote")}</option>
-            <option value="dynamic">{t("forwards.kindName.dynamic")}</option>
-          </select>
+          <Select
+            value={kind}
+            onChange={changeKind}
+            options={(["local", "remote", "dynamic"] as const).map((value) => ({ value, label: t(`forwards.kindName.${value}`) }))}
+          />
         </label>
 
         <fieldset>

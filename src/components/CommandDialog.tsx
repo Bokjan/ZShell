@@ -5,6 +5,7 @@ import type { CommandGroup, QuickCommand } from "../ipc/api";
 import { useDialog } from "../hooks/dialogs";
 import { groupName } from "../lib/quickCommands";
 import { Modal } from "./Modal";
+import { Select } from "./Select";
 
 interface Props {
   /** Null creates a command. */
@@ -60,13 +61,7 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
         <p className="hint">{t("quick.enterHint")}</p>
         <label>
           {t("quick.group")}
-          <select value={group} onChange={(e) => setGroup(e.target.value)}>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {groupName(g, t)}
-              </option>
-            ))}
-          </select>
+          <Select value={group} onChange={setGroup} options={groups.map((g) => ({ value: g.id, label: groupName(g, t) }))} />
         </label>
         <footer>
           <span className="grow" />

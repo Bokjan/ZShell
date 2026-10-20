@@ -5,6 +5,7 @@ import { appLock, errorCode, errorMessage, type AppLockSettings } from "../../ip
 import { useAppLock } from "../../hooks/appLock";
 import { ErrorText } from "../ErrorMessage";
 import { ProtectionDialog } from "../ProtectionDialog";
+import { Select } from "../Select";
 import { useVault } from "../../hooks/vault";
 import { attempt } from "../../lib/attempt";
 import { useLocale } from "../../hooks/locale";
@@ -115,17 +116,15 @@ function AppLockSetting() {
         <Setting>
           <label>
             {t("settings.appLock.idle")}
-            <select
+            <Select
               value={settings.idleMinutes}
               disabled={busy}
-              onChange={(e) => void save({ ...settings, idleMinutes: Number(e.target.value) })}
-            >
-              {IDLE_MINUTES.map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {minutes === 0 ? t("settings.appLock.idleNever") : t("settings.appLock.idleMinutes", { count: minutes })}
-                </option>
-              ))}
-            </select>
+              onChange={(idleMinutes) => void save({ ...settings, idleMinutes })}
+              options={IDLE_MINUTES.map((minutes) => ({
+                value: minutes,
+                label: minutes === 0 ? t("settings.appLock.idleNever") : t("settings.appLock.idleMinutes", { count: minutes }),
+              }))}
+            />
           </label>
         </Setting>
       )}

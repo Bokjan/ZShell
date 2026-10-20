@@ -3,9 +3,11 @@ import { useTranslation } from "react-i18next";
 import { DEFAULT_TERM_TYPE, ENCODINGS, type CommandGroup } from "../../ipc/api";
 import type { ProfileForm } from "../../lib/profileForm";
 import { groupName } from "../../lib/quickCommands";
+import { ComboBox } from "../ComboBox";
+import { Select } from "../Select";
 
 /** Suggestions for the terminal type; any value can be typed. */
-const TERM_TYPES = [DEFAULT_TERM_TYPE, "xterm", "vt100", "vt220", "linux"];
+const TERM_TYPES = [DEFAULT_TERM_TYPE, "xterm", "vt100", "vt220", "linux"].map((value) => ({ value }));
 
 interface Props {
   form: ProfileForm;
@@ -25,30 +27,23 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
       <div className="row">
         <label className="grow">
           {t("profile.encoding")}
-          <select value={form.encoding} onChange={(e) => set({ encoding: e.target.value })}>
-            {ENCODINGS.map((label) => (
-              <option key={label} value={label}>
-                {t(`profile.encodings.${label}`)}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={form.encoding}
+            onChange={(encoding) => set({ encoding })}
+            options={ENCODINGS.map((value) => ({ value, label: t(`profile.encodings.${value}`) }))}
+          />
         </label>
         {protocol !== "serial" && (
           <label className="grow">
             {t("profile.termType")}
-            <input
+            <ComboBox
               value={form.termType}
-              onChange={(e) => set({ termType: e.target.value })}
-              list="profile-term-types"
+              onChange={(termType) => set({ termType })}
+              suggestions={TERM_TYPES}
               placeholder={DEFAULT_TERM_TYPE}
               autoCapitalize="off"
               autoCorrect="off"
             />
-            <datalist id="profile-term-types">
-              {TERM_TYPES.map((type) => (
-                <option key={type} value={type} />
-              ))}
-            </datalist>
           </label>
         )}
       </div>
@@ -91,13 +86,12 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
       <p className="hint">{t("profile.autoLogHint")}</p>
       <label>
         {t("profile.commandGroup")}
-        <select value={shownGroup} disabled={!commandGroups} onChange={(e) => set({ commandGroup: e.target.value })}>
-          {(commandGroups ?? []).map((group) => (
-            <option key={group.id} value={group.id}>
-              {groupName(group, t)}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={shownGroup}
+          disabled={!commandGroups}
+          onChange={(commandGroup) => set({ commandGroup })}
+          options={(commandGroups ?? []).map((group) => ({ value: group.id, label: groupName(group, t) }))}
+        />
       </label>
       <p className="hint">{t("profile.commandGroupHint")}</p>
     </>

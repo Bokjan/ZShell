@@ -56,7 +56,7 @@ function dialogGone() {
 }
 
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** The controls in `container` that Tab reaches, in order: enabled, shown and not hidden from it. */
 export function focusables(container: HTMLElement): HTMLElement[] {

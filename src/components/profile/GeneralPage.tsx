@@ -5,14 +5,16 @@ import type { Profile, Protocol, SerialPortInfo } from "../../ipc/api";
 import { expandHome, startsWithHome } from "../../lib/paths";
 import { isMac, isWindows } from "../../lib/platform";
 import type { ProfileForm } from "../../lib/profileForm";
+import { ComboBox } from "../ComboBox";
 import { HelpTip } from "../HelpTip";
 import { IconButton } from "../IconButton";
 import { RefreshIcon } from "../icons";
 import { PasswordField } from "../PasswordField";
+import { Select } from "../Select";
 
 const PROTOCOLS: Protocol[] = ["ssh", "telnet", "serial"];
 /** Suggestions for the baud rate; any value can be typed. */
-const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
+const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600].map((rate) => ({ value: String(rate) }));
 const PARITIES = ["none", "odd", "even"] as const;
 const FLOW_CONTROLS = ["none", "software", "hardware"] as const;
 
@@ -113,12 +115,16 @@ export function GeneralPage({
       {usernameField}
       <label>
         {t("profile.auth")}
-        <select value={authType} onChange={(e) => set({ authType: e.target.value as ProfileForm["authType"] })}>
-          <option value="auto">{t("profile.authAuto")}</option>
-          <option value="password">{t("profile.authPassword")}</option>
-          <option value="publicKey">{t("profile.authPublicKey")}</option>
-          <option value="agent">{t("profile.authAgent")}</option>
-        </select>
+        <Select
+          value={authType}
+          onChange={(authType) => set({ authType })}
+          options={[
+            { value: "auto", label: t("profile.authAuto") },
+            { value: "password", label: t("profile.authPassword") },
+            { value: "publicKey", label: t("profile.authPublicKey") },
+            { value: "agent", label: t("profile.authAgent") },
+          ]}
+        />
       </label>
       {authType === "auto" && (
         <p className="hint">
@@ -173,11 +179,11 @@ export function GeneralPage({
       <label>
         {t("profile.device")}
         <div className="input-with-button">
-          <input
+          <ComboBox
             name="device"
             value={form.device}
-            onChange={(e) => set({ device: e.target.value })}
-            list="profile-serial-ports"
+            onChange={(device) => set({ device })}
+            suggestions={(ports ?? []).map((port) => ({ value: port.name, description: port.description ?? undefined }))}
             placeholder={isWindows ? "COM3" : isMac ? "/dev/cu.usbserial-1410" : "/dev/ttyUSB0"}
             autoFocus
             autoCapitalize="off"
@@ -187,73 +193,53 @@ export function GeneralPage({
             <RefreshIcon />
           </IconButton>
         </div>
-        <datalist id="profile-serial-ports">
-          {ports?.map((port) => (
-            <option key={port.name} value={port.name}>
-              {port.description ?? undefined}
-            </option>
-          ))}
-        </datalist>
       </label>
       {ports?.length === 0 && <p className="hint">{t("profile.noDevices")}</p>}
       <div className="row">
         <label className="grow">
           {t("profile.baudRate")}
-          <input
+          <ComboBox
             name="baudRate"
             value={form.baudRate}
-            onChange={(e) => set({ baudRate: e.target.value })}
-            list="profile-baud-rates"
+            onChange={(baudRate) => set({ baudRate })}
+            suggestions={BAUD_RATES}
             inputMode="numeric"
           />
-          <datalist id="profile-baud-rates">
-            {BAUD_RATES.map((rate) => (
-              <option key={rate} value={rate} />
-            ))}
-          </datalist>
         </label>
         <label className="grow">
           {t("profile.dataBits")}
-          <select value={form.dataBits} onChange={(e) => set({ dataBits: Number(e.target.value) })}>
-            {[8, 7, 6, 5].map((bits) => (
-              <option key={bits} value={bits}>
-                {bits}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={form.dataBits}
+            onChange={(dataBits) => set({ dataBits })}
+            options={[8, 7, 6, 5].map((bits) => ({ value: bits, label: String(bits) }))}
+          />
         </label>
       </div>
       <div className="row">
         <label className="grow">
           {t("profile.parity")}
-          <select value={form.parity} onChange={(e) => set({ parity: e.target.value as ProfileForm["parity"] })}>
-            {PARITIES.map((value) => (
-              <option key={value} value={value}>
-                {t(`profile.parities.${value}`)}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={form.parity}
+            onChange={(parity) => set({ parity })}
+            options={PARITIES.map((value) => ({ value, label: t(`profile.parities.${value}`) }))}
+          />
         </label>
         <label className="grow">
           {t("profile.stopBits")}
-          <select value={form.stopBits} onChange={(e) => set({ stopBits: Number(e.target.value) })}>
-            {[1, 2].map((bits) => (
-              <option key={bits} value={bits}>
-                {bits}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={form.stopBits}
+            onChange={(stopBits) => set({ stopBits })}
+            options={[1, 2].map((bits) => ({ value: bits, label: String(bits) }))}
+          />
         </label>
       </div>
       <label>
         {t("profile.flowControl")}
-        <select value={form.flowControl} onChange={(e) => set({ flowControl: e.target.value as ProfileForm["flowControl"] })}>
-          {FLOW_CONTROLS.map((value) => (
-            <option key={value} value={value}>
-              {t(`profile.flowControls.${value}`)}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={form.flowControl}
+          onChange={(flowControl) => set({ flowControl })}
+          options={FLOW_CONTROLS.map((value) => ({ value, label: t(`profile.flowControls.${value}`) }))}
+        />
       </label>
       <p className="hint">{t("profile.serialHint")}</p>
     </>
@@ -268,13 +254,11 @@ export function GeneralPage({
         </label>
         <label>
           {t("profile.protocol")}
-          <select value={protocol} onChange={(e) => changeProtocol(e.target.value as Protocol)}>
-            {PROTOCOLS.map((value) => (
-              <option key={value} value={value}>
-                {t(`profile.protocols.${value}`)}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={protocol}
+            onChange={changeProtocol}
+            options={PROTOCOLS.map((value) => ({ value, label: t(`profile.protocols.${value}`) }))}
+          />
         </label>
       </div>
       {protocol === "ssh" ? sshFields : protocol === "telnet" ? telnetFields : serialFields}

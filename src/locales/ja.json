@@ -8,6 +8,7 @@
     "dismiss": "閉じる",
     "increase": "増やす",
     "decrease": "減らす",
+    "showSuggestions": "候補を表示",
     "dontAskAgain": "今後は確認しない",
     "opensInBrowser": "（ブラウザーで開きます）"
   },

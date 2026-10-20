@@ -13,6 +13,7 @@ import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordField } from "./PasswordField";
+import { Select } from "./Select";
 
 interface Props {
   /** null creates a new proxy. */
@@ -142,13 +143,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
           </label>
           <label>
             {t("proxy.kind")}
-            <select value={kind} onChange={(e) => changeKind(e.target.value as ProxyKind)}>
-              {KINDS.map((value) => (
-                <option key={value} value={value}>
-                  {t(`proxy.kinds.${value}`)}
-                </option>
-              ))}
-            </select>
+            <Select value={kind} onChange={changeKind} options={KINDS.map((value) => ({ value, label: t(`proxy.kinds.${value}`) }))} />
           </label>
         </div>
 

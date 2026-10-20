@@ -4,6 +4,7 @@ import type { Profile, Proxy } from "../../ipc/api";
 import type { ProfileForm } from "../../lib/profileForm";
 import { IconButton } from "../IconButton";
 import { ArrowIcon, CloseIcon } from "../icons";
+import { Select } from "../Select";
 
 /** The proxy choice that opens a dialog to create one. */
 const NEW_PROXY = "\u0000new";
@@ -87,36 +88,29 @@ export function ConnectionPage({ form, set, profile, profiles, proxies, newProxy
                 ))}
               </ol>
             )}
-            <select
+            <Select
               value=""
+              placeholder={t("profile.addJumpHost")}
+              aria-label={t("profile.addJumpHost")}
               disabled={candidates.length === 0}
-              onChange={(e) => e.target.value && set({ jumpHosts: [...jumpHosts, e.target.value] })}
-            >
-              <option value="">{t("profile.addJumpHost")}</option>
-              {candidates.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onChange={(id) => set({ jumpHosts: [...jumpHosts, id] })}
+              options={candidates.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </div>
           <p className="hint">{t(ssh ? "profile.jumpHostsHint" : "profile.jumpHostsHintTelnet")}</p>
           <label>
             {t("profile.proxy")}
-            <select
+            <Select
               value={shownProxy}
               disabled={!!firstJump}
-              onChange={(e) => (e.target.value === NEW_PROXY ? newProxy() : set({ proxy: e.target.value }))}
-            >
-              <option value="">{t("profile.noProxy")}</option>
-              {isMissing(shownProxy) && <option value={shownProxy}>{t("profile.missingProxy")}</option>}
-              {proxies?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-              <option value={NEW_PROXY}>{t("profile.newProxy")}</option>
-            </select>
+              onChange={(proxy) => (proxy === NEW_PROXY ? newProxy() : set({ proxy }))}
+              options={[
+                { value: "", label: t("profile.noProxy") },
+                ...(isMissing(shownProxy) ? [{ value: shownProxy, label: t("profile.missingProxy") }] : []),
+                ...(proxies ?? []).map((p) => ({ value: p.id, label: p.name })),
+                { value: NEW_PROXY, label: t("profile.newProxy") },
+              ]}
+            />
           </label>
           <p className="hint">
             {firstJump
