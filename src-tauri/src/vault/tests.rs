@@ -323,17 +323,18 @@ fn a_reset_during_an_unlock_stays() {
     add(&create(&dir, &store), "a", "web", None);
 
     let vault = Arc::new(open(&dir, &store));
-    store.get_delay_ms.store(500, Ordering::Relaxed);
+    let hold = store.hold_get();
     let unlocking = std::thread::spawn({
         let vault = vault.clone();
         move || vault.try_unlock()
     });
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // The old key is read; reset while the store still answers.
+    hold.started();
     assert_eq!(vault.reset().unwrap().locked.map(|l| l.reason), Some(LockReason::New));
+    drop(hold);
     assert!(unlocking.join().unwrap().locked.is_some());
     assert!(vault.data().is_err());
 
-    store.get_delay_ms.store(0, Ordering::Relaxed);
     assert!(vault.try_unlock().locked.is_none());
     assert!(names(&vault).is_empty());
     fs::remove_dir_all(&dir).unwrap();
@@ -376,20 +377,21 @@ fn queries_answer_while_a_change_waits_for_the_credential_store() {
     let vault = Arc::new(create(&dir, &store));
     add(&vault, "a", "alpha", Some("secret"));
     store.failing.store(false, Ordering::Relaxed);
-    store.set_delay_ms.store(500, Ordering::Relaxed);
+    let hold = store.hold_set();
 
     let changing = {
         let vault = vault.clone();
         std::thread::spawn(move || vault.set_protection(Target::System, None).unwrap())
     };
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    let asked = std::time::Instant::now();
+    hold.started();
     assert_eq!(names(&vault), ["alpha"]);
     assert_eq!(vault.password(Account::Profile("a")).unwrap().as_deref(), Some("secret"));
     assert!(vault.app_lock().is_some());
     // As it was until the change is done.
     assert_eq!(vault.status().protection, Some(Protection::None));
-    assert!(asked.elapsed() < std::time::Duration::from_millis(200));
+    // Answered without waiting for it.
+    assert!(!changing.is_finished());
+    drop(hold);
     changing.join().unwrap();
     assert_eq!(vault.status().protection, Some(Protection::System));
     fs::remove_dir_all(&dir).unwrap();

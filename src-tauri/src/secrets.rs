@@ -92,19 +92,60 @@ pub use memory::MemoryStore;
 #[cfg(test)]
 mod memory {
     use std::collections::HashMap;
+    use std::sync::mpsc::{self, Receiver, Sender};
     use std::sync::Mutex;
+    use std::time::Duration;
 
     use super::CredentialStore;
 
+    /// How long a held call waits for its test at most, so that a vault waiting on it by
+    /// mistake fails the test rather than hanging it.
+    const HOLD_LIMIT: Duration = Duration::from_secs(10);
+
     /// A credential store in memory; `failing` makes every call fail, as an unavailable store,
-    /// and `get_delay_ms` and `set_delay_ms` make reading and saving take that long, as when
-    /// the system asks the user.
+    /// and [`MemoryStore::hold_get`] and [`MemoryStore::hold_set`] keep the next read or save
+    /// waiting, as when the system asks the user.
     #[derive(Default)]
     pub struct MemoryStore {
         pub entries: Mutex<HashMap<String, String>>,
         pub failing: std::sync::atomic::AtomicBool,
-        pub get_delay_ms: std::sync::atomic::AtomicU64,
-        pub set_delay_ms: std::sync::atomic::AtomicU64,
+        get_gate: Mutex<Option<Gate>>,
+        set_gate: Mutex<Option<Gate>>,
+    }
+
+    /// The store's side of a [`Hold`].
+    struct Gate {
+        started: Sender<()>,
+        release: Receiver<()>,
+    }
+
+    impl Gate {
+        fn pass(gate: &Mutex<Option<Gate>>) {
+            let Some(gate) = gate.lock().unwrap().take() else { return };
+            let _ = gate.started.send(());
+            // Released when the `Hold` is dropped.
+            let _ = gate.release.recv_timeout(HOLD_LIMIT);
+        }
+    }
+
+    /// A read or save of the store held at its start: [`Hold::started`] waits until a call
+    /// has got there, and dropping the hold lets it go on.
+    pub struct Hold {
+        started: Receiver<()>,
+        _release: Sender<()>,
+    }
+
+    impl Hold {
+        fn new(gate: &Mutex<Option<Gate>>) -> Self {
+            let (started, started_rx) = mpsc::channel();
+            let (release, release_rx) = mpsc::channel();
+            *gate.lock().unwrap() = Some(Gate { started, release: release_rx });
+            Self { started: started_rx, _release: release }
+        }
+
+        pub fn started(&self) {
+            self.started.recv_timeout(HOLD_LIMIT).expect("the held call never started");
+        }
     }
 
     impl MemoryStore {
@@ -114,21 +155,29 @@ mod memory {
                 false => Ok(()),
             }
         }
+
+        /// Holds the next read, which answers with the entry as it was when it started.
+        pub fn hold_get(&self) -> Hold {
+            Hold::new(&self.get_gate)
+        }
+
+        /// Holds the next save, which stores the entry once it is let go on.
+        pub fn hold_set(&self) -> Hold {
+            Hold::new(&self.set_gate)
+        }
     }
 
     impl CredentialStore for MemoryStore {
         fn get(&self, account: &str) -> keyring::Result<String> {
             self.check()?;
             let entry = self.entries.lock().unwrap().get(account).cloned();
-            let delay = self.get_delay_ms.load(std::sync::atomic::Ordering::Relaxed);
-            std::thread::sleep(std::time::Duration::from_millis(delay));
+            Gate::pass(&self.get_gate);
             entry.ok_or(keyring::Error::NoEntry)
         }
 
         fn set(&self, account: &str, secret: &str) -> keyring::Result<()> {
             self.check()?;
-            let delay = self.set_delay_ms.load(std::sync::atomic::Ordering::Relaxed);
-            std::thread::sleep(std::time::Duration::from_millis(delay));
+            Gate::pass(&self.set_gate);
             self.entries.lock().unwrap().insert(account.to_owned(), secret.to_owned());
             Ok(())
         }
