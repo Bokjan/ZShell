@@ -21,7 +21,7 @@ button {
 /* The keyboard focus on controls, the same on both platforms. Of no specificity beyond
    :focus-visible, so a component that marks its focus its own way (a field's border, a
    list's selected row) turns it off with `outline: none`. */
-:where(button, a, summary, [tabindex]):focus-visible {
+:where(button, a, summary, [tabindex], input[type="checkbox"], input[type="radio"]):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -79,6 +79,59 @@ button > svg:only-child:not(.inline-icon) {
 .inline-icon {
   flex-shrink: 0;
   margin-left: 4px;
+}
+
+/* Checkboxes and radio buttons in the theme's colors, rather than each platform's (the system's
+   accent color on macOS); still the native inputs, for the keyboard, labels and screen readers.
+   A switch (`.switch`) draws its own. Windows contrast themes get the native ones back. */
+:is(input[type="checkbox"], input[type="radio"]):not(.switch > input) {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  /* Stronger than a text field's border: the box alone shows that it can be checked. */
+  border: 1px solid var(--text-muted);
+  border-radius: 3px;
+  background: var(--bg);
+  cursor: pointer;
+}
+input[type="radio"]:not(.switch > input) {
+  border-radius: 50%;
+}
+:is(input[type="checkbox"], input[type="radio"]):not(.switch > input):hover:not(:disabled, :checked, :indeterminate) {
+  border-color: var(--text);
+}
+:is(input[type="checkbox"], input[type="radio"]):not(.switch > input):is(:checked, :indeterminate) {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+}
+/* The check mark (as `CheckIcon`) and the dash of a box neither checked nor not (a tab whose
+   panes are partly picked), cut out of the text color on the accent. */
+input[type="checkbox"]:not(.switch > input):is(:checked, :indeterminate)::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--on-accent);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+input[type="checkbox"]:not(.switch > input):indeterminate::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8h8' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+input[type="radio"]:not(.switch > input):checked::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--on-accent);
+}
+:is(input[type="checkbox"], input[type="radio"]):not(.switch > input):disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* A segmented control: one choice among a few (settings, the profile's pages, the side panels).

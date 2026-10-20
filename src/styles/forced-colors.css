@@ -109,6 +109,11 @@
   .switch input:checked + span::after {
     background: HighlightText;
   }
+  /* Checkboxes and radio buttons as the system draws them (see base.css). */
+  :is(input[type="checkbox"], input[type="radio"]):not(.switch > input) {
+    appearance: auto;
+    -webkit-appearance: auto;
+  }
   .switch input:focus-visible + span {
     outline-color: Highlight;
   }

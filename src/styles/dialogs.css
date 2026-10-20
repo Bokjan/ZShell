@@ -55,7 +55,7 @@
   align-items: center;
   gap: 6px;
 }
-.dialog input:not([type="checkbox"]),
+.dialog input:not([type="checkbox"], [type="radio"]),
 .dialog .select,
 .dialog textarea {
   padding: 6px 8px;
