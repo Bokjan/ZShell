@@ -291,6 +291,8 @@ fn process_name(pid: libc::pid_t) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::*;
 
     /// Reading stops once the session has shut down, though something still has the
@@ -309,10 +311,16 @@ mod tests {
         let (stop_reading, stop) = oneshot::channel();
         let reading = tokio::spawn(async move { read_output(&terminal, &sink, stop).await });
         write_fd(slave.as_raw_fd(), b"out").unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        assert_eq!(String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()), "out");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut read = Vec::new();
+        while read.len() < 3 {
+            assert!(Instant::now() < deadline, "the output never came: {read:?}");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            read.extend(output.try_iter().flatten());
+        }
+        assert_eq!(String::from_utf8_lossy(&read), "out");
         assert!(!reading.is_finished());
         drop(stop_reading);
-        tokio::time::timeout(std::time::Duration::from_secs(1), reading).await.expect("reading stopped").unwrap();
+        tokio::time::timeout(Duration::from_secs(5), reading).await.expect("reading stopped").unwrap();
     }
 }

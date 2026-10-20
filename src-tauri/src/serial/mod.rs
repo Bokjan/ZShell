@@ -385,8 +385,35 @@ mod tests {
     use std::fs::File;
     use std::io::Write as _;
     use std::os::fd::FromRawFd;
+    use std::sync::mpsc::Receiver;
 
     use super::*;
+
+    /// How long a test waits for something before failing.
+    const PATIENCE: Duration = Duration::from_secs(10);
+
+    /// Waits until `done` holds; fails if it doesn't for a while.
+    async fn until(what: &str, mut done: impl FnMut() -> bool) {
+        let deadline = Instant::now() + PATIENCE;
+        while !done() {
+            assert!(Instant::now() < deadline, "{what} never happened");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// Waits until the session reports that it is connected (it has opened the device),
+    /// keeping the events it reports in `seen`; fails if it doesn't for a while.
+    async fn until_connected(events: &Receiver<String>, seen: &mut Vec<String>) {
+        let deadline = Instant::now() + PATIENCE;
+        loop {
+            seen.extend(events.try_iter());
+            if seen.iter().any(|event| event.contains(r#""type":"connected""#)) {
+                return;
+            }
+            assert!(Instant::now() < deadline, "never connected: {seen:?}");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
 
     /// A pseudo terminal standing in for a device: the session opens its slave side, the
     /// test plays the device on the master side.
@@ -414,20 +441,30 @@ mod tests {
             let options = SerialOptions { device: path.clone(), ..SerialOptions::default() };
             let session = tokio::spawn(run_with(options, io, on_threads));
 
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            // Until the session opens the device, reading it fails on Linux.
+            let mut events_seen = Vec::new();
+            until_connected(&events, &mut events_seen).await;
             input.send(SessionInput::Data(b"help\r".to_vec())).unwrap();
             let mut buffer = [0; 64];
             let n = device.read(&mut buffer).unwrap();
             assert_eq!(&buffer[..n], b"help\r");
             device.write_all(b"U-Boot> ").unwrap();
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            // Read before the device goes away, which discards what is still unread.
+            let mut shown = Vec::new();
+            until("the device's prompt shown", || {
+                shown.extend(output.try_iter().flatten());
+                String::from_utf8_lossy(&shown).contains("U-Boot> ")
+            })
+            .await;
 
             // The device goes away.
             drop(device);
             tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
-            let text = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
+            shown.extend(output.try_iter().flatten());
+            let text = String::from_utf8_lossy(&shown).into_owned();
             assert!(text.contains("115200 8N1") && text.contains("U-Boot> "), "{text:?}");
-            let events: Vec<String> = events.try_iter().collect();
+            events_seen.extend(events.try_iter());
+            let events = events_seen;
             assert!(events[0].contains(r#""type":"connected""#), "{events:?}");
             assert!(events.last().unwrap().contains(r#""reason":"lost""#), "{events:?}");
         }
@@ -441,15 +478,20 @@ mod tests {
         for on_threads in [false, true] {
             let (_device, path) = fake_device();
             let options = SerialOptions { device: path, ..SerialOptions::default() };
-            let (io, _input, _output, _events) = TermIo::detached((80, 24));
+            let (io, _input, _output, events) = TermIo::detached((80, 24));
             let first = tokio::spawn(run_with(options.clone(), io, on_threads));
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            until_connected(&events, &mut Vec::new()).await;
             first.abort();
             let (io, _input, _output, events) = TermIo::detached((80, 24));
             let second = tokio::spawn(run_with(options, io, on_threads));
-            tokio::time::sleep(Duration::from_millis(1500)).await;
-            let events: Vec<String> = events.try_iter().collect();
-            assert!(events.first().is_some_and(|e| e.contains(r#""type":"connected""#)), "{events:?}");
+            // Connected, or failed to open the device.
+            let mut first_event = None;
+            until("the second session's first event", || {
+                first_event = events.try_recv().ok();
+                first_event.is_some()
+            })
+            .await;
+            assert!(first_event.as_ref().is_some_and(|e| e.contains(r#""type":"connected""#)), "{first_event:?}");
             second.abort();
         }
     }
@@ -462,18 +504,17 @@ mod tests {
         for on_threads in [false, true] {
             // Never read: the line fills up.
             let (_device, path) = fake_device();
-            let (io, input, _output, _events) = TermIo::detached((80, 24));
+            let (io, input, _output, events) = TermIo::detached((80, 24));
             let session = tokio::spawn(run_with(SerialOptions { device: path.clone(), ..SerialOptions::default() }, io, on_threads));
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            until_connected(&events, &mut Vec::new()).await;
             input.send(SessionInput::Data(vec![b'x'; 1 << 20])).unwrap();
+            // Time for the write to start waiting; on a busy machine the test may pass without.
             tokio::time::sleep(Duration::from_millis(300)).await;
             drop(input);
             tokio::time::timeout(Duration::from_secs(5), session).await.unwrap().unwrap();
-            let since = Instant::now();
-            while Hold::is_held(&path) && since.elapsed() < RELEASE_WAIT {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-            assert!(!Hold::is_held(&path));
+            // What is tested is that the device is let go of, not how soon, which depends on the
+            // machine's load.
+            until("the device let go of", || !Hold::is_held(&path)).await;
         }
     }
 
@@ -509,9 +550,10 @@ mod tests {
     async fn sends_input_after_a_break() {
         for on_threads in [false, true] {
             let (mut device, path) = fake_device();
-            let (io, input, _output, _events) = TermIo::detached((80, 24));
+            let (io, input, _output, events) = TermIo::detached((80, 24));
             let session = tokio::spawn(run_with(SerialOptions { device: path, ..SerialOptions::default() }, io, on_threads));
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            // Until the session opens the device, reading it fails on Linux.
+            until_connected(&events, &mut Vec::new()).await;
             input.send(SessionInput::Break).unwrap();
             input.send(SessionInput::Data(b"after".to_vec())).unwrap();
             let mut buffer = [0; 64];

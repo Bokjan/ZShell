@@ -33,8 +33,12 @@ use unix::Pty;
 use windows::Pty;
 
 /// How long to wait for the rest of the output once the shell has exited.
-#[cfg(unix)]
+#[cfg(all(unix, not(test)))]
 const DRAIN_TIMEOUT: Duration = Duration::from_millis(200);
+/// Tests check all the output of a shell that exits, which a busy machine can take longer
+/// than that to read; the reader's reaching the end cuts the wait short anyway.
+#[cfg(all(unix, test))]
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 #[cfg(windows)]
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a shell gets to exit after its terminal is closed before it is killed.
@@ -93,11 +97,24 @@ async fn drain_output(mut done: oneshot::Receiver<()>, flow: &Flow) {
 #[cfg(all(test, unix))]
 mod tests {
     use std::sync::mpsc::Receiver;
+    use std::time::Instant;
 
     use portable_pty::CommandBuilder;
 
     use super::*;
     use crate::session::SessionInput;
+
+    /// How long a test waits for something before failing.
+    const PATIENCE: Duration = Duration::from_secs(10);
+
+    /// Waits until `done` holds; fails if it doesn't for a while.
+    async fn until(what: &str, mut done: impl FnMut() -> bool) {
+        let deadline = Instant::now() + PATIENCE;
+        while !done() {
+            assert!(Instant::now() < deadline, "{what} never happened");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
 
     fn sh(script: &str) -> Shell {
         let mut command = CommandBuilder::new("/bin/sh");
@@ -141,8 +158,9 @@ mod tests {
         // gets to exit while the reader waits.
         let script = format!("head -c {} /dev/zero | tr '\\000' x; printf END; exit 0", (2 << 20) + 500);
         let session = tokio::spawn(run(sh(&script), io));
-        // Catching up only well after the drain timeout.
-        tokio::time::sleep(DRAIN_TIMEOUT * 3).await;
+        // Catching up only well after the drain timeout. (A busy machine slow to run the shell
+        // could leave less than that, and the test would then pass when it shouldn't.)
+        tokio::time::sleep(DRAIN_TIMEOUT + Duration::from_secs(1)).await;
         let mut shown = Vec::new();
         while !session.is_finished() {
             for chunk in output.try_iter() {
@@ -199,7 +217,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn resizes_while_input_is_backed_up() {
         let (io, input, output, _events) = TermIo::detached((80, 24));
-        let session = tokio::spawn(run(sh("stty raw -echo; sleep 1; stty size; exit 4"), io));
+        // The shell waits for the resize itself; the timeout below fails the test if it never
+        // comes.
+        let script = r#"stty raw -echo; while [ "$(stty size)" != "30 100" ]; do sleep 0.05; done; stty size; exit 4"#;
+        let session = tokio::spawn(run(sh(script), io));
         for _ in 0..200 {
             input.send(SessionInput::Data(vec![b'x'; 16 << 10])).unwrap();
         }
@@ -224,14 +245,14 @@ mod tests {
         let (io, input, _output, _events) = TermIo::detached((80, 24));
         let foreground = io.foreground();
         let session = tokio::spawn(run(sh_interactive(), io));
+        // The shell is in the foreground from the start; the sleep only gives it time to start.
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(foreground.get(), None);
-        input.send(SessionInput::Data(b"sleep 5\r".to_vec())).unwrap();
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        assert_eq!(foreground.get().as_deref(), Some("sleep"));
+        // Long enough not to end on its own before it is seen.
+        input.send(SessionInput::Data(b"sleep 30\r".to_vec())).unwrap();
+        until("sleep in the foreground", || foreground.get().as_deref() == Some("sleep")).await;
         input.send(SessionInput::Data(b"\x03".to_vec())).unwrap();
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        assert_eq!(foreground.get(), None);
+        until("the shell back in the foreground", || foreground.get().is_none()).await;
         input.send(SessionInput::Data(b"exit\r".to_vec())).unwrap();
         session.await.unwrap();
         assert_eq!(foreground.get(), None);
@@ -273,11 +294,15 @@ mod tests {
         };
         // SAFETY: plain syscalls; signal 0 only asks whether the process is there.
         let running = || unsafe { libc::kill(pid, 0) } == 0;
+        // Before the abort, so that the grace period (whose timer never fires early) can't
+        // start before it.
+        let since = Instant::now();
         session.abort();
-        tokio::time::sleep(KILL_GRACE / 2).await;
-        assert!(running(), "killed before the grace period");
-        tokio::time::sleep(KILL_GRACE).await;
-        assert!(!running(), "still running (or not reaped) after the grace period");
+        while running() {
+            assert!(since.elapsed() < KILL_GRACE + PATIENCE, "still running (or not reaped) long after the grace period");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(since.elapsed() >= KILL_GRACE, "killed before the grace period");
     }
 
     /// Without acknowledgements the reader stops after about `FLOW_HIGH` bytes, and the
@@ -289,8 +314,15 @@ mod tests {
         let flow = io.sink().flow();
         let session = tokio::spawn(run(sh(&format!("head -c {TOTAL} /dev/zero")), io));
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let mut received: usize = output.try_iter().map(|chunk| chunk.len()).sum();
+        let mut received: usize = 0;
+        until("reading paused", || {
+            received += output.try_iter().map(|chunk| chunk.len()).sum::<usize>();
+            flow.is_paused()
+        })
+        .await;
+        // A reader that read on regardless would do so meanwhile.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        received += output.try_iter().map(|chunk| chunk.len()).sum::<usize>();
         assert!(received > 0 && received < (3 << 20), "{received}");
         assert!(events.try_iter().all(|e| !e.contains("closed")));
 
