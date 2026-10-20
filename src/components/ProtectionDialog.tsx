@@ -122,10 +122,12 @@ export function ProtectionDialog({ intro, status, onDone, onClose }: Props) {
         </fieldset>
 
         {current === "password" && !unchanged && (
-          <label>
-            {t("protection.currentPassword")}
-            <PasswordInput value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} disabled={busy} />
-          </label>
+          <PasswordInput
+            label={t("protection.currentPassword")}
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            disabled={busy}
+          />
         )}
 
         {choice === "password" && (
@@ -138,14 +140,18 @@ export function ProtectionDialog({ intro, status, onDone, onClose }: Props) {
             )}
             {newPassword && (
               <>
-                <label>
-                  {t("protection.newPassword")}
-                  <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
-                </label>
-                <label>
-                  {t("protection.confirmPassword")}
-                  <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={busy} />
-                </label>
+                <PasswordInput
+                  label={t("protection.newPassword")}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={busy}
+                />
+                <PasswordInput
+                  label={t("protection.confirmPassword")}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  disabled={busy}
+                />
               </>
             )}
             <label className="checkbox">

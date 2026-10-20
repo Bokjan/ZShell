@@ -50,6 +50,12 @@
   color: var(--text-muted);
   font-size: calc(12px * var(--text-scale));
 }
+/* A field whose label is around its text only (`PasswordInput`), laid out as one around both. */
+.dialog .labelled-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .dialog label.checkbox {
   flex-direction: row;
   align-items: center;

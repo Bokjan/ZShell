@@ -1,10 +1,13 @@
-import { useState, type ComponentProps } from "react";
+import { useId, useState, type ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "./IconButton";
 import { EyeIcon } from "./icons";
 
-type Props = Omit<ComponentProps<"input">, "type">;
+type Props = Omit<ComponentProps<"input">, "type"> & {
+  /** Its label, shown above it; without one, name it with `aria-label`. */
+  label?: string;
+};
 
 /**
  * A password field with a button at its right end that shows what is typed, and hides it again.
@@ -12,14 +15,19 @@ type Props = Omit<ComponentProps<"input">, "type">;
  * the stylesheet) that the other web views lack. The button is in the Tab order, after the field,
  * so that it works from the keyboard; a press on it keeps the focus in the field. A disabled
  * field shows dots.
+ *
+ * It draws its own label, around the text only: in a `<label>` around the field, the button's
+ * name would join the field's ("Password Show password").
  */
-export function PasswordInput(props: Props) {
+export function PasswordInput({ label, id: givenId, ...props }: Props) {
   const { t } = useTranslation();
+  const ownId = useId();
+  const id = givenId ?? ownId;
   const [show, setShow] = useState(false);
   const shown = show && !props.disabled;
-  return (
+  const field = (
     <span className="password-input">
-      <input {...props} type={shown ? "text" : "password"} autoCapitalize="off" autoCorrect="off" />
+      <input {...props} id={id} type={shown ? "text" : "password"} autoCapitalize="off" autoCorrect="off" />
       <IconButton
         type="button"
         className="password-toggle"
@@ -31,5 +39,12 @@ export function PasswordInput(props: Props) {
         <EyeIcon crossed={!shown} />
       </IconButton>
     </span>
+  );
+  if (label === undefined) return field;
+  return (
+    <div className="labelled-field">
+      <label htmlFor={id}>{label}</label>
+      {field}
+    </div>
   );
 }

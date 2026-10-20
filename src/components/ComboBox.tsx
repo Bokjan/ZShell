@@ -1,5 +1,4 @@
 import { useId, useRef, useState, type InputHTMLAttributes, type KeyboardEvent } from "react";
-import { useTranslation } from "react-i18next";
 
 import { clampIndex } from "../lib/listNavigation";
 import { matchSuggestions, type Suggestion } from "../lib/suggestions";
@@ -22,7 +21,6 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | 
  * Enter takes the highlighted one, Escape closes the list.
  */
 export function ComboBox({ value, onChange, suggestions, onKeyDown, onBlur, id: givenId, ...rest }: Props) {
-  const { t } = useTranslation();
   const ownId = useId();
   const id = givenId ?? ownId;
   const listId = `${id}-list`;
@@ -93,10 +91,12 @@ export function ComboBox({ value, onChange, suggestions, onKeyDown, onBlur, id: 
           onBlur?.(e);
         }}
       />
+      {/* For the pointer only: the keys open the list from the field. Hidden from screen
+          readers, since inside the field's `<label>` its name would join the field's. */}
       <button
         type="button"
         tabIndex={-1}
-        aria-label={t("common.showSuggestions")}
+        aria-hidden="true"
         disabled={rest.disabled || suggestions.length === 0}
         // The field keeps the focus.
         onMouseDown={(e) => e.preventDefault()}

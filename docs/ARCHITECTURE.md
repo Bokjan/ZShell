@@ -215,6 +215,7 @@
 - **终端**：`screenReaderMode` 有性能开销，默认在系统读屏软件运行时打开。WebView 拿不到这一点，由后端查询系统并广播 `screen-reader-changed`（`screen_reader/`）。
 - **对话框**：`Modal` 带 `role="dialog"` 与 `aria-modal`，以标题命名；打开时聚焦第一个控件，Tab 在内循环，关闭后焦点还回去。
 - **列表与下拉**：焦点停在容器或字段上，用 `aria-activedescendant` 指向当前项。各处菜单都可以用 Shift+F10 或菜单键打开。
+- **字段里的按钮**：`<label>` 包住的按钮，名字会并入字段的名字（读成“Password Show password”）。只给指针用的按钮（`ComboBox` 的箭头、`SpinInput` 的 ▲▼，键盘有对应的键）加 `aria-hidden`；要用键盘操作的按钮放在 label 外，例如 `PasswordInput` 自己画 label，只包住文字和输入框。
 - **播报**：`lib/announce.ts` 是唯一的 live region，播报一闪而过或不在视线内的变化。
 - **样式**：键盘焦点统一画强调色轮廓，去掉轮廓必须用别的方式显示焦点；尊重减少动态效果与 Windows 对比度主题；文字对比度至少 4.5:1。
 

@@ -20,10 +20,13 @@ export function PasswordField({ value, onChange, clear, onClearChange, canClear,
   const { t } = useTranslation();
   return (
     <>
-      <label>
-        {t("profile.password")}
-        <PasswordInput value={value} onChange={(e) => onChange(e.target.value)} disabled={clear} placeholder={placeholder} />
-      </label>
+      <PasswordInput
+        label={t("profile.password")}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={clear}
+        placeholder={placeholder}
+      />
       {hint && <p className="hint">{hint}</p>}
       {canClear && (
         <label className="checkbox">

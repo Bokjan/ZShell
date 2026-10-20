@@ -165,16 +165,14 @@ export function SessionImportDialog({ path, onClose }: Props) {
         {encrypted && !scan && (
           <>
             <p className="dialog-message">{t("sessionImport.encrypted")}</p>
-            <label>
-              {t("sessionImport.passphrase")}
-              <PasswordInput
-                ref={passphraseRef}
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-                disabled={busy}
-                autoFocus
-              />
-            </label>
+            <PasswordInput
+              label={t("sessionImport.passphrase")}
+              ref={passphraseRef}
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              disabled={busy}
+              autoFocus
+            />
           </>
         )}
         {error && <ErrorText>{error}</ErrorText>}

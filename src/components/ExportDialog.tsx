@@ -59,14 +59,13 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
         </label>
         {includePasswords && (
           <>
-            <label>
-              {t("exportDialog.passphrase")}
-              <PasswordInput value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoFocus />
-            </label>
-            <label>
-              {t("exportDialog.confirmPassphrase")}
-              <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-            </label>
+            <PasswordInput
+              label={t("exportDialog.passphrase")}
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              autoFocus
+            />
+            <PasswordInput label={t("exportDialog.confirmPassphrase")} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
             <p className="hint">{t("exportDialog.passphraseHint")}</p>
           </>
         )}

@@ -1,5 +1,4 @@
 import { useEffect, useRef, type InputHTMLAttributes, type KeyboardEvent, type PointerEvent } from "react";
-import { useTranslation } from "react-i18next";
 
 import { useLatest } from "../hooks/latest";
 import { ChevronIcon } from "./icons";
@@ -25,7 +24,6 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | 
  * whose spin buttons differ between WebKit and WebView2 and ignore the theme.
  */
 export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDown, ...rest }: Props) {
-  const { t } = useTranslation();
   // The latest value, for a held button's repeats.
   const valueRef = useLatest(value);
   const repeat = useRef<number | undefined>(undefined);
@@ -70,11 +68,12 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
   return (
     <span className="spin-input">
       <input {...rest} value={value} inputMode="numeric" onChange={(e) => onChange(e.target.value, false)} onKeyDown={keyDown} />
-      <span className="spin-buttons">
+      {/* For the pointer only: ↑ / ↓ step from the field. Hidden from screen readers, since
+          inside the field's `<label>` their names would join the field's. */}
+      <span className="spin-buttons" aria-hidden="true">
         <button
           type="button"
           tabIndex={-1}
-          aria-label={t("common.increase")}
           disabled={rest.disabled || n >= max}
           onPointerDown={press(1)}
           onPointerUp={stop}
@@ -85,7 +84,6 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
         <button
           type="button"
           tabIndex={-1}
-          aria-label={t("common.decrease")}
           disabled={rest.disabled || n <= min}
           onPointerDown={press(-1)}
           onPointerUp={stop}
