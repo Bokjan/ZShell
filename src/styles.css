@@ -24,6 +24,7 @@
 @import "./styles/context-menu.css";
 @import "./styles/list-popup.css";
 @import "./styles/dialogs.css";
+@import "./styles/tooltip.css";
 @import "./styles/color-field.css";
 @import "./styles/settings.css";
 @import "./styles/licenses.css";

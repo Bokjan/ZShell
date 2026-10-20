@@ -245,22 +245,6 @@ input::-ms-reveal {
 .help-tip:focus-visible {
   color: var(--text);
 }
-.tooltip {
-  position: fixed;
-  z-index: 30;
-  max-width: 320px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-elevated);
-  box-shadow: 0 4px 12px var(--shadow);
-  color: var(--text);
-  font-size: calc(12px * var(--text-scale));
-  line-height: 1.4;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-  pointer-events: none;
-}
 .dialog .hint.warning {
   color: var(--warn);
 }
