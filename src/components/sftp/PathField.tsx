@@ -142,7 +142,6 @@ export function PathField({ sessionId, value, onChange, onGo, onEditing, showHid
         aria-activedescendant={shown && active >= 0 ? `${listId}-${active}` : undefined}
         autoCapitalize="off"
         autoCorrect="off"
-        spellCheck={false}
       />
       <ul ref={listRef} id={listId} className="path-suggestions" role="listbox" aria-label={t("sftp.pathSuggestions")} hidden={!shown}>
         {shown &&

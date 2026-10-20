@@ -277,7 +277,6 @@ function ColorPopup({ anchor, value, label, onChange, onClose }: PopupProps) {
               if (hex) setHex(hex);
             }}
             onBlur={() => setTyped(null)}
-            spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
             maxLength={7}
