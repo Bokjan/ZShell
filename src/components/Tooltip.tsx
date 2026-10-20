@@ -36,8 +36,9 @@ export function TooltipPopup({ anchor, text }: { anchor: Pick<Element, "getBound
 /**
  * Shows the `title` of the element under the pointer in a tooltip drawn by the page, for the
  * whole app: WKWebView shows no `title` tooltips at all. While the pointer is on the element,
- * its `title` is taken off so that WebView2 doesn't show its own tooltip as well, and put back
- * when the pointer leaves (unless React has set a new one meanwhile).
+ * its `title` is kept off so that WebView2 doesn't show its own tooltip as well: taken off when
+ * the pointer comes, and again if React sets a new one meanwhile (whose text is then shown),
+ * and put back when the pointer leaves.
  */
 export function Tooltips() {
   const [shown, setShown] = useState<{ anchor: Element; text: string } | null>(null);
@@ -46,17 +47,32 @@ export function Tooltips() {
     let current: Element | null = null;
     let saved = "";
     let timer: number | undefined;
+    const retitled = new MutationObserver(() => {
+      if (!current?.hasAttribute("title")) return;
+      saved = current.getAttribute("title") ?? "";
+      current.removeAttribute("title");
+      setShown((tip) => (tip && saved ? { anchor: tip.anchor, text: saved } : null));
+    });
 
     // On every key typed, too: nothing to do unless the pointer is on an element with a title.
     const hide = () => {
       if (!current) return;
       window.clearTimeout(timer);
-      if (current && !current.hasAttribute("title")) current.setAttribute("title", saved);
+      // Before its title is put back, which would count as React's.
+      retitled.disconnect();
+      if (!current.hasAttribute("title")) current.setAttribute("title", saved);
       current = null;
       setShown(null);
     };
     const onOver = (e: MouseEvent) => {
-      const anchor = e.target instanceof Element ? e.target.closest("[title]") : null;
+      const target = e.target instanceof Element ? e.target : null;
+      const titled = target?.closest("[title]") ?? null;
+      // The element shown has no title now, so `closest` passes over it: it stays while the
+      // pointer moves within it (between its icon and its text), unless onto an element with a
+      // title of its own inside it. Otherwise its title would come back under the pointer, and
+      // WebView2's tooltip with it.
+      const within = current && target && current.contains(target) && !(titled && current.contains(titled));
+      const anchor = within ? current : titled;
       if (anchor === current) return;
       hide();
       const text = anchor?.getAttribute("title");
@@ -64,7 +80,8 @@ export function Tooltips() {
       current = anchor;
       saved = text;
       anchor.removeAttribute("title");
-      timer = window.setTimeout(() => setShown({ anchor, text }), TOOLTIP_DELAY);
+      retitled.observe(anchor, { attributes: true, attributeFilter: ["title"] });
+      timer = window.setTimeout(() => saved && setShown({ anchor, text: saved }), TOOLTIP_DELAY);
     };
     // Leaving the window.
     const onOut = (e: MouseEvent) => {
