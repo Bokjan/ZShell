@@ -5,16 +5,19 @@ const sources = import.meta.glob<string>("../**/*.tsx", { query: "?raw", import:
 
 /**
  * Native controls the app draws itself (see "不用原生控件" in docs/ARCHITECTURE.md), with what to
- * use instead. `required`, `pattern` and `minLength` show the web view's own message, in its language rather
- * than the app's, before the form's checks run.
+ * use instead, and the files that may still use them. `required`, `pattern` and `minLength` show
+ * the web view's own message, in its language rather than the app's, before the form's checks run.
  */
-const NATIVE = [
+const NATIVE: { pattern: RegExp; instead: string; except?: string[] }[] = [
   { pattern: /<select\b/, instead: "Select" },
   { pattern: /<datalist\b/, instead: "ComboBox" },
   { pattern: /\btype="number"/, instead: "SpinInput" },
   { pattern: /\btype="color"/, instead: "ColorField" },
-  // An attribute alone on its line, or followed by another one or the end of the tag.
-  { pattern: /^\s*required\s*$|\srequired(?=\s+\w+=|\s*\/?>)|\s(?:pattern|minLength)=[{"]/m, instead: "the form's own checks" },
+  { pattern: /\btype="password"/, instead: "PasswordInput" },
+  // The compose bar's field is as tall as the lines typed, up to a limit of its own.
+  { pattern: /<textarea\b/, instead: "AutoTextarea", except: ["AutoTextarea.tsx", "ComposeBar.tsx"] },
+  // An attribute, alone or with a value, followed by another one, the end of the tag or the line.
+  { pattern: /\srequired(?=[\s=/>])|\s(?:pattern|minLength)=[{"]/, instead: "the form's own checks" },
 ];
 
 // Comments may name the controls they replace.
@@ -28,7 +31,9 @@ describe("native controls", () => {
   it("are never used", () => {
     const found = Object.entries(sources).flatMap(([path, source]) => {
       const code = withoutComments(source);
-      return NATIVE.filter(({ pattern }) => pattern.test(code)).map(({ pattern, instead }) => `${path}: ${pattern} (use ${instead})`);
+      return NATIVE.filter(({ pattern, except }) => pattern.test(code) && !except?.some((file) => path.endsWith(`/${file}`))).map(
+        ({ pattern, instead }) => `${path}: ${pattern} (use ${instead})`,
+      );
     });
     expect(found).toEqual([]);
   });
