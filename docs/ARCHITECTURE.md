@@ -225,6 +225,10 @@
 - **图标**：只用 `components/icons.tsx` 里的 SVG，不用文字字形或 emoji，它们在各平台字体里形状和基线都不同（`icons.test.ts` 检查）。
 - **下拉框**：`Select`（只能选）与 `ComboBox`（可输入，带候选项），列表都是页面内的 `ListPopup`。`<datalist>` 在 WebView2 里只列出包含框中文字的候选项，框里已是其中一项时就只剩它自己。
 - **数字框**：`SpinInput`，不用 `type="number"`。
+- **复选框与单选框**：仍是原生的 `<input>`（键盘、`<label>`、读屏都不变），只用 CSS 画成主题色（`base.css`）；Windows 对比度主题下交还系统绘制。
+- **密码框**：`PasswordInput`，右端的按钮显示或隐藏输入的内容，三个平台一致；WebView2 自带的显示按钮（`::-ms-reveal`）隐藏。
+- **多行文本框**：`AutoTextarea` 随内容增高，没有右下角的拖拽手柄。
+- **表单校验**：不用 `required`、`pattern`，它们弹出 WebView 自己的气泡，语言跟随系统而不是应用；空字段由表单自己的检查说明。`controls.test.ts` 检查以上几条。
 - **颜色**：`ColorField`。WebView2 的颜色框里吸管无效，后端的 `color_pick` 按平台从屏幕取色（`color_pick/`）。
 - **菜单与提示**：右键菜单是 `ContextMenu`（WebView 自带的只在文本框里保留）；WKWebView 不显示 `title`，悬停提示由 `Tooltips` 画，组件照常写 `title`。
 - **例外**：滚动条用系统的（跟随深浅色，保留 macOS 的悬浮滚动条），终端的由 xterm.js 自绘。
