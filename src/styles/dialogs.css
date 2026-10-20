@@ -97,18 +97,19 @@
 .dialog .select:hover:not(:disabled):not(:focus) {
   border-color: var(--text-muted);
 }
-/* A text field with suggestions (`ComboBox`), with the button that shows them all inside its right end. */
-.dialog .combo-box {
+/* A text field with a button inside its right end: the one that shows a `ComboBox`'s suggestions,
+   or a `PasswordInput`'s text. Also on the unlock screen, whose fields are drawn their own way. */
+:is(.combo-box, .password-input) {
   position: relative;
   display: flex;
   min-width: 0;
 }
-.dialog .combo-box input {
+:is(.dialog, .unlock-panel) :is(.combo-box, .password-input) input {
   flex: 1;
   min-width: 0;
   padding-right: 28px;
 }
-.dialog .combo-box button {
+:is(.combo-box, .password-input) > button {
   position: absolute;
   top: 1px;
   right: 1px;
@@ -123,12 +124,16 @@
   background: none;
   color: var(--text-muted);
 }
-.dialog .combo-box button:hover:not(:disabled) {
+:is(.combo-box, .password-input) > button:hover:not(:disabled) {
   color: var(--text);
 }
-.dialog .combo-box button:disabled {
+:is(.combo-box, .password-input) > button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+/* WebView2's own reveal button, which `PasswordInput` replaces. */
+input::-ms-reveal {
+  display: none;
 }
 .dialog .input-with-button .combo-box {
   flex: 1;

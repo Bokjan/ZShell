@@ -14,6 +14,7 @@ import { useWindowEvent } from "../hooks/windowEvents";
 import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 import { Modal } from "./Modal";
+import { PasswordInput } from "./PasswordInput";
 
 interface Props {
   /** Locked. */
@@ -92,9 +93,8 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
 
         {asksPassword && (
           <>
-            <input
+            <PasswordInput
               ref={inputRef}
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               aria-label={t("vault.password")}

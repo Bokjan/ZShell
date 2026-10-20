@@ -8,6 +8,7 @@ import { save as saveDialog } from "../ipc/fileDialog";
 import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { PasswordInput } from "./PasswordInput";
 
 /**
  * Exports every session, with their folders and proxies, to a file chosen next; with the saved
@@ -60,11 +61,11 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
           <>
             <label>
               {t("exportDialog.passphrase")}
-              <input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoFocus />
+              <PasswordInput value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoFocus />
             </label>
             <label>
               {t("exportDialog.confirmPassphrase")}
-              <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} />
             </label>
             <p className="hint">{t("exportDialog.passphraseHint")}</p>
           </>

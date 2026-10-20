@@ -7,6 +7,7 @@ import { useDialog } from "../hooks/dialogs";
 import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { PasswordInput } from "./PasswordInput";
 
 interface Props {
   /**
@@ -123,7 +124,7 @@ export function ProtectionDialog({ intro, status, onDone, onClose }: Props) {
         {current === "password" && !unchanged && (
           <label>
             {t("protection.currentPassword")}
-            <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} disabled={busy} />
+            <PasswordInput value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} disabled={busy} />
           </label>
         )}
 
@@ -139,11 +140,11 @@ export function ProtectionDialog({ intro, status, onDone, onClose }: Props) {
               <>
                 <label>
                   {t("protection.newPassword")}
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
+                  <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
                 </label>
                 <label>
                   {t("protection.confirmPassword")}
-                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={busy} />
+                  <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={busy} />
                 </label>
               </>
             )}

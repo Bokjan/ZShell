@@ -9,6 +9,8 @@
     "increase": "Erhöhen",
     "decrease": "Verringern",
     "showSuggestions": "Vorschläge anzeigen",
+    "showPassword": "Passwort einblenden",
+    "hidePassword": "Passwort ausblenden",
     "dontAskAgain": "Nicht mehr fragen",
     "opensInBrowser": "(wird im Browser geöffnet)"
   },

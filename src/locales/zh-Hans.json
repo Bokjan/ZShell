@@ -9,6 +9,8 @@
     "increase": "增大",
     "decrease": "减小",
     "showSuggestions": "显示候选项",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "dontAskAgain": "不再询问",
     "opensInBrowser": "（在浏览器中打开）"
   },

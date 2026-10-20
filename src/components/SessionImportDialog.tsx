@@ -10,6 +10,7 @@ import { attempt } from "../lib/attempt";
 import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { PasswordInput } from "./PasswordInput";
 
 interface Props {
   /** The exported sessions file. */
@@ -166,9 +167,8 @@ export function SessionImportDialog({ path, onClose }: Props) {
             <p className="dialog-message">{t("sessionImport.encrypted")}</p>
             <label>
               {t("sessionImport.passphrase")}
-              <input
+              <PasswordInput
                 ref={passphraseRef}
-                type="password"
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
                 disabled={busy}

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PasswordInput } from "./PasswordInput";
+
 interface Props {
   value: string;
   onChange(value: string): void;
@@ -20,7 +22,7 @@ export function PasswordField({ value, onChange, clear, onClearChange, canClear,
     <>
       <label>
         {t("profile.password")}
-        <input type="password" value={value} onChange={(e) => onChange(e.target.value)} disabled={clear} placeholder={placeholder} />
+        <PasswordInput value={value} onChange={(e) => onChange(e.target.value)} disabled={clear} placeholder={placeholder} />
       </label>
       {hint && <p className="hint">{hint}</p>}
       {canClear && (
