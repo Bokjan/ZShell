@@ -34,8 +34,8 @@ const PAGE = 10;
  * of an option. Open, the arrow keys, Home, End, PageUp and PageDown move, typing finds an
  * option, Enter or Space choose, and Escape or Tab close without choosing.
  *
- * Inside a `<label>`, which names it; a click on the label's text opens it, as a click on a
- * checkbox's text checks it.
+ * Inside a `<label>`, which names it; a click on the label's text opens or closes it, as a click
+ * on a checkbox's text checks it.
  */
 export function Select<T extends string | number>({ value, options, onChange, disabled, placeholder, "aria-label": ariaLabel }: Props<T>) {
   const id = useId();

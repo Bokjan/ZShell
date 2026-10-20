@@ -42,10 +42,17 @@ export const optionId = (id: string, index: number) => `${id}-${index}`;
  * `aria-activedescendant`; the list only shows the options and takes the pointer's.
  *
  * It sits in the field's tree, often inside its `<label>`, and is placed in the window so that
- * a scrolling dialog doesn't clip it. A press on it keeps the focus in the field, and its
- * clicks don't reach the label, which would click the field again.
+ * a scrolling dialog doesn't clip it, from its size when it opens and again whenever its items
+ * change (a combo box's, as the text is typed). A press on it keeps the focus in the field, and
+ * its clicks don't reach the label, which would click the field again.
  */
-export function ListPopup({ id, anchor, labelledBy, items, highlight, selected = -1, onHighlight, onPick, onClose }: Props) {
+export function ListPopup(props: Props) {
+  // A new list for other items, placed from its own size rather than that of the last ones.
+  const shown = props.items.map((item) => `${item.label}\t${item.detail ?? ""}`).join("\n");
+  return <PlacedList key={shown} {...props} />;
+}
+
+function PlacedList({ id, anchor, labelledBy, items, highlight, selected = -1, onHighlight, onPick, onClose }: Props) {
   const ref = useRef<HTMLUListElement>(null);
   const [position, setPosition] = useState<CSSProperties | null>(null);
   // The option the pointer highlighted last: not scrolled into sight, which would move it from under the pointer.
@@ -79,8 +86,13 @@ export function ListPopup({ id, anchor, labelledBy, items, highlight, selected =
     const close = () => onCloseEvent();
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
+      const field = anchor.current;
       // The field opens and closes it itself.
-      if (!ref.current?.contains(target) && !anchor.current?.contains(target)) close();
+      if (ref.current?.contains(target) || field?.contains(target)) return;
+      // So does a press on the field's label, which clicks the field when released: the field
+      // keeps the focus rather than closing the list as it loses it, then opening it again.
+      if (field?.closest("label")?.contains(target)) e.preventDefault();
+      else close();
     };
     const onScroll = (e: Event) => {
       if (!ref.current?.contains(e.target as Node)) close();
