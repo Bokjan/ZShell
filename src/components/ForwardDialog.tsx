@@ -129,7 +129,6 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
                 value={bindPort}
                 onChange={(e) => setBindPort(e.target.value)}
                 inputMode="numeric"
-                required
                 autoFocus
                 title={t("forwards.dialog.portZeroHint")}
               />
@@ -146,11 +145,11 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
             <div className="row">
               <label className="grow">
                 {t("forwards.dialog.address")}
-                <input value={targetHost} onChange={(e) => setTargetHost(e.target.value)} required autoCapitalize="off" autoCorrect="off" />
+                <input value={targetHost} onChange={(e) => setTargetHost(e.target.value)} autoCapitalize="off" autoCorrect="off" />
               </label>
               <label className="port">
                 {t("forwards.dialog.port")}
-                <input value={targetPort} onChange={(e) => setTargetPort(e.target.value)} inputMode="numeric" required />
+                <input value={targetPort} onChange={(e) => setTargetPort(e.target.value)} inputMode="numeric" />
               </label>
             </div>
           </fieldset>
