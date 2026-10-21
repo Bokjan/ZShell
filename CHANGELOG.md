@@ -2,6 +2,17 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.11.0] - 2026-10-21
+
+### Features
+
+- The close tab shortcut (⌘W, Ctrl+Shift+W on Windows and Linux) closes the top dialog, as a click on its backdrop does: settings, the session editor and the other dialogs close, asking first where there are unsaved changes, and a dialog that must be answered stays open. Before, the shortcut did nothing while a dialog was open.
+
+### Bug Fixes
+
+- On Windows, F5, Ctrl+R and the web view's other browser shortcuts (Alt+Left to go back, Ctrl+P to print, Ctrl+F to find) no longer act on the window. F5 or Ctrl+R pressed outside the terminal, in the session list or the tab bar for example, reloaded the window and closed every session in it. Programs in the terminal still get these keys.
+- On macOS with an input method on, shifted punctuation (the full-width ？ of Shift+/ in Chinese Pinyin, for example) is typed in the terminal on the first press rather than the second.
+
 ## [3.10.0] - 2026-10-20
 
 ### Features
