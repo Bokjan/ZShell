@@ -68,6 +68,7 @@
 | **M41 终端连字** ✅ | 终端字体的编程连字：关闭、常用序列，或按字体自己的规则（后端读出已安装字体的 GSUB，各终端共用）（3.8.0） |
 | **M42 终端与系统集成** ✅ | 远端程序经 OSC 序列写入剪贴板（52）、报告进度（9;4）、发出通知（9、777、99）、设置鼠标指针（22）（3.9.0） |
 | **M43 kitty 键盘协议** | 随 xterm.js 升级打开 kitty 键盘协议，远端的 Claude Code、Cursor CLI、Codex 等能分清 Shift+Enter 与 Enter（等 xterm.js 带上它的正式版） |
+| **M44 终端图片** | 加载 xterm.js 的图片插件，远端程序可在终端里显示图片（kitty 图形协议、Sixel、iTerm2 内联图片）；与 M43 同在下一个 xterm.js 正式版之后，重点是性能 |
 
 ### M43 kitty 键盘协议的设计要点
 
@@ -84,6 +85,20 @@
 - **不含**：远端 tmux 里的程序（见下文「暂不排期」的 modifyOtherKeys）；Windows 本地终端的 win32-input-mode（同一批 PR 里的 `vtExtensions.win32InputMode`，让 ConPTY 拿到完整按键，VS Code 那边还是实验选项）。
 
 不涉及存储与网络连接，`PRIVACY.md` 不变。
+
+### M44 终端图片的设计要点
+
+yazi 的预览、`timg` / `chafa`、Neovim 的图片插件、matplotlib 的终端后端等经这三种协议显示图片。`@xterm/addon-image`（MIT）的 0.10.0-beta 在 Sixel 与 iTerm2 内联图片之外加上了 kitty 图形协议，与 xterm.js 的下一个正式版配套发布；现在 ZShell 没有加载它，图片序列被丢掉。
+
+- **插件的现状**（0.10.0-beta.310）：kitty 部分只支持把数据直接放在序列里（`t=d`，经 SSH 本来也只能这样），不支持文件、共享内存、动画，一张图片只能放在一处；iTerm2 的非内联文件（`inline=0`）直接丢掉，不会写文件，与下文「不做」里 OSC 1337 的理由不冲突。
+- **性能是这个里程碑的重点**，每一项都要实测，不合格就收紧限制或不做：
+  - 内存：图片以 RGBA 存放（每像素 4 字节），插件默认每个终端缓存 128 MB（`storageLimit`，满了按先进先出丢掉旧图、留占位块），单张上限约 1600 万像素（`pixelLimit`），Sixel 解码器还可能常驻 `pixelLimit` × 4 字节。默认值乘上 ZShell 常开的十几个窗格是不可接受的：每个终端的上限要小得多（或按全部终端合计一个预算，后台终端先丢），离开备用屏、清屏、重置时随文本一起释放。用 M39 那次排查的方法看渲染进程内存：开 10 个窗格各显示一批图片、来回切换，再关掉，内存应回落。
+  - CPU：base64 与 Sixel 解码在主线程（wasm），大图或连续输出（预览器快速翻页、`timg` 播放动画）时测按键延迟与输出吞吐，不能卡住打字；序列大小有上限（Sixel 25 MB、iTerm2 与 kitty 20 MB），可以再调小。
+  - GPU 与绘制：图片画在终端上方单独的 2D 画布上（`drawImage`），和 WebGL 渲染器的画布叠在一起；后台终端交出 WebGL、改用 DOM 渲染器（`lib/webgl.ts`）时图片层也要跟着暂停，不能在隐藏页里重画。测滚动带图片的长输出时的帧率与 GPU 占用，以及切换标签时有没有空白帧或残影（TODO 里切换标签空白一帧那一条的录屏方法）。
+- **ZShell 要接的地方**：设置里一个开关（默认开），可以再给一个内存上限；插件默认打开 `CSI 14 t` / `16 t` 等像素尺寸回报（程序据此算图片大小），回报已经在 `lib/terminalReports.ts` 的范围内，不会同步到其他窗格；窗格移到其他窗口时靠 serialize 插件重画，图片不在快照里，到新窗口后丢失，要看是否可以接受；文本日志用 vte 解析，APC 与 DCS 里的图片数据不会写进去。
+- **测试**：临时 sshd 上用 `timg`、`chafa`、`kitten icat`、yazi 显示图片，Sixel 与 kitty 各一遍；窗口缩放与改字号后图片位置；分屏、同步输入、读屏模式下不出错；macOS、Windows、Linux 都看一遍内存与 GPU。
+
+插件与它带的 `xterm-wasm-parts` 都是 MIT，加入后照常跑 `pnpm licenses:generate`。不涉及存储与网络连接，`PRIVACY.md` 不变。
 
 ## 暂不排期（P2）
 
