@@ -20,6 +20,8 @@ use std::sync::{Mutex, Once, OnceLock};
 
 use tauri::window::Color;
 use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
+use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+use windows_core::Interface;
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
@@ -453,8 +455,24 @@ fn apps_use_light_theme() -> bool {
 /// Nothing to do before the window is first shown.
 pub(super) const PREPARED_HIDDEN: bool = false;
 
-pub(super) fn prepare(_window: &WebviewWindow) -> tauri::Result<()> {
-    Ok(())
+pub(super) fn prepare(window: &WebviewWindow) -> tauri::Result<()> {
+    disable_browser_keys(window)
+}
+
+/// Turns off WebView2's browser shortcuts: F5 and Ctrl+R reload the page, which closes every
+/// session in the window, Alt+Left goes back, Ctrl+P prints and Ctrl+F opens a find bar. The
+/// keys still reach the page, so the terminal gets them; Ctrl+C, Ctrl+V, Ctrl+A and the other
+/// editing keys are not among them. Wry has this option, but Tauri doesn't pass it on.
+fn disable_browser_keys(window: &WebviewWindow) -> tauri::Result<()> {
+    window.with_webview(|webview| {
+        // SAFETY: COM calls on the main thread, where the web view runs this.
+        let disable = || unsafe {
+            let settings = webview.controller().CoreWebView2()?.Settings()?;
+            settings.cast::<ICoreWebView2Settings3>()?.SetAreBrowserAcceleratorKeysEnabled(false)
+        };
+        // Fails only on a WebView2 runtime from before 2021, which then keeps its shortcuts.
+        let _ = disable();
+    })
 }
 
 pub(super) fn created(_window: &WebviewWindow) -> tauri::Result<()> {

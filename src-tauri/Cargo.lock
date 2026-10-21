@@ -7433,6 +7433,7 @@ dependencies = [
  "unicode-width",
  "uuid",
  "vte",
+ "webview2-com",
  "windows",
  "windows-core",
  "windows-future",

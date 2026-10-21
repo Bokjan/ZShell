@@ -125,6 +125,8 @@ windows = { version = "0.62", features = [
 windows-core = "0.62"
 # Waiting on Windows Hello (`IAsyncOperation`; already in the tree through `windows`).
 windows-future = "0.3"
+# The web view's settings that Tauri doesn't pass on (its version, already in the tree through Tauri).
+webview2-com = "0.39"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
