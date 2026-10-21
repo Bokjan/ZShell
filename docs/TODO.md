@@ -74,9 +74,18 @@
 - **上游**：[xtermjs/xterm.js#6208](https://github.com/xtermjs/xterm.js/issues/6208)（2026-10-05 提出，未修复）就是这一处，建议的修法和我们的补丁相同；评论里还列出几条同样绕过暂停的路径：暂停时的 `handleBlur` / `handleFocus`、暂停前已排队的刷新、交出 WebGL 后 `DomRenderer.handleResize` 的重画。master 的提交 [`5c2b19f`](https://github.com/xtermjs/xterm.js/commit/5c2b19f2c)（2026-03-12）让 `DomRenderer` 只重画新旧选区所在的行、没有选区时不重画，6.1.0-beta 里的 OffscreenCanvas `WidthCache` 也让这些重画不再逐字测量 DOM，但正式版仍是 6.0.0（2025-12-22），6.1.0 尚无发布日期。
 - **关注**：issue 里已有人在讨论，也有人请求指派，我们不另提 PR，持续关注 #6208 的进展和 6.1.0 的发布。issue 列出的其余路径在 ZShell 里大概也会碰到：切换标签页时后台终端失去焦点，隐藏时释放 WebGL 之后 `DomRenderer.handleResize` 的重画。不过它们每次切换只发生一次，ZShell 的隐藏页也仍然参与布局，字宽能正常测量和缓存，所以开销不大（未实测）。上游若只修了 `handleSelectionChanged`，要再确认这几条路径。
 - **绕过**：`pnpm patch` 给 `@xterm/xterm@6.0.0` 打补丁（`patches/@xterm__xterm@6.0.0.patch`，登记在 `pnpm-workspace.yaml`）：`RenderService.handleSelectionChanged` 在暂停时只记下选区，并置 `_needsSelectionRefresh` 和 `_needsFullRefresh` 后返回，恢复渲染时 `_renderRows` 按记下的状态补画选区（`setRenderer` 用的是同一套标记）。只改 Vite 用的 `lib/xterm.mjs`；那一行压缩代码约 160 KB，所以补丁文件有 300 多 KB。2026-10-17 在 Store 版里用运行时替换同样逻辑验证：后台终端滚动 10 次，原版重画 550 次，补丁后 0 次；后台期间设置的选区切回前台后画在正确的行上。
-- **处理**：升级 xterm.js 时 pnpm 会因补丁打不上而报错。届时看上游是否已在暂停时推迟 `handleSelectionChanged`：已修复就删掉 `patches/` 和 `pnpm-workspace.yaml` 里的 `patchedDependencies`；还没有就在新版本上重做补丁。都用下面的方法确认后台终端滚动时不再重建行。`@xterm/addon-*` 要和 xterm.js 一起升到配套的版本。
+- **处理**：升级 xterm.js 时 pnpm 会因补丁打不上而报错。届时看上游是否已在暂停时推迟 `handleSelectionChanged`：已修复就从补丁里去掉这一处，补丁里的另一处（见下面输入法一项）也不需要了，才删掉 `patches/` 和 `pnpm-workspace.yaml` 里的 `patchedDependencies`；还没有就在新版本上重做补丁。都用下面的方法确认后台终端滚动时不再重建行。`@xterm/addon-*` 要和 xterm.js 一起升到配套的版本。
 - **验证方法**：Store 版要带调试端口启动，得在包的上下文里先启动 `cmd`，由它设置环境变量再启动应用（`Invoke-CommandInDesktopPackage` 不会传递调用方的环境变量）：`Invoke-CommandInDesktopPackage -PackageFamilyName BoyinChen.ZShell_0mrn21pkbrd8j -AppId ZShell -Command cmd.exe -Args '/c set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333&& start "" "<安装目录>\zshell.exe"'`。之后用 Node 直接连 `/json/list` 里的 `webSocketDebuggerUrl`（不带 Origin，WebView2 会拒绝带 Origin 的连接），用 `Runtime.evaluate` 在后台终端的 `.xterm-rows` 上挂 MutationObserver 计数，同时从 React fiber 找到它的 `Terminal`，订阅 `onScroll` 对照；没有输出时可以用 `term.scrollLines()` 触发滚动。Chrome 要看 DevTools，用 `chrome://inspect` 添加 `localhost:9333`。
 - **登记**：2026-10-17。
+
+### macOS：开着输入法时，按 Shift 打的第一个字丢失（已用补丁绕过，等 xterm.js 修复后去掉）
+
+- **现象**：终端里用中文输入法打 `？`、`！`、`：` 等要按 Shift 的标点，第一次按下没有反应，再按一次才出来。日文输入法下的 `#`、`"` 也一样。
+- **原因**：WebKit 开着输入法时，输入法提交的字符先以 `input` 事件到达，字符自己的 keydown 在后面。xterm.js 6.0.0 的 `_keyDown` 对任何 keydown 都置 `_keyDownSeen`，`_inputEvent` 见它为真就认为这个字会由 keydown 处理，丢掉 `input`；按住的 Shift 的 keydown 已经把它置上了。随后字符的 keydown（keyCode 229）走 `CompositionHelper._handleAnyTextareaChanges`，比对输入框前后的内容，但字符已经在里面，差值为空，也没补回来。字符的 keyup 把标志清掉，所以只丢第一次。
+- **上游**：[xtermjs/xterm.js#5374](https://github.com/xtermjs/xterm.js/issues/5374)（未关闭），修复是 [xtermjs/xterm.js#6200](https://github.com/xtermjs/xterm.js/pull/6200)（2026-10-02 提出，未合入）：只按修饰键的 keydown 不置 `_keyDownSeen`。PR 说明快速连打时第二个字丢失的情况（#5887）不在修复范围内。
+- **绕过**：在同一个 `patches/@xterm__xterm@6.0.0.patch` 里照 #6200 改：`_keyDown` 里的 `this._keyDownSeen=!0` 改成 `this._keyDownSeen=!Tc(e)`，`Tc` 是压缩后的 `wasModifierKeyOnlyEvent`（`_keyUp` 里也用它）。
+- **处理**：升级 xterm.js 时看 #6200 或别的修复是否已经发布：已发布就从补丁里去掉这一处，否则在新版本上重做。在 macOS 上用拼音输入法在终端里按一次 Shift+/，应该立刻出现 `？`。
+- **登记**：2026-10-21。
 
 ### 前端：切换标签页后第一帧终端空白（已绕过，等 xterm.js 修复后去掉）
 
