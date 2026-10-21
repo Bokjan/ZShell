@@ -15,9 +15,10 @@
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
+| 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
 | 等待上游 | macOS：开着输入法时，按 Shift 打的第一个字丢失（已用补丁绕过） | xterm.js#6200 合入并发布 |
-| 等待上游 | 前端：切换标签页后第一帧终端空白（已绕过） | xterm.js 6.1.0 发布，我们的 xterm.js#6240 合入 |
+| 等待上游 | 前端：切换标签页后第一帧终端空白（已绕过） | xterm.js 的下一个正式版发布，我们的 xterm.js#6240 合入 |
 | 暂缓 | SFTP：文件夹里的符号链接查完才显示列表 | 做法已想好，排期时再做 |
 | 暂缓 | 保险库：每次修改整份重写 | 保险库到 MiB 级或出现高频写入时再看 |
 | 暂缓 | 串口：Windows 上改用重叠 I/O | 有 Windows 真实串口或虚拟串口对可以实测时 |
@@ -88,12 +89,19 @@
 - **处理**：`.github/dependabot.yml` 已经忽略 `windows-core` 和 `windows-future`，两个 PR 已关闭。`windows` 0.100 发布后，Dependabot 会提它的升级。那时手动把三个 crate 一起升到同一版本，按新 API 改用到它们的代码（`sftp/drag/win.rs` 的拖放、`applock/win.rs` 的 Windows Hello、`pty/shell.rs` 的 `WindowsIntegrityPolicy`），交给 Windows 上的 CI 编译。`windows-sys` 0.61 版本号独立，不受影响。
 - **登记**：2026-10-15。
 
+### 前端：升级到 xterm.js 的下一个正式版，同时做 M43
+
+- **现状**：正式版仍是 6.0.0（2025-12-22）。npm 的 `beta` 标签是 6.1.0-beta 系列（2026-10-21 为 6.1.0-beta.315），但其中的 kitty 键盘协议（[xtermjs/xterm.js#5600](https://github.com/xtermjs/xterm.js/pull/5600)）与 win32-input-mode 挂在 [7.0.0 里程碑](https://github.com/xtermjs/xterm.js/milestones)下，没有截止日期，下一个正式版可能叫 7.0.0。不提前用 beta。
+- **一起处理**：升级时 pnpm 会因 `patches/@xterm__xterm@6.0.0.patch` 打不上而报错，按下面三条（后台终端重建 DOM、输入法丢字、切换标签空白一帧）各自的「处理」逐条确认，重做或去掉补丁与绕过；`@xterm/addon-*` 一起升到配套版本。同一个版本里做 [ROADMAP.md](ROADMAP.md) 的 M43（kitty 键盘协议），那里写了要接的地方和要关注的输入法问题（#6112、#6036）。版本是破坏性大版本时，先看 release notes 里的 API 变更。
+- **关注**：npm 上 `@xterm/xterm` 的 `latest` 标签；7.0.0 里程碑的未关闭项。
+- **登记**：2026-10-21。
+
 ### 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过，等 xterm.js 修复后去掉）
 
 - **现象**：后台标签页里的终端有输出、内容向上滚动时，每一帧都把整屏的行重新生成成 DOM 节点，切到后台也不停。2026-10-17 在 Store 版 3.5.0 上测量：后台终端（222×61，跑着 Claude Code）20 秒里重建约 460 个节点，每次滚动约 50 行；输出越快越多，最多每帧一屏。节点随后被回收，不算泄漏，但持续占用 CPU、制造 GC 压力。
 - **原因**：xterm.js 6.0.0 的 `CoreBrowserTerminal` 在每次滚动时调用 `SelectionService.refresh()`，不管有没有选区；下一帧 `RenderService.handleSelectionChanged` 不看 `_isPaused`，直接交给渲染器；`DomRenderer.handleSelectionChanged` 无条件 `renderRows(0, rows - 1)`。WebGL 渲染器走 `refreshRows`，暂停时不画，所以只有 DOM 渲染器受影响；而后台标签页的终端交出 WebGL 上下文、改用 DOM 渲染器（`src/lib/webgl.ts`），所以每个后台终端都受影响。同一次排查里更大的一处（隐藏的标签页只设了 `visibility: hidden`，xterm.js 的 IntersectionObserver 认为它仍然可见，后台终端一直不暂停，同一终端 20 秒重建约 8.3 万个节点）已经改为把隐藏页移出视口（`styles/terminals.css`），这里剩下的是绕过暂停的这一处。
-- **上游**：[xtermjs/xterm.js#6208](https://github.com/xtermjs/xterm.js/issues/6208)（2026-10-05 提出，未修复）就是这一处，建议的修法和我们的补丁相同；评论里还列出几条同样绕过暂停的路径：暂停时的 `handleBlur` / `handleFocus`、暂停前已排队的刷新、交出 WebGL 后 `DomRenderer.handleResize` 的重画。master 的提交 [`5c2b19f`](https://github.com/xtermjs/xterm.js/commit/5c2b19f2c)（2026-03-12）让 `DomRenderer` 只重画新旧选区所在的行、没有选区时不重画，6.1.0-beta 里的 OffscreenCanvas `WidthCache` 也让这些重画不再逐字测量 DOM，但正式版仍是 6.0.0（2025-12-22），6.1.0 尚无发布日期。
-- **关注**：issue 里已有人在讨论，也有人请求指派，我们不另提 PR，持续关注 #6208 的进展和 6.1.0 的发布。issue 列出的其余路径在 ZShell 里大概也会碰到：切换标签页时后台终端失去焦点，隐藏时释放 WebGL 之后 `DomRenderer.handleResize` 的重画。不过它们每次切换只发生一次，ZShell 的隐藏页也仍然参与布局，字宽能正常测量和缓存，所以开销不大（未实测）。上游若只修了 `handleSelectionChanged`，要再确认这几条路径。
+- **上游**：[xtermjs/xterm.js#6208](https://github.com/xtermjs/xterm.js/issues/6208)（2026-10-05 提出，未修复）就是这一处，建议的修法和我们的补丁相同；评论里还列出几条同样绕过暂停的路径：暂停时的 `handleBlur` / `handleFocus`、暂停前已排队的刷新、交出 WebGL 后 `DomRenderer.handleResize` 的重画。master 的提交 [`5c2b19f`](https://github.com/xtermjs/xterm.js/commit/5c2b19f2c)（2026-03-12）让 `DomRenderer` 只重画新旧选区所在的行、没有选区时不重画，6.1.0-beta 里的 OffscreenCanvas `WidthCache` 也让这些重画不再逐字测量 DOM，但正式版仍是 6.0.0（2025-12-22），下一个正式版尚无发布日期（见上一条）。
+- **关注**：issue 里已有人在讨论，也有人请求指派，我们不另提 PR，持续关注 #6208 的进展和下一个正式版的发布。issue 列出的其余路径在 ZShell 里大概也会碰到：切换标签页时后台终端失去焦点，隐藏时释放 WebGL 之后 `DomRenderer.handleResize` 的重画。不过它们每次切换只发生一次，ZShell 的隐藏页也仍然参与布局，字宽能正常测量和缓存，所以开销不大（未实测）。上游若只修了 `handleSelectionChanged`，要再确认这几条路径。
 - **绕过**：`pnpm patch` 给 `@xterm/xterm@6.0.0` 打补丁（`patches/@xterm__xterm@6.0.0.patch`，登记在 `pnpm-workspace.yaml`）：`RenderService.handleSelectionChanged` 在暂停时只记下选区，并置 `_needsSelectionRefresh` 和 `_needsFullRefresh` 后返回，恢复渲染时 `_renderRows` 按记下的状态补画选区（`setRenderer` 用的是同一套标记）。只改 Vite 用的 `lib/xterm.mjs`；那一行压缩代码约 160 KB，所以补丁文件有 300 多 KB。2026-10-17 在 Store 版里用运行时替换同样逻辑验证：后台终端滚动 10 次，原版重画 550 次，补丁后 0 次；后台期间设置的选区切回前台后画在正确的行上。
 - **处理**：升级 xterm.js 时 pnpm 会因补丁打不上而报错。届时看上游是否已在暂停时推迟 `handleSelectionChanged`：已修复就从补丁里去掉这一处，补丁里的另一处（见下面输入法一项）也不需要了，才删掉 `patches/` 和 `pnpm-workspace.yaml` 里的 `patchedDependencies`；还没有就在新版本上重做补丁。都用下面的方法确认后台终端滚动时不再重建行。`@xterm/addon-*` 要和 xterm.js 一起升到配套的版本。
 - **验证方法**：Store 版要带调试端口启动，得在包的上下文里先启动 `cmd`，由它设置环境变量再启动应用（`Invoke-CommandInDesktopPackage` 不会传递调用方的环境变量）：`Invoke-CommandInDesktopPackage -PackageFamilyName BoyinChen.ZShell_0mrn21pkbrd8j -AppId ZShell -Command cmd.exe -Args '/c set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333&& start "" "<安装目录>\zshell.exe"'`。之后用 Node 直接连 `/json/list` 里的 `webSocketDebuggerUrl`（不带 Origin，WebView2 会拒绝带 Origin 的连接），用 `Runtime.evaluate` 在后台终端的 `.xterm-rows` 上挂 MutationObserver 计数，同时从 React fiber 找到它的 `Terminal`，订阅 `onScroll` 对照；没有输出时可以用 `term.scrollLines()` 触发滚动。Chrome 要看 DevTools，用 `chrome://inspect` 添加 `localhost:9333`。
@@ -115,10 +123,10 @@
   1. **画布差 1 像素被清空**：WebGL 渲染器的 `handleResize` 把画布设成「列数 × 单元格的设备像素」，CSS 尺寸是除以 dpr 后四舍五入的值；在小数缩放下，插件的 ResizeObserver（`device-pixel-content-box`）测出的实际尺寸差 1 像素（175% 时 1794×1140 → 1794×1139），`_setCanvasDevicePixelDimensions` 重设画布，画布被清空，只请求下一帧重画。整数缩放下没有这一条。
   2. **显示时终端还在暂停**：隐藏页在视口外，RenderService 是暂停的；移回视口后，IntersectionObserver 的回调要等这一帧画完才到，这一帧里 `setRenderer` 请求的刷新因为暂停被推迟。任何缩放下都有，前提是隐藏页移出视口（`styles/terminals.css`）。
 - **上游**：
-  - 第 1 条是 [xtermjs/xterm.js#4922](https://github.com/xtermjs/xterm.js/issues/4922)，由 [xtermjs/xterm.js#5529](https://github.com/xtermjs/xterm.js/pull/5529) 修复（2025-12-28 合入 master，晚于 6.0.0）：重设画布后发出 `sync: true`，同步重画。6.1.0-beta 已包含，正式版尚未发布。
-  - 第 2 条是我们提的 [xtermjs/xterm.js#6239](https://github.com/xtermjs/xterm.js/issues/6239)（2026-10-17 提出，之前上游没有人报过），修复是 [xtermjs/xterm.js#6240](https://github.com/xtermjs/xterm.js/pull/6240)，等待评审。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到 6.1.0，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。#6240 就是这样改的，附了单元测试；issue 里有最小复现（npm 6.1.0-beta.315 上每次切换都空白一帧）。
+  - 第 1 条是 [xtermjs/xterm.js#4922](https://github.com/xtermjs/xterm.js/issues/4922)，由 [xtermjs/xterm.js#5529](https://github.com/xtermjs/xterm.js/pull/5529) 修复（2025-12-28 合入 master，晚于 6.0.0）：重设画布后发出 `sync: true`，同步重画。6.1.0-beta 已包含，正式版尚未发布（见上面的升级一条）。
+  - 第 2 条是我们提的 [xtermjs/xterm.js#6239](https://github.com/xtermjs/xterm.js/issues/6239)（2026-10-17 提出，之前上游没有人报过），修复是 [xtermjs/xterm.js#6240](https://github.com/xtermjs/xterm.js/pull/6240)，等待评审。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到包含 #5529 的版本，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。#6240 就是这样改的，附了单元测试；issue 里有最小复现（npm 6.1.0-beta.315 上每次切换都空白一帧）。
 - **关注**：
-  - `@xterm/xterm` 6.1.0 正式版的发布。它只带第 1 条的修复，绕过要保留。
+  - `@xterm/xterm` 下一个正式版的发布。它若只带第 1 条的修复，绕过要保留。
   - #6239 和 #6240：评审意见（要改补丁时，从 fork `Bokjan/xterm.js` 的 `paused-blank-render` 分支继续），是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
   - 维护者如果选了别的修法，要看它能不能让显示的那一帧就有内容。例如只在 IntersectionObserver 恢复渲染时同步补画是不够的：回调本来就晚一帧，补画时那一帧已经空白地画出去了。
 - **绕过**：`webgl.ts` 加载插件后，给新的 WebGL 画布再挂一个 ResizeObserver。它创建在插件的之后，同一轮回调里排在插件后面，也就是画布刚被重设之后、这一帧绘制之前；第一次回调时断开，并调用私有的 `_core._renderService._renderRows` 同步画整屏，这个函数不看暂停。可选链访问，xterm.js 内部改名时什么都不做，空白帧又会出现，不会报错。图集重建时重新加载插件也走这里。

@@ -67,6 +67,23 @@
 | **M40 移动窗格** ✅ | 窗格经终端右键菜单或拖动抓手移到新标签页、其他标签页（合并成分屏）或其他窗口；标签可拖到另一标签的窗格旁合并；终端与面板不随标签页重新挂载（3.7.0） |
 | **M41 终端连字** ✅ | 终端字体的编程连字：关闭、常用序列，或按字体自己的规则（后端读出已安装字体的 GSUB，各终端共用）（3.8.0） |
 | **M42 终端与系统集成** ✅ | 远端程序经 OSC 序列写入剪贴板（52）、报告进度（9;4）、发出通知（9、777、99）、设置鼠标指针（22）（3.9.0） |
+| **M43 kitty 键盘协议** | 随 xterm.js 升级打开 kitty 键盘协议，远端的 Claude Code、Cursor CLI、Codex 等能分清 Shift+Enter 与 Enter（等 xterm.js 带上它的正式版） |
+
+### M43 kitty 键盘协议的设计要点
+
+传统编码里 Shift+Enter、Ctrl+Enter 与 Enter 都是 `\r`，Ctrl+I 与 Tab 也分不开，远端的 agent 只能靠 Option / Alt+Enter（`ESC \r`）、Ctrl+J 或 `\` 加 Enter 换行。[kitty 键盘协议](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)让程序用 `CSI > flags u` 声明自己能理解增强编码，之后 Shift+Enter 发 `CSI 13;2u`；没有声明的程序照旧收到传统编码。Ghostty、kitty、foot、iTerm2、Alacritty、Windows Terminal 1.25 与 VS Code 都已支持。
+
+- **时机**：xterm.js 的实现（[xtermjs/xterm.js#5600](https://github.com/xtermjs/xterm.js/pull/5600)，2026-01-10 合入，选项 `vtExtensions.kittyKeyboard`，默认关）只在 6.1.0-beta 里，PR 挂在 7.0.0 里程碑下，没有日期。不提前用 beta：等正式版发布后，和 [TODO.md](TODO.md) 里几条等 xterm.js 的补丁、绕过一起升级，重做或去掉 `patches/` 里的补丁。升级时还要看输入法的问题：[xtermjs/xterm.js#6112](https://github.com/xtermjs/xterm.js/issues/6112)（程序打开协议后，输入法一次只提交一个字时丢字，在 agent 里打中文正好碰到；修复 [#6186](https://github.com/xtermjs/xterm.js/pull/6186) 未合入）没修好就照 #6186 打补丁，Linux 上还有 fcitx5 的 [#6036](https://github.com/xtermjs/xterm.js/issues/6036) 要实测。
+- **程序怎么用**：Claude Code 2.1.269 起先发 `CSI ? u` 查询，有回应才 push flags 5，所以经 SSH、没有 `TERM_PROGRAM` 时也能用；Cursor CLI 不查询，启动时直接 push flags 1，挂起和退出时 pop；Codex 直接 push flags 7，含按键松开事件。xterm.js 实现了查询、push / pop / set、主屏与备用屏各一个栈，编码按协议的各级 flags。
+- **ZShell 要接的地方**：
+  - 设置：终端设置里加开关，默认开（只在程序请求时生效），输入法等问题出现时用户能关掉；旧的 `settings.json` 照常读取。
+  - `lib/terminalReports.ts`：查询的回应 `CSI ? flags u` 要算作终端回报，否则会同步到其他窗格，也会被当成输入了命令。
+  - 同步输入：现在把源窗格编码好的字节原样转发，源窗格的程序打开了协议而目标窗格没有时，目标的 shell 会收到 `CSI 99;5u` 而不是 Ctrl+C。目标窗格不在协议模式时，在 `lib/` 里把 CSI u 解回传统编码再发（纯函数，单元测试），松开事件丢掉。每个窗格的协议状态公开 API 不给，从 xterm.js 内部可选链读取，或注册不拦截的 CSI 处理器自己跟踪，升级时确认。
+  - 不用改的：会话结束时后端发的软复位（`CSI ! p`，`SessionSink::reset_modes`）在新版 xterm.js 里也清掉协议状态，重连后 shell 不会收到 CSI u；程序崩溃没来得及 pop 时，右键菜单的"重置"能恢复。撰写栏发送的是文本，不经按键编码。
+- **测试**：临时 sshd 上跑 Cursor CLI 与 Claude Code，Shift+Enter 换行、Enter 发送；macOS 上用拼音输入法往里打中文（含 Shift 打的标点）；Option 作 Meta 开与关；Windows 的 AltGr；Linux 的 fcitx5；同步输入时一个窗格跑 agent、一个是普通 shell，Ctrl+C 与方向键都正常。
+- **不含**：远端 tmux 里的程序（见下文「暂不排期」的 modifyOtherKeys）；Windows 本地终端的 win32-input-mode（同一批 PR 里的 `vtExtensions.win32InputMode`，让 ConPTY 拿到完整按键，VS Code 那边还是实验选项）。
+
+不涉及存储与网络连接，`PRIVACY.md` 不变。
 
 ## 暂不排期（P2）
 
@@ -76,6 +93,7 @@
 - Microsoft Store 自动提交：现在每个版本在 Partner Center 手动上传（见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」）。可以用 Store 提交 API（`msstore` CLI）在 release workflow 里提交，需要把 Entra ID 应用的凭据配成 secret。
 - 关键字高亮（如 `ERROR` 标红）：需在 xterm.js 的渲染层用 decoration 实现，不能往输出流里插入颜色序列（会破坏全屏程序）。
 - X11 转发（macOS 上还要依赖 XQuartz）。
+- modifyOtherKeys（`CSI > 4;2 m`）：tmux 不转发 kitty 键盘协议，只向外层终端要 modifyOtherKeys（终端名不在它认得的表里时，用户还要在 tmux 配置里加 `terminal-features 'xterm*:extkeys'`），所以 M43 之后远端 tmux 里的 agent 仍分不清 Shift+Enter。xterm.js 的 master 也没有实现，要自己在 `attachCustomKeyEventHandler` 里编码（`CSI 27;2;13~`）。tmux 自己的 kitty 支持（tmux#5615）合入后可能就不需要了。
 - Linux 上 GNOME 以外的桌面：KDE 的闲置时间（`org.freedesktop.ScreenSaver.GetSessionIdleTime`）、X11 的闲置时间（XScreenSaver 扩展）、窗口按钮按各自主题的样式；没有 polkit 认证代理时用 PAM 在锁定界面输入密码。Flatpak 不在计划内（Secret Service 与 polkit 都要经 portal）。
 
 ## 不做
