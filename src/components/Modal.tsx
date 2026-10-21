@@ -2,6 +2,8 @@ import { useEffect, useId, useLayoutEffect, useState, type ReactNode } from "rea
 import { createPortal } from "react-dom";
 
 import { focusables, type DialogHandle } from "../hooks/dialogs";
+import { useShortcuts } from "../hooks/shortcuts";
+import { matches } from "../lib/keymap";
 
 interface Props {
   dialog: DialogHandle;
@@ -25,11 +27,23 @@ interface Props {
  * For screen readers it is the modal dialog, named by its title. It takes the focus when it
  * opens (unless a control in it already has it, `autoFocus`), Tab stays within it (see
  * `useDialog`), and the focus goes back to where it was once it closes.
+ *
+ * Closing a tab (⌘W, the File menu's Close; Ctrl+Shift+W elsewhere) closes the top dialog
+ * instead, as a click on its backdrop does.
  */
 export function Modal({ dialog, label, alert, className, children }: Props) {
   const id = useId();
   // Before the dialog's controls take the focus.
   const [opener] = useState(() => document.activeElement);
+
+  useShortcuts(
+    (e) => {
+      if (!matches(e, "closeTab")) return false;
+      dialog.close();
+      return true;
+    },
+    { dialog },
+  );
 
   // Names the dialog after its title, and describes a question with its message.
   useLayoutEffect(() => {
