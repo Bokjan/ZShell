@@ -26,7 +26,10 @@ export interface LatestSave<T> {
   flush(): void;
   /** Shows the stored value (after a change in another window), with the changes not stored yet. */
   reload(): void;
-  /** The stored value, read elsewhere (when the page starts). */
+  /**
+   * The stored value, read elsewhere (when the page starts). Ignored once a newer one has
+   * come: a reload (another window changed it while this read was on its way) or a store.
+   */
   loaded(value: T): void;
 }
 
@@ -114,6 +117,7 @@ export function latestSave<T>(options: {
     flush,
     reload,
     loaded(value) {
+      if (base !== undefined) return;
       base = value;
       show(changed(value));
     },

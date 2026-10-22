@@ -1,6 +1,7 @@
 import { errorMessage, updates } from "../ipc/api";
 import type { Release, UpdateStatus } from "../ipc/bindings";
 import { listenHere } from "../ipc/events";
+import { latestOnly } from "./latestOnly";
 import { createStore } from "./store";
 
 export interface UpdateState {
@@ -18,20 +19,24 @@ export interface UpdateState {
 /** The state of the update check in this window. */
 export const updateState = createStore<UpdateState>({ loaded: false, supported: false, newer: null, checking: false, result: null });
 
-const apply = (status: UpdateStatus) => updateState.set({ loaded: true, supported: status.supported, newer: status.newer });
+// A status the backend sends or a check answers is newer than one read before it (see `latestOnly`).
+const statuses = latestOnly((status: UpdateStatus) => updateState.set({ loaded: true, supported: status.supported, newer: status.newer }));
 
 let started = false;
 
-/** Reads the status once per page, and follows the checks of any window (see update.rs). */
+/**
+ * Reads the status once per page, and follows the checks of any window (see update.rs):
+ * listening first, so that none is missed while the status is read.
+ */
 export function followUpdates() {
   if (started) return;
   started = true;
-  updates.status().then(apply, console.error);
   // A check that worked (the automatic one, or another window's) clears the error of one that didn't.
-  void listenHere("update-status", (e) => {
-    apply(e.payload);
+  const listening = listenHere("update-status", (e) => {
+    statuses.changed(e.payload);
     if (updateState.get().result?.kind === "failed") updateState.set({ result: null });
-  });
+  }).catch(console.error);
+  void listening.then(() => statuses.track(updates.status())).catch(console.error);
 }
 
 /** Checks now, as the user asked; the result is shown in Settings › About. */
@@ -41,7 +46,7 @@ export function checkForUpdates() {
   updateState.set({ checking: true, result: null });
   updates.check().then(
     (status) => {
-      apply(status);
+      statuses.changed(status);
       updateState.set({ checking: false, result: status.newer ? null : { kind: "upToDate" } });
     },
     (e) => updateState.set({ checking: false, result: { kind: "failed", message: errorMessage(e) } }),

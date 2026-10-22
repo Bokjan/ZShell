@@ -105,6 +105,23 @@ describe("latestSave", () => {
     expect(shown).toEqual(["a", "a"]);
   });
 
+  it("keeps what another window stored over a first read that comes after it", async () => {
+    const shown: string[] = [];
+    const saver = latestSave<string>({
+      show: (value) => shown.push(value),
+      store: async (value) => value,
+      load: async () => "changed there",
+      failed: () => {},
+    });
+    // The first read is still on its way when the other window's change is read.
+    saver.reload();
+    await settle();
+    saver.loaded("stored");
+    expect(shown).toEqual(["changed there"]);
+    saver.save((value) => `${value}, and here`);
+    expect(shown[shown.length - 1]).toBe("changed there, and here");
+  });
+
   it("lets a change made after a failure win over putting back", async () => {
     const { saver, shown, stores } = setup("stored");
     saver.save(() => "a");
