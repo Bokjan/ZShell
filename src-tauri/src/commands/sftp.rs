@@ -146,7 +146,6 @@ pub async fn sftp_download(
     sessions: State<'_, SessionManager>,
     connections: State<'_, Connections>,
     transfers: State<'_, transfer::Transfers>,
-    settings: State<'_, SettingsStore>,
     id: SessionId,
     transfer_id: String,
     remote_paths: Vec<String>,
@@ -159,7 +158,8 @@ pub async fn sftp_download(
         let sftp = connection.transfer_sftp().await?;
         let local_dir = match local_dir {
             Some(dir) => dir,
-            None => download_dir(&app, &settings)?,
+            // Made if it isn't there: a disk that may be slow to answer.
+            None => blocking(app, |app| download_dir(app, &app.state::<SettingsStore>())).await?,
         };
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await?)

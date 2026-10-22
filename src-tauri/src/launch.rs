@@ -43,12 +43,15 @@ pub enum SessionSpec {
 }
 
 /// What resolving a spec reads: the saved sessions, the live connections, the sessions (whose
-/// log a shared one is named after) and the settings.
+/// log a shared one is named after) and the settings. `local_shell`: the default shell, found
+/// beforehand off the async workers for a local terminal (Windows looks for it in each folder
+/// of PATH, where a network drive may not answer); found here if not.
 pub struct Sources<'a> {
     pub profiles: &'a ProfileStore,
     pub connections: &'a Connections,
     pub sessions: &'a SessionManager,
     pub settings: &'a SettingsStore,
+    pub local_shell: Option<pty::Shell>,
 }
 
 /// A session about to start: how its log is named and whether it starts logged, the remote
@@ -117,7 +120,7 @@ pub fn launch(spec: SessionSpec, webview: &str, sources: Sources) -> Result<Laun
             Ok(Launch { log_info, auto_log, encoding, backend: Backend::Shared { connection, connections } })
         }
         SessionSpec::Local => {
-            let shell = pty::default_shell();
+            let shell = sources.local_shell.unwrap_or_else(pty::default_shell);
             let log_info = LogInfo { session: shell.name(), host: "localhost".to_owned(), user: model::local_username(), profile: None };
             let auto_log = sources.settings.get().logs.auto_local;
             Ok(Launch { log_info, auto_log, encoding: utf8, backend: Backend::Local(shell) })
@@ -220,8 +223,13 @@ mod tests {
         }
 
         fn launch(&self, spec: SessionSpec) -> Result<Launch> {
-            let sources =
-                Sources { profiles: &self.profiles, connections: &self.connections, sessions: &self.sessions, settings: &self.settings };
+            let sources = Sources {
+                profiles: &self.profiles,
+                connections: &self.connections,
+                sessions: &self.sessions,
+                settings: &self.settings,
+                local_shell: None,
+            };
             launch(spec, "main", sources)
         }
     }

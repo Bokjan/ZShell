@@ -220,7 +220,7 @@ impl<H: Handler> Auth<'_, H> {
             paths.insert(0, expand_home(key_path));
         }
         for path in paths {
-            if path.is_file() {
+            if tokio::fs::metadata(&path).await.is_ok_and(|metadata| metadata.is_file()) {
                 let outcome = self.try_key_file(&path).await?;
                 if outcome != Outcome::Rejected {
                     return Ok(outcome);

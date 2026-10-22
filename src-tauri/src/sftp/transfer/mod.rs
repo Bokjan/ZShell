@@ -433,9 +433,9 @@ pub async fn download(sftp: &SftpSession, remote_paths: &[String], local_dir: &P
         // empty file or folder.
         let missing = items.iter().enumerate().filter(|(i, _)| !whole.get(*i).copied().unwrap_or(false));
         for (_, (_, local)) in missing {
-            let _ = match std::fs::symlink_metadata(local) {
-                Ok(metadata) if metadata.is_dir() => std::fs::remove_dir(local),
-                Ok(metadata) if metadata.len() == 0 => std::fs::remove_file(local),
+            let _ = match tokio::fs::symlink_metadata(local).await {
+                Ok(metadata) if metadata.is_dir() => tokio::fs::remove_dir(local).await,
+                Ok(metadata) if metadata.len() == 0 => tokio::fs::remove_file(local).await,
                 _ => Ok(()),
             };
         }
@@ -449,11 +449,13 @@ async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<Pat
     let name = local_file_name(file_name(remote)).ok_or_else(|| Error::new("transfer.invalidName").param("name", remote))?;
     let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
     let path = local_dir.join(name);
-    let created = if metadata.file_type().is_dir() {
-        create_unique(&path, |path| create_dir(path, downloaded_dir_mode(&metadata), false))
-    } else {
-        create_unique_file(&path, downloaded_mode(&metadata)).map(|(path, _)| (path, ()))
-    };
+    let (is_dir, dir_mode, file_mode) = (metadata.file_type().is_dir(), downloaded_dir_mode(&metadata), downloaded_mode(&metadata));
+    let wanted = path.clone();
+    let created = tokio::task::spawn_blocking(move || match is_dir {
+        true => create_unique(&wanted, |path| create_dir(path, dir_mode, false)),
+        false => create_unique_file(&wanted, file_mode).map(|(path, _)| (path, ())),
+    })
+    .await?;
     let (path, ()) = created.context(Error::new("transfer.createFailed").param("path", path.display()))?;
     Ok(path)
 }
@@ -468,7 +470,9 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
 async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, whole: &mut Vec<bool>) -> Result<()> {
     let mut plan = Plan::new();
     // The items of one download go to one folder, or one disk at least.
-    let mut taken = Taken::new(items.first().is_some_and(|(_, local)| ignores_case(local)));
+    let first = items.first().map(|(_, local)| local.clone());
+    let ignores_case = tokio::task::spawn_blocking(move || first.is_some_and(|local| ignores_case(&local))).await?;
+    let mut taken = Taken::new(ignores_case);
     // Where each item's files end in `plan.files`.
     let mut ends = Vec::with_capacity(items.len());
     for (remote, local) in items {

@@ -115,7 +115,10 @@ async fn run_with(options: SerialOptions, mut io: TermIo, on_threads: bool) {
     while Hold::is_held(&options.device) && since.elapsed() < RELEASE_WAIT {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    let outcome = match open(&options) {
+    // Off the async workers: opening a Bluetooth serial port can take seconds.
+    let opening = options.clone();
+    let opened = tauri::async_runtime::spawn_blocking(move || open(&opening)).await.unwrap_or_else(|e| Err(e.into()));
+    let outcome = match opened {
         Ok(port) => {
             // Before reading starts, so that what the device already sent comes after.
             let opened = t!("terminal.serialOpened", device = &options.device, settings = options.summary());

@@ -58,11 +58,16 @@ pub async fn session_open(
     channel: Channel,
 ) -> Result<SessionId> {
     let page = sessions.page(webview.label());
+    let local_shell = match spec {
+        SessionSpec::Local => Some(tauri::async_runtime::spawn_blocking(pty::default_shell).await?),
+        _ => None,
+    };
     let sources = Sources {
         profiles: &app.state::<ProfileStore>(),
         connections: &app.state::<Connections>(),
         sessions: &sessions,
         settings: &app.state::<SettingsStore>(),
+        local_shell,
     };
     let Launch { log_info, auto_log, encoding, backend } = launch::launch(spec, webview.label(), sources)?;
     let slot = LogSlot::new(log_info);
@@ -159,10 +164,12 @@ pub fn session_handover(app: AppHandle, webview: Webview, sessions: State<'_, Se
 }
 
 /// The program running in the session's terminal other than the shell (an empty string if
-/// its name is unknown), or `None`. Only local terminals can tell.
+/// its name is unknown), or `None`. Only local terminals can tell. Off the main thread: on
+/// Windows, it is found in a snapshot of all the system's processes.
 #[tauri::command]
-pub fn session_foreground(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId) -> Result<Option<String>> {
-    sessions.foreground(webview.label(), id)
+pub async fn session_foreground(app: AppHandle, webview: Webview, id: SessionId) -> Result<Option<String>> {
+    let label = webview.label().to_owned();
+    blocking(app, move |app| app.state::<SessionManager>().foreground(&label, id)).await
 }
 
 #[tauri::command]

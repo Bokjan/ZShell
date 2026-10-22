@@ -112,7 +112,9 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     link.send_header(Header::new(Kind::Skip), Encoding::Hex).await?;
                     continue;
                 };
-                let (path, file) = match create_unique_file(&dir.join(&name), None) {
+                let wanted = dir.join(&name);
+                let created = tokio::task::spawn_blocking(move || create_unique_file(&wanted, None)).await;
+                let (path, file) = match created.unwrap_or_else(|e| Err(std::io::Error::other(e))) {
                     Ok((path, file)) => (path, tokio::fs::File::from_std(file)),
                     Err(e) => {
                         let path = dir.join(&name);

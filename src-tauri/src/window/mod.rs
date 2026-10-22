@@ -443,9 +443,9 @@ pub async fn buttons(app: AppHandle) -> tauri::Result<Vec<WindowButton>> {
 }
 
 /// Sets the window's appearance (all windows' on Linux, where it is GTK's); `None` follows
-/// the system's. Off the main thread: on Linux it may ask the settings portal.
+/// the system's. On the blocking pool: on Linux it may wait for the settings portal.
 pub async fn set_theme(window: WebviewWindow, theme: Option<tauri::Theme>) -> tauri::Result<()> {
-    platform::set_theme(&window, theme)
+    tauri::async_runtime::spawn_blocking(move || platform::set_theme(&window, theme)).await?
 }
 
 /// The title bar's color (`#rrggbb`), for the window's border while it is snapped (see
