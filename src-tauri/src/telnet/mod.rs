@@ -339,7 +339,7 @@ impl<F: FnOnce() -> Option<String>> AutoLogin<F> {
             Prompt::Password => self.password.take().and_then(|password| password()),
         }?;
         self.tail = LastLine::default();
-        let mut bytes = encoding.encode(&answer).0.into_owned();
+        let mut bytes = crate::encoding::encode(encoding, &answer);
         bytes.push(b'\r');
         Some(bytes)
     }
@@ -372,6 +372,15 @@ mod tests {
         // A second prompt (wrong password) is left to the user.
         login.output(b"\r\nLogin incorrect\r\nrouter login: ");
         assert_eq!(login.due, None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn answers_in_the_sessions_encoding() {
+        // What the encoding can't write becomes `?`, not an HTML character reference.
+        let mut login = AutoLogin::new("jörg✓", || None);
+        login.output(b"login: ");
+        login.due().await;
+        assert_eq!(login.answer(encoding_rs::WINDOWS_1252).as_deref(), Some(&b"j\xf6rg?\r"[..]));
     }
 
     #[tokio::test(start_paused = true)]
