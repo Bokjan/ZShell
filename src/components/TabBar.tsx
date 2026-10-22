@@ -19,6 +19,7 @@ import { isComposing, isMac } from "../lib/platform";
 import type { Point } from "../ipc/bindings";
 import { REST_MS, type TabRest } from "../lib/tabRest";
 import { slideTabs, tabEdgeAt, tabIndexAt } from "../lib/tabStrip";
+import { togglesPanel } from "../lib/tabs";
 import { DRAG_REGION } from "../hooks/titleBar";
 import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
@@ -359,7 +360,7 @@ export function TabBar({
     <button
       className={activeTab?.sidePanel === panel ? "on" : undefined}
       aria-pressed={activeTab?.sidePanel === panel}
-      disabled={!activeTab || (unavailable && activeTab.sidePanel !== panel)}
+      disabled={!activeTab || !togglesPanel(activeTab, panel)}
       onClick={onToggle}
       title={unavailable ? t("tabs.panelUnavailable") : hint}
     >

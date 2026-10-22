@@ -15,6 +15,9 @@ export const INITIAL_TABS: TabsState = { tabs: [], activeKey: null, nextKey: 1 }
 
 export const activeTabOf = (state: TabsState) => state.tabs.find((tab) => tab.key === state.activeKey);
 
+/** Whether a side panel can be toggled in the tab: it opens only for an SSH pane, and closes whatever the pane. */
+export const togglesPanel = (tab: Tab, panel: SidePanel) => tab.sidePanel === panel || focusedPane(tab).protocol === "ssh";
+
 /** What a new pane runs; its key comes from the state. */
 export interface PaneSpec {
   target: SessionTarget;
@@ -277,10 +280,9 @@ function reduce(state: TabsState, action: TabsAction): TabsState {
     }
     case "togglePanel": {
       if (state.activeKey === null) return state;
-      return mapTab(state, state.activeKey, (tab) => {
-        if (tab.sidePanel === action.panel) return { ...tab, sidePanel: null };
-        return focusedPane(tab).protocol === "ssh" ? { ...tab, sidePanel: action.panel } : tab;
-      });
+      return mapTab(state, state.activeKey, (tab) =>
+        togglesPanel(tab, action.panel) ? { ...tab, sidePanel: tab.sidePanel === action.panel ? null : action.panel } : tab,
+      );
     }
     case "connecting": {
       const tab = tabOf(state.tabs, action.key);

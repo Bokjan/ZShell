@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PaneSpec, TabsAction, TabsState } from "./tabs";
-import { activeTabOf, createTabStore, INITIAL_TABS, leavesSomething, reduceTabs, transferSessions } from "./tabs";
+import { activeTabOf, createTabStore, INITIAL_TABS, leavesSomething, reduceTabs, togglesPanel, transferSessions } from "./tabs";
 
 const local: PaneSpec = { target: { kind: "local" }, protocol: "local", title: "zsh" };
 const ssh = (profileId: string): PaneSpec => ({ target: { kind: "profile", profileId }, protocol: "ssh", title: profileId });
@@ -299,10 +299,13 @@ describe("updatePane", () => {
 describe("side panels", () => {
   it("opens only for an SSH pane, and closes whatever the pane", () => {
     let state = run({ type: "open", pane: local });
+    expect(togglesPanel(activeTabOf(state)!, "files")).toBe(false);
     state = reduceTabs(state, { type: "togglePanel", panel: "files" });
     expect(activeTabOf(state)!.sidePanel).toBeNull();
     state = run({ type: "open", pane: ssh("a") }, { type: "togglePanel", panel: "files" });
     expect(activeTabOf(state)!.sidePanel).toBe("files");
+    // Open, a panel closes whatever the pane.
+    expect(togglesPanel({ ...activeTabOf(state)!, panes: [{ ...activeTabOf(state)!.panes[0], protocol: "local" }] }, "files")).toBe(true);
     state = reduceTabs(state, { type: "togglePanel", panel: "forwards" });
     expect(activeTabOf(state)!.sidePanel).toBe("forwards");
     state = reduceTabs(state, { type: "togglePanel", panel: "forwards" });

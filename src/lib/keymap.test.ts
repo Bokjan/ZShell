@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { actionEvent, actionOf, appMenu, chosenAction, labelsOn, matches, paneSideOf, shortcutRows, tabIndexOf } from "./keymap";
+import { actionEvent, actionOf, appMenu, chosenAction, labelsOn, matches, PANE_SIDES, shortcutRows, TAB_ACTIONS } from "./keymap";
 
 const key = (code: string, modifiers: { ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {}) =>
   ({
@@ -27,11 +27,12 @@ describe("keymap", () => {
   });
 
   it("finds tabs and panes", () => {
-    expect(tabIndexOf(key("Digit3", { alt: true }))).toBe(2);
-    expect(tabIndexOf(key("Digit9", { alt: true }))).toBe(-1);
-    expect(tabIndexOf(key("Digit3", { ctrl: true }))).toBe(null);
-    expect(paneSideOf(key("ArrowUp", { ctrl: true, alt: true }))).toBe("up");
-    expect(paneSideOf(key("ArrowUp", { alt: true }))).toBe(null);
+    const sides = Object.keys(PANE_SIDES) as (keyof typeof PANE_SIDES)[];
+    expect(actionOf(key("Digit3", { alt: true }), TAB_ACTIONS)).toBe("tab3");
+    expect(matches(key("Digit9", { alt: true }), "lastTab")).toBe(true);
+    expect(actionOf(key("Digit3", { ctrl: true }), TAB_ACTIONS)).toBe(null);
+    expect(actionOf(key("ArrowUp", { ctrl: true, alt: true }), sides)).toBe("focusUp");
+    expect(actionOf(key("ArrowUp", { alt: true }), sides)).toBe(null);
   });
 
   it("labels keys as each platform writes them", () => {
@@ -59,7 +60,7 @@ describe("keymap", () => {
     expect(matches(e, "splitRight")).toBe(true);
     expect(matches(e, "splitDown")).toBe(false);
     expect(actionOf(e, ["splitDown", "splitRight"])).toBe("splitRight");
-    expect(tabIndexOf(e)).toBe(null);
+    expect(actionOf(e, TAB_ACTIONS)).toBe(null);
     expect(chosenAction(e)).toBe("splitRight");
     expect(chosenAction(key("KeyF", { ctrl: true, shift: true }))).toBe(null);
     vi.unstubAllGlobals();

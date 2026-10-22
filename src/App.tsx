@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
 import { useLocale } from "./hooks/locale";
 import { useLatest } from "./hooks/latest";
+import { useAppActions } from "./app/useAppActions";
 import { useAppMenu } from "./app/useAppMenu";
 import { useCloseFlow } from "./app/useCloseFlow";
 import { useCompose } from "./app/useCompose";
@@ -20,7 +21,6 @@ import { useTaskbarProgress } from "./app/useTaskbarProgress";
 import { useTerminalMenu } from "./app/useTerminalMenu";
 import { useWindows } from "./app/useWindows";
 
-import { useAppLock } from "./hooks/appLock";
 import { CommandPalette } from "./components/CommandPalette";
 import { ComposeBar } from "./components/ComposeBar";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -38,9 +38,7 @@ import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n/index";
 import { errorMessage, sendBreak, sessionLog, type Folder, type Profile, type QuickCommand, type SessionTarget } from "./ipc/api";
-import { ISSUES_URL, RELEASES_URL, useNativeMenuLabel } from "./hooks/appMenu";
-import { actionOf, matches, paneSideOf, tabIndexOf, type MenuAction } from "./lib/keymap";
-import { neighbor } from "./lib/layout";
+import { useNativeMenuLabel } from "./hooks/appMenu";
 import { quickCommandStore, tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
 import { findPane, focusedPane, targetProfile, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
@@ -52,16 +50,11 @@ import { createSessionRegistry } from "./lib/sessionRegistry";
 import { createTabRest } from "./lib/tabRest";
 import { currentSettings } from "./lib/settings";
 import { useSettings } from "./hooks/settings";
-import { useShortcuts } from "./hooks/shortcuts";
 import { useStableHandlers } from "./hooks/stableHandlers";
 import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
 import { useUpdates } from "./hooks/updates";
-import { checkForUpdates } from "./lib/updates";
 import "./styles.css";
-
-/** What terminal full screen hides, whose keys and menu items do nothing meanwhile. */
-const HIDDEN_IN_FULL_SCREEN = ["searchSessions", "composeBar", "filePanel", "forwardsPanel"] as const;
 
 function App() {
   const { t } = useTranslation();
@@ -147,9 +140,6 @@ function App() {
   );
   const paneDrag = usePaneDrag(store, paneActions, windowing, tabRest);
 
-  /** Shows the pane: activates its tab and focuses it there. */
-  const focusPane = useCallback((key: number) => dispatch({ type: "focusPane", key }), [dispatch]);
-
   /**
    * "connect" connects again in the focused pane of the active tab when that is the session's
    * and its connection is closed (or waiting to reconnect), else opens a tab; "newTab" always
@@ -209,93 +199,7 @@ function App() {
     return tab && focusedPane(tab);
   };
 
-  // Opens a panel only for an SSH pane; closes it whatever the pane.
   const togglePanel = useCallback((panel: SidePanel) => dispatch({ type: "togglePanel", panel }), [dispatch]);
-
-  // The "Lock" action: the app lock's settings when it is off, to turn it on.
-  const { lock } = useAppLock();
-  const lockApp = useCallback(() => !lock() && openSettings("security"), [lock, openSettings]);
-
-  // Settings open over a dialog too, and the app locks over one.
-  useShortcuts(
-    (e) => {
-      if (matches(e, "lock")) lockApp();
-      else if (matches(e, "settings")) openSettings();
-      else if (matches(e, "about")) openSettings("about");
-      else if (matches(e, "checkForUpdates")) {
-        // The result shows there.
-        openSettings("about");
-        checkForUpdates();
-      } else if (matches(e, "releaseNotes")) void openUrl(RELEASES_URL).catch(console.error);
-      else if (matches(e, "reportIssue")) void openUrl(ISSUES_URL).catch(console.error);
-      else return false;
-      return true;
-    },
-    { when: "always" },
-  );
-
-  useShortcuts((e) => {
-    if (fullScreen.on && actionOf(e, HIDDEN_IN_FULL_SCREEN)) return true;
-    if (matches(e, "newLocalTerminal") && localAllowed) {
-      openLocalTab();
-      return true;
-    }
-    if (matches(e, "searchSessions")) {
-      setSearchFocusKey((key) => key + 1);
-      return true;
-    }
-    if (matches(e, "importSshConfig")) {
-      setImporting(true);
-      return true;
-    }
-    // The focused pane or tab, or the window once it has no tabs.
-    if (matches(e, "closeTab")) {
-      closeFocused();
-      return true;
-    }
-    const tabAction = actionOf(e, ["nextTab", "previousTab"]);
-    const tabIndex = tabIndexOf(e);
-    if (tabAction || tabIndex !== null) {
-      const tabs = store.get().tabs;
-      const index = tabs.findIndex((t) => t.key === store.get().activeKey);
-      if (tabs.length === 0) return true;
-      let next: number;
-      if (tabAction === "nextTab") next = (index + 1) % tabs.length;
-      else if (tabAction === "previousTab") next = (index - 1 + tabs.length) % tabs.length;
-      // ⌘9 / Alt+9 is always the last tab, as in browsers.
-      else next = tabIndex === -1 ? tabs.length - 1 : tabIndex!;
-      if (next < tabs.length) activate(tabs[next].key);
-      return true;
-    }
-    const split = actionOf(e, ["splitRight", "splitDown"]);
-    const side = paneSideOf(e);
-    if ((split || side) && store.get().activeKey !== null) {
-      const tab = activeTabOf(store.get());
-      if (!tab) return true;
-      if (split) splitPane(tab.focused, split === "splitRight" ? "row" : "column");
-      else {
-        const next = neighbor(tab.layout, tab.focused, side!);
-        if (next !== null) focusPane(next);
-      }
-      return true;
-    }
-    if (matches(e, "fullScreen")) {
-      if (store.get().tabs.length > 0) fullScreen.toggle();
-      return true;
-    }
-    if (matches(e, "quickCommands")) {
-      if (store.get().tabs.length > 0) quick.setPaletteOpen(true);
-      return true;
-    }
-    if (matches(e, "composeBar")) {
-      if (store.get().tabs.length > 0) composer.toggle();
-      return true;
-    }
-    const panel = actionOf(e, ["filePanel", "forwardsPanel"]);
-    if (!panel) return false;
-    togglePanel(panel === "filePanel" ? "files" : "forwards");
-    return true;
-  });
 
   const runCommand = (command: QuickCommand) => composer.send(asTyped(command.text, command.enter));
 
@@ -308,36 +212,20 @@ function App() {
   /** Tabs with any of these panes. */
   const tabsWith = (keys: number[]) => tabs.filter((t) => t.panes.some((p) => keys.includes(p.key))).map((t) => t.key);
 
-  /** Whether an item of the app menu applies now, outside macOS (whose items are always on). */
-  const menuEnabled = (action: MenuAction): boolean => {
-    if (fullScreen.on && (HIDDEN_IN_FULL_SCREEN as readonly MenuAction[]).includes(action)) return false;
-    // The file and port forwarding panels open only for SSH, and close for anything.
-    const panel = (kind: SidePanel) => !!activeTab && (activeTab.sidePanel === kind || activePane?.protocol === "ssh");
-    switch (action) {
-      case "newLocalTerminal":
-        return localAllowed;
-      case "exportSessions":
-        return profiles.length > 0;
-      case "copy":
-        return !!activePane && sessions.hasSelection(activePane.key);
-      case "paste":
-      case "find":
-      case "composeBar":
-      case "fullScreen":
-        return !!activePane;
-      case "splitRight":
-      case "splitDown":
-        return !!activePane && activePane.protocol !== "serial" && roomToSplit(activePane.key, action === "splitRight" ? "row" : "column");
-      case "filePanel":
-        return panel("files");
-      case "forwardsPanel":
-        return panel("forwards");
-      case "quickCommands":
-        return !!activePane && !!commands && !!activeGroup;
-      default:
-        return true;
-    }
-  };
+  const menuEnabled = useAppActions({
+    store,
+    sessions,
+    paneActions,
+    fullScreen,
+    localAllowed,
+    openLocalTab,
+    searchSessions: () => setSearchFocusKey((key) => key + 1),
+    importSshConfig: () => setImporting(true),
+    closeFocused,
+    openSettings,
+    openPalette: () => quick.setPaletteOpen(true),
+    toggleCompose: composer.toggle,
+  });
   const updates = useUpdates();
   const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on, updates });
 

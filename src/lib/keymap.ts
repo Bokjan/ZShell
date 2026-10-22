@@ -250,14 +250,8 @@ export function actionOf<A extends Action>(e: KeyboardEvent, actions: readonly A
   return actions.find((action) => matches(e, action)) ?? null;
 }
 
-const TAB_ACTIONS = ["tab1", "tab2", "tab3", "tab4", "tab5", "tab6", "tab7", "tab8"] as const;
-
-/** The index of the tab `e` goes to (⌘1–⌘8 / Alt+1–Alt+8), or -1 for the last tab (⌘9 / Alt+9). */
-export function tabIndexOf(e: KeyboardEvent): number | null {
-  if (matches(e, "lastTab")) return -1;
-  const action = actionOf(e, TAB_ACTIONS);
-  return action ? TAB_ACTIONS.indexOf(action) : null;
-}
+/** The actions going to the first tabs (⌘1–⌘8 / Alt+1–Alt+8), in order; `lastTab` goes to the last. */
+export const TAB_ACTIONS = ["tab1", "tab2", "tab3", "tab4", "tab5", "tab6", "tab7", "tab8"] as const;
 
 /**
  * A clipboard key in the terminal, outside macOS (where the native Edit menu has them):
@@ -269,13 +263,8 @@ export function clipboardKeyOf(e: KeyboardEvent): "copy" | "copyIfSelected" | "p
   return action === "copySelection" ? "copyIfSelected" : action;
 }
 
-const SIDES = { focusLeft: "left", focusUp: "up", focusRight: "right", focusDown: "down" } as const;
-
-/** The side of the pane that `e` moves the focus to. */
-export function paneSideOf(e: KeyboardEvent): (typeof SIDES)[keyof typeof SIDES] | null {
-  const action = actionOf(e, Object.keys(SIDES) as (keyof typeof SIDES)[]);
-  return action && SIDES[action];
-}
+/** The actions moving the focus to the pane on a side, and that side. */
+export const PANE_SIDES = { focusLeft: "left", focusUp: "up", focusRight: "right", focusDown: "down" } as const;
 
 const MAC_KEY_LABELS: Record<string, string> = {
   Tab: "⇥",
