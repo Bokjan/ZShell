@@ -545,7 +545,7 @@ impl Vault {
     /// The data key in the credential store's entry `account`, if it is `sealing`'s.
     fn saved_key(&self, account: &str, sealing: &Sealing) -> Result<Key> {
         let key = match self.store.get(account) {
-            Ok(text) => crypto::decode_key(&text).ok_or_else(|| Error::new("vault.keyMismatch"))?,
+            Ok(text) => crypto::decode_key(&zeroize::Zeroizing::new(text)).ok_or_else(|| Error::new("vault.keyMismatch"))?,
             Err(keyring::Error::NoEntry) => return Err(Error::new("vault.keyMissing")),
             Err(e) => return Err(e.into()),
         };
@@ -594,7 +594,7 @@ impl Vault {
         };
         let account = sealing.store_account();
         if let (Some(account), Some(key)) = (&account, &key) {
-            self.store.set(account, &crypto::encode(&**key))?;
+            self.store.set(account, &zeroize::Zeroizing::new(crypto::encode(&**key)))?;
         }
         if let Err(e) = self.write(&sealing, key.as_ref(), &data) {
             if let Some(account) = &account {

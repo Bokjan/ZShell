@@ -125,20 +125,47 @@ impl<H> Envelope<H> {
 }
 
 /// The file of `header` (with `format` and `version`) and `data`, encrypted with `key` or in
-/// clear without. Read back before it is returned, to check that it opens to the same data;
-/// `None` if it doesn't.
+/// clear without. Read back before it is returned, to check that it opens (decrypted with
+/// `key`) to the same data; `None` if it doesn't.
 pub fn write<H: Serialize, T: Serialize>(format: &str, version: u32, header: &H, key: Option<&Key>, data: &T) -> Option<Vec<u8>> {
     let header_raw = RawValue::from_string(serde_json::to_string(&VersionedOut { format, version, header }).ok()?).ok()?;
+    let plaintext = to_vec_once(data)?;
     let bytes = match key {
         None => serde_json::to_vec_pretty(&PlainOut { header: &header_raw, data }).ok()?,
         Some(key) => {
-            let plaintext = Zeroizing::new(serde_json::to_vec(data).ok()?);
             let sealed = crypto::seal(key, header_raw.get().as_bytes(), &plaintext);
-            let bytes = serde_json::to_vec_pretty(&SealedOut { header: &header_raw, sealed: &sealed }).ok()?;
-            let read: Envelope<serde::de::IgnoredAny> = parse(&bytes, format, version).ok()?;
-            (*read.plaintext(Some(key)).ok()? == *plaintext).then_some(bytes)?
+            serde_json::to_vec_pretty(&SealedOut { header: &header_raw, sealed: &sealed }).ok()?
         }
     };
+    let read: Envelope<serde::de::IgnoredAny> = parse(&bytes, format, version).ok()?;
+    let opened = read.plaintext(key).ok()?;
+    // In clear the data is laid out as the file is (pretty): compared as JSON.
+    let same = match key {
+        Some(_) => *opened == *plaintext,
+        None => {
+            serde_json::from_slice::<serde_json::Value>(&opened).ok()? == serde_json::from_slice::<serde_json::Value>(&plaintext).ok()?
+        }
+    };
+    same.then_some(bytes)
+}
+
+/// `data` as JSON, in a buffer the size of it from the start, cleared when dropped: one that
+/// grew would leave copies of the data behind in memory as it moved.
+fn to_vec_once<T: Serialize>(data: &T) -> Option<Zeroizing<Vec<u8>>> {
+    struct Count(usize);
+    impl std::io::Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = Count(0);
+    serde_json::to_writer(&mut count, data).ok()?;
+    let mut bytes = Zeroizing::new(Vec::with_capacity(count.0));
+    serde_json::to_writer(&mut *bytes, data).ok()?;
     Some(bytes)
 }
 
