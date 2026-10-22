@@ -45,6 +45,14 @@ fn default_true() -> bool {
 }
 
 impl QuickCommands {
+    /// The ids of the groups other than the default one, and of the commands, in order.
+    pub(crate) fn ids_mut(&mut self) -> impl Iterator<Item = &mut String> {
+        self.groups.iter_mut().flat_map(|CommandGroup { id, commands, .. }| {
+            let id = (id != DEFAULT_GROUP).then_some(id);
+            id.into_iter().chain(commands.iter_mut().map(|command| &mut command.id))
+        })
+    }
+
     /// Gives new groups and commands ids (and fixes duplicates from hand edits), and puts the
     /// default group first, creating it if needed.
     pub(crate) fn normalize(mut self) -> Self {
