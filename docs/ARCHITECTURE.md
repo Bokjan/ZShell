@@ -113,7 +113,7 @@
 - **一个连接多路复用**：认证后连接登记到 `connections::Connections`，SFTP 与转发开在同一连接上。复制标签与分屏在已有连接上开新的 shell channel（类似 ControlMaster），最后一个会话结束时才断开。
 - **提示都在终端里**：主机指纹、密码、口令、keyboard-interactive 都经 `TermIo::read_line` 在终端里问，与 OpenSSH 一致。
 - **认证**：按 OpenSSH 的顺序与规则；保存的密码只回答一次，且只回答问本账户密码的提示，验证码类的总在终端里问（`ssh/auth/`）。
-- **主机校验**：自己解析 known_hosts 并按 OpenSSH 的规则校验与写入，包括 `@cert-authority` 主机证书（`ssh/known_hosts/`），不用 russh 自带的校验。
+- **主机校验**：自己解析 known_hosts 并按 OpenSSH 的规则校验与写入，包括 `@cert-authority` 主机证书（`ssh/known_hosts/`），不用 russh 自带的校验。新密钥写入时，用户与系统的 ssh_config 对该主机设了 `HashKnownHosts yes` 就写 hashed 形式（只看 `Host` 块，`Match` 块当作不适用）；连接的其他选项不读 ssh_config。
 - **agent 转发**：只转发给目标主机，只接受本连接请求过的 agent 通道。
 - **ProxyJump**：在上一跳连接上开 `direct-tcpip` 作为下一跳的传输层，每一跳用被引用会话自己的地址、认证与主机密钥；SSH 与 Telnet 共用（`ssh::tunnel`）。
 - **keepalive 与重连**：keepalive 无响应判定断线（`lost`），前端退避重连到标签关闭，认证或主机密钥被拒绝时停止。重连是新会话。超时与断线的分类见 `net.rs` 与 `ssh/mod.rs`。

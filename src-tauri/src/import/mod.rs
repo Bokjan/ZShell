@@ -174,7 +174,7 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
 /// The parsed config, and whether it has `Match` blocks (which are not imported).
 fn parse(path: &Path) -> Result<(SshConfig, bool)> {
     let mut text = String::new();
-    let has_match = preprocess(path, 0, &mut text)?;
+    let has_match = preprocess(path, &user_dir(), 0, &mut text)?;
     let config = SshConfig::default()
         .parse(&mut text.as_bytes(), ParseRule::ALLOW_UNKNOWN_FIELDS | ParseRule::ALLOW_UNSUPPORTED_FIELDS)
         .map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
@@ -193,8 +193,9 @@ const SKIPPED_MATCH: &str = "Host *.zshell-skipped-match.invalid";
 /// `Match` line becomes a `Host` line matching nothing. `Include`d files are inlined here,
 /// which is how OpenSSH reads them, so that theirs are seen too; none is left for
 /// ssh2-config, which follows them with no limit (a file that includes itself would overflow
-/// the stack).
-fn preprocess(path: &Path, depth: usize, out: &mut String) -> Result<bool> {
+/// the stack). Relative `Include`s are in `dir`: `~/.ssh` for the user's config, `/etc/ssh`
+/// for the system's.
+fn preprocess(path: &Path, dir: &Path, depth: usize, out: &mut String) -> Result<bool> {
     let read_failed = |e: std::io::Error| Error::new("import.readFailed").param("path", path.display()).detail(e);
     let text = std::fs::read_to_string(path).map_err(read_failed)?;
     let mut has_match = false;
@@ -211,12 +212,10 @@ fn preprocess(path: &Path, depth: usize, out: &mut String) -> Result<bool> {
             if depth >= MAX_INCLUDE_DEPTH {
                 return Err(Error::new("import.includeTooDeep").param("path", path.display()));
             }
-            let trimmed = line.trim_start();
-            let args = trimmed[key.len()..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
             let start = out.len();
-            for pattern in args.split_whitespace().map(|arg| arg.trim_matches('"')) {
-                for included in include_paths(pattern) {
-                    has_match |= preprocess(&included, depth + 1, out)?;
+            for pattern in arguments(line) {
+                for included in include_paths(pattern, dir) {
+                    has_match |= preprocess(&included, dir, depth + 1, out)?;
                 }
             }
             let starts_blocks = out[start..].lines().any(|line| keyword(line).eq_ignore_ascii_case("host"));
@@ -240,16 +239,74 @@ fn keyword(line: &str) -> &str {
     line.trim_start().split(|c: char| c.is_whitespace() || c == '=').next().unwrap_or_default()
 }
 
-/// The files an `Include` pattern names: relative to `~/.ssh` unless absolute, with `~`
+/// The arguments after a config line's keyword, without quotes.
+fn arguments(line: &str) -> impl Iterator<Item = &str> {
+    let trimmed = line.trim_start();
+    let rest = trimmed[keyword(line).len()..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
+    rest.split_whitespace().map(|arg| arg.trim_matches('"'))
+}
+
+/// The user's folder of OpenSSH files, where relative `Include`s of their config are.
+fn user_dir() -> PathBuf {
+    std::env::home_dir().unwrap_or_default().join(".ssh")
+}
+
+/// The value of option `name` for `host`, as OpenSSH reads it: the first given in a `Host`
+/// block that applies to the host (or before any block), in the user's config, then the
+/// system's (`/etc/ssh/ssh_config`, `%ProgramData%\ssh\ssh_config`). `Match` blocks, which
+/// need more than the host to decide, are taken to apply to none. `None` if no readable file
+/// gives one.
+pub fn option_for_host(name: &str, host: &str) -> Option<String> {
+    #[cfg(unix)]
+    let system = Some(PathBuf::from("/etc/ssh"));
+    #[cfg(windows)]
+    let system = std::env::var_os("PROGRAMDATA").map(|dir| PathBuf::from(dir).join("ssh"));
+    let user = std::env::home_dir().map(|_| (user_dir().join("config"), user_dir()));
+    let files = user.into_iter().chain(system.map(|dir| (dir.join("ssh_config"), dir)));
+    files.into_iter().find_map(|(path, dir)| {
+        let mut text = String::new();
+        preprocess(&path, &dir, 0, &mut text).ok()?;
+        option_in(&text, name, host)
+    })
+}
+
+/// The value of option `name` for `host` in a config read by [`preprocess`].
+fn option_in(text: &str, name: &str, host: &str) -> Option<String> {
+    let mut applies = true;
+    for line in text.lines() {
+        let key = keyword(line);
+        if key.eq_ignore_ascii_case("host") {
+            // A negated pattern that matches rules the block out, whatever else matches.
+            let (mut matched, mut negated) = (false, false);
+            for pattern in arguments(line) {
+                match pattern.strip_prefix('!') {
+                    Some(pattern) => negated |= glob_matches(pattern, host),
+                    None => matched |= glob_matches(pattern, host),
+                }
+            }
+            applies = matched && !negated;
+        } else if applies && key.eq_ignore_ascii_case(name) {
+            return arguments(line).next().map(str::to_owned);
+        }
+    }
+    None
+}
+
+/// Whether `pattern` (with `*` and `?`) matches all of `host`, ignoring case.
+fn glob_matches(pattern: &str, host: &str) -> bool {
+    crate::ssh::known_hosts::glob_matches(pattern.as_bytes(), host.as_bytes())
+}
+
+/// The files an `Include` pattern names: relative to `dir` unless absolute, with `~`
 /// expanded and wildcards matched (no match is no file, as in OpenSSH). As with OpenSSH's
 /// glob(3), a wildcard doesn't match a leading dot (`.DS_Store`, an editor's swap file);
 /// folders are left out too.
-fn include_paths(pattern: &str) -> Vec<PathBuf> {
+fn include_paths(pattern: &str, dir: &Path) -> Vec<PathBuf> {
     let home = std::env::home_dir().unwrap_or_default();
     let path = match pattern.strip_prefix("~/") {
         Some(rest) => home.join(rest),
         None if Path::new(pattern).is_absolute() => PathBuf::from(pattern),
-        None => home.join(".ssh").join(pattern),
+        None => dir.join(pattern),
     };
     let options = glob::MatchOptions { require_literal_leading_dot: true, ..glob::MatchOptions::new() };
     let mut paths: Vec<PathBuf> = glob::glob_with(&path.to_string_lossy(), options)

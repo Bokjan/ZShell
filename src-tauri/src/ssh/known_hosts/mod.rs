@@ -127,12 +127,23 @@ fn writing() -> std::sync::MutexGuard<'static, ()> {
 }
 
 /// Records `key` for `host:port` at the end of the user's known_hosts, as OpenSSH does when
-/// the user accepts a new key: the host name in lower case, on a line of its own.
+/// the user accepts a new key: the host name in lower case, on a line of its own, hashed if
+/// ssh_config's `HashKnownHosts` is `yes` for the host (as Debian and Ubuntu set it for all),
+/// so that the file doesn't list where the user connects.
 pub fn learn(host: &str, port: u16, key: &PublicKey) -> Result<()> {
-    learn_at(&required_path()?, host, port, key)
+    let hashed = crate::import::option_for_host("HashKnownHosts", host).is_some_and(|value| value.eq_ignore_ascii_case("yes"));
+    learn_at(&required_path()?, host, port, key, hashed)
 }
 
-fn learn_at(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<()> {
+/// `pattern` hashed as OpenSSH hashes it: `|1|<salt>|<HMAC-SHA1 of it>`, with a random salt.
+fn hashed(pattern: &str) -> String {
+    let mut salt = [0; 20];
+    crate::crypto::fill(&mut salt);
+    let mac = Hmac::<Sha1>::new_from_slice(&salt).expect("any key length").chain_update(pattern.as_bytes()).finalize().into_bytes();
+    format!("|1|{}|{}", BASE64.encode(&salt), BASE64.encode(&mac))
+}
+
+fn learn_at(path: &Path, host: &str, port: u16, key: &PublicKey, hash: bool) -> Result<()> {
     use std::io::{Read, Seek, SeekFrom, Write};
 
     if !is_plain_host(host) {
@@ -152,7 +163,9 @@ fn learn_at(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<()> {
         file.seek(SeekFrom::End(-1)).and_then(|_| file.read_exact(&mut last)).map_err(write_failed)?;
     }
     let separator = if last[0] == b'\n' { "" } else { "\n" };
-    let line = format!("{separator}{} {key}\n", host_pattern(&host.to_ascii_lowercase(), port));
+    let pattern = host_pattern(&host.to_ascii_lowercase(), port);
+    let pattern = if hash { hashed(&pattern) } else { pattern };
+    let line = format!("{separator}{pattern} {key}\n");
     file.write_all(line.as_bytes()).map_err(write_failed)
 }
 
@@ -231,7 +244,7 @@ pub fn list() -> Result<Vec<Entry>> {
 /// whatever an earlier one could match, the later one can too. So a line with many stars
 /// takes time in proportion to the pattern's length times the host's, not exponential time
 /// in the number of stars, while checking a host key.
-fn glob_matches(pattern: &[u8], text: &[u8]) -> bool {
+pub(crate) fn glob_matches(pattern: &[u8], text: &[u8]) -> bool {
     let (mut p, mut t) = (0, 0);
     // The last `*` seen, and where in the text what it matches ends so far.
     let mut star: Option<(usize, usize)> = None;

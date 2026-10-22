@@ -267,3 +267,20 @@ fn checks_sessions_as_saving_does() {
     let error = plan(&path, &["bad".to_owned()], &[], &[]).unwrap_err();
     assert_eq!(error.code(), "import.invalidSession");
 }
+
+#[test]
+fn reads_an_option_for_a_host_as_openssh() {
+    let config = "HashKnownHosts no\n";
+    assert_eq!(option_in(config, "hashknownhosts", "a").as_deref(), Some("no"));
+    let config = "Host *.lan !db.lan\n  HashKnownHosts yes\nHost *\n  HashKnownHosts=no\n  User me\n";
+    // The first value given wins.
+    assert_eq!(option_in(config, "HashKnownHosts", "web.LAN").as_deref(), Some("yes"));
+    assert_eq!(option_in(config, "HashKnownHosts", "db.lan").as_deref(), Some("no"));
+    assert_eq!(option_in(config, "HashKnownHosts", "example.com").as_deref(), Some("no"));
+    assert_eq!(option_in(config, "Port", "example.com"), None);
+    // A `Match` block, made a block for no host by `preprocess`, applies to none.
+    let (_dir, path) = write_config("Match user root\n  HashKnownHosts yes\n");
+    let mut text = String::new();
+    preprocess(&path, &user_dir(), 0, &mut text).unwrap();
+    assert_eq!(option_in(&text, "HashKnownHosts", "a"), None);
+}

@@ -148,22 +148,29 @@ fn checks_the_other_files_too() {
 fn learns_keys_as_openssh_writes_them() {
     let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
     let path = temp_file("");
-    learn_at(&path, "Server.LAN", 22, &key).unwrap();
-    learn_at(&path, "::1", 2222, &key).unwrap();
+    learn_at(&path, "Server.LAN", 22, &key, false).unwrap();
+    learn_at(&path, "::1", 2222, &key, false).unwrap();
     assert_eq!(fs::read_to_string(&path).unwrap(), format!("server.lan ssh-ed25519 {KEY}\n[::1]:2222 ssh-ed25519 {KEY}\n"));
     assert_eq!(check_at(std::slice::from_ref(&path), "server.lan", 22, &key).unwrap(), Check::Known);
     // After a last line without a line break.
     let path = temp_file("# mine");
-    learn_at(&path, "a", 22, &key).unwrap();
+    learn_at(&path, "a", 22, &key, false).unwrap();
     assert_eq!(fs::read_to_string(&path).unwrap(), format!("# mine\na ssh-ed25519 {KEY}\n"));
     // A host that would be read as a pattern is refused.
     for host in ["*", "a,b", "!a", "a?", "[a]", "a b", ""] {
-        assert!(learn_at(&path, host, 22, &key).is_err(), "{host}");
+        assert!(learn_at(&path, host, 22, &key, false).is_err(), "{host}");
     }
+    // Hashed, as with `HashKnownHosts yes`: found by its name, which the file doesn't show.
+    let path = temp_file("");
+    learn_at(&path, "Server.LAN", 2222, &key, true).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.starts_with("|1|") && !text.to_lowercase().contains("server"), "{text}");
+    assert_eq!(check_at(std::slice::from_ref(&path), "server.lan", 2222, &key).unwrap(), Check::Known);
+    assert_eq!(check_at(std::slice::from_ref(&path), "server.lan", 22, &key).unwrap(), Check::Unknown);
     // Where there is no folder yet.
     let beside = temp_file("");
     let path = beside.with_file_name("new").join("known_hosts");
-    learn_at(&path, "a", 22, &key).unwrap();
+    learn_at(&path, "a", 22, &key, false).unwrap();
     assert!(path.is_file());
 }
 
@@ -282,7 +289,7 @@ b ssh-ed25519 {OTHER}
     let key = PublicKey::from_openssh(&format!("ssh-ed25519 {KEY}")).unwrap();
     let beside = temp_file("");
     let path = beside.with_file_name(".ssh").join("known_hosts");
-    learn_at(&path, "a", 22, &key).unwrap();
+    learn_at(&path, "a", 22, &key, false).unwrap();
     assert_eq!(mode(path.parent().unwrap()), 0o700);
 }
 

@@ -189,7 +189,8 @@ fn a_missing_or_wrong_key_does_not_unlock() {
     let old = fs::read(dir.join(VAULT_FILE)).unwrap();
     assert_eq!(vault.reset().unwrap().locked.map(|l| l.reason), Some(LockReason::New));
     assert!(!dir.join(VAULT_FILE).exists());
-    let aside: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().contains(".reset-")).collect();
+    let aside: Vec<_> =
+        fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().contains(".reset-")).collect();
     assert_eq!(aside.len(), 1);
     assert_eq!(fs::read(&aside[0]).unwrap(), old);
     assert_eq!(keys(&store), std::slice::from_ref(&account));

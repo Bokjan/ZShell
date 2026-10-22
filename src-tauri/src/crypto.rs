@@ -22,7 +22,7 @@ const ITERATIONS: u32 = if cfg!(test) { 1_000 } else { 600_000 };
 const MAX_ITERATIONS: u32 = 10_000_000;
 const SALT_LEN: usize = 16;
 
-fn fill(bytes: &mut [u8]) {
+pub(crate) fn fill(bytes: &mut [u8]) {
     // Only fails if the system has no random source at all, which nothing here can recover from.
     SystemRandom::new().fill(bytes).expect("the system's random number generator failed");
 }
