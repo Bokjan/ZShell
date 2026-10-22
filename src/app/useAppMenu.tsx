@@ -45,24 +45,15 @@ export function useAppMenu({
   const { shortcutLabel } = useLocale();
   const ref = useRef<HTMLButtonElement>(null);
   // `anchor` is the button, taken when the menu opens: a click on it toggles the menu rather than
-  // closing it as a click outside.
-  const [open, setOpen] = useState<{ x: number; y: number; fromKeyboard: boolean; anchor: HTMLButtonElement | null } | null>(null);
-
-  const toggle = (fromKeyboard: boolean) => {
-    if (open) {
-      setOpen(null);
-      return;
-    }
-    const anchor = ref.current;
-    const rect = anchor?.checkVisibility() ? anchor.getBoundingClientRect() : null;
-    setOpen(rect ? { x: rect.left, y: rect.bottom + 2, fromKeyboard, anchor } : { x: CORNER, y: CORNER, fromKeyboard, anchor });
-  };
-
-  useShortcuts((e) => {
-    if (isMac || !matches(e, "appMenu")) return false;
-    toggle(true);
-    return true;
-  });
+  // closing it as a click outside. The items are those that apply as it opens (see
+  // "渲染与 memo" in ARCHITECTURE.md): what decides it isn't state of this component.
+  const [open, setOpen] = useState<{
+    x: number;
+    y: number;
+    fromKeyboard: boolean;
+    anchor: HTMLButtonElement | null;
+    items: MenuItem[];
+  } | null>(null);
 
   const badge = updates.available ? t("updates.available", { version: updates.available.version }) : undefined;
   const entries = (items: MenuEntry[]): MenuItem[] =>
@@ -88,12 +79,29 @@ export function useAppMenu({
         : [{ label: t(`appMenu.${section}`), badge: section === "help" ? badge : undefined, submenu: entries(items) }],
     );
 
+  const toggle = (fromKeyboard: boolean) => {
+    if (open) {
+      setOpen(null);
+      return;
+    }
+    const anchor = ref.current;
+    const rect = anchor?.checkVisibility() ? anchor.getBoundingClientRect() : null;
+    const at = rect ? { x: rect.left, y: rect.bottom + 2 } : { x: CORNER, y: CORNER };
+    setOpen({ ...at, fromKeyboard, anchor, items: items() });
+  };
+
+  useShortcuts((e) => {
+    if (isMac || !matches(e, "appMenu")) return false;
+    toggle(true);
+    return true;
+  });
+
   const button = useStableHandlers<AppMenuButton>({ ref, toggle });
   const menu = open && (
     <ContextMenu
       x={open.x}
       y={open.y}
-      items={items()}
+      items={open.items}
       anchor={open.anchor}
       highlightFirst={open.fromKeyboard}
       onClose={() => setOpen(null)}

@@ -178,7 +178,8 @@ export function TabBar({
     if (from && stripRef.current) slideTabs(stripRef.current, from, SLIDE_MS);
   }, [tabs]);
   const [editing, setEditing] = useState<number | null>(null);
-  const [menu, setMenu] = useState<{ key: number; x: number; y: number } | null>(null);
+  // Its items as they were when it opened (see `menuItems`).
+  const [menu, setMenu] = useState<{ key: number; x: number; y: number; items: MenuItem[] } | null>(null);
   const tabsRef = useLatest(tabs);
   const activeKeyRef = useLatest(activeKey);
   const resting = useSyncExternalStore(tabRest.subscribe, tabRest.get);
@@ -324,7 +325,7 @@ export function TabBar({
       else if (isMenuKey(e)) {
         openedByMenuKey();
         const rect = e.currentTarget.getBoundingClientRect();
-        setMenu({ key, x: rect.left, y: rect.bottom });
+        setMenu({ key, x: rect.left, y: rect.bottom, items: menuItems(key) });
       } else return;
       e.preventDefault();
       return;
@@ -344,7 +345,7 @@ export function TabBar({
       if (value !== null && value !== title) onRename(key, value || null);
     },
     onClose: (key) => onClose([key]),
-    onMenu: (key, x, y) => setMenu({ key, x, y }),
+    onMenu: (key, x, y) => setMenu({ key, x, y, items: menuItems(key) }),
   });
 
   /** Whether a pane of the tab has a question waiting in its file panel, out of sight. */
@@ -407,7 +408,7 @@ export function TabBar({
         {dropLeft !== null && <span className="tab-drop-marker" style={{ left: dropLeft }} aria-hidden="true" />}
       </div>
       {menu && tabs.some((tab) => tab.key === menu.key) && (
-        <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.key)} onClose={() => setMenu(null)} />
+        <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
       {canOpenLocal && (
         <IconButton

@@ -203,7 +203,7 @@
 ### 渲染与 memo
 
 - **React Compiler**：给每个组件与 hook 自动 memo。它跳过编不了的函数时不报错，所以 `compiler.test.ts` 编译 `src/`，任何函数被跳过都失败；真编不了的写 `"use no memo"` 并说明原因。
-- **渲染时不碰 ref**：最新值用 `useLatest`（名字以 `Ref` 结尾）或 `useEffectEvent`，DOM 尺寸存进 state；含 ref 的对象在使用处解构。
+- **渲染时不碰 ref**：最新值用 `useLatest`（名字以 `Ref` 结尾）或 `useEffectEvent`，DOM 尺寸存进 state；含 ref 的对象在使用处解构。菜单的项（哪些可用）要读 store 与 ref，在打开菜单的事件里算好存进 state，打开期间不再更新。
 - **渲染时不读 React 之外的状态**：外部 store 经 `useSyncExternalStore` 订阅；随语言变化的文字从 `useLocale` 取（`locale.test.ts` 检查）。
 - **尚不支持的语法**：`try … finally` 等写法会让整个组件被跳过，经 `lib/attempt` 或改写。
 - **热路径**：标签页 store 可能每秒变化多次。不该随之重新渲染的组件，回调经 `useStableHandlers` 组成一个对象传入，开发版的 `useStableProps` 在破坏时警告；频繁更新的列表每项拆成单独的组件（`TabItem`、`FileRow` 等），因为 Compiler 不 memo 循环里创建的元素。
