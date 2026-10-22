@@ -257,3 +257,12 @@ fn parses_addresses() {
     assert_eq!(stdio_forward_host("ssh jump nc %h %p"), None);
     assert_eq!(stdio_forward_host("ssh -W db:22 jump"), None);
 }
+
+#[test]
+fn checks_sessions_as_saving_does() {
+    let (_dir, path) = write_config("Host v6\n  HostName [::1]\n  User me\n\nHost bad\n  HostName a?b\n  User me\n");
+    let (_, profiles) = plan(&path, &["v6".to_owned()], &[], &[]).unwrap();
+    assert_eq!(profiles[0].ssh().unwrap().remote.host, "::1");
+    let error = plan(&path, &["bad".to_owned()], &[], &[]).unwrap_err();
+    assert_eq!(error.code(), "import.invalidSession");
+}

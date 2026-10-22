@@ -161,6 +161,13 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
         ssh.forwards = candidate.forwards.into_iter().filter_map(|rule| ForwardRule { id: new_id(), ..rule }.normalize().ok()).collect();
         profiles.push(new_profile(ids[&candidate.alias].clone(), candidate.alias, ssh));
     }
+    // Checked and tidied as saving does, as an import from a sessions file is.
+    for proxy in &mut new_proxies {
+        proxy.normalize().map_err(|e| Error::new("import.invalidProxy").param("name", &proxy.name).detail(e))?;
+    }
+    for profile in &mut profiles {
+        profile.normalize_imported().map_err(|e| Error::new("import.invalidSession").param("name", &profile.name).detail(e))?;
+    }
     Ok((new_proxies, profiles))
 }
 
