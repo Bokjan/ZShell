@@ -1062,10 +1062,10 @@
     "showFile": "Afficher le fichier",
     "forgot": "Mot de passe principal oublié ?",
     "reset": "Réinitialiser…",
-    "resetTitle": "Supprimer toutes les sessions ?",
-    "resetMessage": "La réinitialisation supprime le fichier contenant vos sessions : toutes les sessions, tous les dossiers, proxys, commandes rapides et mots de passe enregistrés qu’il contient seront définitivement perdus. Les paramètres et les journaux de session sont conservés.",
+    "resetTitle": "Réinitialiser les sessions ?",
+    "resetMessage": "La réinitialisation repart sans sessions, dossiers, proxys, commandes rapides ni mots de passe enregistrés. Le fichier qui les contient est conservé dans le dossier de configuration, renommé avec la date : renommez-le en vault.json pour l’ouvrir à nouveau si vous retrouvez le mot de passe principal ou sa clé. Les paramètres et les journaux de session sont conservés.",
     "resetWordLabel": "Tapez {word} pour confirmer",
-    "resetConfirm": "Tout supprimer",
+    "resetConfirm": "Réinitialiser",
     "unlocked": "Déverrouillé.",
     "store": {
       "keychain": "le trousseau macOS",

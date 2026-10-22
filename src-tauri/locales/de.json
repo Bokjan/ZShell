@@ -256,7 +256,7 @@
       "readFailed": "Die Sitzungsdatei kann nicht gelesen werden",
       "parseFailed": "Die Sitzungsdatei ist ungültig",
       "verifyFailed": "Die in {path} geschriebenen Sitzungen konnten nicht zurückgelesen werden, daher wurde nichts geändert",
-      "deleteFailed": "{path} kann nicht gelöscht werden",
+      "moveAsideFailed": "{path} kann nicht beiseitegelegt werden",
       "notLocked": "Die Sitzungen sind nicht gesperrt",
       "keyMissing": "Der Schlüssel ist nicht im Anmeldeinformationsspeicher",
       "keyMismatch": "Der Schlüssel im Anmeldeinformationsspeicher öffnet die Sitzungsdatei nicht",

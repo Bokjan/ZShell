@@ -1025,10 +1025,10 @@
     "showFile": "Show File",
     "forgot": "Forgot the master password?",
     "reset": "Reset…",
-    "resetTitle": "Delete All Sessions?",
-    "resetMessage": "Resetting deletes the file with your sessions: every session, folder, proxy, quick command and saved password in it is lost for good. Settings and session logs are kept.",
+    "resetTitle": "Reset Your Sessions?",
+    "resetMessage": "Resetting starts again with no sessions, folders, proxies, quick commands or saved passwords. The file that has them is kept in the configuration folder, renamed with the date: rename it back to vault.json to open it again if you remember the master password or get its key back. Settings and session logs are kept.",
     "resetWordLabel": "Type {word} to confirm",
-    "resetConfirm": "Delete Everything",
+    "resetConfirm": "Reset",
     "unlocked": "Unlocked.",
     "store": {
       "keychain": "the macOS Keychain",

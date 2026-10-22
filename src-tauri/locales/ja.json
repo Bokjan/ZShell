@@ -256,7 +256,7 @@
       "readFailed": "セッションファイルを読み込めません",
       "parseFailed": "セッションファイルが無効です",
       "verifyFailed": "{path}に書き込んだセッションを読み戻せなかったため、何も変更していません",
-      "deleteFailed": "{path}を削除できません",
+      "moveAsideFailed": "{path}を退避できません",
       "notLocked": "セッションはロックされていません",
       "keyMissing": "鍵が資格情報ストアにありません",
       "keyMismatch": "資格情報ストアの鍵ではセッションファイルを開けません",

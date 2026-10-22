@@ -256,7 +256,7 @@
       "readFailed": "Impossible de lire le fichier des sessions",
       "parseFailed": "Le fichier des sessions n’est pas valide",
       "verifyFailed": "Les sessions écrites dans {path} n’ont pas pu être relues ; rien n’a donc été modifié",
-      "deleteFailed": "Impossible de supprimer {path}",
+      "moveAsideFailed": "Impossible de mettre {path} de côté",
       "notLocked": "Les sessions ne sont pas verrouillées",
       "keyMissing": "La clé ne se trouve pas dans le magasin d’identifiants",
       "keyMismatch": "La clé du magasin d’identifiants n’ouvre pas le fichier des sessions",

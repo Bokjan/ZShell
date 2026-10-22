@@ -256,7 +256,7 @@
       "readFailed": "无法读取会话文件",
       "parseFailed": "会话文件无效",
       "verifyFailed": "写入 {path} 的会话无法读回，因此未做任何更改",
-      "deleteFailed": "无法删除 {path}",
+      "moveAsideFailed": "无法将 {path} 移到一旁",
       "notLocked": "会话未锁定",
       "keyMissing": "凭据存储中没有该密钥",
       "keyMismatch": "凭据存储中的密钥无法打开会话文件",

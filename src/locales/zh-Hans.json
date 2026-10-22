@@ -988,10 +988,10 @@
     "showFile": "显示文件",
     "forgot": "忘记了主密码？",
     "reset": "重置…",
-    "resetTitle": "删除所有会话？",
-    "resetMessage": "重置会删除保存会话的文件：其中的所有会话、文件夹、代理、快速命令和已保存的密码都将永久丢失。设置和会话日志会保留。",
+    "resetTitle": "重置会话？",
+    "resetMessage": "重置后将从没有会话、文件夹、代理、快速命令和已保存密码的状态重新开始。保存它们的文件会以带日期的新名称留在配置文件夹中：之后如果想起了主密码或找回了密钥，把它改回 vault.json 即可再次打开。设置和会话日志会保留。",
     "resetWordLabel": "输入 {word} 以确认",
-    "resetConfirm": "全部删除",
+    "resetConfirm": "重置",
     "unlocked": "已解锁。",
     "store": {
       "keychain": "钥匙串",

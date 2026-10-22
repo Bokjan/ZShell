@@ -1025,10 +1025,10 @@
     "showFile": "Datei anzeigen",
     "forgot": "Master-Passwort vergessen?",
     "reset": "Zurücksetzen…",
-    "resetTitle": "Alle Sitzungen löschen?",
-    "resetMessage": "Beim Zurücksetzen wird die Datei mit Ihren Sitzungen gelöscht: Alle Sitzungen, Ordner, Proxys, Schnellbefehle und gespeicherten Passwörter darin gehen endgültig verloren. Einstellungen und Sitzungsprotokolle bleiben erhalten.",
+    "resetTitle": "Sitzungen zurücksetzen?",
+    "resetMessage": "Beim Zurücksetzen beginnen Sie ohne Sitzungen, Ordner, Proxys, Schnellbefehle und gespeicherte Passwörter. Die Datei, die sie enthält, bleibt mit dem Datum im Namen im Konfigurationsordner: Benennen Sie sie wieder in vault.json um, um sie erneut zu öffnen, wenn Ihnen das Master-Passwort wieder einfällt oder Sie den Schlüssel zurückerhalten. Einstellungen und Sitzungsprotokolle bleiben erhalten.",
     "resetWordLabel": "Geben Sie zur Bestätigung {word} ein",
-    "resetConfirm": "Alles löschen",
+    "resetConfirm": "Zurücksetzen",
     "unlocked": "Entsperrt.",
     "store": {
       "keychain": "der macOS-Schlüsselbund",

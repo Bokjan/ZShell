@@ -194,14 +194,6 @@ pub fn secure_dir(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Removes the file at `path`; one that isn't there is fine.
-pub fn remove_file(path: &Path) -> std::io::Result<()> {
-    match fs::remove_file(path) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
-        _ => Ok(()),
-    }
-}
-
 impl Staged {
     /// Puts the file in place; `config.writeFailed` if it can't be.
     pub fn commit(self) -> Result<()> {

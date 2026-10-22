@@ -256,7 +256,7 @@
       "readFailed": "Cannot read the sessions file",
       "parseFailed": "The sessions file is not valid",
       "verifyFailed": "The sessions written to {path} could not be read back, so nothing was changed",
-      "deleteFailed": "Cannot delete {path}",
+      "moveAsideFailed": "Cannot move {path} aside",
       "notLocked": "The sessions are not locked",
       "keyMissing": "The key is not in the credential store",
       "keyMismatch": "The key in the credential store does not open the sessions file",

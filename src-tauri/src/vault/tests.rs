@@ -183,11 +183,18 @@ fn a_missing_or_wrong_key_does_not_unlock() {
     let lock = vault.try_unlock().locked.unwrap();
     assert_eq!((lock.reason, lock.error.map(|e| e.code())), (LockReason::KeyUnavailable, Some("vault.keyMissing")));
 
-    // Only a reset helps; a new vault follows.
+    // Only a reset helps; a new vault follows. The old one is moved aside, and its key stays
+    // in the credential store, to be opened again if the key comes back.
     store.entries.lock().unwrap().insert(account.clone(), "left".into());
+    let old = fs::read(dir.join(VAULT_FILE)).unwrap();
     assert_eq!(vault.reset().unwrap().locked.map(|l| l.reason), Some(LockReason::New));
-    assert!(!dir.join(VAULT_FILE).exists() && keys(&store).is_empty());
+    assert!(!dir.join(VAULT_FILE).exists());
+    let aside: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().contains(".reset-")).collect();
+    assert_eq!(aside.len(), 1);
+    assert_eq!(fs::read(&aside[0]).unwrap(), old);
+    assert_eq!(keys(&store), std::slice::from_ref(&account));
     assert!(vault.try_unlock().locked.is_none());
+    assert_eq!(keys(&store).len(), 2);
     assert!(vault.data().unwrap().profiles.is_empty());
     assert_eq!(vault.reset().unwrap_err().code(), "vault.notLocked");
     fs::remove_dir_all(&dir).unwrap();

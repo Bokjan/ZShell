@@ -140,10 +140,10 @@ export function UnlockScreen({ status, trying, onTryAgain, onStatus, onReset }: 
 }
 
 /**
- * The word typed to confirm deleting the vault, the same in every language: one keyboard
+ * The word typed to confirm resetting the vault, the same in every language: one keyboard
  * layout and no input method needed, like the `yes` / `no` answers to host key prompts.
  */
-const RESET_WORD = "DELETE";
+const RESET_WORD = "RESET";
 
 /** Deleting the vault, once its typed confirmation matches. */
 function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: VaultStatus): void }) {

@@ -656,18 +656,32 @@ impl Vault {
         Ok((self.status(), opened))
     }
 
-    /// Deletes the vault, whose key is lost (a forgotten master password) or which can't be
-    /// read, with its key in the credential store: no sessions. [`Vault::try_unlock`] then
-    /// makes a new one.
+    /// Starts again without sessions when the vault's key is lost (a forgotten master password)
+    /// or it can't be read: the file is moved aside (`vault.json.reset-<time>`), and its key, if
+    /// the credential store has it, stays there under its own name, so that the file can still
+    /// be opened if the password comes back to mind or the key is restored (a keychain backup):
+    /// renamed back to `vault.json`. [`Vault::try_unlock`] then makes a new one.
     pub fn reset(&self) -> Result<VaultStatus> {
         {
             let mut state = self.state.lock().unwrap();
-            let State::Locked { sealing, .. } = &*state else { return Err(Error::new("vault.notLocked")) };
-            let account = sealing.as_ref().and_then(Sealing::store_account);
+            let State::Locked { .. } = &*state else { return Err(Error::new("vault.notLocked")) };
             let path = self.path();
-            persist::remove_file(&path).map_err(|e| Error::new("vault.deleteFailed").param("path", path.display()).detail(e))?;
-            if let Some(account) = account {
-                let _ = self.store.delete(&account);
+            let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            let aside = (0..)
+                .map(|n| {
+                    path.with_file_name(if n == 0 {
+                        format!("{VAULT_FILE}.reset-{stamp}")
+                    } else {
+                        format!("{VAULT_FILE}.reset-{stamp}-{n}")
+                    })
+                })
+                .find(|aside| !aside.exists())
+                .expect("a free name");
+            match std::fs::rename(&path, &aside) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(Error::new("vault.moveAsideFailed").param("path", path.display()).detail(e));
+                }
+                _ => {}
             }
             self.replace(&mut state, State::locked(None, LockReason::New, None));
             self.resets.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
