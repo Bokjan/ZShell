@@ -428,3 +428,17 @@ fn a_part_changes_the_data_as_it_is_not_its_copy() {
     assert_eq!(names(&vault), ["alpha", "beta"]);
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn debug_output_leaves_out_passwords() {
+    let mut passwords = Passwords::default();
+    passwords.profiles.insert("p1".into(), "hunter2".into());
+    passwords.proxies.insert("x1".into(), "swordfish".into());
+    let data = Data { passwords, ..Default::default() };
+    let target = Target::Password { password: Some("master".into()), remember: true };
+    let shown = format!("{data:?} {target:?}");
+    assert!(shown.contains("p1") && shown.contains("x1"), "{shown}");
+    for secret in ["hunter2", "swordfish", "master"] {
+        assert!(!shown.contains(secret), "{shown}");
+    }
+}

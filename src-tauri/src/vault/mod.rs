@@ -66,14 +66,23 @@ pub struct Data {
     pub app_lock: AppLockSettings,
 }
 
-/// The saved passwords of the sessions and proxies, by id.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// The saved passwords of the sessions and proxies, by id. Shown by `{:?}` without them.
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Passwords {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub profiles: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub proxies: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for Passwords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Passwords")
+            .field("profiles", &self.profiles.keys().collect::<Vec<_>>())
+            .field("proxies", &self.proxies.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 /// Whose password: a session's or a proxy's, by id.
@@ -128,8 +137,9 @@ pub enum Protection {
     Password,
 }
 
-/// What the protection changes to (see `Vault::set_protection`).
-#[derive(Debug, Deserialize, TS)]
+/// What the protection changes to (see `Vault::set_protection`). Shown by `{:?}` without the
+/// master password.
+#[derive(Deserialize, TS)]
 #[ts(rename = "ProtectionChange")]
 #[serde(tag = "protection", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Target {
@@ -140,6 +150,19 @@ pub enum Target {
         password: Option<String>,
         remember: bool,
     },
+}
+
+impl std::fmt::Debug for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => f.write_str("None"),
+            Self::System => f.write_str("System"),
+            Self::Password { password, remember } => {
+                let password = password.as_ref().map(|_| "…");
+                f.debug_struct("Password").field("password", &password).field("remember", remember).finish()
+            }
+        }
+    }
 }
 
 /// Why the vault is locked, for the unlock screen.
