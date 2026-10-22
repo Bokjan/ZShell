@@ -1,6 +1,7 @@
 //! `-L`: listen on this computer; each connection is carried to the target through a
 //! `direct-tcpip` channel opened from the server.
 
+use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::task::Poll;
@@ -15,6 +16,20 @@ use crate::model::ALL_ADDRESSES;
 use crate::ssh::SshHandle;
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
+    serve(rule, ctx, stopping, |stream, peer| connect(ctx.handle(), stream, peer, rule.target_host.clone(), rule.target_port)).await
+}
+
+/// Listens where `rule` says until it is asked to stop, carrying each connection accepted on
+/// with what `carry` makes of it (a local rule's or a dynamic one's), and reporting them.
+pub(super) async fn serve<F>(
+    rule: &ForwardRule,
+    ctx: &Ctx,
+    stopping: &mut Stopping,
+    carry: impl Fn(TcpStream, SocketAddr) -> F,
+) -> Result<()>
+where
+    F: Future<Output = Result<()>> + Send + 'static,
+{
     let listener = tokio::select! {
         listener = Listener::bind(&rule.bind_host, rule.bind_port) => listener?,
         () = stopping.requested() => return Ok(()),
@@ -25,10 +40,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
         tokio::select! {
             () = super::at(report) => tracker.report(),
             accepted = listener.accept() => match accepted {
-                Ok((stream, peer)) => {
-                    let (handle, host, port) = (ctx.handle(), rule.target_host.clone(), rule.target_port);
-                    tracker.spawn(async move { connect(handle, stream, peer, host, port).await });
-                }
+                Ok((stream, peer)) => tracker.spawn(carry(stream, peer)),
                 Err(e) => accept_failed(&mut tracker, e).await,
             },
             finished = tracker.next_finished() => tracker.finished(finished),
@@ -121,7 +133,7 @@ fn listen(address: SocketAddr) -> std::io::Result<TcpListener> {
 
 /// Accept errors are usually transient (aborted handshakes, descriptor exhaustion); report
 /// and keep listening, pausing briefly so a persistent error cannot spin.
-pub(super) async fn accept_failed(tracker: &mut Tracker<'_>, error: std::io::Error) {
+async fn accept_failed(tracker: &mut Tracker<'_>, error: std::io::Error) {
     tracker.failed(Error::new("forward.acceptFailed").detail(error));
     tokio::time::sleep(Duration::from_millis(100)).await;
 }

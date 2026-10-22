@@ -10,9 +10,9 @@ use russh::ChannelOpenFailure;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
-use super::local::{accept_failed, Listener};
+use super::local::serve;
 use super::socks::{self, Reply};
-use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
+use super::{bridge, host_port, Ctx, ForwardRule, Stopping};
 use crate::error::Error;
 use crate::ssh::SshHandle;
 
@@ -20,26 +20,7 @@ use crate::ssh::SshHandle;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
-    let listener = tokio::select! {
-        listener = Listener::bind(&rule.bind_host, rule.bind_port) => listener?,
-        () = stopping.requested() => return Ok(()),
-    };
-    let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
-    loop {
-        let report = tracker.report_due();
-        tokio::select! {
-            () = super::at(report) => tracker.report(),
-            accepted = listener.accept() => match accepted {
-                Ok((stream, peer)) => {
-                    let handle = ctx.handle();
-                    tracker.spawn(async move { connect(handle, stream, peer).await });
-                }
-                Err(e) => accept_failed(&mut tracker, e).await,
-            },
-            finished = tracker.next_finished() => tracker.finished(finished),
-            () = stopping.requested() => return Ok(()),
-        }
-    }
+    serve(rule, ctx, stopping, |stream, peer| connect(ctx.handle(), stream, peer)).await
 }
 
 async fn connect(handle: Arc<SshHandle>, mut stream: TcpStream, peer: SocketAddr) -> Result<()> {
