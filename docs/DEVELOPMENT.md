@@ -159,9 +159,9 @@ env -i HOME=$T/home USER=$USER LOGNAME=$USER TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/
 **升版本号与发布分开**：每个版本都打 tag，但不一定发布。git-cliff 以 tag 划分版本，所以没发布的版本也要打 tag 并推送，否则下一版的更新日志会把这一版的提交再算一遍；推送 tag 不会触发构建，要发布时再单独运行 release workflow，之前任何一个已推送的版本都可以补发。
 
 **步骤**（`scripts/release.sh`，需在 main 上且工作区干净）：
-1. `scripts/release.sh prepare X.Y.Z`：修改 `src-tauri/Cargo.toml` 中的版本号并更新 `Cargo.lock`，用 git-cliff 在 `CHANGELOG.md` 顶部加上该版本一节（`--unreleased --prepend`，之前各版本已润色的内容不变）。git-cliff 的配置在 `cliff.toml`，收录 `feat` / `fix` / `perf`、`refactor`（列在 "Internal" 下，排在面向用户的变化之后）和破坏性变更，其他类型（`docs`、`ci`、`chore` 等）不出现在更新日志里，因此提交类型要选准。git-cliff 的版本固定在脚本的 `git_cliff` 里，升级时改那一行。中途失败（例如没有网络）时脚本会还原改动，可以直接重跑。
+1. `scripts/release.sh prepare X.Y.Z`：要求新版本号大于当前版本、本地 main 包含 `origin/main`，然后修改 `src-tauri/Cargo.toml` 中的版本号并更新 `Cargo.lock`，用 git-cliff 在 `CHANGELOG.md` 顶部加上该版本一节（`--unreleased --prepend`，之前各版本已润色的内容不变）。git-cliff 的配置在 `cliff.toml`，收录 `feat` / `fix` / `perf`、`refactor`（列在 "Internal" 下，排在面向用户的变化之后）和破坏性变更，其他类型（`docs`、`ci`、`chore` 等）不出现在更新日志里，因此提交类型要选准。git-cliff 的版本固定在脚本的 `git_cliff` 里，升级时改那一行。中途失败（例如没有网络）时脚本会还原改动，可以直接重跑。
 2. 润色该版本一节：合并同一功能的多条、去掉内部里程碑编号，内容保持英语。来自 issue 的修改在条目末尾署名（`(thanks @name, #12)`），并把此人加进 `THANKS.md`（每人一行，已有的补上 issue 编号）。只有 `docs` / `chore` 等提交的版本，git-cliff 生成的一节可能是空的，手写一句面向用户的说明（`tag` 要求有该版本一节）；"Internal" 下的条目同样润色成读者看得懂的说明。
-3. `scripts/release.sh tag`：运行格式检查、`pnpm build`、`pnpm test`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
+3. `scripts/release.sh tag`：检查 `Cargo.toml` / `Cargo.lock` 除了版本号没有别的改动，按 CI 的方式（`pnpm install --frozen-lockfile`、cargo 带 `--locked`）运行格式检查、`pnpm build`、`pnpm test`、clippy 与测试，提交 `chore: release vX.Y.Z` 并打 `vX.Y.Z` tag（之后的参数原样传给 `git commit`，如 `--trailer`）。
 4. `git push origin main vX.Y.Z`。只升版本号的话到此为止。
 5. 要发布时：`scripts/release.sh publish [X.Y.Z]`（默认当前版本），用 `gh workflow run release.yml --ref vX.Y.Z` 在该 tag 上运行 release workflow。workflow 先校验 tag 与 `Cargo.toml` 版本一致、`CHANGELOG.md` 中有 `## [X.Y.Z]` 一节，以及 CI 在该提交上通过（还在运行就等它跑完；没有运行过，例如只推了 tag，就失败，因为打包的 job 不跑测试），然后并行打包，最后由一个 job 把各平台的包（Store 包除外）一起放进新建的草稿 release。发布说明由 `scripts/release-notes.sh` 从 `CHANGELOG.md` 取：不是每个版本都发布，所以包含上一个已发布的 release（不算草稿）之后的全部版本；只有这一个版本时就是该节原文，有多个时每个版本一节、以版本号和日期为标题，新的在前。本地运行 `scripts/release-notes.sh X.Y.Z` 可以预览。各个包：
    - macOS 通用包（`universal-apple-darwin`，`.app` 与 `.dmg`）。

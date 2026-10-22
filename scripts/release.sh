@@ -33,12 +33,24 @@ current_version() {
   grep -m1 '^version = ' "$manifest" | cut -d '"' -f 2
 }
 
+# Behind or apart from origin's main, the changelog would miss commits, and the push after
+# tagging would be refused.
+check_up_to_date() {
+  git fetch -q origin main
+  git merge-base --is-ancestor origin/main HEAD || die "main doesn't contain origin/main; bring it up to date first"
+}
+
 prepare() {
   local version=${1:-}
   [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "usage: $0 prepare X.Y.Z (no pre-release suffix: MSI versions are numeric)"
   [[ $(git branch --show-current) == main ]] || die "not on main"
   [[ -z $(git status --porcelain) ]] || die "the working tree has uncommitted changes"
   ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null || die "tag v$version already exists"
+  local current
+  current=$(current_version)
+  [[ $version != "$current" && $(printf '%s\n' "$current" "$version" | sort -V | tail -n 1) == "$version" ]] ||
+    die "$version is not after the current version, $current"
+  check_up_to_date
 
   # A failure from here on (git-cliff without a network, say) puts the files back, so that
   # the tree is clean for running prepare again.
@@ -69,20 +81,25 @@ tag() {
   local version
   version=$(current_version)
   [[ $(git branch --show-current) == main ]] || die "not on main"
-  # Behind or apart from origin's main, the push after tagging would be refused.
-  git fetch -q origin main
-  git merge-base --is-ancestor origin/main HEAD || die "main doesn't contain origin/main; bring it up to date first"
+  check_up_to_date
   ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null || die "tag v$version already exists; run '$0 prepare X.Y.Z' first"
   grep -q "^## \[$version\]" "$changelog" || die "$changelog has no section for $version"
   local unexpected
   unexpected=$(git status --porcelain | cut -c4- | grep -vxE "$manifest|src-tauri/Cargo.lock|$changelog" || true)
   [[ -z $unexpected ]] || die "unexpected changes besides the version and the changelog:
 $unexpected"
+  # Of the manifest and the lock file, only the app's version: a dependency changed by hand
+  # after prepare would go into the release commit unnoticed.
+  unexpected=$(git diff -U0 -- "$manifest" src-tauri/Cargo.lock | grep -E '^[-+]([^-+]|$)' | grep -vE '^[-+]version = "' || true)
+  [[ -z $unexpected ]] || die "$manifest or src-tauri/Cargo.lock changed besides the version:
+$unexpected"
 
+  # As CI runs them: with the lock files as they are.
+  pnpm install --frozen-lockfile
   pnpm format:check
   pnpm build
   pnpm test
-  (cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test)
+  (cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked)
 
   git add "$manifest" src-tauri/Cargo.lock "$changelog"
   git commit -m "chore: release v$version" "$@"
