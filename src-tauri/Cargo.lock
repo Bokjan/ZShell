@@ -7429,7 +7429,7 @@ dependencies = [
  "sha2 0.11.0",
  "socket2",
  "ssh2-config",
- "syn 2.0.119",
+ "syn 3.0.6",
  "sys-locale",
  "tauri",
  "tauri-build",
