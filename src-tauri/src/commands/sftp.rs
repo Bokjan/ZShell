@@ -127,8 +127,9 @@ pub async fn sftp_upload(
 ) -> Result<()> {
     let cancelled = transfers.start(webview.label(), &transfer_id);
     let result = async {
-        let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-        let mut reporter = transfer::Reporter::new(on_progress, cancelled);
+        let connection = connection(webview.label(), &sessions, &connections, id)?;
+        let sftp = connection.transfer_sftp().await?;
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await?)
     };
     let result = result.await;
@@ -154,12 +155,13 @@ pub async fn sftp_download(
 ) -> Result<Vec<PathBuf>> {
     let cancelled = transfers.start(webview.label(), &transfer_id);
     let result = async {
-        let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
+        let connection = connection(webview.label(), &sessions, &connections, id)?;
+        let sftp = connection.transfer_sftp().await?;
         let local_dir = match local_dir {
             Some(dir) => dir,
             None => download_dir(&app, &settings)?,
         };
-        let mut reporter = transfer::Reporter::new(on_progress, cancelled);
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await?)
     };
     let result = result.await;
@@ -182,8 +184,9 @@ pub async fn sftp_download_as(
 ) -> Result<PathBuf> {
     let cancelled = transfers.start(webview.label(), &transfer_id);
     let result = async {
-        let sftp = connection(webview.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-        let mut reporter = transfer::Reporter::new(on_progress, cancelled);
+        let connection = connection(webview.label(), &sessions, &connections, id)?;
+        let sftp = connection.transfer_sftp().await?;
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter).await?)
     };
     let result = result.await;
@@ -313,8 +316,9 @@ pub async fn sftp_drag_out(
 ) -> Result<drag::DragResult> {
     // Before waiting for the SFTP channel.
     let pressed = Instant::now().checked_sub(Duration::from_millis(since_press.into())).unwrap_or_else(Instant::now);
-    let sftp = connection(window.label(), &sessions, &connections, id)?.transfer_sftp().await?;
-    drag::drag_out(&window, sftp, transfer_id, items, pressed, on_event).await
+    let connection = connection(window.label(), &sessions, &connections, id)?;
+    let sftp = connection.transfer_sftp().await?;
+    drag::drag_out(&window, sftp, connection.transfer_slots(), transfer_id, items, pressed, on_event).await
 }
 
 #[tauri::command]

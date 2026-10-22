@@ -12,6 +12,7 @@ use russh::ChannelMsg;
 use russh_sftp::client::{Config as SftpConfig, SftpSession};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+use super::transfer::TransferSlots;
 use crate::error::Error;
 use crate::ssh;
 
@@ -37,9 +38,17 @@ type Slot = tokio::sync::Mutex<Option<(Arc<SftpSession>, Arc<AtomicBool>)>>;
 pub struct Channels {
     browse: Slot,
     transfer: Slot,
+    /// The files its transfers copy at once, all together (see `transfer::copy_files`).
+    transfer_slots: Arc<TransferSlots>,
 }
 
 impl Channels {
+    /// What its transfers copy files at once by, shared: two large files downloaded at once
+    /// would otherwise each keep the channel's window full, as if alone.
+    pub fn transfer_slots(&self) -> Arc<TransferSlots> {
+        self.transfer_slots.clone()
+    }
+
     /// The SFTP session for browsing (and editing) on `connection`, opened on first use.
     pub async fn browse(&self, connection: &ssh::Connection) -> anyhow::Result<Arc<SftpSession>> {
         open(&self.browse, connection, config()).await

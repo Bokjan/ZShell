@@ -20,6 +20,7 @@ use crate::model::ForwardRule;
 use crate::session::{SessionId, TermIo};
 use crate::sftp::channels::Channels;
 use crate::sftp::shell_dir::ShellDirs;
+use crate::sftp::transfer::TransferSlots;
 use crate::ssh;
 
 /// A live SSH connection and what runs on it besides shells.
@@ -47,6 +48,11 @@ impl LiveConnection {
     /// The SFTP session for transfers (see [`Channels::transfer`]).
     pub async fn transfer_sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
         self.sftp.transfer(&self.ssh).await
+    }
+
+    /// What its transfers copy files at once by (see [`Channels::transfer_slots`]).
+    pub fn transfer_slots(&self) -> Arc<TransferSlots> {
+        self.sftp.transfer_slots()
     }
 
     /// The folder session `id`'s shell is in, where the server lets it be found (see

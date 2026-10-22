@@ -17,6 +17,29 @@ fn a_transfer_is_cancelled_only_by_its_page_or_with_it() {
     assert!(transfers.0.lock().unwrap().is_empty());
 }
 
+#[tokio::test]
+async fn transfers_on_one_connection_share_the_files_copied_at_once() {
+    use std::sync::atomic::AtomicUsize;
+    let slots = Arc::new(TransferSlots::default());
+    let (copying, most) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let copy = |_| async {
+        let now = copying.fetch_add(1, Ordering::SeqCst) + 1;
+        most.fetch_max(now, Ordering::SeqCst);
+        tokio::task::yield_now().await;
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        copying.fetch_sub(1, Ordering::SeqCst);
+        Ok(())
+    };
+    let small = vec![1; 20];
+    let mut first = Reporter::with_sink(|_| {}, Arc::default()).sharing(slots.clone());
+    let mut second = Reporter::with_sink(|_| {}, Arc::default()).sharing(slots);
+    let (one, two) = (Run::new(&mut first), Run::new(&mut second));
+    let (a, b) = tokio::join!(copy_files(&small, &one, copy), copy_files(&small, &two, copy));
+    a.unwrap();
+    b.unwrap();
+    assert_eq!(most.load(Ordering::SeqCst), CONCURRENT_FILES);
+}
+
 #[cfg(unix)]
 mod unix {
     use super::*;

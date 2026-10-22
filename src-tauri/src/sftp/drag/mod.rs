@@ -23,7 +23,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::oneshot;
 use ts_rs::TS;
 
-use super::transfer::{self, Progress, Reporter, Transfers};
+use super::transfer::{self, Progress, Reporter, TransferSlots, Transfers};
 use crate::error::{Error, Result};
 use crate::local_name::local_file_name;
 
@@ -138,12 +138,19 @@ struct Ended {
 }
 
 impl DropDownload {
-    fn new(window: &WebviewWindow, sftp: Arc<SftpSession>, transfer_id: String, count: usize, events: Channel<DragEvent>) -> Arc<Self> {
+    fn new(
+        window: &WebviewWindow,
+        sftp: Arc<SftpSession>,
+        slots: Arc<TransferSlots>,
+        transfer_id: String,
+        count: usize,
+        events: Channel<DragEvent>,
+    ) -> Arc<Self> {
         let app = window.app_handle();
         let webview = window.label().to_owned();
         let cancelled = app.state::<Transfers>().start(&webview, &transfer_id);
         let progress = events.clone();
-        let reporter = Reporter::with_sink(move |p| drop(progress.send(DragEvent::Progress(p))), cancelled.clone());
+        let reporter = Reporter::with_sink(move |p| drop(progress.send(DragEvent::Progress(p))), cancelled.clone()).sharing(slots);
         let state = State { pending: count, active: 0, last_activity: Instant::now(), failed: false, finished: false, paths: Vec::new() };
         Arc::new(Self {
             app: app.clone(),
@@ -308,6 +315,7 @@ fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Re
 pub async fn drag_out(
     window: &WebviewWindow,
     sftp: Arc<SftpSession>,
+    slots: Arc<TransferSlots>,
     transfer_id: String,
     items: Vec<Item>,
     pressed: Instant,
@@ -321,7 +329,7 @@ pub async fn drag_out(
     if let Some(item) = items.iter().find(|item| local_file_name(item.name()).is_none()) {
         return Err(Error::new("transfer.invalidName").param("name", &item.path));
     }
-    let download = DropDownload::new(window, sftp, transfer_id, items.len(), events);
+    let download = DropDownload::new(window, sftp, slots, transfer_id, items.len(), events);
     let (done, result) = oneshot::channel();
     #[cfg(target_os = "macos")]
     macos::start(window, items, download.clone(), done)?;

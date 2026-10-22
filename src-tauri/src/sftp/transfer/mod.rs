@@ -71,9 +71,20 @@ impl Transfers {
     }
 }
 
+/// What the transfers on one connection copy files at once by (see [`copy_files`]).
+pub struct TransferSlots(Semaphore);
+
+impl Default for TransferSlots {
+    fn default() -> Self {
+        Self(Semaphore::new(CONCURRENT_FILES))
+    }
+}
+
 pub struct Reporter {
     send: Box<dyn Fn(Progress) + Send + Sync>,
     cancelled: Arc<AtomicBool>,
+    /// Shared with the connection's other transfers ([`Reporter::sharing`]), else its own.
+    slots: Arc<TransferSlots>,
     progress: Progress,
     /// When progress was last sent; `None` before the first time, which is at once.
     last_emit: Option<Instant>,
@@ -86,7 +97,12 @@ impl Reporter {
 
     /// Reports progress to `send` instead of a channel of its own.
     pub fn with_sink(send: impl Fn(Progress) + Send + Sync + 'static, cancelled: Arc<AtomicBool>) -> Self {
-        Self { send: Box::new(send), cancelled, progress: Progress::default(), last_emit: None }
+        Self { send: Box::new(send), cancelled, slots: Arc::default(), progress: Progress::default(), last_emit: None }
+    }
+
+    /// Copies files at once by `slots`, those of the connection's other transfers too.
+    pub fn sharing(self, slots: Arc<TransferSlots>) -> Self {
+        Self { slots, ..self }
     }
 
     fn check_cancelled(&self) -> Result<()> {
@@ -178,9 +194,10 @@ fn downloaded_mode(attributes: &FileAttributes) -> Option<u32> {
     attributes.permissions.map(|mode| mode & 0o777 | 0o200)
 }
 
-/// Files copied at once. A small file costs a few round trips (opening it, its first read or
-/// its writes' acknowledgements, closing it), which copying one file after another waits for
-/// in turn: 10,000 small files took over an hour from a server 100 ms away.
+/// Files copied at once on a connection, by all of its transfers together. A small file costs
+/// a few round trips (opening it, its first read or its writes' acknowledgements, closing it),
+/// which copying one file after another waits for in turn: 10,000 small files took over an
+/// hour from a server 100 ms away.
 const CONCURRENT_FILES: usize = 8;
 /// Files larger than this are copied alone: one keeps the channel's window full by itself,
 /// and with others beside it the requests waiting at the server could outlast their timeout
@@ -193,12 +210,13 @@ const CONCURRENT_DIRS: usize = 8;
 /// one of them failed, after which no other starts.
 struct Run<'a> {
     reporter: Mutex<&'a mut Reporter>,
+    slots: Arc<TransferSlots>,
     failed: AtomicBool,
 }
 
 impl<'a> Run<'a> {
     fn new(reporter: &'a mut Reporter) -> Self {
-        Self { reporter: Mutex::new(reporter), failed: AtomicBool::new(false) }
+        Self { slots: reporter.slots.clone(), reporter: Mutex::new(reporter), failed: AtomicBool::new(false) }
     }
 
     fn check_cancelled(&self) -> Result<()> {
@@ -223,15 +241,15 @@ impl<'a> Run<'a> {
 }
 
 /// Copies the files of `sizes` with `copy_file` (given each one's index), in order, up to
-/// [`CONCURRENT_FILES`] small ones at once and a large one alone. After a failure no other
+/// [`CONCURRENT_FILES`] small ones at once and a large one alone, counting those that the
+/// connection's other transfers copy (see [`Reporter::sharing`]). After a failure no other
 /// starts, those being copied finish (as they would have before it, one at a time), and the
 /// first failure is returned.
 async fn copy_files<F>(sizes: &[u64], run: &Run<'_>, copy_file: impl Fn(usize) -> F) -> Result<()>
 where
     F: Future<Output = Result<()>>,
 {
-    let slots = Semaphore::new(CONCURRENT_FILES);
-    let (slots, copy_file) = (&slots, &copy_file);
+    let (slots, copy_file) = (&run.slots.0, &copy_file);
     // By index: closures given references make futures the compiler can't prove `Send`.
     let mut copies = stream::iter(0..sizes.len())
         .map(|i| async move {
