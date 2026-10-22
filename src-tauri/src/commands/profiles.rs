@@ -23,11 +23,7 @@ pub fn profiles_list(store: State<'_, ProfileStore>) -> Vec<Profile> {
 pub async fn profile_save(app: AppHandle, window: WebviewWindow, profile: Profile, password: Option<String>) -> Result<Profile> {
     let result = blocking(app, move |app| {
         let profile = app.state::<ProfileStore>().save(profile, password.as_deref())?;
-        // A session that is no longer SSH has no forwarding rules; running ones stop. Saving
-        // an SSH session keeps its rules.
-        if profile.ssh().is_none() {
-            app.state::<Connections>().stop_saved_forwards(&profile.id, None);
-        }
+        app.state::<Connections>().session_changed(&profile.id, Some(&profile));
         Ok(profile)
     })
     .await;
@@ -122,14 +118,13 @@ pub async fn profile_duplicate(app: AppHandle, window: WebviewWindow, id: String
     notified(&window, Change::Profiles, result)
 }
 
-/// Deletes a session, with its password, and stops its forwarding rules running in its tabs
-/// (which the frontend asked about first, see `forward_sessions_of`): nothing would show them
-/// any more, with the session gone.
+/// Deletes a session, with its password; its forwarding rules running in its tabs stop (see
+/// [`Connections::session_changed`]), which the frontend asked about first (`forward_sessions_of`).
 #[tauri::command]
 pub async fn profile_delete(app: AppHandle, window: WebviewWindow, id: String) -> Result<()> {
     let result = blocking(app, move |app| {
         app.state::<ProfileStore>().delete(&id)?;
-        app.state::<Connections>().stop_saved_forwards(&id, None);
+        app.state::<Connections>().session_changed(&id, None);
         Ok(())
     })
     .await;

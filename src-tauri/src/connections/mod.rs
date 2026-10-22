@@ -16,7 +16,7 @@ use russh_sftp::client::SftpSession;
 
 use crate::error::{Error, Result};
 use crate::forward::{Forwards, Hub};
-use crate::model::ForwardRule;
+use crate::model::{ForwardRule, Profile};
 use crate::session::{SessionId, TermIo};
 use crate::sftp::channels::Channels;
 use crate::sftp::shell_dir::ShellDirs;
@@ -319,6 +319,15 @@ impl Connections {
                     connection.forwards.stop(&rule.id);
                 }
             }
+        }
+    }
+
+    /// What saved session `profile_id` having changed to `profile` (`None`: deleted) does to its
+    /// rules running in its tabs: one that is gone, or no longer SSH, has none, and those stop;
+    /// saving an SSH session keeps them running.
+    pub fn session_changed(&self, profile_id: &str, profile: Option<&Profile>) {
+        if profile.is_none_or(|profile| profile.ssh().is_none()) {
+            self.stop_saved_forwards(profile_id, None);
         }
     }
 

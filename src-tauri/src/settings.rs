@@ -4,7 +4,9 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 
-use crate::error::Result;
+use tauri::{AppHandle, Manager};
+
+use crate::error::{Error, Result};
 use crate::model::Settings;
 use crate::persist::{JsonFile, SetAside};
 
@@ -39,5 +41,18 @@ impl SettingsStore {
         *self.settings.write().unwrap() = settings.clone();
         apply(&settings);
         Ok(settings)
+    }
+
+    /// Where downloads (and files received with ZMODEM) go without asking: the folder chosen
+    /// in the settings, made if it isn't there, else the system's Downloads folder. Blocks:
+    /// the folder may be on a slow or network disk.
+    pub fn download_dir(&self, app: &AppHandle) -> Result<PathBuf> {
+        let chosen = self.get().files.download_directory;
+        if chosen.is_empty() {
+            return Ok(app.path().download_dir()?);
+        }
+        let dir = PathBuf::from(chosen);
+        std::fs::create_dir_all(&dir).map_err(|e| Error::new("transfer.createDirFailed").param("path", dir.display()).detail(e))?;
+        Ok(dir)
     }
 }

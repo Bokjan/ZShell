@@ -18,7 +18,7 @@ pub async fn zmodem_save_to(app: AppHandle, webview: Webview, id: SessionId, dir
     blocking(app, move |app| {
         let dir = match dir {
             Some(dir) => dir,
-            None => super::sftp::download_dir(app, &app.state::<SettingsStore>())?,
+            None => app.state::<SettingsStore>().download_dir(app)?,
         };
         app.state::<SessionManager>().zmodem(&webview, id)?.reply(zmodem::Reply::Destination(dir));
         Ok(())

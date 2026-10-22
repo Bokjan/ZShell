@@ -75,13 +75,12 @@ impl State {
         false
     }
 
-    /// Drops jump hosts that aren't other SSH sessions and breaks folder cycles (hand-edited
-    /// files, an import).
+    /// Drops jump hosts that aren't other SSH sessions, and the parents of folders that don't
+    /// exist or would make a cycle (hand-edited files, an import).
     ///
-    /// References to folders and proxies that don't exist are kept: the file they are in may
-    /// have been set aside (see [`JsonFile::load`]), and they work again once it is restored.
-    /// Until then a session whose folder is missing shows at the top level, and one whose proxy
-    /// is missing fails to connect, rather than connecting without it.
+    /// A session's references to a folder or a proxy that doesn't exist are kept, harmlessly:
+    /// a session whose folder is missing shows at the top level, and one whose proxy is
+    /// missing fails to connect (`profile.invalidProxy`), rather than connecting without it.
     fn repair(&mut self) {
         let ids: HashSet<String> = self.folders.iter().map(|f| f.id.clone()).collect();
         // Jump hosts must be other SSH sessions that exist (a hand-edited file, an import).

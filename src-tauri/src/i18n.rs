@@ -413,11 +413,8 @@ mod tests {
     #[test]
     fn errors_keep_their_codes() {
         let wrapped = concat!("other(e.", "to_string())");
-        let found: Vec<_> = sources()
-            .into_iter()
-            .filter(|(_, source)| source.contains(wrapped))
-            .map(|(path, _)| path.display().to_string())
-            .collect();
+        let found: Vec<_> =
+            sources().into_iter().filter(|(_, source)| source.contains(wrapped)).map(|(path, _)| path.display().to_string()).collect();
         assert!(found.is_empty(), "errors made into text, losing their codes:\n{}", found.join("\n"));
     }
 

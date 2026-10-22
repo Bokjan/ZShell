@@ -159,7 +159,7 @@ pub async fn sftp_download(
         let local_dir = match local_dir {
             Some(dir) => dir,
             // Made if it isn't there: a disk that may be slow to answer.
-            None => blocking(app, |app| download_dir(app, &app.state::<SettingsStore>())).await?,
+            None => blocking(app, |app| app.state::<SettingsStore>().download_dir(app)).await?,
         };
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await?)
@@ -194,21 +194,10 @@ pub async fn sftp_download_as(
     result.map(|()| local_path)
 }
 
-/// Where downloads go without asking: the folder chosen in the settings, else Downloads.
-pub(super) fn download_dir(app: &AppHandle, settings: &SettingsStore) -> Result<PathBuf> {
-    let chosen = settings.get().files.download_directory;
-    if chosen.is_empty() {
-        return Ok(app.path().download_dir()?);
-    }
-    let dir = PathBuf::from(chosen);
-    std::fs::create_dir_all(&dir).map_err(|e| Error::new("transfer.createDirFailed").param("path", dir.display()).detail(e))?;
-    Ok(dir)
-}
-
 /// The folder downloads go to without asking, for the settings.
 #[tauri::command]
 pub async fn downloads_directory(app: AppHandle) -> Result<PathBuf> {
-    blocking(app, |app| download_dir(app, &app.state::<SettingsStore>())).await
+    blocking(app, |app| app.state::<SettingsStore>().download_dir(app)).await
 }
 
 /// Downloads a remote file into a temporary folder, opens it in the editor and watches it;
