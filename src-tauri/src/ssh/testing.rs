@@ -4,7 +4,7 @@
 //! user's known_hosts.
 
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -28,6 +28,33 @@ impl russh::server::Handler for Anyone {
     }
 }
 
+/// A server that lets anyone in and opens every `direct-tcpip` channel, reading none.
+#[derive(Default)]
+pub struct Accepting(Vec<russh::Channel<russh::server::Msg>>);
+
+impl russh::server::Handler for Accepting {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+        Ok(russh::server::Auth::Accept)
+    }
+
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::server::Msg>,
+        _host: &str,
+        _port: u32,
+        _originator: &str,
+        _originator_port: u32,
+        reply: russh::server::ChannelOpenHandle,
+        _session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        self.0.push(channel);
+        Ok(())
+    }
+}
+
 /// A connection of saved session `profile_id` (a quick connection if empty) to `server`,
 /// which runs on a stream in this process and lets anyone in without authenticating.
 pub async fn connect<H: russh::server::Handler + Send + 'static>(server: H, profile_id: &str) -> Arc<Connection> {
@@ -35,7 +62,8 @@ pub async fn connect<H: russh::server::Handler + Send + 'static>(server: H, prof
 }
 
 /// A connection to `server` sending keepalives every `keepalive`, whose transport stalls once
-/// told to: as one to a peer gone silently, it then neither reads nor writes any more.
+/// told to: as one to a peer gone silently, it then neither reads nor writes any more. Or it
+/// slows down, as on a slow link.
 pub async fn connect_stalling<H: russh::server::Handler + Send + 'static>(server: H, keepalive: Duration) -> (Arc<Connection>, Stall) {
     connect_with(server, "", Some(keepalive)).await
 }
@@ -57,7 +85,7 @@ async fn connect_with<H: russh::server::Handler + Send + 'static>(
         }
     });
     let stall = Stall::default();
-    let (client_side, guard) = super::abortable::abortable(Stalling { inner: client_side, stall: stall.clone() });
+    let (client_side, guard) = super::abortable::abortable(Stalling { inner: client_side, stall: stall.clone(), rested: false });
     let mut profile = SshProfile::quick("test".into(), Remote::new("localhost".into(), 22, "alice".into()));
     profile.id = profile_id.into();
     let routes = RemoteRoutes::default();
@@ -71,29 +99,39 @@ async fn connect_with<H: russh::server::Handler + Send + 'static>(
     (Connection::new(handle, guard.keep(), profile, JumpChain::default(), routes, disconnect), stall)
 }
 
-/// Stalls the transport of a connection made by [`connect_stalling`].
+/// Stalls or slows the transport of a connection made by [`connect_stalling`].
 #[derive(Clone, Default)]
-pub struct Stall(Arc<AtomicBool>);
+pub struct Stall(Arc<AtomicU8>);
+
+const STALLED: u8 = 1;
+const SLOW: u8 = 2;
 
 impl Stall {
     pub fn now(&self) {
-        self.0.store(true, Ordering::Relaxed);
+        self.0.store(STALLED, Ordering::Relaxed);
     }
 
-    fn stalled(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
+    /// Writes 1 KiB at a time from now on, after waiting 10 ms for room each time.
+    pub fn slow(&self) {
+        self.0.store(SLOW, Ordering::Relaxed);
+    }
+
+    fn is(&self, mode: u8) -> bool {
+        self.0.load(Ordering::Relaxed) == mode
     }
 }
 
-/// A stream that is pending for good once stalled, and wakes nobody.
+/// A stream that is pending for good once stalled, and wakes nobody; or that writes slowly.
 struct Stalling<S> {
     inner: S,
     stall: Stall,
+    /// Slow, it has waited for room before this write.
+    rested: bool,
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Stalling<S> {
     fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
-        if self.stall.stalled() {
+        if self.stall.is(STALLED) {
             return Poll::Pending;
         }
         Pin::new(&mut self.inner).poll_read(cx, buf)
@@ -102,14 +140,27 @@ impl<S: AsyncRead + Unpin> AsyncRead for Stalling<S> {
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for Stalling<S> {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
-        if self.stall.stalled() {
+        if self.stall.is(STALLED) {
             return Poll::Pending;
+        }
+        if self.stall.is(SLOW) {
+            if !std::mem::replace(&mut self.rested, false) {
+                self.rested = true;
+                let waker = cx.waker().clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    waker.wake();
+                });
+                return Poll::Pending;
+            }
+            let n = buf.len().min(1024);
+            return Pin::new(&mut self.inner).poll_write(cx, &buf[..n]);
         }
         Pin::new(&mut self.inner).poll_write(cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        if self.stall.stalled() {
+        if self.stall.is(STALLED) {
             return Poll::Pending;
         }
         Pin::new(&mut self.inner).poll_flush(cx)

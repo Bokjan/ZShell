@@ -612,39 +612,14 @@ mod tests {
         assert!(error.downcast_ref::<tokio::time::error::Elapsed>().is_some(), "{error:#}");
     }
 
-    /// A server that opens every `direct-tcpip` channel, and reads none.
-    struct Accepting(Vec<Channel<russh::server::Msg>>);
-
-    impl russh::server::Handler for Accepting {
-        type Error = russh::Error;
-
-        async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
-            Ok(russh::server::Auth::Accept)
-        }
-
-        async fn channel_open_direct_tcpip(
-            &mut self,
-            channel: Channel<russh::server::Msg>,
-            _host: &str,
-            _port: u32,
-            _originator: &str,
-            _originator_port: u32,
-            reply: russh::server::ChannelOpenHandle,
-            _session: &mut russh::server::Session,
-        ) -> Result<(), Self::Error> {
-            reply.accept().await;
-            self.0.push(channel);
-            Ok(())
-        }
-    }
-
     /// A client sending through a carried connection once the SSH connection has gone dead
     /// ends it soon, rather than when keepalives give up (an hour away here).
     #[tokio::test]
     async fn sending_on_a_dead_connection_ends_it() {
         use tokio::io::AsyncWriteExt;
 
-        let (connection, stall) = crate::ssh::testing::connect_stalling(Accepting(Vec::new()), Duration::from_secs(3600)).await;
+        let (connection, stall) =
+            crate::ssh::testing::connect_stalling(crate::ssh::testing::Accepting::default(), Duration::from_secs(3600)).await;
         let opener = Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone() };
         let channel = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await.unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

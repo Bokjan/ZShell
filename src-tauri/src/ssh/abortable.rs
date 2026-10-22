@@ -27,8 +27,12 @@ pub fn abortable<S>(stream: S) -> (Abortable<S>, AbortOnDrop) {
 #[derive(Default)]
 struct Shared {
     state: Mutex<State>,
-    /// The reads that brought something.
-    received: AtomicU64,
+    /// The signs of the peer: reads that brought something, and writes that went on after
+    /// waiting for room (which only the peer's acknowledgements make, once the system's send
+    /// buffer is full).
+    heard: AtomicU64,
+    /// The writes that took something.
+    sent: AtomicU64,
     /// The last read, and the last write, were left waiting for the peer.
     reading: AtomicBool,
     writing: AtomicBool,
@@ -86,7 +90,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for Abortable<S> {
         let before = buf.filled().len();
         let poll = Pin::new(&mut self.inner).poll_read(cx, buf);
         if buf.filled().len() > before {
-            self.shared.received.fetch_add(1, Ordering::Relaxed);
+            self.shared.heard.fetch_add(1, Ordering::Relaxed);
         }
         noting(&self.shared.reading, poll)
     }
@@ -96,6 +100,12 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Abortable<S> {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         check(&self.shared, cx, |s| &mut s.writer)?;
         let poll = Pin::new(&mut self.inner).poll_write(cx, buf);
+        if let Poll::Ready(Ok(1..)) = poll {
+            self.shared.sent.fetch_add(1, Ordering::Relaxed);
+            if self.shared.writing.load(Ordering::Relaxed) {
+                self.shared.heard.fetch_add(1, Ordering::Relaxed);
+            }
+        }
         noting(&self.shared.writing, poll)
     }
 
@@ -138,16 +148,28 @@ impl Drop for AbortOnDrop {
 pub struct Link(Arc<Shared>);
 
 impl Link {
-    /// Counts the reads that brought something so far: anything from the peer adds to it.
-    pub fn received(&self) -> u64 {
-        self.0.received.load(Ordering::Relaxed)
+    /// Counts the signs of the peer so far: anything read from it, and room to write that it
+    /// made by acknowledging what was sent, on a slow link where russh writes for long without
+    /// reading.
+    pub fn heard(&self) -> u64 {
+        self.0.heard.load(Ordering::Relaxed)
+    }
+
+    /// Counts the writes that took something so far.
+    pub fn sent(&self) -> u64 {
+        self.0.sent.load(Ordering::Relaxed)
     }
 
     /// Whether russh waits for the peer: to read something, or for room to write. Neither when
     /// its connection task is held up on this side, by a channel not read (see
     /// `super::bridge`).
     pub fn waiting(&self) -> bool {
-        self.0.reading.load(Ordering::Relaxed) || self.0.writing.load(Ordering::Relaxed)
+        self.0.reading.load(Ordering::Relaxed) || self.writing()
+    }
+
+    /// Whether russh waits for room to write.
+    pub fn writing(&self) -> bool {
+        self.0.writing.load(Ordering::Relaxed)
     }
 
     /// Ends the stream: its reads and writes fail with `why` from now on.
@@ -181,6 +203,25 @@ mod tests {
         assert_eq!(peer.read(&mut buf).await.unwrap(), 0);
     }
 
+    /// A write that goes on once the peer has made room tells that the peer is there; one that
+    /// finds room at once doesn't.
+    #[tokio::test]
+    async fn room_made_by_the_peer_is_heard() {
+        let (stream, mut peer) = tokio::io::duplex(4);
+        let (mut stream, guard) = abortable(stream);
+        let link = guard.keep();
+        stream.write_all(b"abcd").await.unwrap();
+        assert_eq!(link.heard(), 0);
+        let writing = tokio::spawn(async move { stream.write_all(b"efgh").await.unwrap() });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(link.writing());
+        let mut buf = [0; 8];
+        peer.read_exact(&mut buf).await.unwrap();
+        writing.await.unwrap();
+        assert!(!link.writing());
+        assert_eq!(link.heard(), 1);
+    }
+
     /// Kept, the stream works as before, and the link tells what it does until it ends it.
     #[tokio::test]
     async fn a_kept_stream_runs_until_its_link_ends_it() {
@@ -192,10 +233,10 @@ mod tests {
         peer.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"hello");
 
-        assert_eq!(link.received(), 0);
+        assert_eq!((link.heard(), link.sent()), (0, 1));
         peer.write_all(b"hi").await.unwrap();
         stream.read_exact(&mut buf[..2]).await.unwrap();
-        assert_eq!(link.received(), 1);
+        assert_eq!(link.heard(), 1);
         assert!(!link.waiting());
 
         let reading = tokio::spawn(async move {
