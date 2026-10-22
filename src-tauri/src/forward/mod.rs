@@ -403,8 +403,22 @@ impl Opener {
     /// server answers the request, which tells that the connection is still alive.
     async fn open(&self, host: String, port: u16, peer: SocketAddr) -> anyhow::Result<Channel<Msg>> {
         self.liveness.expect_reply();
-        let opening = self.handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into());
-        Ok(tokio::time::timeout(OPEN_TIMEOUT, opening).await??)
+        let handle = self.handle.clone();
+        let mut opening =
+            Box::pin(async move { handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into()).await });
+        match tokio::time::timeout(OPEN_TIMEOUT, &mut opening).await {
+            Ok(opened) => Ok(opened?),
+            Err(elapsed) => {
+                // The server may open it yet, and would keep its connection to the target with
+                // the channel: closed then. Waiting ends with the SSH connection at the latest.
+                tokio::spawn(async move {
+                    if let Ok(channel) = opening.await {
+                        let _ = channel.close().await;
+                    }
+                });
+                Err(elapsed.into())
+            }
+        }
     }
 }
 
@@ -577,9 +591,10 @@ mod tests {
         assert!(forwards.running().is_empty());
     }
 
-    /// A server that never answers requests for `direct-tcpip` channels, as one waiting to
-    /// connect to a target that drops packets.
-    struct Unanswering(Vec<russh::server::ChannelOpenHandle>);
+    /// A server that answers no request for a `direct-tcpip` channel by itself, as one waiting
+    /// to connect to a target that drops packets: each request's channel and reply go to the
+    /// test.
+    struct Unanswering(tokio::sync::mpsc::UnboundedSender<(Channel<russh::server::Msg>, russh::server::ChannelOpenHandle)>);
 
     impl russh::server::Handler for Unanswering {
         type Error = russh::Error;
@@ -590,7 +605,7 @@ mod tests {
 
         async fn channel_open_direct_tcpip(
             &mut self,
-            _channel: Channel<russh::server::Msg>,
+            channel: Channel<russh::server::Msg>,
             _host: &str,
             _port: u32,
             _originator: &str,
@@ -598,18 +613,33 @@ mod tests {
             reply: russh::server::ChannelOpenHandle,
             _session: &mut russh::server::Session,
         ) -> Result<(), Self::Error> {
-            self.0.push(reply);
+            let _ = self.0.send((channel, reply));
             Ok(())
         }
     }
 
+    /// A channel the server doesn't open in time is given up on, and closed if the server
+    /// opens it after all.
     #[tokio::test(start_paused = true)]
-    async fn gives_up_on_a_channel_the_server_never_opens() {
-        let connection = connect(Unanswering(Vec::new()), "").await;
+    async fn gives_up_on_a_channel_the_server_does_not_open_in_time() {
+        let (requests, mut requested) = tokio::sync::mpsc::unbounded_channel();
+        let connection = connect(Unanswering(requests), "").await;
         let opener = Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone() };
         let opened = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await;
         let Err(error) = opened else { panic!("the channel opened") };
         assert!(error.downcast_ref::<tokio::time::error::Elapsed>().is_some(), "{error:#}");
+
+        let (mut channel, reply) = requested.recv().await.unwrap();
+        reply.accept().await;
+        let closed = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match channel.wait().await {
+                    Some(russh::ChannelMsg::Close) | None => break,
+                    Some(_) => {}
+                }
+            }
+        });
+        assert!(closed.await.is_ok(), "the channel is still open");
     }
 
     /// A client sending through a carried connection once the SSH connection has gone dead
