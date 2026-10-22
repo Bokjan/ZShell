@@ -40,13 +40,18 @@ impl LiveConnection {
         &self.ssh
     }
 
-    /// The SFTP session for browsing and editing (see [`Channels::browse`]).
+    /// The SFTP session for browsing and editing (see [`Channels::browse`]). Each SFTP command
+    /// takes it, and its requests are answered: the connection is checked unless an answer
+    /// comes soon (see [`ssh::Liveness`]).
     pub async fn sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
+        self.ssh.liveness().expect_reply();
         self.sftp.browse(&self.ssh).await
     }
 
-    /// The SFTP session for transfers (see [`Channels::transfer`]).
+    /// The SFTP session for transfers (see [`Channels::transfer`]), checking the connection as
+    /// [`LiveConnection::sftp`] does.
     pub async fn transfer_sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
+        self.ssh.liveness().expect_reply();
         self.sftp.transfer(&self.ssh).await
     }
 
@@ -454,6 +459,20 @@ mod tests {
         until("the connection's end", || ssh[0].handle().is_closed()).await;
         assert!(!connections.get(2).unwrap().forwards.has("r1"));
         assert_eq!(tabs[1].reported("r1"), Vec::<String>::new());
+    }
+
+    /// An SFTP command on a connection gone dead ends it soon, rather than waiting for its
+    /// channel or its requests until keepalives give up.
+    #[tokio::test]
+    async fn sftp_on_a_dead_connection_ends_it() {
+        let connections = Connections::default();
+        let (ssh, stall) = crate::ssh::testing::connect_stalling(Anyone, std::time::Duration::from_secs(3600)).await;
+        let tab = Tab::new();
+        connections.connected(1, ssh.clone(), &[], &tab.io);
+        stall.now();
+        let sftp = tokio::time::timeout(std::time::Duration::from_secs(5), connections.get(1).unwrap().sftp()).await;
+        assert!(sftp.expect("the connection is still open").is_err());
+        assert!(ssh.disconnect_reason().borrow().is_some());
     }
 
     /// The rules of a connection that closed (lost) are given once to its tab, to reconnect with.
