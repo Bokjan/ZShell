@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
 use crate::error::Error;
 use crate::model::ALL_ADDRESSES;
-use crate::ssh::{Incoming, RemoteRoutes, SshHandle, ROUTE_QUEUE};
+use crate::ssh::{Incoming, Liveness, RemoteRoutes, SshHandle, ROUTE_QUEUE};
 
 /// How long a stopping rule waits for the server to cancel its listener.
 const CANCEL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -92,8 +92,8 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
         tokio::select! {
             () = super::at(report) => tracker.report(),
             Some(next) = incoming.recv() => {
-                let (host, port) = (rule.target_host.clone(), rule.target_port);
-                tracker.spawn(async move { connect(next, host, port).await });
+                let (host, port, liveness) = (rule.target_host.clone(), rule.target_port, ctx.liveness());
+                tracker.spawn(async move { connect(next, host, port, liveness).await });
             }
             finished = tracker.next_finished() => tracker.finished(finished),
             () = stopping.requested() => break,
@@ -107,11 +107,11 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
 /// Connects to the target first and only then accepts the channel, so an unreachable
 /// target is reported to the server as a failed open, as OpenSSH does. Each of the target's
 /// addresses is tried in turn, as for a session's host.
-async fn connect(incoming: Incoming, host: String, port: u16) -> Result<()> {
+async fn connect(incoming: Incoming, host: String, port: u16, liveness: Liveness) -> Result<()> {
     match crate::net::tcp(&host, port).await {
         Ok(stream) => {
             incoming.reply.accept().await;
-            bridge(stream, incoming.channel).await;
+            bridge(stream, incoming.channel, liveness).await;
             Ok(())
         }
         Err(e) => {

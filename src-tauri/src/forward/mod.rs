@@ -22,13 +22,16 @@ pub(crate) mod testing;
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use russh::client::Msg;
 use russh::Channel;
 use tauri::async_runtime::JoinHandle;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
@@ -226,6 +229,10 @@ impl Ctx {
         self.shared.handle.clone()
     }
 
+    fn liveness(&self) -> Liveness {
+        self.shared.liveness.clone()
+    }
+
     /// What opens the channels of the connections a local or dynamic rule takes.
     fn opener(&self) -> Opener {
         Opener { handle: self.shared.handle.clone(), liveness: self.shared.liveness.clone() }
@@ -404,11 +411,48 @@ impl Opener {
 /// Copies data both ways until both sides are done. Errors here are ordinary disconnects
 /// (resets, aborted transfers) and are not reported. Each write to the channel is a packet
 /// of its own: buffers larger than the default 8 KiB send fewer when there is much to copy.
-async fn bridge(mut stream: TcpStream, channel: Channel<Msg>) {
+///
+/// What `stream` sends is checked for (see [`Checking`]): a client waiting for an answer on a
+/// connection gone dead would otherwise wait until keepalives give up.
+async fn bridge(stream: TcpStream, channel: Channel<Msg>, liveness: Liveness) {
     const BUFFER: usize = 64 << 10;
     let _ = stream.set_nodelay(true);
+    let mut stream = Checking { inner: stream, liveness };
     let mut channel = channel.into_stream();
     let _ = tokio::io::copy_bidirectional_with_sizes(&mut stream, &mut channel, BUFFER, BUFFER).await;
+}
+
+/// A rule's end of a connection it carries, which checks the SSH connection whenever it reads
+/// something to send through it. A check that finds something read from the server already
+/// ends at once, so a busy connection costs little.
+struct Checking<S> {
+    inner: S,
+    liveness: Liveness,
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for Checking<S> {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let poll = Pin::new(&mut self.inner).poll_read(cx, buf);
+        if buf.filled().len() > before {
+            self.liveness.expect_reply();
+        }
+        poll
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for Checking<S> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
 }
 
 #[cfg(test)]
@@ -566,6 +610,54 @@ mod tests {
         let opened = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await;
         let Err(error) = opened else { panic!("the channel opened") };
         assert!(error.downcast_ref::<tokio::time::error::Elapsed>().is_some(), "{error:#}");
+    }
+
+    /// A server that opens every `direct-tcpip` channel, and reads none.
+    struct Accepting(Vec<Channel<russh::server::Msg>>);
+
+    impl russh::server::Handler for Accepting {
+        type Error = russh::Error;
+
+        async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+            Ok(russh::server::Auth::Accept)
+        }
+
+        async fn channel_open_direct_tcpip(
+            &mut self,
+            channel: Channel<russh::server::Msg>,
+            _host: &str,
+            _port: u32,
+            _originator: &str,
+            _originator_port: u32,
+            reply: russh::server::ChannelOpenHandle,
+            _session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            reply.accept().await;
+            self.0.push(channel);
+            Ok(())
+        }
+    }
+
+    /// A client sending through a carried connection once the SSH connection has gone dead
+    /// ends it soon, rather than when keepalives give up (an hour away here).
+    #[tokio::test]
+    async fn sending_on_a_dead_connection_ends_it() {
+        use tokio::io::AsyncWriteExt;
+
+        let (connection, stall) = crate::ssh::testing::connect_stalling(Accepting(Vec::new()), Duration::from_secs(3600)).await;
+        let opener = Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone() };
+        let channel = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+        let (ours, _) = listener.accept().await.unwrap();
+        tokio::spawn(bridge(ours, channel, opener.liveness.clone()));
+        // Longer than the check of opening the channel takes, in tests.
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let mut reason = connection.disconnect_reason();
+        stall.now();
+        client.write_all(b"SELECT 1;").await.unwrap();
+        let ended = tokio::time::timeout(Duration::from_secs(5), reason.wait_for(Option::is_some)).await;
+        assert!(ended.is_ok(), "the connection is still open");
     }
 
     /// The first change is reported at once; those right after it together, once the

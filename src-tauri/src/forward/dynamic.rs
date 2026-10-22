@@ -39,7 +39,7 @@ async fn connect(opener: Opener, mut stream: TcpStream, peer: SocketAddr) -> Res
         }
     };
     socks::reply(&mut stream, request.version, Reply::Succeeded).await?;
-    bridge(stream, channel).await;
+    bridge(stream, channel, opener.liveness).await;
     Ok(())
 }
 
