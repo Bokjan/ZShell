@@ -85,7 +85,7 @@
 
 - **分层**：`lib/` 是不用 React 的逻辑，调用后端只经 `ipc/`；`ipc/` 是唯一调用命令、监听事件的地方（Tauri 自己的窗口与插件 API，如剪贴板、打开链接、拖放事件、`api/app`、`api/path`，组件可以直接用，它们内部的命令不算在内）；`hooks/` 是组件共用的 store、provider 与 hook（只属于 `App` 的在 `app/`）。`layers.test.ts` 检查依赖方向。
 - **外部 store**：跨组件共享的状态是每个窗口一份的 store（`lib/store.ts`），组件经 `useSyncExternalStore` 订阅，模块直接 `get()`，不经 `App` 转交。整体保存到后端的值（设置、快速命令）经 `lib/savedStore.ts` 与 `latestSave`。谁读入谁负责重读：收到其他窗口的 `config-changed` 时重读。
-- **标签页与窗格**：每个修改是一个 action，由纯函数 `reduceTabs`（`lib/tabs.ts`）处理；`App` 的各流程各是 `app/` 下的一个 hook。
+- **标签页与窗格**：每个修改是一个 action，由纯函数 `reduceTabs`（`lib/tabs.ts`）处理；`App` 的各流程各是 `app/` 下的一个 hook，流程要问用户或显示的对话框、面板由这个 hook 自己保管状态并返回要渲染的元素（`dialog`），`App` 只负责组装和摆放。
 - **会话目录**：已保存的会话、文件夹、代理和最近打开的会话（`lib/directory.ts`），用到的组件直接订阅。最近打开的存在 `localStorage`，经 `storage` 事件在窗口间同步。
 - **窗格的会话**：每个窗格一个 `PaneSession`（`lib/paneSession.ts`），负责打开、重连、共享连接、登录后命令和流控，只经小接口读写终端；`TerminalView` 只管终端。注册表（`lib/sessionRegistry.ts`）以事件通知拥有关闭、移动流程的 hook，依赖只从拥有者指向它。
 - **会话结束**：和 Xshell 一样，用户退出 shell 后窗格自动关闭；服务器一连上就结束、被信号结束或文件面板有工作时不关（`closesOnExit`，`lib/panes.ts`），这时 Enter 重连。

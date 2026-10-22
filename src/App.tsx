@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { useLocale } from "./hooks/locale";
 import { useAppActions } from "./app/useAppActions";
 import { useAppMenu } from "./app/useAppMenu";
+import { useImportDialog } from "./app/useImportDialog";
+import { useSettingsDialog } from "./app/useSettingsDialog";
 import { useProfileEditor } from "./app/useProfileEditor";
 import { useSessionOpening } from "./app/useSessionOpening";
 import { useUpdateAnnouncement } from "./app/useUpdateAnnouncement";
@@ -22,30 +24,23 @@ import { useTaskbarProgress } from "./app/useTaskbarProgress";
 import { useTerminalMenu } from "./app/useTerminalMenu";
 import { useWindows } from "./app/useWindows";
 
-import { CommandPalette } from "./components/CommandPalette";
 import { ComposeBar } from "./components/ComposeBar";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { ImportDialog } from "./components/ImportDialog";
-import { QuickCommandBar } from "./components/QuickCommandBar";
-import { SettingsDialog } from "./components/SettingsDialog";
-import type { SectionId } from "./components/settings/common";
 import { Sidebar, type SidebarHandlers } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar, type TabBarHandlers } from "./components/TabBar";
 import { PaneHostList } from "./components/PaneHost";
 import { createPaneHosts } from "./components/paneHosts";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
+import { SaveErrorNotices } from "./components/SaveErrorNotices";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n/index";
-import { errorMessage, type QuickCommand } from "./ipc/api";
 import { useNativeMenuLabel } from "./hooks/appMenu";
-import { quickCommandStore, tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
 import { findPane, focusedPane, targetProfile, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { address } from "./lib/sessions";
 import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
-import { useDirectory, useQuickCommands, useTabStore } from "./hooks/stores";
+import { useDirectory, useTabStore } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { createTabRest } from "./lib/tabRest";
 import { currentSettings } from "./lib/settings";
@@ -59,7 +54,7 @@ import "./styles.css";
 function App() {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
-  const { settings, update, saveError: settingsSaveError, dismissSaveError: dismissSettingsSaveError } = useSettings();
+  const { settings, update } = useSettings();
   useDirectorySync();
   useQuickCommandSync();
   const { profiles } = useDirectory();
@@ -68,13 +63,9 @@ function App() {
   const { tabs, activeKey } = useTabStore(store);
   const { dispatch } = store;
   const activate = (key: number | null) => dispatch({ type: "activate", key });
-  const [importing, setImporting] = useState(false);
-  // Open, scrolled to a section if one is named.
-  // A new object each time they are asked for, so that a section asked for while they are
-  // open is shown too.
-  const [settingsOpen, setSettingsOpen] = useState<false | { section?: SectionId }>(false);
-  const openSettings = useCallback((section?: SectionId) => setSettingsOpen({ section }), []);
   const { shellName, localAllowed, username, setAsideDialog } = useStartupInfo();
+  const settingsDialog = useSettingsDialog(localAllowed);
+  const importer = useImportDialog();
   // What closes panes and moves them between windows, made further down, hears the registry
   // through `sessions.on`.
   const [sessions] = useState(() =>
@@ -99,8 +90,6 @@ function App() {
   );
   useTaskbarProgress(tabs);
   useKeepAwake(tabs);
-  const quick = useQuickCommandBar();
-  const { commands, saveError: quickSaveError } = useQuickCommands();
   const fullScreen = useFullScreen(tabs.length > 0, (on) => {
     announce(on ? t("announce.fullScreen", { shortcut: shortcutLabel("fullScreen") }) : t("announce.fullScreenLeft"));
     focusActiveTerminal();
@@ -111,6 +100,14 @@ function App() {
     focusTerminal: focusActiveTerminal,
   });
   const { compose, flashing, inScope } = composer;
+  const activeTab = tabs.find((tab) => tab.key === activeKey);
+  const activePane = activeTab && focusedPane(activeTab);
+  const quick = useQuickCommandBar(store, {
+    activePane,
+    targets: composer.targets,
+    send: composer.send,
+    focusTerminal: focusActiveTerminal,
+  });
   const close = useCloseFlow(store, sessions, settings, update);
   const deletion = useProfileDeletion(store, settings.tabs.followRemoteTitle);
   const { requestClose, closeFocused } = close;
@@ -151,13 +148,7 @@ function App() {
 
   const togglePanel = useCallback((panel: SidePanel) => dispatch({ type: "togglePanel", panel }), [dispatch]);
 
-  const runCommand = (command: QuickCommand) => composer.send(asTyped(command.text, command.enter));
-
-  const activeTab = tabs.find((tab) => tab.key === activeKey);
-  const activePane = activeTab && focusedPane(activeTab);
   const profileOf = (pane: Pane) => targetProfile(pane.target, profiles);
-  const groupOf = (pane: Pane) => commands && tabGroup(commands, pane.commandGroup, profileOf(pane)?.commandGroup);
-  const activeGroup = activePane ? groupOf(activePane) : null;
   const inScopeKeys = inScope.map((pane) => pane.key);
   /** Tabs with any of these panes. */
   const tabsWith = (keys: number[]) => tabs.filter((t) => t.panes.some((p) => keys.includes(p.key))).map((t) => t.key);
@@ -170,16 +161,16 @@ function App() {
     localAllowed,
     openLocalTab: opening.openLocal,
     searchSessions: () => setSearchFocusKey((key) => key + 1),
-    importSshConfig: () => setImporting(true),
+    importSshConfig: importer.open,
     closeFocused,
-    openSettings,
-    openPalette: () => quick.setPaletteOpen(true),
+    openSettings: settingsDialog.open,
+    openPalette: quick.openPalette,
     toggleCompose: composer.toggle,
   });
   const updates = useUpdates();
   const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on, updates });
 
-  useUpdateAnnouncement(updates, settingsOpen !== false);
+  useUpdateAnnouncement(updates, settingsDialog.isOpen);
 
   const terminalMenu = useTerminalMenu({
     tabs,
@@ -188,12 +179,9 @@ function App() {
     requestClose,
     fullScreen,
     followRemoteTitle: settings.tabs.followRemoteTitle,
-    commandsOf: (pane) => {
-      const group = groupOf(pane);
-      return !commands || !group || commands.groups.every((g) => g.commands.length === 0) ? null : group.commands;
-    },
-    runCommand,
-    openPalette: () => quick.setPaletteOpen(true),
+    commandsOf: quick.menuCommands,
+    runCommand: quick.run,
+    openPalette: quick.openPalette,
   });
 
   const sidebarHandlers = useStableHandlers<SidebarHandlers>({
@@ -203,8 +191,8 @@ function App() {
     onEdit: editor.edit,
     onDelete: (profile) => deletion.remove(profile, false),
     onNew: editor.create,
-    onImportSshConfig: () => setImporting(true),
-    onSettings: () => openSettings(),
+    onImportSshConfig: importer.open,
+    onSettings: () => settingsDialog.open(),
   });
 
   const tabBarHandlers = useStableHandlers<TabBarHandlers>({
@@ -256,9 +244,6 @@ function App() {
     menuItems: terminalMenu,
     onGrab: paneDrag.start,
   });
-
-  const closeImport = useCallback(() => setImporting(false), []);
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   return (
     <div className={`app${fullScreen.on ? " full-screen" : ""}`}>
@@ -330,55 +315,18 @@ function App() {
           )}
           {tabs.length === 0 && <div className="placeholder">{t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}</div>}
         </div>
-        {quick.barOpen && activePane && commands && activeGroup && (
-          <QuickCommandBar
-            group={activeGroup}
-            onPickGroup={(id) => updatePane(activePane.key, { commandGroup: id })}
-            onRun={runCommand}
-            targets={composer.targets}
-          />
-        )}
+        {quick.bar}
         {settings.statusBar.show && activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}
       </main>
       {editor.dialog}
       {deletion.dialog}
       {opening.dialog}
-      {quick.paletteOpen && commands && activeGroup && (
-        <CommandPalette
-          firstGroup={activeGroup.id}
-          targets={composer.targets}
-          onRun={runCommand}
-          onClose={() => {
-            quick.setPaletteOpen(false);
-            focusActiveTerminal();
-          }}
-        />
-      )}
-      {importing && <ImportDialog onClose={closeImport} />}
-      {settingsOpen && <SettingsDialog localAllowed={localAllowed} request={settingsOpen} onClose={closeSettings} />}
+      {quick.palette}
+      {importer.dialog}
+      {settingsDialog.dialog}
       {close.dialogs}
       {appMenu.menu}
-      {/* A change that couldn't be saved was undone, maybe after its dialog closed. */}
-      {settingsSaveError !== null && (
-        <ConfirmDialog
-          notice
-          title={t("saveFailed.title")}
-          message={t("saveFailed.settings", { error: errorMessage(settingsSaveError) })}
-          confirmLabel={t("common.ok")}
-          onConfirm={dismissSettingsSaveError}
-          onCancel={dismissSettingsSaveError}
-        />
-      )}
-      {quickSaveError !== null && (
-        <ConfirmDialog
-          notice
-          title={t("saveFailed.title")}
-          message={t("saveFailed.quickCommands", { error: errorMessage(quickSaveError) })}
-          confirmLabel={t("common.ok")}
-          onConfirm={quickCommandStore.dismissSaveError}
-          onCancel={quickCommandStore.dismissSaveError}
-        />
-      )}
+      <SaveErrorNotices />
       {setAsideDialog}
       <PaneDragLayer view={paneDrag.view} />
       <Tooltips />
