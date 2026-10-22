@@ -79,7 +79,9 @@ fn rules_of(family: &str, tables: &[(sfnt::Tag, Vec<u8>)]) -> Option<LigatureRul
     if chars.is_empty() {
         return None;
     }
-    Some(rules::compile(family, &chars, &gsub::substitutions(table(b"GSUB")), &gsub::glyph_classes(table(b"GDEF"))))
+    // A font that describes too much to read gets the usual sequences, as one that can't be read.
+    let (substitutions, classes) = (gsub::substitutions(table(b"GSUB"))?, gsub::glyph_classes(table(b"GDEF"))?);
+    Some(rules::compile(family, &chars, &substitutions, &classes))
 }
 
 // Fonts are found by name only on Windows and macOS: Linux has no font every system has.

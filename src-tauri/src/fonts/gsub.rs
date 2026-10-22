@@ -6,9 +6,49 @@
 //! required feature) together by lookup index. A subtable that can't be read is left out, as
 //! HarfBuzz does with what fails its checks.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use super::read::Data;
+
+/// How many values and ranges reading a table may make. Offsets can point many times at the
+/// same data, so a table of a few hundred kilobytes can describe billions of values (ligature
+/// sets sharing one set, whose ligatures share one ligature): a font beyond this is set aside
+/// as a whole, as HarfBuzz gives up past its own limits. macOS's fonts with the largest tables
+/// make under 3 % of it.
+const WORK_LIMIT: usize = 1 << 22;
+
+/// What reading may still make (see [`WORK_LIMIT`]), passed to all that reads.
+struct Budget(Cell<Option<usize>>);
+
+impl Budget {
+    fn new() -> Self {
+        Self(Cell::new(Some(WORK_LIMIT)))
+    }
+
+    /// Takes `count` from what is left; `None` once it is used up, from then on.
+    fn spend(&self, count: usize) -> Option<()> {
+        let left = self.0.get()?.checked_sub(count);
+        self.0.set(left);
+        left.map(|_| ())
+    }
+
+    fn used_up(&self) -> bool {
+        self.0.get().is_none()
+    }
+
+    /// The count at `at` and the values after it.
+    fn array(&self, data: Data, at: usize) -> Option<Vec<u16>> {
+        self.spend(usize::from(data.u16(at)?))?;
+        data.u16_array(at)
+    }
+
+    /// `count` values from `at`.
+    fn values(&self, data: Data, at: usize, count: usize) -> Option<Vec<u16>> {
+        self.spend(count)?;
+        data.u16s(at, count)
+    }
+}
 
 /// The features applied first, in a stage of their own.
 const FIRST_FEATURES: [[u8; 4]; 1] = [*b"rvrn"];
@@ -126,12 +166,15 @@ pub struct Substitutions {
     pub lookups: BTreeMap<u16, Lookup>,
 }
 
-/// The substitutions of `gsub` (none for a table that can't be read).
-pub fn substitutions(gsub: &[u8]) -> Substitutions {
-    read_substitutions(Data(gsub)).unwrap_or_default()
+/// The substitutions of `gsub` (none for a table that can't be read); `None` for one that
+/// describes too much to read (see [`WORK_LIMIT`]).
+pub fn substitutions(gsub: &[u8]) -> Option<Substitutions> {
+    let budget = Budget::new();
+    let found = read_substitutions(Data(gsub), &budget);
+    (!budget.used_up()).then(|| found.unwrap_or_default())
 }
 
-fn read_substitutions(gsub: Data) -> Option<Substitutions> {
+fn read_substitutions(gsub: Data, budget: &Budget) -> Option<Substitutions> {
     if gsub.u16(0)? != 1 {
         return None;
     }
@@ -166,7 +209,7 @@ fn read_substitutions(gsub: Data) -> Option<Substitutions> {
         if index >= lookup_count || all.contains_key(&index) {
             continue;
         }
-        let lookup = lookups.offset16(2 + usize::from(index) * 2).and_then(lookup).unwrap_or(Lookup {
+        let lookup = lookups.offset16(2 + usize::from(index) * 2).and_then(|data| lookup(data, budget)).unwrap_or(Lookup {
             flag: 0,
             mark_filtering_set: None,
             reverse: false,
@@ -174,6 +217,7 @@ fn read_substitutions(gsub: Data) -> Option<Substitutions> {
         });
         pending.extend(lookup.subtables.iter().flat_map(records).map(|record| record.lookup_index));
         all.insert(index, lookup);
+        budget.spend(0)?;
     }
     applied.retain(|index| all.contains_key(index));
     Some(Substitutions { applied, lookups: all })
@@ -203,8 +247,9 @@ fn records(subtable: &Subtable) -> Vec<Record> {
     }
 }
 
-fn lookup(data: Data) -> Option<Lookup> {
+fn lookup(data: Data, budget: &Budget) -> Option<Lookup> {
     let (kind, flag, count) = (data.u16(0)?, data.u16(2)?, usize::from(data.u16(4)?));
+    budget.spend(count)?;
     let mark_filtering_set = if flag & 0x10 != 0 { Some(data.u16(6 + count * 2)?) } else { None };
     let mut subtables = Vec::new();
     let mut reverse = kind == 8;
@@ -217,51 +262,57 @@ fn lookup(data: Data) -> Option<Lookup> {
             (kind, table) = extended;
             reverse |= i == 0 && kind == 8;
         }
-        if let Some(subtable) = subtable(kind, table) {
+        if let Some(subtable) = subtable(kind, table, budget) {
             subtables.push(subtable);
         }
     }
     Some(Lookup { flag, mark_filtering_set, reverse, subtables })
 }
 
-fn subtable(kind: u16, table: Data) -> Option<Subtable> {
+fn subtable(kind: u16, table: Data, budget: &Budget) -> Option<Subtable> {
     let format = table.u16(0)?;
-    let coverage = || table.offset16(2).and_then(coverage);
-    let list = |at: usize| -> Option<Vec<Data>> { (0..usize::from(table.u16(at)?)).map(|i| table.offset16(at + 2 + i * 2)).collect() };
+    let coverage = || table.offset16(2).and_then(|data| coverage(data, budget));
+    let list = |at: usize| -> Option<Vec<Data>> {
+        let count = usize::from(table.u16(at)?);
+        budget.spend(count)?;
+        (0..count).map(|i| table.offset16(at + 2 + i * 2)).collect()
+    };
     match (kind, format) {
         (1, 1) => {
             let (coverage, delta) = (coverage()?, table.u16(4)?);
+            budget.spend(coverage.0.iter().map(|range| usize::from(range.end - range.start) + 1).sum())?;
             let substitutes = coverage.glyphs().map(|glyph| Some(glyph.wrapping_add(delta))).collect();
             Some(Subtable::Single { coverage, substitutes })
         }
-        (1, 2) => Some(Subtable::Single { coverage: coverage()?, substitutes: table.u16_array(4)?.into_iter().map(Some).collect() }),
+        (1, 2) => Some(Subtable::Single { coverage: coverage()?, substitutes: budget.array(table, 4)?.into_iter().map(Some).collect() }),
         (2, 1) => Some(Subtable::Multiple {
             coverage: coverage()?,
-            sequences: list(4)?.into_iter().map(|s| s.u16_array(0)).collect::<Option<_>>()?,
+            sequences: list(4)?.into_iter().map(|s| budget.array(s, 0)).collect::<Option<_>>()?,
         }),
         (3, 1) => {
             let sets = list(4)?;
             let substitutes =
-                sets.into_iter().map(|set| set.u16_array(0).map(|alternates| alternates.first().copied())).collect::<Option<_>>()?;
+                sets.into_iter().map(|set| budget.array(set, 0).map(|alternates| alternates.first().copied())).collect::<Option<_>>()?;
             Some(Subtable::Single { coverage: coverage()?, substitutes })
         }
         (4, 1) => {
             let sets = list(4)?.into_iter().map(|set| {
                 let count = usize::from(set.u16(0)?);
+                budget.spend(count)?;
                 (0..count)
                     .map(|i| {
                         let ligature = set.offset16(2 + i * 2)?;
                         let components = usize::from(ligature.u16(2)?).checked_sub(1)?;
-                        Some((ligature.u16(0)?, ligature.u16s(4, components)?))
+                        Some((ligature.u16(0)?, budget.values(ligature, 4, components)?))
                     })
                     .collect::<Option<Vec<_>>>()
             });
             Some(Subtable::Ligature { coverage: coverage()?, sets: sets.collect::<Option<_>>()? })
         }
-        (5 | 6, 1) => Some(Subtable::GlyphRules { coverage: coverage()?, sets: rule_sets(table, 4, kind == 6)? }),
+        (5 | 6, 1) => Some(Subtable::GlyphRules { coverage: coverage()?, sets: rule_sets(table, 4, kind == 6, budget)? }),
         (5, 2) => {
-            let classes = class_def(table.offset16(4)?)?;
-            let sets = rule_sets(table, 6, false)?;
+            let classes = class_def(table.offset16(4)?, budget)?;
+            let sets = rule_sets(table, 6, false, budget)?;
             Some(Subtable::ClassRules {
                 coverage: coverage()?,
                 backtrack: Ranges::default(),
@@ -271,85 +322,94 @@ fn subtable(kind: u16, table: Data) -> Option<Subtable> {
             })
         }
         (6, 2) => {
-            let class = |at: usize| table.offset16(at).map_or(Some(Ranges::default()), class_def);
+            let class = |at: usize| table.offset16(at).map_or(Some(Ranges::default()), |data| class_def(data, budget));
             let (backtrack, input, lookahead) = (class(4)?, class(6)?, class(8)?);
-            Some(Subtable::ClassRules { coverage: coverage()?, backtrack, input, lookahead, sets: rule_sets(table, 10, true)? })
+            Some(Subtable::ClassRules { coverage: coverage()?, backtrack, input, lookahead, sets: rule_sets(table, 10, true, budget)? })
         }
         (5, 3) => {
             let (glyphs, count) = (usize::from(table.u16(2)?), usize::from(table.u16(4)?));
-            let input = coverages(table, 6, glyphs)?;
-            let records = read_records(table, 6 + glyphs * 2, count)?;
+            let input = coverages(table, 6, glyphs, budget)?;
+            let records = read_records(table, 6 + glyphs * 2, count, budget)?;
             (!input.is_empty()).then_some(Subtable::CoverageRules { backtrack: Vec::new(), input, lookahead: Vec::new(), records })
         }
         (6, 3) => {
             let mut at = 2;
             let mut sequence = || -> Option<Vec<Ranges>> {
                 let count = usize::from(table.u16(at)?);
-                let sequence = coverages(table, at + 2, count)?;
+                let sequence = coverages(table, at + 2, count, budget)?;
                 at += 2 + count * 2;
                 Some(sequence)
             };
             let (backtrack, input, lookahead) = (sequence()?, sequence()?, sequence()?);
-            let records = read_records(table, at + 2, usize::from(table.u16(at)?))?;
+            let records = read_records(table, at + 2, usize::from(table.u16(at)?), budget)?;
             (!input.is_empty()).then_some(Subtable::CoverageRules { backtrack, input, lookahead, records })
         }
         (8, 1) => {
             let backtrack_count = usize::from(table.u16(4)?);
-            let backtrack = coverages(table, 6, backtrack_count)?;
+            let backtrack = coverages(table, 6, backtrack_count, budget)?;
             let at = 6 + backtrack_count * 2;
             let lookahead_count = usize::from(table.u16(at)?);
-            let lookahead = coverages(table, at + 2, lookahead_count)?;
-            let substitutes = table.u16_array(at + 2 + lookahead_count * 2)?;
+            let lookahead = coverages(table, at + 2, lookahead_count, budget)?;
+            let substitutes = budget.array(table, at + 2 + lookahead_count * 2)?;
             Some(Subtable::Reverse { coverage: coverage()?, backtrack, lookahead, substitutes })
         }
         _ => None,
     }
 }
 
-fn coverages(table: Data, at: usize, count: usize) -> Option<Vec<Ranges>> {
-    (0..count).map(|i| table.offset16(at + i * 2).and_then(coverage)).collect()
+fn coverages(table: Data, at: usize, count: usize, budget: &Budget) -> Option<Vec<Ranges>> {
+    budget.spend(count)?;
+    (0..count).map(|i| table.offset16(at + i * 2).and_then(|data| coverage(data, budget))).collect()
 }
 
-fn read_records(table: Data, at: usize, count: usize) -> Option<Vec<Record>> {
+fn read_records(table: Data, at: usize, count: usize, budget: &Budget) -> Option<Vec<Record>> {
+    budget.spend(count)?;
     (0..count).map(|i| Some(Record { sequence_index: table.u16(at + i * 4)?, lookup_index: table.u16(at + i * 4 + 2)? })).collect()
 }
 
 /// The rule sets of a contextual subtable, listed at `at`; a missing set has no rules.
-fn rule_sets(table: Data, at: usize, chained: bool) -> Option<Vec<Vec<Rule>>> {
+fn rule_sets(table: Data, at: usize, chained: bool, budget: &Budget) -> Option<Vec<Vec<Rule>>> {
     let count = usize::from(table.u16(at)?);
+    budget.spend(count)?;
     (0..count)
         .map(|i| {
             let Some(set) = table.offset16(at + 2 + i * 2) else { return Some(Vec::new()) };
-            (0..usize::from(set.u16(0)?)).map(|i| set.offset16(2 + i * 2).and_then(|rule| read_rule(rule, chained))).collect()
+            let rules = usize::from(set.u16(0)?);
+            budget.spend(rules)?;
+            (0..rules).map(|i| set.offset16(2 + i * 2).and_then(|rule| read_rule(rule, chained, budget))).collect()
         })
         .collect()
 }
 
-fn read_rule(rule: Data, chained: bool) -> Option<Rule> {
+fn read_rule(rule: Data, chained: bool, budget: &Budget) -> Option<Rule> {
     if !chained {
         let (glyphs, count) = (usize::from(rule.u16(0)?), usize::from(rule.u16(2)?));
-        let input = rule.u16s(4, glyphs.checked_sub(1)?)?;
-        let records = read_records(rule, 4 + input.len() * 2, count)?;
+        let input = budget.values(rule, 4, glyphs.checked_sub(1)?)?;
+        let records = read_records(rule, 4 + input.len() * 2, count, budget)?;
         return Some(Rule { backtrack: Vec::new(), input, lookahead: Vec::new(), records });
     }
-    let backtrack = rule.u16_array(0)?;
+    let backtrack = budget.array(rule, 0)?;
     let at = 2 + backtrack.len() * 2;
-    let input = rule.u16s(at + 2, usize::from(rule.u16(at)?).checked_sub(1)?)?;
+    let input = budget.values(rule, at + 2, usize::from(rule.u16(at)?).checked_sub(1)?)?;
     let at = at + 2 + input.len() * 2;
-    let lookahead = rule.u16_array(at)?;
+    let lookahead = budget.array(rule, at)?;
     let at = at + 2 + lookahead.len() * 2;
-    let records = read_records(rule, at + 2, usize::from(rule.u16(at)?))?;
+    let records = read_records(rule, at + 2, usize::from(rule.u16(at)?), budget)?;
     Some(Rule { backtrack, input, lookahead, records })
 }
 
-pub fn coverage(table: Data) -> Option<Ranges> {
+/// A coverage table, its glyphs each listed once: where ranges overlap (a broken font), the
+/// first listed covers what they share.
+fn coverage(table: Data, budget: &Budget) -> Option<Ranges> {
     let mut ranges = Vec::new();
     match table.u16(0)? {
         1 => {
-            for (index, glyph) in table.u16_array(2)?.into_iter().enumerate() {
+            for (index, glyph) in budget.array(table, 2)?.into_iter().enumerate() {
                 let index = u16::try_from(index).ok()?;
                 match ranges.last_mut() {
-                    Some(GlyphRange { end, value, start }) if glyph == end.wrapping_add(1) && index == *value + (*end - *start) + 1 => {
+                    Some(GlyphRange { end, value, start })
+                        if end.checked_add(1) == Some(glyph) && index == *value + (*end - *start) + 1 =>
+                    {
                         *end = glyph
                     }
                     _ => ranges.push(GlyphRange { start: glyph, end: glyph, value: index }),
@@ -357,7 +417,9 @@ pub fn coverage(table: Data) -> Option<Ranges> {
             }
         }
         2 => {
-            for i in 0..usize::from(table.u16(2)?) {
+            let count = usize::from(table.u16(2)?);
+            budget.spend(count)?;
+            for i in 0..count {
                 let at = 4 + i * 6;
                 let (start, end, value) = (table.u16(at)?, table.u16(at + 2)?, table.u16(at + 4)?);
                 if start <= end {
@@ -367,17 +429,32 @@ pub fn coverage(table: Data) -> Option<Ranges> {
         }
         _ => return None,
     }
+    // Stable: of ranges starting together, the first listed comes first.
     ranges.sort_by_key(|range| range.start);
+    let mut covered: Option<u16> = None;
+    ranges.retain_mut(|range| {
+        if let Some(last) = covered {
+            if range.end <= last {
+                return false;
+            }
+            if range.start <= last {
+                range.value = range.value.wrapping_add(last + 1 - range.start);
+                range.start = last + 1;
+            }
+        }
+        covered = Some(range.end);
+        true
+    });
     Some(Ranges(ranges))
 }
 
 /// A class definition, without the glyphs of class 0 (those not listed).
-pub fn class_def(table: Data) -> Option<Ranges> {
+fn class_def(table: Data, budget: &Budget) -> Option<Ranges> {
     let mut ranges = Vec::new();
     match table.u16(0)? {
         1 => {
             let start = table.u16(2)?;
-            for (i, class) in table.u16_array(4)?.into_iter().enumerate() {
+            for (i, class) in budget.array(table, 4)?.into_iter().enumerate() {
                 let glyph = start.checked_add(u16::try_from(i).ok()?)?;
                 match ranges.last_mut() {
                     Some(GlyphRange { end, value, .. }) if *value == class && end.checked_add(1) == Some(glyph) => *end = glyph,
@@ -386,7 +463,9 @@ pub fn class_def(table: Data) -> Option<Ranges> {
             }
         }
         2 => {
-            for i in 0..usize::from(table.u16(2)?) {
+            let count = usize::from(table.u16(2)?);
+            budget.spend(count)?;
+            for i in 0..count {
                 let at = 4 + i * 6;
                 let (start, end, value) = (table.u16(at)?, table.u16(at + 2)?, table.u16(at + 4)?);
                 if start <= end {
@@ -410,16 +489,24 @@ pub struct GlyphClasses {
     pub mark_sets: Vec<Ranges>,
 }
 
-pub fn glyph_classes(gdef: &[u8]) -> GlyphClasses {
+/// The glyph classes of `gdef` (none for a table that can't be read); `None` for one that
+/// describes too much to read (see [`WORK_LIMIT`]).
+pub fn glyph_classes(gdef: &[u8]) -> Option<GlyphClasses> {
     let gdef = Data(gdef);
-    let Some(version) = gdef.u32(0) else { return GlyphClasses::default() };
-    let class = |at: usize| gdef.offset16(at).and_then(class_def).unwrap_or_default();
+    let Some(version) = gdef.u32(0) else { return Some(GlyphClasses::default()) };
+    let budget = Budget::new();
+    let class = |at: usize| gdef.offset16(at).and_then(|data| class_def(data, &budget)).unwrap_or_default();
     let mark_sets = (version >= 0x0001_0002)
         .then(|| gdef.offset16(12))
         .flatten()
-        .and_then(|sets| (0..usize::from(sets.u16(2)?)).map(|i| sets.offset32(4 + i * 4).and_then(coverage)).collect())
+        .and_then(|sets| {
+            let count = usize::from(sets.u16(2)?);
+            budget.spend(count)?;
+            (0..count).map(|i| sets.offset32(4 + i * 4).and_then(|data| coverage(data, &budget))).collect()
+        })
         .unwrap_or_default();
-    GlyphClasses { classes: class(4), mark_attachment: class(10), mark_sets }
+    let classes = GlyphClasses { classes: class(4), mark_attachment: class(10), mark_sets };
+    (!budget.used_up()).then_some(classes)
 }
 
 #[cfg(test)]
@@ -439,7 +526,7 @@ mod tests {
     fn applies_the_features_of_plain_text_in_lookup_order() {
         let lookups = (0..6).map(|_| a_lookup()).collect();
         let table = gsub(&[(b"liga", &[4, 1]), (b"smcp", &[2]), (b"rvrn", &[5]), (b"calt", &[3, 1]), (b"ccmp", &[0])], lookups);
-        let found = substitutions(&table);
+        let found = substitutions(&table).unwrap();
         // `rvrn` first, then the others together by index; not small capitals.
         assert_eq!(found.applied, [5, 0, 1, 3, 4]);
         assert_eq!(found.lookups.keys().copied().collect::<Vec<_>>(), [0, 1, 3, 4, 5]);
@@ -456,12 +543,12 @@ mod tests {
             |scripts: Table| Table::new().u32(0x0001_0000).offset16(scripts).offset16(features.clone()).offset16(lookups.clone()).bytes();
         // A script other than Latin, then the default one.
         let scripts = Table::new().u16(2).tag(b"cyrl").offset16(script(0)).tag(b"DFLT").offset16(script(1));
-        assert_eq!(substitutions(&table(scripts)).applied, [1]);
+        assert_eq!(substitutions(&table(scripts)).unwrap().applied, [1]);
         // A language system tagged `dflt` comes before the default one.
         let latin = Table::new().offset16(lang_sys(0)).u16(1).tag(b"dflt").offset16(lang_sys(1));
-        assert_eq!(substitutions(&table(Table::new().u16(1).tag(b"latn").offset16(latin))).applied, [1]);
+        assert_eq!(substitutions(&table(Table::new().u16(1).tag(b"latn").offset16(latin))).unwrap().applied, [1]);
         // None of the scripts looked for: nothing applies.
-        assert!(substitutions(&table(Table::new().u16(1).tag(b"arab").offset16(script(0)))).applied.is_empty());
+        assert!(substitutions(&table(Table::new().u16(1).tag(b"arab").offset16(script(0)))).unwrap().applied.is_empty());
     }
 
     #[test]
@@ -475,14 +562,14 @@ mod tests {
         let lookups = Table::new().offsets((0..3).map(|_| a_lookup()).collect());
         let table = Table::new().u32(0x0001_0000).offset16(scripts).offset16(features).offset16(lookups).bytes();
         // The required feature in the first stage, as its tag isn't one applied later.
-        assert_eq!(substitutions(&table).applied, [2, 0]);
+        assert_eq!(substitutions(&table).unwrap().applied, [2, 0]);
     }
 
     #[test]
     fn reads_the_lookups_rules_apply_too() {
         let rule = chain(&[&[1]], &[&[2], &[3]], &[&[4]], &[(1, 1)]);
         let table = gsub(&[(b"calt", &[0])], vec![lookup(6, 0, vec![rule]), lookup(1, 0, vec![single(&[(3, 9)])]), a_lookup()]);
-        let found = substitutions(&table);
+        let found = substitutions(&table).unwrap();
         assert_eq!(found.applied, [0]);
         assert_eq!(found.lookups.keys().copied().collect::<Vec<_>>(), [0, 1]);
         let expected = Subtable::CoverageRules {
@@ -511,7 +598,7 @@ mod tests {
             lookup(7, 0, vec![extended(8, reverse)]),
             lookup(7, 0, vec![extended(1, single(&[(1, 2)]))]),
         ];
-        let found = substitutions(&gsub(&[(b"liga", &[0, 1, 2, 3, 4, 5])], lookups));
+        let found = substitutions(&gsub(&[(b"liga", &[0, 1, 2, 3, 4, 5])], lookups)).unwrap();
         let subtables: Vec<&Subtable> = found.lookups.values().map(|lookup| &lookup.subtables[0]).collect();
         assert_eq!(*subtables[0], Subtable::Single { coverage: ranges(&[(5, 6, 0)]), substitutes: vec![Some(15), Some(16)] });
         // The first alternate, as with a feature's value of 1.
@@ -547,7 +634,7 @@ mod tests {
         let context_rule = Table::new().u16(2).u16(0).u16(8);
         let context = Table::new().u16(1).offset16(coverage(&[7])).offsets(vec![Table::new().offsets(vec![context_rule])]);
         let lookups = vec![lookup(6, 0, vec![glyph_rules]), lookup(6, 0, vec![class_rules]), lookup(5, 0, vec![context])];
-        let found = substitutions(&gsub(&[(b"calt", &[0, 1, 2])], lookups));
+        let found = substitutions(&gsub(&[(b"calt", &[0, 1, 2])], lookups)).unwrap();
         let rule =
             Rule { backtrack: vec![1], input: vec![3], lookahead: vec![4], records: vec![Record { sequence_index: 0, lookup_index: 1 }] };
         assert_eq!(found.lookups[&0].subtables, [Subtable::GlyphRules { coverage: ranges(&[(2, 2, 0)]), sets: vec![vec![rule]] }]);
@@ -565,23 +652,55 @@ mod tests {
         // An unknown format, a subtable cut short, and then a good one.
         let cut = Table::new().u16(2).u16(5);
         let table = gsub(&[(b"calt", &[0])], vec![lookup(1, 0, vec![Table::new().u16(9), cut, single(&[(1, 2)])])]);
-        assert_eq!(substitutions(&table).lookups[&0].subtables.len(), 1);
-        assert!(substitutions(b"").applied.is_empty());
-        assert!(substitutions(&table[..20]).applied.is_empty());
+        assert_eq!(substitutions(&table).unwrap().lookups[&0].subtables.len(), 1);
+        assert!(substitutions(b"").unwrap().applied.is_empty());
+        assert!(substitutions(&table[..20]).unwrap().applied.is_empty());
     }
 
     #[test]
     fn reads_coverages_and_classes_as_ranges() {
         let read = |table: Table| coverage_of(&table.bytes());
         fn coverage_of(bytes: &[u8]) -> Ranges {
-            super::coverage(Data(bytes)).unwrap()
+            super::coverage(Data(bytes), &Budget::new()).unwrap()
         }
         assert_eq!(read(coverage(&[3, 4, 5, 9])), ranges(&[(3, 5, 0), (9, 9, 3)]));
         let two = read(coverage_ranges(&[(10, 12), (1, 1)]));
         assert_eq!(two, ranges(&[(1, 1, 3), (10, 12, 0)]));
         assert_eq!((two.index(11), two.index(1), two.index(2)), (Some(1), Some(3), None));
         let format1 = Table::new().u16(1).u16(4).array(&[1, 1, 0, 2]).bytes();
-        assert_eq!(class_def(Data(&format1)).unwrap(), ranges(&[(4, 5, 1), (7, 7, 2)]));
+        assert_eq!(class_def(Data(&format1), &Budget::new()).unwrap(), ranges(&[(4, 5, 1), (7, 7, 2)]));
+    }
+
+    #[test]
+    fn covers_each_glyph_once() {
+        let read = |table: Table| super::coverage(Data(&table.bytes()), &Budget::new()).unwrap();
+        // Overlapping ranges: the first listed covers what they share.
+        assert_eq!(read(coverage_ranges(&[(0, 30000), (0, 30000), (5, 9)])), ranges(&[(0, 30000, 0)]));
+        assert_eq!(read(coverage_ranges(&[(10, 20), (15, 30)])), ranges(&[(10, 20, 0), (21, 30, 17)]));
+        // The last glyph, then the first: not one range.
+        assert_eq!(read(coverage(&[65535, 0, 1])), ranges(&[(0, 1, 1), (65535, 65535, 0)]));
+    }
+
+    #[test]
+    fn gives_up_on_a_table_that_describes_too_much() {
+        // A ligature subtable whose 10,000 sets are one set of 10,000 ligatures, each the same
+        // one of 10,000 glyphs: 10¹² values from 60 KB.
+        const N: u16 = 10_000;
+        let sets_at = 6 + 2 * N;
+        let ligature_at = 2 + 2 * N;
+        let coverage_at = sets_at + ligature_at + 2 + 2 * N;
+        let mut bytes = Table::new().u16(1).u16(coverage_at).u16(N).u16s(&vec![sets_at; N.into()]).u16(N);
+        bytes = bytes.u16s(&vec![ligature_at; N.into()]).u16(1).u16(N).u16s(&vec![2; usize::from(N) - 1]);
+        let bytes = bytes.u16(2).u16(1).u16s(&[0, N - 1, 0]).bytes();
+        assert_eq!(bytes.len(), usize::from(coverage_at) + 10);
+        let budget = Budget::new();
+        assert!(subtable(4, Data(&bytes), &budget).is_none());
+        assert!(budget.used_up());
+        // A lookup of it in a table: the whole table is set aside.
+        let lookup = [Table::new().u16(4).u16(0).u16(1).u16(8).bytes(), bytes].concat();
+        let words: Vec<u16> = lookup.chunks(2).map(|pair| u16::from_be_bytes([pair[0], pair[1]])).collect();
+        let table = gsub(&[(b"liga", &[0])], vec![Table::new().u16s(&words)]);
+        assert!(substitutions(&table).is_none());
     }
 
     #[test]
@@ -594,10 +713,10 @@ mod tests {
             .offset16(classes(&[(9, 9, 2)]))
             .offset16(sets)
             .bytes();
-        let found = glyph_classes(&gdef);
+        let found = glyph_classes(&gdef).unwrap();
         assert_eq!(found.classes, ranges(&[(1, 5, 1), (8, 9, 3)]));
         assert_eq!(found.mark_attachment, ranges(&[(9, 9, 2)]));
         assert_eq!(found.mark_sets, [ranges(&[(8, 8, 0)])]);
-        assert!(glyph_classes(b"").classes.0.is_empty());
+        assert!(glyph_classes(b"").unwrap().classes.0.is_empty());
     }
 }

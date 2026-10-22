@@ -429,7 +429,7 @@ mod tests {
         ];
         let table = gsub(&[(b"ccmp", &[7]), (b"liga", &[1]), (b"calt", &[0, 2, 5, 8, 9])], lookups);
         let classes = GlyphClasses { classes: gsub::Ranges(vec![GlyphRange { start: 8, end: 8, value: 3 }]), ..Default::default() };
-        (gsub::substitutions(&table), classes)
+        (gsub::substitutions(&table).unwrap(), classes)
     }
 
     #[test]
@@ -449,8 +449,12 @@ mod tests {
     #[test]
     fn keeps_the_characters_of_other_glyphs_when_glyph_0_is_told_apart() {
         let table = gsub(&[(b"calt", &[0])], vec![lookup(6, 0, vec![chain(&[&[0, 1]], &[&[2]], &[], &[])])]);
-        let rules =
-            compile("Test", &[('a' as u32, 5), ('b' as u32, 6), ('c' as u32, 2)], &gsub::substitutions(&table), &GlyphClasses::default());
+        let rules = compile(
+            "Test",
+            &[('a' as u32, 5), ('b' as u32, 6), ('c' as u32, 2)],
+            &gsub::substitutions(&table).unwrap(),
+            &GlyphClasses::default(),
+        );
         // Glyphs 0, 1 and 2 have numbers; `a` and `b` are another glyph, unlike a missing character.
         assert_eq!((rules.glyph_count, rules.missing_glyph), (3, 0));
         assert_eq!(rules.chars, [0x61, 0x62, 3, 0x63, 0x63, 2]);
@@ -464,13 +468,13 @@ mod tests {
         let marks: Vec<usize> = rules.props.iter().enumerate().filter(|(_, &p)| p != 0).map(|(number, _)| number).collect();
         assert_eq!((marks, rules.props[7]), (vec![7], u32::from(IGNORE_MARKS)));
         let table = gsub(&[(b"calt", &[0])], vec![lookup(1, 0, vec![single(&[(8, 9)])])]);
-        assert!(compile("Test", &CHARS, &gsub::substitutions(&table), &classes).props.is_empty());
+        assert!(compile("Test", &CHARS, &gsub::substitutions(&table).unwrap(), &classes).props.is_empty());
     }
 
     #[test]
     fn writes_lookups_and_shares_identical_tables() {
         let table = gsub(&[(b"calt", &[0])], vec![lookup(1, 0x10, vec![single(&[(1, 2)]), single(&[(1, 3)])]), lookup(1, 0, vec![])]);
-        let mut substitutions = gsub::substitutions(&table);
+        let mut substitutions = gsub::substitutions(&table).unwrap();
         substitutions.lookups.get_mut(&0).unwrap().mark_filtering_set = Some(0);
         let classes = GlyphClasses { mark_sets: vec![gsub::Ranges(vec![GlyphRange { start: 3, end: 3, value: 0 }])], ..Default::default() };
         let rules = compile("Test", &[], &substitutions, &classes);
