@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { currentCjk } from "../i18n/index";
-import { compareNames, formatAgo, formatSize, formatTime } from "../lib/format";
+import { compareNames, formatAgo, formatList, formatSize, formatTime } from "../lib/format";
 import { shortcutLabel, shortcutRows, type Action } from "../lib/keymap";
 
 /**
@@ -23,6 +23,7 @@ export function useLocale() {
       formatTime: (seconds: number | null) => formatTime(seconds),
       formatAgo: (ms: number) => formatAgo(ms),
       compareNames: (a: string, b: string) => compareNames(a, b),
+      formatList: (items: string[], style?: "long" | "narrow") => formatList(items, style),
       /** The CJK language whose fonts come first (see `currentCjk`). */
       cjk: currentCjk(),
     }),

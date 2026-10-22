@@ -7,6 +7,7 @@ import { useWindowFocus } from "../hooks/windowEvents";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { useLocale } from "../hooks/locale";
 
 interface Props {
   onClose(): void;
@@ -22,6 +23,7 @@ const isHashed = (host: string) => host.startsWith("|1|");
  */
 export function KnownHostsDialog({ onClose, onChanged }: Props) {
   const { t } = useTranslation();
+  const { formatList } = useLocale();
   // undefined while loading.
   const [entries, setEntries] = useState<KnownHost[] | undefined>(undefined);
   const [query, setQuery] = useState("");
@@ -81,7 +83,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
   const removeMessage = (entry: KnownHost) => {
     const named = entry.hosts.filter((host) => !isHashed(host));
     if (named.length === 0) return t("knownHosts.removeMessageHashed", { algorithm: entry.algorithm });
-    return t("knownHosts.removeMessage", { algorithm: entry.algorithm, hosts: named.join(", ") });
+    return t("knownHosts.removeMessage", { algorithm: entry.algorithm, hosts: formatList(named) });
   };
 
   return (

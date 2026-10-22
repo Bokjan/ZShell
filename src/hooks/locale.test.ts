@@ -9,7 +9,7 @@ const rendering = import.meta.glob<string>(
 // Their text depends on the interface language through state outside React (see `useLocale`).
 const HELPERS: Record<string, string[]> = {
   "lib/keymap": ["shortcutLabel", "shortcutRows"],
-  "lib/format": ["formatSize", "formatTime", "formatAgo", "compareNames"],
+  "lib/format": ["formatSize", "formatTime", "formatAgo", "compareNames", "formatList"],
   "i18n/index": ["currentCjk"],
 };
 

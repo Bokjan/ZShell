@@ -25,6 +25,7 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 import { NameDialog } from "./NameDialog";
 import { ChevronIcon, PlusIcon } from "./icons";
+import { useLocale } from "../hooks/locale";
 
 interface Props {
   /** The active tab's group. */
@@ -49,6 +50,7 @@ const STATUS_MS = 3000;
  */
 export function QuickCommandBar({ group, onPickGroup, onRun, targets }: Props) {
   const { t } = useTranslation();
+  const { formatList } = useLocale();
   const { commands } = useQuickCommands();
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [editing, setEditing] = useState<{ command: QuickCommand | null } | null>(null);
@@ -77,8 +79,8 @@ export function QuickCommandBar({ group, onPickGroup, onRun, targets }: Props) {
   const run = (command: QuickCommand) => {
     const { sent, skipped } = onRun(command);
     if (sent.length === 0) show(t("compose.noTargets"));
-    else if (skipped > 0) show(t("quick.sentSkipped", { names: sent.join(", "), count: skipped }));
-    else if (targets) show(t("quick.sentTo", { names: sent.join(", ") }));
+    else if (skipped > 0) show(t("quick.sentSkipped", { names: formatList(sent), count: skipped }));
+    else if (targets) show(t("quick.sentTo", { names: formatList(sent) }));
   };
 
   const groupMenu = (e: ReactMouseEvent<HTMLButtonElement>) => {
@@ -169,7 +171,7 @@ export function QuickCommandBar({ group, onPickGroup, onRun, targets }: Props) {
 
   const shown = order ? order.map((id) => group.commands.find((c) => c.id === id)).filter((c): c is QuickCommand => !!c) : group.commands;
   const tooltip = (command: QuickCommand) =>
-    targets ? `${command.text}\n\n${t("quick.targets", { names: targets.join(", ") })}` : command.text;
+    targets ? `${command.text}\n\n${t("quick.targets", { names: formatList(targets) })}` : command.text;
 
   return (
     <>

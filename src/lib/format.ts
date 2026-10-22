@@ -41,6 +41,15 @@ export function formatTime(seconds: number | null): string {
   return new Intl.DateTimeFormat(i18n.language, options).format(date);
 }
 
+/**
+ * Items as a list in a sentence, as the interface language writes one: "a, b, and c" in English,
+ * "a、b和c" in Chinese. `narrow` leaves out the conjunction where the language can ("a、b、c"):
+ * for a list that isn't part of a sentence.
+ */
+export function formatList(items: string[], style: "long" | "narrow" = "long"): string {
+  return new Intl.ListFormat(i18n.language, { type: "conjunction", style }).format(items);
+}
+
 let collator: { language: string; compare: (a: string, b: string) => number } | null = null;
 
 /** Compares names as people sort them in the interface language: "file2" before "file10", ignoring case. */

@@ -10,6 +10,8 @@ import { attempt } from "../lib/attempt";
 import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { address } from "../lib/sessions";
+import { useLocale } from "../hooks/locale";
 
 interface Props {
   onClose(): void;
@@ -18,6 +20,7 @@ interface Props {
 /** Imports hosts from an OpenSSH client config file as session profiles. */
 export function ImportDialog({ onClose }: Props) {
   const { t } = useTranslation();
+  const { formatList } = useLocale();
   const [path, setPath] = useState("");
   const [candidates, setCandidates] = useState<ImportCandidate[] | null>(null);
   // The file the candidates come from, which the path field may no longer show.
@@ -129,20 +132,17 @@ export function ImportDialog({ onClose }: Props) {
               main={(c) => (
                 <>
                   <span className="import-alias">{c.alias}</span>
-                  <span className="import-address">
-                    {c.username}@{c.host}
-                    {c.port !== 22 && `:${c.port}`}
-                  </span>
+                  <span className="import-address">{address({ protocol: "ssh", ...c })}</span>
                 </>
               )}
               notes={(c) => (
                 <>
                   {c.existing && <span>{t("importDialog.existing", { name: c.existing })}</span>}
-                  {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: c.jumpHosts.join(", ") })}</span>}
+                  {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: formatList(c.jumpHosts) })}</span>}
                   {c.proxyCommand && <span>{t("importDialog.proxyCommand", { command: c.proxyCommand })}</span>}
                   {c.forwards.length > 0 && <span>{t("importDialog.forwards", { count: c.forwards.length })}</span>}
                   {c.forwardAgent && <span>{t("importDialog.forwardAgent")}</span>}
-                  {c.skipped.length > 0 && <span className="warning">{t("importDialog.skipped", { options: c.skipped.join(", ") })}</span>}
+                  {c.skipped.length > 0 && <span className="warning">{t("importDialog.skipped", { options: formatList(c.skipped) })}</span>}
                 </>
               )}
             />

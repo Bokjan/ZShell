@@ -11,6 +11,7 @@ import { CandidateList } from "./CandidateList";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordInput } from "./PasswordInput";
+import { useLocale } from "../hooks/locale";
 
 interface Props {
   /** The exported sessions file. */
@@ -25,6 +26,7 @@ interface Props {
  */
 export function SessionImportDialog({ path, onClose }: Props) {
   const { t } = useTranslation();
+  const { formatList } = useLocale();
   const [scan, setScan] = useState<SessionsScan | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -118,12 +120,12 @@ export function SessionImportDialog({ path, onClose }: Props) {
                 <>
                   {c.folder.length > 0 && <span>{c.folder.join(" / ")}</span>}
                   {c.existing && <span>{t("importDialog.existing", { name: c.existing })}</span>}
-                  {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: c.jumpHosts.join(", ") })}</span>}
+                  {c.jumpHosts.length > 0 && <span>{t("importDialog.via", { names: formatList(c.jumpHosts) })}</span>}
                   {!selected.has(c.id) && broughtBy.has(c.id) && (
-                    <span>{t("sessionImport.broughtBy", { names: broughtBy.get(c.id)!.join(", ") })}</span>
+                    <span>{t("sessionImport.broughtBy", { names: formatList(broughtBy.get(c.id)!) })}</span>
                   )}
                   {c.brings.length > 0 && (
-                    <span>{t("sessionImport.brings", { names: c.brings.map((id) => byId.get(id)?.name ?? id).join(", ") })}</span>
+                    <span>{t("sessionImport.brings", { names: formatList(c.brings.map((id) => byId.get(id)?.name ?? id)) })}</span>
                   )}
                   {/* The first jump host's proxy is the one that connects this session. */}
                   {c.brings
@@ -153,7 +155,7 @@ export function SessionImportDialog({ path, onClose }: Props) {
                     <span className="warning">{t("sessionImport.loginCommands", { commands: c.loginCommands.join("; ") })}</span>
                   )}
                   {c.connection.protocol === "ssh" && c.connection.env.length > 0 && (
-                    <span>{t("sessionImport.env", { names: c.connection.env.map((v) => v.name).join(", ") })}</span>
+                    <span>{t("sessionImport.env", { names: formatList(c.connection.env.map((v) => v.name)) })}</span>
                   )}
                 </>
               )}

@@ -509,7 +509,7 @@ function TabItem(props: TabItemProps) {
   useStableProps("TabItem", props, ["actions"]);
   const { tab, title, active, marks, editing, color, where, newOutput, bellRang, noticed, questionWaiting, actions } = props;
   const { t } = useTranslation();
-  const { shortcutLabel } = useLocale();
+  const { shortcutLabel, formatList } = useLocale();
   const { key } = tab;
   const pane = focusedPane(tab);
   const progress = mergeProgress(tab.panes.map((p) => p.progress));
@@ -524,8 +524,8 @@ function TabItem(props: TabItemProps) {
       progressLabel,
       newOutput && t("tabs.newOutput"),
       questionWaiting && t("tabs.questionWaiting"),
-    ].filter(Boolean);
-    return parts.length > 0 ? parts.join(". ") : null;
+    ].filter((part) => typeof part === "string");
+    return parts.length > 0 ? formatList(parts, "narrow") : null;
   };
   const status = statusLabel();
 

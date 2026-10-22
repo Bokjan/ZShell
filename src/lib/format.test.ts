@@ -1,7 +1,7 @@
 import i18n from "i18next";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { formatAgo, languageName } from "./format";
+import { compareNames, formatAgo, formatList, languageName } from "./format";
 
 describe("formatAgo", () => {
   // In the app's language, which tests set: otherwise it is the system's (LANG), and the
@@ -25,5 +25,29 @@ describe("languageName", () => {
     expect(languageName("ja")).toBe("日本語");
     expect(languageName("de")).toBe("Deutsch");
     expect(languageName("fr")).toBe("Français");
+  });
+});
+
+describe("formatList", () => {
+  it("writes the list as the interface language does", async () => {
+    await i18n.init({ lng: "en", resources: {} });
+    expect(formatList(["a", "b", "c"])).toBe("a, b, and c");
+    expect(formatList(["a", "b", "c"], "narrow")).toBe("a, b, c");
+    await i18n.changeLanguage("zh-Hans");
+    expect(formatList(["a", "b", "c"])).toBe("a、b和c");
+    expect(formatList(["a", "b", "c"], "narrow")).toBe("a、b、c");
+    await i18n.changeLanguage("en");
+  });
+});
+
+describe("compareNames", () => {
+  it("puts numbers in order and ignores case, in the interface language", async () => {
+    await i18n.init({ lng: "en", resources: {} });
+    expect(["file10", "File2", "file1"].sort(compareNames)).toEqual(["file1", "File2", "file10"]);
+    // Swedish sorts "ä" after "z"; English with "a".
+    expect(["ä", "z"].sort(compareNames)).toEqual(["ä", "z"]);
+    await i18n.changeLanguage("sv");
+    expect(["ä", "z"].sort(compareNames)).toEqual(["z", "ä"]);
+    await i18n.changeLanguage("en");
   });
 });

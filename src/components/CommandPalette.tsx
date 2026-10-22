@@ -7,6 +7,7 @@ import { useQuickCommands } from "../hooks/stores";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { groupName, searchCommands } from "../lib/quickCommands";
 import { Modal } from "./Modal";
+import { useLocale } from "../hooks/locale";
 
 interface Props {
   /** The active tab's group, listed first. */
@@ -20,6 +21,7 @@ interface Props {
 /** Searches the quick commands of all groups; Enter (or a click) sends one. */
 export function CommandPalette({ firstGroup, targets, onRun, onClose }: Props) {
   const { t } = useTranslation();
+  const { formatList } = useLocale();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export function CommandPalette({ firstGroup, targets, onRun, onClose }: Props) {
           autoCapitalize="off"
           autoCorrect="off"
         />
-        {targets && <div className="palette-targets">{t("quick.targets", { names: targets.join(", ") })}</div>}
+        {targets && <div className="palette-targets">{t("quick.targets", { names: formatList(targets) })}</div>}
         {/* A list without items, which shows a message instead, has no role (see Sidebar). */}
         <div
           className="palette-list"
