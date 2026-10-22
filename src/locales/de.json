@@ -952,6 +952,7 @@
     "title": "Sitzungen importieren",
     "hint": "Jump-Hosts und Proxys werden zusammen mit den Sitzungen importiert, die sie verwenden, oder vorhandenen zugeordnet. Ordner werden nach Namen zusammengeführt.",
     "proxy": "Proxy: {name}",
+    "existingProxy": "Verwendet den vorhandenen Proxy „{name}“",
     "proxyCommand": "Führt zum Verbinden einen Befehl aus: {command}",
     "autoForward": "Leitet {rule} ({kind}) weiter, sobald die Verbindung steht",
     "forwardAgent": "Lässt den Server die Schlüssel Ihres SSH-Agents verwenden (Agent-Weiterleitung)",

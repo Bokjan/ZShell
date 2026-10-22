@@ -201,6 +201,7 @@
       "readFailed": "无法读取 {path}",
       "parseFailed": "无法解析 {path}",
       "notSessionsFile": "{path} 不是 ZShell 会话文件",
+      "tooLarge": "{path} 太大，不是 ZShell 会话文件",
       "unsupportedVersion": "{path} 由另一个版本的 ZShell 导出，此版本无法读取",
       "invalidSession": "文件中的会话 {name} 无效",
       "invalidProxy": "文件中的代理 {name} 无效",

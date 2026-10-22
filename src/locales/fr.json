@@ -987,6 +987,7 @@
     "title": "Importer des sessions",
     "hint": "Les hôtes de rebond et les proxys sont importés avec les sessions qui les utilisent, ou associés à ceux qui existent déjà. Les dossiers sont fusionnés par nom.",
     "proxy": "Proxy : {name}",
+    "existingProxy": "Utilise le proxy « {name} » déjà présent",
     "proxyCommand": "Exécute une commande pour se connecter : {command}",
     "autoForward": "Redirige {rule} ({kind}) dès la connexion",
     "forwardAgent": "Permet au serveur d’utiliser les clés de votre agent SSH (transfert d’agent)",

@@ -27,7 +27,11 @@ pub async fn sessions_export(app: AppHandle, path: PathBuf, passphrase: Option<S
 /// (`import.passphraseRequired` without one, `import.wrongPassphrase` for another one).
 #[tauri::command]
 pub async fn sessions_import_scan(app: AppHandle, path: PathBuf, passphrase: Option<String>) -> Result<backup::Scan> {
-    blocking(app, move |app| backup::scan(&path, passphrase.as_deref(), &app.state::<ProfileStore>().list())).await
+    blocking(app, move |app| {
+        let store = app.state::<ProfileStore>();
+        backup::scan(&path, passphrase.as_deref(), &store.list(), &store.proxies())
+    })
+    .await
 }
 
 /// Imports the sessions `ids` (ids in the file) and what they need (jump hosts, proxies,

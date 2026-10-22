@@ -201,6 +201,7 @@
       "readFailed": "Impossible de lire {path}",
       "parseFailed": "Impossible d’analyser {path}",
       "notSessionsFile": "{path} n’est pas un fichier de sessions ZShell",
+      "tooLarge": "{path} est trop volumineux pour être un fichier de sessions ZShell",
       "unsupportedVersion": "{path} a été exporté par une version de ZShell dont cette version ne peut pas lire les fichiers",
       "invalidSession": "La session {name} du fichier n’est pas valide",
       "invalidProxy": "Le proxy {name} du fichier n’est pas valide",

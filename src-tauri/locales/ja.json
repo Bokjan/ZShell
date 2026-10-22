@@ -201,6 +201,7 @@
       "readFailed": "{path}を読み込めません",
       "parseFailed": "{path}を解析できません",
       "notSessionsFile": "{path}はZShellのセッションファイルではありません",
+      "tooLarge": "{path}は大きすぎるため、ZShellのセッションファイルではありません",
       "unsupportedVersion": "{path}は、このバージョンでは読み込めない形式のZShellでエクスポートされています",
       "invalidSession": "ファイル内のセッション{name}は無効です",
       "invalidProxy": "ファイル内のプロキシ{name}は無効です",

@@ -141,7 +141,7 @@ export function SessionImportDialog({ path, onClose }: Props) {
                   {c.proxyCommand ? (
                     <span className="warning">{t("sessionImport.proxyCommand", { command: c.proxyCommand })}</span>
                   ) : (
-                    c.proxy && <span>{t("sessionImport.proxy", { name: c.proxy })}</span>
+                    c.proxy && <span>{t(c.existingProxy ? "sessionImport.existingProxy" : "sessionImport.proxy", { name: c.proxy })}</span>
                   )}
                   {c.autoForwards.map((rule, index) => (
                     <span key={index} className="warning">

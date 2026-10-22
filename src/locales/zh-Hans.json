@@ -917,6 +917,7 @@
     "title": "导入会话",
     "hint": "跳板机和代理会随使用它们的会话一起导入，或与已有的跳板机和代理匹配。文件夹按名称合并。",
     "proxy": "代理：{name}",
+    "existingProxy": "使用已有的代理“{name}”",
     "proxyCommand": "通过运行命令连接：{command}",
     "autoForward": "连接后立即转发 {rule}（{kind}）",
     "forwardAgent": "允许服务器使用你的 SSH agent 中的密钥（agent 转发）",

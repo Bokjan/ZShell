@@ -952,6 +952,7 @@
     "title": "Import Sessions",
     "hint": "Jump hosts and proxies are imported along with the sessions that use them, or matched to existing ones. Folders are merged by name.",
     "proxy": "Proxy: {name}",
+    "existingProxy": "Uses the proxy “{name}” already here",
     "proxyCommand": "Runs a command to connect: {command}",
     "autoForward": "Forwards {rule} ({kind}) as soon as it connects",
     "forwardAgent": "Lets the server use your SSH agent's keys (agent forwarding)",

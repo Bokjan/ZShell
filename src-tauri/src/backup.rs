@@ -74,10 +74,13 @@ pub struct Candidate {
     pub folder: Vec<String>,
     /// The names of its jump hosts.
     pub jump_hosts: Vec<String>,
-    /// The name of its proxy.
+    /// The name of its proxy: one that exists here if importing uses it instead (the same
+    /// name and kind, or the same server or command).
     pub proxy: Option<String>,
-    /// The command its proxy runs, for a command proxy: importing it means that this
-    /// command runs when the session connects.
+    /// Whether `proxy` is one that exists here.
+    pub existing_proxy: bool,
+    /// The command its proxy runs, for a command proxy imported with it: importing it means
+    /// that this command runs when the session connects.
     pub proxy_command: Option<String>,
     /// The name of an existing session with the same name or address; such sessions are not
     /// imported again.
@@ -120,9 +123,10 @@ pub fn export(path: &Path, contents: Contents, passwords: Option<(&str, Password
     write_atomic(path, &bytes).map_err(|e| failed().detail(e))
 }
 
-/// What importing the file would add; an encrypted file takes its `passphrase`
-/// (`import.passphraseRequired` without one). Blocks while the key is derived.
-pub fn scan(path: &Path, passphrase: Option<&str>, existing: &[Profile]) -> Result<Scan> {
+/// What importing the file would add, with the sessions and proxies here (`existing`,
+/// `proxies`); an encrypted file takes its `passphrase` (`import.passphraseRequired` without
+/// one). Blocks while the key is derived.
+pub fn scan(path: &Path, passphrase: Option<&str>, existing: &[Profile], proxies: &[Proxy]) -> Result<Scan> {
     let (file, digest) = read(path, passphrase, None)?;
     let names: HashMap<&str, &str> = file.profiles.iter().map(|p| (p.id.as_str(), p.name.as_str())).collect();
     let candidates = file
@@ -130,14 +134,16 @@ pub fn scan(path: &Path, passphrase: Option<&str>, existing: &[Profile]) -> Resu
         .iter()
         .map(|p| {
             let proxy = p.proxy().and_then(|id| file.proxies.iter().find(|proxy| proxy.id == id));
+            let here = proxy.and_then(|proxy| existing_proxy(proxy, proxies));
             Candidate {
                 id: p.id.clone(),
                 name: p.name.clone(),
                 connection: p.connection.clone(),
                 folder: folder_path(&file.folders, p.folder.as_deref()),
                 jump_hosts: p.jump_hosts().iter().filter_map(|j| names.get(j.as_str()).map(|n| n.to_string())).collect(),
-                proxy: proxy.map(|proxy| proxy.name.clone()),
-                proxy_command: proxy.filter(|proxy| proxy.kind == ProxyKind::Command).map(|proxy| proxy.command.clone()),
+                proxy: here.or(proxy).map(|proxy| proxy.name.clone()),
+                existing_proxy: here.is_some(),
+                proxy_command: proxy.filter(|proxy| here.is_none() && proxy.kind == ProxyKind::Command).map(|proxy| proxy.command.clone()),
                 existing: duplicate_of(p, existing).map(|e| e.name.clone()),
                 auto_forwards: p.forwards().iter().filter(|f| f.auto_start).filter_map(|f| f.clone().normalize().ok()).collect(),
                 login_commands: p.login_commands.iter().filter(|c| !c.trim().is_empty()).cloned().collect(),
@@ -159,18 +165,17 @@ fn to_import(
     let by_id: HashMap<&str, &Profile> = file.profiles.iter().map(|p| (p.id.as_str(), p)).collect();
     let mut imported = Vec::new();
     let mut found: HashMap<String, String> = HashMap::new();
-    let mut queue: VecDeque<String> = selected.into_iter().collect();
+    // Each queued once: a file may list a session as a jump host many times over.
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<String> = selected.into_iter().filter(|id| seen.insert(id.clone())).collect();
     while let Some(id) = queue.pop_front() {
         let Some(profile) = by_id.get(id.as_str()) else { continue };
-        if imported.contains(&id) || found.contains_key(&id) {
-            continue;
-        }
         match duplicate_of(profile, existing) {
             Some(here) => {
                 found.insert(id, here.id.clone());
             }
             None => {
-                queue.extend(profile.jump_hosts().iter().cloned());
+                queue.extend(profile.jump_hosts().iter().filter(|jump| seen.insert(jump.to_string())).cloned());
                 imported.push(id);
             }
         }
@@ -209,14 +214,7 @@ pub fn plan(path: &Path, passphrase: Option<&str>, selected: &[String], digest: 
         if proxy_ids.contains_key(proxy.id.as_str()) {
             continue;
         }
-        // The same name is the same proxy only if it is of the same kind: an HTTP proxy in the
-        // file must not quietly become a command proxy here.
-        let existing = here
-            .proxies
-            .iter()
-            .find(|e| e.name == proxy.name && e.kind == proxy.kind)
-            .or_else(|| here.proxies.iter().find(|e| e.same_as(proxy)));
-        let id = match existing {
+        let id = match existing_proxy(proxy, here.proxies) {
             Some(existing) => existing.id.clone(),
             None => {
                 let taken = |name: &str| here.proxies.iter().chain(&proxies).any(|p| p.name == name);
@@ -281,12 +279,30 @@ fn file_rank(file: &SessionsFile) -> HashMap<Item, usize> {
     rank
 }
 
+/// The proxy here that importing `proxy` uses instead of it, if any. The same name is the same
+/// proxy only if it is of the same kind: an HTTP proxy in the file must not quietly become a
+/// command proxy here.
+fn existing_proxy<'a>(proxy: &Proxy, here: &'a [Proxy]) -> Option<&'a Proxy> {
+    here.iter().find(|e| e.name == proxy.name && e.kind == proxy.kind).or_else(|| here.iter().find(|e| e.same_as(proxy)))
+}
+
+/// The largest sessions file read: thousands of sessions take well under a megabyte, and one
+/// made to be large would take long to scan.
+const MAX_FILE_SIZE: u64 = 16 << 20;
+
 /// The file, opened with `passphrase` if it is encrypted, and a digest of it (SHA-256, in
 /// hex): `import.fileChanged` if it isn't `digest`, when given.
 fn read(path: &Path, passphrase: Option<&str>, digest: Option<&str>) -> Result<(SessionsFile, String)> {
+    use std::io::Read;
+
     use sha2::Digest;
 
-    let bytes = std::fs::read(path).map_err(|e| Error::new("import.readFailed").param("path", path.display()).detail(e))?;
+    let read_failed = |e: std::io::Error| Error::new("import.readFailed").param("path", path.display()).detail(e);
+    let mut bytes = Vec::new();
+    std::fs::File::open(path).and_then(|file| file.take(MAX_FILE_SIZE + 1).read_to_end(&mut bytes)).map_err(read_failed)?;
+    if bytes.len() as u64 > MAX_FILE_SIZE {
+        return Err(Error::new("import.tooLarge").param("path", path.display()));
+    }
     let read_digest: String = sha2::Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
     if digest.is_some_and(|digest| digest != read_digest) {
         return Err(Error::new("import.fileChanged").param("path", path.display()));
@@ -421,7 +437,7 @@ mod tests {
         // Here: a "Work" folder and the bastion already exist (same address, other name).
         let here_folders = vec![folder("w", "Work", None)];
         let here_profiles = vec![profile("b2", "jump", "bastion.example.com", None, &[])];
-        let Scan { candidates, digest } = scan(&path, None, &here_profiles).unwrap();
+        let Scan { candidates, digest } = scan(&path, None, &here_profiles, &[]).unwrap();
         assert_eq!(candidates[0].existing.as_deref(), Some("jump"));
         assert_eq!(candidates[1].folder, ["Work", "DB"]);
         assert_eq!(candidates[1].jump_hosts, ["bastion"]);
@@ -464,11 +480,11 @@ mod tests {
 
         let order = vec![item("profile", "web"), item("folder", "f1"), item("profile", "db")];
         export(&path, Contents { folders: folders.clone(), proxies: Vec::new(), profiles: profiles.clone(), order }, None).unwrap();
-        let Scan { digest, .. } = scan(&path, None, &[]).unwrap();
+        let Scan { digest, .. } = scan(&path, None, &[], &[]).unwrap();
         assert_eq!(names(&plan(&path, None, &selected, &digest, &here).unwrap()), ["web", "Work", "db"]);
 
         export(&path, Contents { folders, proxies: Vec::new(), profiles, order: Vec::new() }, None).unwrap();
-        let Scan { digest, .. } = scan(&path, None, &[]).unwrap();
+        let Scan { digest, .. } = scan(&path, None, &[], &[]).unwrap();
         assert_eq!(names(&plan(&path, None, &selected, &digest, &here).unwrap()), ["Work", "web", "db"]);
         std::fs::remove_file(&path).unwrap();
     }
@@ -506,7 +522,7 @@ mod tests {
             connection: Connection::Telnet(Remote::new("10.0.0.1".into(), 23, String::new())),
             ..profile("t", "router", "", None, &[])
         };
-        let Scan { candidates, digest, .. } = scan(&path, None, std::slice::from_ref(&telnet)).unwrap();
+        let Scan { candidates, digest, .. } = scan(&path, None, std::slice::from_ref(&telnet), &[]).unwrap();
         assert_eq!(candidates[0].existing, None);
         assert_eq!(candidates[1].auto_forwards[0].bind_host, "localhost");
         assert_eq!(candidates[1].login_commands, ["cd /srv"]);
@@ -535,7 +551,7 @@ mod tests {
             let Connection::Ssh(ssh) = &mut db.connection else { unreachable!() };
             ssh.auth = AuthMethod::PublicKey { key_path: key_path.into() };
             export(&path, Contents { folders: Vec::new(), proxies: Vec::new(), profiles: vec![db], order: Vec::new() }, None).unwrap();
-            let Scan { candidates, digest, .. } = scan(&path, None, &[]).unwrap();
+            let Scan { candidates, digest, .. } = scan(&path, None, &[], &[]).unwrap();
             let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
             let error = plan(&path, None, &[candidates[0].id.clone()], &digest, &here).err().unwrap();
             assert_eq!(error.code(), "import.invalidSession", "{key_path}");
@@ -571,13 +587,19 @@ mod tests {
         ];
         export(&path, Contents { folders: Vec::new(), proxies, profiles, order: Vec::new() }, None).unwrap();
 
-        let Scan { candidates, digest, .. } = scan(&path, None, &[]).unwrap();
+        let Scan { candidates, digest, .. } = scan(&path, None, &[], &[]).unwrap();
         assert_eq!(candidates[0].proxy.as_deref(), Some("corp"));
         assert_eq!(candidates[0].proxy_command, None);
         assert_eq!(candidates[1].proxy_command.as_deref(), Some("cloudflared access ssh --hostname %h"));
         assert_eq!(candidates[2].proxy, None);
 
-        // Here the SOCKS proxy exists under another name.
+        // Here the SOCKS proxy exists under another name, and the command proxy under its
+        // own with another command: the scan names those used instead, without the command.
+        let here_proxies = vec![proxy("mine", "office", ProxyKind::Socks5, ""), proxy("cf-here", "cf", ProxyKind::Command, "nc %h %p")];
+        let Scan { candidates: with_mine, .. } = scan(&path, None, &[], &here_proxies).unwrap();
+        assert_eq!((with_mine[0].proxy.as_deref(), with_mine[0].existing_proxy), (Some("office"), true));
+        assert_eq!((with_mine[1].proxy.as_deref(), with_mine[1].proxy_command.as_deref()), (Some("cf"), None));
+        assert!(!with_mine[2].existing_proxy);
         let here_proxies = vec![proxy("mine", "office", ProxyKind::Socks5, "")];
         let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
         let ids: Vec<String> = ["a", "b", "c", "d"].map(String::from).to_vec();
@@ -600,6 +622,15 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
+    #[test]
+    fn refuses_a_file_too_large_to_be_one() {
+        let path = std::env::temp_dir().join(format!("zshell-sessions-large-{}.json", std::process::id()));
+        std::fs::write(&path, vec![b' '; MAX_FILE_SIZE as usize + 1]).unwrap();
+        let error = scan(&path, None, &[], &[]).unwrap_err();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(error.code(), "import.tooLarge");
+    }
+
     /// Importing a session imports the jump hosts it goes through, with their proxies: the
     /// scan says which, so that their commands are shown with it.
     #[test]
@@ -614,12 +645,12 @@ mod tests {
         ];
         export(&path, Contents { folders: Vec::new(), proxies, profiles, order: Vec::new() }, None).unwrap();
 
-        let Scan { candidates, digest, .. } = scan(&path, None, &[]).unwrap();
+        let Scan { candidates, digest, .. } = scan(&path, None, &[], &[]).unwrap();
         let brings: Vec<&[String]> = candidates.iter().map(|c| c.brings.as_slice()).collect();
         assert_eq!(brings, [&[][..], &["bastion".to_owned()], &["inner".to_owned(), "bastion".to_owned()], &[]]);
         // A jump host that exists here is used rather than imported.
         let here_bastion = profile("b", "jump", "bastion.example.com", None, &[]);
-        let Scan { candidates: with_bastion, .. } = scan(&path, None, std::slice::from_ref(&here_bastion)).unwrap();
+        let Scan { candidates: with_bastion, .. } = scan(&path, None, std::slice::from_ref(&here_bastion), &[]).unwrap();
         assert_eq!(with_bastion[2].brings, ["inner"]);
 
         let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
@@ -648,9 +679,9 @@ mod tests {
         let exported = std::fs::read_to_string(&path).unwrap();
         assert!(!exported.contains("secret") && !exported.contains("a.internal"));
 
-        assert_eq!(scan(&path, None, &[]).unwrap_err().code(), "import.passphraseRequired");
-        assert_eq!(scan(&path, Some("wrong"), &[]).unwrap_err().code(), "import.wrongPassphrase");
-        let Scan { candidates, digest } = scan(&path, Some("passphrase"), &[]).unwrap();
+        assert_eq!(scan(&path, None, &[], &[]).unwrap_err().code(), "import.passphraseRequired");
+        assert_eq!(scan(&path, Some("wrong"), &[], &[]).unwrap_err().code(), "import.wrongPassphrase");
+        let Scan { candidates, digest } = scan(&path, Some("passphrase"), &[], &[]).unwrap();
         assert_eq!(candidates.len(), 2);
 
         // The new sessions and the new proxy get the passwords they had in the file.
@@ -671,7 +702,7 @@ mod tests {
         let changed = exported.replace("\"protection\":\"password\"", "\"protection\":\"password\",\"x\":1");
         assert_ne!(changed, exported);
         std::fs::write(&path, changed).unwrap();
-        assert_eq!(scan(&path, Some("passphrase"), &[]).unwrap_err().code(), "import.wrongPassphrase");
+        assert_eq!(scan(&path, Some("passphrase"), &[], &[]).unwrap_err().code(), "import.wrongPassphrase");
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -687,15 +718,15 @@ mod tests {
     fn rejects_other_files() {
         let path = std::env::temp_dir().join(format!("zshell-not-sessions-{}.json", std::process::id()));
         std::fs::write(&path, r#"{"format":"something","version":1}"#).unwrap();
-        assert_eq!(scan(&path, None, &[]).unwrap_err().code(), "import.notSessionsFile");
+        assert_eq!(scan(&path, None, &[], &[]).unwrap_err().code(), "import.notSessionsFile");
         std::fs::write(&path, r#"{"header":{"format":"zshell-vault","version":2,"protection":"none"},"data":{}}"#).unwrap();
-        assert_eq!(scan(&path, None, &[]).unwrap_err().code(), "import.notSessionsFile");
+        assert_eq!(scan(&path, None, &[], &[]).unwrap_err().code(), "import.notSessionsFile");
         // Exported before 3.0, with the format at the top level.
         let old = r#"{"format":"zshell-sessions","version":2,"profiles":[]}"#;
         std::fs::write(&path, old).unwrap();
-        assert_eq!(scan(&path, None, &[]).unwrap_err().code(), "import.notSessionsFile");
+        assert_eq!(scan(&path, None, &[], &[]).unwrap_err().code(), "import.notSessionsFile");
         std::fs::write(&path, r#"{"header":{"format":"zshell-sessions","version":4,"protection":"none"},"data":{}}"#).unwrap();
-        assert_eq!(scan(&path, None, &[]).unwrap_err().code(), "import.unsupportedVersion");
+        assert_eq!(scan(&path, None, &[], &[]).unwrap_err().code(), "import.unsupportedVersion");
         std::fs::remove_file(&path).unwrap();
     }
 }

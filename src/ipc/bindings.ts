@@ -62,6 +62,7 @@ export type ErrorCode =
   | "import.parseFailed"
   | "import.passphraseRequired"
   | "import.readFailed"
+  | "import.tooLarge"
   | "import.unsupportedEncryption"
   | "import.unsupportedVersion"
   | "import.wrongPassphrase"
@@ -752,12 +753,17 @@ folder: Array<string>,
  */
 jumpHosts: Array<string>, 
 /**
- * The name of its proxy.
+ * The name of its proxy: one that exists here if importing uses it instead (the same
+ * name and kind, or the same server or command).
  */
 proxy: string | null, 
 /**
- * The command its proxy runs, for a command proxy: importing it means that this
- * command runs when the session connects.
+ * Whether `proxy` is one that exists here.
+ */
+existingProxy: boolean, 
+/**
+ * The command its proxy runs, for a command proxy imported with it: importing it means
+ * that this command runs when the session connects.
  */
 proxyCommand: string | null, 
 /**
