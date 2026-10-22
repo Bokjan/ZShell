@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FileEntry } from "../ipc/api";
+import { compareNames } from "./format";
 import { commonPrefix, completionTarget, folderCandidates, tabCompletion } from "./pathCompletion";
 
 const entry = (name: string, isDir: boolean, isSymlink = false) =>
@@ -16,20 +17,20 @@ describe("path completion", () => {
 
   it("offers folders and links to folders, not files", () => {
     const entries = [entry("logs", true), entry("lib", true, true), entry("log.txt", false), entry("Library", true)];
-    expect(folderCandidates(entries, "l", false)).toEqual(["lib", "logs"]);
-    expect(folderCandidates(entries, "", false)).toEqual(["lib", "Library", "logs"]);
+    expect(folderCandidates(entries, "l", false, compareNames)).toEqual(["lib", "logs"]);
+    expect(folderCandidates(entries, "", false, compareNames)).toEqual(["lib", "Library", "logs"]);
   });
 
   it("ignores case when nothing matches as typed", () => {
-    expect(folderCandidates([entry("Projects", true), entry("public", true)], "pro", false)).toEqual(["Projects"]);
-    expect(folderCandidates([entry("Projects", true), entry("profile", true)], "pro", false)).toEqual(["profile"]);
+    expect(folderCandidates([entry("Projects", true), entry("public", true)], "pro", false, compareNames)).toEqual(["Projects"]);
+    expect(folderCandidates([entry("Projects", true), entry("profile", true)], "pro", false, compareNames)).toEqual(["profile"]);
   });
 
   it("offers hidden folders when they are shown or asked for", () => {
     const entries = [entry(".config", true), entry("code", true)];
-    expect(folderCandidates(entries, "", false)).toEqual(["code"]);
-    expect(folderCandidates(entries, "", true)).toEqual([".config", "code"]);
-    expect(folderCandidates(entries, ".", false)).toEqual([".config"]);
+    expect(folderCandidates(entries, "", false, compareNames)).toEqual(["code"]);
+    expect(folderCandidates(entries, "", true, compareNames)).toEqual([".config", "code"]);
+    expect(folderCandidates(entries, ".", false, compareNames)).toEqual([".config"]);
   });
 
   it("completes as a shell does on Tab", () => {

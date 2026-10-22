@@ -41,6 +41,16 @@ export function formatTime(seconds: number | null): string {
   return new Intl.DateTimeFormat(i18n.language, options).format(date);
 }
 
+let collator: { language: string; compare: (a: string, b: string) => number } | null = null;
+
+/** Compares names as people sort them in the interface language: "file2" before "file10", ignoring case. */
+export function compareNames(a: string, b: string): number {
+  if (collator === null || collator.language !== i18n.language) {
+    collator = { language: i18n.language, compare: new Intl.Collator(i18n.language, { numeric: true, sensitivity: "base" }).compare };
+  }
+  return collator.compare(a, b);
+}
+
 /** How long ago something happened, given in milliseconds: "5 seconds ago", "2 minutes ago". */
 export function formatAgo(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));

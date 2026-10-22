@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FileEntry } from "../ipc/api";
 import { parseMode, visibleEntries, type FileView } from "./fileList";
+import { compareNames } from "./format";
 
 // Only what the list looks at.
 const file = (name: string, size = 0, modified: number | null = null) => ({ name, isDir: false, size, modified }) as FileEntry;
@@ -19,27 +20,39 @@ describe("visibleEntries", () => {
   const entries = [file("file10", 30, 300), file("file2", 10, null), dir("Docs", 200), dir("a", 100), file(".bashrc", 20, 100)];
 
   it("lists folders first, then by name with numbers in order", () => {
-    expect(names(visibleEntries(entries, view(), ""))).toEqual(["a", "Docs", ".bashrc", "file2", "file10"]);
-    expect(names(visibleEntries(entries, view({ descending: true }), ""))).toEqual(["Docs", "a", "file10", "file2", ".bashrc"]);
+    expect(names(visibleEntries(entries, view(), "", compareNames))).toEqual(["a", "Docs", ".bashrc", "file2", "file10"]);
+    expect(names(visibleEntries(entries, view({ descending: true }), "", compareNames))).toEqual([
+      "Docs",
+      "a",
+      "file10",
+      "file2",
+      ".bashrc",
+    ]);
   });
 
   it("hides dotfiles only when asked to", () => {
-    expect(names(visibleEntries(entries, view({ showHidden: false }), ""))).toEqual(["a", "Docs", "file2", "file10"]);
+    expect(names(visibleEntries(entries, view({ showHidden: false }), "", compareNames))).toEqual(["a", "Docs", "file2", "file10"]);
   });
 
   it("sorts files by size and keeps folders in name order", () => {
-    expect(names(visibleEntries(entries, view({ sort: "size" }), ""))).toEqual(["a", "Docs", "file2", ".bashrc", "file10"]);
+    expect(names(visibleEntries(entries, view({ sort: "size" }), "", compareNames))).toEqual(["a", "Docs", "file2", ".bashrc", "file10"]);
   });
 
   it("sorts by modification time, unknown first, and by name on a tie", () => {
-    expect(names(visibleEntries(entries, view({ sort: "modified" }), ""))).toEqual(["a", "Docs", "file2", ".bashrc", "file10"]);
-    expect(names(visibleEntries([file("b", 0, 5), file("a", 0, 5)], view({ sort: "modified" }), ""))).toEqual(["a", "b"]);
+    expect(names(visibleEntries(entries, view({ sort: "modified" }), "", compareNames))).toEqual([
+      "a",
+      "Docs",
+      "file2",
+      ".bashrc",
+      "file10",
+    ]);
+    expect(names(visibleEntries([file("b", 0, 5), file("a", 0, 5)], view({ sort: "modified" }), "", compareNames))).toEqual(["a", "b"]);
   });
 
   it("keeps names containing every word of the filter, ignoring case", () => {
     const logs = [file("app.log"), file("app-old.LOG"), file("old.txt")];
-    expect(names(visibleEntries(logs, view(), "  LOG  old "))).toEqual(["app-old.LOG"]);
-    expect(names(visibleEntries(logs, view(), ""))).toHaveLength(3);
+    expect(names(visibleEntries(logs, view(), "  LOG  old ", compareNames))).toEqual(["app-old.LOG"]);
+    expect(names(visibleEntries(logs, view(), "", compareNames))).toHaveLength(3);
   });
 });
 

@@ -9,6 +9,7 @@ import { filterEntries, sortedEntries, storeView, storedView, type FileView, typ
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
+import { useLocale } from "../hooks/locale";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -108,7 +109,8 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
   });
 
   // Sorted apart from the filter, which keeps their order: typing in the filter sorts nothing.
-  const sorted = useMemo(() => sortedEntries(entries, view), [entries, view]);
+  const { compareNames } = useLocale();
+  const sorted = useMemo(() => sortedEntries(entries, view, compareNames), [entries, view, compareNames]);
   const visible = useMemo(() => filterEntries(sorted, filter ?? ""), [sorted, filter]);
   const rows = useMemo(() => visible.map((entry) => entry.path), [visible]);
   // What actions apply to: the selected entries that are shown, in the listed order.

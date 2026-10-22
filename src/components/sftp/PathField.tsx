@@ -6,6 +6,7 @@ import { completionTarget, folderCandidates, tabCompletion } from "../../lib/pat
 import { isComposing } from "../../lib/platform";
 import { FolderIcon } from "../icons";
 import { useLatest } from "../../hooks/latest";
+import { useLocale } from "../../hooks/locale";
 
 interface Props {
   sessionId: SessionId | null;
@@ -30,6 +31,7 @@ const LIST_DELAY = 150;
  */
 export function PathField({ sessionId, value, onChange, onGo, onEditing, showHidden }: Props) {
   const { t } = useTranslation();
+  const { compareNames } = useLocale();
   const listId = useId();
   const listRef = useRef<HTMLUListElement>(null);
   // Whether the value is the user's typing (rather than the folder shown), which is completed.
@@ -44,7 +46,7 @@ export function PathField({ sessionId, value, onChange, onGo, onEditing, showHid
   const cacheRef = useRef(new Map<string, FileEntry[]>());
 
   const { dir, prefix } = completionTarget(value);
-  const candidates = typing && listing?.dir === dir ? folderCandidates(listing.entries, prefix, showHidden) : [];
+  const candidates = typing && listing?.dir === dir ? folderCandidates(listing.entries, prefix, showHidden, compareNames) : [];
   const shown = open && candidates.length > 0;
 
   useEffect(() => {

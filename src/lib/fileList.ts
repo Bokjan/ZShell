@@ -20,20 +20,21 @@ export function storedView(): FileView {
   return typeof stored === "object" && stored !== null ? { ...DEFAULT_VIEW, ...stored } : DEFAULT_VIEW;
 }
 
-export const storeView = (view: FileView) => storeJson(VIEW_KEY, view);
+type Compare = (a: string, b: string) => number;
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+export const storeView = (view: FileView) => storeJson(VIEW_KEY, view);
 
 /**
  * The entries shown: hidden files (dotfiles) only when asked for, names containing every word
- * of `filter` (ignoring case), folders first, then by the sort key with name as tiebreaker.
+ * of `filter` (ignoring case), folders first, then by the sort key with name (in `compare`'s
+ * order: `compareNames`) as tiebreaker.
  */
-export const visibleEntries = (entries: FileEntry[], view: FileView, filter: string): FileEntry[] =>
-  filterEntries(sortedEntries(entries, view), filter);
+export const visibleEntries = (entries: FileEntry[], view: FileView, filter: string, compare: Compare): FileEntry[] =>
+  filterEntries(sortedEntries(entries, view, compare), filter);
 
 /** The entries shown before filtering by name (see `visibleEntries`), in order. */
-export function sortedEntries(entries: FileEntry[], view: FileView): FileEntry[] {
-  const byName = (a: FileEntry, b: FileEntry) => collator.compare(a.name, b.name);
+export function sortedEntries(entries: FileEntry[], view: FileView, compare: Compare): FileEntry[] {
+  const byName = (a: FileEntry, b: FileEntry) => compare(a.name, b.name);
   const byKey = (a: FileEntry, b: FileEntry) => {
     // Folders have no meaningful size, so they stay in name order when sorting by size.
     if (view.sort === "size" && !a.isDir) return a.size - b.size;

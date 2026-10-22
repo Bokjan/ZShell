@@ -1,7 +1,5 @@
 import type { FileEntry } from "../ipc/api";
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
 /**
  * What a remote path being typed completes from: the folder to list, as typed up to its last
  * `/` (empty for a bare name, which, like a relative path entered, is in the SFTP session's
@@ -14,10 +12,15 @@ export function completionTarget(input: string): { dir: string; prefix: string }
 
 /**
  * The names of the folders among `entries` (links to folders too) that start with `prefix`,
- * sorted; ignoring case when none starts with it as typed. Hidden ones only when they are shown,
- * or when `prefix` starts with a dot.
+ * sorted by `compare` (`compareNames`); ignoring case when none starts with it as typed. Hidden
+ * ones only when they are shown, or when `prefix` starts with a dot.
  */
-export function folderCandidates(entries: FileEntry[], prefix: string, showHidden: boolean): string[] {
+export function folderCandidates(
+  entries: FileEntry[],
+  prefix: string,
+  showHidden: boolean,
+  compare: (a: string, b: string) => number,
+): string[] {
   const hidden = showHidden || prefix.startsWith(".");
   const folders = entries.filter((e) => e.isDir && (hidden || !e.name.startsWith("."))).map((e) => e.name);
   let names = folders.filter((name) => name.startsWith(prefix));
@@ -25,7 +28,7 @@ export function folderCandidates(entries: FileEntry[], prefix: string, showHidde
     const lower = prefix.toLowerCase();
     names = folders.filter((name) => name.toLowerCase().startsWith(lower));
   }
-  return names.sort(collator.compare);
+  return names.sort(compare);
 }
 
 /** The longest start that all `names` share. */
