@@ -112,7 +112,7 @@ async fn run(link: &mut Link, dir: &Path, report: &mut impl Report, current: &mu
                     link.send_header(Header::new(Kind::Skip), Encoding::Hex).await?;
                     continue;
                 };
-                let (path, file) = match create_unique_file(&dir.join(&name)) {
+                let (path, file) = match create_unique_file(&dir.join(&name), None) {
                     Ok((path, file)) => (path, tokio::fs::File::from_std(file)),
                     Err(e) => {
                         let path = dir.join(&name);

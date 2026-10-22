@@ -20,7 +20,7 @@ use ts_rs::TS;
 use super::replace::{LocalTarget, RemoteTarget};
 use super::{file_name, is_entry, join};
 use crate::error::Error;
-use crate::local_name::{create_unique, create_unique_file, local_file_name, numbered};
+use crate::local_name::{create_dir, create_unique, create_unique_file, local_file_name, new_file, numbered};
 
 const BUFFER_SIZE: usize = 256 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -131,6 +131,51 @@ struct Plan<S, D> {
     dirs: Vec<D>,
     /// Each file, where it goes and its size.
     files: Vec<(S, D, u64)>,
+    /// The permission bits each of `dirs` is created with, where they are known.
+    dir_modes: Vec<Option<u32>>,
+    /// Those each of `files` is created with.
+    file_modes: Vec<Option<u32>>,
+}
+
+impl<S, D> Plan<S, D> {
+    fn new() -> Self {
+        Self { dirs: Vec::new(), files: Vec::new(), dir_modes: Vec::new(), file_modes: Vec::new() }
+    }
+
+    fn add_dir(&mut self, dir: D, mode: Option<u32>) {
+        self.dirs.push(dir);
+        self.dir_modes.push(mode);
+    }
+
+    fn add_file(&mut self, from: S, to: D, size: u64, mode: Option<u32>) {
+        self.files.push((from, to, size));
+        self.file_modes.push(mode);
+    }
+}
+
+/// The permission bits a copy uploaded gets, as `sftp put` gives them: the file's, without the
+/// set-id and sticky bits (and less the server's umask). None on Windows, which has none: the
+/// server's default.
+fn uploaded_mode(metadata: &std::fs::Metadata) -> Option<u32> {
+    #[cfg(unix)]
+    return Some(std::os::unix::fs::PermissionsExt::mode(&metadata.permissions()) & 0o777);
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        None
+    }
+}
+
+/// Those a folder downloaded gets, as `sftp get -r` gives them: with the owner's read, write
+/// and search.
+fn downloaded_dir_mode(attributes: &FileAttributes) -> Option<u32> {
+    attributes.permissions.map(|mode| mode & 0o777 | 0o700)
+}
+
+/// Those a file downloaded gets, as `sftp get` gives them: the remote one's, without the set-id
+/// and sticky bits, and with the owner's write, which writes it (less the umask; Unix only).
+fn downloaded_mode(attributes: &FileAttributes) -> Option<u32> {
+    attributes.permissions.map(|mode| mode & 0o777 | 0o200)
 }
 
 /// Files copied at once. A small file costs a few round trips (opening it, its first read or
@@ -210,7 +255,7 @@ where
 }
 
 pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &str, reporter: &mut Reporter) -> Result<()> {
-    let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+    let mut plan = Plan::new();
     for local in local_paths {
         let name = local.file_name().context(Error::new("transfer.invalidPath").param("path", local.display()))?.to_string_lossy();
         let remote = join(remote_dir, &name);
@@ -219,17 +264,17 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
             scan_local_dir(local, remote, &mut plan, reporter).await?;
         } else {
             reporter.progress.total += metadata.len();
-            plan.files.push((local.clone(), remote, metadata.len()));
+            plan.add_file(local.clone(), remote, metadata.len(), uploaded_mode(&metadata));
         }
     }
     reporter.progress.files_total = plan.files.len();
 
-    let created = create_remote_dirs(sftp, &plan.dirs).await?;
+    let created = create_remote_dirs(sftp, &plan.dirs, &plan.dir_modes).await?;
     let turns = same_name_turns(&plan.files);
     let run = Run::new(reporter);
     let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
     let result = copy_files(&sizes, &run, |i| {
-        let (local, remote, _) = &plan.files[i];
+        let ((local, remote, _), mode) = (&plan.files[i], plan.file_modes[i]);
         let (run, turn) = (&run, turns.get(&remote.to_lowercase()));
         // In a folder this upload created, nothing is there to replace, unless another file of
         // the same name went there first.
@@ -243,8 +288,8 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
             run.start_file(file_name(remote));
             let mut src = tokio::fs::File::open(local).await.context(Error::new("transfer.openFailed").param("path", local.display()))?;
             let mut dst = match new {
-                true => RemoteTarget::create_new(sftp, remote).await?,
-                false => RemoteTarget::create(sftp, remote).await?,
+                true => RemoteTarget::create_new(sftp, remote, mode).await?,
+                false => RemoteTarget::create(sftp, remote, mode).await?,
             };
             let result = match copy(&mut src, &mut dst.file, run).await {
                 Ok(()) => dst.finish(sftp).await,
@@ -275,32 +320,41 @@ fn same_name_turns(files: &[(PathBuf, String, u64)]) -> HashMap<String, tokio::s
     counts.into_iter().filter(|(_, count)| *count > 1).map(|(remote, _)| (remote, tokio::sync::Mutex::new(()))).collect()
 }
 
-/// Creates an upload's folders, parents first and those of one depth at once; returns those
-/// that weren't there.
-async fn create_remote_dirs(sftp: &SftpSession, dirs: &[String]) -> Result<HashSet<String>> {
-    let depth = |dir: &&String| dir.matches('/').count();
-    let mut by_depth: Vec<&String> = dirs.iter().collect();
+/// Creates an upload's folders, parents first and those of one depth at once, with the
+/// permission bits `modes` gives each; returns those that weren't there.
+async fn create_remote_dirs(sftp: &SftpSession, dirs: &[String], modes: &[Option<u32>]) -> Result<HashSet<String>> {
+    let depth = |dir: &(&String, Option<u32>)| dir.0.matches('/').count();
+    let mut by_depth: Vec<(&String, Option<u32>)> = dirs.iter().zip(modes.iter().copied()).collect();
     by_depth.sort_by_key(depth);
     let mut created = HashSet::new();
     for level in by_depth.chunk_by(|a, b| depth(a) == depth(b)) {
         let results: Vec<(usize, Result<bool>)> = stream::iter(0..level.len())
-            .map(|i| async move { (i, create_remote_dir(sftp, level[i]).await) })
+            .map(|i| async move { (i, create_remote_dir(sftp, level[i].0, level[i].1).await) })
             .buffer_unordered(CONCURRENT_DIRS)
             .collect()
             .await;
         for (i, result) in results {
             if result? {
-                created.insert(level[i].clone());
+                created.insert(level[i].0.clone());
             }
         }
     }
     Ok(created)
 }
 
-/// Creates `dir` unless there is a folder there already; true if there wasn't.
-async fn create_remote_dir(sftp: &SftpSession, dir: &str) -> Result<bool> {
+/// Creates `dir` unless there is a folder there already; true if there wasn't. A new one gets
+/// the local folder's permission bits `mode`, with the owner's write and search (which the
+/// upload needs), as `sftp put -r` gives them; set once it is made, as russh-sftp makes
+/// folders without any.
+async fn create_remote_dir(sftp: &SftpSession, dir: &str, mode: Option<u32>) -> Result<bool> {
     match sftp.create_dir(dir).await {
-        Ok(()) => Ok(true),
+        Ok(()) => {
+            if let Some(mode) = mode {
+                let attributes = FileAttributes { permissions: Some(mode | 0o300), ..FileAttributes::empty() };
+                let _ = sftp.set_metadata(dir, attributes).await;
+            }
+            Ok(true)
+        }
         // Most often because it is there: asked only then, one round trip less for new ones.
         Err(e) => match sftp.metadata(dir).await {
             Ok(metadata) if metadata.file_type().is_dir() => Ok(false),
@@ -310,10 +364,11 @@ async fn create_remote_dir(sftp: &SftpSession, dir: &str) -> Result<bool> {
 }
 
 async fn scan_local_dir(root: &Path, remote_root: String, plan: &mut Plan<PathBuf, String>, reporter: &mut Reporter) -> Result<()> {
-    let mut pending = vec![(root.to_path_buf(), remote_root)];
-    while let Some((local, remote)) = pending.pop() {
+    let root_mode = tokio::fs::metadata(root).await.ok().and_then(|metadata| uploaded_mode(&metadata));
+    let mut pending = vec![(root.to_path_buf(), remote_root, root_mode)];
+    while let Some((local, remote, mode)) = pending.pop() {
         reporter.check_cancelled()?;
-        plan.dirs.push(remote.clone());
+        plan.add_dir(remote.clone(), mode);
         let mut entries = tokio::fs::read_dir(&local).await.context(Error::new("transfer.readFailed").param("path", local.display()))?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
@@ -327,10 +382,10 @@ async fn scan_local_dir(root: &Path, remote_root: String, plan: &mut Plan<PathBu
                 continue;
             }
             if metadata.is_dir() {
-                pending.push((path, child));
+                pending.push((path, child, uploaded_mode(&metadata)));
             } else if metadata.is_file() {
                 reporter.progress.total += metadata.len();
-                plan.files.push((path, child, metadata.len()));
+                plan.add_file(path, child, metadata.len(), uploaded_mode(&metadata));
             }
         }
     }
@@ -377,9 +432,9 @@ async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<Pat
     let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
     let path = local_dir.join(name);
     let created = if metadata.file_type().is_dir() {
-        create_unique(&path, |path| std::fs::create_dir(path))
+        create_unique(&path, |path| create_dir(path, downloaded_dir_mode(&metadata), false))
     } else {
-        create_unique_file(&path).map(|(path, _)| (path, ()))
+        create_unique_file(&path, downloaded_mode(&metadata)).map(|(path, _)| (path, ()))
     };
     let (path, ()) = created.context(Error::new("transfer.createFailed").param("path", path.display()))?;
     Ok(path)
@@ -393,7 +448,7 @@ pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], report
 /// [`download_to`], keeping in `whole` which of the items have arrived whole: those copied at
 /// the same time as one that failed may have.
 async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, whole: &mut Vec<bool>) -> Result<()> {
-    let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+    let mut plan = Plan::new();
     // The items of one download go to one folder, or one disk at least.
     let mut taken = Taken::new(items.first().is_some_and(|(_, local)| ignores_case(local)));
     // Where each item's files end in `plan.files`.
@@ -401,11 +456,11 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
     for (remote, local) in items {
         let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
         if metadata.file_type().is_dir() {
-            scan_remote_dir(sftp, remote.clone(), local.clone(), &mut plan, &mut taken, reporter).await?;
+            scan_remote_dir(sftp, remote.clone(), local.clone(), downloaded_dir_mode(&metadata), &mut plan, &mut taken, reporter).await?;
         } else {
             let size = metadata.size.unwrap_or(0);
             reporter.progress.total += size;
-            plan.files.push((remote.clone(), local.clone(), size));
+            plan.add_file(remote.clone(), local.clone(), size, downloaded_mode(&metadata));
         }
         ends.push(plan.files.len());
     }
@@ -414,9 +469,17 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
 
     // The folders the items go into (for files given a path of their own), then the remote
     // folders' copies.
-    let parents = items.iter().filter_map(|(_, local)| local.parent());
-    for dir in parents.chain(plan.dirs.iter().map(PathBuf::as_path)) {
-        tokio::fs::create_dir_all(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
+    let parents = items.iter().filter_map(|(_, local)| local.parent()).map(|dir| (dir, None));
+    for (dir, mode) in parents.chain(plan.dirs.iter().map(PathBuf::as_path).zip(plan.dir_modes.iter().copied())) {
+        let mut builder = tokio::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        if let Some(mode) = mode {
+            builder.mode(mode);
+        }
+        #[cfg(not(unix))]
+        let _ = mode;
+        builder.create(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
     }
     let clashes = clashing(&plan.files, &mut taken);
     let taken = Mutex::new(taken);
@@ -424,7 +487,7 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
     let run = Run::new(reporter);
     let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
     let result = copy_files(&sizes, &run, |i| {
-        let (remote, local, _) = &plan.files[i];
+        let ((remote, local, _), mode) = (&plan.files[i], plan.file_modes[i]);
         let (clashes, taken, arrived, run) = (clashes[i], &taken, &arrived, &run);
         async move {
             run.start_file(file_name(remote));
@@ -432,12 +495,12 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
             // A file that would land where another of this download (or a folder) did, or
             // where a folder is, gets a free name instead.
             let local = if clashes || local.is_dir() {
-                let free = taken.lock().unwrap().create_free_file(local);
+                let free = taken.lock().unwrap().create_free_file(local, mode);
                 free.context(Error::new("transfer.createFailed").param("path", local.display()))?.0
             } else {
                 local.clone()
             };
-            let mut dst = LocalTarget::create(&local).await?;
+            let mut dst = LocalTarget::create(&local, mode).await?;
             let result = copy(&mut src, &mut dst.file, run).await;
             // Closed without waiting for the server's answer: all of it has been read.
             drop(src);
@@ -494,9 +557,9 @@ impl Taken {
     /// Creates an empty file at `path`, or at `name (1)`, `name (2)`, …, taking a name that
     /// neither a file on disk nor another of this download's files has: a later file may be
     /// called `name (1)` on the server, and would replace this one.
-    fn create_free_file(&mut self, path: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
+    fn create_free_file(&mut self, path: &Path, mode: Option<u32>) -> std::io::Result<(PathBuf, std::fs::File)> {
         create_unique(path, |candidate| match self.take(candidate) {
-            true => std::fs::OpenOptions::new().write(true).create_new(true).open(candidate),
+            true => new_file(mode).open(candidate),
             false => Err(std::io::ErrorKind::AlreadyExists.into()),
         })
     }
@@ -533,6 +596,7 @@ async fn scan_remote_dir(
     sftp: &SftpSession,
     root: String,
     local_root: PathBuf,
+    root_mode: Option<u32>,
     plan: &mut Plan<String, PathBuf>,
     taken: &mut Taken,
     reporter: &mut Reporter,
@@ -540,7 +604,7 @@ async fn scan_remote_dir(
     // Its name was chosen by the caller.
     taken.take(&local_root);
     // A level of the tree at a time, its folders listed at once.
-    let mut level = vec![(root, local_root)];
+    let mut level = vec![(root, local_root, root_mode)];
     while !level.is_empty() {
         reporter.check_cancelled()?;
         let listings: Vec<_> = stream::iter(0..level.len())
@@ -552,8 +616,8 @@ async fn scan_remote_dir(
             .collect()
             .await;
         let mut next = Vec::new();
-        for ((remote, local), listing) in level.into_iter().zip(listings) {
-            plan.dirs.push(local.clone());
+        for ((remote, local, mode), listing) in level.into_iter().zip(listings) {
+            plan.add_dir(local.clone(), mode);
             let mut entries = Vec::new();
             for entry in listing? {
                 let name = entry.file_name();
@@ -580,11 +644,11 @@ async fn scan_remote_dir(
             }
             for (child, local_child, metadata) in entries {
                 if metadata.file_type().is_dir() {
-                    next.push((child, taken.take_free(local_child)));
+                    next.push((child, taken.take_free(local_child), downloaded_dir_mode(&metadata)));
                 } else if metadata.file_type().is_file() {
                     let size = metadata.size.unwrap_or(0);
                     reporter.progress.total += size;
-                    plan.files.push((child, local_child, size));
+                    plan.add_file(child, local_child, size, downloaded_mode(&metadata));
                 }
             }
         }

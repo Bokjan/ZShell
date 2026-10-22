@@ -29,7 +29,7 @@ mod unix {
         std::os::unix::fs::symlink("..", root.join("sub/loop")).unwrap();
         std::os::unix::fs::symlink("a.txt", root.join("sub/link.txt")).unwrap();
 
-        let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+        let mut plan = Plan::new();
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
         let result = scan_local_dir(&root, "/r".into(), &mut plan, &mut reporter).await;
         std::fs::remove_dir_all(&root).unwrap();
@@ -82,6 +82,43 @@ mod unix {
         down.unwrap();
         assert_eq!((uploaded.files_done, uploaded.files_total), (81, 81));
         assert!(all_same);
+    }
+
+    /// New files and folders get the permission bits of those copied, as with `sftp put` and
+    /// `get`: a key stays private, a script executable. Skipped without `sftp-server`.
+    #[tokio::test]
+    async fn copies_keep_their_permissions_both_ways() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(sftp) = crate::sftp::replace::tests::local_sftp_server().await else { return };
+        let root = std::env::temp_dir().join(format!("zshell-modes-{}", uuid::Uuid::new_v4()));
+        let (source, remote, back) = (root.join("keys"), root.join("remote"), root.join("back"));
+        for dir in [&source, &remote, &back] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let set = |path: &Path, mode| std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+        let mode = |path: PathBuf| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        std::fs::write(source.join("id"), "key").unwrap();
+        std::fs::write(source.join("run.sh"), "true").unwrap();
+        set(&source.join("id"), 0o600);
+        set(&source.join("run.sh"), 0o755);
+        set(&source, 0o700);
+
+        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter).await;
+        let uploaded = up.is_ok().then(|| (mode(remote.join("keys")), mode(remote.join("keys/id")), mode(remote.join("keys/run.sh"))));
+        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let paths = [remote.join("keys").to_str().unwrap().to_owned(), remote.join("keys/id").to_str().unwrap().to_owned()];
+        let down = download(&sftp, &paths, &back, &mut reporter).await;
+        let downloaded = down.is_ok().then(|| (mode(back.join("keys")), mode(back.join("keys/id")), mode(back.join("id"))));
+        set(&source, 0o755);
+        set(&remote.join("keys"), 0o755);
+        set(&back.join("keys"), 0o755);
+        std::fs::remove_dir_all(&root).unwrap();
+
+        up.unwrap();
+        down.unwrap();
+        assert_eq!(uploaded, Some((0o700, 0o600, 0o755)));
+        assert_eq!(downloaded, Some((0o700, 0o600, 0o600)));
     }
 
     /// A failed download takes back only the names of the items that did not arrive: an
@@ -155,7 +192,7 @@ mod unix {
         let mut taken = Taken::new(true);
         assert_eq!(clashing(&files, &mut taken), [false, true, false]);
         std::fs::write(&files[0].1, "").unwrap();
-        let (renamed, _) = taken.create_free_file(&files[1].1).unwrap();
+        let (renamed, _) = taken.create_free_file(&files[1].1, None).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(renamed, dir.join("readme (2)"));
     }
@@ -190,11 +227,11 @@ mod unix {
         std::fs::write(remote.join("dir/f"), "lower").unwrap();
         std::fs::create_dir_all(&local).unwrap();
 
-        let mut plan = Plan { dirs: Vec::new(), files: Vec::new() };
+        let mut plan = Plan::new();
         let mut taken = Taken::new(true);
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
         let result =
-            scan_remote_dir(&sftp, remote.to_str().unwrap().to_owned(), local.join("r"), &mut plan, &mut taken, &mut reporter).await;
+            scan_remote_dir(&sftp, remote.to_str().unwrap().to_owned(), local.join("r"), None, &mut plan, &mut taken, &mut reporter).await;
         std::fs::remove_dir_all(&root).unwrap();
         result.unwrap();
 

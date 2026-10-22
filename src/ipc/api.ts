@@ -427,7 +427,11 @@ export const sftp = {
     return call("sftp_drag_out", {
       id,
       transferId,
-      items: items.map(({ path, isDir }): DragItem => ({ path, isDir })),
+      items: items.map(({ path, isDir, isSymlink, permissions, targetPermissions }): DragItem => ({
+        path,
+        isDir,
+        permissions: isSymlink ? (targetPermissions ?? null) : permissions,
+      })),
       sincePress: Math.max(0, Math.round(performance.now() - pressedAt)),
       onEvent: channel,
     });

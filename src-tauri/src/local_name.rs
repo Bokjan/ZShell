@@ -88,9 +88,38 @@ pub fn numbered(path: &Path, n: u32) -> PathBuf {
     path.with_file_name(format!("{stem} ({n}){ext}"))
 }
 
-/// A new, empty file at `path` or a free name next to it.
-pub fn create_unique_file(path: &Path) -> io::Result<(PathBuf, File)> {
-    create_unique(path, |path| OpenOptions::new().write(true).create_new(true).open(path))
+/// A new, empty file at `path` or a free name next to it, with the permission bits `mode` if
+/// given (Unix; less the umask), as a downloaded file gets the original's.
+pub fn create_unique_file(path: &Path, mode: Option<u32>) -> io::Result<(PathBuf, File)> {
+    create_unique(path, |path| new_file(mode).open(path))
+}
+
+/// Options that create a new file to write, with the permission bits `mode` if given (Unix;
+/// less the umask).
+pub fn new_file(mode: Option<u32>) -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    options
+}
+
+/// Creates the folder `path` (and those it is in), with the permission bits `mode` if given
+/// (Unix; less the umask) for those it creates. One that is there already is left as it is.
+pub fn create_dir(path: &Path, mode: Option<u32>, recursive: bool) -> io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(recursive);
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    builder.create(path)
 }
 
 #[cfg(test)]
@@ -101,14 +130,14 @@ mod tests {
     fn creates_unique_names() {
         let dir = std::env::temp_dir().join(format!("zshell-unique-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let names: Vec<_> = (0..3).map(|_| create_unique_file(&dir.join("a.txt")).unwrap().0).collect();
+        let names: Vec<_> = (0..3).map(|_| create_unique_file(&dir.join("a.txt"), None).unwrap().0).collect();
         assert_eq!(names, [dir.join("a.txt"), dir.join("a (1).txt"), dir.join("a (2).txt")]);
         let (folder, ()) = create_unique(&dir.join("a.txt"), |path| std::fs::create_dir(path)).unwrap();
         assert_eq!(folder, dir.join("a (3).txt"));
         assert!(folder.is_dir());
         // A folder in the way of a file.
         std::fs::create_dir(dir.join("b")).unwrap();
-        assert_eq!(create_unique_file(&dir.join("b")).unwrap().0, dir.join("b (1)"));
+        assert_eq!(create_unique_file(&dir.join("b"), None).unwrap().0, dir.join("b (1)"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

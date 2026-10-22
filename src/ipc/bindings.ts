@@ -223,7 +223,12 @@ export type CursorStyle = "block" | "bar" | "underline";
 /**
  * A remote item being dragged.
  */
-export type DragItem = { path: string, isDir: boolean, };
+export type DragItem = { path: string, isDir: boolean, 
+/**
+ * Its permission bits (those of what a link points to), which its placeholder is made
+ * with, as a download's copy gets them; unknown for some servers. macOS makes none.
+ */
+permissions: number | null, };
 
 /**
  * The download of a drop, reported to the frontend as one transfer.
@@ -311,7 +316,11 @@ export type ForwardRule = {
 /**
  * Empty for a new rule; assigned on save.
  */
-id: string, kind: ForwardKind, bindHost: string, 
+id: string, kind: ForwardKind, 
+/**
+ * Loopback when empty (filled in on save); `*` ([`ALL_ADDRESSES`]) is every address.
+ */
+bindHost: string, 
 /**
  * 0 lets the OS (or the server, for remote rules) pick a port.
  */
@@ -593,7 +602,8 @@ background?: string, fontFamily?: string, fontSize?: number, };
 export type Protection = "none" | "system" | "password";
 
 /**
- * What the protection changes to (see `Vault::set_protection`).
+ * What the protection changes to (see `Vault::set_protection`). Shown by `{:?}` without the
+ * master password.
  */
 export type ProtectionChange = { "protection": "none" } | { "protection": "system" } | { "protection": "password", password: string | null, remember: boolean, };
 

@@ -34,6 +34,11 @@ use crate::local_name::local_file_name;
 pub struct Item {
     pub path: String,
     pub is_dir: bool,
+    /// Its permission bits (those of what a link points to), which its placeholder is made
+    /// with, as a download's copy gets them; unknown for some servers. macOS makes none.
+    #[serde(default)]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    pub permissions: Option<u32>,
 }
 
 impl Item {
@@ -272,7 +277,7 @@ impl DropDownload {
 /// `a_b` there) would otherwise land on one file.
 #[cfg(any(windows, target_os = "linux"))]
 fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Result<Vec<(String, PathBuf)>> {
-    use crate::local_name::{create_unique, create_unique_file};
+    use crate::local_name::{create_dir, create_unique, create_unique_file};
 
     super::edit::remove_old(root);
     if !super::is_folder_id(transfer_id) {
@@ -286,9 +291,9 @@ fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Re
             let name = local_file_name(item.name()).ok_or_else(|| Error::new("transfer.invalidName").param("name", &item.path))?;
             let path = dir.join(name);
             let created = if item.is_dir {
-                create_unique(&path, |path| std::fs::create_dir(path))
+                create_unique(&path, |path| create_dir(path, item.permissions.map(|mode| mode & 0o777 | 0o700), false))
             } else {
-                create_unique_file(&path).map(|(path, _)| (path, ()))
+                create_unique_file(&path, item.permissions.map(|mode| mode & 0o777 | 0o200)).map(|(path, _)| (path, ()))
             };
             let (local, ()) = created.map_err(|e| Error::new("transfer.createFailed").param("path", path.display()).detail(e))?;
             Ok((item.path.clone(), local))
