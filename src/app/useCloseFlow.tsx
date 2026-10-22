@@ -4,17 +4,17 @@ import { useTranslation } from "react-i18next";
 
 import { useAppLock, type PendingClose } from "../hooks/appLock";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { forwards, sessionForeground, type ForwardRule, type SessionId, type Settings } from "../ipc/api";
+import { forwards, sessionForeground, type ForwardRule, type SessionId } from "../ipc/api";
 import { isAppLocked } from "../lib/appLock";
 import { forwardMapping } from "../lib/format";
 import { matches } from "../lib/keymap";
 import { findPane, paneLabel, paneWork, tabTitle, type Pane, type PaneWork } from "../lib/panes";
 import { useShortcuts } from "../hooks/shortcuts";
 import type { SessionRegistry } from "../lib/sessionRegistry";
+import { currentSettings, settingsStore } from "../lib/settings";
 import { activeTabOf, type TabStore } from "../lib/tabs";
 import { windows } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
-import { useLatest } from "../hooks/latest";
 
 /**
  * Why closing a pane needs confirmation: its file panel is at work (even disconnected), a
@@ -59,14 +59,8 @@ async function busyReason(pane: Pane): Promise<Busy | null> {
  * whether port forwarding another tab of the session could take over should keep running.
  * `dialogs` is what to render for the questions.
  */
-export function useCloseFlow(
-  store: TabStore,
-  sessions: SessionRegistry,
-  settings: Settings,
-  update: (change: (settings: Settings) => Settings) => void,
-) {
+export function useCloseFlow(store: TabStore, sessions: SessionRegistry) {
   const { t } = useTranslation();
-  const settingsRef = useLatest(settings);
   // Panes waiting for the user to confirm closing them, with why the first busy one is busy.
   const [closing, setClosing] = useState<Closing | null>(null);
   // Closing panes whose connections run port forwarding another tab of the session could take over.
@@ -120,12 +114,12 @@ export function useCloseFlow(
         setKeeping({ panes: keys, ids, rules });
         return;
       }
-      if (settingsRef.current.tabs.confirmClose) {
+      if (currentSettings().tabs.confirmClose) {
         const reasons = await Promise.all(panes.map(({ pane }) => busyReason(pane)));
         const index = reasons.findIndex((reason) => reason !== null);
         if (index >= 0) {
           const { tab, pane } = panes[index];
-          const follow = settingsRef.current.tabs.followRemoteTitle;
+          const follow = currentSettings().tabs.followRemoteTitle;
           // A split tab is named as a whole (see `message`).
           const name = request.kind === "tabs" && tab.panes.length > 1 ? tabTitle(tab, follow) : paneLabel(tab, pane, follow);
           const tabs = request.kind === "tabs" ? new Set(panes.map(({ tab }) => tab.key)).size : 0;
@@ -135,7 +129,7 @@ export function useCloseFlow(
       }
       closePanes(keys);
     },
-    [store, closePanes, settingsRef],
+    [store, closePanes],
   );
 
   /** Closes a pane of a split tab, otherwise the tab. */
@@ -199,7 +193,7 @@ export function useCloseFlow(
 
   const confirmClose = (dontAskAgain: boolean) => {
     if (!closing) return;
-    if (dontAskAgain) update((settings) => ({ ...settings, tabs: { ...settings.tabs, confirmClose: false } }));
+    if (dontAskAgain) settingsStore.save((settings) => ({ ...settings, tabs: { ...settings.tabs, confirmClose: false } }));
     closePanes(closing.panes);
     setClosing(null);
   };

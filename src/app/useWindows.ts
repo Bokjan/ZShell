@@ -10,13 +10,13 @@ import type { Dropped, Point } from "../ipc/bindings";
 import { tabIndexAt, tabStrip } from "../lib/tabStrip";
 import { TabMoves, type Settled } from "../lib/tabMoves";
 import { leavesSomething, type TabStore, type TabTransfer } from "../lib/tabs";
+import { useSettings } from "../hooks/settings";
 import { useTabStore } from "../hooks/stores";
 import { windows, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
 import { useLatest } from "../hooks/latest";
 
 interface Options {
-  followRemoteTitle: boolean;
   /** Opens a tab for a saved session (a window opened for one). */
   openTab(target: SessionTarget, title: string): void;
 }
@@ -44,8 +44,9 @@ const sameWindows = (a: WindowInfo[], b: WindowInfo[]) =>
  * couldn't move (the other window says so, or closes first) stays here, and the rest of the
  * tab goes.
  */
-export function useWindows(store: TabStore, sessions: SessionRegistry, { followRemoteTitle, openTab }: Options) {
+export function useWindows(store: TabStore, sessions: SessionRegistry, { openTab }: Options) {
   const { t } = useTranslation();
+  const { followRemoteTitle } = useSettings().settings.tabs;
   const { tabs, activeKey } = useTabStore(store);
   const [others, setOthers] = useState<WindowInfo[]>([]);
   /** Tabs moving out. */

@@ -7,12 +7,12 @@ import { IconButton } from "./IconButton";
 import { ChevronIcon, CloseIcon } from "./icons";
 import { paneTitle, tabTitle, type Tab } from "../lib/panes";
 import { isComposing } from "../lib/platform";
+import { useSettings } from "../hooks/settings";
 
 interface Props {
   compose: Compose;
   tabs: Tab[];
   activeKey: number | null;
-  followRemoteTitle: boolean;
   onChange(compose: Compose): void;
   /** Sends the text (as typed, with Enter) to the panes in scope. */
   onSend(text: string): SendResult;
@@ -31,7 +31,8 @@ const STATUS_MS = 4000;
  * sends, Shift+Enter adds a line, ↑↓ go through the history), and for syncing what is typed
  * in the terminal to them. Syncing turns the bar to the warning color.
  */
-export function ComposeBar({ compose, tabs, activeKey, followRemoteTitle, onChange, onSend, onClose }: Props) {
+export function ComposeBar({ compose, tabs, activeKey, onChange, onSend, onClose }: Props) {
+  const { followRemoteTitle } = useSettings().settings.tabs;
   const { t } = useTranslation();
   const [text, setText] = useState("");
   const [status, setStatus] = useState<string | null>(null);

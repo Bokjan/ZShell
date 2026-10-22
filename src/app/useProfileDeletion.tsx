@@ -5,6 +5,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { deleteProfile, forwards, type Profile, type SessionId } from "../ipc/api";
 import { directory } from "../lib/directory";
 import { paneLabel } from "../lib/panes";
+import { currentSettings } from "../lib/settings";
 import type { TabStore } from "../lib/tabs";
 import { useLocale } from "../hooks/locale";
 
@@ -21,7 +22,7 @@ interface Asking {
  * are named (those of other windows counted), and the user deletes anyway or keeps it.
  * `dialog` is what to render for the question.
  */
-export function useProfileDeletion(store: TabStore, followRemoteTitle: boolean) {
+export function useProfileDeletion(store: TabStore) {
   const { t } = useTranslation();
   const { formatList } = useLocale();
   const [asking, setAsking] = useState<Asking | null>(null);
@@ -30,6 +31,7 @@ export function useProfileDeletion(store: TabStore, followRemoteTitle: boolean) 
   const forwardingTabs = async (profile: Profile): Promise<string | null> => {
     const ids = await forwards.sessionsOf(profile.id).catch((): SessionId[] => []);
     if (ids.length === 0) return null;
+    const { followRemoteTitle } = currentSettings().tabs;
     const here = store
       .get()
       .tabs.flatMap((tab) =>

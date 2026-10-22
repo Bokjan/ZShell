@@ -5,7 +5,7 @@ import type { Profile } from "../ipc/api";
 import type { Pane } from "../lib/panes";
 import type { SessionRegistry, TerminalScreen } from "../lib/sessionRegistry";
 import { address, serialSummary } from "../lib/sessions";
-import { useMediaQuery } from "../hooks/settings";
+import { useMediaQuery, useSettings } from "../hooks/settings";
 import type { TrafficMeter } from "../lib/traffic";
 import { useLocale } from "../hooks/locale";
 import { ActivityIcon } from "./icons";
@@ -30,7 +30,12 @@ const LIGHT_REDUCED_MS = 400;
  * sent and received, the terminal type (or a serial port's line settings), the terminal's
  * size and the cursor's position. Not a live region: the cursor moves too often to announce.
  */
-export function StatusBar({ pane, profile, sessions }: Props) {
+export function StatusBar(props: Props) {
+  const { settings } = useSettings();
+  return settings.statusBar.show ? <StatusItems {...props} /> : null;
+}
+
+function StatusItems({ pane, profile, sessions }: Props) {
   const { t } = useTranslation();
   const screen = useScreen(sessions, pane.key);
   const meter = useRegistered(sessions, () => sessions.get(pane.key)?.traffic);

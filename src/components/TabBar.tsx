@@ -25,7 +25,7 @@ import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
 import { useLatest } from "../hooks/latest";
 import { useLocale } from "../hooks/locale";
-import { useMediaQuery } from "../hooks/settings";
+import { useMediaQuery, useSettings } from "../hooks/settings";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -80,11 +80,6 @@ export interface TabBarHandlers {
 interface Props {
   tabs: Tab[];
   activeKey: number | null;
-  followRemoteTitle: boolean;
-  /** Whether tabs in the background with new output are marked (a setting). */
-  markOutput: boolean;
-  /** Whether tabs in the background whose terminal rang its bell are marked (a setting). */
-  bellAlert: boolean;
   /**
    * From `useStableHandlers`: a title changes several times a second in a busy terminal, and
    * the tab bar renders again each time, but the tabs whose title didn't change don't.
@@ -113,9 +108,6 @@ interface Props {
 export function TabBar({
   tabs,
   activeKey,
-  followRemoteTitle,
-  markOutput,
-  bellAlert,
   handlers,
   canOpenLocal,
   windows,
@@ -130,6 +122,8 @@ export function TabBar({
 }: Props) {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
+  const { followRemoteTitle, markOutput } = useSettings().settings.tabs;
+  const { bellAlert } = useSettings().settings.terminal;
   const {
     onSelect,
     onNew,

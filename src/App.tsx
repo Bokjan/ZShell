@@ -44,7 +44,6 @@ import { useDirectory, useTabStore } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { createTabRest } from "./lib/tabRest";
 import { currentSettings } from "./lib/settings";
-import { useSettings } from "./hooks/settings";
 import { useStableHandlers } from "./hooks/stableHandlers";
 import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
@@ -54,7 +53,6 @@ import "./styles.css";
 function App() {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
-  const { settings, update } = useSettings();
   useDirectorySync();
   useQuickCommandSync();
   const { profiles } = useDirectory();
@@ -95,10 +93,7 @@ function App() {
     focusActiveTerminal();
   });
   useNativeMenuLabel("fullScreen", t(fullScreen.on ? "appMenu.exitFullScreen" : "appMenu.items.fullScreen"));
-  const composer = useCompose(store, sessions, tabs, activeKey, {
-    followRemoteTitle: settings.tabs.followRemoteTitle,
-    focusTerminal: focusActiveTerminal,
-  });
+  const composer = useCompose(store, sessions, tabs, activeKey, { focusTerminal: focusActiveTerminal });
   const { compose, flashing, inScope } = composer;
   const activeTab = tabs.find((tab) => tab.key === activeKey);
   const activePane = activeTab && focusedPane(activeTab);
@@ -108,14 +103,14 @@ function App() {
     send: composer.send,
     focusTerminal: focusActiveTerminal,
   });
-  const close = useCloseFlow(store, sessions, settings, update);
-  const deletion = useProfileDeletion(store, settings.tabs.followRemoteTitle);
+  const close = useCloseFlow(store, sessions);
+  const deletion = useProfileDeletion(store);
   const { requestClose, closeFocused } = close;
 
   const paneActions = usePaneActions(store, sessions);
   const { refused, onAreaSize, roomToSplit, splitPane, duplicateTab } = paneActions;
 
-  const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: paneActions.openTab });
+  const windowing = useWindows(store, sessions, { openTab: paneActions.openTab });
   const [tabRest] = useState(() =>
     createTabRest(
       () => store.get().activeKey,
@@ -178,7 +173,6 @@ function App() {
     windowing,
     requestClose,
     fullScreen,
-    followRemoteTitle: settings.tabs.followRemoteTitle,
     commandsOf: quick.menuCommands,
     runCommand: quick.run,
     openPalette: quick.openPalette,
@@ -258,9 +252,6 @@ function App() {
         <TabBar
           tabs={tabs}
           activeKey={activeKey}
-          followRemoteTitle={settings.tabs.followRemoteTitle}
-          markOutput={settings.tabs.markOutput}
-          bellAlert={settings.terminal.bellAlert}
           handlers={tabBarHandlers}
           tabRest={tabRest}
           canOpenLocal={localAllowed}
@@ -286,7 +277,6 @@ function App() {
             compose={compose}
             tabs={tabs}
             activeKey={activeKey}
-            followRemoteTitle={settings.tabs.followRemoteTitle}
             onChange={composer.setCompose}
             onSend={(text) => composer.send(asTyped(text, true))}
             onClose={composer.toggle}
@@ -316,7 +306,7 @@ function App() {
           {tabs.length === 0 && <div className="placeholder">{t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}</div>}
         </div>
         {quick.bar}
-        {settings.statusBar.show && activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}
+        {activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}
       </main>
       {editor.dialog}
       {deletion.dialog}

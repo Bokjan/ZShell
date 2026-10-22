@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { MenuItem } from "../components/ContextMenu";
 import type { QuickCommand } from "../ipc/api";
 import { useLocale } from "../hooks/locale";
+import { useSettings } from "../hooks/settings";
 import { findPane, tabTitle, type Pane, type Tab } from "../lib/panes";
 import { leavesSomething } from "../lib/tabs";
 import type { CloseRequest } from "./useCloseFlow";
@@ -18,7 +19,6 @@ interface Options {
   windowing: ReturnType<typeof useWindows>;
   requestClose(request: CloseRequest): unknown;
   fullScreen: { on: boolean; toggle(): void };
-  followRemoteTitle: boolean;
   /** The quick commands of a pane's group, or null when the menu lists none. */
   commandsOf(pane: Pane): QuickCommand[] | null;
   runCommand(command: QuickCommand): void;
@@ -35,13 +35,14 @@ export function useTerminalMenu({
   windowing,
   requestClose,
   fullScreen,
-  followRemoteTitle,
   commandsOf,
   runCommand,
   openPalette,
 }: Options): (pane: Pane) => MenuItem[] {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
+  // The terminal builds its menu as it renders.
+  const { followRemoteTitle } = useSettings().settings.tabs;
 
   const paneMenu = (pane: Pane): MenuItem[] => {
     const split = (tabs.find((tab) => tab.panes.some((p) => p.key === pane.key))?.panes.length ?? 0) > 1;
