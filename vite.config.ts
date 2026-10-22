@@ -17,6 +17,9 @@ export default defineConfig(() => ({
     // included: the tests that list the sources that way (layers, icons, React Compiler…)
     // would miss a new file until then. Turning the cache off costs well under a second.
     fsModuleCache: false,
+    // Stylesheets are read as text by styles.test.ts, which Vitest leaves empty by default (the
+    // pattern has no `$`: the id ends in `?raw`).
+    css: { include: [/\.css/] },
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

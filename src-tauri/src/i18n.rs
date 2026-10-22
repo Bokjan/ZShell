@@ -405,6 +405,22 @@ mod tests {
         assert!(missing.is_empty(), "keys missing from locales/en.json:\n{}", missing.join("\n"));
     }
 
+    /// An error made into text and wrapped as another (an `io::Error::other` of its text, to
+    /// return it from a callback with an error type of its own) keeps its message but loses
+    /// its code, which the frontend decides by (a known_hosts file that can't be read was a
+    /// failed handshake to retry). Such an error goes to where it is reported another way (see
+    /// `ssh::handler`).
+    #[test]
+    fn errors_keep_their_codes() {
+        let wrapped = concat!("other(e.", "to_string())");
+        let found: Vec<_> = sources()
+            .into_iter()
+            .filter(|(_, source)| source.contains(wrapped))
+            .map(|(path, _)| path.display().to_string())
+            .collect();
+        assert!(found.is_empty(), "errors made into text, losing their codes:\n{}", found.join("\n"));
+    }
+
     /// Every key in the English catalog must be used, so that unused ones are removed. A key
     /// counts as used when it appears as a string literal, since some are chosen before being
     /// passed to `t!` (an error code, as such, without its `errors.` prefix).

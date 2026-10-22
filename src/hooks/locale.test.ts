@@ -59,3 +59,23 @@ describe("useLocale", () => {
     expect(found).toEqual([]);
   });
 });
+
+// All the sources, rendering or not.
+const all = import.meta.glob<string>(["../**/*.{ts,tsx}", "!../**/*.test.ts"], { query: "?raw", import: "default", eager: true });
+
+describe("the interface language", () => {
+  it("joins the lists in sentences as it writes them (formatList), not with English punctuation", () => {
+    const components = Object.entries(rendering).filter(([path]) => /^\.\.\/(App|app\/|components\/)/.test(path));
+    const found = components.flatMap(([path, source]) =>
+      [...source.matchAll(/\.join\("(, |\. )"\)/g)].map((match) => `${path}: ${match[0]}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("is the one numbers, dates and names are formatted and sorted in, not the WebView's", () => {
+    const found = Object.entries(all).flatMap(([path, source]) =>
+      [...source.matchAll(/new Intl\.\w+\((undefined|\))/g)].map((match) => `${path}: ${match[0]}`),
+    );
+    expect(found).toEqual([]);
+  });
+});
