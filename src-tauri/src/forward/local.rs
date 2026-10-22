@@ -137,8 +137,7 @@ async fn accept_failed(tracker: &mut Tracker<'_>, error: std::io::Error) {
 }
 
 async fn connect(opener: Opener, stream: TcpStream, peer: SocketAddr, host: String, port: u16) -> Result<()> {
-    let target = host_port(&host, port);
-    let channel = opener.open(host, port, peer).await.context(Error::new("forward.channelFailed").param("target", target))?;
+    let channel = opener.open(host, port, peer).await?;
     bridge(stream, channel, opener.liveness).await;
     Ok(())
 }

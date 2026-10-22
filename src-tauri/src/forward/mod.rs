@@ -28,6 +28,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use anyhow::Context as _;
 use russh::client::Msg;
 use russh::Channel;
 use tauri::async_runtime::JoinHandle;
@@ -400,15 +401,17 @@ struct Opener {
 
 impl Opener {
     /// A channel to `host:port` for the connection from `peer`, within [`OPEN_TIMEOUT`]. The
-    /// server answers the request, which tells that the connection is still alive.
+    /// server answers the request, which tells that the connection is still alive. Fails with
+    /// `forward.channelFailed` (with russh's error underneath) or `forward.channelTimeout`.
     async fn open(&self, host: String, port: u16, peer: SocketAddr) -> anyhow::Result<Channel<Msg>> {
         self.liveness.expect_reply();
+        let target = host_port(&host, port);
         let handle = self.handle.clone();
         let mut opening =
             Box::pin(async move { handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into()).await });
         match tokio::time::timeout(OPEN_TIMEOUT, &mut opening).await {
-            Ok(opened) => Ok(opened?),
-            Err(elapsed) => {
+            Ok(opened) => opened.context(Error::new("forward.channelFailed").param("target", target)),
+            Err(_) => {
                 // The server may open it yet, and would keep its connection to the target with
                 // the channel: closed then. Waiting ends with the SSH connection at the latest.
                 tokio::spawn(async move {
@@ -416,7 +419,7 @@ impl Opener {
                         let _ = channel.close().await;
                     }
                 });
-                Err(elapsed.into())
+                Err(Error::new("forward.channelTimeout").param("target", target).into())
             }
         }
     }
@@ -627,7 +630,7 @@ mod tests {
         let opener = Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone() };
         let opened = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await;
         let Err(error) = opened else { panic!("the channel opened") };
-        assert!(error.downcast_ref::<tokio::time::error::Elapsed>().is_some(), "{error:#}");
+        assert_eq!(error.downcast_ref::<Error>().map(Error::code), Some("forward.channelTimeout"), "{error:#}");
 
         let (mut channel, reply) = requested.recv().await.unwrap();
         reply.accept().await;

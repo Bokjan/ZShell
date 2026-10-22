@@ -191,6 +191,7 @@
       "acceptFailed": "Impossible d’accepter une connexion",
       "remoteRefused": "Le serveur a refusé d’écouter sur {address}",
       "channelFailed": "Le serveur n’a pas pu se connecter à {target}",
+      "channelTimeout": "Le serveur a mis trop de temps à se connecter à {target}",
       "socksVersion": "Version SOCKS non prise en charge : {version}",
       "socksAuth": "Le client SOCKS exige une authentification, qui n’est pas prise en charge",
       "socksCommand": "Commande SOCKS non prise en charge : {command} ; seule la commande CONNECT est prise en charge",

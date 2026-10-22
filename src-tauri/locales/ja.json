@@ -191,6 +191,7 @@
       "acceptFailed": "接続を受け付けられません",
       "remoteRefused": "サーバーが{address}での待ち受けを拒否しました",
       "channelFailed": "サーバーから{target}に接続できませんでした",
+      "channelTimeout": "サーバーから{target}への接続がタイムアウトしました",
       "socksVersion": "サポートされていないSOCKSバージョンです：{version}",
       "socksAuth": "SOCKSクライアントが認証を要求していますが、認証には対応していません",
       "socksCommand": "サポートされていないSOCKSコマンドです：{command}。対応しているのはCONNECTのみです",

@@ -47,6 +47,7 @@ export type ErrorCode =
   | "forward.acceptFailed"
   | "forward.bindFailed"
   | "forward.channelFailed"
+  | "forward.channelTimeout"
   | "forward.missingTarget"
   | "forward.remoteRefused"
   | "forward.socksAddressType"

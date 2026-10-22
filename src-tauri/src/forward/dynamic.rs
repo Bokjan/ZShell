@@ -4,15 +4,14 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use russh::ChannelOpenFailure;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
 use super::local::serve;
 use super::socks::{self, Reply};
-use super::{bridge, host_port, Ctx, ForwardRule, Opener, Stopping};
-use crate::error::Error;
+use super::{bridge, Ctx, ForwardRule, Opener, Stopping};
 
 /// How long a client may take to send its request after connecting.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -25,7 +24,6 @@ async fn connect(opener: Opener, mut stream: TcpStream, peer: SocketAddr) -> Res
     let Some(request) = request(&mut stream, REQUEST_TIMEOUT).await? else {
         return Ok(());
     };
-    let target = host_port(&request.host, request.port);
     let channel = match opener.open(request.host, request.port, peer).await {
         Ok(channel) => channel,
         Err(e) => {
@@ -35,7 +33,7 @@ async fn connect(opener: Opener, mut stream: TcpStream, peer: SocketAddr) -> Res
                 _ => Reply::GeneralFailure,
             };
             let _ = socks::reply(&mut stream, request.version, reply).await;
-            return Err(e).context(Error::new("forward.channelFailed").param("target", target));
+            return Err(e);
         }
     };
     socks::reply(&mut stream, request.version, Reply::Succeeded).await?;

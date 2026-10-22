@@ -191,6 +191,7 @@
       "acceptFailed": "Eine Verbindung kann nicht angenommen werden",
       "remoteRefused": "Der Server hat das Lauschen auf {address} verweigert",
       "channelFailed": "Der Server konnte keine Verbindung mit {target} herstellen",
+      "channelTimeout": "Der Server hat zu lange gebraucht, um eine Verbindung mit {target} herzustellen",
       "socksVersion": "Nicht unterstützte SOCKS-Version {version}",
       "socksAuth": "Der SOCKS-Client verlangt eine Authentifizierung, die nicht unterstützt wird",
       "socksCommand": "Nicht unterstützter SOCKS-Befehl {command}; nur CONNECT wird unterstützt",

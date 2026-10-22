@@ -191,6 +191,7 @@
       "acceptFailed": "无法接受连接",
       "remoteRefused": "服务器拒绝监听 {address}",
       "channelFailed": "服务器无法连接到 {target}",
+      "channelTimeout": "服务器连接 {target} 超时",
       "socksVersion": "不支持的 SOCKS 版本 {version}",
       "socksAuth": "SOCKS 客户端要求身份验证，但不支持身份验证",
       "socksCommand": "不支持的 SOCKS 命令 {command}；仅支持 CONNECT",
