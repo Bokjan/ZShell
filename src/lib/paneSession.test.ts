@@ -287,6 +287,17 @@ describe("automatic reconnection", () => {
     expect(opened).toHaveLength(2);
   });
 
+  it("doesn't retry while the known_hosts files can't be read", async () => {
+    const { pane, opened } = setup();
+    pane.connect();
+    opened[0].event({ type: "connected" });
+    opened[0].event(lost());
+    await vi.advanceTimersByTimeAsync(2000);
+    opened[1].event(failed({ code: "knownHosts.readFailed", message: "", params: {} }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(opened).toHaveLength(2);
+  });
+
   it("doesn't retry when turned off for the session", async () => {
     const { pane, opened } = setup({ autoReconnect: () => false });
     pane.connect();

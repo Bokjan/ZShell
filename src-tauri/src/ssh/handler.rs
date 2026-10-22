@@ -74,6 +74,14 @@ impl ClientHandler {
         Self { any_host_key: true, ..self }
     }
 
+    /// Fails the handshake as `error` says: sent to the session task, which reports it, since
+    /// russh keeps only the text of the error returned.
+    async fn failed(&self, error: crate::error::Error) -> russh::Error {
+        let text = error.to_string();
+        let _ = self.queries.send(HostKeyMessage::Failed(error)).await;
+        std::io::Error::other(text).into()
+    }
+
     /// Has the session task tell or ask the user about `key`; whether to go on.
     async fn ask(&self, key: PublicKey, status: HostKeyStatus) -> bool {
         let (reply, answer) = oneshot::channel();
@@ -134,7 +142,7 @@ impl client::Handler for ClientHandler {
                     let warning = invalid_certificate(&why, &self.host);
                     let _ = self.queries.send(HostKeyMessage::Warning(warning)).await;
                 }
-                Err(e) => return Err(std::io::Error::other(e.to_string()).into()),
+                Err(e) => return Err(self.failed(e).await),
             }
         }
 
@@ -148,7 +156,7 @@ impl client::Handler for ClientHandler {
             Ok(Check::OtherTypesKnown(others)) => HostKeyStatus::Unknown { others },
             Ok(Check::Changed { path, line }) => HostKeyStatus::Changed { path, line },
             Ok(Check::Revoked { path, .. }) => HostKeyStatus::Revoked { path },
-            Err(e) => return Err(std::io::Error::other(e.to_string()).into()),
+            Err(e) => return Err(self.failed(e).await),
         };
         Ok(self.ask(key, status).await)
     }

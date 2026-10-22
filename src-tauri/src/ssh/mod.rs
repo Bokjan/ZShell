@@ -455,25 +455,31 @@ where
     tokio::pin!(handshake);
     let deadline = tokio::time::sleep(HANDSHAKE_TIMEOUT);
     tokio::pin!(deadline);
+    // Why the handler couldn't check the host key, which is the error then.
+    let mut failure = None;
     loop {
         tokio::select! {
             result = &mut handshake => {
                 // Warnings sent just before the key was accepted, which may not have been
                 // received yet.
                 while let Ok(message) = queries.try_recv() {
-                    if let HostKeyMessage::Warning(warning) = message {
-                        host_key::warn(io, &warning);
+                    match message {
+                        HostKeyMessage::Warning(warning) => host_key::warn(io, &warning),
+                        HostKeyMessage::Failed(e) => failure = Some(e),
+                        HostKeyMessage::Query(_) => {}
                     }
                 }
-                let session = result.map_err(|e| match e {
-                    russh::Error::UnknownKey => anyhow!(Error::new("ssh.hostKeyRejected")),
-                    e => anyhow!(e).context(Error::new("ssh.handshakeFailed")),
+                let session = result.map_err(|e| match (e, failure) {
+                    (_, Some(failure)) => anyhow!(failure),
+                    (russh::Error::UnknownKey, None) => anyhow!(Error::new("ssh.hostKeyRejected")),
+                    (e, None) => anyhow!(e).context(Error::new("ssh.handshakeFailed")),
                 })?;
                 abort.disarm();
                 return Ok(session);
             }
             Some(message) = queries.recv() => match message {
                 HostKeyMessage::Warning(warning) => host_key::warn(io, &warning),
+                HostKeyMessage::Failed(e) => failure = Some(e),
                 HostKeyMessage::Query(query) => {
                     let accepted = host_key::confirm(io, &remote.host, remote.port, &query).await;
                     let _ = query.reply.send(accepted);

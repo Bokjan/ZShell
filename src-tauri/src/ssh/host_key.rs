@@ -33,6 +33,9 @@ pub enum HostKeyMessage {
     Query(HostKeyQuery),
     /// A translated warning to show, e.g. about a certificate set aside.
     Warning(String),
+    /// Why the host key couldn't be checked (a known_hosts file can't be read), with its
+    /// code: russh only passes on the `io::Error` the handler fails with.
+    Failed(crate::error::Error),
 }
 
 pub struct HostKeyQuery {

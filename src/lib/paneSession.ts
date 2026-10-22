@@ -98,9 +98,16 @@ export const RETRY_DELAYS = [2, 4, 8, 16, 30];
 /** Proxy failures that retrying cannot fix: it wants credentials we don't have or can't use. */
 const PERMANENT_PROXY_ERRORS = new Set(["proxy.authRequired", "proxy.authUnsupported", "proxy.authFailed", "proxy.unsafeName"]);
 
-/** Failures that retrying cannot fix: authentication problems (also with the proxy) and untrusted host keys. */
+/**
+ * Failures that retrying cannot fix: authentication problems (also with the proxy), untrusted
+ * host keys and known_hosts files that can't be read (a file left to root by `sudo`).
+ */
 const isPermanent = (error: CommandError | null) =>
-  !!error && (error.code.startsWith("auth.") || error.code === "ssh.hostKeyRejected" || PERMANENT_PROXY_ERRORS.has(error.code));
+  !!error &&
+  (error.code.startsWith("auth.") ||
+    error.code.startsWith("knownHosts.") ||
+    error.code === "ssh.hostKeyRejected" ||
+    PERMANENT_PROXY_ERRORS.has(error.code));
 
 /** How long the output must pause before the next login command is typed. */
 export const LOGIN_COMMAND_IDLE_MS = 300;
