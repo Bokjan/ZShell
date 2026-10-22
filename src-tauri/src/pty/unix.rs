@@ -49,7 +49,7 @@ impl Pty {
             .as_raw_fd()
             .ok_or_else(|| io::Error::from(ErrorKind::Unsupported))
             .and_then(non_blocking_copy)
-            .and_then(AsyncFd::new)
+            .and_then(watch)
             .context(Error::new("pty.openFailed"))?;
         let terminal = Arc::new(terminal);
         // Before the shell starts, so that its exit can't come before we listen for it.
@@ -232,6 +232,13 @@ fn non_blocking_copy(fd: RawFd) -> io::Result<OwnedFd> {
     Ok(copy)
 }
 
+/// Lets tokio wake us when `fd` is readable or writable.
+fn watch(fd: OwnedFd) -> io::Result<AsyncFd<OwnedFd>> {
+    // SAFETY: the `AsyncFd` owns the descriptor and only lends it out, so it stays open and the
+    // same until the `AsyncFd` is dropped.
+    unsafe { AsyncFd::register(fd) }.map_err(|e| e.into_parts().1)
+}
+
 /// Passes the output on until its end, or until `stop` (the session has shut down).
 async fn read_output(terminal: &AsyncFd<OwnedFd>, sink: &SessionSink, mut stop: oneshot::Receiver<()>) {
     let flow = sink.flow();
@@ -305,7 +312,7 @@ mod tests {
         assert_eq!(result, 0);
         // SAFETY: just opened, and owned by nothing else.
         let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
-        let terminal = AsyncFd::new(non_blocking_copy(master.as_raw_fd()).unwrap()).unwrap();
+        let terminal = watch(non_blocking_copy(master.as_raw_fd()).unwrap()).unwrap();
         let (io, _input, output, _events) = TermIo::detached((80, 24));
         let sink = io.sink();
         let (stop_reading, stop) = oneshot::channel();

@@ -136,7 +136,9 @@ async fn run_with(options: SerialOptions, mut io: TermIo, on_threads: bool) {
 
 #[cfg(unix)]
 async fn bridge(port: NativePort, device: &str, io: &mut TermIo) -> Outcome {
-    match tokio::io::unix::AsyncFd::try_new(port) {
+    // SAFETY: the `AsyncFd` owns the port, whose descriptor stays open and the same until the
+    // port is dropped; the session only borrows it (`get_ref`).
+    match unsafe { tokio::io::unix::AsyncFd::register(port) } {
         Ok(port) => {
             io.event(SessionEvent::Connected);
             unix::bridge(port, device, io).await
@@ -545,7 +547,8 @@ mod tests {
     async fn the_task_drives_a_device_tokio_can_watch() {
         let (_device, path) = fake_device();
         let port = open(&SerialOptions { device: path, ..SerialOptions::default() }).unwrap();
-        assert!(tokio::io::unix::AsyncFd::try_new(port).is_ok());
+        // SAFETY: as in `bridge`.
+        assert!(unsafe { tokio::io::unix::AsyncFd::register(port) }.is_ok());
     }
 
     /// What is typed after a break goes out after it, and the line keeps working.
