@@ -152,4 +152,10 @@
   :where(button, a, summary, [tabindex]):focus-visible {
     outline-color: Highlight;
   }
+  /* Text fields show their focus by their border's color, which these colors replace. */
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea):not(.sftp-filter input):focus,
+  .sftp-filter:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
