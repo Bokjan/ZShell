@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { actionEvent, actionOf, appMenu, chosenAction, labelsOn, matches, PANE_SIDES, shortcutRows, TAB_ACTIONS } from "./keymap";
+import {
+  actionEvent,
+  actionOf,
+  appMenu,
+  chosenAction,
+  labelsOn,
+  matches,
+  PANE_SIDES,
+  shortcutRows,
+  TAB_ACTIONS,
+  toAppMenu,
+} from "./keymap";
 
 const key = (code: string, modifiers: { ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {}) =>
   ({
@@ -33,6 +44,18 @@ describe("keymap", () => {
     expect(actionOf(key("Digit3", { ctrl: true }), TAB_ACTIONS)).toBe(null);
     expect(actionOf(key("ArrowUp", { ctrl: true, alt: true }), sides)).toBe("focusUp");
     expect(actionOf(key("ArrowUp", { alt: true }), sides)).toBe(null);
+  });
+
+  it("leaves the keys of the app menu's items in the macOS menu bar to the menu", () => {
+    const enter = key("Enter", { meta: true });
+    expect(toAppMenu(enter, true, true)).toBe(true);
+    // Until the page has put the app menu's items in the menu bar, it takes their keys itself.
+    expect(toAppMenu(enter, true, false)).toBe(false);
+    // The system's Select All is the terminal's own.
+    expect(toAppMenu(key("KeyA", { meta: true }), true, true)).toBe(false);
+    expect(toAppMenu(key("Enter"), true, true)).toBe(false);
+    expect(toAppMenu(key("ArrowLeft", { alt: true, meta: true }), true, true)).toBe(false);
+    expect(toAppMenu(enter, false, true)).toBe(false);
   });
 
   it("labels keys as each platform writes them", () => {

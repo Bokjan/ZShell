@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent } from "react";
 
 import { isAppLocked } from "../lib/appLock";
 import { isDialogOpen, type DialogHandle } from "./dialogs";
-import { actionEvent, type Action } from "../lib/keymap";
+import { actionEvent, toAppMenu, type Action } from "../lib/keymap";
 
 /** Handles a key if it is one of its shortcuts, returning whether it did. */
 export type ShortcutHandler = (e: KeyboardEvent) => boolean;
@@ -32,7 +32,15 @@ let listening = false;
 // `isComposing` in platform.ts), which WebKit also gives ⌘, and other keys the input
 // method sees while it is on but not composing. None apply while the app is locked.
 function onKeyDown(e: KeyboardEvent) {
-  if (e.isComposing || isAppLocked()) return;
+  if (e.isComposing) return;
+  // The keys of the app menu's items in the macOS menu bar reach the menu only if the page
+  // leaves them, so nothing on the page sees them (not cancelled, the menu still gets them):
+  // the terminal would type ⌘↩ as Enter, the compose bar send its text.
+  if (toAppMenu(e)) {
+    e.stopPropagation();
+    return;
+  }
+  if (isAppLocked()) return;
   for (const registration of registrations) {
     if (registration.applies() && registration.handle(e)) {
       e.preventDefault();

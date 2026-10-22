@@ -245,6 +245,17 @@ export function matches(e: KeyboardEvent, action: Action): boolean {
   return CHORDS.get(action)!.some((chord) => sameChord(e, chord));
 }
 
+/**
+ * Whether `e` is the key of an app menu item in the macOS menu bar (`mac`, once the page has
+ * put them there: `appMenuThere`), which the page must leave to the menu (see `useShortcuts`).
+ * The system's Copy, Paste and Select All are not among them: the terminal and text fields
+ * handle their keys themselves (⌘A selects all of the terminal).
+ */
+export function toAppMenu(e: KeyboardEvent, mac = isMac, appMenuThere = nativeMenu): boolean {
+  if (!mac || !appMenuThere || chosen.has(e)) return false;
+  return [...APP_MENU].some((action) => (mac === isMac ? CHORDS.get(action)! : chordsOf(action, mac)).some((chord) => sameChord(e, chord)));
+}
+
 /** The first of `actions` that `e` is a shortcut of. */
 export function actionOf<A extends Action>(e: KeyboardEvent, actions: readonly A[]): A | null {
   return actions.find((action) => matches(e, action)) ?? null;
