@@ -124,13 +124,13 @@ pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
 
 fn watch(on_lock: &'static (dyn Fn() + Send + Sync)) -> zbus::Result<()> {
     let bus = crate::dbus::system().map_err(|e| zbus::Error::Failure(e.to_owned()))?;
-    let manager = Proxy::new(&bus, LOGIN, "/org/freedesktop/login1", "org.freedesktop.login1.Manager")?;
+    let manager = Proxy::new(bus, LOGIN, "/org/freedesktop/login1", "org.freedesktop.login1.Manager")?;
     // `auto` is the caller's session, or the user's graphical one for an app outside it (as
     // apps a desktop starts in their own systemd scope are); signals come from its real path.
-    let auto = Proxy::new(&bus, LOGIN, "/org/freedesktop/login1/session/auto", "org.freedesktop.login1.Session")?;
+    let auto = Proxy::new(bus, LOGIN, "/org/freedesktop/login1/session/auto", "org.freedesktop.login1.Session")?;
     let id: String = auto.get_property("Id")?;
     let path: OwnedObjectPath = manager.call("GetSession", &(id,))?;
-    let session = Proxy::new(&bus, LOGIN, path, "org.freedesktop.login1.Session")?;
+    let session = Proxy::new(bus, LOGIN, path, "org.freedesktop.login1.Session")?;
 
     let sleeping = manager.receive_signal("PrepareForSleep")?;
     let lock_signals = session.receive_signal("Lock")?;
