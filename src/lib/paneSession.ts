@@ -603,7 +603,15 @@ export class PaneSession {
         }
         ended = true;
         this.dropSession();
-        void handle?.close().catch(ignore);
+        // The rules the lost connection ran, which reconnecting (automatically too) starts
+        // again: asked before the session closes, which forgets them.
+        const lostRules = event.reason === "lost" && handle ? forwards.carry(handle.id).catch((): string[] => []) : Promise.resolve([]);
+        void lostRules
+          .then((running) => {
+            if (!stale()) this.carry = [...new Set([...this.carry, ...running])];
+            return handle?.close();
+          })
+          .catch(ignore);
         // The duplicated tab's connection had died without its session noticing yet (a
         // laptop waking up, say): connect as usual.
         if (source !== undefined && !connected && event.reason === "failed") {

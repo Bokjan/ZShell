@@ -7,7 +7,7 @@
 //! runs on it), `sftp` and `forward` use it, and the registry decides where a saved session's
 //! forwarding rules run and what happens to them when a connection closes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -97,7 +97,19 @@ fn same_session<C: Holder>(a: &C, b: &C) -> bool {
 /// runs, a new connection doesn't start a rule another one runs, and when a connection closes
 /// its rules move to another one if the user chose so.
 #[derive(Clone, Default)]
-pub struct Connections(Arc<Mutex<HashMap<SessionId, Arc<LiveConnection>>>>);
+pub struct Connections {
+    map: Arc<Mutex<HashMap<SessionId, Arc<LiveConnection>>>>,
+    /// The rules that were running on the connections of sessions that have closed, by the
+    /// last session using each: the tab reconnects with them (see [`Connections::forwards_to_carry`]).
+    /// A few at most: those of tabs closed for good are never asked for.
+    carried: Arc<Mutex<VecDeque<Carried>>>,
+}
+
+/// A closed session, and the ids of the rules its connection ran.
+type Carried = (SessionId, Vec<String>);
+
+/// How many closed sessions' rules [`Connections::carried`] keeps.
+const CARRIED: usize = 32;
 
 type Map<C = LiveConnection> = HashMap<SessionId, Arc<C>>;
 
@@ -186,7 +198,7 @@ impl Connections {
         // Under one lock, so that two tabs of a session connecting at once share a hub, and
         // don't both start a rule (one would find its port taken).
         {
-            let mut map = self.0.lock().unwrap();
+            let mut map = self.map.lock().unwrap();
             let profile_id = &ssh.profile().id;
             let sibling = map.values().find(|other| !profile_id.is_empty() && other.ssh.profile().id == *profile_id);
             let hub = sibling.map(|other| other.forwards.hub()).unwrap_or_else(|| Arc::new(Hub::default()));
@@ -209,7 +221,7 @@ impl Connections {
     /// Registers session `id` as another user of `connection` (a duplicated tab), until the
     /// session closes. A session closing meanwhile is unregistered right away.
     pub fn attach(&self, id: SessionId, connection: Arc<LiveConnection>, io: &TermIo) {
-        Self::register(&mut self.0.lock().unwrap(), id, connection, io);
+        Self::register(&mut self.map.lock().unwrap(), id, connection, io);
         self.close_with(id, io);
     }
 
@@ -226,14 +238,14 @@ impl Connections {
     }
 
     pub fn get(&self, id: SessionId) -> Result<Arc<LiveConnection>> {
-        self.0.lock().unwrap().get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))
+        self.map.lock().unwrap().get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))
     }
 
     /// Unregisters session `id`; if no other session uses its connection, disconnects it in
     /// the background. Idempotent.
     fn close(&self, id: SessionId) {
         let connection = {
-            let mut connections = self.0.lock().unwrap();
+            let mut connections = self.map.lock().unwrap();
             let Some(connection) = connections.remove(&id) else {
                 return;
             };
@@ -245,6 +257,13 @@ impl Connections {
         };
         let (rules, tasks) = connection.forwards.stop_all();
         let handover = connection.keep_forwards.load(Ordering::Relaxed) && !rules.is_empty();
+        if !handover && !rules.is_empty() {
+            let mut carried = self.carried.lock().unwrap();
+            if carried.len() == CARRIED {
+                carried.pop_front();
+            }
+            carried.push_back((id, rules.iter().map(|rule| rule.id.clone()).collect()));
+        }
         let connections = self.clone();
         tauri::async_runtime::spawn(async move {
             if handover {
@@ -264,7 +283,7 @@ impl Connections {
     /// Starts (or restarts with a new definition) a rule of session `id`'s saved session:
     /// where it runs, else on `id`'s connection.
     pub fn start_forward(&self, id: SessionId, rule: ForwardRule) -> Result<()> {
-        let map = self.0.lock().unwrap();
+        let map = self.map.lock().unwrap();
         let own = map.get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))?;
         let target = session_connections(&map, &own).into_iter().find(|c| c.forwards.is_running(&rule.id)).unwrap_or(own);
         target.forwards.start(rule, false);
@@ -274,7 +293,7 @@ impl Connections {
     /// Stops a rule of session `id`'s saved session wherever it runs (or clears its failure).
     pub fn stop_forward(&self, id: SessionId, rule_id: &str) -> Result<()> {
         let targets = {
-            let map = self.0.lock().unwrap();
+            let map = self.map.lock().unwrap();
             let own = map.get(&id).cloned().ok_or_else(|| Error::new("session.notConnected"))?;
             let holders: Vec<_> = session_connections(&map, &own).into_iter().filter(|c| c.forwards.has(rule_id)).collect();
             if holders.is_empty() {
@@ -293,7 +312,7 @@ impl Connections {
     /// its rules (`None`: it is no longer SSH). Only those: stopping the rules a session no
     /// longer lists would also stop one another window saved and started meanwhile.
     pub fn stop_saved_forwards(&self, profile_id: &str, rule_id: Option<&str>) {
-        let connections: Vec<_> = self.0.lock().unwrap().values().filter(|c| c.ssh.profile().id == profile_id).cloned().collect();
+        let connections: Vec<_> = self.map.lock().unwrap().values().filter(|c| c.ssh.profile().id == profile_id).cloned().collect();
         for connection in connections {
             for rule in connection.forwards.running() {
                 if rule_id.is_none_or(|id| id == rule.id) {
@@ -306,33 +325,40 @@ impl Connections {
     /// The sessions whose connection runs forwarding rules of saved session `profile_id` (see
     /// [`forwarding_sessions`]): those deleting it would stop.
     pub fn forwarding_sessions(&self, profile_id: &str) -> Vec<SessionId> {
-        forwarding_sessions(&self.0.lock().unwrap(), profile_id)
+        forwarding_sessions(&self.map.lock().unwrap(), profile_id)
     }
 
     /// The rules that closing sessions `ids` would stop although another connection of their
     /// saved session stays open, which could take them over.
     pub fn forwards_to_keep(&self, ids: &[SessionId]) -> Vec<ForwardRule> {
-        rules_to_keep(&self.0.lock().unwrap(), ids)
+        rules_to_keep(&self.map.lock().unwrap(), ids)
     }
 
     /// Moves the forwards of the connections that closing sessions `ids` disconnects to
     /// another connection of their saved session once they close. A connection another tab
     /// still uses is left alone: when it closes later, the user is asked again.
     pub fn keep_forwards(&self, ids: &[SessionId]) {
-        for connection in closing(&self.0.lock().unwrap(), ids) {
+        for connection in closing(&self.map.lock().unwrap(), ids) {
             connection.keep_forwards.store(true, Ordering::Relaxed);
         }
     }
 
     /// The rules running on session `id`'s connection if it is the connection's last user, to
-    /// carry over to the connection it reconnects with.
+    /// carry over to the connection it reconnects with; once it has closed (the connection
+    /// lost), those that were running then, given once.
     pub fn forwards_to_carry(&self, id: SessionId) -> Vec<String> {
-        rules_to_carry(&self.0.lock().unwrap(), id)
+        let map = self.map.lock().unwrap();
+        if map.contains_key(&id) {
+            return rules_to_carry(&map, id);
+        }
+        let mut carried = self.carried.lock().unwrap();
+        let found = carried.iter().position(|(closed, _)| *closed == id);
+        found.and_then(|at| carried.remove(at)).map(|(_, rules)| rules).unwrap_or_default()
     }
 
     /// Starts `rules` of a closed connection on another connection of its session, if any.
     fn adopt(&self, closed: &LiveConnection, rules: Vec<ForwardRule>) {
-        let map = self.0.lock().unwrap();
+        let map = self.map.lock().unwrap();
         let Some((target, rules)) = rules_to_adopt(&map, closed, rules) else { return };
         for rule in rules {
             target.forwards.start(rule, true);
@@ -411,6 +437,18 @@ mod tests {
         until("the connection's end", || ssh[0].handle().is_closed()).await;
         assert!(!connections.get(2).unwrap().forwards.has("r1"));
         assert_eq!(tabs[1].reported("r1"), Vec::<String>::new());
+    }
+
+    /// The rules of a connection that closed (lost) are given once to its tab, to reconnect with.
+    #[tokio::test]
+    async fn gives_a_closed_connections_rules_to_carry_once() {
+        let (connections, _ssh, tabs) = two_connections(0).await;
+        assert_eq!(connections.forwards_to_carry(1), ["r1"]);
+        tabs[0].io.finish(Outcome::Exited(None));
+        until("the session to close", || connections.get(1).is_err()).await;
+        assert_eq!(connections.forwards_to_carry(1), ["r1"]);
+        assert!(connections.forwards_to_carry(1).is_empty());
+        assert!(connections.forwards_to_carry(2).is_empty());
     }
 
     /// A connection another tab still uses (a duplicated tab) stays open with its rules.

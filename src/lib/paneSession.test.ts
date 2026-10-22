@@ -609,10 +609,19 @@ describe("reconnecting by hand", () => {
     opened[1].resolve();
     await settle();
     opened[1].event({ type: "connected" });
-    // A later automatic reconnection starts the session's automatic rules only.
+    // An automatic reconnection after the connection was lost, those that were running then.
+    vi.mocked(forwards.carry).mockResolvedValueOnce(["r2"]);
     opened[1].event(lost());
     await vi.runOnlyPendingTimersAsync();
-    expect(opened[2].carry).toEqual([]);
+    expect(opened[2].carry).toEqual(["r2"]);
+    // Started there: none left to carry after that.
+    opened[2].resolve();
+    await settle();
+    opened[2].event({ type: "connected" });
+    vi.mocked(forwards.carry).mockResolvedValueOnce([]);
+    opened[2].event(lost());
+    await vi.runOnlyPendingTimersAsync();
+    expect(opened[3].carry).toEqual([]);
   });
 
   it("keeps the rules to carry when reconnecting again before connecting", async () => {
