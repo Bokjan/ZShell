@@ -123,7 +123,7 @@ async fn sign_in_with_key(
     let (server_side, hang_up) = abortable(server_side);
     match server.hangs_up {
         true => server.hang_up = Some(hang_up),
-        false => hang_up.disarm(),
+        false => drop(hang_up.keep()),
     }
     tokio::spawn(async move {
         if let Ok(session) = server::run_stream(Arc::new(config), server_side, server).await {

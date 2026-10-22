@@ -7,6 +7,7 @@ mod forwarded;
 mod handler;
 mod host_key;
 pub mod known_hosts;
+mod liveness;
 #[cfg(test)]
 pub(crate) mod testing;
 
@@ -33,6 +34,7 @@ pub use connection::{Connection, Shells, SshHandle};
 pub use forwarded::{Incoming, RemoteRoutes, ROUTE_QUEUE};
 use handler::{ClientHandler, EndReason};
 use host_key::HostKeyMessage;
+pub use liveness::Liveness;
 
 /// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
 /// terminal. `connected` is given the connection once it is authenticated, before the shell
@@ -45,7 +47,7 @@ pub async fn run(
     connected: impl FnOnce(Arc<Connection>, &TermIo) + Send,
 ) {
     let outcome = match start(&profile, &route, id, &mut io, connected).await {
-        Ok((channel, disconnect)) => bridge(channel, &mut io, disconnect).await,
+        Ok((channel, connection)) => bridge(channel, &mut io, connection.disconnect_reason(), connection.liveness()).await,
         Err(e) => Outcome::Failed(e.into()),
     };
     io.finish(outcome);
@@ -56,7 +58,7 @@ pub async fn run(
 /// forwards: like a second OpenSSH session through a ControlMaster.
 pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo) {
     let outcome = match open_shell(&connection, id, &mut io).await {
-        Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason()).await,
+        Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason(), connection.liveness()).await,
         Err(e) => Outcome::Failed(e.into()),
     };
     drop(connection);
@@ -112,7 +114,8 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         // The agent is only forwarded to the target, where the shell runs.
         let options = HopOptions::jump_host();
         let ended = options.disconnect.subscribe();
-        let mut session = connect(hop, options, transport.take(), proxy, &route.passwords, io).await?;
+        // The target's checks find a jump host gone, as nothing comes through it any more.
+        let (mut session, _) = connect(hop, options, transport.take(), proxy, &route.passwords, io).await?;
         auth::authenticate(&mut session, hop, &route.passwords, io, ended).await?;
         let target = host_port(next_host, next_port);
         let failed = || Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target);
@@ -130,15 +133,14 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
 }
 
 /// Connects (through the jump hosts, if any), authenticates and starts the remote shell.
-/// Also returns the receiver for the reason the connection ends, reported by the client
-/// handler.
+/// Also returns the connection, given to `connected` too.
 async fn start(
     profile: &SshProfile,
     route: &Route,
     id: SessionId,
     io: &mut TermIo,
     connected: impl FnOnce(Arc<Connection>, &TermIo),
-) -> Result<(Channel<Msg>, watch::Receiver<Option<EndReason>>)> {
+) -> Result<(Channel<Msg>, Arc<Connection>)> {
     let remote = &profile.ssh.remote;
     let (transport, chain) = match tunnel(route, &remote.host, remote.port, io).await? {
         Some(Tunnel { stream, via, jumps }) => (Some((stream, via)), jumps),
@@ -148,14 +150,14 @@ async fn start(
     let (disconnect_tx, disconnect) = watch::channel(None);
     let proxy = route.proxy.as_ref();
     let options = HopOptions { forward_agent: profile.ssh.forward_agent, routes: routes.clone(), disconnect: disconnect_tx };
-    let mut session = connect(profile, options, transport, proxy, &route.passwords, io).await?;
+    let (mut session, link) = connect(profile, options, transport, proxy, &route.passwords, io).await?;
     // No time limit, unlike connecting: the user may be answering prompts, and the server
     // has its own (`LoginGraceTime`).
     auth::authenticate(&mut session, profile, &route.passwords, io, disconnect.clone()).await?;
-    let connection = Connection::new(session, profile.clone(), chain, routes, disconnect.clone());
+    let connection = Connection::new(session, link, profile.clone(), chain, routes, disconnect);
     connected(connection.clone(), io);
     let channel = open_shell(&connection, id, io).await?;
-    Ok((channel, disconnect))
+    Ok((channel, connection))
 }
 
 /// Starts an interactive shell in a new channel on an authenticated connection, with the
@@ -203,7 +205,15 @@ async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> 
 /// limit, a ZMODEM upload's data waits in its own queue while keystrokes are still read, see
 /// [`TermIo::recv`]), and window changes are merged into the latest size (dragging the
 /// window edge sends many).
-async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::Receiver<Option<EndReason>>) -> Outcome {
+///
+/// What is typed is answered, echoed or otherwise: `liveness` checks the connection when
+/// nothing comes back.
+async fn bridge(
+    channel: Channel<Msg>,
+    io: &mut TermIo,
+    mut disconnect: watch::Receiver<Option<EndReason>>,
+    liveness: &Liveness,
+) -> Outcome {
     let (mut reader, writer) = channel.split();
     let writer = Arc::new(writer);
     let mut close = CloseOnDrop(Some(writer.clone()));
@@ -259,6 +269,7 @@ async fn bridge(channel: Channel<Msg>, io: &mut TermIo, mut disconnect: watch::R
             input = io.recv(data.len()) => match input {
                 Some(SessionInput::Data(bytes) | SessionInput::Raw(bytes)) => {
                     data.extend_from_slice(&bytes);
+                    liveness.expect_reply();
                     Ok(())
                 }
                 Some(SessionInput::Resize { cols, rows }) => {
@@ -398,7 +409,7 @@ impl HopOptions {
 
 /// Connects to one hop: over TCP (through `proxy`, if any, with its saved password in
 /// `passwords`), or through `via` (a channel from the previous jump host, with that host's
-/// name), then performs the SSH handshake.
+/// name), then performs the SSH handshake. Also returns the link to its transport.
 async fn connect(
     hop: &SshProfile,
     options: HopOptions,
@@ -406,7 +417,7 @@ async fn connect(
     proxy: Option<&Proxy>,
     passwords: &SavedPasswords,
     io: &mut TermIo,
-) -> Result<SshHandle> {
+) -> Result<(SshHandle, abortable::Link)> {
     let remote = &hop.ssh.remote;
     let (user, host, port) = (&remote.username, &remote.host, remote.port);
     let Some((stream, jump)) = via else {
@@ -453,7 +464,7 @@ fn client_config(keepalive: Option<Duration>) -> client::Config {
 /// connection, which russh would otherwise keep (see [`abortable`]).
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
-async fn handshake<S>(hop: &SshProfile, options: HopOptions, stream: S, io: &mut TermIo) -> Result<SshHandle>
+async fn handshake<S>(hop: &SshProfile, options: HopOptions, stream: S, io: &mut TermIo) -> Result<(SshHandle, abortable::Link)>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -497,8 +508,7 @@ where
                     (russh::Error::UnknownKey, None) => anyhow!(Error::new("ssh.hostKeyRejected")),
                     (e, None) => anyhow!(e).context(Error::new("ssh.handshakeFailed")),
                 })?;
-                abort.disarm();
-                return Ok(session);
+                return Ok((session, abort.keep()));
             }
             Some(message) = queries.recv() => match message {
                 HostKeyMessage::Warning(warning) => host_key::warn(io, &warning),
@@ -672,7 +682,7 @@ mod tests {
             channel.request_shell(false).await.unwrap();
             let (mut io, input, output, _events) = TermIo::detached((80, 24));
             let flow = io.sink().flow();
-            let bridge = tokio::spawn(async move { bridge(channel, &mut io, watch::channel(None).1).await });
+            let bridge = tokio::spawn(async move { bridge(channel, &mut io, connection.disconnect_reason(), connection.liveness()).await });
             Self { input, output, flow, sizes, typed, bridge }
         }
 
@@ -734,6 +744,29 @@ mod tests {
         shell.input.send(SessionInput::Data(b"q".to_vec())).unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
         shell.expect(b"q", (149, 30), true).await;
+        shell.bridge.abort();
+    }
+
+    /// Typing while output is paused gets no echo, and russh reads nothing meanwhile, but the
+    /// hold-up is on this side: the connection is not taken for a dead one.
+    #[tokio::test]
+    async fn typing_while_output_is_paused_keeps_the_connection() {
+        let mut shell = Shell::start(true).await;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !shell.flow.is_paused() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("output never paused");
+        // Until the connection task has filled the channel's queue, and reads no more.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        shell.input.send(SessionInput::Data(b"q".to_vec())).unwrap();
+        shell.input.send(SessionInput::Resize { cols: 100, rows: 30 }).unwrap();
+        // Longer than a check after typing takes, in tests.
+        tokio::time::sleep(Duration::from_millis(2000)).await;
+        assert!(!shell.bridge.is_finished(), "the connection ended");
+        shell.expect(b"q", (100, 30), true).await;
         shell.bridge.abort();
     }
 

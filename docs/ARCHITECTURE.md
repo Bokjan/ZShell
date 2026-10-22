@@ -116,7 +116,8 @@
 - **主机校验**：自己解析 known_hosts 并按 OpenSSH 的规则校验与写入，包括 `@cert-authority` 主机证书（`ssh/known_hosts/`），不用 russh 自带的校验。新密钥写入时，用户与系统的 ssh_config 对该主机设了 `HashKnownHosts yes` 就写 hashed 形式（只看 `Host` 块，`Match` 块当作不适用）；连接的其他选项不读 ssh_config。
 - **agent 转发**：只转发给目标主机；会话开启了 agent 转发时才接受服务器打开的 agent 通道（跳板机一律拒绝），没有本地 agent 时也拒绝。
 - **ProxyJump**：在上一跳连接上开 `direct-tcpip` 作为下一跳的传输层，每一跳用被引用会话自己的地址、认证与主机密钥；SSH 与 Telnet 共用（`ssh::tunnel`）。
-- **keepalive 与重连**：keepalive 无响应判定断线（`lost`），前端退避重连到标签关闭，认证或主机密钥被拒绝时停止。重连是新会话。超时与断线的分类见 `net.rs` 与 `ssh/mod.rs`。
+- **keepalive 与重连**：keepalive 无响应判定断线（`lost`），前端退避重连到标签关闭，认证或主机密钥被拒绝时停止。重连是新会话。超时与断线的分类见 `net.rs` 与 `ssh/mod.rs`。russh 写传输层时只受 `inactivity_timeout` 限制：对端无声消失、发送缓冲区满了以后，连接任务会一直卡在写上，keepalive 也发不出去，所以把它设为 keepalive 间隔的 5 倍作兜底。
+- **及早发现断线**（`ssh/liveness.rs`）：keepalive 要几分钟才判定断线，用户却在几秒内就会发觉。所以在三个时机检查连接：终端输入后（服务器会回显）、本地或动态转发开通道时、系统从睡眠唤醒时（应用锁的系统事件转给 `Connections::woke`）。检查先等一会儿看服务器有没有发来东西，没有就发一个要回复的 keepalive 再等；判断依据是传输层读到的任何字节（`ssh/abortable.rs` 计数），而不只是 keepalive 的回复，所以大流量下不会误判。一直没收到、且 russh 正等着对端（读或写挂起）时，从外部切断传输层，按断线处理、照常重连；russh 若是被本地卡住（终端积压了输出，不再读通道），不算服务器的问题。同一连接同时只跑一个检查；会话关了 keepalive 时也不检查。
 - **测试**：连接上的功能连到进程内的 russh 服务器（`ssh/testing.rs`），从不碰用户的 `~/.ssh`。
 
 ### Telnet 与串口

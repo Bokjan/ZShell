@@ -272,11 +272,22 @@ pub fn watch_idle(lock: Arc<AppLock>) {
     });
 }
 
-/// Locks when the system locks its screen, sleeps or switches user, for as long as the app
+/// What the system tells as it happens, which [`watch_system`] follows.
+#[derive(Clone, Copy)]
+enum SystemEvent {
+    /// The screen locks, the system goes to sleep or the user switches.
+    Locking,
+    /// The system has woken from sleep.
+    Woke,
+}
+
+/// Locks when the system locks its screen, sleeps or switches user, and calls `woke` as it wakes
+/// from sleep (for the connections to check that they are still alive), for as long as the app
 /// runs. On the main thread.
-pub fn watch_system(lock: Arc<AppLock>) {
-    platform::watch_system(Box::new(move || {
-        lock.lock(Trigger::System);
+pub fn watch_system(lock: Arc<AppLock>, woke: impl Fn() + Send + Sync + 'static) {
+    platform::watch_system(Box::new(move |event| match event {
+        SystemEvent::Locking => lock.lock(Trigger::System),
+        SystemEvent::Woke => woke(),
     }));
 }
 

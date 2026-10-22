@@ -57,7 +57,7 @@ async fn connect_with<H: russh::server::Handler + Send + 'static>(
         }
     });
     let stall = Stall::default();
-    let client_side = Stalling { inner: client_side, stall: stall.clone() };
+    let (client_side, guard) = super::abortable::abortable(Stalling { inner: client_side, stall: stall.clone() });
     let mut profile = SshProfile::quick("test".into(), Remote::new("localhost".into(), 22, "alice".into()));
     profile.id = profile_id.into();
     let routes = RemoteRoutes::default();
@@ -68,7 +68,7 @@ async fn connect_with<H: russh::server::Handler + Send + 'static>(
     let config = Arc::new(super::client_config(keepalive));
     let mut handle = client::connect_stream(config, client_side, handler).await.unwrap();
     assert!(handle.authenticate_none("alice").await.unwrap().success());
-    (Connection::new(handle, profile, JumpChain::default(), routes, disconnect), stall)
+    (Connection::new(handle, guard.keep(), profile, JumpChain::default(), routes, disconnect), stall)
 }
 
 /// Stalls the transport of a connection made by [`connect_stalling`].

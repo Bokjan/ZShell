@@ -1,35 +1,66 @@
-//! A connection that a handshake given up on can end. russh starts its connection task once
-//! the server's version line arrives, and `connect_stream` waits for the key exchange to
-//! finish: dropping that future leaves the task running, reading from a server that may
-//! never say more. Ending the stream makes the task's reads and writes fail, so it stops and
-//! the connection (or the proxy command) goes with it.
+//! A connection's transport, which can be ended from outside russh and tells what goes on in
+//! it.
+//!
+//! A handshake given up on ends it: russh starts its connection task once the server's version
+//! line arrives, and `connect_stream` waits for the key exchange to finish, so dropping that
+//! future leaves the task running, reading from a server that may never say more. Ending the
+//! stream makes the task's reads and writes fail, so it stops and the connection (or the
+//! proxy command) goes with it.
+//!
+//! So does a connection found dead (see `super::liveness`): russh's connection task may itself
+//! be stuck writing to the stream, and a disconnect message would wait behind that write.
 
 use std::io;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-/// Wraps `stream`; the guard ends it when dropped, unless disarmed first.
+/// Wraps `stream`; the guard ends it when dropped, unless kept first.
 pub fn abortable<S>(stream: S) -> (Abortable<S>, AbortOnDrop) {
-    let state = Arc::new(Mutex::new(State::default()));
-    (Abortable { inner: stream, state: state.clone() }, AbortOnDrop(Some(state)))
+    let shared = Arc::new(Shared::default());
+    (Abortable { inner: stream, shared: shared.clone() }, AbortOnDrop(Some(shared)))
+}
+
+#[derive(Default)]
+struct Shared {
+    state: Mutex<State>,
+    /// The reads that brought something.
+    received: AtomicU64,
+    /// The last read, and the last write, were left waiting for the peer.
+    reading: AtomicBool,
+    writing: AtomicBool,
 }
 
 #[derive(Default)]
 struct State {
-    aborted: bool,
+    /// Why the stream ended, once it has.
+    ended: Option<io::ErrorKind>,
     /// The tasks waiting to read and to write, woken when the stream ends.
     reader: Option<Waker>,
     writer: Option<Waker>,
 }
 
+impl Shared {
+    fn end(&self, why: io::ErrorKind) {
+        let (reader, writer) = {
+            let mut state = self.state.lock().unwrap();
+            state.ended.get_or_insert(why);
+            (state.reader.take(), state.writer.take())
+        };
+        for waker in [reader, writer].into_iter().flatten() {
+            waker.wake();
+        }
+    }
+}
+
 /// Fails once the stream has ended; otherwise remembers who to wake when it does.
-fn check(state: &Mutex<State>, cx: &Context<'_>, waker: fn(&mut State) -> &mut Option<Waker>) -> io::Result<()> {
-    let mut state = state.lock().unwrap();
-    if state.aborted {
-        return Err(io::ErrorKind::ConnectionAborted.into());
+fn check(shared: &Shared, cx: &Context<'_>, waker: fn(&mut State) -> &mut Option<Waker>) -> io::Result<()> {
+    let mut state = shared.state.lock().unwrap();
+    if let Some(why) = state.ended {
+        return Err(why.into());
     }
     let slot = waker(&mut state);
     if !slot.as_ref().is_some_and(|w| w.will_wake(cx.waker())) {
@@ -38,60 +69,90 @@ fn check(state: &Mutex<State>, cx: &Context<'_>, waker: fn(&mut State) -> &mut O
     Ok(())
 }
 
+/// Notes in `waiting` whether `poll` was left waiting for the peer.
+fn noting<T>(waiting: &AtomicBool, poll: Poll<T>) -> Poll<T> {
+    waiting.store(poll.is_pending(), Ordering::Relaxed);
+    poll
+}
+
 pub struct Abortable<S> {
     inner: S,
-    state: Arc<Mutex<State>>,
+    shared: Arc<Shared>,
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Abortable<S> {
     fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
-        check(&self.state, cx, |s| &mut s.reader)?;
-        Pin::new(&mut self.inner).poll_read(cx, buf)
+        check(&self.shared, cx, |s| &mut s.reader)?;
+        let before = buf.filled().len();
+        let poll = Pin::new(&mut self.inner).poll_read(cx, buf);
+        if buf.filled().len() > before {
+            self.shared.received.fetch_add(1, Ordering::Relaxed);
+        }
+        noting(&self.shared.reading, poll)
     }
 }
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for Abortable<S> {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        check(&self.state, cx, |s| &mut s.writer)?;
-        Pin::new(&mut self.inner).poll_write(cx, buf)
+        check(&self.shared, cx, |s| &mut s.writer)?;
+        let poll = Pin::new(&mut self.inner).poll_write(cx, buf);
+        noting(&self.shared.writing, poll)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        check(&self.state, cx, |s| &mut s.writer)?;
-        Pin::new(&mut self.inner).poll_flush(cx)
+        check(&self.shared, cx, |s| &mut s.writer)?;
+        let poll = Pin::new(&mut self.inner).poll_flush(cx);
+        noting(&self.shared.writing, poll)
     }
 
     /// Done at once once ended: dropping the stream closes it, and a shutdown could wait on
     /// the very peer that went silent.
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if self.state.lock().unwrap().aborted {
+        if self.shared.state.lock().unwrap().ended.is_some() {
             return Poll::Ready(Ok(()));
         }
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 
-/// Ends the stream when dropped, unless [disarmed](Self::disarm).
-pub struct AbortOnDrop(Option<Arc<Mutex<State>>>);
+/// Ends the stream when dropped, unless [kept](Self::keep).
+pub struct AbortOnDrop(Option<Arc<Shared>>);
 
 impl AbortOnDrop {
-    /// Leaves the stream to run for as long as the connection does.
-    pub fn disarm(mut self) {
-        self.0 = None;
+    /// Leaves the stream to run for as long as the connection does; the link ends it sooner.
+    pub fn keep(mut self) -> Link {
+        Link(self.0.take().expect("kept once"))
     }
 }
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
-        let Some(state) = self.0.take() else { return };
-        let (reader, writer) = {
-            let mut state = state.lock().unwrap();
-            state.aborted = true;
-            (state.reader.take(), state.writer.take())
-        };
-        for waker in [reader, writer].into_iter().flatten() {
-            waker.wake();
+        if let Some(shared) = self.0.take() {
+            shared.end(io::ErrorKind::ConnectionAborted);
         }
+    }
+}
+
+/// What goes on in a kept stream, and a way to end it. Dropping it leaves the stream alone.
+#[derive(Clone)]
+pub struct Link(Arc<Shared>);
+
+impl Link {
+    /// Counts the reads that brought something so far: anything from the peer adds to it.
+    pub fn received(&self) -> u64 {
+        self.0.received.load(Ordering::Relaxed)
+    }
+
+    /// Whether russh waits for the peer: to read something, or for room to write. Neither when
+    /// its connection task is held up on this side, by a channel not read (see
+    /// `super::bridge`).
+    pub fn waiting(&self) -> bool {
+        self.0.reading.load(Ordering::Relaxed) || self.0.writing.load(Ordering::Relaxed)
+    }
+
+    /// Ends the stream: its reads and writes fail with `why` from now on.
+    pub fn end(&self, why: io::ErrorKind) {
+        self.0.end(why);
     }
 }
 
@@ -120,15 +181,31 @@ mod tests {
         assert_eq!(peer.read(&mut buf).await.unwrap(), 0);
     }
 
-    /// Disarmed, the stream works as before.
+    /// Kept, the stream works as before, and the link tells what it does until it ends it.
     #[tokio::test]
-    async fn a_disarmed_guard_leaves_the_stream_alone() {
+    async fn a_kept_stream_runs_until_its_link_ends_it() {
         let (stream, mut peer) = tokio::io::duplex(64);
         let (mut stream, guard) = abortable(stream);
-        guard.disarm();
+        let link = guard.keep();
         stream.write_all(b"hello").await.unwrap();
         let mut buf = [0; 5];
         peer.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"hello");
+
+        assert_eq!(link.received(), 0);
+        peer.write_all(b"hi").await.unwrap();
+        stream.read_exact(&mut buf[..2]).await.unwrap();
+        assert_eq!(link.received(), 1);
+        assert!(!link.waiting());
+
+        let reading = tokio::spawn(async move {
+            let mut buf = [0; 8];
+            stream.read(&mut buf).await.map_err(|e| e.kind())
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(link.waiting());
+        link.end(io::ErrorKind::TimedOut);
+        let read = tokio::time::timeout(std::time::Duration::from_secs(5), reading).await.unwrap().unwrap();
+        assert_eq!(read, Err(io::ErrorKind::TimedOut));
     }
 }

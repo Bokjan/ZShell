@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex};
 use russh::client;
 use tokio::sync::watch;
 
+use super::abortable::Link;
 use super::forwarded::RemoteRoutes;
 use super::handler::{ClientHandler, EndReason};
+use super::liveness::Liveness;
 use super::JumpChain;
 use crate::model::SshProfile;
 use crate::session::{SessionId, TermIo};
@@ -29,18 +31,23 @@ pub struct Connection {
     disconnect: watch::Receiver<Option<EndReason>>,
     /// Its tabs' shells.
     shells: Arc<Shells>,
+    liveness: Liveness,
 }
 
 impl Connection {
-    /// `routes` and `disconnect` must be the ones given to the connection's [`ClientHandler`].
+    /// `routes` and `disconnect` must be the ones given to the connection's [`ClientHandler`],
+    /// and `link` the one of its transport.
     pub(super) fn new(
         handle: SshHandle,
+        link: Link,
         profile: SshProfile,
         jumps: JumpChain,
         routes: RemoteRoutes,
         disconnect: watch::Receiver<Option<EndReason>>,
     ) -> Arc<Self> {
-        Arc::new(Self { handle: Arc::new(handle), profile, _jumps: jumps, routes, disconnect, shells: Arc::default() })
+        let handle = Arc::new(handle);
+        let liveness = Liveness::new(link, &handle, profile.ssh.remote.keepalive().is_some());
+        Arc::new(Self { handle, profile, _jumps: jumps, routes, disconnect, shells: Arc::default(), liveness })
     }
 
     pub fn handle(&self) -> &Arc<SshHandle> {
@@ -61,6 +68,11 @@ impl Connection {
 
     pub fn shells(&self) -> &Shells {
         &self.shells
+    }
+
+    /// Checks that the connection is still alive (see [`Liveness`]).
+    pub fn liveness(&self) -> &Liveness {
+        &self.liveness
     }
 
     /// Notes that session `id` opens its shell now, until the session closes.

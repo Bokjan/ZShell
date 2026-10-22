@@ -1,7 +1,8 @@
 //! Linux: polkit for authenticating (the desktop's own dialog, GNOME Shell's: the account's
 //! password, or a fingerprint where fprintd is set up), Mutter's idle monitor for the idle
 //! time (GNOME; other desktops have none here), and logind for the session locking
-//! (`LockedHint`, and the `Lock` signal of `loginctl lock-session`) and the system sleeping.
+//! (`LockedHint`, and the `Lock` signal of `loginctl lock-session`) and the system sleeping and
+//! waking.
 //! All through D-Bus.
 //!
 //! polkit asks for an action of the app's own, `org.boyin.zshell.unlock`, which the deb and
@@ -16,7 +17,7 @@ use tauri::WebviewWindow;
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::{OwnedObjectPath, Value};
 
-use super::{Method, System};
+use super::{Method, System, SystemEvent};
 use crate::error::{Error, Result};
 
 const ACTION: &str = "org.boyin.zshell.unlock";
@@ -110,19 +111,20 @@ impl System for Platform {
 /// system.
 static WATCHING: AtomicBool = AtomicBool::new(false);
 
-/// Watches logind on threads of their own: the system about to sleep (`PrepareForSleep`), and
-/// the user's session locking (`LockedHint`, which GNOME Shell sets as its lock screen comes
-/// up, also before switching user; and `Lock`, which asks the session to lock).
-pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
-    let on_lock: &'static (dyn Fn() + Send + Sync) = Box::leak(on_lock);
+/// Watches logind on threads of their own: the system about to sleep and waking
+/// (`PrepareForSleep`), and the user's session locking (`LockedHint`, which GNOME Shell sets
+/// as its lock screen comes up, also before switching user; and `Lock`, which asks the session
+/// to lock).
+pub fn watch_system(on_event: Box<dyn Fn(SystemEvent) + Send + Sync>) {
+    let on_event: &'static (dyn Fn(SystemEvent) + Send + Sync) = Box::leak(on_event);
     std::thread::spawn(move || {
-        if let Err(e) = watch(on_lock) {
+        if let Err(e) = watch(on_event) {
             eprintln!("app lock: can't watch the session: {e}");
         }
     });
 }
 
-fn watch(on_lock: &'static (dyn Fn() + Send + Sync)) -> zbus::Result<()> {
+fn watch(on_event: &'static (dyn Fn(SystemEvent) + Send + Sync)) -> zbus::Result<()> {
     let bus = crate::dbus::system().map_err(|e| zbus::Error::Failure(e.to_owned()))?;
     let manager = Proxy::new(bus, LOGIN, "/org/freedesktop/login1", "org.freedesktop.login1.Manager")?;
     // `auto` is the caller's session, or the user's graphical one for an app outside it (as
@@ -139,19 +141,21 @@ fn watch(on_lock: &'static (dyn Fn() + Send + Sync)) -> zbus::Result<()> {
     std::thread::spawn(move || {
         for message in sleeping {
             // True as the system goes to sleep, false once it has woken up.
-            if message.body().deserialize::<bool>().unwrap_or(false) {
-                on_lock();
+            match message.body().deserialize::<bool>() {
+                Ok(true) => on_event(SystemEvent::Locking),
+                Ok(false) => on_event(SystemEvent::Woke),
+                Err(_) => {}
             }
         }
     });
     std::thread::spawn(move || {
         for _ in lock_signals {
-            on_lock();
+            on_event(SystemEvent::Locking);
         }
     });
     for change in locked_hints {
         if change.get().unwrap_or(false) {
-            on_lock();
+            on_event(SystemEvent::Locking);
         }
     }
     Ok(())

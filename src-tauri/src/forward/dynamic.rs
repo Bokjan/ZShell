@@ -2,7 +2,6 @@
 //! `direct-tcpip` channel, so host names are resolved by the server.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -12,29 +11,27 @@ use tokio::net::TcpStream;
 
 use super::local::serve;
 use super::socks::{self, Reply};
-use super::{bridge, host_port, Ctx, ForwardRule, Stopping};
+use super::{bridge, host_port, Ctx, ForwardRule, Opener, Stopping};
 use crate::error::Error;
-use crate::ssh::SshHandle;
 
 /// How long a client may take to send its request after connecting.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
-    serve(rule, ctx, stopping, |stream, peer| connect(ctx.handle(), stream, peer)).await
+    serve(rule, ctx, stopping, |stream, peer| connect(ctx.opener(), stream, peer)).await
 }
 
-async fn connect(handle: Arc<SshHandle>, mut stream: TcpStream, peer: SocketAddr) -> Result<()> {
+async fn connect(opener: Opener, mut stream: TcpStream, peer: SocketAddr) -> Result<()> {
     let Some(request) = request(&mut stream, REQUEST_TIMEOUT).await? else {
         return Ok(());
     };
     let target = host_port(&request.host, request.port);
-    let opened = handle.channel_open_direct_tcpip(request.host, request.port.into(), peer.ip().to_string(), peer.port().into()).await;
-    let channel = match opened {
+    let channel = match opener.open(request.host, request.port, peer).await {
         Ok(channel) => channel,
         Err(e) => {
-            let reply = match e {
-                russh::Error::ChannelOpenFailure(ChannelOpenFailure::ConnectFailed) => Reply::ConnectionRefused,
-                russh::Error::ChannelOpenFailure(ChannelOpenFailure::AdministrativelyProhibited) => Reply::NotAllowed,
+            let reply = match e.downcast_ref::<russh::Error>() {
+                Some(russh::Error::ChannelOpenFailure(ChannelOpenFailure::ConnectFailed)) => Reply::ConnectionRefused,
+                Some(russh::Error::ChannelOpenFailure(ChannelOpenFailure::AdministrativelyProhibited)) => Reply::NotAllowed,
                 _ => Reply::GeneralFailure,
             };
             let _ = socks::reply(&mut stream, request.version, reply).await;

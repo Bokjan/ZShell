@@ -190,6 +190,14 @@ fn rules_to_adopt<C: Holder>(map: &Map<C>, closed: &C, rules: Vec<ForwardRule>) 
 }
 
 impl Connections {
+    /// The system has woken from sleep, and the network may have changed under the
+    /// connections: checks that each is still alive (see [`ssh::Liveness`]).
+    pub fn woke(&self) {
+        for connection in self.map.lock().unwrap().values() {
+            connection.ssh.liveness().woke();
+        }
+    }
+
     /// Registers the new connection of session `id` until the session closes, and starts the
     /// rules that start on connecting and those in `carry` (running before the tab
     /// reconnected), unless another connection of the session runs them. Forward states are
@@ -202,7 +210,7 @@ impl Connections {
             let profile_id = &ssh.profile().id;
             let sibling = map.values().find(|other| !profile_id.is_empty() && other.ssh.profile().id == *profile_id);
             let hub = sibling.map(|other| other.forwards.hub()).unwrap_or_else(|| Arc::new(Hub::default()));
-            let forwards = Forwards::new(ssh.handle().clone(), ssh.routes().clone(), hub);
+            let forwards = Forwards::new(&ssh, hub);
             let connection = Arc::new(LiveConnection {
                 ssh,
                 sftp: Channels::default(),

@@ -7,12 +7,14 @@ use std::sync::mpsc;
 
 use block2::RcBlock;
 use objc2::runtime::Bool;
-use objc2_app_kit::{NSWorkspace, NSWorkspaceSessionDidResignActiveNotification, NSWorkspaceWillSleepNotification};
+use objc2_app_kit::{
+    NSWorkspace, NSWorkspaceDidWakeNotification, NSWorkspaceSessionDidResignActiveNotification, NSWorkspaceWillSleepNotification,
+};
 use objc2_foundation::{NSDistributedNotificationCenter, NSError, NSNotification, NSString};
 use objc2_local_authentication::{LAContext, LAError, LAPolicy};
 use tauri::WebviewWindow;
 
-use super::{Method, System};
+use super::{Method, System, SystemEvent};
 use crate::error::{Error, Result};
 
 pub struct Platform;
@@ -83,25 +85,32 @@ impl System for Platform {
     }
 }
 
-/// The workspace's sleeping and switching user, and the screen locking, which only a
+/// The workspace's sleeping, waking and switching user, and the screen locking, which only a
 /// distributed notification tells. Locking as they happen, so that the window is covered by
 /// the time the screen shows again.
-pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
-    let on_lock: std::sync::Arc<dyn Fn() + Send + Sync> = on_lock.into();
-    let block = |on_lock: std::sync::Arc<dyn Fn() + Send + Sync>| RcBlock::new(move |_: NonNull<NSNotification>| on_lock());
+pub fn watch_system(on_event: Box<dyn Fn(SystemEvent) + Send + Sync>) {
+    let on_event: std::sync::Arc<dyn Fn(SystemEvent) + Send + Sync> = on_event.into();
+    let block = |event: SystemEvent| {
+        let on_event = on_event.clone();
+        RcBlock::new(move |_: NonNull<NSNotification>| on_event(event))
+    };
     // SAFETY: the notification names are AppKit's constants and a literal; the centers keep
     // the observers for as long as the app runs, so the tokens can go.
     unsafe {
         let workspace = NSWorkspace::sharedWorkspace().notificationCenter();
-        for name in [NSWorkspaceWillSleepNotification, NSWorkspaceSessionDidResignActiveNotification] {
-            let _ = workspace.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block(on_lock.clone()));
+        for (name, event) in [
+            (NSWorkspaceWillSleepNotification, SystemEvent::Locking),
+            (NSWorkspaceSessionDidResignActiveNotification, SystemEvent::Locking),
+            (NSWorkspaceDidWakeNotification, SystemEvent::Woke),
+        ] {
+            let _ = workspace.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block(event));
         }
         let screen_locked = NSString::from_str("com.apple.screenIsLocked");
         let _ = NSDistributedNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
             Some(&screen_locked),
             None,
             None,
-            &block(on_lock),
+            &block(SystemEvent::Locking),
         );
     }
 }

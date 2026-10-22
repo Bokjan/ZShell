@@ -3,20 +3,18 @@
 
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 
-use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker, LOOKUP_TIMEOUT};
+use super::{bridge, host_port, Ctx, ForwardRule, Opener, Stopping, Tracker, LOOKUP_TIMEOUT};
 use crate::error::Error;
 use crate::model::ALL_ADDRESSES;
-use crate::ssh::SshHandle;
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
-    serve(rule, ctx, stopping, |stream, peer| connect(ctx.handle(), stream, peer, rule.target_host.clone(), rule.target_port)).await
+    serve(rule, ctx, stopping, |stream, peer| connect(ctx.opener(), stream, peer, rule.target_host.clone(), rule.target_port)).await
 }
 
 /// Listens where `rule` says until it is asked to stop, carrying each connection accepted on
@@ -138,12 +136,9 @@ async fn accept_failed(tracker: &mut Tracker<'_>, error: std::io::Error) {
     tokio::time::sleep(Duration::from_millis(100)).await;
 }
 
-async fn connect(handle: Arc<SshHandle>, stream: TcpStream, peer: SocketAddr, host: String, port: u16) -> Result<()> {
+async fn connect(opener: Opener, stream: TcpStream, peer: SocketAddr, host: String, port: u16) -> Result<()> {
     let target = host_port(&host, port);
-    let channel = handle
-        .channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into())
-        .await
-        .context(Error::new("forward.channelFailed").param("target", target))?;
+    let channel = opener.open(host, port, peer).await.context(Error::new("forward.channelFailed").param("target", target))?;
     bridge(stream, channel).await;
     Ok(())
 }

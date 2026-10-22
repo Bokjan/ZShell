@@ -1,5 +1,6 @@
 //! Windows: Windows Hello (a PIN, a fingerprint, a face), the last input's time, and the
-//! session's locking and the system's suspending, told to a hidden window of our own.
+//! session's locking and the system's suspending and resuming, told to a hidden window of our
+//! own.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
@@ -15,10 +16,10 @@ use windows_sys::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, 
 use windows_sys::Win32::System::SystemInformation::GetTickCount;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, PBT_APMSUSPEND, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE, WTS_SESSION_LOCK,
+    DefWindowProcW, PBT_APMRESUMEAUTOMATIC, PBT_APMSUSPEND, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE, WTS_SESSION_LOCK,
 };
 
-use super::{Method, System};
+use super::{Method, System, SystemEvent};
 use crate::error::{Error, Result};
 
 pub struct Platform;
@@ -81,16 +82,16 @@ impl System for Platform {
     }
 }
 
-static ON_LOCK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+static ON_EVENT: OnceLock<Box<dyn Fn(SystemEvent) + Send + Sync>> = OnceLock::new();
 /// Set once the window is registered for session notifications; if that fails, the settings
 /// don't offer locking with the system.
 static WATCHING: AtomicBool = AtomicBool::new(false);
 
-/// A hidden top-level window on a thread of its own: suspending is broadcast to top-level
-/// windows only, and a window registered for session notifications gets the screen locking
-/// and switching user (`WTS_SESSION_LOCK` for both).
-pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
-    if ON_LOCK.set(on_lock).is_err() {
+/// A hidden top-level window on a thread of its own: suspending and resuming are broadcast to
+/// top-level windows only, and a window registered for session notifications gets the screen
+/// locking and switching user (`WTS_SESSION_LOCK` for both).
+pub fn watch_system(on_event: Box<dyn Fn(SystemEvent) + Send + Sync>) {
+    if ON_EVENT.set(on_event).is_err() {
         return;
     }
     crate::hidden_window::spawn("ZShellSystemEvents", Some(window_proc), |hwnd| {
@@ -104,15 +105,15 @@ pub fn watch_system(on_lock: Box<dyn Fn() + Send + Sync>) {
 }
 
 unsafe extern "system" fn window_proc(hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    let locking = match msg {
-        WM_WTSSESSION_CHANGE => wparam as u32 == WTS_SESSION_LOCK,
-        WM_POWERBROADCAST => wparam as u32 == PBT_APMSUSPEND,
-        _ => false,
+    let event = match (msg, wparam as u32) {
+        (WM_WTSSESSION_CHANGE, WTS_SESSION_LOCK) | (WM_POWERBROADCAST, PBT_APMSUSPEND) => Some(SystemEvent::Locking),
+        // Sent on every resume, also when no user is there (`PBT_APMRESUMESUSPEND` only follows
+        // once there is input), and on leaving Modern Standby.
+        (WM_POWERBROADCAST, PBT_APMRESUMEAUTOMATIC) => Some(SystemEvent::Woke),
+        _ => None,
     };
-    if locking {
-        if let Some(on_lock) = ON_LOCK.get() {
-            on_lock();
-        }
+    if let (Some(event), Some(on_event)) = (event, ON_EVENT.get()) {
+        on_event(event);
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }

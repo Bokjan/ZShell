@@ -21,6 +21,7 @@ pub(crate) mod testing;
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,7 +37,7 @@ use tokio::time::Instant;
 use crate::error::Error;
 use crate::model::{host_port, ForwardKind, ForwardRule};
 use crate::session::{ForwardState, SessionEvent, SessionId, SessionSink};
-use crate::ssh::{RemoteRoutes, SshHandle};
+use crate::ssh::{Liveness, RemoteRoutes, SshHandle};
 
 /// How long to wait for the name a local or dynamic rule listens on to be looked up.
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -90,6 +91,7 @@ impl Hub {
 struct Shared {
     handle: Arc<SshHandle>,
     routes: RemoteRoutes,
+    liveness: Liveness,
     hub: Arc<Hub>,
     running: Mutex<HashMap<String, Running>>,
     next_generation: AtomicU64,
@@ -103,10 +105,11 @@ pub struct Forwards(Arc<Shared>);
 
 impl Forwards {
     /// `hub`: the session's, shared with its other connections.
-    pub fn new(handle: Arc<SshHandle>, routes: RemoteRoutes, hub: Arc<Hub>) -> Self {
+    pub fn new(connection: &crate::ssh::Connection, hub: Arc<Hub>) -> Self {
         Self(Arc::new(Shared {
-            handle,
-            routes,
+            handle: connection.handle().clone(),
+            routes: connection.routes().clone(),
+            liveness: connection.liveness().clone(),
             hub,
             running: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(0),
@@ -216,6 +219,11 @@ struct Ctx {
 impl Ctx {
     fn handle(&self) -> Arc<SshHandle> {
         self.shared.handle.clone()
+    }
+
+    /// What opens the channels of the connections a local or dynamic rule takes.
+    fn opener(&self) -> Opener {
+        Opener { handle: self.shared.handle.clone(), liveness: self.shared.liveness.clone() }
     }
 
     fn report(&self, state: ForwardState) {
@@ -371,6 +379,22 @@ impl<'a> Tracker<'a> {
     }
 }
 
+/// Opens the `direct-tcpip` channels of a rule's connections.
+#[derive(Clone)]
+struct Opener {
+    handle: Arc<SshHandle>,
+    liveness: Liveness,
+}
+
+impl Opener {
+    /// A channel to `host:port` for the connection from `peer`. The server answers the request,
+    /// which tells that the connection is still alive.
+    async fn open(&self, host: String, port: u16, peer: SocketAddr) -> anyhow::Result<Channel<Msg>> {
+        self.liveness.expect_reply();
+        Ok(self.handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into()).await?)
+    }
+}
+
 /// Copies data both ways until both sides are done. Errors here are ordinary disconnects
 /// (resets, aborted transfers) and are not reported. Each write to the channel is a packet
 /// of its own: buffers larger than the default 8 KiB send fewer when there is much to copy.
@@ -390,7 +414,7 @@ mod tests {
     /// The forwards of a new connection, and a tab of its session watching them.
     async fn forwards() -> (Forwards, Tab) {
         let connection = connect(Anyone, "web").await;
-        let forwards = Forwards::new(connection.handle().clone(), connection.routes().clone(), Arc::new(Hub::default()));
+        let forwards = Forwards::new(&connection, Arc::new(Hub::default()));
         let tab = Tab::new();
         forwards.attach(1, tab.io.sink());
         (forwards, tab)

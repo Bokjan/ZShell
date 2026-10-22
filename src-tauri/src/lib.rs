@@ -211,7 +211,8 @@ pub fn run() {
                 events::emit(&handle, events::AppLocked);
             }));
             applock::watch_idle(app_lock.clone());
-            applock::watch_system(app_lock.clone());
+            let connections = app.state::<Connections>().inner().clone();
+            applock::watch_system(app_lock.clone(), move || connections.woke());
             app.manage(app_lock);
             app.manage(vault);
             let documents = app.path().document_dir().unwrap_or_else(|_| config_dir.clone());
