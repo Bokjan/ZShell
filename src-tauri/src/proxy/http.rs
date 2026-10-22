@@ -22,7 +22,7 @@ pub async fn connect<S: AsyncRead + AsyncWrite + Unpin>(
     let authority = host_port(host, port);
     let mut request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
     if let Some(Credentials { username, password }) = credentials {
-        let token = base64(format!("{username}:{password}").as_bytes());
+        let token = data_encoding::BASE64.encode(format!("{username}:{password}").as_bytes());
         request.push_str(&format!("Proxy-Authorization: Basic {token}\r\n"));
     }
     request.push_str("\r\n");
@@ -54,23 +54,6 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> Result<String> {
     Ok(String::from_utf8_lossy(&head).into_owned())
 }
 
-/// Standard base64 with padding (RFC 4648).
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut text = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let n = chunk.iter().enumerate().fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
-        for i in 0..4 {
-            if i <= chunk.len() {
-                text.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char);
-            } else {
-                text.push('=');
-            }
-        }
-    }
-    text
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,15 +77,6 @@ mod tests {
 
     fn code(result: &Result<()>) -> &'static str {
         result.as_ref().unwrap_err().downcast_ref::<Error>().unwrap().code()
-    }
-
-    #[test]
-    fn encodes_base64() {
-        assert_eq!(base64(b""), "");
-        assert_eq!(base64(b"f"), "Zg==");
-        assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(b"foo"), "Zm9v");
-        assert_eq!(base64(b"Aladdin:open sesame"), "QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
     }
 
     #[tokio::test]

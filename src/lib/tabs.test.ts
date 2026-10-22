@@ -379,3 +379,13 @@ describe("attention", () => {
     expect(reduceTabs(state, { type: "close", keys: [paneOf(state, 1)] }).tabs[0].attention).toBeUndefined();
   });
 });
+
+describe("updates that change nothing", () => {
+  it("leave the state as it is, rendering nothing again", () => {
+    const state = run({ type: "open", pane: local });
+    const key = state.tabs[0].key;
+    expect(reduceTabs(state, { type: "updateTab", key, patch: { customTitle: state.tabs[0].customTitle } })).toBe(state);
+    expect(reduceTabs(state, { type: "updateTab", key: 999, patch: { customTitle: "x" } })).toBe(state);
+    expect(reduceTabs(state, { type: "updateTab", key, patch: { customTitle: "x" } }).tabs[0].customTitle).toBe("x");
+  });
+});

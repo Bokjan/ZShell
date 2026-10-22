@@ -1,4 +1,5 @@
-//! Commands for the windows: opening one, moving tabs between them, quitting, and the title bar and window buttons drawn by the page (see `window/`).
+//! Commands for the windows: opening one, moving tabs between them, quitting, and the title bar
+//! and window buttons drawn by the page (see `window/`).
 
 use std::sync::Arc;
 

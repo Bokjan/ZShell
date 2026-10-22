@@ -432,10 +432,7 @@ pub struct HostKeyAlgorithms {
 }
 
 pub fn host_key_algorithms(preferred: &[Algorithm], host: &str, port: u16) -> HostKeyAlgorithms {
-    let user = path();
-    let mut paths: Vec<PathBuf> = user.iter().cloned().collect();
-    paths.extend(user.as_deref().map(other_paths).unwrap_or_default());
-    host_key_algorithms_at(&paths, preferred, host, port)
+    host_key_algorithms_at(&all_paths().unwrap_or_default(), preferred, host, port)
 }
 
 fn host_key_algorithms_at(paths: &[PathBuf], preferred: &[Algorithm], host: &str, port: u16) -> HostKeyAlgorithms {

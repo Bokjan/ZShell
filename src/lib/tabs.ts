@@ -111,10 +111,13 @@ const newPane = (key: number, spec: PaneSpec): Pane => ({
   progress: null,
 });
 
-const mapTab = (state: TabsState, key: number, f: (tab: Tab) => Tab): TabsState => ({
-  ...state,
-  tabs: state.tabs.map((tab) => (tab.key === key ? f(tab) : tab)),
-});
+/** `state` with tab `key` made `f` of it; the same state if there is no such tab or `f` keeps it. */
+function mapTab(state: TabsState, key: number, f: (tab: Tab) => Tab): TabsState {
+  const tab = state.tabs.find((t) => t.key === key);
+  const next = tab && f(tab);
+  if (!tab || next === tab) return state;
+  return { ...state, tabs: state.tabs.map((t) => (t === tab ? next! : t)) };
+}
 
 const tabOf = (tabs: Tab[], paneKey: number) => tabs.find((tab) => tab.panes.some((p) => p.key === paneKey));
 
@@ -258,7 +261,10 @@ function reduce(state: TabsState, action: TabsAction): TabsState {
       return { ...state, tabs: [...rest.slice(0, action.index), tab, ...rest.slice(action.index)] };
     }
     case "updateTab":
-      return mapTab(state, action.key, (tab) => ({ ...tab, ...action.patch }));
+      return mapTab(state, action.key, (tab) =>
+        // Nothing new: the same state, as for `updatePane`.
+        Object.entries(action.patch).every(([name, value]) => Object.is(tab[name as keyof Tab], value)) ? tab : { ...tab, ...action.patch },
+      );
     case "updatePane": {
       const tab = tabOf(state.tabs, action.key);
       const pane = tab?.panes.find((p) => p.key === action.key);
