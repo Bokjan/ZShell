@@ -12,6 +12,8 @@ mod config;
 mod connections;
 mod crypto;
 #[cfg(target_os = "linux")]
+mod dbus;
+#[cfg(target_os = "linux")]
 mod desktop;
 mod encoding;
 mod envelope;

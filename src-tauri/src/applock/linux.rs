@@ -11,7 +11,6 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
 
 use tauri::WebviewWindow;
 use zbus::blocking::{Connection, Proxy};
@@ -36,14 +35,12 @@ fn failed(error: zbus::Error) -> Error {
 
 /// The system bus, kept for the idle checks and the queries.
 fn system_bus() -> Result<&'static Connection> {
-    static BUS: OnceLock<std::result::Result<Connection, String>> = OnceLock::new();
-    BUS.get_or_init(|| Connection::system().map_err(|e| e.to_string())).as_ref().map_err(|e| Error::new("appLock.failed").detail(e))
+    crate::dbus::system().map_err(|e| Error::new("appLock.failed").detail(e))
 }
 
 /// The session bus, for Mutter; `None` without one.
 fn session_bus() -> Option<&'static Connection> {
-    static BUS: OnceLock<Option<Connection>> = OnceLock::new();
-    BUS.get_or_init(|| Connection::session().ok()).as_ref()
+    crate::dbus::session().ok()
 }
 
 fn authority(bus: &Connection) -> Result<Proxy<'static>> {
