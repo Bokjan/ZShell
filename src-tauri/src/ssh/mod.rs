@@ -115,10 +115,14 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         let mut session = connect(hop, options, transport.take(), proxy, &route.passwords, io).await?;
         auth::authenticate(&mut session, hop, &route.passwords, io, ended).await?;
         let target = host_port(next_host, next_port);
-        let channel = session
-            .channel_open_direct_tcpip(next_host.to_owned(), next_port.into(), "127.0.0.1", 0)
-            .await
-            .context(Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target))?;
+        let failed = || Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target);
+        // Given as long as a handshake: a target that drops packets would otherwise leave the
+        // tab connecting until the jump host's kernel gives up (two minutes on Linux).
+        let opening = session.channel_open_direct_tcpip(next_host.to_owned(), next_port.into(), "127.0.0.1", 0);
+        let channel = match tokio::time::timeout(HANDSHAKE_TIMEOUT, opening).await {
+            Ok(opened) => opened.context(failed())?,
+            Err(elapsed) => return Err(anyhow!(elapsed).context(failed())),
+        };
         chain.0.push(Arc::new(session));
         transport = Some((channel.into_stream(), hop.name.clone()));
     }
