@@ -1115,6 +1115,7 @@ export type Commands = {
   forward_carry: { args: { id: number }; result: string[] };
   forward_keep: { args: { ids: number[] }; result: void };
   forward_keep_candidates: { args: { ids: number[] }; result: ForwardRule[] };
+  forward_sessions_of: { args: { profileId: string }; result: number[] };
   forward_start: { args: { id: number; rule: ForwardRule }; result: void };
   forward_stop: { args: { id: number; ruleId: string }; result: void };
   home_directory: { args: Record<string, never>; result: string | null };

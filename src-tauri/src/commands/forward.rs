@@ -35,6 +35,13 @@ pub fn forward_stop(
     connections.stop_forward(id, &rule_id)
 }
 
+/// The sessions, in any window, whose connection runs forwarding rules of saved session
+/// `profile_id`: deleting it stops them (see `profile_delete`).
+#[tauri::command]
+pub fn forward_sessions_of(connections: State<'_, Connections>, profile_id: String) -> Vec<SessionId> {
+    connections.forwarding_sessions(&profile_id)
+}
+
 /// The forwarding rules that closing sessions `ids` (this window's) would stop, although
 /// another tab of their saved session stays connected and could keep them running.
 #[tauri::command]

@@ -12,6 +12,7 @@ import { usePaneActions } from "./app/usePaneActions";
 import { PaneDragLayer, usePaneDrag } from "./app/usePaneDrag";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommandBar } from "./app/useQuickCommandBar";
+import { useProfileDeletion } from "./app/useProfileDeletion";
 import { useQuickCommandSync } from "./app/useQuickCommandSync";
 import { useStartupInfo } from "./app/useStartupInfo";
 import { useKeepAwake } from "./app/useKeepAwake";
@@ -124,6 +125,7 @@ function App() {
   });
   const { compose, flashing, inScope } = composer;
   const close = useCloseFlow(store, sessions, settings, update);
+  const deletion = useProfileDeletion(store, settings.tabs.followRemoteTitle);
   const { requestClose, closeFocused } = close;
 
   /** What a tab's next session will be: a saved session's protocol may have been changed. */
@@ -393,6 +395,7 @@ function App() {
     onOpenAll: openAll,
     onQuickConnect: quickConnect,
     onEdit: (profile) => setEditing({ profile }),
+    onDelete: (profile) => deletion.remove(profile, false),
     onNew: (folder) => setEditing({ profile: null, defaults: { folder } }),
     onImportSshConfig: () => setImporting(true),
     onSettings: () => openSettings(),
@@ -547,7 +550,16 @@ function App() {
         )}
         {settings.statusBar.show && activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}
       </main>
-      {editing && <ProfileDialog profile={editing.profile} defaults={editing.defaults} onClose={closeDialog} onSaved={onProfileSaved} />}
+      {editing && (
+        <ProfileDialog
+          profile={editing.profile}
+          defaults={editing.defaults}
+          onClose={closeDialog}
+          onSaved={onProfileSaved}
+          onDelete={(profile) => deletion.remove(profile, true)}
+        />
+      )}
+      {deletion.dialog}
       {openingAll && (
         <ConfirmDialog
           title={t("sidebar.openAllTitle", { count: openingAll.profiles.length })}

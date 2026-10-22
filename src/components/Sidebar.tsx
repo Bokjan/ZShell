@@ -5,7 +5,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import type { AppMenuButton } from "../app/useAppMenu";
 import type { Release } from "../ipc/bindings";
 import { announce } from "../lib/announce";
-import { deleteProfile, duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../ipc/api";
+import { duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../ipc/api";
 import { directory, recentProfiles as recentOf } from "../lib/directory";
 import { useDirectory } from "../hooks/stores";
 import { usePressDrag } from "../hooks/drag";
@@ -57,6 +57,8 @@ export interface SidebarHandlers {
   onOpenAll(folder: Folder): void;
   onQuickConnect(target: QuickTarget): void;
   onEdit(profile: Profile): void;
+  /** Deletes the session once the user confirms; rejects if that fails. */
+  onDelete(profile: Profile): Promise<boolean>;
   /** Creates a session in `folder` (undefined: top level). */
   onNew(folder: string | undefined): void;
   onImportSshConfig(): void;
@@ -88,7 +90,7 @@ export function Sidebar(props: Props) {
   // Taken apart here: React Compiler treats an object holding a ref as a ref, and reading any of
   // it while rendering would keep the whole component from being compiled.
   const { ref: appMenuRef, toggle: toggleAppMenu } = appMenu;
-  const { onOpen, onOpenAll, onQuickConnect, onEdit, onNew, onImportSshConfig, onSettings } = handlers;
+  const { onOpen, onOpenAll, onQuickConnect, onEdit, onDelete, onNew, onImportSshConfig, onSettings } = handlers;
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
   const { settings } = useSettings();
@@ -108,7 +110,6 @@ export function Sidebar(props: Props) {
   const [collapsed, setCollapsed] = useState(storedCollapsed);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
-  const [deleting, setDeleting] = useState<Profile | null>(null);
   // A session whose logs are about to be deleted, with how many it has.
   const [deletingLogs, setDeletingLogs] = useState<{ profile: Profile; count: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -192,7 +193,7 @@ export function Sidebar(props: Props) {
       label: t("sidebar.deleteLogs"),
       onSelect: () => logs.count(profile.id).then((count) => setDeletingLogs({ profile, count }), fail),
     },
-    { label: t("sidebar.delete"), danger: true, onSelect: () => setDeleting(profile) },
+    { label: t("sidebar.delete"), danger: true, onSelect: () => void onDelete(profile).catch(fail) },
   ];
 
   const folderMenu = (folder: Folder, count: number): MenuItem[] => [
@@ -584,20 +585,6 @@ export function Sidebar(props: Props) {
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       {importing && <SessionImportDialog path={importing} onClose={() => setImporting(null)} />}
-      {deleting && (
-        <ConfirmDialog
-          title={t("sidebar.deleteTitle")}
-          message={t("sidebar.deleteMessage", { name: deleting.name })}
-          confirmLabel={t("common.delete")}
-          danger
-          onConfirm={() => {
-            const profile = deleting;
-            setDeleting(null);
-            directory.changed(deleteProfile(profile.id)).catch(fail);
-          }}
-          onCancel={() => setDeleting(null)}
-        />
-      )}
       {deletingLogs &&
         (deletingLogs.count === 0 ? (
           <ConfirmDialog

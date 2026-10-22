@@ -5,7 +5,6 @@ import {
   DEFAULT_GROUP,
   DEFAULT_PORTS,
   defaultKeyPath,
-  deleteProfile,
   errorMessage,
   keyFileExists,
   saveProfile,
@@ -54,6 +53,8 @@ interface Props {
   onClose(): void;
   /** Called with the saved profile (not on delete). */
   onSaved?(profile: Profile): void;
+  /** Deletes the session, which the user confirmed, asking again if that stops its forwarding; resolves to whether it did. */
+  onDelete(profile: Profile): Promise<boolean>;
 }
 
 /**
@@ -62,7 +63,7 @@ interface Props {
  * page, with its field focused. Closing with Esc or a click outside asks first if anything
  * was changed.
  */
-export function ProfileDialog({ profile, defaults, onClose, onSaved }: Props) {
+export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }: Props) {
   const { t } = useTranslation();
   // To pick the quick command group its tabs show first; null until they have loaded.
   const commandGroups = useQuickCommands().commands?.groups ?? null;
@@ -178,8 +179,7 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved }: Props) {
     await saving.submit(() =>
       attempt(
         async () => {
-          await directory.changed(deleteProfile(profile.id));
-          onClose();
+          if (await onDelete(profile)) onClose();
         },
         {
           onError: (err) => setError(errorMessage(err)),

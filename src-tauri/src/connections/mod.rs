@@ -137,6 +137,15 @@ fn rules_to_keep<C: Holder>(map: &Map<C>, ids: &[SessionId]) -> Vec<ForwardRule>
     rules
 }
 
+/// The sessions (tabs, in any window) whose connection runs forwarding rules of saved session
+/// `profile_id`, in order.
+fn forwarding_sessions<C: Holder>(map: &Map<C>, profile_id: &str) -> Vec<SessionId> {
+    let mut ids: Vec<SessionId> =
+        map.iter().filter(|(_, c)| c.session() == profile_id && !c.running().is_empty()).map(|(id, _)| *id).collect();
+    ids.sort_unstable();
+    ids
+}
+
 /// The connections that closing sessions `ids` disconnects: those no other tab uses.
 fn closing<C>(map: &Map<C>, ids: &[SessionId]) -> Vec<Arc<C>> {
     let mut closing: Vec<Arc<C>> = Vec::new();
@@ -294,6 +303,12 @@ impl Connections {
         }
     }
 
+    /// The sessions whose connection runs forwarding rules of saved session `profile_id` (see
+    /// [`forwarding_sessions`]): those deleting it would stop.
+    pub fn forwarding_sessions(&self, profile_id: &str) -> Vec<SessionId> {
+        forwarding_sessions(&self.0.lock().unwrap(), profile_id)
+    }
+
     /// The rules that closing sessions `ids` would stop although another connection of their
     /// saved session stays open, which could take them over.
     pub fn forwards_to_keep(&self, ids: &[SessionId]) -> Vec<ForwardRule> {
@@ -368,6 +383,20 @@ mod tests {
         until("the connection's end", || ssh[0].handle().is_closed()).await;
         assert!(connections.get(1).is_err());
         assert!(connections.get(2).unwrap().forwards.is_running("r1"));
+    }
+
+    /// The tabs using a connection that runs the session's rules, whichever tab started them.
+    #[tokio::test]
+    async fn finds_the_tabs_forwarding_for_a_session() {
+        let (connections, ssh, tabs) = two_connections(0).await;
+        let duplicate = Tab::new();
+        connections.attach(3, connections.get(1).unwrap(), &duplicate.io);
+        assert_eq!(connections.forwarding_sessions("web"), [1, 3]);
+        assert!(connections.forwarding_sessions("other").is_empty());
+        connections.stop_saved_forwards("web", None);
+        assert_eq!(tabs[1].next_kind("r1").await, "stopped");
+        assert!(connections.forwarding_sessions("web").is_empty());
+        drop(ssh);
     }
 
     /// Without the user choosing to keep them, a closing connection's rules just stop.

@@ -122,9 +122,16 @@ pub async fn profile_duplicate(app: AppHandle, window: WebviewWindow, id: String
     notified(&window, Change::Profiles, result)
 }
 
-/// Deletes a session, with its password.
+/// Deletes a session, with its password, and stops its forwarding rules running in its tabs
+/// (which the frontend asked about first, see `forward_sessions_of`): nothing would show them
+/// any more, with the session gone.
 #[tauri::command]
 pub async fn profile_delete(app: AppHandle, window: WebviewWindow, id: String) -> Result<()> {
-    let result = blocking(app, move |app| app.state::<ProfileStore>().delete(&id)).await;
+    let result = blocking(app, move |app| {
+        app.state::<ProfileStore>().delete(&id)?;
+        app.state::<Connections>().stop_saved_forwards(&id, None);
+        Ok(())
+    })
+    .await;
     notified(&window, Change::Profiles, result)
 }
