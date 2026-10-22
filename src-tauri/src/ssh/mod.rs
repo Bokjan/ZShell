@@ -439,6 +439,11 @@ async fn connect(
 /// Keepalives unanswered in a row that end a connection, as OpenSSH's `ServerAliveCountMax`.
 const KEEPALIVE_MAX: u32 = 3;
 
+/// The least `inactivity_timeout`, which also limits each of russh's writes: on a slow link,
+/// writing what a channel's window allows takes a minute (2 MiB at 256 kbit/s). None in tests,
+/// which wait for stalled connections to end.
+const INACTIVITY_MIN: Duration = Duration::from_secs(if cfg!(test) { 0 } else { 120 });
+
 /// russh's settings for a connection sending keepalives every `keepalive`, if at all.
 ///
 /// russh waits for its writes with no limit but `inactivity_timeout`. Once a peer gone silently
@@ -447,12 +452,13 @@ const KEEPALIVE_MAX: u32 = 3;
 /// retransmitting many minutes later. Anything that happens on the connection but our own
 /// keepalives starts the timeout again, a server's answer to them included, so an idle
 /// connection stays open; it is a keepalive longer than the keepalives take to give up, which
-/// stay the reason given for a server that stops answering.
+/// stay the reason given for a server that stops answering, and no less than
+/// [`INACTIVITY_MIN`].
 fn client_config(keepalive: Option<Duration>) -> client::Config {
     client::Config {
         keepalive_interval: keepalive,
         keepalive_max: KEEPALIVE_MAX as usize,
-        inactivity_timeout: keepalive.map(|interval| interval * (KEEPALIVE_MAX + 2)),
+        inactivity_timeout: keepalive.map(|interval| (interval * (KEEPALIVE_MAX + 2)).max(INACTIVITY_MIN)),
         ..Default::default()
     }
 }
