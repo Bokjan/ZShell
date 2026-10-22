@@ -42,6 +42,11 @@ use crate::ssh::{Liveness, RemoteRoutes, SshHandle};
 /// How long to wait for the name a local or dynamic rule listens on to be looked up.
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// How long the server may take to open a rule's channel. It answers once it has connected to
+/// the target, and one that drops packets would otherwise leave the client waiting until the
+/// server's kernel gives up (two minutes on Linux), with nothing to show in the rule's state.
+const OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+
 struct Running {
     rule: ForwardRule,
     /// `None` once stopped; the task is kept so a restart can wait for it to wind down.
@@ -387,11 +392,12 @@ struct Opener {
 }
 
 impl Opener {
-    /// A channel to `host:port` for the connection from `peer`. The server answers the request,
-    /// which tells that the connection is still alive.
+    /// A channel to `host:port` for the connection from `peer`, within [`OPEN_TIMEOUT`]. The
+    /// server answers the request, which tells that the connection is still alive.
     async fn open(&self, host: String, port: u16, peer: SocketAddr) -> anyhow::Result<Channel<Msg>> {
         self.liveness.expect_reply();
-        Ok(self.handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into()).await?)
+        let opening = self.handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into());
+        Ok(tokio::time::timeout(OPEN_TIMEOUT, opening).await??)
     }
 }
 
@@ -525,6 +531,41 @@ mod tests {
         assert!(forwards.has("r1"));
         assert!(!forwards.is_running("r1"));
         assert!(forwards.running().is_empty());
+    }
+
+    /// A server that never answers requests for `direct-tcpip` channels, as one waiting to
+    /// connect to a target that drops packets.
+    struct Unanswering(Vec<russh::server::ChannelOpenHandle>);
+
+    impl russh::server::Handler for Unanswering {
+        type Error = russh::Error;
+
+        async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+            Ok(russh::server::Auth::Accept)
+        }
+
+        async fn channel_open_direct_tcpip(
+            &mut self,
+            _channel: Channel<russh::server::Msg>,
+            _host: &str,
+            _port: u32,
+            _originator: &str,
+            _originator_port: u32,
+            reply: russh::server::ChannelOpenHandle,
+            _session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            self.0.push(reply);
+            Ok(())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn gives_up_on_a_channel_the_server_never_opens() {
+        let connection = connect(Unanswering(Vec::new()), "").await;
+        let opener = Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone() };
+        let opened = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await;
+        let Err(error) = opened else { panic!("the channel opened") };
+        assert!(error.downcast_ref::<tokio::time::error::Elapsed>().is_some(), "{error:#}");
     }
 
     /// The first change is reported at once; those right after it together, once the
