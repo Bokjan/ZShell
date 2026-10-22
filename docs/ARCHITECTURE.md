@@ -67,8 +67,8 @@
 | `encoding.rs` / `local_name.rs` | 会话的字符编码；对方给出的文件名转成本地文件名 |
 | `import/` / `backup.rs` | ssh_config 导入；会话导出与导入 |
 | `window/` | 按平台创建窗口；各平台文件提供同一组函数，缺了哪个都编译不过 |
-| `desktop.rs` / `dbus.rs` | Linux 桌面的配色方案与等宽字体（设置 portal）；应用锁与阻止睡眠共用的 D-Bus 连接 |
-| `hidden_window.rs` | Windows：接收系统广播的隐藏窗口，应用锁、读屏检测与电源检测共用 |
+| `desktop.rs` / `dbus.rs` | Linux 桌面的配色方案与等宽字体（设置 portal）；应用锁与阻止睡眠共用的 D-Bus 连接（方法调用 25 秒超时；应用锁的认证对话框不限时，另开连接） |
+| `hidden_window.rs` | Windows：接收系统广播的隐藏窗口，应用锁、读屏检测与电源检测共用这个模块，各自在自己的线程里建一个 |
 | `fonts/` | 终端字体的连字规则（见「终端连字」） |
 | `screen_reader/` | 系统读屏软件是否在运行（见「无障碍」） |
 | `tab_drag/` | 标签拖出窗口时的落点（见「多窗口」） |
