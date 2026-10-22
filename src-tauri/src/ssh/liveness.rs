@@ -1,6 +1,7 @@
 //! Noticing soon that a connection has gone dead, when the user would: as they type and nothing
-//! comes back, as a forward's client waits for its channel, and as the system wakes from sleep
-//! (when the network may have changed under the connection). Keepalives alone take minutes:
+//! comes back, as an SFTP command waits, as a forward's client waits for its channel or for an
+//! answer to what it sent, and as the system wakes from sleep (when the network may have
+//! changed under the connection). Keepalives alone take minutes:
 //! they are sent every interval and given up on after several, and not at all while russh's
 //! connection task waits on a write the system can't send.
 //!
