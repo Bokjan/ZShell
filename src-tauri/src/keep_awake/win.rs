@@ -64,8 +64,9 @@ fn external_power() -> bool {
 }
 
 /// The power source changes are sent only to windows registered for them: a hidden top-level
-/// window on a thread of its own. Read once first: that the window is told the current source
-/// as it registers is not documented.
+/// window on a thread of its own. Read once first, and again once registered: that the window
+/// is told the current source as it registers is not documented, and the source may change
+/// while the window is being made.
 pub fn watch_power(changed: PowerChanged) {
     changed(external_power());
     if CHANGED.set(changed).is_err() {
@@ -73,7 +74,11 @@ pub fn watch_power(changed: PowerChanged) {
     }
     crate::hidden_window::spawn("ZShellPowerEvents", Some(window_proc), |hwnd| {
         // SAFETY: the window was just made, on this thread; the registration lasts as long as it.
-        unsafe { RegisterPowerSettingNotification(hwnd, &GUID_ACDC_POWER_SOURCE, DEVICE_NOTIFY_WINDOW_HANDLE) != 0 }
+        let registered = unsafe { RegisterPowerSettingNotification(hwnd, &GUID_ACDC_POWER_SOURCE, DEVICE_NOTIFY_WINDOW_HANDLE) != 0 };
+        if let (true, Some(changed)) = (registered, CHANGED.get()) {
+            changed(external_power());
+        }
+        registered
     });
 }
 
