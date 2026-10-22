@@ -268,7 +268,7 @@ export class PaneSession {
       }
       if (!this.session) return false;
       this.nudgedAt = performance.now();
-      void this.session.write(data);
+      this.session.write(data).catch(ignore);
       this.traffic.addSent(utf8Length(data));
       return true;
     }
@@ -289,7 +289,7 @@ export class PaneSession {
   inputBinary(data: string) {
     if (this.closed || !this.session) return;
     this.nudgedAt = performance.now();
-    void this.session.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff));
+    this.session.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(ignore);
     this.traffic.addSent(data.length);
   }
 
@@ -342,7 +342,7 @@ export class PaneSession {
       this.waitingSize = { cols, rows };
       return;
     }
-    void this.session?.resize(cols, rows);
+    this.session?.resize(cols, rows).catch(ignore);
     this.resizeTimer = setTimeout(() => {
       this.resizeTimer = undefined;
       const size = this.waitingSize;
@@ -374,6 +374,8 @@ export class PaneSession {
     this.connected = false;
     this.events.session(null);
     this.attempt = 0;
+    // No longer taking a session over (see `adopt`): the new one gets the terminal's size.
+    this.arriving = false;
     resetModes(this.port);
     this.port.write("\r\n");
     // Leaves the old session's callbacks behind (see `connect`), and any pending retry.
@@ -462,7 +464,7 @@ export class PaneSession {
       this.config.target(),
       undefined,
       connected,
-      async (onOutput, onEvent, took) => {
+      async (onOutput, onEvent, took, stale) => {
         let waiting: (() => void)[] | null = [];
         const later = (f: () => void) => (waiting ? waiting.push(f) : f());
         const adopted = await this.adoptOpen(
@@ -471,8 +473,12 @@ export class PaneSession {
           (event) => later(() => onEvent(event)),
         );
         took(adopted.session);
+        // Connected anew meanwhile (or closed): the new session draws on this terminal now.
+        if (stale()) return adopted.session;
         const snapshot = await adopted.snapshot;
+        if (stale()) return adopted.session;
         if (snapshot) await new Promise<void>((done) => this.port.restore(snapshot, done));
+        if (stale()) return adopted.session;
         const pending = waiting;
         waiting = null;
         pending.forEach((f) => f());
@@ -480,6 +486,7 @@ export class PaneSession {
         // other window's: drawn at it too, and only then fitted to this pane.
         await new Promise<void>((done) => this.port.write("", done));
         settled();
+        if (stale()) return adopted.session;
         const before = this.port.size();
         this.port.fit();
         const { cols, rows } = this.port.size();
@@ -488,11 +495,13 @@ export class PaneSession {
         if (cols === before.cols && rows === before.rows) void adopted.session.resize(cols, rows).catch(ignore);
         return adopted.session;
       },
-      () => {
+      (stale) => {
         settled();
+        this.events.stayed();
+        // Not if it has connected anew meanwhile.
+        if (stale) return;
         this.closed = true;
         this.connected = false;
-        this.events.stayed();
       },
     );
   }
@@ -500,8 +509,9 @@ export class PaneSession {
   /**
    * Follows a session as `start` opens it: passes its output to the terminal with flow
    * control, and acts on its events. `wasConnected`: its shell is already up (adopted).
-   * `start` may say which session it is before it resolves (`took`). `failed`: what to do
-   * instead of reporting an error if `start` fails.
+   * `start` may say which session it is before it resolves (`took`), and learns whether the
+   * pane has moved on to another session since (`stale`). `failed`: what to do instead of
+   * reporting an error if `start` fails, told whether the pane has moved on.
    */
   private follow(
     target: SessionTarget,
@@ -511,8 +521,9 @@ export class PaneSession {
       onOutput: (data: Uint8Array) => void,
       onEvent: (event: SessionEvent) => void,
       took: (session: Session) => void,
+      stale: () => boolean,
     ) => Promise<Session>,
-    failed?: () => void,
+    failed?: (stale: boolean) => void,
   ) {
     const current = ++this.generation;
     const stale = () => this.disposed || current !== this.generation;
@@ -610,12 +621,13 @@ export class PaneSession {
         }
       },
       took,
+      stale,
     )
       .then(took)
       .catch((e) => {
         // Even for a pane that has closed since: the other window learns it still has the session.
         if (failed) {
-          failed();
+          failed(stale());
           return;
         }
         if (stale()) return;

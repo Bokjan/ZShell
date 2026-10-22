@@ -136,6 +136,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
   const adopted: Adopted[] = [];
   let adoptFailure: unknown = null;
   const adopt = (async (id, onOutput, onEvent) => {
+    if (adoptFailure instanceof Promise) await adoptFailure;
     if (adoptFailure) throw adoptFailure;
     const session = fakeSession(id);
     let handOver: (snapshot: SessionSnapshot | null) => void = () => {};
@@ -793,6 +794,36 @@ describe("moving to another window", () => {
     // Its shell was up: nothing connects anew.
     expect(adopted[0].session.writes).toEqual(["ls\r"]);
     expect(opened).toHaveLength(0);
+  });
+
+  it("doesn't draw the old screen over a connection made while it was being handed over", async () => {
+    const arrival: Arrival = { sessionId: 42, connected: true, snapshot: null, reconnect: false, from };
+    const { pane, adopted, screen, opened } = setup({}, undefined, arrival);
+    pane.start();
+    await settle();
+    pane.reconnect();
+    await settle();
+    expect(adopted[0].session.closed).toBe(true);
+    expect(pane.isArriving).toBe(false);
+    adopted[0].handOver({ id: 42, moveId: "m1", data: "<old>", cols: 100, rows: 30 });
+    await settle();
+    expect(screen()).not.toContain("<restored");
+    expect(opened).toHaveLength(1);
+  });
+
+  it("stays connecting anew when the session it was taking over can't move", async () => {
+    const arrival: Arrival = { sessionId: 42, connected: true, snapshot: null, reconnect: false, from };
+    const { pane, failAdoption, events, opened } = setup({}, undefined, arrival);
+    let reject: (e: unknown) => void = () => {};
+    failAdoption(new Promise((_, r) => (reject = r)));
+    pane.start();
+    pane.reconnect();
+    await settle();
+    reject({ code: "session.busy", message: "busy" });
+    await settle();
+    expect(events.stayed).toHaveBeenCalledOnce();
+    expect(opened).toHaveLength(1);
+    expect(events.status).not.toHaveBeenCalledWith("closed");
   });
 
   it("moves on without closing the session it took over", async () => {
