@@ -1,16 +1,17 @@
 //! `-L`: listen on this computer; each connection is carried to the target through a
 //! `direct-tcpip` channel opened from the server.
 
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 
 use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker, LOOKUP_TIMEOUT};
 use crate::error::Error;
+use crate::model::ALL_ADDRESSES;
 use crate::ssh::SshHandle;
 
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
@@ -38,7 +39,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
 
 /// Where a local or dynamic rule listens: every address its bind host resolves to, as
 /// OpenSSH does, so a rule on `localhost` takes connections to both 127.0.0.1 and ::1
-/// (clients differ in which one they try).
+/// (clients differ in which one they try); IPv4's and IPv6's any address for `*`.
 pub(super) struct Listener(Vec<TcpListener>);
 
 impl Listener {
@@ -46,9 +47,13 @@ impl Listener {
     pub(super) async fn bind(host: &str, port: u16) -> Result<Self> {
         let failed = || Error::new("forward.bindFailed").param("address", host_port(host, port));
         let mut addresses: Vec<SocketAddr> = Vec::new();
-        let found = tokio::time::timeout(LOOKUP_TIMEOUT, tokio::net::lookup_host((host, port)))
-            .await
-            .unwrap_or_else(|_| Err(std::io::ErrorKind::TimedOut.into()));
+        let found = match host {
+            ALL_ADDRESSES => Ok(vec![(Ipv4Addr::UNSPECIFIED, port).into(), (Ipv6Addr::UNSPECIFIED, port).into()]),
+            _ => tokio::time::timeout(LOOKUP_TIMEOUT, tokio::net::lookup_host((host, port)))
+                .await
+                .unwrap_or_else(|_| Err(std::io::ErrorKind::TimedOut.into()))
+                .map(Vec::from_iter),
+        };
         for address in found.with_context(failed)? {
             if !addresses.contains(&address) {
                 addresses.push(address);
@@ -61,7 +66,7 @@ impl Listener {
             if let Some(first) = listeners.first() {
                 address.set_port(first.local_addr()?.port());
             }
-            match TcpListener::bind(address).await {
+            match listen(address) {
                 Ok(listener) => listeners.push(listener),
                 Err(e) => {
                     error.get_or_insert(e);
@@ -95,6 +100,25 @@ impl Listener {
     }
 }
 
+/// A listener on `address`. One on IPv6 takes only IPv6 connections, as OpenSSH's do: where
+/// the system would also give it IPv4 ones (Linux), it would take the port from the IPv4
+/// listener beside it.
+fn listen(address: SocketAddr) -> std::io::Result<TcpListener> {
+    let socket = match address {
+        SocketAddr::V4(_) => TcpSocket::new_v4()?,
+        SocketAddr::V6(_) => {
+            let socket = TcpSocket::new_v6()?;
+            socket2::SockRef::from(&socket).set_only_v6(true)?;
+            socket
+        }
+    };
+    // As `TcpListener::bind` does: a port whose last connections are closing can be taken again.
+    #[cfg(unix)]
+    socket.set_reuseaddr(true)?;
+    socket.bind(address)?;
+    socket.listen(1024)
+}
+
 /// Accept errors are usually transient (aborted handshakes, descriptor exhaustion); report
 /// and keep listening, pausing briefly so a persistent error cannot spin.
 pub(super) async fn accept_failed(tracker: &mut Tracker<'_>, error: std::io::Error) {
@@ -114,6 +138,8 @@ async fn connect(handle: Arc<SshHandle>, stream: TcpStream, peer: SocketAddr, ho
 
 #[cfg(test)]
 mod tests {
+    use std::net::IpAddr;
+
     use super::*;
 
     #[tokio::test]
@@ -132,6 +158,20 @@ mod tests {
             let _client = TcpStream::connect(address).await.unwrap();
             let (_, peer) = listener.accept().await.unwrap();
             assert_eq!(peer.ip(), address.ip());
+        }
+    }
+
+    #[tokio::test]
+    async fn listens_on_ipv4_and_ipv6_for_every_address() {
+        let listener = Listener::bind(ALL_ADDRESSES, 0).await.unwrap();
+        let bound: Vec<SocketAddr> = listener.0.iter().map(|l| l.local_addr().unwrap()).collect();
+        let port = bound[0].port();
+        assert_eq!(bound, [SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)), SocketAddr::from((Ipv6Addr::UNSPECIFIED, port))]);
+        assert_eq!(listener.address(ALL_ADDRESSES).unwrap(), format!("*:{port}"));
+        for ip in [IpAddr::from(Ipv4Addr::LOCALHOST), IpAddr::from(Ipv6Addr::LOCALHOST)] {
+            let _client = TcpStream::connect((ip, port)).await.unwrap();
+            let (_, peer) = listener.accept().await.unwrap();
+            assert_eq!(peer.ip(), ip);
         }
     }
 }

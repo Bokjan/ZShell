@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 
 use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
 use crate::error::Error;
+use crate::model::ALL_ADDRESSES;
 use crate::ssh::{Incoming, RemoteRoutes, SshHandle, ROUTE_QUEUE};
 
 /// How long a stopping rule waits for the server to cancel its listener.
@@ -61,7 +62,9 @@ impl Drop for Listening {
 pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
     let handle = ctx.handle();
     let requested = host_port(&rule.bind_host, rule.bind_port);
-    let request = handle.tcpip_forward(rule.bind_host.clone(), rule.bind_port.into());
+    // Every address is the empty one in the protocol (RFC 4254 7.1), as OpenSSH sends `*`.
+    let address = if rule.bind_host == ALL_ADDRESSES { String::new() } else { rule.bind_host.clone() };
+    let request = handle.tcpip_forward(address.clone(), rule.bind_port.into());
     tokio::pin!(request);
     // The server only reports the port when it picked one.
     let port = |allocated: u32| if rule.bind_port == 0 { allocated } else { rule.bind_port.into() };
@@ -73,7 +76,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
             // doesn't stay without a route (refusing connections, and restarts of the rule
             // with "address in use").
             if let Ok(Ok(allocated)) = tokio::time::timeout(CANCEL_TIMEOUT, request).await {
-                let cancel = handle.cancel_tcpip_forward(rule.bind_host.clone(), port(allocated));
+                let cancel = handle.cancel_tcpip_forward(address.clone(), port(allocated));
                 let _ = tokio::time::timeout(CANCEL_TIMEOUT, cancel).await;
             }
             return Ok(());
@@ -82,7 +85,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
     let port = port(reply.context(Error::new("forward.remoteRefused").param("address", &requested))?);
 
     let (sender, mut incoming) = mpsc::channel(ROUTE_QUEUE);
-    let listening = Listening::new(ctx, rule.bind_host.clone(), port, sender);
+    let listening = Listening::new(ctx, address, port, sender);
     let mut tracker = Tracker::new(ctx, host_port(&rule.bind_host, port));
     loop {
         let report = tracker.report_due();

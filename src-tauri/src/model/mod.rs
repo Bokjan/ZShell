@@ -18,7 +18,7 @@ mod settings;
 pub use app_lock::AppLockSettings;
 #[cfg(test)]
 pub(crate) use app_lock::DEFAULT_IDLE_MINUTES;
-pub use forward::{host_port, ForwardKind, ForwardRule};
+pub use forward::{host_port, ForwardKind, ForwardRule, ALL_ADDRESSES};
 // Written into the frontend's bindings.
 #[cfg(test)]
 pub use profile::default_term_type;

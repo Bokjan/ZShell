@@ -239,7 +239,8 @@ fn plan_shares_one_proxy_per_command() {
 #[test]
 fn parses_addresses() {
     assert_eq!(parse_listen("8080"), Some((String::new(), 8080)));
-    assert_eq!(parse_listen("*:8080"), Some(("0.0.0.0".into(), 8080)));
+    assert_eq!(parse_listen("*:8080"), Some(("*".into(), 8080)));
+    assert_eq!(parse_listen(":8080"), Some(("*".into(), 8080)));
     assert_eq!(parse_host_port("[::1]:22"), Some(("::1".into(), 22)));
     assert_eq!(parse_host_port("db/5432"), Some(("db".into(), 5432)));
     assert_eq!(split_destination("ops@jump:2222"), (Some("ops".into()), "jump".into(), Some(2222)));

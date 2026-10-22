@@ -26,6 +26,7 @@ pub struct ForwardRule {
     #[serde(default)]
     pub id: String,
     pub kind: ForwardKind,
+    /// Loopback when empty (filled in on save); `*` ([`ALL_ADDRESSES`]) is every address.
     #[serde(default)]
     pub bind_host: String,
     /// 0 lets the OS (or the server, for remote rules) pick a port.
@@ -39,6 +40,9 @@ pub struct ForwardRule {
     #[serde(default)]
     pub auto_start: bool,
 }
+
+/// The bind address that listens on every address, IPv4 and IPv6, as in OpenSSH.
+pub const ALL_ADDRESSES: &str = "*";
 
 impl ForwardRule {
     /// Trims fields, fills in the default bind address and checks the target.

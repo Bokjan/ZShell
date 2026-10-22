@@ -14,7 +14,7 @@ use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::model::{local_username, AuthMethod, Connection, EnvVar, Profile, Remote, SshOptions};
-use crate::model::{ForwardKind, ForwardRule};
+use crate::model::{ForwardKind, ForwardRule, ALL_ADDRESSES};
 use crate::model::{Proxy, ProxyKind};
 
 /// Options that change how `ssh` connects but are not imported, reported per host.
@@ -400,9 +400,8 @@ fn forwards(params: &HostParams, skipped: &mut Vec<String>) -> Vec<ForwardRule> 
     for forward in &params.remote_forward {
         let listen = match &forward.listen {
             RemoteForwardListen::Port(port) => Some((String::new(), *port)),
-            // OpenSSH's "*" (all interfaces) is the empty address in the protocol; keep it
-            // explicit, as an empty bind address here means loopback.
-            RemoteForwardListen::Host { host, port } if host == "*" => Some(("0.0.0.0".to_owned(), *port)),
+            // An empty bind address here means loopback; every address is `*`, as in OpenSSH.
+            RemoteForwardListen::Host { host, port } if host.is_empty() => Some((ALL_ADDRESSES.to_owned(), *port)),
             RemoteForwardListen::Host { host, port } => Some((host.clone(), *port)),
             RemoteForwardListen::UnixSocket(_) => None,
         };
@@ -423,13 +422,14 @@ fn forwards(params: &HostParams, skipped: &mut Vec<String>) -> Vec<ForwardRule> 
     rules
 }
 
-/// `port`, `host:port` or `[v6]:port`; an empty or `*` host means all interfaces.
+/// `port` (loopback), `host:port` or `[v6]:port`; an empty or `*` host means every address
+/// (`*`, as the rule keeps it).
 fn parse_listen(text: &str) -> Option<(String, u16)> {
     match text.parse::<u16>() {
         Ok(port) => Some((String::new(), port)),
         Err(_) => {
             let (host, port) = parse_host_port(text)?;
-            Some((if host == "*" { "0.0.0.0".to_owned() } else { host }, port))
+            Some((if host.is_empty() { ALL_ADDRESSES.to_owned() } else { host }, port))
         }
     }
 }
