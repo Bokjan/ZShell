@@ -273,6 +273,12 @@ impl LocalTarget {
             return Err(e.into());
         }
         let Some(temporary) = &self.temporary else { return Ok(()) };
+        // On the disk before it replaces the original: a power cut right after the rename
+        // would otherwise leave a file that was never written in place of a complete one.
+        if let Err(e) = self.file.sync_all().await {
+            self.remove_incomplete().await;
+            return Err(anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", self.path.display())));
+        }
         if let Some(permissions) = self.permissions.take() {
             let _ = tokio::fs::set_permissions(temporary, permissions).await;
         }
