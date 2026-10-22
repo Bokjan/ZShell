@@ -1,6 +1,8 @@
 # Weekly dependency updates. Minor and patch updates are grouped into one pull request per
 # ecosystem; major updates (including 0.x minor bumps for Cargo) get their own. Tauri's npm
-# packages and crates are released together, so each side groups them separately.
+# packages and crates are released together, so each side groups them separately. Dependabot
+# puts a dependency in the group whose rule fits it most closely, and counts a group without
+# patterns as closer than a wildcard, so minor-and-patch leaves out the named groups' packages.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -17,6 +19,12 @@ updates:
         patterns: ["@xterm/*"]
       minor-and-patch:
         update-types: [minor, patch]
+        exclude-patterns: ["@tauri-apps/*", "@xterm/*"]
+    ignore:
+      # React Compiler doesn't compile parameters with defaults under Babel 8 (react/react#36868,
+      # see docs/TODO.md).
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: cargo
     directory: /src-tauri
@@ -32,6 +40,7 @@ updates:
         patterns: ["russh", "russh-*"]
       minor-and-patch:
         update-types: [minor, patch]
+        exclude-patterns: ["tauri", "tauri-*", "russh", "russh-*"]
     ignore:
       # They must be the versions `windows` itself depends on (`#[implement]` mixes their types), so
       # they are bumped by hand along with it.

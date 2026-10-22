@@ -16,6 +16,7 @@
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
+| 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
 | 等待上游 | macOS：开着输入法时，按 Shift 打的第一个字丢失（已用补丁绕过） | xterm.js#6200 合入并发布 |
@@ -96,6 +97,14 @@
 - **原因**：windows-rs 2026-09-03 发布 0.100.0 时，`windows-core`、`windows-future`、`windows-implement` 等小 crate 上了 crates.io，`windows` 本体还没发，最新仍是 0.62.2。按 [microsoft/windows-rs#4867](https://github.com/microsoft/windows-rs/issues/4867)，`windows` 和 `windows-sys` 改用从 SDK 头文件生成的新元数据，可能晚些才发布。新元数据下很多 Win32 API 的签名、类型和 feature 名都会变。
 - **处理**：`.github/dependabot.yml` 已经忽略 `windows-core` 和 `windows-future`，两个 PR 已关闭。`windows` 0.100 发布后，Dependabot 会提它的升级。那时手动把三个 crate 一起升到同一版本，按新 API 改用到它们的代码（`sftp/drag/win.rs` 的拖放、`applock/win.rs` 的 Windows Hello、`pty/shell.rs` 的 `WindowsIntegrityPolicy`），交给 Windows 上的 CI 编译。`windows-sys` 0.61 版本号独立，不受影响。
 - **登记**：2026-10-15。
+
+### 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数
+
+- **现象**：Dependabot 把 `@babel/core` 升到 8.0.7（#14，2026-10-22）后，`compiler.test.ts` 报 43 处 `(BuildHIR::lowerAssignment) Expected object property value to be an LVal, got: AssignmentPattern`，都是 `function C({ a = 1 })` 这类参数解构带默认值的组件和图标。正常构建不报错，而是静默跳过这些组件，不做 memo。
+- **原因**：Babel 8 的 AST 里，对象解构属性的默认值用 `AssignmentPattern` 表示，`babel-plugin-react-compiler` 1.0.0（npm 的 `latest`）的 `lowerAssignment` 还只认 Babel 7 的形状。构建链的其余部分已经支持 Babel 8：`@rolldown/plugin-babel` 的 peer 依赖是 `^7.29.0 || ^8.0.0-rc.1`。
+- **上游**：[react/react#36868](https://github.com/react/react/issues/36868)（2026-06-24 提出，标签仍是 Unconfirmed，没有维护者回应）是同一个报错；[react/react#37406](https://github.com/react/react/issues/37406) 说明了静默跳过的情况。都还没有修复。
+- **处理**：#14 已关闭，`dependabot.yml` 忽略 `@babel/core` 的 major 更新。上游发布支持 Babel 8 的 `babel-plugin-react-compiler` 后，删掉这条 ignore，让 Dependabot 重新提，`compiler.test.ts` 通过即可合入。`@types/babel__core` 不用跟着升：Babel 8 自带类型，届时看能否去掉它。
+- **登记**：2026-10-23。
 
 ### 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44
 
