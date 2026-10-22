@@ -74,5 +74,9 @@ describe("targetProfile", () => {
     expect(targetProfile({ kind: "profile", profileId: "a" }, profiles)).toBe(profiles[0]);
     expect(targetProfile({ kind: "profile", profileId: "gone" }, profiles)).toBeUndefined();
     expect(targetProfile({ kind: "local" }, profiles)).toBeUndefined();
+    // A new list (the directory replaced it) is looked up anew.
+    const changed = [{ id: "b" } as Profile, { id: "b", name: "second" } as Profile];
+    expect(targetProfile({ kind: "profile", profileId: "b" }, changed)).toBe(changed[0]);
+    expect(targetProfile({ kind: "profile", profileId: "b" }, profiles)).toBeUndefined();
   });
 });

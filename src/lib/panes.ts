@@ -123,9 +123,23 @@ export interface Tab {
   moving?: boolean;
 }
 
+// The sessions of each list by id, made once per list: the app looks up every tab's session
+// as it renders, several times a second while a program changes a title. A list is never
+// changed in place (the directory replaces it), so its map stays right; it goes with it.
+const byId = new WeakMap<Profile[], Map<string, Profile>>();
+
 /** The saved session `target` connects to; undefined for other targets and for deleted sessions. */
-export const targetProfile = (target: SessionTarget, profiles: Profile[]): Profile | undefined =>
-  target.kind === "profile" ? profiles.find((p) => p.id === target.profileId) : undefined;
+export function targetProfile(target: SessionTarget, profiles: Profile[]): Profile | undefined {
+  if (target.kind !== "profile") return undefined;
+  let index = byId.get(profiles);
+  if (!index) {
+    index = new Map();
+    // The first of a repeated id, as references go to (`persist::unique_ids`).
+    for (const profile of profiles) if (!index.has(profile.id)) index.set(profile.id, profile);
+    byId.set(profiles, index);
+  }
+  return index.get(target.profileId);
+}
 
 /** What a pane's next session will be: a saved session's protocol may have been changed. */
 export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabProtocol {
