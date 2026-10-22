@@ -226,6 +226,7 @@ pub async fn open(
     let place = at_drop().or_else(|| cascade(&window).ok());
     if let Err(e) = build(&app, &label, place) {
         windows.inbox.lock().unwrap().forget(&label);
+        session_manager.withdraw_offers(&label, &Default::default());
         return Err(e.into());
     }
     changed(&app);
