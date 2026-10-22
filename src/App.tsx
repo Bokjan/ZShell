@@ -12,6 +12,7 @@ import { usePaneActions } from "./app/usePaneActions";
 import { PaneDragLayer, usePaneDrag } from "./app/usePaneDrag";
 import { useFullScreen } from "./app/useFullScreen";
 import { useQuickCommandBar } from "./app/useQuickCommandBar";
+import { useQuickCommandSync } from "./app/useQuickCommandSync";
 import { useStartupInfo } from "./app/useStartupInfo";
 import { useKeepAwake } from "./app/useKeepAwake";
 import { useTaskbarProgress } from "./app/useTaskbarProgress";
@@ -66,6 +67,7 @@ function App() {
   const { shortcutLabel } = useLocale();
   const { settings, update, saveError: settingsSaveError, dismissSaveError: dismissSettingsSaveError } = useSettings();
   useDirectorySync();
+  useQuickCommandSync();
   const { profiles } = useDirectory();
   const [searchFocusKey, setSearchFocusKey] = useState(0);
   // A folder's sessions waiting for confirmation to open them all.
