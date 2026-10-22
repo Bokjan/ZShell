@@ -1,18 +1,23 @@
 import { useRef, useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
-import type { SessionTarget } from "../ipc/api";
+import { sendBreak, sessionLog, type SessionTarget } from "../ipc/api";
 import { announce } from "../lib/announce";
 import { autoSide, canSplit, fits, insertLayout, paneKeys, removeFromLayout, type Direction, type Size } from "../lib/layout";
-import { findPane, focusedPane, type Layout, type Pane, type TabProtocol } from "../lib/panes";
+import { directory } from "../lib/directory";
+import { findPane, focusedPane, targetProtocol, type Layout, type Pane } from "../lib/panes";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import type { PanePlace, PaneSide, PaneSpec, TabStore } from "../lib/tabs";
 
 /** How long a pane that can't be split flashes. */
 const REFUSED_MS = 400;
 
-/** Splitting panes, copying them into new tabs, and moving them between tabs. */
-export function usePaneActions(store: TabStore, sessions: SessionRegistry, protocolOf: (target: SessionTarget) => TabProtocol) {
+/**
+ * Opening tabs, splitting panes, copying them into new tabs, moving them between tabs, and
+ * what a pane's menus do to its session (logging it, sending a break).
+ */
+export function usePaneActions(store: TabStore, sessions: SessionRegistry) {
   const { t } = useTranslation();
   // The pane that couldn't be split, flashing; `count` restarts the flash on each refusal.
   const [refused, setRefused] = useState<{ key: number; count: number } | null>(null);
@@ -34,6 +39,15 @@ export function usePaneActions(store: TabStore, sessions: SessionRegistry, proto
     const found = findPane(store.get().tabs, key);
     return !found || canSplit(found.tab.layout, key, areas.current.get(found.tab.key), direction);
   };
+
+  /** What a pane's next session will be: a saved session's protocol may have been changed. */
+  const protocolOf = (target: SessionTarget) => targetProtocol(target, directory.get().profiles);
+
+  /** A new pane for `target`, titled `title` until its program sets one. */
+  const specOf = (target: SessionTarget, title: string): PaneSpec => ({ target, protocol: protocolOf(target), title });
+
+  /** Opens a tab for `target` (see `specOf`). */
+  const openTab = (target: SessionTarget, title: string) => store.dispatch({ type: "open", pane: specOf(target, title) });
 
   /**
    * A new pane running what `pane` runs: an SSH pane whose shell is up opens its copy on the
@@ -112,5 +126,41 @@ export function usePaneActions(store: TabStore, sessions: SessionRegistry, proto
     requestAnimationFrame(() => sessions.focus(tab.focused));
   };
 
-  return { refused, onAreaSize, roomToSplit, splitPane, duplicateTab, placeIn, fitsBeside, movePane, mergeTab };
+  /** Starts or stops logging a pane's session. */
+  const setLogging = (key: number, start: boolean) => {
+    const pane = findPane(store.get().tabs, key)?.pane;
+    if (pane?.sessionId == null) return;
+    // The session reports the path (or an error) with a `log` event.
+    store.dispatch({ type: "updatePane", key, patch: { logStopped: !start } });
+    (start ? sessionLog.start(pane.sessionId) : sessionLog.stop(pane.sessionId)).catch(console.error);
+  };
+
+  /** Shows a pane's log file in the file manager. */
+  const showLog = (key: number) => {
+    const path = findPane(store.get().tabs, key)?.pane.logPath;
+    if (path) revealItemInDir(path).catch(console.error);
+  };
+
+  /** Sends a break to a pane's session (serial and Telnet). */
+  const breakSession = (key: number) => {
+    const id = findPane(store.get().tabs, key)?.pane.sessionId;
+    if (id != null) sendBreak(id).catch(console.error);
+  };
+
+  return {
+    refused,
+    onAreaSize,
+    roomToSplit,
+    specOf,
+    openTab,
+    splitPane,
+    duplicateTab,
+    placeIn,
+    fitsBeside,
+    movePane,
+    mergeTab,
+    setLogging,
+    showLog,
+    breakSession,
+  };
 }

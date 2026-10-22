@@ -176,6 +176,10 @@ export interface QuickTarget {
   port: number;
 }
 
+/** The user a quick connection logs in as: SSH without a user name logs in as the local user, as `ssh host` does. */
+export const loginName = (target: { protocol: string; username: string }, localUser: string) =>
+  target.username || (target.protocol === "ssh" ? localUser : "");
+
 /**
  * `[ssh ][user@]host[:port]` (IPv6 in brackets) as a quick SSH connection, and
  * `telnet [user@]host[:port]` or `telnet://[user@]host[:port]` as a Telnet one. Plain words

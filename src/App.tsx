@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useLocale } from "./hooks/locale";
-import { useLatest } from "./hooks/latest";
 import { useAppActions } from "./app/useAppActions";
 import { useAppMenu } from "./app/useAppMenu";
+import { useProfileEditor } from "./app/useProfileEditor";
+import { useSessionOpening } from "./app/useSessionOpening";
+import { useUpdateAnnouncement } from "./app/useUpdateAnnouncement";
 import { useCloseFlow } from "./app/useCloseFlow";
 import { useCompose } from "./app/useCompose";
 import { useDirectorySync } from "./app/useDirectorySync";
@@ -25,11 +26,10 @@ import { CommandPalette } from "./components/CommandPalette";
 import { ComposeBar } from "./components/ComposeBar";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ImportDialog } from "./components/ImportDialog";
-import { ProfileDialog, type ProfileDefaults } from "./components/ProfileDialog";
 import { QuickCommandBar } from "./components/QuickCommandBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import type { SectionId } from "./components/settings/common";
-import { Sidebar, type OpenMode, type SidebarHandlers } from "./components/Sidebar";
+import { Sidebar, type SidebarHandlers } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar, type TabBarHandlers } from "./components/TabBar";
 import { PaneHostList } from "./components/PaneHost";
@@ -37,12 +37,12 @@ import { createPaneHosts } from "./components/paneHosts";
 import { TabPage, type PaneHandlers } from "./components/TabPage";
 import { Tooltips } from "./components/Tooltip";
 import i18n from "./i18n/index";
-import { errorMessage, sendBreak, sessionLog, type Folder, type Profile, type QuickCommand, type SessionTarget } from "./ipc/api";
+import { errorMessage, type QuickCommand } from "./ipc/api";
 import { useNativeMenuLabel } from "./hooks/appMenu";
 import { quickCommandStore, tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
-import { findPane, focusedPane, targetProfile, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
-import { address, sessionsIn, type QuickTarget } from "./lib/sessions";
+import { findPane, focusedPane, targetProfile, type Pane, type SidePanel, type Tab } from "./lib/panes";
+import { address } from "./lib/sessions";
 import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
 import { useDirectory, useQuickCommands, useTabStore } from "./hooks/stores";
@@ -64,15 +64,10 @@ function App() {
   useQuickCommandSync();
   const { profiles } = useDirectory();
   const [searchFocusKey, setSearchFocusKey] = useState(0);
-  // A folder's sessions waiting for confirmation to open them all.
-  const [openingAll, setOpeningAll] = useState<{ folder: Folder; profiles: Profile[] } | null>(null);
   const [store] = useState(() => createTabStore());
   const { tabs, activeKey } = useTabStore(store);
   const { dispatch } = store;
   const activate = (key: number | null) => dispatch({ type: "activate", key });
-  // The profile dialog: an existing profile, or a new one (null) with defaults; `paneKey` is
-  // the quick connection pane being saved as a session.
-  const [editing, setEditing] = useState<{ profile: Profile | null; defaults?: ProfileDefaults; paneKey?: number } | null>(null);
   const [importing, setImporting] = useState(false);
   // Open, scrolled to a section if one is named.
   // A new object each time they are asked for, so that a section asked for while they are
@@ -92,7 +87,6 @@ function App() {
       notifications: () => currentSettings().terminal.notifications,
     }),
   );
-  const localTitleRef = useLatest(shellName ?? t("tabs.localTitle"));
 
   /** Moves the keyboard focus back to the active terminal (after a bar or the palette closes). */
   const focusActiveTerminal = useCallback(
@@ -121,17 +115,10 @@ function App() {
   const deletion = useProfileDeletion(store, settings.tabs.followRemoteTitle);
   const { requestClose, closeFocused } = close;
 
-  /** What a tab's next session will be: a saved session's protocol may have been changed. */
-  const protocolOf = useCallback((target: SessionTarget) => targetProtocol(target, directory.get().profiles), []);
-  const paneActions = usePaneActions(store, sessions, protocolOf);
+  const paneActions = usePaneActions(store, sessions);
   const { refused, onAreaSize, roomToSplit, splitPane, duplicateTab } = paneActions;
 
-  const addTab = useCallback(
-    (target: SessionTarget, title: string) => dispatch({ type: "open", pane: { target, protocol: protocolOf(target), title } }),
-    [dispatch, protocolOf],
-  );
-
-  const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: addTab });
+  const windowing = useWindows(store, sessions, { followRemoteTitle: settings.tabs.followRemoteTitle, openTab: paneActions.openTab });
   const [tabRest] = useState(() =>
     createTabRest(
       () => store.get().activeKey,
@@ -140,45 +127,8 @@ function App() {
   );
   const paneDrag = usePaneDrag(store, paneActions, windowing, tabRest);
 
-  /**
-   * "connect" connects again in the focused pane of the active tab when that is the session's
-   * and its connection is closed (or waiting to reconnect), else opens a tab; "newTab" always
-   * opens a tab; "splitRight" and "splitDown" split the focused pane (or open a tab if there
-   * is none); "newWindow" opens a window with a tab for it.
-   */
-  const openProfile = (profile: Profile, mode: OpenMode) => {
-    directory.opened(profile.id);
-    if (mode === "newWindow") {
-      windowing.openInNewWindow(profile.id, profile.name);
-      return;
-    }
-    const target: SessionTarget = { kind: "profile", profileId: profile.id };
-    const active = activeTabOf(store.get());
-    const here = active?.panes.find((p) => p.key === active.focused);
-    if (mode === "connect" && here?.status === "closed" && here.target.kind === "profile" && here.target.profileId === profile.id) {
-      sessions.reconnect(here.key);
-      focusActiveTerminal();
-    } else if ((mode === "splitRight" || mode === "splitDown") && active) {
-      splitPane(active.focused, mode === "splitRight" ? "row" : "column", {
-        target,
-        protocol: protocolOf(target),
-        title: profile.name,
-      });
-    } else addTab(target, profile.name);
-  };
-
-  const openAll = (folder: Folder) => {
-    const list = sessionsIn(folder.id, directory.get());
-    // Several tabs (and connections) at once ask first; a single session opens as it would by itself.
-    if (list.length > 1) setOpeningAll({ folder, profiles: list });
-    else list.forEach((p) => openProfile(p, "newTab"));
-  };
-
-  // SSH without a user name logs in as the local user.
-  const quickConnect = (target: QuickTarget) =>
-    addTab({ kind: "quick", ...target }, address({ ...target, username: target.username || (target.protocol === "ssh" ? username : "") }));
-
-  const openLocalTab = useCallback(() => addTab({ kind: "local" }, localTitleRef.current), [addTab, localTitleRef]);
+  const opening = useSessionOpening(store, sessions, { paneActions, windowing, shellName, username, focusTerminal: focusActiveTerminal });
+  const editor = useProfileEditor(store, { username, remove: (profile) => deletion.remove(profile, true) });
 
   const moveTab = (key: number, index: number) => dispatch({ type: "move", key, index });
 
@@ -218,7 +168,7 @@ function App() {
     paneActions,
     fullScreen,
     localAllowed,
-    openLocalTab,
+    openLocalTab: opening.openLocal,
     searchSessions: () => setSearchFocusKey((key) => key + 1),
     importSshConfig: () => setImporting(true),
     closeFocused,
@@ -229,18 +179,7 @@ function App() {
   const updates = useUpdates();
   const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on, updates });
 
-  // A newer version found while the app runs (not one known at the start, marked already),
-  // told in the window in use; Settings › About tells of the checks made there.
-  const announcedUpdate = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    if (!updates.loaded) return;
-    const version = updates.available?.version ?? null;
-    const known = announcedUpdate.current;
-    announcedUpdate.current = version;
-    if (known !== undefined && version && version !== known && document.hasFocus() && !settingsOpen) {
-      announce(t("updates.found", { version }));
-    }
-  }, [updates.loaded, updates.available?.version, settingsOpen, t]);
+  useUpdateAnnouncement(updates, settingsOpen !== false);
 
   const terminalMenu = useTerminalMenu({
     tabs,
@@ -257,39 +196,20 @@ function App() {
     openPalette: () => quick.setPaletteOpen(true),
   });
 
-  /** Starts or stops logging a pane's session. */
-  const setLogging = (key: number, start: boolean) => {
-    const pane = findPane(store.get().tabs, key)?.pane;
-    if (pane?.sessionId == null) return;
-    // The session reports the path (or an error) with a `log` event.
-    if (start) {
-      updatePane(key, { logStopped: false });
-      sessionLog.start(pane.sessionId).catch(console.error);
-    } else {
-      updatePane(key, { logStopped: true });
-      sessionLog.stop(pane.sessionId).catch(console.error);
-    }
-  };
-
-  const showLog = (key: number) => {
-    const path = findPane(store.get().tabs, key)?.pane.logPath;
-    if (path) revealItemInDir(path).catch(console.error);
-  };
-
   const sidebarHandlers = useStableHandlers<SidebarHandlers>({
-    onOpen: openProfile,
-    onOpenAll: openAll,
-    onQuickConnect: quickConnect,
-    onEdit: (profile) => setEditing({ profile }),
+    onOpen: opening.openProfile,
+    onOpenAll: opening.openAll,
+    onQuickConnect: opening.quickConnect,
+    onEdit: editor.edit,
     onDelete: (profile) => deletion.remove(profile, false),
-    onNew: (folder) => setEditing({ profile: null, defaults: { folder } }),
+    onNew: editor.create,
     onImportSshConfig: () => setImporting(true),
     onSettings: () => openSettings(),
   });
 
   const tabBarHandlers = useStableHandlers<TabBarHandlers>({
     onSelect: activate,
-    onNew: openLocalTab,
+    onNew: opening.openLocal,
     onClose: (keys) => void requestClose({ kind: "tabs", keys }),
     onSplit: (key, direction) => withFocused(key, (pane) => splitPane(pane.key, direction)),
     canSplit: (key, direction) => {
@@ -307,11 +227,11 @@ function App() {
     onDropOnPanes: paneDrag.dropOnPanes,
     onRename: (key, customTitle) => updateTab(key, { customTitle }),
     onDuplicate: duplicateTab,
-    onSaveAsSession: (key) => withFocused(key, (pane) => saveAsSession(pane.key)),
+    onSaveAsSession: (key) => withFocused(key, (pane) => editor.saveAsSession(pane.key)),
     onReconnect: (key) => withFocused(key, (pane) => sessions.reconnect(pane.key)),
-    onBreak: (key) => withFocused(key, (pane) => pane.sessionId != null && sendBreak(pane.sessionId).catch(console.error)),
-    onLog: (key, start) => withFocused(key, (pane) => setLogging(pane.key, start)),
-    onShowLog: (key) => withFocused(key, (pane) => showLog(pane.key)),
+    onBreak: (key) => withFocused(key, (pane) => paneActions.breakSession(pane.key)),
+    onLog: (key, start) => withFocused(key, (pane) => paneActions.setLogging(pane.key, start)),
+    onShowLog: (key) => withFocused(key, (pane) => paneActions.showLog(pane.key)),
     onTogglePanel: togglePanel,
     onToggleCompose: composer.toggle,
     onToggleQuickBar: quick.toggleBar,
@@ -337,22 +257,6 @@ function App() {
     onGrab: paneDrag.start,
   });
 
-  const closeDialog = useCallback(() => setEditing(null), []);
-
-  // A quick connection saved as a session becomes that session's pane; the connection stays.
-  const onProfileSaved = (profile: Profile) => {
-    const paneKey = editing?.paneKey;
-    if (paneKey === undefined) return;
-    updatePane(paneKey, { target: { kind: "profile", profileId: profile.id }, title: profile.name });
-  };
-
-  const saveAsSession = (key: number) => {
-    const pane = findPane(store.get().tabs, key)?.pane;
-    if (pane?.target.kind !== "quick") return;
-    const { protocol, host, port } = pane.target;
-    const user = pane.target.username || (protocol === "ssh" ? username : "");
-    setEditing({ profile: null, defaults: { protocol, host, port, username: user }, paneKey: key });
-  };
   const closeImport = useCallback(() => setImporting(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
@@ -436,28 +340,9 @@ function App() {
         )}
         {settings.statusBar.show && activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}
       </main>
-      {editing && (
-        <ProfileDialog
-          profile={editing.profile}
-          defaults={editing.defaults}
-          onClose={closeDialog}
-          onSaved={onProfileSaved}
-          onDelete={(profile) => deletion.remove(profile, true)}
-        />
-      )}
+      {editor.dialog}
       {deletion.dialog}
-      {openingAll && (
-        <ConfirmDialog
-          title={t("sidebar.openAllTitle", { count: openingAll.profiles.length })}
-          message={t("sidebar.openAllMessage", { count: openingAll.profiles.length, folder: openingAll.folder.name })}
-          confirmLabel={t("sidebar.openAllConfirm")}
-          onConfirm={() => {
-            openingAll.profiles.forEach((p) => openProfile(p, "newTab"));
-            setOpeningAll(null);
-          }}
-          onCancel={() => setOpeningAll(null)}
-        />
-      )}
+      {opening.dialog}
       {quick.paletteOpen && commands && activeGroup && (
         <CommandPalette
           firstGroup={activeGroup.id}

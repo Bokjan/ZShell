@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Folder, Profile, TreeItem } from "../ipc/api";
-import { notesPreview, parseQuickConnect, rowKey, search, sessionsIn, treeRows, withRecent } from "./sessions";
+import { loginName, notesPreview, parseQuickConnect, rowKey, search, sessionsIn, treeRows, withRecent } from "./sessions";
 
 const folder = (id: string, parent?: string): Folder => ({ id, name: id, parent });
 // Only what the tree looks at.
@@ -60,6 +60,14 @@ describe("parseQuickConnect", () => {
     expect(parseQuickConnect("web server")).toBeNull();
     expect(parseQuickConnect("host:70000")).toBeNull();
     expect(parseQuickConnect("host:0")).toBeNull();
+  });
+});
+
+describe("loginName", () => {
+  it("logs in to SSH as the local user without a user name, and to Telnet as no one", () => {
+    expect(loginName({ protocol: "ssh", username: "" }, "me")).toBe("me");
+    expect(loginName({ protocol: "ssh", username: "alice" }, "me")).toBe("alice");
+    expect(loginName({ protocol: "telnet", username: "" }, "me")).toBe("");
   });
 });
 
