@@ -101,6 +101,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // `latestSave`).
   const { value: settings, saveError } = useSyncExternalStore(settingsStore.subscribe, settingsStore.get);
   const [system, setSystem] = useState<"dark" | "light">(systemTheme);
+  // Whether the first read is done, with the desktop's monospace font: another window's change
+  // read meanwhile (see `latestSave`) shows the settings before it would.
+  const [started, setStarted] = useState(false);
 
   useEffect(() => {
     // With the desktop's monospace font (Linux), which terminals default to.
@@ -112,6 +115,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     void Promise.all([stored, font]).then(([stored, font]) => {
       if (font) setSystemFont(font);
       settingsStore.loaded(stored);
+      setStarted(true);
     });
     const query = window.matchMedia("(prefers-color-scheme: light)");
     const onChange = () => setSystem(systemTheme());
@@ -119,7 +123,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return () => query.removeEventListener("change", onChange);
   }, []);
 
-  const loaded = settings !== null;
+  const loaded = started && settings !== null;
   const appearance = settings?.appearance ?? "system";
   const theme = appearance === "system" ? system : appearance;
   // Once the stored settings load: "system" before then would turn the window to the
@@ -170,7 +174,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useConfigChanged("settings", settingsStore.reload);
 
   // Wait for the stored settings so terminals start with the right theme and font.
-  if (!settings) return null;
+  if (!settings || !loaded) return null;
   const mode = settings.terminal.screenReaderMode;
   const screenReader = mode === "on" || (mode === "auto" && screenReaderRunning);
   const value = {
