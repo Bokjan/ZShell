@@ -1,0 +1,6 @@
+# The Rust version CI and the release builds use, so that a release builds with the one its
+# commit was checked with, and a new stable's lints don't fail unrelated changes. Raised by
+# hand, here and in the workflows' `toolchain:` (see docs/DEVELOPMENT.md).
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
