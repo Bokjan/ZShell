@@ -1,5 +1,4 @@
 import { listProfiles, proxies as proxyApi, tree, type Folder, type Profile, type Proxy, type TreeItem } from "../ipc/api";
-import type { Pane } from "./panes";
 import { RECENT_LIMIT, addRecent, storedRecent } from "./sessions";
 import { createStore, type ReducerStore } from "./store";
 
@@ -43,12 +42,6 @@ export function reduceDirectory(state: DirectoryState, action: DirectoryAction):
     case "reset":
       return state === INITIAL_DIRECTORY ? state : INITIAL_DIRECTORY;
   }
-}
-
-/** The session a pane connects to; undefined for other panes and for deleted sessions. */
-export function paneProfile(profiles: Profile[], pane: Pane): Profile | undefined {
-  const target = pane.target;
-  return target.kind === "profile" ? profiles.find((p) => p.id === target.profileId) : undefined;
 }
 
 /** The recent sessions to show, most recent first, without deleted ones. */

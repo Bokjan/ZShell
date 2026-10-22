@@ -3,7 +3,7 @@ import type { TerminalSettings } from "../ipc/bindings";
 import { windows } from "../ipc/windows";
 import { isAppLocked } from "./appLock";
 import { PaneSession, type SessionConfig, type TerminalPort } from "./paneSession";
-import { closesOnExit, findPane, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
+import { closesOnExit, findPane, targetProfile, targetProtocol, targetTermType, type Arrival, type Pane, type Snapshot } from "./panes";
 import { activeTabOf, type TabsState, type TabStore } from "./tabs";
 
 /** A pane's terminal as the status bar shows it. */
@@ -135,10 +135,7 @@ export function createSessionRegistry(
       // The tab state `output` last looked at.
       let outputChecked: TabsState | undefined;
       const pane = () => (last = findPane(store.get().tabs, key)?.pane ?? last);
-      const profile = () => {
-        const { target } = pane();
-        return target.kind === "profile" ? profiles().find((p) => p.id === target.profileId) : undefined;
-      };
+      const profile = () => targetProfile(pane().target, profiles());
       const update = (patch: Partial<Pane>) => store.dispatch({ type: "updatePane", key, patch });
       // A remote pane out of sight connecting or disconnecting; the one with the keyboard
       // says so in its terminal.

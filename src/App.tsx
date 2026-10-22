@@ -43,7 +43,7 @@ import { actionOf, matches, paneSideOf, tabIndexOf, type MenuAction } from "./li
 import { neighbor } from "./lib/layout";
 import { quickCommandStore, tabGroup } from "./lib/quickCommands";
 import { asTyped } from "./lib/compose";
-import { findPane, focusedPane, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
+import { findPane, focusedPane, targetProfile, targetProtocol, type Pane, type SidePanel, type Tab } from "./lib/panes";
 import { address, sessionsIn, type QuickTarget } from "./lib/sessions";
 import { announce } from "./lib/announce";
 import { directory } from "./lib/directory";
@@ -301,9 +301,7 @@ function App() {
 
   const activeTab = tabs.find((tab) => tab.key === activeKey);
   const activePane = activeTab && focusedPane(activeTab);
-  // Looked up for every tab on each render: by id rather than through the whole list.
-  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
-  const profileOf = (pane: Pane) => (pane.target.kind === "profile" ? profileById.get(pane.target.profileId) : undefined);
+  const profileOf = (pane: Pane) => targetProfile(pane.target, profiles);
   const groupOf = (pane: Pane) => commands && tabGroup(commands, pane.commandGroup, profileOf(pane)?.commandGroup);
   const activeGroup = activePane ? groupOf(activePane) : null;
   const inScopeKeys = inScope.map((pane) => pane.key);

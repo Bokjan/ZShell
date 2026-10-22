@@ -123,11 +123,15 @@ export interface Tab {
   moving?: boolean;
 }
 
+/** The saved session `target` connects to; undefined for other targets and for deleted sessions. */
+export const targetProfile = (target: SessionTarget, profiles: Profile[]): Profile | undefined =>
+  target.kind === "profile" ? profiles.find((p) => p.id === target.profileId) : undefined;
+
 /** What a pane's next session will be: a saved session's protocol may have been changed. */
 export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabProtocol {
   if (target.kind === "local") return "local";
   if (target.kind === "quick") return target.protocol;
-  return profiles.find((p) => p.id === target.profileId)?.connection.protocol ?? "ssh";
+  return targetProfile(target, profiles)?.connection.protocol ?? "ssh";
 }
 
 /**
@@ -135,8 +139,7 @@ export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabP
  * for quick connections, and the one local shells get (see `pty/shell.rs`).
  */
 export function targetTermType(target: SessionTarget, profiles: Profile[]): string | null {
-  if (target.kind !== "profile") return DEFAULT_TERM_TYPE;
-  const connection = profiles.find((p) => p.id === target.profileId)?.connection;
+  const connection = targetProfile(target, profiles)?.connection;
   if (!connection) return DEFAULT_TERM_TYPE;
   return connection.protocol === "serial" ? null : connection.termType;
 }

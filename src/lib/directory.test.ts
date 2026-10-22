@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { listProfiles, type Folder, type Profile, type Proxy } from "../ipc/api";
-import { createDirectoryStore, INITIAL_DIRECTORY, paneProfile, recentProfiles, reduceDirectory, type DirectoryAction } from "./directory";
-import type { Pane } from "./panes";
+import { createDirectoryStore, INITIAL_DIRECTORY, recentProfiles, reduceDirectory, type DirectoryAction } from "./directory";
 
 // Only what the directory looks at.
 const profile = (id: string, name = id) => ({ id, name }) as Profile;
@@ -52,15 +51,6 @@ describe("recentProfiles", () => {
       { type: "recent", ids: ["f", "gone", "a", "e", "b", "d", "c"] },
     );
     expect(recentProfiles(state).map((p) => p.id)).toEqual(["f", "a", "e", "b", "d"]);
-  });
-});
-
-describe("paneProfile", () => {
-  it("finds a saved session's pane's session, and nothing for other panes", () => {
-    const profiles = [profile("a")];
-    expect(paneProfile(profiles, { target: { kind: "profile", profileId: "a" } } as Pane)).toBe(profiles[0]);
-    expect(paneProfile(profiles, { target: { kind: "profile", profileId: "gone" } } as Pane)).toBeUndefined();
-    expect(paneProfile(profiles, { target: { kind: "local" } } as Pane)).toBeUndefined();
   });
 });
 

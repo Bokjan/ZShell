@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { closesOnExit, keepsAwake, paneWork } from "./panes";
+import type { Profile } from "../ipc/api";
+import { closesOnExit, keepsAwake, paneWork, targetProfile } from "./panes";
 import { INITIAL_TABS, reduceTabs } from "./tabs";
 
 const pane = reduceTabs(INITIAL_TABS, { type: "open", pane: { target: { kind: "profile", profileId: "a" }, protocol: "ssh", title: "a" } })
@@ -64,5 +65,14 @@ describe("keepsAwake", () => {
 
   it("never for a local terminal", () => {
     expect(keepsAwake({ ...pane, target: { kind: "local" }, protocol: "local", status: "connected" })).toBe(false);
+  });
+});
+
+describe("targetProfile", () => {
+  it("finds the saved session of a target, and nothing for others", () => {
+    const profiles = [{ id: "a" } as Profile];
+    expect(targetProfile({ kind: "profile", profileId: "a" }, profiles)).toBe(profiles[0]);
+    expect(targetProfile({ kind: "profile", profileId: "gone" }, profiles)).toBeUndefined();
+    expect(targetProfile({ kind: "local" }, profiles)).toBeUndefined();
   });
 });

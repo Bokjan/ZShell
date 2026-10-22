@@ -4,8 +4,7 @@ import { createPortal } from "react-dom";
 import { DialogsHidden } from "../hooks/dialogs";
 import { useStableProps } from "../hooks/stableProps";
 import type { Profile } from "../ipc/api";
-import { paneProfile } from "../lib/directory";
-import { focusedPane, type Pane, type SidePanel, type Tab } from "../lib/panes";
+import { focusedPane, targetProfile, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import { ForwardsPanel } from "./ForwardsPanel";
 import { SftpPanel } from "./SftpPanel";
 import type { PaneHandlers } from "./TabPage";
@@ -36,7 +35,7 @@ export function PaneHostList({ tabs, activeKey, profiles, handlers }: Props) {
       <PaneHost
         key={pane.key}
         pane={pane}
-        profile={paneProfile(profiles, pane)}
+        profile={targetProfile(pane.target, profiles)}
         visible={tab.key === activeKey}
         focused={pane.key === focused}
         sidePanel={tab.sidePanel}
