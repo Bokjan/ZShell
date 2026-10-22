@@ -196,7 +196,12 @@ impl Link {
                 continue;
             }
             let mut byte = self.byte(timeout).await?;
+            // Counted too: a peer sending only `*` would otherwise never reach the limit.
             while byte == ZPAD {
+                if skipped > GARBAGE_LIMIT {
+                    bail!(Error::new("zmodem.protocol"));
+                }
+                skipped += 1;
                 byte = self.byte(timeout).await?;
             }
             if byte != ZDLE {
