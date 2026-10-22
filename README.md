@@ -12,9 +12,9 @@ Get it from the [Microsoft Store](https://apps.microsoft.com/detail/9n502tzg8hk8
 
 ## Features
 
-- **SSH**: password, private key, agent and keyboard-interactive authentication (or all of them in OpenSSH's order), host keys checked against `~/.ssh/known_hosts`, including host certificates from a trusted certificate authority (`@cert-authority`), jump hosts, SOCKS5 and HTTP proxies or proxy commands, keepalives and automatic reconnection, optionally keeping the computer from sleeping while connected. Hosts can be imported from `~/.ssh/config`.
+- **SSH**: password, private key, agent and keyboard-interactive authentication (or all of them in OpenSSH's order), host keys checked against `~/.ssh/known_hosts`, including host certificates from a trusted certificate authority (`@cert-authority`), jump hosts, SOCKS5 and HTTP proxies or proxy commands, keepalives and automatic reconnection. Hosts can be imported from `~/.ssh/config`.
 - **One connection per tab**: the terminal, the file panel and port forwarding share a single SSH connection, and duplicated tabs and split panes reuse it, so you authenticate once.
-- **Telnet and serial consoles** for network devices and older systems, with saved logins typed at the prompts, and serial sessions that reconnect when a USB adapter is plugged back in.
+- **Telnet and serial consoles** for network devices and older systems, with saved logins typed at the prompts, and serial sessions that reconnect when a USB adapter is plugged back in. While SSH, Telnet or serial sessions are connected, the computer can be kept from sleeping.
 - **Files**: an SFTP panel that opens in the terminal's folder and can follow it (on Linux servers, or shells that report it), with drag and drop in and out, transfers with progress, and remote files edited in your own editor and uploaded on save; `rz` and `sz` (ZMODEM) for hosts without SFTP.
 - **Port forwarding**: local, remote and dynamic SOCKS rules (`-L`, `-R`, `-D`) saved with the session, with live status.
 - **Sessions**: nested folders, search and quick connect, export and import, and per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login, environment variables and notes.

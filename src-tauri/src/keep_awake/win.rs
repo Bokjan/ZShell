@@ -64,7 +64,8 @@ fn external_power() -> bool {
 }
 
 /// The power source changes are sent only to windows registered for them: a hidden top-level
-/// window on a thread of its own.
+/// window on a thread of its own. Read once first: that the window is told the current source
+/// as it registers is not documented.
 pub fn watch_power(changed: PowerChanged) {
     changed(external_power());
     if CHANGED.set(changed).is_err() {
