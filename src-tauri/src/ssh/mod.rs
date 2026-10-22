@@ -425,6 +425,27 @@ async fn connect(
     handshake(hop, options, stream, io).await
 }
 
+/// Keepalives unanswered in a row that end a connection, as OpenSSH's `ServerAliveCountMax`.
+const KEEPALIVE_MAX: u32 = 3;
+
+/// russh's settings for a connection sending keepalives every `keepalive`, if at all.
+///
+/// russh waits for its writes with no limit but `inactivity_timeout`. Once a peer gone silently
+/// has left the system's send buffer full (with what a forward carries, say), the connection
+/// task waits on a write for good, and its keepalives with it, until the system gives up
+/// retransmitting many minutes later. Anything that happens on the connection but our own
+/// keepalives starts the timeout again, a server's answer to them included, so an idle
+/// connection stays open; it is a keepalive longer than the keepalives take to give up, which
+/// stay the reason given for a server that stops answering.
+fn client_config(keepalive: Option<Duration>) -> client::Config {
+    client::Config {
+        keepalive_interval: keepalive,
+        keepalive_max: KEEPALIVE_MAX as usize,
+        inactivity_timeout: keepalive.map(|interval| interval * (KEEPALIVE_MAX + 2)),
+        ..Default::default()
+    }
+}
+
 /// How long the SSH version and key exchange may take, not counting the time a host key
 /// question waits for the user. A port that accepts connections but never speaks SSH (or a
 /// proxy command that hangs) would otherwise leave the tab connecting for ever, and an
@@ -444,10 +465,8 @@ where
         .await
         .unwrap_or_else(|_| known_hosts::HostKeyAlgorithms { keys: preferred.key.to_vec(), certificates: Vec::new() });
     let config = Arc::new(client::Config {
-        keepalive_interval: remote.keepalive(),
-        keepalive_max: 3,
         preferred: russh::Preferred { key: algorithms.keys.into(), host_key_certificates: algorithms.certificates.into(), ..preferred },
-        ..Default::default()
+        ..client_config(remote.keepalive())
     });
     let (queries_tx, mut queries) = mpsc::channel(1);
     let HopOptions { forward_agent, routes, disconnect } = options;
@@ -544,6 +563,18 @@ mod tests {
         let closed =
             tokio::time::timeout(Duration::from_secs(5), async { while server.read(&mut buf).await.is_ok_and(|n| n > 0) {} }).await;
         assert!(closed.is_ok(), "the connection is still open");
+    }
+
+    /// A connection whose transport stalls, as one to a peer gone silently does once the send
+    /// buffer is full, ends after a while: russh's connection task waits on a write by then, and
+    /// sends no more keepalives.
+    #[tokio::test]
+    async fn a_stalled_connection_ends() {
+        let (connection, stall) = testing::connect_stalling(testing::Anyone, Duration::from_millis(100)).await;
+        let mut reason = connection.disconnect_reason();
+        stall.now();
+        let ended = tokio::time::timeout(Duration::from_secs(5), reason.wait_for(Option::is_some)).await;
+        assert!(ended.is_ok(), "the connection is still open");
     }
 
     /// A server whose shell prints without end if `flood` (and nothing otherwise), and that
