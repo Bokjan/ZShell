@@ -75,6 +75,9 @@
     "reasonMacos": "show your sessions",
     "reasonWindows": "Verify it's you to unlock ZShell"
   },
+  "keepAwake": {
+    "reason": "Keeping sessions connected"
+  },
   "colorPick": {
     "instructions": "Click anywhere to pick a color, or move the pointer with the arrow keys and press Enter. Press Escape to cancel."
   },

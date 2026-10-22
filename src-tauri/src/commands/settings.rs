@@ -1,11 +1,13 @@
 //! Commands for the app's settings and the quick commands, and the files they are kept in.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 use crate::error::Result;
 use crate::fonts::LigatureRules;
+use crate::keep_awake::KeepAwake;
 use crate::logging::Logs;
 use crate::model::QuickCommands;
 use crate::model::Settings;
@@ -43,6 +45,13 @@ pub fn screen_reader_running() -> bool {
     crate::screen_reader::running()
 }
 
+/// Whether the system lets the computer sleep soon after its sleep time on battery even while
+/// it is kept awake (Windows with Modern Standby), which the settings tell.
+#[tauri::command]
+pub fn keep_awake_limited() -> bool {
+    crate::keep_awake::limited_on_battery()
+}
+
 /// Stores the settings; returns them as validated (e.g. with the font size clamped). Off the
 /// main thread, as writing the file waits for the disk: the frontend sends one request at a
 /// time, which keeps them in order (see `latestSave`).
@@ -51,6 +60,7 @@ pub async fn settings_set(app: AppHandle, window: WebviewWindow, settings: Setti
     let stored = blocking(app.clone(), move |app| {
         app.state::<SettingsStore>().set(settings, |settings| {
             crate::i18n::apply(&settings.language);
+            app.state::<Arc<KeepAwake>>().set_mode(settings.power.keep_awake);
         })
     })
     .await;

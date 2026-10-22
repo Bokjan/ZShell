@@ -75,6 +75,9 @@
     "reasonMacos": "セッションを表示",
     "reasonWindows": "ZShellのロックを解除するには、本人確認を行ってください"
   },
+  "keepAwake": {
+    "reason": "セッションの接続を維持"
+  },
   "colorPick": {
     "instructions": "任意の場所をクリックして色を取得します。矢印キーでポインターを動かしてEnterキーを押しても取得できます。Escキーでキャンセルします。"
   },

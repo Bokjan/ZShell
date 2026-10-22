@@ -735,6 +735,15 @@
     "markOutputHint": "Quand le terminal d’un onglet en arrière-plan affiche quelque chose, un anneau entoure son voyant d’état jusqu’à ce que vous passiez à cet onglet. Ce qui s’affiche juste après une saisie ou un redimensionnement ne compte pas.",
     "sidebar": "Sessions",
     "showRecent": "Afficher les sessions ouvertes récemment",
+    "power": "Alimentation",
+    "keepAwake": "Empêcher la mise en veille pendant les connexions",
+    "keepAwakeOptions": {
+      "off": "Jamais",
+      "pluggedIn": "Sur secteur",
+      "always": "Toujours"
+    },
+    "keepAwakeHint": "L’ordinateur ne se met plus en veille par inactivité, et les sessions SSH, Telnet et série restent connectées. L’écran s’éteint et se verrouille toujours ; fermer le capot ou choisir Mettre en veille le met toujours en veille.",
+    "keepAwakeLimited": "Sur batterie, Windows met tout de même cet ordinateur en veille 5 minutes après son délai de mise en veille.",
     "files": "Fichiers",
     "downloadDirectory": "Dossier de téléchargement",
     "downloadDirectoryDefault": "Utiliser le dossier Téléchargements",

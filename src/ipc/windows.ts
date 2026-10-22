@@ -44,6 +44,8 @@ export const windows = {
   requestAttention: () => void getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(console.error),
   /** The progress this window's taskbar button shows (the Dock icon, the launcher: merged with the other windows'), or none. */
   setProgress: (progress: TaskProgress | null) => void call("window_set_progress", { progress }).catch(console.error),
+  /** Whether any of this window's tabs is connected, which keeps the system awake if the settings say so. */
+  setConnected: (connected: boolean) => void call("window_set_connected", { connected }).catch(console.error),
   /** Shows a system notification, if the system lets the app. */
   notify: (title: string, body: string) =>
     void allowsNotifications()

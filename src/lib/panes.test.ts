@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { closesOnExit, paneWork } from "./panes";
+import { closesOnExit, keepsAwake, paneWork } from "./panes";
 import { INITIAL_TABS, reduceTabs } from "./tabs";
 
 const pane = reduceTabs(INITIAL_TABS, { type: "open", pane: { target: { kind: "profile", profileId: "a" }, protocol: "ssh", title: "a" } })
@@ -51,5 +51,18 @@ describe("closesOnExit", () => {
   it("keeps it while closing would end work of the file panel", () => {
     expect(closesOnExit({ ...pane, transfers: 1 }, 0, null, true)).toBe(false);
     expect(closesOnExit({ ...pane, edits: 1 }, 0, null, true)).toBe(false);
+  });
+});
+
+describe("keepsAwake", () => {
+  it("keeps the system awake while a remote pane is connected, connecting or waiting to reconnect", () => {
+    expect(keepsAwake({ ...pane, status: "connected" })).toBe(true);
+    expect(keepsAwake({ ...pane, status: "connecting" })).toBe(true);
+    expect(keepsAwake({ ...pane, status: "closed", retryAt: Date.now() + 2000 })).toBe(true);
+    expect(keepsAwake({ ...pane, status: "closed", retryAt: null })).toBe(false);
+  });
+
+  it("never for a local terminal", () => {
+    expect(keepsAwake({ ...pane, target: { kind: "local" }, protocol: "local", status: "connected" })).toBe(false);
   });
 });

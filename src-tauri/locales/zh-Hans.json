@@ -75,6 +75,9 @@
     "reasonMacos": "显示你的会话",
     "reasonWindows": "请验证你的身份以解锁 ZShell"
   },
+  "keepAwake": {
+    "reason": "保持会话连接"
+  },
   "colorPick": {
     "instructions": "点击任意位置取色，或用方向键移动指针后按 Enter。按 Esc 取消。"
   },

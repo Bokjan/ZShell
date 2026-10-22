@@ -75,6 +75,9 @@
     "reasonMacos": "Ihre Sitzungen anzuzeigen",
     "reasonWindows": "Bestätigen Sie Ihre Identität, um ZShell zu entsperren"
   },
+  "keepAwake": {
+    "reason": "Sitzungen verbunden halten"
+  },
   "colorPick": {
     "instructions": "Klicken Sie irgendwo, um eine Farbe aufzunehmen, oder bewegen Sie den Zeiger mit den Pfeiltasten und drücken Sie die Eingabetaste. Mit Esc brechen Sie ab."
   },

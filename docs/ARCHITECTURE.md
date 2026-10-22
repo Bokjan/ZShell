@@ -62,12 +62,13 @@
 | `config/` / `quick.rs` / `settings.rs` | 会话、文件夹与代理；快速命令；`settings.json` |
 | `vault/` / `envelope.rs` / `crypto.rs` / `secrets.rs` | 保险库；保险库与导出文件共用的信封格式；加密与口令派生；系统凭据存储 |
 | `applock/` | 应用锁：锁定状态、系统认证、闲置与锁屏检测 |
+| `keep_awake/` | 连接期间阻止系统睡眠，电源检测（见「阻止睡眠」） |
 | `persist.rs` | JSON 文件读写：读不出的文件、原子写入 |
 | `encoding.rs` / `local_name.rs` | 会话的字符编码；对方给出的文件名转成本地文件名 |
 | `import/` / `backup.rs` | ssh_config 导入；会话导出与导入 |
 | `window/` | 按平台创建窗口；各平台文件提供同一组函数，缺了哪个都编译不过 |
 | `desktop.rs` | Linux 桌面的配色方案与等宽字体（设置 portal） |
-| `hidden_window.rs` | Windows：接收系统广播的隐藏窗口，应用锁与读屏检测共用 |
+| `hidden_window.rs` | Windows：接收系统广播的隐藏窗口，应用锁、读屏检测与电源检测共用 |
 | `fonts/` | 终端字体的连字规则（见「终端连字」） |
 | `screen_reader/` | 系统读屏软件是否在运行（见「无障碍」） |
 | `tab_drag/` | 标签拖出窗口时的落点（见「多窗口」） |
@@ -184,6 +185,13 @@
 - **设置在保险库**：加密时改文件关不掉它，所以 `AppLockGate` 在 `VaultGate` 之内。
 - **触发**：系统闲置、锁屏、睡眠、切换用户，以及手动。
 - **锁定界面**：模态 `<dialog>` 盖住一切，应用保持挂载。React 之外的部分（快捷键、播报、系统通知、原生拖放与对话框）经 `isAppLocked()` 判断。已经打开的原生文件对话框盖不住（已知限制）。
+
+### 阻止睡眠
+
+- **范围**（`keep_awake/`）：只阻止闲置睡眠，熄屏、锁屏照旧（应用锁也照常触发），合盖与手动睡眠三个平台都拦不住。macOS 用 `PreventUserIdleSystemSleep` 断言，Windows 用 `PowerRequestSystemRequired`，Linux 用桌面 portal 的 Inhibit（挂起），GNOME 转给会话管理器；不用 logind 的 sleep 锁，因为 GNOME 在它释放后要等下一次输入才重新计算闲置。
+- **算哪些连接**：每个窗口告诉后端它有没有远程窗格连着、正在连接或等待重连（`keepsAwake`，`lib/panes.ts`），后端按窗口记、合起来持有一个请求；窗口关闭或页面重载时它那份清掉。等待重连也算：这时系统早已闲置，两次重试之间一放开就会睡。本地终端不算。
+- **仅接通电源时**：后端监听电源（IOKit、`GUID_ACDC_POWER_SOURCE`、UPower 的 `OnBattery`），UPS 算作没接电源，没有电池或判断不了时算接着。拔掉电源即释放，系统按电池的计时睡眠。
+- **Modern Standby**：Windows 在这类机器上用电池时，到睡眠时间 5 分钟后结束请求；后端报告这一点（`keep_awake_limited`），设置选「始终」时提示，不设法绕过。
 
 ### 检查更新
 

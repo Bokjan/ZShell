@@ -178,6 +178,15 @@ export function closesOnExit(pane: Pane, status: number | null, signal: string |
   return pane.target.kind !== "local" || status !== null;
 }
 
+/**
+ * Whether the pane has a remote session, connected or connecting, or is waiting to reconnect:
+ * such panes keep the system awake when the settings say so (`keep_awake` in the backend).
+ * Local terminals have no connection to lose.
+ */
+export function keepsAwake(pane: Pane): boolean {
+  return pane.target.kind !== "local" && (pane.status !== "closed" || pane.retryAt !== null);
+}
+
 export const paneTitle = (pane: Pane, followRemoteTitle: boolean) => (followRemoteTitle && pane.remoteTitle) || pane.title;
 
 export const tabTitle = (tab: Tab, followRemoteTitle: boolean) => tab.customTitle ?? paneTitle(focusedPane(tab), followRemoteTitle);

@@ -75,6 +75,9 @@
     "reasonMacos": "afficher vos sessions",
     "reasonWindows": "Confirmez votre identité pour déverrouiller ZShell"
   },
+  "keepAwake": {
+    "reason": "Maintenir les sessions connectées"
+  },
   "colorPick": {
     "instructions": "Cliquez n’importe où pour prélever une couleur, ou déplacez le pointeur avec les touches fléchées et appuyez sur Entrée. Appuyez sur Échap pour annuler."
   },

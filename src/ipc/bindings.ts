@@ -358,6 +358,11 @@ existing: string | null,
 skipped: Array<string>, };
 
 /**
+ * When the system is kept from sleeping while sessions are connected.
+ */
+export type KeepAwakeMode = "off" | "pluggedIn" | "always";
+
+/**
  * A line of the file with a host key.
  */
 export type KnownHost = { 
@@ -520,6 +525,12 @@ export type Parity = "none" | "odd" | "even";
  * A point: in a page's CSS pixels, or in screen coordinates (see [`screen`]).
  */
 export type Point = { x: number, y: number, };
+
+export type PowerSettings = { 
+/**
+ * Keep the system from sleeping while idle as long as sessions are connected (see `keep_awake`).
+ */
+keepAwake: KeepAwakeMode, };
 
 /**
  * A saved session: what it connects to (by protocol), and how its tabs behave.
@@ -809,7 +820,7 @@ language: string, appearance: Appearance, textSize: TextSize,
  * The interface's font, a CSS font family list put before the default ones; empty for
  * the default (the terminal's is `terminal.font_family`).
  */
-appFont: string, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
+appFont: string, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, power: PowerSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
 
 export type SidebarSettings = { 
 /**
@@ -1097,6 +1108,7 @@ export type Commands = {
   forward_start: { args: { id: number; rule: ForwardRule }; result: void };
   forward_stop: { args: { id: number; ruleId: string }; result: void };
   home_directory: { args: Record<string, never>; result: string | null };
+  keep_awake_limited: { args: Record<string, never>; result: boolean };
   known_hosts_find: { args: { query: string }; result: number[] };
   known_hosts_list: { args: Record<string, never>; result: KnownHost[] };
   known_hosts_path: { args: Record<string, never>; result: string | null };
@@ -1180,6 +1192,7 @@ export type Commands = {
   window_open: { args: { content: WindowContent; sessions: number[]; dropped?: Dropped | null }; result: string };
   window_pane_stayed: { args: { target: string; pane: number }; result: void };
   window_send_tab: { args: { target: string; tab: unknown; sessions: number[]; at?: number | null }; result: void };
+  window_set_connected: { args: { connected: boolean }; result: void };
   window_set_drag_area: { args: { rect?: Rect | null }; result: void };
   window_set_maximize_button: { args: { rect?: Rect | null }; result: void };
   window_set_progress: { args: { progress?: TaskProgress | null }; result: void };
@@ -1213,7 +1226,7 @@ export const DEFAULT_GROUP = "default";
 export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;
 
 /** The settings before any change, which "Restore Defaults" goes back to. */
-export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, power: { keepAwake: "off" }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
 
 /** The smallest terminal font size, in the settings and in sessions. */
 export const FONT_SIZE_MIN = 6;

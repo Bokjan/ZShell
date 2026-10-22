@@ -697,6 +697,15 @@
     "markOutputHint": "后台标签页的终端有输出时，在其状态灯外加一圈，切换到该标签页后消失。输入或调整大小后紧接着的输出不算。",
     "sidebar": "会话",
     "showRecent": "显示最近打开的会话",
+    "power": "电源",
+    "keepAwake": "连接期间阻止睡眠",
+    "keepAwakeOptions": {
+      "off": "从不",
+      "pluggedIn": "接通电源时",
+      "always": "始终"
+    },
+    "keepAwakeHint": "电脑闲置时不再进入睡眠，SSH、Telnet 和串口会话保持连接。显示器照常关闭，屏幕照常锁定；合上盖子或选择睡眠时仍会睡眠。",
+    "keepAwakeLimited": "使用电池时，Windows 仍会在到达睡眠时间 5 分钟后让这台电脑睡眠。",
     "files": "文件",
     "downloadDirectory": "下载文件夹",
     "downloadDirectoryDefault": "使用“下载”文件夹",

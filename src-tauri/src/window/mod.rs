@@ -20,7 +20,7 @@
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,7 @@ use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::events;
+use crate::keep_awake::KeepAwake;
 use crate::session::{SessionId, SessionManager};
 use crate::settings::SettingsStore;
 use crate::tab_drag::{self, Dropped};
@@ -128,6 +129,7 @@ pub fn destroyed(window: &tauri::Window) {
     windows.busy.lock().unwrap().gone(window.label());
     tab_drag::forget(window.app_handle(), window.label());
     progress::forget(window.app_handle(), window.label());
+    window.state::<Arc<KeepAwake>>().set_connected(window.label(), false);
     events::emit(window, events::WindowClosed(window.label().to_owned()));
     platform::forget(window);
     changed(window.app_handle());
@@ -138,6 +140,7 @@ pub fn destroyed(window: &tauri::Window) {
 /// which hear (`offers-withdrawn`); the new page takes only what it hasn't yet.
 pub fn page_loading(app: &AppHandle, label: &str) {
     progress::forget(app, label);
+    app.state::<Arc<KeepAwake>>().set_connected(label, false);
     let windows = app.state::<Windows>();
     let withdrawn = {
         // Held across, as when a tab is given: no offer for a tab not yet taken is lost.

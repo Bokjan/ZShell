@@ -10,6 +10,7 @@ import {
   useSettings,
   type FileSettings,
   type LogSettings,
+  type PowerSettings,
   type RightClick,
   type SidebarSettings,
   type TabSettings,
@@ -34,6 +35,7 @@ import { filterSettings, NumberField, Section, SECTION_REACHED, SECTIONS, Settin
 import { FileSection } from "./settings/FileSection";
 import { KnownHostsSection } from "./settings/KnownHostsSection";
 import { LogSection } from "./settings/LogSection";
+import { PowerSection } from "./settings/PowerSection";
 import { ProxySection } from "./settings/ProxySection";
 import { SecuritySection } from "./settings/SecuritySection";
 
@@ -67,6 +69,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const setTabs = (patch: Partial<TabSettings>) => update((settings) => ({ ...settings, tabs: { ...settings.tabs, ...patch } }));
   const setSidebar = (patch: Partial<SidebarSettings>) =>
     update((settings) => ({ ...settings, sidebar: { ...settings.sidebar, ...patch } }));
+  const setPower = (patch: Partial<PowerSettings>) => update((settings) => ({ ...settings, power: { ...settings.power, ...patch } }));
   const setFiles = (patch: Partial<FileSettings>) => update((settings) => ({ ...settings, files: { ...settings.files, ...patch } }));
   const setZmodem = (patch: Partial<ZmodemSettings>) => update((settings) => ({ ...settings, zmodem: { ...settings.zmodem, ...patch } }));
   const setLogs = (patch: Partial<LogSettings>) => update((settings) => ({ ...settings, logs: { ...settings.logs, ...patch } }));
@@ -374,6 +377,8 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                 {t("settings.showRecent")}
               </label>
             </Section>
+
+            <PowerSection settings={settings.power} onChange={setPower} />
 
             <FileSection settings={settings.files} onChange={setFiles} />
 

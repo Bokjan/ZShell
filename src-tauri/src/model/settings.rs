@@ -1,5 +1,5 @@
 //! App-wide preferences (language, appearance, text size, app font, status bar, terminal,
-//! tabs, sidebar, files, ZMODEM, session logs, updates), as saved in `settings.json` (see
+//! tabs, sidebar, power, files, ZMODEM, session logs, updates), as saved in `settings.json` (see
 //! `crate::settings`). The frontend interprets them, but for the language, which backend text
 //! uses too; the backend validates them.
 
@@ -22,6 +22,7 @@ pub struct Settings {
     pub terminal: TerminalSettings,
     pub tabs: TabSettings,
     pub sidebar: SidebarSettings,
+    pub power: PowerSettings,
     pub files: FileSettings,
     pub zmodem: ZmodemSettings,
     pub logs: LogSettings,
@@ -200,6 +201,24 @@ impl Default for SidebarSettings {
     }
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PowerSettings {
+    /// Keep the system from sleeping while idle as long as sessions are connected (see `keep_awake`).
+    pub keep_awake: KeepAwakeMode,
+}
+
+/// When the system is kept from sleeping while sessions are connected.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum KeepAwakeMode {
+    #[default]
+    Off,
+    /// While the computer runs on external power, not on its battery or a UPS.
+    PluggedIn,
+    Always,
+}
+
 /// Remote files: SFTP and ZMODEM downloads, and editing remote files locally.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
@@ -304,6 +323,7 @@ impl Default for Settings {
             terminal: TerminalSettings::default(),
             tabs: TabSettings::default(),
             sidebar: SidebarSettings::default(),
+            power: PowerSettings::default(),
             files: FileSettings::default(),
             zmodem: ZmodemSettings::default(),
             logs: LogSettings::default(),
@@ -402,6 +422,7 @@ mod tests {
         assert_eq!(settings.terminal.clipboard_limit, 1024);
         assert!(settings.terminal.confirm_multiline_paste && settings.tabs.confirm_close);
         assert!(settings.status_bar.show);
+        assert_eq!(settings.power.keep_awake, KeepAwakeMode::Off);
         assert_eq!(settings.language, "system");
     }
 

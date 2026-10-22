@@ -716,6 +716,15 @@
     "markOutputHint": "Gibt das Terminal eines Tabs im Hintergrund etwas aus, erhält seine Statusanzeige einen Ring, bis Sie zu dem Tab wechseln. Ausgaben direkt nach einer Eingabe oder Größenänderung zählen nicht.",
     "sidebar": "Sitzungen",
     "showRecent": "Zuletzt geöffnete Sitzungen anzeigen",
+    "power": "Energie",
+    "keepAwake": "Ruhezustand bei Verbindung verhindern",
+    "keepAwakeOptions": {
+      "off": "Nie",
+      "pluggedIn": "Bei Netzbetrieb",
+      "always": "Immer"
+    },
+    "keepAwakeHint": "Der Computer wechselt bei Inaktivität nicht mehr in den Ruhezustand, sodass SSH-, Telnet- und serielle Sitzungen verbunden bleiben. Der Bildschirm schaltet sich trotzdem aus und wird gesperrt; beim Zuklappen oder wenn Sie den Ruhezustand wählen, wechselt er weiterhin in den Ruhezustand.",
+    "keepAwakeLimited": "Im Akkubetrieb versetzt Windows diesen Computer trotzdem 5 Minuten nach Ablauf seiner Zeit bis zum Ruhezustand in den Ruhezustand.",
     "files": "Dateien",
     "downloadDirectory": "Downloadordner",
     "downloadDirectoryDefault": "Den Ordner „Downloads“ verwenden",

@@ -1,8 +1,11 @@
 //! Commands for the windows: opening one, moving tabs between them, quitting, and the title bar and window buttons drawn by the page (see `window/`).
 
+use std::sync::Arc;
+
 use tauri::{AppHandle, State, WebviewWindow};
 
 use crate::error::Result;
+use crate::keep_awake::KeepAwake;
 use crate::session::{SessionId, SessionManager};
 use crate::tab_drag::Dropped;
 use crate::window::progress::TaskProgress;
@@ -90,6 +93,12 @@ pub fn app_bell(app: AppHandle) {
 #[tauri::command]
 pub fn window_set_progress(window: WebviewWindow, progress: Option<TaskProgress>) -> Result<()> {
     Ok(window::progress::show(&window, progress)?)
+}
+
+/// Whether any of the window's tabs is connected, which keeps the system awake (see `keep_awake`).
+#[tauri::command]
+pub fn window_set_connected(window: WebviewWindow, keep_awake: State<'_, Arc<KeepAwake>>, connected: bool) {
+    keep_awake.set_connected(window.label(), connected);
 }
 
 /// See [`window::quit`].

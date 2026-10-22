@@ -716,6 +716,15 @@
     "markOutputHint": "A tab in the background gets a ring around its status light when its terminal has output, until you switch to it. Output right after typing or resizing doesn't count.",
     "sidebar": "Sessions",
     "showRecent": "Show recently opened sessions",
+    "power": "Power",
+    "keepAwake": "Prevent sleep while connected",
+    "keepAwakeOptions": {
+      "off": "Never",
+      "pluggedIn": "When plugged in",
+      "always": "Always"
+    },
+    "keepAwakeHint": "Inactivity no longer puts the computer to sleep, so SSH, Telnet and serial sessions stay connected. The display still turns off and the screen still locks; closing the lid or choosing Sleep still puts it to sleep.",
+    "keepAwakeLimited": "On battery, Windows still puts this computer to sleep 5 minutes after its sleep time.",
     "files": "Files",
     "downloadDirectory": "Download folder",
     "downloadDirectoryDefault": "Use the Downloads folder",

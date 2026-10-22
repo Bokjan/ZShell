@@ -32,6 +32,7 @@ export const SECTIONS = [
   "mouseAndClipboard",
   "tabs",
   "sidebar",
+  "power",
   "files",
   "proxies",
   "knownHosts",

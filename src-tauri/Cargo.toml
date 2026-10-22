@@ -98,9 +98,11 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Diagnostics_Debug",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_LibraryLoader",
+    "Win32_System_Power",
     "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
     "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_UI_Accessibility",
     "Win32_UI_Input_KeyboardAndMouse",
@@ -171,9 +173,11 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSWorkspace",
 ] }
 block2 = "0.6"
-# A font's tables for its ligature rules (already in the tree through tauri).
-objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFData", "CFDictionary", "CFSet", "CFString"] }
+# A font's tables for its ligature rules, and the power source's notifications (already in the tree through tauri).
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFData", "CFDictionary", "CFRunLoop", "CFSet", "CFString"] }
 objc2-core-text = { version = "0.3", default-features = false, features = ["std", "CTFont", "CTFontDescriptor"] }
+# Keeping the system awake while connected, and whether it runs on external power.
+objc2-io-kit = { version = "0.3", default-features = false, features = ["std", "pwr_mgt", "ps"] }
 # The app lock: Touch ID or the login password.
 objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }
 

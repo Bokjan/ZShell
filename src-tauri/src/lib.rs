@@ -26,6 +26,7 @@ mod hidden_window;
 mod import;
 #[cfg(unix)]
 mod instance;
+mod keep_awake;
 mod launch;
 mod local_name;
 mod logging;
@@ -57,6 +58,7 @@ use tauri::Manager;
 use applock::AppLock;
 use config::ProfileStore;
 use connections::Connections;
+use keep_awake::KeepAwake;
 use logging::Logs;
 use persist::SetAside;
 use quick::QuickCommandStore;
@@ -189,6 +191,9 @@ pub fn run() {
             // First, so that backend text is in the chosen language from the start.
             let settings = SettingsStore::load(config_dir.join("settings.json"), &set_aside);
             i18n::apply(&settings.get().language);
+            let keep_awake = Arc::new(KeepAwake::for_platform(settings.get().power.keep_awake));
+            keep_awake::watch_power(keep_awake.clone());
+            app.manage(keep_awake);
             app.manage(settings);
             // The one built before the language was known.
             #[cfg(target_os = "macos")]
@@ -263,6 +268,7 @@ pub fn run() {
             commands::settings::system_monospace_font,
             commands::settings::terminal_ligature_rules,
             commands::settings::screen_reader_running,
+            commands::settings::keep_awake_limited,
             commands::settings::settings_set,
             commands::settings::config_directory,
             commands::settings::config_set_aside,
@@ -365,6 +371,7 @@ pub fn run() {
             commands::window::app_quit,
             commands::window::app_bell,
             commands::window::window_set_progress,
+            commands::window::window_set_connected,
             commands::window::window_title_double_click,
             commands::window::window_system_menu,
             commands::window::window_file_dialog,
