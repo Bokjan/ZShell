@@ -193,7 +193,11 @@ function App() {
     onQuickConnect: opening.quickConnect,
     onEdit: editor.edit,
     onDelete: (profile) => deletion.remove(profile, false),
-    onNew: editor.create,
+    // The list is shown for a new session, which goes in its selected folder: where it goes is in sight.
+    onNew: (folder) => {
+      sidebar.show();
+      editor.create(folder);
+    },
     onImportSshConfig: importer.open,
     onSettings: () => settingsDialog.open(),
     onToggleHidden: sidebar.toggle,

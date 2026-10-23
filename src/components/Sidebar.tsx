@@ -83,8 +83,8 @@ interface Props {
   /**
    * The list is hidden: only its part of the title bar (the app menu's button and the one
    * that shows the list) is shown, at the start of the tab bar (`titleStart`), in the same
-   * place. Its dialogs and the actions of the app menu (new session, import, export) still
-   * work.
+   * place. Its dialogs and the app menu's import and export still work; a new session shows
+   * the list first (see `App`).
    */
   hidden: boolean;
   titleStart: HTMLElement | null;
@@ -92,6 +92,11 @@ interface Props {
 
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
+/**
+ * The narrowest list that shows the app's name in its title bar, which goes first to leave
+ * room for the buttons; the same while the list is hidden, so that they stay in place.
+ */
+const NAME_MIN_WIDTH = 210;
 
 /**
  * The saved sessions and folders, with search and quick connect. It doesn't depend on the tabs,
@@ -131,10 +136,9 @@ export function Sidebar(props: Props) {
   // A sessions file being imported.
   const [importing, setImporting] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  // The button hiding or showing the list moves between the list and the tab bar: pressed from
-  // the keyboard, it takes the focus again where it is now.
+  // The button hiding or showing the list moves between the list and the tab bar.
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const refocusToggleRef = useRef(false);
+  const shownHiddenRef = useRef(hidden);
 
   // Not `state`, which also changes as sessions are opened (the recent ones).
   const sessionTree = { profiles, folders, order: state.order };
@@ -155,10 +159,12 @@ export function Sidebar(props: Props) {
 
   useEffect(() => setHighlight(0), [query]);
 
+  // The focus was on what is gone (the button, pressed from the keyboard or with its key, or
+  // the list with no terminal to take it, see `useSidebar`): the button takes it where it is now.
   useEffect(() => {
-    if (!refocusToggleRef.current) return;
-    refocusToggleRef.current = false;
-    toggleRef.current?.focus();
+    if (shownHiddenRef.current === hidden) return;
+    shownHiddenRef.current = hidden;
+    if (!document.activeElement || document.activeElement === document.body) toggleRef.current?.focus();
   }, [hidden]);
 
   const fail = (e: unknown) => setError(errorMessage(e));
@@ -190,7 +196,9 @@ export function Sidebar(props: Props) {
 
   const finishRename = (folder: Folder, name: string | null) => {
     setRenaming(null);
-    listRef.current?.focus();
+    // Ended from the keyboard, the focus stays in the list. Not when it went elsewhere, while
+    // the editor is left (a terminal, as the list is hidden): it would be taken back.
+    if (listRef.current?.contains(document.activeElement)) listRef.current.focus();
     if (name !== null && name !== folder.name) run(tree.saveFolder({ ...folder, name }));
   };
 
@@ -317,10 +325,10 @@ export function Sidebar(props: Props) {
     e.preventDefault();
   };
 
-  // Keep the selected row visible as it moves.
+  // Keep the selected row visible as it moves, and as the list is shown again from the top.
   useEffect(() => {
     listRef.current?.querySelector(`[data-key="${CSS.escape(selected ?? "")}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [selected]);
+  }, [selected, hidden]);
 
   const onSearchKeyDown = (e: KeyboardEvent) => {
     const pick = (index: number) => {
@@ -477,7 +485,7 @@ export function Sidebar(props: Props) {
         }}
       >
         <img src={appIcon} alt="" />
-        <span className="sidebar-brand-name">{t("app.name")}</span>
+        {width >= NAME_MIN_WIDTH && <span className="sidebar-brand-name">{t("app.name")}</span>}
         {/* On macOS, the settings button has the mark. */}
         {update && !isMac ? <DotIcon /> : <ChevronIcon />}
       </button>
@@ -488,10 +496,7 @@ export function Sidebar(props: Props) {
         label={toggleLabel}
         aria-expanded={!hidden}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={(e) => {
-          refocusToggleRef.current = e.detail === 0;
-          onToggleHidden();
-        }}
+        onClick={onToggleHidden}
       >
         <SidebarIcon />
         {markToggle && <DotIcon size={6} />}

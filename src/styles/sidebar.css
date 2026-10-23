@@ -22,7 +22,7 @@
   color: var(--text-muted);
 }
 /* Clicks go through to the title bar, which moves the window. The name goes first when the
-   sidebar is narrow; it is clipped where container queries aren't supported. */
+   sidebar is narrow (`Sidebar`), and is clipped with a larger text scale. */
 .sidebar-brand {
   display: flex;
   align-items: center;
@@ -79,14 +79,6 @@
   position: absolute;
   top: 0;
   right: 2px;
-}
-.sidebar-titlebar {
-  container-type: inline-size;
-}
-@container (max-width: 200px) {
-  .sidebar-brand-name {
-    display: none;
-  }
 }
 .sidebar-actions {
   display: flex;

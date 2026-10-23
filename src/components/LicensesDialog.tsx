@@ -57,7 +57,8 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
       // Both the dev server and Tauri answer a missing file with index.html.
       .then((res) => (res.ok && res.headers.get("content-type")?.includes("json") ? res.json() : null))
       .catch(() => null)
-      .then((loaded: Notices | null) => current && setNotices(loaded));
+      // A local one written by an older script, which stored whole texts, counts as missing.
+      .then((loaded: Notices | null) => current && setNotices(loaded && Array.isArray(loaded.paragraphs) ? loaded : null));
     return () => {
       current = false;
     };

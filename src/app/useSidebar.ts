@@ -16,7 +16,8 @@ const HIDDEN_KEY = "zshell.sidebarHidden";
  * last one.
  *
  * Hiding it while it has the focus gives the focus to the terminal (`focusTerminal`), unless
- * it was on its button, which `Sidebar` focuses again where it is now.
+ * it was on its button or there is no terminal: `Sidebar` then focuses the button where it is
+ * now.
  */
 export function useSidebar(focusTerminal: () => void) {
   const { t } = useTranslation();

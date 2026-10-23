@@ -10,9 +10,9 @@
 //
 // The output lists every package with the indices of its license texts; identical texts
 // are stored once, as the indices of their paragraphs, and each paragraph is stored once
-// too: most texts are MIT licenses that differ only in their copyright line. A package whose license isn't in about.toml's `accepted` list fails the
-// generation, npm packages as well as crates, so that a new dependency's license is
-// checked before it ships.
+// too: most texts are MIT licenses that differ only in their copyright line. A package
+// whose license isn't in about.toml's `accepted` list fails the generation, npm packages as
+// well as crates, so that a new dependency's license is checked before it ships.
 //
 // Without cargo-about (`cargo install --locked cargo-about --features cli`) the Rust part
 // is left out and `rustMissing` is set, which is fine for local builds; in CI (`CI` is
