@@ -9,6 +9,18 @@
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
 }
+/* The session list's part of the title bar while the list is hidden (see `Sidebar`), in the
+   same place as in the list's title bar, and with the same edge. */
+.tab-bar-start {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 4px 0 var(--traffic-lights-width);
+  border-right: 1px solid var(--border);
+}
+.tab-bar-start:empty {
+  display: none;
+}
 /* Scrolls sideways when the tabs don't fit (wheel, trackpad, or the active tab is kept in
    view), with no scroll bar: one would not fit in the bar, and on Windows it would squeeze
    the tabs. The panel switch stays outside, always visible. */

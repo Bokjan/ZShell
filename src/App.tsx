@@ -15,6 +15,7 @@ import { useDirectorySync } from "./app/useDirectorySync";
 import { usePaneActions } from "./app/usePaneActions";
 import { PaneDragLayer, usePaneDrag } from "./app/usePaneDrag";
 import { useFullScreen } from "./app/useFullScreen";
+import { useSidebar } from "./app/useSidebar";
 import { useQuickCommandBar } from "./app/useQuickCommandBar";
 import { useProfileDeletion } from "./app/useProfileDeletion";
 import { useQuickCommandSync } from "./app/useQuickCommandSync";
@@ -93,6 +94,10 @@ function App() {
     focusActiveTerminal();
   });
   useNativeMenuLabel("fullScreen", t(fullScreen.on ? "appMenu.exitFullScreen" : "appMenu.items.fullScreen"));
+  const sidebar = useSidebar(focusActiveTerminal);
+  useNativeMenuLabel("sidebar", t(sidebar.hidden ? "appMenu.showSidebar" : "appMenu.items.sidebar"));
+  // Where the session list's title bar part goes while it is hidden: the start of the tab bar.
+  const [titleStart, setTitleStart] = useState<HTMLElement | null>(null);
   const composer = useCompose(store, sessions, tabs, activeKey, { focusTerminal: focusActiveTerminal });
   const { compose, flashing, inScope } = composer;
   const activeTab = tabs.find((tab) => tab.key === activeKey);
@@ -155,7 +160,11 @@ function App() {
     fullScreen,
     localAllowed,
     openLocalTab: opening.openLocal,
-    searchSessions: () => setSearchFocusKey((key) => key + 1),
+    searchSessions: () => {
+      sidebar.show();
+      setSearchFocusKey((key) => key + 1);
+    },
+    toggleSidebar: sidebar.toggle,
     importSshConfig: importer.open,
     closeFocused,
     openSettings: settingsDialog.open,
@@ -163,7 +172,7 @@ function App() {
     toggleCompose: composer.toggle,
   });
   const updates = useUpdates();
-  const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on, updates });
+  const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on, sidebarHidden: sidebar.hidden, updates });
 
   useUpdateAnnouncement(updates, settingsDialog.isOpen);
 
@@ -187,6 +196,7 @@ function App() {
     onNew: editor.create,
     onImportSshConfig: importer.open,
     onSettings: () => settingsDialog.open(),
+    onToggleHidden: sidebar.toggle,
   });
 
   const tabBarHandlers = useStableHandlers<TabBarHandlers>({
@@ -247,6 +257,8 @@ function App() {
         appMenu={appMenu.button}
         appMenuOpen={appMenu.open}
         update={updates.available}
+        hidden={sidebar.hidden}
+        titleStart={titleStart}
       />
       <main>
         <TabBar
@@ -254,6 +266,7 @@ function App() {
           activeKey={activeKey}
           handlers={tabBarHandlers}
           tabRest={tabRest}
+          titleStartRef={setTitleStart}
           canOpenLocal={localAllowed}
           windows={windowing.others}
           composeOpen={compose.open}

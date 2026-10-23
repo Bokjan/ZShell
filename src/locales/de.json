@@ -35,6 +35,7 @@
     "view": "Ansicht",
     "help": "Hilfe",
     "exitFullScreen": "Terminal-Vollbild beenden",
+    "showSidebar": "Sitzungsliste einblenden",
     "items": {
       "settings": "Einstellungen…",
       "lock": "ZShell sperren",
@@ -53,6 +54,7 @@
       "splitDown": "Unten teilen",
       "filePanel": "Dateibereich",
       "forwardsPanel": "Bereich für Portweiterleitungen",
+      "sidebar": "Sitzungsliste ausblenden",
       "composeBar": "Eingabeleiste",
       "quickCommands": "Schnellbefehle…",
       "fullScreen": "Terminal-Vollbild",
@@ -83,6 +85,9 @@
     "edit": "Bearbeiten…",
     "settings": "Einstellungen ({shortcut})",
     "settingsUpdate": "Einstellungen ({shortcut}). ZShell {version} ist verfügbar.",
+    "hide": "Sitzungsliste ausblenden ({shortcut})",
+    "show": "Sitzungsliste einblenden ({shortcut})",
+    "showUpdate": "Sitzungsliste einblenden ({shortcut}). ZShell {version} ist verfügbar.",
     "resize": "Größe der Sitzungsliste ändern",
     "resizeHint": "Ziehen, um die Größe zu ändern; doppelklicken, um sie zurückzusetzen",
     "newFolder": "Neuer Ordner",
@@ -288,7 +293,9 @@
     "splitNoRoom": "Für das Teilen dieses Terminals ist kein Platz.",
     "splitSerial": "Eine serielle Schnittstelle kann nur in einem Terminal geöffnet sein.",
     "fullScreen": "Vollbild: Nur die Terminals dieses Tabs werden angezeigt. Drücken Sie {shortcut}, um es zu beenden.",
-    "fullScreenLeft": "Vollbild beendet."
+    "fullScreenLeft": "Vollbild beendet.",
+    "sidebarHidden": "Sitzungsliste ausgeblendet. Drücken Sie {shortcut}, um sie einzublenden.",
+    "sidebarShown": "Sitzungsliste eingeblendet."
   },
   "terminal": {
     "inputLabel": "Terminaleingabe",
@@ -805,6 +812,7 @@
       "quickCommands": "Schnellbefehlspalette",
       "filePanel": "Dateibereich ein- oder ausblenden",
       "forwardsPanel": "Bereich für Portweiterleitungen ein- oder ausblenden",
+      "sidebar": "Sitzungsliste ein- oder ausblenden",
       "fullScreen": "Vollbild, nur mit den Terminals des Tabs",
       "settings": "Einstellungen",
       "lock": "ZShell sperren",

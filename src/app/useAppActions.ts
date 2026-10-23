@@ -15,7 +15,7 @@ import { checkForUpdates } from "../lib/updates";
 import type { usePaneActions } from "./usePaneActions";
 
 /** What terminal full screen hides, whose keys and menu items do nothing meanwhile. */
-const HIDDEN_IN_FULL_SCREEN: readonly Action[] = ["searchSessions", "composeBar", "filePanel", "forwardsPanel"];
+const HIDDEN_IN_FULL_SCREEN: readonly Action[] = ["searchSessions", "sidebar", "composeBar", "filePanel", "forwardsPanel"];
 
 /** What an action does, when its keys are pressed or it is chosen from a menu, and when it applies. */
 interface Entry {
@@ -37,8 +37,10 @@ interface Options {
   /** False on Windows in S mode, which blocks local shells. */
   localAllowed: boolean;
   openLocalTab(): void;
-  /** Focuses the session list's search box. */
+  /** Focuses the session list's search box, showing the list if it is hidden. */
   searchSessions(): void;
+  /** Hides or shows the session list. */
+  toggleSidebar(): void;
   importSshConfig(): void;
   /** Closes the focused pane or tab, or the window once it has no tabs. */
   closeFocused(): void;
@@ -155,6 +157,7 @@ export function useAppActions(options: Options): (action: MenuAction) => boolean
 
     filePanel: panel("files"),
     forwardsPanel: panel("forwards"),
+    sidebar: { run: options.toggleSidebar },
     composeBar: { enabled: hasTabs, run: options.toggleCompose },
     // The default group is always there once the commands are read.
     quickCommands: { enabled: () => hasTabs() && quickCommandStore.get().value !== null, run: options.openPalette },

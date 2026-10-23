@@ -105,6 +105,16 @@ export function QuickIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** A window with a column on its left, for hiding and showing the session list. */
+export function SidebarIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <path d="M6 2.5v11" />
+    </Svg>
+  );
+}
+
 /** A circular arrow, for reloading. */
 export function RefreshIcon({ size = 14 }: { size?: number }) {
   return (

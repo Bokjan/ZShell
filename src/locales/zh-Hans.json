@@ -35,6 +35,7 @@
     "view": "查看",
     "help": "帮助",
     "exitFullScreen": "退出终端全屏",
+    "showSidebar": "显示会话列表",
     "items": {
       "settings": "设置…",
       "lock": "锁定 ZShell",
@@ -53,6 +54,7 @@
       "splitDown": "向下拆分",
       "filePanel": "文件面板",
       "forwardsPanel": "端口转发面板",
+      "sidebar": "隐藏会话列表",
       "composeBar": "撰写栏",
       "quickCommands": "快速命令…",
       "fullScreen": "终端全屏",
@@ -83,6 +85,9 @@
     "edit": "编辑…",
     "settings": "设置（{shortcut}）",
     "settingsUpdate": "设置（{shortcut}）。ZShell {version} 已发布。",
+    "hide": "隐藏会话列表（{shortcut}）",
+    "show": "显示会话列表（{shortcut}）",
+    "showUpdate": "显示会话列表（{shortcut}）。ZShell {version} 已发布。",
     "resize": "调整会话列表的宽度",
     "resizeHint": "拖动以调整宽度，双击恢复默认",
     "newFolder": "新建文件夹",
@@ -277,7 +282,9 @@
     "splitNoRoom": "没有足够的空间拆分此终端。",
     "splitSerial": "一个串口只能在一个终端中打开。",
     "fullScreen": "全屏：只显示此标签页的终端。按 {shortcut} 退出。",
-    "fullScreenLeft": "已退出全屏。"
+    "fullScreenLeft": "已退出全屏。",
+    "sidebarHidden": "已隐藏会话列表。按 {shortcut} 显示。",
+    "sidebarShown": "已显示会话列表。"
   },
   "terminal": {
     "inputLabel": "终端输入",
@@ -781,6 +788,7 @@
       "quickCommands": "快速命令面板",
       "filePanel": "显示或隐藏文件面板",
       "forwardsPanel": "显示或隐藏端口转发面板",
+      "sidebar": "显示或隐藏会话列表",
       "fullScreen": "全屏，只显示此标签页的终端",
       "settings": "设置",
       "lock": "锁定 ZShell",

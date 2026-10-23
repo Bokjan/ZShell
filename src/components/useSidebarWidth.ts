@@ -5,8 +5,8 @@ import { useLatest } from "../hooks/latest";
 import { storedString, storeString } from "../lib/storage";
 
 const DEFAULT_WIDTH = 260;
-// Room for the traffic lights and the three buttons of the title bar.
-const MIN_WIDTH = 176;
+// Room for the traffic lights, the button hiding the list and the three buttons of the title bar.
+const MIN_WIDTH = 204;
 const MAX_WIDTH = 480;
 /** Space always left for the terminal area. */
 const MIN_MAIN = 400;

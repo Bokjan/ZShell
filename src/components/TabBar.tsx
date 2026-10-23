@@ -103,6 +103,8 @@ interface Props {
   addressOf(tab: Tab): string | undefined;
   /** The tab a dragged tab or pane rests on, marked until it is shown. */
   tabRest: TabRest;
+  /** Gets the bar's start, where the session list puts its part of the title bar while it is hidden. */
+  titleStartRef(element: HTMLElement | null): void;
 }
 
 export function TabBar({
@@ -119,6 +121,7 @@ export function TabBar({
   colorOf,
   addressOf,
   tabRest,
+  titleStartRef,
 }: Props) {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
@@ -368,6 +371,7 @@ export function TabBar({
   // The window's title bar: always shown, so "+" and room to move the window stay available.
   return (
     <nav className="tab-bar" ref={barRef} {...DRAG_REGION}>
+      <div className="tab-bar-start" ref={titleStartRef} {...DRAG_REGION} />
       <div
         className="tab-strip"
         ref={stripRef}

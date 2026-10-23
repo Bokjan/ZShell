@@ -35,6 +35,7 @@
     "view": "View",
     "help": "Help",
     "exitFullScreen": "Exit Terminal Full Screen",
+    "showSidebar": "Show Session List",
     "items": {
       "settings": "Settings…",
       "lock": "Lock ZShell",
@@ -53,6 +54,7 @@
       "splitDown": "Split Down",
       "filePanel": "File Panel",
       "forwardsPanel": "Port Forwarding Panel",
+      "sidebar": "Hide Session List",
       "composeBar": "Compose Bar",
       "quickCommands": "Quick Commands…",
       "fullScreen": "Terminal Full Screen",
@@ -83,6 +85,9 @@
     "edit": "Edit…",
     "settings": "Settings ({shortcut})",
     "settingsUpdate": "Settings ({shortcut}). ZShell {version} is available.",
+    "hide": "Hide the session list ({shortcut})",
+    "show": "Show the session list ({shortcut})",
+    "showUpdate": "Show the session list ({shortcut}). ZShell {version} is available.",
     "resize": "Resize the session list",
     "resizeHint": "Drag to resize, double-click to reset",
     "newFolder": "New folder",
@@ -288,7 +293,9 @@
     "splitNoRoom": "There is no room to split this terminal.",
     "splitSerial": "A serial port can be open in only one terminal.",
     "fullScreen": "Full screen: only the terminals of this tab are shown. Press {shortcut} to exit.",
-    "fullScreenLeft": "Exited full screen."
+    "fullScreenLeft": "Exited full screen.",
+    "sidebarHidden": "Session list hidden. Press {shortcut} to show it.",
+    "sidebarShown": "Session list shown."
   },
   "terminal": {
     "inputLabel": "Terminal input",
@@ -805,6 +812,7 @@
       "quickCommands": "Quick command palette",
       "filePanel": "Show or hide the file panel",
       "forwardsPanel": "Show or hide the port forwarding panel",
+      "sidebar": "Show or hide the session list",
       "fullScreen": "Full screen, showing only the terminals of the tab",
       "settings": "Settings",
       "lock": "Lock ZShell",

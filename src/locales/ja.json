@@ -35,6 +35,7 @@
     "view": "表示",
     "help": "ヘルプ",
     "exitFullScreen": "ターミナルのフルスクリーンを終了",
+    "showSidebar": "セッション一覧を表示",
     "items": {
       "settings": "設定…",
       "lock": "ZShellをロック",
@@ -53,6 +54,7 @@
       "splitDown": "下に分割",
       "filePanel": "ファイルパネル",
       "forwardsPanel": "ポートフォワーディングパネル",
+      "sidebar": "セッション一覧を非表示",
       "composeBar": "入力バー",
       "quickCommands": "クイックコマンド…",
       "fullScreen": "ターミナルのフルスクリーン",
@@ -83,6 +85,9 @@
     "edit": "編集…",
     "settings": "設定（{shortcut}）",
     "settingsUpdate": "設定（{shortcut}）。ZShell {version}が利用可能です。",
+    "hide": "セッション一覧を非表示（{shortcut}）",
+    "show": "セッション一覧を表示（{shortcut}）",
+    "showUpdate": "セッション一覧を表示（{shortcut}）。ZShell {version}が利用可能です。",
     "resize": "セッション一覧のサイズを変更",
     "resizeHint": "ドラッグでサイズを変更、ダブルクリックで元に戻します",
     "newFolder": "新規フォルダー",
@@ -277,7 +282,9 @@
     "splitNoRoom": "このターミナルを分割する余地がありません。",
     "splitSerial": "シリアルポートは1つのターミナルでしか開けません。",
     "fullScreen": "フルスクリーン：このタブのターミナルのみを表示しています。{shortcut}を押すと終了します。",
-    "fullScreenLeft": "フルスクリーンを終了しました。"
+    "fullScreenLeft": "フルスクリーンを終了しました。",
+    "sidebarHidden": "セッション一覧を非表示にしました。{shortcut}を押すと表示します。",
+    "sidebarShown": "セッション一覧を表示しました。"
   },
   "terminal": {
     "inputLabel": "ターミナル入力",
@@ -781,6 +788,7 @@
       "quickCommands": "クイックコマンドパレット",
       "filePanel": "ファイルパネルの表示／非表示",
       "forwardsPanel": "ポートフォワーディングパネルの表示／非表示",
+      "sidebar": "セッション一覧の表示／非表示",
       "fullScreen": "フルスクリーン（タブのターミナルのみを表示）",
       "settings": "設定",
       "lock": "ZShellをロック",

@@ -17,7 +17,6 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  justify-content: flex-end;
   height: var(--titlebar-height);
   padding: 0 8px 0 var(--traffic-lights-width);
   color: var(--text-muted);
@@ -29,7 +28,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  margin: 0 auto 0 10px;
+  margin-left: 10px;
   overflow: hidden;
   font-size: calc(12px * var(--text-scale));
   font-weight: 600;
@@ -71,10 +70,12 @@
 .app-menu-button .dot-icon {
   margin-left: 1px;
 }
-.sidebar-actions .icon-button.marked {
+.sidebar-actions .icon-button.marked,
+.sidebar-toggle.marked {
   position: relative;
 }
-.sidebar-actions .icon-button.marked .dot-icon {
+.sidebar-actions .icon-button.marked .dot-icon,
+.sidebar-toggle.marked .dot-icon {
   position: absolute;
   top: 0;
   right: 2px;
@@ -91,9 +92,11 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  margin-left: auto;
 }
 /* SVG icons sit beside text glyphs: give them the same box. */
-.sidebar-actions .icon-button {
+.sidebar-actions .icon-button,
+.sidebar-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;

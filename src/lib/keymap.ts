@@ -56,6 +56,8 @@ const KEYMAP = {
   quickCommands: { mac: "Cmd+Shift+J", other: "Ctrl+Shift+J" },
   filePanel: { mac: "Cmd+Shift+E", other: "Ctrl+Shift+E" },
   forwardsPanel: { mac: "Cmd+Shift+P", other: "Ctrl+Shift+P" },
+  // The session list: as Finder's sidebar on macOS; elsewhere VS Code's Ctrl+B with Shift added.
+  sidebar: { mac: "Ctrl+Cmd+S", other: "Ctrl+Shift+B" },
   // As in iTerm2 on macOS and Windows Terminal elsewhere.
   fullScreen: { mac: "Cmd+Enter", other: "F11" },
   // Outside macOS, which has the menu bar instead: the menu of the app's icon in the title bar.
@@ -95,6 +97,7 @@ export type MenuAction = Extract<
   | "splitDown"
   | "filePanel"
   | "forwardsPanel"
+  | "sidebar"
   | "composeBar"
   | "quickCommands"
   | "fullScreen"
@@ -130,6 +133,7 @@ export function appMenu(mac = isMac): { section: MenuSection; items: MenuEntry[]
     "splitRight",
     "splitDown",
     "separator",
+    "sidebar",
     "filePanel",
     "forwardsPanel",
     "composeBar",
@@ -368,6 +372,7 @@ export interface ShortcutRow {
     | "quickCommands"
     | "filePanel"
     | "forwardsPanel"
+    | "sidebar"
     | "fullScreen"
     | "lock"
     | "settings"
@@ -407,6 +412,7 @@ export function shortcutRows(mac = isMac): ShortcutRow[] {
     { id: "quickCommands", keys: all("quickCommands") },
     { id: "filePanel", keys: all("filePanel") },
     { id: "forwardsPanel", keys: all("forwardsPanel") },
+    { id: "sidebar", keys: all("sidebar") },
     { id: "fullScreen", keys: all("fullScreen") },
     { id: "lock", keys: all("lock") },
     { id: "settings", keys: all("settings") },

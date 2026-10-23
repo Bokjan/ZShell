@@ -35,10 +35,12 @@ export interface AppMenuButton {
 export function useAppMenu({
   enabled,
   fullScreen,
+  sidebarHidden,
   updates,
 }: {
   enabled(action: MenuAction): boolean;
   fullScreen: boolean;
+  sidebarHidden: boolean;
   updates: { supported: boolean; available: Release | null };
 }) {
   const { t } = useTranslation();
@@ -55,6 +57,13 @@ export function useAppMenu({
     items: MenuItem[];
   } | null>(null);
 
+  // Items that tell the window's state.
+  const label = (action: MenuAction) =>
+    action === "fullScreen" && fullScreen
+      ? t("appMenu.exitFullScreen")
+      : action === "sidebar" && sidebarHidden
+        ? t("appMenu.showSidebar")
+        : menuLabel(t, action);
   const badge = updates.available ? t("updates.available", { version: updates.available.version }) : undefined;
   const entries = (items: MenuEntry[]): MenuItem[] =>
     items
@@ -63,7 +72,7 @@ export function useAppMenu({
         action === "separator"
           ? action
           : {
-              label: action === "fullScreen" && fullScreen ? t("appMenu.exitFullScreen") : menuLabel(t, action),
+              label: label(action),
               shortcut: shortcutLabel(action),
               disabled: !enabled(action),
               badge: action === "checkForUpdates" ? badge : undefined,
