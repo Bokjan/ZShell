@@ -30,7 +30,7 @@ export type EditSave =
 
 interface Props {
   transfers: Transfer[];
-  /** What the transfers' channel carries, shown beside the title. */
+  /** What the transfers' channel carries, shown at the header's end. */
   traffic?: ReactNode;
   onCancel(id: string): void;
   onDismiss(id: string): void;
@@ -58,13 +58,14 @@ export function TransferList({ transfers, traffic, onCancel, onDismiss, onClearF
   return (
     <section className="transfers">
       <header>
-        <span>{t("transfer.title")}</span>
-        {traffic}
+        <span className="transfers-title">{t("transfer.title")}</span>
         {transfers.some(finished) && (
           <button className="link-button" onClick={onClearFinished}>
             {t("transfer.clearFinished")}
           </button>
         )}
+        {/* Last, so that the button coming and going doesn't move it. */}
+        {traffic}
       </header>
       <ul>
         {transfers.map((transfer) => (

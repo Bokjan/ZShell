@@ -20,8 +20,9 @@
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
-.transfers header .traffic-lights {
-  margin-left: auto;
+.transfers-title {
+  flex: 1;
+  min-width: 0;
 }
 .transfers ul {
   list-style: none;
