@@ -37,7 +37,7 @@ function StatusItems({ pane, profile, sessions }: Props) {
   return (
     <footer className="status-bar" role="group" aria-label={t("statusBar.label")}>
       <Connection pane={pane} profile={profile} />
-      <Activity meter={meter} />
+      <Activity meter={meter} ssh={pane.protocol === "ssh"} />
       {serial ? (
         <Item
           text={serialSummary(serial)}
@@ -100,9 +100,9 @@ function Connection({ pane, profile }: { pane: Pane; profile: Profile | undefine
 
 /**
  * The lights for what the terminal sends and receives, with the channel it runs on and what
- * it has carried in the tooltip.
+ * it has carried in the tooltip; for SSH, what it leaves to the side panel's lights.
  */
-function Activity({ meter }: { meter: TrafficMeter<TerminalDetail> | undefined }) {
+function Activity({ meter, ssh }: { meter: TrafficMeter<TerminalDetail> | undefined; ssh: boolean }) {
   const { t } = useTranslation();
   const text = useTrafficText();
   const summary = () => {
@@ -110,7 +110,7 @@ function Activity({ meter }: { meter: TrafficMeter<TerminalDetail> | undefined }
     return [
       ...(channel ? [text.channel(channel.connection, channel.channel)] : []),
       ...text.counts(meter?.counts),
-      t("traffic.terminalScope"),
+      ...(ssh ? [t("traffic.terminalScope")] : []),
     ];
   };
   return <TrafficLights source={meter} summary={summary} />;
