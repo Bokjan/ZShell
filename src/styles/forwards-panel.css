@@ -166,6 +166,10 @@
   line-height: calc(14px * var(--text-scale));
   margin-top: calc((16px * var(--text-scale) - 14px * var(--text-scale) - 2px) / 2);
 }
+.forward-traffic {
+  margin-top: 2px;
+  line-height: calc(16px * var(--text-scale));
+}
 .forward-last-error {
   margin-top: 2px;
   font-size: calc(11px * var(--text-scale));

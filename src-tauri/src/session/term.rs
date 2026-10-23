@@ -72,7 +72,8 @@ impl TermIo {
     }
 
     /// A session without a frontend, for backend tests: returns the input sender and the
-    /// channels' receiving ends (raw output bytes, events as JSON).
+    /// channels' receiving ends (raw output bytes, events as JSON, without the traffic reports
+    /// that come whenever data goes through).
     #[cfg(test)]
     pub fn detached(
         size: (u16, u16),
@@ -95,7 +96,15 @@ impl TermIo {
             if let InvokeResponseBody::Raw(message) = body {
                 match message.split_first() {
                     Some((&OUTPUT, bytes)) => drop(output_tx.send(bytes.to_vec())),
-                    Some((&EVENT, json)) => drop(events_tx.send(String::from_utf8_lossy(json).into_owned())),
+                    Some((&EVENT, json)) => {
+                        let event = String::from_utf8_lossy(json).into_owned();
+                        let kind = serde_json::from_str::<serde_json::Value>(&event)
+                            .ok()
+                            .and_then(|event| event["type"].as_str().map(str::to_owned));
+                        if !kind.is_some_and(|kind| kind.ends_with("Traffic")) {
+                            let _ = events_tx.send(event);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -184,7 +193,11 @@ impl TermIo {
     /// cancel the transfer) and resizes are still taken: every backend reads its input this
     /// way, so none stops seeing them however long the other side stalls.
     pub async fn recv(&mut self, waiting: usize) -> Option<SessionInput> {
-        self.next_input(true, waiting < INPUT_BACKLOG).await
+        let input = self.next_input(true, waiting < INPUT_BACKLOG).await;
+        if let Some(SessionInput::Data(data) | SessionInput::Raw(data)) = &input {
+            self.sink.traffic().sent(data.len());
+        }
+        input
     }
 
     /// `convert`: whether keystrokes are converted to the session's encoding. Prompts read
@@ -386,6 +399,21 @@ mod tests {
         let shown: Vec<u8> = output.try_iter().flatten().collect();
         assert_eq!(String::from_utf8_lossy(&shown), "rz\r\r\n");
         sink.zmodem.cancel();
+    }
+
+    /// What the remote side sends and receives is counted as it has it, before the session's
+    /// encoding is converted; what is typed at a prompt and our own messages are not.
+    #[tokio::test]
+    async fn counts_what_goes_both_ways() {
+        let (mut io, input, _output, _events) = TermIo::detached_with((80, 24), encoding_rs::GBK);
+        input.send(SessionInput::Data(b"secret\r".to_vec())).unwrap();
+        io.read_line(false).await.unwrap();
+        io.print("Connecting\n");
+        io.output(vec![0xd6, 0xd0]);
+        input.send(SessionInput::Data("中文".as_bytes().to_vec())).unwrap();
+        io.recv(0).await.unwrap();
+        let counts = io.sink().traffic().counts();
+        assert_eq!((counts.sent, counts.received), (4, 2));
     }
 
     /// Typing is converted to the session's encoding; the terminal's binary reports are not.

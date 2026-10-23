@@ -39,6 +39,7 @@ export {
   ENCODINGS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  FORWARD_CHANNELS_LISTED,
   SCROLLBACK_MAX,
 } from "./bindings";
 

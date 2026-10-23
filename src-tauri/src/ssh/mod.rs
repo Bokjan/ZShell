@@ -28,6 +28,7 @@ use crate::model::Proxy;
 use crate::model::SshProfile;
 use crate::net::Route;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
+use crate::traffic::{ChannelInfo, ConnectionInfo};
 use crate::vault::SavedPasswords;
 pub use auth::{default_key_path, key_file_exists};
 pub use connection::{Connection, Shells, SshHandle};
@@ -125,6 +126,8 @@ pub struct Tunnel {
     /// The name of the jump host the stream comes from.
     pub via: String,
     pub jumps: JumpChain,
+    /// The port of the connection to the first jump host (or its proxy) on this computer.
+    pub local_port: Option<u16>,
 }
 
 /// Connects through the route's jump hosts (each authenticating as its own profile, with its
@@ -135,6 +138,7 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
     let jumps = &route.jumps;
     let mut chain = JumpChain::default();
     let mut transport = None;
+    let mut local_port = None;
     for (index, hop) in jumps.iter().enumerate() {
         let (next_host, next_port) =
             jumps.get(index + 1).map_or((host, port), |next| (next.ssh.remote.host.as_str(), next.ssh.remote.port));
@@ -143,7 +147,10 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         let options = HopOptions::jump_host();
         let ended = options.disconnect.subscribe();
         // The target's checks find a jump host gone, as nothing comes through it any more.
-        let (mut session, _) = connect(hop, options, transport.take(), proxy, &route.passwords, io).await?;
+        let (mut session, _, port) = connect(hop, options, transport.take(), proxy, &route.passwords, io).await?;
+        if index == 0 {
+            local_port = port;
+        }
         auth::authenticate(&mut session, hop, &route.passwords, io, ended).await?;
         let target = host_port(next_host, next_port);
         let failed = || Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target);
@@ -157,7 +164,7 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         chain.0.push(Arc::new(session));
         transport = Some((channel.into_stream(), hop.name.clone()));
     }
-    Ok(transport.map(|(stream, via)| Tunnel { stream, via, jumps: chain }))
+    Ok(transport.map(|(stream, via)| Tunnel { stream, via, jumps: chain, local_port }))
 }
 
 /// Connects (through the jump hosts, if any), authenticates and starts the remote shell.
@@ -170,19 +177,20 @@ async fn start(
     connected: impl FnOnce(Arc<Connection>, &TermIo),
 ) -> Result<(Channel<Msg>, Arc<Connection>)> {
     let remote = &profile.ssh.remote;
-    let (transport, chain) = match tunnel(route, &remote.host, remote.port, io).await? {
-        Some(Tunnel { stream, via, jumps }) => (Some((stream, via)), jumps),
-        None => (None, JumpChain::default()),
+    let (transport, chain, tunnel_port) = match tunnel(route, &remote.host, remote.port, io).await? {
+        Some(Tunnel { stream, via, jumps, local_port }) => (Some((stream, via)), jumps, local_port),
+        None => (None, JumpChain::default(), None),
     };
     let routes = RemoteRoutes::default();
     let (disconnect_tx, disconnect) = watch::channel(None);
     let proxy = route.proxy.as_ref();
     let options = HopOptions { forward_agent: profile.ssh.forward_agent, routes: routes.clone(), disconnect: disconnect_tx };
-    let (mut session, link) = connect(profile, options, transport, proxy, &route.passwords, io).await?;
+    let (mut session, link, local_port) = connect(profile, options, transport, proxy, &route.passwords, io).await?;
     // No time limit, unlike connecting: the user may be answering prompts, and the server
     // has its own (`LoginGraceTime`).
     auth::authenticate(&mut session, profile, &route.passwords, io, disconnect.clone()).await?;
-    let connection = Connection::new(session, link, profile.clone(), chain, routes, disconnect);
+    let info = ConnectionInfo::next(local_port.or(tunnel_port));
+    let connection = Connection::new(session, link, info, profile.clone(), chain, routes, disconnect);
     connected(connection.clone(), io);
     let channel = open_shell(&connection, id, io).await?;
     Ok((channel, connection))
@@ -194,6 +202,7 @@ async fn start(
 async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> Result<Channel<Msg>> {
     let profile = connection.profile();
     let channel = connection.handle().channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
+    io.sink().traffic().on_channel(ChannelInfo { connection: connection.info(), channel: channel.id().into() });
     // These requests wait for no answer: they fail only when the connection is gone. A server
     // that won't start the shell closes the channel, which ends the session as usual.
     let failed = || Error::new("net.connectionLost");
@@ -437,7 +446,8 @@ impl HopOptions {
 
 /// Connects to one hop: over TCP (through `proxy`, if any, with its saved password in
 /// `passwords`), or through `via` (a channel from the previous jump host, with that host's
-/// name), then performs the SSH handshake. Also returns the link to its transport.
+/// name), then performs the SSH handshake. Also returns the link to its transport, and the
+/// port of its TCP connection on this computer (none through a jump host or a proxy command).
 async fn connect(
     hop: &SshProfile,
     options: HopOptions,
@@ -445,7 +455,7 @@ async fn connect(
     proxy: Option<&Proxy>,
     passwords: &SavedPasswords,
     io: &mut TermIo,
-) -> Result<(SshHandle, abortable::Link)> {
+) -> Result<(SshHandle, abortable::Link, Option<u16>)> {
     let remote = &hop.ssh.remote;
     let (user, host, port) = (&remote.username, &remote.host, remote.port);
     let Some((stream, jump)) = via else {
@@ -456,12 +466,14 @@ async fn connect(
         io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
         // SSH keepalives notice a dead connection once authenticated (russh sends none
         // before); TCP ones cover the time until then, as OpenSSH's `TCPKeepAlive` does.
-        let stream = crate::net::connect(host, port, user, proxy, passwords, remote.keepalive(), io).await?;
-        return handshake(hop, options, stream, io).await;
+        let (stream, local_port) = crate::net::connect(host, port, user, proxy, passwords, remote.keepalive(), io).await?;
+        let (session, link) = handshake(hop, options, stream, io).await?;
+        return Ok((session, link, local_port));
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);
     io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
-    handshake(hop, options, stream, io).await
+    let (session, link) = handshake(hop, options, stream, io).await?;
+    Ok((session, link, None))
 }
 
 /// Keepalives unanswered in a row that end a connection, as OpenSSH's `ServerAliveCountMax`.

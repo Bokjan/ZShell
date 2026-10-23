@@ -126,7 +126,8 @@ async fn connect_with<H: russh::server::Handler + Send + 'static>(
     let config = Arc::new(super::client_config(keepalive));
     let mut handle = client::connect_stream(config, client_side, handler).await.unwrap();
     assert!(handle.authenticate_none("alice").await.unwrap().success());
-    (Connection::new(handle, guard.keep(), profile, JumpChain::default(), routes, disconnect), stall)
+    let info = crate::traffic::ConnectionInfo::next(None);
+    (Connection::new(handle, guard.keep(), info, profile, JumpChain::default(), routes, disconnect), stall)
 }
 
 /// Stalls or slows the transport of a connection made by [`connect_stalling`].

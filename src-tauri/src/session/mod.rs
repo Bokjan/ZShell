@@ -42,6 +42,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::Error;
+use crate::traffic::{ChannelInfo, ConnectionInfo, Counts};
 use crate::zmodem;
 pub use flow::Flow;
 #[cfg(test)]
@@ -114,6 +115,24 @@ pub enum SessionEvent {
     Waiting {
         connections: usize,
     },
+    /// What the session's terminal has sent and received (see [`crate::traffic`]), and the
+    /// channel it runs on, for an SSH session once its shell has started.
+    TerminalTraffic {
+        counts: Counts,
+        channel: Option<ChannelInfo>,
+    },
+    /// What the SFTP channels of the session's connection have carried.
+    SftpTraffic {
+        connection: ConnectionInfo,
+        browse: SftpChannelTraffic,
+        transfer: SftpChannelTraffic,
+    },
+    /// What forwarding rule `rule_id` of the session's saved session carries in its current
+    /// run, on whichever of the session's connections it runs.
+    ForwardTraffic {
+        rule_id: String,
+        traffic: ForwardTraffic,
+    },
     /// The session moved to another window's tab: the last message on this channel.
     /// `move_id`: what the new tab named the move, to pass back with the screen.
     Moved {
@@ -138,6 +157,32 @@ pub enum ForwardState {
     },
     Stopped,
 }
+
+/// One of a connection's SFTP channels (browsing, or transfers), for [`SessionEvent::SftpTraffic`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpChannelTraffic {
+    pub counts: Counts,
+    /// The channel it is on now, if it has been opened. Transfers share the browsing channel
+    /// when the server refuses them one of their own, and then have its counts too.
+    pub channel: Option<u32>,
+}
+
+/// A forwarding rule's run, for [`SessionEvent::ForwardTraffic`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardTraffic {
+    pub counts: Counts,
+    /// The connection it runs on.
+    pub connection: ConnectionInfo,
+    /// The channels of the connections it carries now, lowest first: the first
+    /// [`FORWARD_CHANNELS_LISTED`] of `channel_count`.
+    pub channels: Vec<u32>,
+    pub channel_count: usize,
+}
+
+/// How many of a rule's channels [`ForwardTraffic`] lists.
+pub const FORWARD_CHANNELS_LISTED: usize = 20;
 
 #[derive(Clone, Copy, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

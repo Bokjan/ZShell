@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import { DialogsHidden } from "../hooks/dialogs";
 import { useStableProps } from "../hooks/stableProps";
+import { useRegistered } from "../hooks/stores";
 import type { Profile } from "../ipc/api";
 import { focusedPane, targetProfile, type Pane, type SidePanel, type Tab } from "../lib/panes";
 import { ForwardsPanel } from "./ForwardsPanel";
@@ -76,6 +77,7 @@ const PaneHost = memo(function PaneHost(props: PaneHostProps) {
   }
   const shown = (panel: SidePanel) => focused && sidePanel === panel;
   const connected = pane.status === "connected" && pane.sessionId != null;
+  const session = useRegistered(h.sessions, () => h.sessions.get(key));
 
   return (
     <>
@@ -107,6 +109,7 @@ const PaneHost = memo(function PaneHost(props: PaneHostProps) {
                     sessionId={pane.sessionId}
                     connected={connected}
                     active={visible && shown("files")}
+                    traffic={session?.sftpTraffic}
                     onTransfers={(count) => h.onTransfers(key, count)}
                     onEdits={(count) => h.onEdits(key, count)}
                     onQuestions={(count) => h.onQuestions(key, count)}
@@ -123,6 +126,7 @@ const PaneHost = memo(function PaneHost(props: PaneHostProps) {
                     profile={profile}
                     quick={pane.target.kind === "quick"}
                     states={pane.forwards}
+                    traffic={session?.forwardTraffic}
                   />
                 </DialogsHidden.Provider>
               </div>

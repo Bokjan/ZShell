@@ -56,7 +56,7 @@ async fn connect(remote: &Remote, route: &Route, io: &mut TermIo) -> Result<(Box
         None => t!("terminal.connectingTo", host = host, port = port),
     };
     io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
-    let stream = crate::net::connect(host, port, &remote.username, proxy, &route.passwords, remote.keepalive(), io).await?;
+    let (stream, _) = crate::net::connect(host, port, &remote.username, proxy, &route.passwords, remote.keepalive(), io).await?;
     Ok((stream, JumpChain::default()))
 }
 

@@ -48,6 +48,7 @@ mod sftp;
 mod ssh;
 mod tab_drag;
 mod telnet;
+mod traffic;
 mod update;
 mod vault;
 mod window;

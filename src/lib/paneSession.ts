@@ -21,7 +21,7 @@ import {
 import type { Notice, ProgressReport } from "./osc";
 import type { Arrival, Snapshot } from "./panes";
 import { isTerminalReport } from "./terminalReports";
-import { TrafficMeter, utf8Length } from "./traffic";
+import { ForwardMeters, SftpTraffic, TrafficMeter, type TerminalDetail } from "./traffic";
 
 export type SessionStatus = "connecting" | "connected" | "closed";
 
@@ -209,8 +209,14 @@ export class PaneSession {
    */
   private suspended = false;
   private connectWhenResumed = false;
-  /** What the terminal has sent and received on the current connection. */
-  readonly traffic = new TrafficMeter();
+  /**
+   * What the current session's terminal has sent and received, on the channel of its detail
+   * (for SSH), as the backend reports it; and what the SFTP channels of its connection and the
+   * forwarding rules of its saved session carry.
+   */
+  readonly traffic = new TrafficMeter<TerminalDetail>();
+  readonly sftpTraffic = new SftpTraffic();
+  readonly forwardTraffic = new ForwardMeters();
   /** When the pane was last typed into or resized (`performance.now()`). */
   private nudgedAt = -Infinity;
   /** When the bell last rang (`performance.now()`). */
@@ -293,7 +299,6 @@ export class PaneSession {
       if (!this.session) return false;
       this.nudgedAt = performance.now();
       this.session.write(data).catch(ignore);
-      this.traffic.addSent(utf8Length(data));
       return true;
     }
     // Enter pressed, not a line break in something else that came in (a paste).
@@ -314,7 +319,6 @@ export class PaneSession {
     if (this.closed || !this.session) return;
     this.nudgedAt = performance.now();
     this.session.writeBytes(Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(ignore);
-    this.traffic.addSent(data.length);
   }
 
   /** The terminal rang its bell (BEL in the output): reported once for bells in quick succession. */
@@ -461,6 +465,8 @@ export class PaneSession {
     this.typed = false;
     this.cut = false;
     this.traffic.reset();
+    this.sftpTraffic.reset();
+    this.forwardTraffic.reset();
     this.progress(null);
     this.events.status("connecting");
     const target = this.config.target();
@@ -581,7 +587,6 @@ export class PaneSession {
     start(
       (data) => {
         if (stale()) return;
-        this.traffic.addReceived(data.byteLength);
         if (performance.now() - this.nudgedAt >= ECHO_MS) this.events.output();
         this.port.write(data, () => {
           processed += data.byteLength;
@@ -606,7 +611,18 @@ export class PaneSession {
             this.awaitPrompt();
             return;
           case "forward":
+            // A new run of the rule counts afresh.
+            if (event.state.type !== "active") this.forwardTraffic.clear(event.ruleId);
             this.events.forward(event.ruleId, event.state);
+            return;
+          case "terminalTraffic":
+            this.traffic.update(event.counts, event.channel);
+            return;
+          case "sftpTraffic":
+            this.sftpTraffic.update(event.connection, event.browse, event.transfer);
+            return;
+          case "forwardTraffic":
+            this.forwardTraffic.update(event.ruleId, event.traffic);
             return;
           case "zmodem":
             this.events.zmodem(event.phase);
@@ -738,7 +754,6 @@ export class PaneSession {
       if (!this.session || this.closed || !looksLikePrompt(this.port.lineBeforeCursor())) return;
       const command = `${this.loginPending.shift()}\r`;
       void this.session.write(command).catch(ignore);
-      this.traffic.addSent(utf8Length(command));
     }, LOGIN_COMMAND_IDLE_MS);
   }
 

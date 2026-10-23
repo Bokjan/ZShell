@@ -25,6 +25,7 @@ const MAX_ATTEMPTS: usize = 3;
 /// Connects to `host:port` through `proxy`. `user` is what a command's `%r` stands for;
 /// `keepalive` turns on TCP keepalives on the connection to a SOCKS or HTTP proxy. A
 /// password the proxy needs and that isn't saved (in `passwords`) is asked in the terminal.
+/// Also returns the port of the connection to a SOCKS or HTTP proxy on this computer.
 pub async fn connect(
     proxy: &Proxy,
     host: &str,
@@ -33,9 +34,9 @@ pub async fn connect(
     passwords: &SavedPasswords,
     keepalive: Option<Duration>,
     io: &mut TermIo,
-) -> Result<Box<dyn Stream>> {
+) -> Result<(Box<dyn Stream>, Option<u16>)> {
     if proxy.kind == ProxyKind::Command {
-        return command::spawn(proxy, host, port, user, io.sink()).await;
+        return Ok((command::spawn(proxy, host, port, user, io.sink()).await?, None));
     }
     let saved = match proxy.uses_password() {
         true => passwords.proxy(&proxy.id),
@@ -53,7 +54,7 @@ async fn connect_with(
     keepalive: Option<Duration>,
     mut saved: Option<String>,
     io: &mut TermIo,
-) -> Result<Box<dyn Stream>> {
+) -> Result<(Box<dyn Stream>, Option<u16>)> {
     // Sent in the request as it is: a line break would add to the HTTP request.
     if host.chars().any(|c| c.is_whitespace() || c.is_control()) {
         bail!(Error::new("profile.invalidHost"));
@@ -81,7 +82,8 @@ async fn connect_with(
         let handshake =
             tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake).await.unwrap_or_else(|_| Err(errors.error("proxy.timeout").into()));
         let Err(e) = handshake else {
-            return Ok(Box::new(stream));
+            let local_port = crate::net::local_port(&stream);
+            return Ok((Box::new(stream), local_port));
         };
         let rejected = e.downcast_ref::<Error>().is_some_and(|e| e.code() == "proxy.authFailed");
         if typed {
@@ -192,7 +194,9 @@ mod tests {
 
         let proxy = Proxy { port: proxy_port, host: "127.0.0.1".into(), ..proxy(ProxyKind::Socks5) };
         let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
-        let mut stream = connect(&proxy, "echo.internal", echo_port, "", &SavedPasswords::default(), None, &mut io).await.unwrap();
+        let (mut stream, local_port) =
+            connect(&proxy, "echo.internal", echo_port, "", &SavedPasswords::default(), None, &mut io).await.unwrap();
+        assert!(local_port.is_some_and(|port| port != proxy_port));
         stream.write_all(b"ping").await.unwrap();
         let mut reply = [0; 4];
         stream.read_exact(&mut reply).await.unwrap();

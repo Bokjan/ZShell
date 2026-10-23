@@ -33,6 +33,10 @@ struct Shared {
     heard: AtomicU64,
     /// The writes that took something.
     sent: AtomicU64,
+    /// The bytes read and written: all of the connection's traffic, as it goes over the
+    /// network (see `crate::traffic`).
+    bytes_read: AtomicU64,
+    bytes_written: AtomicU64,
     /// The last read, and the last write, were left waiting for the peer.
     reading: AtomicBool,
     writing: AtomicBool,
@@ -89,8 +93,10 @@ impl<S: AsyncRead + Unpin> AsyncRead for Abortable<S> {
         check(&self.shared, cx, |s| &mut s.reader)?;
         let before = buf.filled().len();
         let poll = Pin::new(&mut self.inner).poll_read(cx, buf);
-        if buf.filled().len() > before {
+        let read = buf.filled().len() - before;
+        if read > 0 {
             self.shared.heard.fetch_add(1, Ordering::Relaxed);
+            self.shared.bytes_read.fetch_add(read as u64, Ordering::Relaxed);
         }
         noting(&self.shared.reading, poll)
     }
@@ -100,8 +106,9 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Abortable<S> {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         check(&self.shared, cx, |s| &mut s.writer)?;
         let poll = Pin::new(&mut self.inner).poll_write(cx, buf);
-        if let Poll::Ready(Ok(1..)) = poll {
+        if let Poll::Ready(Ok(written @ 1..)) = poll {
             self.shared.sent.fetch_add(1, Ordering::Relaxed);
+            self.shared.bytes_written.fetch_add(written as u64, Ordering::Relaxed);
             if self.shared.writing.load(Ordering::Relaxed) {
                 self.shared.heard.fetch_add(1, Ordering::Relaxed);
             }
@@ -158,6 +165,12 @@ impl Link {
     /// Counts the writes that took something so far.
     pub fn sent(&self) -> u64 {
         self.0.sent.load(Ordering::Relaxed)
+    }
+
+    /// The bytes written and read so far: everything the connection sent and received.
+    #[cfg_attr(not(test), expect(dead_code, reason = "kept for showing a connection's whole traffic beside what its channels carry"))]
+    pub fn bytes(&self) -> (u64, u64) {
+        (self.0.bytes_written.load(Ordering::Relaxed), self.0.bytes_read.load(Ordering::Relaxed))
     }
 
     /// Whether russh waits for the peer: to read something, or for room to write. Neither when
@@ -220,6 +233,7 @@ mod tests {
         writing.await.unwrap();
         assert!(!link.writing());
         assert_eq!(link.heard(), 1);
+        assert_eq!(link.bytes(), (8, 0));
     }
 
     /// Kept, the stream works as before, and the link tells what it does until it ends it.

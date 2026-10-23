@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
@@ -29,6 +30,8 @@ export type EditSave =
 
 interface Props {
   transfers: Transfer[];
+  /** What the transfers' channel carries, shown beside the title. */
+  traffic?: ReactNode;
   onCancel(id: string): void;
   onDismiss(id: string): void;
   onClearFinished(): void;
@@ -46,7 +49,7 @@ const KIND_ICONS = {
 
 const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
 
-export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, onReopen, onStopEditing }: Props) {
+export function TransferList({ transfers, traffic, onCancel, onDismiss, onClearFinished, onReopen, onStopEditing }: Props) {
   const { t } = useTranslation();
   // The same from render to render, so that a transfer renders again only when it changes.
   const actions = useStableHandlers<TransferActions>({ onCancel, onDismiss, onReopen, onStopEditing });
@@ -56,6 +59,7 @@ export function TransferList({ transfers, onCancel, onDismiss, onClearFinished, 
     <section className="transfers">
       <header>
         <span>{t("transfer.title")}</span>
+        {traffic}
         {transfers.some(finished) && (
           <button className="link-button" onClick={onClearFinished}>
             {t("transfer.clearFinished")}

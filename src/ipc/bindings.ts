@@ -200,6 +200,11 @@ export type AuthMethod = { "type": "auto" } | { "type": "password" } | { "type":
  */
 export type Change = "settings" | "profiles" | "quickCommands" | "vault" | "appLock";
 
+/**
+ * A channel on an SSH connection: the number this side gave it.
+ */
+export type ChannelInfo = { connection: ConnectionInfo, channel: number, };
+
 export type Cjk = "zh-Hans" | "zh-Hant" | "ja" | "ko";
 
 export type CloseReason = "exited" | "lost" | "failed";
@@ -219,6 +224,24 @@ export type CommandGroup = { id: string, name: string, commands: Array<QuickComm
  * What a session connects to, with the settings of its protocol.
  */
 export type Connection = { "protocol": "ssh" } & SshOptions | { "protocol": "telnet" } & Remote | { "protocol": "serial" } & SerialOptions;
+
+/**
+ * An SSH connection, as the frontend names it next to a count: a number given in the order
+ * connections are made since ZShell started, and the port of its TCP connection on this
+ * computer (to the first jump host or the proxy, if it goes through one), unless it runs
+ * through a proxy command.
+ */
+export type ConnectionInfo = { id: number, localPort: number | null, };
+
+/**
+ * What a meter has counted so far.
+ */
+export type Counts = { sent: number, received: number, 
+/**
+ * When something was last sent and received, in milliseconds since the Unix epoch (as
+ * JavaScript's `Date.now()`), if it has been.
+ */
+lastSent: number | null, lastReceived: number | null, };
 
 export type CursorStyle = "block" | "bar" | "underline";
 
@@ -340,6 +363,20 @@ bound: string, connections: number,
  * Why the most recent connection through this rule failed, if one did.
  */
 lastError: CommandError | null, } | { "type": "failed", error: CommandError, } | { "type": "stopped" };
+
+/**
+ * A forwarding rule's run, for [`SessionEvent::ForwardTraffic`].
+ */
+export type ForwardTraffic = { counts: Counts, 
+/**
+ * The connection it runs on.
+ */
+connection: ConnectionInfo, 
+/**
+ * The channels of the connections it carries now, lowest first: the first
+ * [`FORWARD_CHANNELS_LISTED`] of `channel_count`.
+ */
+channels: Array<number>, channelCount: number, };
 
 /**
  * A host found in the config, as it would be imported.
@@ -789,7 +826,7 @@ loginCommands: Array<string>,
  */
 brings: Array<string>, };
 
-export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, signal: string | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, } | { "type": "waiting", connections: number, } | { "type": "moved", moveId: string, };
+export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, signal: string | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, } | { "type": "waiting", connections: number, } | { "type": "terminalTraffic", counts: Counts, channel: ChannelInfo | null, } | { "type": "sftpTraffic", connection: ConnectionInfo, browse: SftpChannelTraffic, transfer: SftpChannelTraffic, } | { "type": "forwardTraffic", ruleId: string, traffic: ForwardTraffic, } | { "type": "moved", moveId: string, };
 
 /**
  * What a session's terminal showed in the tab it moved from: written to the new tab's
@@ -838,6 +875,16 @@ language: string, appearance: Appearance, textSize: TextSize,
  * the default (the terminal's is `terminal.font_family`).
  */
 appFont: string, statusBar: StatusBarSettings, terminal: TerminalSettings, tabs: TabSettings, sidebar: SidebarSettings, power: PowerSettings, files: FileSettings, zmodem: ZmodemSettings, logs: LogSettings, updates: UpdateSettings, };
+
+/**
+ * One of a connection's SFTP channels (browsing, or transfers), for [`SessionEvent::SftpTraffic`].
+ */
+export type SftpChannelTraffic = { counts: Counts, 
+/**
+ * The channel it is on now, if it has been opened. Transfers share the browsing channel
+ * when the server refuses them one of their own, and then have its counts too.
+ */
+channel: number | null, };
 
 export type SidebarSettings = { 
 /**
@@ -1264,6 +1311,9 @@ export const LIGATURE_SUBTABLES = { classRules: 5, coverageRules: 6, glyphRules:
 
 /** No table, glyph or lookup in a font's ligature rules. */
 export const LIGATURE_NONE = 4294967295;
+
+/** How many of a forwarding rule's channels its traffic reports list. */
+export const FORWARD_CHANNELS_LISTED = 20;
 
 /** Processed terminal output is acknowledged in batches of this many bytes (see `session/flow.rs`). */
 export const ACK_BATCH = 262144;

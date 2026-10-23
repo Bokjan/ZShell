@@ -370,6 +370,11 @@ mod tests {
             ),
             ("No table, glyph or lookup in a font's ligature rules.", "LIGATURE_NONE", js(fonts::rules::NONE)),
             (
+                "How many of a forwarding rule's channels its traffic reports list.",
+                "FORWARD_CHANNELS_LISTED",
+                js(session::FORWARD_CHANNELS_LISTED),
+            ),
+            (
                 "Processed terminal output is acknowledged in batches of this many bytes (see `session/flow.rs`).",
                 "ACK_BATCH",
                 js(session::ACK_BATCH),

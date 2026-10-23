@@ -14,11 +14,13 @@ use super::liveness::Liveness;
 use super::JumpChain;
 use crate::model::SshProfile;
 use crate::session::{SessionId, TermIo};
+use crate::traffic::ConnectionInfo;
 
 pub type SshHandle = client::Handle<ClientHandler>;
 
 pub struct Connection {
     handle: Arc<SshHandle>,
+    info: ConnectionInfo,
     /// The profile as it was when connecting; shells opened later (duplicated tabs) use its
     /// terminal options and encoding.
     profile: SshProfile,
@@ -40,6 +42,7 @@ impl Connection {
     pub(super) fn new(
         handle: SshHandle,
         link: Link,
+        info: ConnectionInfo,
         profile: SshProfile,
         jumps: JumpChain,
         routes: RemoteRoutes,
@@ -47,11 +50,16 @@ impl Connection {
     ) -> Arc<Self> {
         let handle = Arc::new(handle);
         let liveness = Liveness::new(link, &handle, profile.ssh.remote.keepalive().is_some());
-        Arc::new(Self { handle, profile, _jumps: jumps, routes, disconnect, shells: Arc::default(), liveness })
+        Arc::new(Self { handle, info, profile, _jumps: jumps, routes, disconnect, shells: Arc::default(), liveness })
     }
 
     pub fn handle(&self) -> &Arc<SshHandle> {
         &self.handle
+    }
+
+    /// How the frontend names it (see [`ConnectionInfo`]).
+    pub fn info(&self) -> ConnectionInfo {
+        self.info
     }
 
     pub fn profile(&self) -> &SshProfile {

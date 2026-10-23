@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use russh::ChannelOpenFailure;
 use tokio::sync::mpsc;
 
-use super::{bridge, host_port, Ctx, ForwardRule, InFlight, Stopping, Tracker};
+use super::{bridge, host_port, Ctx, ForwardRule, InFlight, RuleTraffic, Stopping, Tracker};
 use crate::error::Error;
 use crate::model::ALL_ADDRESSES;
 use crate::ssh::{Incoming, Liveness, RemoteRoutes, SshHandle, ROUTE_QUEUE};
@@ -92,8 +92,8 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
         tokio::select! {
             () = super::at(report) => tracker.report(),
             Some(next) = incoming.recv() => {
-                let (host, port, liveness) = (rule.target_host.clone(), rule.target_port, ctx.liveness());
-                tracker.spawn(async move { connect(next, host, port, liveness).await });
+                let (host, port, liveness, traffic) = (rule.target_host.clone(), rule.target_port, ctx.liveness(), ctx.traffic.clone());
+                tracker.spawn(async move { connect(next, host, port, liveness, traffic).await });
             }
             finished = tracker.next_finished() => tracker.finished(finished),
             () = stopping.requested() => break,
@@ -108,11 +108,11 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
 /// Connects to the target first and only then accepts the channel, so an unreachable
 /// target is reported to the server as a failed open, as OpenSSH does. Each of the target's
 /// addresses is tried in turn, as for a session's host.
-async fn connect(incoming: Incoming, host: String, port: u16, liveness: Liveness) -> Result<()> {
+async fn connect(incoming: Incoming, host: String, port: u16, liveness: Liveness, traffic: Arc<RuleTraffic>) -> Result<()> {
     match crate::net::tcp(&host, port).await {
         Ok(stream) => {
             incoming.reply.accept().await;
-            bridge(stream, incoming.channel, liveness).await;
+            bridge(stream, incoming.channel, liveness, traffic).await;
             Ok(())
         }
         Err(e) => {

@@ -139,7 +139,7 @@ async fn accept_failed(tracker: &mut Tracker<'_>, error: std::io::Error) {
 
 async fn connect(opener: Opener, stream: TcpStream, peer: SocketAddr, host: String, port: u16) -> Result<()> {
     let channel = opener.open(host, port, peer).await?;
-    bridge(stream, channel, opener.liveness).await;
+    bridge(stream, channel, opener.liveness, opener.traffic).await;
     Ok(())
 }
 

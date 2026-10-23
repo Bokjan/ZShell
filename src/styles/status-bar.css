@@ -34,27 +34,6 @@
 .status-state {
   flex-shrink: 0;
 }
-.status-activity {
-  display: flex;
-  gap: 2px;
-  color: var(--indicator-off);
-}
-.status-activity svg {
-  display: block;
-}
-/* On at once, off with a short fade. */
-.status-activity > span {
-  transition: color 0.12s ease-out;
-}
-.status-activity > .on {
-  transition: none;
-}
-.status-activity > .send.on {
-  color: var(--indicator-send);
-}
-.status-activity > .receive.on {
-  color: var(--indicator-receive);
-}
 .status-size {
   min-width: 7ch;
 }

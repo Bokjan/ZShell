@@ -13,7 +13,8 @@
 //! state changes are pushed as [`SessionEvent::Forward`] to every tab of the session through
 //! its [`Hub`], whichever connection runs the rule (see `crate::connections` for how a rule
 //! runs on one connection only). A generation number keeps a replaced or stopped task from
-//! reporting after the fact.
+//! reporting after the fact. So it does for what each run carries ([`SessionEvent::ForwardTraffic`],
+//! see `traffic`).
 
 mod draining;
 mod dynamic;
@@ -22,6 +23,7 @@ mod remote;
 pub(crate) mod socks;
 #[cfg(test)]
 pub(crate) mod testing;
+mod traffic;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -44,9 +46,11 @@ use tokio::time::Instant;
 
 use crate::error::Error;
 use crate::model::{host_port, ForwardKind, ForwardRule};
-use crate::session::{ForwardState, SessionEvent, SessionId, SessionSink};
+use crate::session::{ForwardState, ForwardTraffic, SessionEvent, SessionId, SessionSink};
 use crate::ssh::{Liveness, RemoteRoutes, SshHandle};
+use crate::traffic::{ConnectionInfo, Counted, Reporter};
 pub use draining::{Draining, InFlight};
+use traffic::RuleTraffic;
 
 /// How long to wait for the name a local or dynamic rule listens on to be looked up.
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -99,6 +103,8 @@ pub struct Hub(Mutex<Watchers>);
 struct Watchers {
     sinks: Vec<(SessionId, SessionSink)>,
     states: HashMap<String, ForwardState>,
+    /// What each running rule carries in its current run, as last reported.
+    traffic: HashMap<String, ForwardTraffic>,
 }
 
 impl Hub {
@@ -107,7 +113,19 @@ impl Hub {
         for (_, sink) in &watchers.sinks {
             sink.event(SessionEvent::Forward { rule_id: rule_id.to_owned(), state: state.clone() });
         }
+        // A new run starts counting afresh.
+        if !matches!(state, ForwardState::Active { .. }) {
+            watchers.traffic.remove(rule_id);
+        }
         watchers.states.insert(rule_id.to_owned(), state);
+    }
+
+    fn report_traffic(&self, rule_id: &str, traffic: ForwardTraffic) {
+        let mut watchers = self.0.lock().unwrap();
+        for (_, sink) in &watchers.sinks {
+            sink.event(SessionEvent::ForwardTraffic { rule_id: rule_id.to_owned(), traffic: traffic.clone() });
+        }
+        watchers.traffic.insert(rule_id.to_owned(), traffic);
     }
 
     fn print(&self, text: &str) {
@@ -119,6 +137,7 @@ impl Hub {
 
 struct Shared {
     handle: Arc<SshHandle>,
+    info: ConnectionInfo,
     routes: RemoteRoutes,
     liveness: Liveness,
     hub: Arc<Hub>,
@@ -137,6 +156,7 @@ impl Forwards {
     pub fn new(connection: &crate::ssh::Connection, hub: Arc<Hub>) -> Self {
         Self(Arc::new(Shared {
             handle: connection.handle().clone(),
+            info: connection.info(),
             routes: connection.routes().clone(),
             liveness: connection.liveness().clone(),
             hub,
@@ -150,11 +170,15 @@ impl Forwards {
         self.0.hub.clone()
     }
 
-    /// Reports rule states to session `id` from now on, starting with the current ones.
+    /// Reports rule states (and what they carry) to session `id` from now on, starting with
+    /// the current ones.
     pub fn attach(&self, id: SessionId, sink: SessionSink) {
         let mut watchers = self.0.hub.0.lock().unwrap();
         for (rule_id, state) in &watchers.states {
             sink.event(SessionEvent::Forward { rule_id: rule_id.clone(), state: state.clone() });
+        }
+        for (rule_id, traffic) in &watchers.traffic {
+            sink.event(SessionEvent::ForwardTraffic { rule_id: rule_id.clone(), traffic: traffic.clone() });
         }
         watchers.sinks.push((id, sink));
     }
@@ -194,7 +218,7 @@ impl Forwards {
     /// start is also printed in the terminal (for rules started automatically on connect).
     pub fn start(&self, rule: ForwardRule, announce: bool) {
         let generation = self.0.next_generation.fetch_add(1, Ordering::Relaxed);
-        let ctx = Ctx { shared: self.0.clone(), rule_id: rule.id.clone(), generation };
+        let ctx = Ctx { shared: self.0.clone(), rule_id: rule.id.clone(), generation, traffic: Arc::new(RuleTraffic::new()) };
         // Hold the lock until the new task is registered, so its first report is not dropped.
         let mut running = self.0.running.lock().unwrap();
         // Asked for on a connection that is closing meanwhile (from another tab).
@@ -273,12 +297,14 @@ impl Shared {
     }
 }
 
-/// What a rule's task needs: the connection, and a way to report its own state.
+/// What a rule's task needs: the connection, and a way to report its own state and what its
+/// run carries.
 #[derive(Clone)]
 struct Ctx {
     shared: Arc<Shared>,
     rule_id: String,
     generation: u64,
+    traffic: Arc<RuleTraffic>,
 }
 
 impl Ctx {
@@ -292,7 +318,7 @@ impl Ctx {
 
     /// What opens the channels of the connections a local or dynamic rule takes.
     fn opener(&self) -> Opener {
-        Opener { handle: self.shared.handle.clone(), liveness: self.shared.liveness.clone() }
+        Opener { handle: self.shared.handle.clone(), liveness: self.shared.liveness.clone(), traffic: self.traffic.clone() }
     }
 
     fn report(&self, state: ForwardState) {
@@ -301,6 +327,14 @@ impl Ctx {
         let running = self.shared.running.lock().unwrap();
         if running.get(&self.rule_id).is_some_and(|r| r.generation == Some(self.generation)) {
             self.shared.report(&self.rule_id, state);
+        }
+    }
+
+    /// Reports what the run carries, as [`Ctx::report`] does its state.
+    fn report_traffic(&self) {
+        let running = self.shared.running.lock().unwrap();
+        if running.get(&self.rule_id).is_some_and(|r| r.generation == Some(self.generation)) {
+            self.shared.hub.report_traffic(&self.rule_id, self.traffic.report(self.shared.info));
         }
     }
 }
@@ -312,6 +346,8 @@ async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<InFlight>>
     if let Some(previous) = previous {
         let _ = previous.await;
     }
+    let reporting = ctx.clone();
+    let _reporter = Reporter::start(&ctx.traffic.wake, move || reporting.report_traffic());
     // Ends with `Ok` once stopped.
     let result = match rule.kind {
         ForwardKind::Local => local::run(&rule, &ctx, &mut stopping).await,
@@ -465,6 +501,7 @@ impl<'a> Tracker<'a> {
 struct Opener {
     handle: Arc<SshHandle>,
     liveness: Liveness,
+    traffic: Arc<RuleTraffic>,
 }
 
 impl Opener {
@@ -498,12 +535,14 @@ impl Opener {
 /// of its own: buffers larger than the default 8 KiB send fewer when there is much to copy.
 ///
 /// What `stream` sends is checked for (see [`Checking`]): a client waiting for an answer on a
-/// connection gone dead would otherwise wait until keepalives give up.
-async fn bridge(stream: TcpStream, channel: Channel<Msg>, liveness: Liveness) {
+/// connection gone dead would otherwise wait until keepalives give up. What goes through the
+/// channel counts on the rule's `traffic`.
+async fn bridge(stream: TcpStream, channel: Channel<Msg>, liveness: Liveness, traffic: Arc<RuleTraffic>) {
     const BUFFER: usize = 64 << 10;
     let _ = stream.set_nodelay(true);
     let mut stream = Checking { inner: stream, liveness };
-    let mut channel = channel.into_stream();
+    let _carrying = traffic.carrying(channel.id().into());
+    let mut channel = Counted::new(channel.into_stream(), traffic.meter.clone());
     let _ = tokio::io::copy_bidirectional_with_sizes(&mut stream, &mut channel, BUFFER, BUFFER).await;
 }
 
@@ -541,215 +580,4 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Checking<S> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::testing::{free_port, local_rule, until, Tab};
-    use super::*;
-    use crate::ssh::testing::{connect, Anyone};
-
-    /// The forwards of a new connection, and a tab of its session watching them.
-    async fn forwards() -> (Forwards, Tab) {
-        let connection = connect(Anyone, "web").await;
-        let forwards = Forwards::new(&connection, Arc::new(Hub::default()));
-        let tab = Tab::new();
-        forwards.attach(1, tab.io.sink());
-        (forwards, tab)
-    }
-
-    /// Whether the task of rule `rule_id` has ended.
-    fn ended(forwards: &Forwards, rule_id: &str) -> bool {
-        forwards.0.running.lock().unwrap().get(rule_id).is_some_and(|r| r.task.inner().is_finished())
-    }
-
-    #[tokio::test]
-    async fn starts_and_stops_a_rule() {
-        let (forwards, tab) = forwards().await;
-        forwards.start(local_rule("r1", 0), false);
-        assert_eq!(tab.next_kind("r1").await, "starting");
-        let active = tab.next_state("r1").await;
-        assert_eq!(active["type"], "active");
-        assert!(active["bound"].as_str().unwrap().starts_with("127.0.0.1:"));
-        assert!(forwards.has("r1") && forwards.is_running("r1"));
-        assert_eq!(forwards.running().len(), 1);
-
-        forwards.stop("r1");
-        assert_eq!(tab.next_kind("r1").await, "stopped");
-        assert!(!forwards.has("r1") && !forwards.is_running("r1"));
-        assert!(forwards.running().is_empty());
-    }
-
-    /// A rule started again on the same port: the new run binds it once the old one has let
-    /// it go, and the old one's reports no longer count.
-    #[tokio::test]
-    async fn restarting_a_rule_reuses_its_port() {
-        let (forwards, tab) = forwards().await;
-        let rule = local_rule("r1", free_port());
-        forwards.start(rule.clone(), false);
-        assert_eq!(tab.next_kind("r1").await, "starting");
-        let first = tab.next_state("r1").await;
-        assert_eq!(first["type"], "active");
-
-        forwards.start(rule, false);
-        assert_eq!(tab.next_kind("r1").await, "starting");
-        let second = tab.next_state("r1").await;
-        assert_eq!(second["type"], "active", "{second}");
-        assert_eq!(second["bound"], first["bound"]);
-        assert_eq!(forwards.running().len(), 1);
-
-        // The replaced run's generation reports nothing; the current one's does.
-        let ctx = |generation| Ctx { shared: forwards.0.clone(), rule_id: "r1".into(), generation };
-        let current = forwards.0.next_generation.load(Ordering::Relaxed) - 1;
-        assert!(tab.quiet());
-        ctx(current - 1).report(ForwardState::Stopped);
-        assert!(tab.quiet());
-        ctx(current).report(ForwardState::Stopped);
-        assert_eq!(tab.next_kind("r1").await, "stopped");
-    }
-
-    /// Each start takes a new generation, and a stopped rule's run reports nothing more.
-    #[tokio::test]
-    async fn a_stopped_run_no_longer_reports() {
-        let (forwards, tab) = forwards().await;
-        forwards.start(local_rule("r1", 0), false);
-        forwards.start(local_rule("r2", 0), false);
-        assert_eq!(forwards.0.next_generation.load(Ordering::Relaxed), 2);
-        assert_eq!(tab.next_kind("r1").await, "starting");
-        assert_eq!(tab.next_kind("r1").await, "active");
-
-        forwards.stop("r1");
-        assert_eq!(tab.next_kind("r1").await, "stopped");
-        Ctx { shared: forwards.0.clone(), rule_id: "r1".into(), generation: 0 }.report(ForwardState::Starting);
-        until("the stopped run's end", || ended(&forwards, "r1")).await;
-        // Its run has ended: nothing more can come.
-        assert_eq!(tab.reported("r1"), Vec::<String>::new());
-        assert!(forwards.running().iter().all(|rule| rule.id == "r2"));
-    }
-
-    /// Once the connection closes, its rules stop and none starts again.
-    #[tokio::test]
-    async fn nothing_starts_after_stop_all() {
-        let (forwards, tab) = forwards().await;
-        forwards.start(local_rule("r1", 0), false);
-        assert_eq!(tab.next_kind("r1").await, "starting");
-        assert_eq!(tab.next_kind("r1").await, "active");
-
-        let (rules, tasks) = forwards.stop_all();
-        assert_eq!(rules.iter().map(|rule| rule.id.as_str()).collect::<Vec<_>>(), ["r1"]);
-        assert_eq!(tab.next_kind("r1").await, "stopped");
-        for task in tasks {
-            task.await.unwrap();
-        }
-
-        forwards.start(local_rule("r1", 0), false);
-        assert_eq!(tab.next_kind("r1").await, "stopped");
-        assert!(tab.quiet());
-        assert!(!forwards.has("r1") && forwards.running().is_empty());
-        assert!(forwards.0.running.lock().unwrap().is_empty());
-    }
-
-    /// A rule that failed to start is still had (until stopped), but no longer runs.
-    #[tokio::test]
-    async fn a_failed_rule_is_not_running() {
-        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = taken.local_addr().unwrap().port();
-        let (forwards, tab) = forwards().await;
-        forwards.start(local_rule("r1", port), false);
-        assert_eq!(tab.next_kind("r1").await, "starting");
-        let failed = tab.next_state("r1").await;
-        assert_eq!(failed["type"], "failed", "{failed}");
-        until("the failed run's end", || ended(&forwards, "r1")).await;
-        assert!(forwards.has("r1"));
-        assert!(!forwards.is_running("r1"));
-        assert!(forwards.running().is_empty());
-    }
-
-    /// A server that answers no request for a `direct-tcpip` channel by itself, as one waiting
-    /// to connect to a target that drops packets: each request's channel and reply go to the
-    /// test.
-    struct Unanswering(tokio::sync::mpsc::UnboundedSender<(Channel<russh::server::Msg>, russh::server::ChannelOpenHandle)>);
-
-    impl russh::server::Handler for Unanswering {
-        type Error = russh::Error;
-
-        async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
-            Ok(russh::server::Auth::Accept)
-        }
-
-        async fn channel_open_direct_tcpip(
-            &mut self,
-            channel: Channel<russh::server::Msg>,
-            _host: &str,
-            _port: u32,
-            _originator: &str,
-            _originator_port: u32,
-            reply: russh::server::ChannelOpenHandle,
-            _session: &mut russh::server::Session,
-        ) -> Result<(), Self::Error> {
-            let _ = self.0.send((channel, reply));
-            Ok(())
-        }
-    }
-
-    /// A channel the server doesn't open in time is given up on, and closed if the server
-    /// opens it after all.
-    #[tokio::test(start_paused = true)]
-    async fn gives_up_on_a_channel_the_server_does_not_open_in_time() {
-        let (requests, mut requested) = tokio::sync::mpsc::unbounded_channel();
-        let connection = connect(Unanswering(requests), "").await;
-        let opener = Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone() };
-        let opened = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await;
-        let Err(error) = opened else { panic!("the channel opened") };
-        assert_eq!(error.downcast_ref::<Error>().map(Error::code), Some("forward.channelTimeout"), "{error:#}");
-
-        let (mut channel, reply) = requested.recv().await.unwrap();
-        reply.accept().await;
-        let closed = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                match channel.wait().await {
-                    Some(russh::ChannelMsg::Close) | None => break,
-                    Some(_) => {}
-                }
-            }
-        });
-        assert!(closed.await.is_ok(), "the channel is still open");
-    }
-
-    /// A client sending through a carried connection once the SSH connection has gone dead
-    /// ends it soon, rather than when keepalives give up (an hour away here).
-    #[tokio::test]
-    async fn sending_on_a_dead_connection_ends_it() {
-        use tokio::io::AsyncWriteExt;
-
-        let (connection, stall) =
-            crate::ssh::testing::connect_stalling(crate::ssh::testing::Accepting::default(), Duration::from_secs(3600)).await;
-        let opener = Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone() };
-        let channel = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await.unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
-        let (ours, _) = listener.accept().await.unwrap();
-        tokio::spawn(bridge(ours, channel, opener.liveness.clone()));
-        // Longer than the check of opening the channel takes, in tests.
-        tokio::time::sleep(Duration::from_millis(1500)).await;
-        let mut reason = connection.disconnect_reason();
-        stall.now();
-        client.write_all(b"SELECT 1;").await.unwrap();
-        let ended = tokio::time::timeout(Duration::from_secs(5), reason.wait_for(Option::is_some)).await;
-        assert!(ended.is_ok(), "the connection is still open");
-    }
-
-    /// The first change is reported at once; those right after it together, once the
-    /// interval has passed.
-    #[tokio::test(start_paused = true)]
-    async fn reports_changes_at_most_once_an_interval() {
-        let mut throttle = Throttle::default();
-        let start = Instant::now();
-        assert!(throttle.changed(start));
-        assert_eq!(throttle.due(), None);
-        assert!(!throttle.changed(start + Duration::from_millis(10)));
-        assert!(!throttle.changed(start + Duration::from_millis(50)));
-        assert_eq!(throttle.due(), Some(start + REPORT_INTERVAL));
-        throttle.reported(start + REPORT_INTERVAL);
-        assert_eq!(throttle.due(), None);
-        // After a quiet interval, at once again.
-        assert!(throttle.changed(start + REPORT_INTERVAL * 3));
-    }
-}
+mod tests;

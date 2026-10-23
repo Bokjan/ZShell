@@ -7,6 +7,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use super::{Flow, SessionEvent};
 use crate::encoding::Codec;
 use crate::logging::LogSlot;
+use crate::traffic::{ChannelInfo, Meter, Reporter, Wake};
 use crate::zmodem::Zmodem;
 
 /// The first byte of a message on a session's channel: terminal output follows...
@@ -34,16 +35,66 @@ pub struct SessionSink {
     log: Arc<LogSlot>,
     /// The session's character encoding; `None` for UTF-8.
     pub(super) codec: Option<Arc<Codec>>,
+    traffic: Arc<TerminalTraffic>,
+}
+
+/// What a session's terminal sends and receives, as the remote side has it (before the
+/// session's encoding is converted, ZMODEM transfers included, our own messages and what is
+/// typed at prompts before the session starts not), reported to its tab.
+pub struct TerminalTraffic {
+    meter: Arc<Meter>,
+    channel: Arc<Mutex<Option<ChannelInfo>>>,
+    wake: Wake,
+    _reporter: Reporter,
+}
+
+impl TerminalTraffic {
+    /// Reported on `to`, the session's channel.
+    fn new(to: Arc<Mutex<Channel>>) -> Self {
+        let wake = Wake::default();
+        let meter = Arc::new(Meter::new(&wake));
+        let channel = Arc::new(Mutex::new(None));
+        let (counted, on) = (meter.clone(), channel.clone());
+        let reporter = Reporter::start(&wake, move || {
+            let event = SessionEvent::TerminalTraffic { counts: counted.counts(), channel: *on.lock().unwrap() };
+            if let Some(message) = event_message(&event) {
+                let _ = to.lock().unwrap().send(message);
+            }
+        });
+        Self { meter, channel, wake, _reporter: reporter }
+    }
+
+    pub fn sent(&self, bytes: usize) {
+        self.meter.sent(bytes);
+    }
+
+    #[cfg(test)]
+    pub fn counts(&self) -> crate::traffic::Counts {
+        self.meter.counts()
+    }
+
+    /// The SSH channel the session's shell runs on.
+    pub fn on_channel(&self, channel: ChannelInfo) {
+        *self.channel.lock().unwrap() = Some(channel);
+        self.wake.wake();
+    }
 }
 
 impl SessionSink {
     pub(super) fn new(channel: Channel, zmodem: Arc<Zmodem>, log: Arc<LogSlot>, codec: Option<Arc<Codec>>) -> Self {
-        Self { channel: Arc::new(Mutex::new(channel)), flow: Arc::default(), zmodem, log, codec }
+        let channel = Arc::new(Mutex::new(channel));
+        let traffic = Arc::new(TerminalTraffic::new(channel.clone()));
+        Self { channel, flow: Arc::default(), zmodem, log, codec, traffic }
+    }
+
+    pub fn traffic(&self) -> &TerminalTraffic {
+        &self.traffic
     }
 
     /// Output from the remote side (or the local shell): shown in the terminal, unless a
     /// ZMODEM transfer starts or is running.
     pub fn output(&self, bytes: Vec<u8>) {
+        self.traffic.meter.received(bytes.len());
         let shown = self.zmodem.output(bytes, self);
         if !shown.is_empty() {
             self.remote(shown);

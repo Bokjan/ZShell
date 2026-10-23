@@ -13,6 +13,7 @@
 @import "./styles/command-palette.css";
 @import "./styles/window-controls.css";
 @import "./styles/status-dot.css";
+@import "./styles/traffic-lights.css";
 @import "./styles/terminals.css";
 @import "./styles/pane-drag.css";
 @import "./styles/zmodem-bar.css";

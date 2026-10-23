@@ -112,6 +112,10 @@
   background: var(--bg-active);
   font-size: calc(12px * var(--text-scale));
 }
+.sftp-traffic {
+  align-self: center;
+  margin-left: auto;
+}
 .sftp-toolbar .icon-button.on {
   background: var(--bg-active);
   color: var(--text);

@@ -4,6 +4,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { announce } from "../lib/announce";
 import { sftp, type FileEntry, type SessionId } from "../ipc/api";
+import type { SftpDetail, SftpTraffic, TrafficMeter } from "../lib/traffic";
 import { open } from "../ipc/fileDialog";
 import { filterEntries, sortedEntries, storeView, storedView, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
@@ -30,6 +31,7 @@ import { useRowWindow } from "./sftp/useRowWindow";
 import { useTransfers } from "./sftp/useTransfers";
 import { parentPath } from "../lib/remotePath";
 import { TransferList } from "./TransferList";
+import { TrafficLights, useTrafficText } from "./TrafficLights";
 
 interface Props {
   /** The pane whose connection it shows, and whose terminal it may follow. */
@@ -38,6 +40,8 @@ interface Props {
   connected: boolean;
   /** Whether this panel is visible and should receive file drops. */
   active: boolean;
+  /** What the connection's SFTP channels carry. */
+  traffic: SftpTraffic | undefined;
   /** How many uploads and downloads are running, each time that changes. */
   onTransfers(count: number): void;
   /** How many files are open in a local editor, each time that changes. */
@@ -56,8 +60,19 @@ interface Menu {
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
  */
-export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, onEdits, onQuestions }: Props) {
+export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTransfers, onEdits, onQuestions }: Props) {
   const { t } = useTranslation();
+  const trafficText = useTrafficText();
+  /** The tooltip of a channel's lights: `shared` when transfers go on the browsing channel. */
+  const channelSummary = (title: string, meter: TrafficMeter<SftpDetail> | undefined, shared: boolean) => {
+    const detail = meter?.detail;
+    return [
+      title,
+      detail?.channel != null ? trafficText.channel(detail.connection, detail.channel) : t("traffic.notOpened"),
+      ...(shared ? [t("traffic.sharedChannel")] : []),
+      ...trafficText.counts(meter?.counts),
+    ];
+  };
   const [view, setView] = useState<FileView>(storedView);
   /** The name filter; null while the filter field is closed. */
   const [filter, setFilter] = useState<string | null>(null);
@@ -426,6 +441,11 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
         <button disabled={!connected || !cwd} onClick={() => setNewFolder("")}>
           {t("sftp.newFolder")}
         </button>
+        <TrafficLights
+          className="sftp-traffic"
+          source={traffic?.browse}
+          summary={() => channelSummary(t("traffic.browse"), traffic?.browse, false)}
+        />
       </div>
       {filter !== null && (
         <div className="sftp-filter">
@@ -523,6 +543,20 @@ export function SftpPanel({ paneKey, sessionId, connected, active, onTransfers, 
 
       <TransferList
         transfers={transfers.transfers}
+        traffic={
+          <TrafficLights
+            source={traffic?.transfer}
+            rates
+            summary={() => {
+              const channel = traffic?.transfer.detail?.channel;
+              return channelSummary(
+                t("traffic.transfers"),
+                traffic?.transfer,
+                channel != null && channel === traffic?.browse.detail?.channel,
+              );
+            }}
+          />
+        }
         onCancel={(id) => void sftp.cancel(id)}
         onDismiss={transfers.remove}
         onClearFinished={transfers.clearFinished}

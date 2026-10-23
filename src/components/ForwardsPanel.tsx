@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   errorMessage,
+  FORWARD_CHANNELS_LISTED,
   forwards,
   profileForwardRules,
   profileForwards,
@@ -14,11 +15,13 @@ import {
 import { directory } from "../lib/directory";
 import { forwardMapping as mapping } from "../lib/format";
 import { attempt } from "../lib/attempt";
+import type { ForwardDetail, ForwardMeters } from "../lib/traffic";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorBanner } from "./ErrorMessage";
 import { ForwardDialog, explainRule } from "./ForwardDialog";
 import { IconButton } from "./IconButton";
 import { PencilIcon, TrashIcon } from "./icons";
+import { TrafficLights, useTrafficText } from "./TrafficLights";
 
 interface Props {
   sessionId: SessionId | null;
@@ -28,6 +31,8 @@ interface Props {
   quick: boolean;
   /** Live rule states on this tab's connection, by rule id. */
   states: Record<string, ForwardState>;
+  /** What the rules that run carry. */
+  traffic: ForwardMeters | undefined;
 }
 
 const isRunning = (state: ForwardState | undefined) => state?.type === "starting" || state?.type === "active";
@@ -35,8 +40,9 @@ const isRunning = (state: ForwardState | undefined) => state?.type === "starting
 /** Puts the session with its new rules in this window's directory; the other windows read theirs again. */
 const profileSaved = (profile: Profile) => directory.profileSaved(profile);
 
-export function ForwardsPanel({ sessionId, connected, profile, quick, states }: Props) {
+export function ForwardsPanel({ sessionId, connected, profile, quick, states, traffic }: Props) {
   const { t } = useTranslation();
+  const trafficText = useTrafficText();
   // undefined: dialog closed; null: adding a new rule.
   const [editing, setEditing] = useState<ForwardRule | null | undefined>(undefined);
   const [deleting, setDeleting] = useState<ForwardRule | null>(null);
@@ -75,6 +81,36 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
 
   const closeDialog = useCallback(() => setEditing(undefined), []);
 
+  /** The tooltip of all the rules' lights: their channels on each connection they run on. */
+  const allSummary = () => {
+    const on = new Map<number, ForwardDetail>();
+    for (const { detail } of traffic?.all() ?? []) {
+      if (!detail) continue;
+      const seen = on.get(detail.connection.id);
+      on.set(
+        detail.connection.id,
+        seen
+          ? { ...seen, channels: [...seen.channels, ...detail.channels], channelCount: seen.channelCount + detail.channelCount }
+          : detail,
+      );
+    }
+    const channels = [...on.values()].map(({ connection, channels, channelCount }) => {
+      const listed = [...channels].sort((a, b) => a - b).slice(0, FORWARD_CHANNELS_LISTED);
+      return trafficText.channels(connection, listed, channelCount);
+    });
+    return [t("traffic.allRules"), ...channels, ...trafficText.counts(traffic?.counts)];
+  };
+
+  /** The tooltip of a rule's lights. */
+  const ruleSummary = (ruleId: string) => {
+    const meter = traffic?.get(ruleId);
+    const detail = meter?.detail;
+    return [
+      ...(detail ? [trafficText.channels(detail.connection, detail.channels, detail.channelCount)] : []),
+      ...trafficText.counts(meter?.counts),
+    ];
+  };
+
   const status = (rule: ForwardRule, state: ForwardState | undefined) => {
     if (!state || state.type === "stopped") return t("forwards.status.stopped");
     switch (state.type) {
@@ -102,6 +138,9 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
     <div className="forwards-panel">
       <div className="forwards-toolbar">
         <span className="forwards-title">{t("forwards.title")}</span>
+        {Object.values(states).some((state) => state.type === "active") && (
+          <TrafficLights className="forwards-traffic" source={traffic} rates summary={allSummary} />
+        )}
         <button onClick={() => setEditing(null)}>{t("forwards.add")}</button>
       </div>
 
@@ -130,6 +169,11 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
                     {rule.autoStart && <span className="forward-tag">{t("forwards.autoStartTag")}</span>}
                   </span>
                 </div>
+                {state?.type === "active" && (
+                  <div className="forward-traffic">
+                    <TrafficLights source={traffic?.get(rule.id)} rates summary={() => ruleSummary(rule.id)} />
+                  </div>
+                )}
                 {lastError && <div className="forward-last-error">{t("forwards.status.lastError", { error: lastError.message })}</div>}
               </div>
               <span className="forward-actions">

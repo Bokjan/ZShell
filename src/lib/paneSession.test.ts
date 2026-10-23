@@ -484,26 +484,29 @@ describe("ending", () => {
 });
 
 describe("traffic", () => {
-  it("counts what the terminal sends and receives on each connection", async () => {
-    const { pane, opened, setLine } = setup({ loginCommands: () => ["cd /"] });
+  it("keeps what the backend reports for the current connection", async () => {
+    const { pane, opened } = setup();
     pane.connect();
-    // Nothing is sent before there is a session to send it to.
-    expect(pane.input("x")).toBe(false);
-    const session = opened[0].resolve();
+    opened[0].resolve();
     await settle();
     opened[0].event({ type: "connected" });
-    opened[0].output("é$ ");
-    setLine("$ ");
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(session.writes).toEqual(["cd /\r"]);
-    pane.input("ls\r");
-    pane.inputBinary("\x1b[M !!");
-    expect(pane.traffic).toMatchObject({ sent: 5 + 3 + 6, received: 4 });
-    expect(pane.traffic.lastSent).toBe(Date.now());
+    const counts = { sent: 5, received: 4, lastSent: 1000, lastReceived: 2000 };
+    const connection = { id: 3, localPort: 50000 };
+    opened[0].event({ type: "terminalTraffic", counts, channel: { connection, channel: 2 } });
+    opened[0].event({ type: "sftpTraffic", connection, browse: { counts, channel: 5 }, transfer: { counts, channel: 6 } });
+    opened[0].event({ type: "forwardTraffic", ruleId: "r1", traffic: { counts, connection, channels: [7], channelCount: 1 } });
+    expect(pane.traffic).toMatchObject({ counts, detail: { connection, channel: 2 } });
+    expect(pane.sftpTraffic.transfer).toMatchObject({ counts, detail: { connection, channel: 6 } });
+    expect(pane.forwardTraffic.get("r1")?.counts).toEqual(counts);
+
+    // A rule that stops (or starts again) starts its count afresh.
+    opened[0].event({ type: "forward", ruleId: "r1", state: { type: "stopped" } });
+    expect(pane.forwardTraffic.get("r1")).toBeUndefined();
 
     opened[0].event(lost());
     await vi.advanceTimersByTimeAsync(2000);
-    expect(pane.traffic).toMatchObject({ sent: 0, received: 0, lastSent: null, lastReceived: null });
+    expect(pane.traffic).toMatchObject({ counts: { sent: 0, received: 0, lastSent: null, lastReceived: null }, detail: null });
+    expect(pane.sftpTraffic.browse.detail).toBeNull();
   });
 
   it("reports output, but not what answers typing or resizing", async () => {

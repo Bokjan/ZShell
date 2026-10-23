@@ -25,10 +25,13 @@ use crate::sftp::channels::Channels;
 use crate::sftp::shell_dir::ShellDirs;
 use crate::sftp::transfer::TransferSlots;
 use crate::ssh;
+use crate::traffic::Viewers;
 
 /// A live SSH connection and what runs on it besides shells.
 pub struct LiveConnection {
     ssh: Arc<ssh::Connection>,
+    /// The tabs using it, which its SFTP traffic is reported to.
+    viewers: Viewers,
     sftp: Channels,
     /// What has been found of its tabs' shells on the server.
     shell_dirs: ShellDirs,
@@ -231,9 +234,11 @@ impl Connections {
             let sibling = map.values().find(|other| !profile_id.is_empty() && other.ssh.profile().id == *profile_id);
             let hub = sibling.map(|other| other.forwards.hub()).unwrap_or_else(|| Arc::new(Hub::default()));
             let forwards = Forwards::new(&ssh, hub);
+            let viewers = Viewers::default();
             let connection = Arc::new(LiveConnection {
+                sftp: Channels::new(ssh.info(), viewers.clone()),
                 ssh,
-                sftp: Channels::default(),
+                viewers,
                 shell_dirs: ShellDirs::default(),
                 forwards,
                 keep_forwards: AtomicBool::new(false),
@@ -256,6 +261,10 @@ impl Connections {
 
     fn register(map: &mut Map, id: SessionId, connection: Arc<LiveConnection>, io: &TermIo) {
         connection.forwards.attach(id, io.sink());
+        if let Some(traffic) = connection.sftp.traffic(connection.ssh.info()) {
+            io.event(traffic);
+        }
+        connection.viewers.add(id, io.sink());
         map.insert(id, connection);
     }
 
@@ -281,6 +290,7 @@ impl Connections {
                 return;
             };
             connection.forwards.detach(id);
+            connection.viewers.remove(id);
             if connections.values().any(|other| Arc::ptr_eq(other, &connection)) {
                 return;
             }

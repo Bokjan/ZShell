@@ -37,7 +37,8 @@ pub struct Route {
 
 /// Connects to `host:port` directly or through `proxy`, whose saved password is in
 /// `passwords`. `user` is the user name for a proxy command's `%r`; `keepalive`, TCP
-/// keepalives on the connection to the host or the proxy.
+/// keepalives on the connection to the host or the proxy. Also returns the port of that TCP
+/// connection on this computer, unless a proxy command carries it.
 pub async fn connect(
     host: &str,
     port: u16,
@@ -46,7 +47,7 @@ pub async fn connect(
     passwords: &SavedPasswords,
     keepalive: Option<Duration>,
     io: &mut TermIo,
-) -> Result<Box<dyn Stream>> {
+) -> Result<(Box<dyn Stream>, Option<u16>)> {
     if let Some(proxy) = proxy {
         return crate::proxy::connect(proxy, host, port, user, passwords, keepalive, io).await;
     }
@@ -54,7 +55,13 @@ pub async fn connect(
     if let Some(interval) = keepalive {
         set_keepalive(&stream, interval);
     }
-    Ok(Box::new(stream))
+    let local_port = local_port(&stream);
+    Ok((Box::new(stream), local_port))
+}
+
+/// The port of `stream` on this computer.
+pub fn local_port(stream: &TcpStream) -> Option<u16> {
+    stream.local_addr().ok().map(|address| address.port())
 }
 
 /// Opens a TCP connection to `host:port`, trying its addresses in turn, each for up to 15

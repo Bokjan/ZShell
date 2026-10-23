@@ -40,14 +40,17 @@
   .sftp-list tbody tr.selected .file-icon {
     color: inherit;
   }
-  /* The status bar's lights: on is highlighted, off is grayed. */
-  .status-activity {
+  /* The traffic lights: on is highlighted, off is grayed. */
+  .traffic-lights {
     forced-color-adjust: none;
     color: GrayText;
   }
-  .status-activity > .send.on,
-  .status-activity > .receive.on {
+  .traffic-lights > .send.on,
+  .traffic-lights > .receive.on {
     color: Highlight;
+  }
+  .traffic-rate {
+    color: CanvasText;
   }
   /* Status and color marks are their color, and so is a color field's every part. */
   .status-dot,

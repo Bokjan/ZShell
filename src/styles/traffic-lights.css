@@ -1,0 +1,41 @@
+/* The lights for data sent and received (`TrafficLights`): in the status bar, the file panel
+   and the forwarding panel. With rates, each light is followed by its own; the rates keep a
+   width, so that what comes after them doesn't move as the numbers change. */
+
+.traffic-lights {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  font-size: calc(11px * var(--text-scale));
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  color: var(--indicator-off);
+}
+.traffic-lights svg {
+  display: block;
+}
+/* On at once, off with a short fade. */
+.traffic-lights > .send,
+.traffic-lights > .receive {
+  transition: color 0.12s ease-out;
+}
+.traffic-lights > .on {
+  transition: none;
+}
+.traffic-lights > .send.on {
+  color: var(--indicator-send);
+}
+.traffic-lights > .receive.on {
+  color: var(--indicator-receive);
+}
+.traffic-rate {
+  color: var(--text-muted);
+}
+.send + .traffic-rate {
+  min-width: 8ch;
+  margin-right: 4px;
+}
