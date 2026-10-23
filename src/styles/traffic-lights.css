@@ -1,6 +1,7 @@
 /* The lights for data sent and received (`TrafficLights`): in the status bar, the file panel
-   and the forwarding panel. With rates, each light is followed by its own; the rates keep a
-   width, so that what comes after them doesn't move as the numbers change. */
+   and the forwarding panel. With rates, each light is followed by its own. Both rates keep a
+   width that holds the longest one ("1,023 KB/s"), so that neither the lights nor what is
+   beside them move as the numbers change, also where they are aligned to the right. */
 
 .traffic-lights {
   display: inline-flex;
@@ -33,9 +34,9 @@
   color: var(--indicator-receive);
 }
 .traffic-rate {
+  min-width: 9ch;
   color: var(--text-muted);
 }
 .send + .traffic-rate {
-  min-width: 8ch;
   margin-right: 4px;
 }
