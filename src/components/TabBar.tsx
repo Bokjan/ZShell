@@ -515,6 +515,7 @@ function TabItem(props: TabItemProps) {
     if (pane.status === "connecting") return t("tabs.status.connecting");
     const parts = [
       pane.status === "closed" && t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed"),
+      pane.waiting !== null && t("tabs.status.waiting", { count: pane.waiting }),
       bellRang && t("tabs.bell"),
       noticed && t("tabs.notice"),
       progressLabel,

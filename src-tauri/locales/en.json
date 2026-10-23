@@ -4,6 +4,8 @@
     "closed": "[Connection closed]",
     "closedWithStatus": "[Connection closed, exit status {status}]",
     "closedBySignal": "[Connection closed, the shell was terminated by signal: {signal}]",
+    "waitingForForwards": "[Shell exited, waiting for the connections of port forwarding {forwards} to close]",
+    "waitingHint": "Press Enter to start a new shell, Ctrl+C to close these connections or Ctrl+D to close",
     "savedPasswordRejected": "The saved password was rejected by the server.",
     "incorrectPassphrase": "Incorrect passphrase.",
     "connectingVia": "Connecting to {user}@{host}:{port} via {jump} ...",

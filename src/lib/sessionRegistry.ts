@@ -191,6 +191,7 @@ export function createSessionRegistry(
             store.dispatch({ type: "close", keys: [key] });
             return true;
           },
+          waiting: (connections) => update({ waiting: connections }),
           close: () => emit("close", key),
           retry: (at) => update({ retryAt: at }),
           // Often: only a tab in the background that isn't marked yet changes the store. The

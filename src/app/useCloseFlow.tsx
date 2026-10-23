@@ -17,10 +17,11 @@ import { windows } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
 
 /**
- * Why closing a pane needs confirmation: its file panel is at work (even disconnected), a
- * remote session is connected, or a local program runs.
+ * Why closing a pane needs confirmation: its file panel is at work (even disconnected), its
+ * port forwarding carries connections (closing cuts them), a remote session is connected, or a
+ * local program runs.
  */
-type Busy = PaneWork | { kind: "connected" } | { kind: "process"; name: string };
+type Busy = PaneWork | { kind: "forwards"; count: number } | { kind: "connected" } | { kind: "process"; name: string };
 
 interface Closing {
   panes: number[];
@@ -47,8 +48,12 @@ async function busyPanes(store: TabStore): Promise<number> {
 async function busyReason(pane: Pane): Promise<Busy | null> {
   const work = paneWork(pane);
   if (work) return work;
+  if (pane.waiting !== null) return { kind: "forwards", count: pane.waiting };
   if (pane.status !== "connected" || pane.sessionId == null) return null;
-  if (pane.target.kind !== "local") return { kind: "connected" };
+  if (pane.target.kind !== "local") {
+    const count = await forwards.connections([pane.sessionId]).catch(() => 0);
+    return count > 0 ? { kind: "forwards", count } : { kind: "connected" };
+  }
   const name = await sessionForeground(pane.sessionId).catch(() => null);
   return name === null ? null : { kind: "process", name };
 }
@@ -63,8 +68,9 @@ export function useCloseFlow(store: TabStore, sessions: SessionRegistry) {
   const { t } = useTranslation();
   // Panes waiting for the user to confirm closing them, with why the first busy one is busy.
   const [closing, setClosing] = useState<Closing | null>(null);
-  // Closing panes whose connections run port forwarding another tab of the session could take over.
-  const [keeping, setKeeping] = useState<{ panes: number[]; ids: SessionId[]; rules: ForwardRule[] } | null>(null);
+  // Closing panes whose connections run port forwarding another tab of the session could take
+  // over, with the connections it carries, which closing cuts either way.
+  const [keeping, setKeeping] = useState<{ panes: number[]; ids: SessionId[]; rules: ForwardRule[]; connections: number } | null>(null);
   // The window waiting for the user to confirm closing it, or quitting.
   const [closingWindow, setClosingWindow] = useState<PendingClose | null>(null);
 
@@ -111,7 +117,8 @@ export function useCloseFlow(store: TabStore, sessions: SessionRegistry) {
       const ids = panes.flatMap(({ pane }) => (pane.status === "connected" && pane.sessionId != null ? [pane.sessionId] : []));
       const rules = ids.length > 0 ? await forwards.keepCandidates(ids).catch(() => []) : [];
       if (rules.length > 0) {
-        setKeeping({ panes: keys, ids, rules });
+        const connections = await forwards.connections(ids).catch(() => 0);
+        setKeeping({ panes: keys, ids, rules, connections });
         return;
       }
       if (currentSettings().tabs.confirmClose) {
@@ -143,8 +150,16 @@ export function useCloseFlow(store: TabStore, sessions: SessionRegistry) {
     [store, requestClose],
   );
 
-  // A pane's session asks (Ctrl+D in a pane left open after its shell exited).
-  useEffect(() => sessions.on("close", closePane), [sessions, closePane]);
+  // A pane's session asks (Ctrl+D in a pane left open after its shell exited). One waiting for
+  // forwarded connections closes without asking: Ctrl+D is the way it offers to cut them.
+  const closeAsked = useCallback(
+    (key: number) => {
+      if (findPane(store.get().tabs, key)?.pane.waiting != null) closePanes([key]);
+      else closePane(key);
+    },
+    [store, closePane, closePanes],
+  );
+  useEffect(() => sessions.on("close", closeAsked), [sessions, closeAsked]);
 
   /** ⌘W / Ctrl+Shift+W: the focused pane of a split tab, otherwise the tab (the window if there is none). */
   const closeFocused = useCallback(() => {
@@ -215,6 +230,7 @@ export function useCloseFlow(store: TabStore, sessions: SessionRegistry) {
     if (panes.length > 1) return t("closeConfirm.panes", { name });
     const what = tabs === 0 ? "pane" : "tab";
     if (busy.kind === "connected") return t(`closeConfirm.connected.${what}`, { name });
+    if (busy.kind === "forwards") return t(`closeConfirm.forwards.${what}`, { count: busy.count, name });
     if (busy.kind === "transfers") return t(`closeConfirm.transfers.${what}`, { count: busy.count, name });
     if (busy.kind === "edits") return t(`closeConfirm.edits.${what}`, { count: busy.count, name });
     if (busy.kind === "questions") return t(`closeConfirm.questions.${what}`, { count: busy.count, name });
@@ -236,7 +252,9 @@ export function useCloseFlow(store: TabStore, sessions: SessionRegistry) {
       {keeping && (
         <ConfirmDialog
           title={t("closeForwards.title")}
-          message={t("closeForwards.message")}
+          message={
+            keeping.connections > 0 ? t("closeForwards.messageConnections", { count: keeping.connections }) : t("closeForwards.message")
+          }
           confirmLabel={t("closeForwards.keep")}
           secondaryLabel={t("closeForwards.stop")}
           onSecondary={() => void closeKeeping(false)}

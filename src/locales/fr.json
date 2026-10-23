@@ -142,7 +142,10 @@
     "status": {
       "connecting": "Connexion en cours",
       "closed": "Déconnecté",
-      "exited": "Terminé"
+      "exited": "Terminé",
+      "waiting_one": "En attente de {count} connexion redirigée",
+      "waiting_many": "En attente de {count} connexions redirigées",
+      "waiting_other": "En attente de {count} connexions redirigées"
     },
     "close": "Fermer",
     "closeWithShortcut": "Fermer ({shortcut})",
@@ -913,6 +916,14 @@
       "tab": "« {name} » est toujours connecté. Fermer l’onglet met fin à sa session.",
       "pane": "« {name} » est toujours connecté. Fermer le volet met fin à sa session."
     },
+    "forwards": {
+      "tab_one": "Une connexion passant par la redirection de port de « {name} » est toujours utilisée. Fermer l’onglet la coupe.",
+      "tab_many": "{count} connexions passant par la redirection de port de « {name} » sont toujours utilisées. Fermer l’onglet les coupe.",
+      "tab_other": "{count} connexions passant par la redirection de port de « {name} » sont toujours utilisées. Fermer l’onglet les coupe.",
+      "pane_one": "Une connexion passant par la redirection de port de « {name} » est toujours utilisée. Fermer le volet la coupe.",
+      "pane_many": "{count} connexions passant par la redirection de port de « {name} » sont toujours utilisées. Fermer le volet les coupe.",
+      "pane_other": "{count} connexions passant par la redirection de port de « {name} » sont toujours utilisées. Fermer le volet les coupe."
+    },
     "process": {
       "tab": "« {process} » est toujours en cours d’exécution dans « {name} ». Fermer l’onglet l’arrête.",
       "pane": "« {process} » est toujours en cours d’exécution dans « {name} ». Fermer le volet l’arrête."
@@ -962,6 +973,9 @@
   "closeForwards": {
     "title": "Maintenir la redirection de port ?",
     "message": "Cette redirection de port passe par la connexion en cours de fermeture. Un autre onglet de la même session est toujours connecté et peut la maintenir active.",
+    "messageConnections_one": "Cette redirection de port passe par la connexion en cours de fermeture. Un autre onglet de la même session est toujours connecté et peut la maintenir active. Une connexion passant par elle est utilisée ; la fermeture la coupe dans tous les cas.",
+    "messageConnections_many": "Cette redirection de port passe par la connexion en cours de fermeture. Un autre onglet de la même session est toujours connecté et peut la maintenir active. {count} connexions passant par elle sont utilisées ; la fermeture les coupe dans tous les cas.",
+    "messageConnections_other": "Cette redirection de port passe par la connexion en cours de fermeture. Un autre onglet de la même session est toujours connecté et peut la maintenir active. {count} connexions passant par elle sont utilisées ; la fermeture les coupe dans tous les cas.",
     "keep": "Maintenir",
     "stop": "Arrêter"
   },

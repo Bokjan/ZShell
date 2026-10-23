@@ -9,28 +9,29 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 
-use super::{bridge, host_port, Ctx, ForwardRule, Opener, Stopping, Tracker, LOOKUP_TIMEOUT};
+use super::{bridge, host_port, Ctx, ForwardRule, InFlight, Opener, Stopping, Tracker, LOOKUP_TIMEOUT};
 use crate::error::Error;
 use crate::model::ALL_ADDRESSES;
 
-pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
+pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<InFlight> {
     serve(rule, ctx, stopping, |stream, peer| connect(ctx.opener(), stream, peer, rule.target_host.clone(), rule.target_port)).await
 }
 
 /// Listens where `rule` says until it is asked to stop, carrying each connection accepted on
 /// with what `carry` makes of it (a local rule's or a dynamic one's), and reporting them.
+/// Gives back the connections it carries if it was released.
 pub(super) async fn serve<F>(
     rule: &ForwardRule,
     ctx: &Ctx,
     stopping: &mut Stopping,
     carry: impl Fn(TcpStream, SocketAddr) -> F,
-) -> Result<()>
+) -> Result<InFlight>
 where
     F: Future<Output = Result<()>> + Send + 'static,
 {
     let listener = tokio::select! {
         listener = Listener::bind(&rule.bind_host, rule.bind_port) => listener?,
-        () = stopping.requested() => return Ok(()),
+        () = stopping.requested() => return Ok(InFlight::default()),
     };
     let mut tracker = Tracker::new(ctx, listener.address(&rule.bind_host)?);
     loop {
@@ -42,7 +43,7 @@ where
                 Err(e) => accept_failed(&mut tracker, e).await,
             },
             finished = tracker.next_finished() => tracker.finished(finished),
-            () = stopping.requested() => return Ok(()),
+            () = stopping.requested() => return Ok(tracker.into_in_flight(stopping)),
         }
     }
 }

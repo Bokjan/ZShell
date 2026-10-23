@@ -57,7 +57,12 @@ export interface SessionEvents {
    * the pane closes, which then shows nothing more.
    */
   exited(status: number | null, signal: string | null, typed: boolean): boolean;
-  /** Ctrl+D in a closed terminal: the user asks to close the pane. */
+  /**
+   * The shell has exited and the session waits for the connections its port forwarding still
+   * carries to end: how many; null once it no longer waits.
+   */
+  waiting(connections: number | null): void;
+  /** Ctrl+D in a closed terminal, or one waiting for forwarded connections: the user asks to close the pane. */
   close(): void;
   /** An automatic reconnection is due at this time (`Date.now()`), or none is any more (null). */
   retry(at: number | null): void;
@@ -168,7 +173,9 @@ function resetModes(port: TerminalPort) {
  * A pane's backend sessions, one after another: it connects, reconnects by hand or
  * automatically (with growing delays, sooner when the network comes back), types the login
  * commands, and passes output to the terminal with flow control. Enter in a closed terminal
- * connects again, Ctrl+C cancels a pending retry, and Ctrl+D closes the pane.
+ * connects again, Ctrl+C cancels a pending retry, and Ctrl+D closes the pane. While the session
+ * waits for forwarded connections after its shell exited, Enter (a new shell) and Ctrl+C (end
+ * them) go to the session, and Ctrl+D closes the pane.
  */
 export class PaneSession {
   private session: Session | undefined;
@@ -177,6 +184,10 @@ export class PaneSession {
   private connected = false;
   /** Whether the user has typed into the current session's shell (not into its prompts). */
   private typed = false;
+  /** Whether the session waits for forwarded connections after its shell exited. */
+  private waiting = false;
+  /** Whether the user ended those connections (Ctrl+C), which leaves the pane open. */
+  private cut = false;
   private disposed = false;
   /** Automatic reconnection: the number of attempts so far and the pending one, if any. */
   private attempt = 0;
@@ -263,9 +274,15 @@ export class PaneSession {
 
   /**
    * What the user typed. Returns whether a session got it. Into a closed terminal, Enter
-   * connects again, Ctrl+C cancels a pending retry and Ctrl+D closes the pane.
+   * connects again, Ctrl+C cancels a pending retry and Ctrl+D closes the pane; so does Ctrl+D
+   * while the session waits for forwarded connections.
    */
   input(data: string): boolean {
+    if (this.waiting && data === "\x04") {
+      this.events.close();
+      return false;
+    }
+    if (this.waiting && data === "\x03") this.cut = true;
     if (!this.closed) {
       // The user has taken over: a command typed now would land in what they are typing.
       // The terminal's answers to the shell's queries (fish asks at startup) aren't typing.
@@ -442,6 +459,7 @@ export class PaneSession {
     this.closed = false;
     this.connected = false;
     this.typed = false;
+    this.cut = false;
     this.traffic.reset();
     this.progress(null);
     this.events.status("connecting");
@@ -575,6 +593,8 @@ export class PaneSession {
         if (stale()) return;
         switch (event.type) {
           case "connected":
+            // Also another shell on the connection, after one exited.
+            this.stopWaiting();
             connected = true;
             this.connected = true;
             this.attempt = 0;
@@ -595,6 +615,10 @@ export class PaneSession {
             else if (event.error) this.dim(t("terminal.logFailed", { message: event.error.message }));
             this.events.log(event.path);
             return;
+          case "waiting":
+            this.waiting = true;
+            this.events.waiting(event.connections);
+            return;
           case "moved":
             // The last message: the session is now another window's.
             given = true;
@@ -602,6 +626,8 @@ export class PaneSession {
             return;
         }
         ended = true;
+        const cut = this.cut;
+        this.cut = false;
         this.dropSession();
         // The rules the lost connection ran, which reconnecting (automatically too) starts
         // again: asked before the session closes, which forgets them.
@@ -618,7 +644,8 @@ export class PaneSession {
           this.connect();
           return;
         }
-        if (event.reason === "exited" && this.events.exited(event.status, event.signal, this.typed)) return;
+        // Ending the forwarded connections by hand is not closing the pane.
+        if (event.reason === "exited" && !cut && this.events.exited(event.status, event.signal, this.typed)) return;
         this.events.status("closed");
         if (target.kind === "local") {
           this.dim(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
@@ -676,12 +703,19 @@ export class PaneSession {
 
   /** Forgets the current session, which has ended or is being replaced. */
   private dropSession() {
+    this.stopWaiting();
     this.closed = true;
     this.connected = false;
     this.stopLoginCommands();
     this.progress(null);
     this.session = undefined;
     this.events.session(null);
+  }
+
+  private stopWaiting() {
+    if (!this.waiting) return;
+    this.waiting = false;
+    this.events.waiting(null);
   }
 
   private dim(text: string) {

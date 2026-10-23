@@ -103,6 +103,7 @@ const newPane = (key: number, spec: PaneSpec): Pane => ({
   status: "connecting",
   termType: null,
   retryAt: null,
+  waiting: null,
   sessionId: null,
   forwards: {},
   commandGroup: null,

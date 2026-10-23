@@ -4,6 +4,8 @@
     "closed": "[接続が閉じられました]",
     "closedWithStatus": "[接続が閉じられました。終了ステータス：{status}]",
     "closedBySignal": "[接続が閉じられました。シェルがシグナルで終了しました：{signal}]",
+    "waitingForForwards": "[シェルが終了しました。ポートフォワーディング {forwards} の接続が閉じるのを待っています]",
+    "waitingHint": "Enterキーを押すと新しいシェルを起動、Ctrl+Cキーを押すとこれらの接続を閉じ、Ctrl+Dキーを押すと閉じます",
     "savedPasswordRejected": "保存されたパスワードはサーバーに拒否されました。",
     "incorrectPassphrase": "パスフレーズが正しくありません。",
     "connectingVia": "{jump}経由で{user}@{host}:{port}に接続しています...",

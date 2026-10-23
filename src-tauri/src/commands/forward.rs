@@ -55,6 +55,19 @@ pub fn forward_keep_candidates(
     connections.forwards_to_keep(&ids)
 }
 
+/// How many connections the forwarding rules on the connections of sessions `ids` (this
+/// window's) carry: closing the sessions would cut them.
+#[tauri::command]
+pub fn forward_connections(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    mut ids: Vec<SessionId>,
+) -> usize {
+    ids.retain(|&id| sessions.owns(webview.label(), id));
+    connections.forward_connections(&ids)
+}
+
 /// Keeps the forwarding rules of sessions `ids` (this window's) running on another tab of
 /// their saved session once they close.
 #[tauri::command]

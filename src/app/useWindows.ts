@@ -123,7 +123,8 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { openTab
   /**
    * Whether the tab (or only its pane `pane`) can move now: not while its file panel transfers
    * files, edits them in a local editor or asks something (those belong to this window's page),
-   * nor during a ZMODEM transfer, nor while a pane opens its session or its session is still
+   * nor during a ZMODEM transfer, nor while a pane opens its session, waits for forwarded
+   * connections after its shell exited (only this window's pane knows) or its session is still
    * moving here.
    */
   const canMove = useCallback(
@@ -134,6 +135,7 @@ export function useWindows(store: TabStore, sessions: SessionRegistry, { openTab
           paneWork(pane) === null &&
           !sessions.inZmodem(pane.key) &&
           !(pane.status === "connecting" && pane.sessionId === null) &&
+          pane.waiting === null &&
           pane.arrival === undefined &&
           !sessions.arriving(pane.key),
       ),

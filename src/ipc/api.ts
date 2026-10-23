@@ -224,6 +224,8 @@ export const forwards = {
   stop: (id: SessionId, ruleId: string) => call("forward_stop", { id, ruleId }),
   /** The rules closing these sessions would stop although another tab of their session could keep them running. */
   keepCandidates: (ids: SessionId[]) => call("forward_keep_candidates", { ids }),
+  /** How many connections the rules on these sessions' connections carry, which closing them cuts. */
+  connections: (ids: SessionId[]) => call("forward_connections", { ids }),
   /** The sessions, in any window, whose connection runs the saved session's rules: deleting it stops them. */
   sessionsOf: (profileId: string) => call("forward_sessions_of", { profileId }),
   /** Moves those rules to another tab of their session once the sessions close. */

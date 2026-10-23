@@ -789,7 +789,7 @@ loginCommands: Array<string>,
  */
 brings: Array<string>, };
 
-export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, signal: string | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, } | { "type": "moved", moveId: string, };
+export type SessionEvent = { "type": "connected" } | { "type": "closed", reason: CloseReason, error: CommandError | null, status: number | null, signal: string | null, } | { "type": "forward", ruleId: string, state: ForwardState, } | { "type": "zmodem", phase: ZmodemPhase, } | { "type": "log", path: string | null, error: CommandError | null, } | { "type": "waiting", connections: number, } | { "type": "moved", moveId: string, };
 
 /**
  * What a session's terminal showed in the tab it moved from: written to the new tab's
@@ -1120,6 +1120,7 @@ export type Commands = {
   folder_save: { args: { folder: Folder }; result: Folder };
   folders_list: { args: Record<string, never>; result: Folder[] };
   forward_carry: { args: { id: number }; result: string[] };
+  forward_connections: { args: { ids: number[] }; result: number };
   forward_keep: { args: { ids: number[] }; result: void };
   forward_keep_candidates: { args: { ids: number[] }; result: ForwardRule[] };
   forward_sessions_of: { args: { profileId: string }; result: number[] };

@@ -55,6 +55,36 @@ impl russh::server::Handler for Accepting {
     }
 }
 
+/// A server that lets anyone in and opens every `direct-tcpip` channel, sending back what
+/// comes through it.
+pub struct Echoing;
+
+impl russh::server::Handler for Echoing {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+        Ok(russh::server::Auth::Accept)
+    }
+
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::server::Msg>,
+        _host: &str,
+        _port: u32,
+        _originator: &str,
+        _originator_port: u32,
+        reply: russh::server::ChannelOpenHandle,
+        _session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        tokio::spawn(async move {
+            let (mut reader, mut writer) = tokio::io::split(channel.into_stream());
+            let _ = tokio::io::copy(&mut reader, &mut writer).await;
+        });
+        Ok(())
+    }
+}
+
 /// A connection of saved session `profile_id` (a quick connection if empty) to `server`,
 /// which runs on a stream in this process and lets anyone in without authenticating.
 pub async fn connect<H: russh::server::Handler + Send + 'static>(server: H, profile_id: &str) -> Arc<Connection> {

@@ -354,6 +354,7 @@ pub fn run() {
             commands::forward::forward_start,
             commands::forward::forward_stop,
             commands::forward::forward_keep_candidates,
+            commands::forward::forward_connections,
             commands::forward::forward_sessions_of,
             commands::forward::forward_keep,
             commands::forward::forward_carry,

@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use russh::ChannelOpenFailure;
 use tokio::sync::mpsc;
 
-use super::{bridge, host_port, Ctx, ForwardRule, Stopping, Tracker};
+use super::{bridge, host_port, Ctx, ForwardRule, InFlight, Stopping, Tracker};
 use crate::error::Error;
 use crate::model::ALL_ADDRESSES;
 use crate::ssh::{Incoming, Liveness, RemoteRoutes, SshHandle, ROUTE_QUEUE};
@@ -59,7 +59,7 @@ impl Drop for Listening {
     }
 }
 
-pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
+pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<InFlight> {
     let handle = ctx.handle();
     let requested = host_port(&rule.bind_host, rule.bind_port);
     // Every address is the empty one in the protocol (RFC 4254 7.1), as OpenSSH sends `*`.
@@ -79,7 +79,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
                 let cancel = handle.cancel_tcpip_forward(address.clone(), port(allocated));
                 let _ = tokio::time::timeout(CANCEL_TIMEOUT, cancel).await;
             }
-            return Ok(());
+            return Ok(InFlight::default());
         }
     };
     let port = port(reply.context(Error::new("forward.remoteRefused").param("address", &requested))?);
@@ -99,9 +99,10 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
             () = stopping.requested() => break,
         }
     }
-    drop(tracker);
+    // Those not given back end before the listener is cancelled.
+    let in_flight = tracker.into_in_flight(stopping);
     listening.cancel().await;
-    Ok(())
+    Ok(in_flight)
 }
 
 /// Connects to the target first and only then accepts the channel, so an unreachable

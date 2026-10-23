@@ -109,6 +109,11 @@ pub enum SessionEvent {
         path: Option<String>,
         error: Option<Error>,
     },
+    /// The shell has exited, and the session waits for the connections its forwarding rules
+    /// still carry to end: `connections` of them (see `crate::connections`).
+    Waiting {
+        connections: usize,
+    },
     /// The session moved to another window's tab: the last message on this channel.
     /// `move_id`: what the new tab named the move, to pass back with the screen.
     Moved {

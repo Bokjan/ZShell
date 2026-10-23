@@ -137,7 +137,9 @@
     "status": {
       "connecting": "Connecting",
       "closed": "Disconnected",
-      "exited": "Exited"
+      "exited": "Exited",
+      "waiting_one": "Waiting for {count} forwarded connection",
+      "waiting_other": "Waiting for {count} forwarded connections"
     },
     "close": "Close",
     "closeWithShortcut": "Close ({shortcut})",
@@ -887,6 +889,12 @@
       "tab": "“{name}” is still connected. Closing the tab ends its session.",
       "pane": "“{name}” is still connected. Closing the pane ends its session."
     },
+    "forwards": {
+      "tab_one": "A connection through the port forwarding of “{name}” is still in use. Closing the tab disconnects it.",
+      "tab_other": "{count} connections through the port forwarding of “{name}” are still in use. Closing the tab disconnects them.",
+      "pane_one": "A connection through the port forwarding of “{name}” is still in use. Closing the pane disconnects it.",
+      "pane_other": "{count} connections through the port forwarding of “{name}” are still in use. Closing the pane disconnects them."
+    },
     "process": {
       "tab": "“{process}” is still running in “{name}”. Closing the tab ends it.",
       "pane": "“{process}” is still running in “{name}”. Closing the pane ends it."
@@ -928,6 +936,8 @@
   "closeForwards": {
     "title": "Keep Port Forwarding Running?",
     "message": "This port forwarding runs on the connection being closed. Another tab of the same session is still connected and can keep it running.",
+    "messageConnections_one": "This port forwarding runs on the connection being closed. Another tab of the same session is still connected and can keep it running. A connection through it is in use, and closing disconnects it either way.",
+    "messageConnections_other": "This port forwarding runs on the connection being closed. Another tab of the same session is still connected and can keep it running. {count} connections through it are in use, and closing disconnects them either way.",
     "keep": "Keep Running",
     "stop": "Stop"
   },

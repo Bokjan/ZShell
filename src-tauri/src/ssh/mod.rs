@@ -36,6 +36,14 @@ use handler::{ClientHandler, EndReason};
 use host_key::HostKeyMessage;
 pub use liveness::Liveness;
 
+/// What a session does once its shell has exited, which depends on what else runs on its
+/// connection (see `crate::connections`).
+pub trait ShellExit: Send {
+    /// Returns whether to start another shell on the connection, with which the session
+    /// goes on; otherwise it ends.
+    fn exited(&mut self, io: &mut TermIo) -> impl Future<Output = bool> + Send;
+}
+
 /// Session backend: connects (by `route`), authenticates and bridges a remote shell to the
 /// terminal. `connected` is given the connection once it is authenticated, before the shell
 /// opens on it, for the other features to use (see `crate::connections`).
@@ -45,9 +53,10 @@ pub async fn run(
     id: SessionId,
     mut io: TermIo,
     connected: impl FnOnce(Arc<Connection>, &TermIo) + Send,
+    exit: impl ShellExit,
 ) {
     let outcome = match start(&profile, &route, id, &mut io, connected).await {
-        Ok((channel, connection)) => bridge(channel, &mut io, connection.disconnect_reason(), connection.liveness()).await,
+        Ok((channel, connection)) => shells(channel, &connection, id, &mut io, exit).await,
         Err(e) => Outcome::Failed(e.into()),
     };
     io.finish(outcome);
@@ -56,13 +65,32 @@ pub async fn run(
 /// Session backend for a duplicated tab: a new shell on `connection`, which is already
 /// registered for this session (see `crate::connections`). No prompts, no auto-started
 /// forwards: like a second OpenSSH session through a ControlMaster.
-pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo) {
+pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo, exit: impl ShellExit) {
     let outcome = match open_shell(&connection, id, &mut io).await {
-        Ok(channel) => bridge(channel, &mut io, connection.disconnect_reason(), connection.liveness()).await,
+        Ok(channel) => shells(channel, &connection, id, &mut io, exit).await,
         Err(e) => Outcome::Failed(e.into()),
     };
     drop(connection);
     io.finish(outcome);
+}
+
+/// Bridges the shell in `channel`, and those the session starts after it on the connection
+/// when one exits (see [`ShellExit`]), until the session ends.
+async fn shells(mut channel: Channel<Msg>, connection: &Connection, id: SessionId, io: &mut TermIo, mut exit: impl ShellExit) -> Outcome {
+    loop {
+        let outcome = bridge(channel, io, connection.disconnect_reason(), connection.liveness()).await;
+        if !matches!(outcome, Outcome::Exited(_) | Outcome::Signaled(_)) {
+            return outcome;
+        }
+        connection.shells().closed(id);
+        if !exit.exited(io).await {
+            return outcome;
+        }
+        channel = match open_shell(connection, id, io).await {
+            Ok(channel) => channel,
+            Err(e) => return Outcome::Failed(e.into()),
+        };
+    }
 }
 
 /// Connections to the jump hosts a session runs through, first hop first. Dropping it

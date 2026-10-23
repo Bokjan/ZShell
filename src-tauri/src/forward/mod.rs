@@ -5,13 +5,17 @@
 //! remote rules, its route in the connection's `ssh::RemoteRoutes` and the server's listener) and a [`JoinSet`] of
 //! the connections it carries. Stopping a rule signals the task, which releases all of it (a
 //! remote rule waits for the server to cancel its listener) and then ends: once the task has
-//! ended, the rule can start again on the same port. Dropping the signal stops it too. Rules
+//! ended, the rule can start again on the same port. Dropping the signal stops it too. A rule
+//! can also be released ([`Forwards::release_all`]): it stops listening, but the connections it
+//! carries go on, given back by its task as [`InFlight`], as OpenSSH lets them run after the
+//! shell exits. Rules
 //! belong to a saved session, which may have several connections (tabs opened separately):
 //! state changes are pushed as [`SessionEvent::Forward`] to every tab of the session through
 //! its [`Hub`], whichever connection runs the rule (see `crate::connections` for how a rule
 //! runs on one connection only). A generation number keeps a replaced or stopped task from
 //! reporting after the fact.
 
+mod draining;
 mod dynamic;
 mod local;
 mod remote;
@@ -42,6 +46,7 @@ use crate::error::Error;
 use crate::model::{host_port, ForwardKind, ForwardRule};
 use crate::session::{ForwardState, SessionEvent, SessionId, SessionSink};
 use crate::ssh::{Liveness, RemoteRoutes, SshHandle};
+pub use draining::{Draining, InFlight};
 
 /// How long to wait for the name a local or dynamic rule listens on to be looked up.
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -56,17 +61,32 @@ struct Running {
     /// `None` once stopped; the task is kept so a restart can wait for it to wind down.
     generation: Option<u64>,
     /// Stops the task, also when dropped.
-    stop: watch::Sender<bool>,
-    task: JoinHandle<()>,
+    stop: watch::Sender<Signal>,
+    task: JoinHandle<InFlight>,
+}
+
+/// What a rule's task is asked to do.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Signal {
+    Run,
+    /// Stop, ending the connections it carries.
+    Stop,
+    /// Stop listening, and give back the connections it carries (see [`Forwards::release_all`]).
+    Release,
 }
 
 /// A rule task's side of its stop signal.
-pub(super) struct Stopping(watch::Receiver<bool>);
+pub(super) struct Stopping(watch::Receiver<Signal>);
 
 impl Stopping {
     /// Completes once the rule is asked to stop (or its owner is gone).
     async fn requested(&mut self) {
-        let _ = self.0.wait_for(|stop| *stop).await;
+        let _ = self.0.wait_for(|signal| *signal != Signal::Run).await;
+    }
+
+    /// Whether the rule was asked to give back its connections rather than end them.
+    fn releases(&self) -> bool {
+        *self.0.borrow() == Signal::Release
     }
 }
 
@@ -159,6 +179,17 @@ impl Forwards {
         running.values().filter(|r| r.generation.is_some() && !r.task.inner().is_finished()).map(|r| r.rule.clone()).collect()
     }
 
+    /// How many connections the rules running here carry, as last reported.
+    pub fn connections(&self) -> usize {
+        let running = self.0.running.lock().unwrap();
+        let watchers = self.0.hub.0.lock().unwrap();
+        let carried = |rule_id: &String| match watchers.states.get(rule_id) {
+            Some(ForwardState::Active { connections, .. }) => *connections,
+            _ => 0,
+        };
+        running.iter().filter(|(_, r)| r.generation.is_some()).map(|(rule_id, _)| carried(rule_id)).sum()
+    }
+
     /// Starts `rule`, restarting it if it is already running. With `announce`, a failure to
     /// start is also printed in the terminal (for rules started automatically on connect).
     pub fn start(&self, rule: ForwardRule, announce: bool) {
@@ -174,7 +205,7 @@ impl Forwards {
         // Dropping it stops the previous run.
         let previous = running.remove(&rule.id).map(|old| old.task);
         self.0.report(&rule.id, ForwardState::Starting);
-        let (stop, stopping) = watch::channel(false);
+        let (stop, stopping) = watch::channel(Signal::Run);
         let task = tauri::async_runtime::spawn(run(rule.clone(), ctx, previous, announce, Stopping(stopping)));
         running.insert(rule.id.clone(), Running { rule, generation: Some(generation), stop, task });
     }
@@ -182,7 +213,7 @@ impl Forwards {
     pub fn stop(&self, rule_id: &str) {
         let mut running = self.0.running.lock().unwrap();
         if let Some(old) = running.get_mut(rule_id) {
-            let _ = old.stop.send(true);
+            let _ = old.stop.send(Signal::Stop);
             old.generation = None;
         }
         self.0.report(rule_id, ForwardState::Stopped);
@@ -191,17 +222,39 @@ impl Forwards {
     /// Stops every rule, as the connection closes; the session's other tabs see them stop.
     /// Returns the rules that were running, and their tasks, which end once they have
     /// released their ports and the server's listeners.
-    pub fn stop_all(&self) -> (Vec<ForwardRule>, Vec<JoinHandle<()>>) {
+    pub fn stop_all(&self) -> (Vec<ForwardRule>, Vec<JoinHandle<InFlight>>) {
+        let (rules, tasks) = self.take_all(Signal::Stop, true);
+        (rules, tasks.into_iter().map(|(_, task)| task).collect())
+    }
+
+    /// Stops every rule but lets the connections they carry go on: the shell of the
+    /// connection's last tab has exited. The session's other tabs see the rules stop. Returns
+    /// the rules that were running, and the tasks of all the rules here, which end once they
+    /// have released their ports and the server's listeners, with the connections they still
+    /// carry (see [`Draining::collect`]). Rules can start here again afterwards.
+    pub fn release_all(&self) -> (Vec<ForwardRule>, Vec<(ForwardRule, JoinHandle<InFlight>)>) {
+        self.take_all(Signal::Release, false)
+    }
+
+    /// Signals every rule, reporting those that were running as stopped; `close`: nothing
+    /// starts here any more.
+    fn take_all(&self, signal: Signal, close: bool) -> (Vec<ForwardRule>, Vec<(ForwardRule, JoinHandle<InFlight>)>) {
         let mut rules = Vec::new();
         let mut tasks = Vec::new();
         let mut running = self.0.running.lock().unwrap();
-        self.0.closed.store(true, Ordering::Relaxed);
+        if close {
+            self.0.closed.store(true, Ordering::Relaxed);
+        }
         for (rule_id, old) in running.drain() {
-            if old.generation.is_some() && !old.task.inner().is_finished() {
-                self.0.report(&rule_id, ForwardState::Stopped);
-                rules.push(old.rule);
+            // A stopped rule's task has its signal already, and gives back nothing.
+            if old.generation.is_some() {
+                let _ = old.stop.send(signal);
+                if !old.task.inner().is_finished() {
+                    self.0.report(&rule_id, ForwardState::Stopped);
+                    rules.push(old.rule.clone());
+                }
             }
-            tasks.push(old.task);
+            tasks.push((old.rule, old.task));
         }
         (rules, tasks)
     }
@@ -249,9 +302,10 @@ impl Ctx {
     }
 }
 
-async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<()>>, announce: bool, mut stopping: Stopping) {
+/// A run of `rule`, which gives back the connections it still carries if it was released.
+async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<InFlight>>, announce: bool, mut stopping: Stopping) -> InFlight {
     // Let the previous run release its port (and, for remote rules, the server's listener)
-    // before binding it again.
+    // before binding it again. Its connections end.
     if let Some(previous) = previous {
         let _ = previous.await;
     }
@@ -261,7 +315,7 @@ async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<()>>, anno
         ForwardKind::Remote => remote::run(&rule, &ctx, &mut stopping).await,
         ForwardKind::Dynamic => dynamic::run(&rule, &ctx, &mut stopping).await,
     };
-    if let Err(e) = result {
+    result.unwrap_or_else(|e| {
         let error = Error::from(e);
         if announce {
             let forward = describe(&rule);
@@ -269,7 +323,8 @@ async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<()>>, anno
             ctx.shared.print(&format!("\r\n\x1b[33m{message}\x1b[0m\n"));
         }
         ctx.report(ForwardState::Failed { error });
-    }
+        InFlight::default()
+    })
 }
 
 /// OpenSSH-style one-line summary of a rule, e.g. `-L 127.0.0.1:8080:db:5432`.
@@ -289,7 +344,7 @@ const REPORT_INTERVAL: Duration = Duration::from_millis(200);
 /// When to report changes that come faster than [`REPORT_INTERVAL`]: the first at once, the
 /// rest together once the interval has passed.
 #[derive(Default)]
-struct Throttle {
+pub(crate) struct Throttle {
     reported: Option<Instant>,
     /// A change not reported yet.
     pending: bool,
@@ -297,7 +352,7 @@ struct Throttle {
 
 impl Throttle {
     /// Whether to report a change now; otherwise it is reported when [`Throttle::due`] says.
-    fn changed(&mut self, now: Instant) -> bool {
+    pub(crate) fn changed(&mut self, now: Instant) -> bool {
         if self.reported.is_some_and(|reported| now < reported + REPORT_INTERVAL) {
             self.pending = true;
             return false;
@@ -306,19 +361,19 @@ impl Throttle {
         true
     }
 
-    fn reported(&mut self, now: Instant) {
+    pub(crate) fn reported(&mut self, now: Instant) {
         self.reported = Some(now);
         self.pending = false;
     }
 
     /// When the change put off is due, if there is one.
-    fn due(&self) -> Option<Instant> {
+    pub(crate) fn due(&self) -> Option<Instant> {
         self.pending.then(|| self.reported.map_or_else(Instant::now, |reported| reported + REPORT_INTERVAL))
     }
 }
 
 /// Completes at `deadline`; pending forever without one, for `select!`.
-async fn at(deadline: Option<Instant>) {
+pub(crate) async fn at(deadline: Option<Instant>) {
     match deadline {
         Some(deadline) => tokio::time::sleep_until(deadline).await,
         None => std::future::pending().await,
@@ -369,6 +424,16 @@ impl<'a> Tracker<'a> {
     fn failed(&mut self, error: impl Into<Error>) {
         self.last_error = Some(error.into());
         self.changed();
+    }
+
+    /// The connections it carries if the rule was released, to go on; otherwise none, and
+    /// they end now.
+    fn into_in_flight(self, stopping: &Stopping) -> InFlight {
+        if stopping.releases() {
+            InFlight(self.connections)
+        } else {
+            InFlight::default()
+        }
     }
 
     fn changed(&mut self) {

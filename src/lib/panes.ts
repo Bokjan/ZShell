@@ -31,6 +31,11 @@ export interface Pane {
   termType: string | null;
   /** When the next automatic reconnection is due (`Date.now()`), while one is. */
   retryAt: number | null;
+  /**
+   * While the shell has exited and the session waits for the connections its port forwarding
+   * still carries to end: how many.
+   */
+  waiting: number | null;
   /** The backend session, while there is one. */
   sessionId: SessionId | null;
   /** For a duplicated SSH pane: the session whose connection its first shell runs on. */

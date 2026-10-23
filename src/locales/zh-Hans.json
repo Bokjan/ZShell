@@ -132,7 +132,8 @@
     "status": {
       "connecting": "正在连接",
       "closed": "已断开连接",
-      "exited": "已退出"
+      "exited": "已退出",
+      "waiting_other": "正在等待 {count} 个转发连接结束"
     },
     "close": "关闭",
     "closeWithShortcut": "关闭（{shortcut}）",
@@ -861,6 +862,10 @@
       "tab": "“{name}”仍处于连接状态。关闭标签页会结束其会话。",
       "pane": "“{name}”仍处于连接状态。关闭窗格会结束其会话。"
     },
+    "forwards": {
+      "tab_other": "“{name}”的端口转发仍有 {count} 个连接在使用。关闭标签页会断开这些连接。",
+      "pane_other": "“{name}”的端口转发仍有 {count} 个连接在使用。关闭窗格会断开这些连接。"
+    },
     "process": {
       "tab": "“{process}”仍在“{name}”中运行。关闭标签页会结束它。",
       "pane": "“{process}”仍在“{name}”中运行。关闭窗格会结束它。"
@@ -894,6 +899,7 @@
   "closeForwards": {
     "title": "保持端口转发运行？",
     "message": "此端口转发运行在即将关闭的连接上。同一会话的另一个标签页仍处于连接状态，可以让它继续运行。",
+    "messageConnections_other": "此端口转发运行在即将关闭的连接上。同一会话的另一个标签页仍处于连接状态，可以让它继续运行。经由它的 {count} 个连接正在使用，无论是否继续运行，关闭都会断开这些连接。",
     "keep": "保持运行",
     "stop": "停止"
   },

@@ -17,14 +17,19 @@ const PATIENCE: Duration = Duration::from_secs(10);
 pub struct Tab {
     pub io: TermIo,
     events: Receiver<String>,
-    _input: UnboundedSender<SessionInput>,
+    input: UnboundedSender<SessionInput>,
     _output: Receiver<Vec<u8>>,
 }
 
 impl Tab {
     pub fn new() -> Self {
         let (io, input, output, events) = TermIo::detached((80, 24));
-        Self { io, events, _input: input, _output: output }
+        Self { io, events, input, _output: output }
+    }
+
+    /// Types `text` into the tab, for its session to read.
+    pub fn typed(&self, text: &str) {
+        self.input.send(SessionInput::Data(text.as_bytes().to_vec())).unwrap();
     }
 
     /// The next state reported for rule `rule_id` (`{"type": "active", …}`), skipping other

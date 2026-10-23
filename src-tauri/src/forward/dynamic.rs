@@ -11,12 +11,12 @@ use tokio::net::TcpStream;
 
 use super::local::serve;
 use super::socks::{self, Reply};
-use super::{bridge, Ctx, ForwardRule, Opener, Stopping};
+use super::{bridge, Ctx, ForwardRule, InFlight, Opener, Stopping};
 
 /// How long a client may take to send its request after connecting.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<()> {
+pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Result<InFlight> {
     serve(rule, ctx, stopping, |stream, peer| connect(ctx.opener(), stream, peer)).await
 }
 

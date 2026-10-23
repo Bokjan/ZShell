@@ -172,9 +172,12 @@ impl Backend {
     async fn run(self, id: SessionId, io: TermIo) {
         match self {
             Backend::Ssh { profile, route, connections, carry } => {
-                ssh::run(profile, route, id, io, move |connection, io| connections.connected(id, connection, &carry, io)).await
+                let exit = connections.shell_exit(id);
+                ssh::run(profile, route, id, io, move |connection, io| connections.connected(id, connection, &carry, io), exit).await
             }
-            Backend::Shared { connection, .. } => ssh::run_shared(connection.ssh().clone(), id, io).await,
+            Backend::Shared { connection, connections } => {
+                ssh::run_shared(connection.ssh().clone(), id, io, connections.shell_exit(id)).await
+            }
             Backend::Telnet { remote, route, password_of } => {
                 // Looked up when the server asks.
                 let passwords = route.passwords.clone();

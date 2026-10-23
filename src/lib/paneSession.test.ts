@@ -151,6 +151,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     zmodem: vi.fn(),
     log: vi.fn(),
     exited: vi.fn((_status: number | null, _signal: string | null, _typed: boolean) => false),
+    waiting: vi.fn(),
     close: vi.fn(),
     retry: vi.fn(),
     arrived: vi.fn(),
@@ -420,6 +421,62 @@ describe("ending", () => {
     opened[0].event(lost());
     pane.input("\x04");
     expect(events.close).toHaveBeenCalledOnce();
+  });
+
+  it("waits for forwarded connections, until another shell starts", async () => {
+    const { pane, opened, events } = setup();
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    opened[0].event({ type: "waiting", connections: 2 });
+    opened[0].event({ type: "waiting", connections: 1 });
+    expect(events.waiting.mock.calls).toEqual([[2], [1]]);
+    // Enter goes to the session, which starts another shell.
+    pane.input("\r");
+    await settle();
+    expect(session.writes).toEqual(["\r"]);
+    opened[0].event({ type: "connected" });
+    expect(events.waiting).toHaveBeenLastCalledWith(null);
+    expect(pane.isConnected).toBe(true);
+  });
+
+  it("closes the pane on Ctrl+D while waiting for forwarded connections", async () => {
+    const { pane, opened, events } = setup();
+    pane.connect();
+    const session = opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    opened[0].event({ type: "waiting", connections: 1 });
+    pane.input("\x04");
+    await settle();
+    expect(events.close).toHaveBeenCalledOnce();
+    expect(session.writes).toEqual([]);
+  });
+
+  it("stays open once the forwarded connections are ended by hand, not once they end by themselves", async () => {
+    const { pane, opened, events, screen } = setup();
+    pane.connect();
+    opened[0].resolve();
+    await settle();
+    opened[0].event({ type: "connected" });
+    pane.input("exit\r");
+    opened[0].event({ type: "waiting", connections: 1 });
+    pane.input("\x03");
+    opened[0].event(exited(0));
+    expect(events.exited).not.toHaveBeenCalled();
+    expect(events.waiting).toHaveBeenLastCalledWith(null);
+    expect(events.status).toHaveBeenLastCalledWith("closed");
+    expect(screen()).toContain("terminal.reconnectHint");
+
+    pane.input("\r");
+    opened[1].resolve();
+    await settle();
+    opened[1].event({ type: "connected" });
+    pane.input("exit\r");
+    opened[1].event({ type: "waiting", connections: 1 });
+    opened[1].event(exited(0));
+    expect(events.exited).toHaveBeenLastCalledWith(0, null, true);
   });
 });
 

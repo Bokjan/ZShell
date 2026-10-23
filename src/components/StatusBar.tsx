@@ -93,6 +93,7 @@ function Connection({ pane, profile }: { pane: Pane; profile: Profile | undefine
   else where = address(profile.connection);
   let state: string | null = null;
   if (pane.status === "connecting") state = t("tabs.status.connecting");
+  else if (pane.waiting !== null) state = t("tabs.status.waiting", { count: pane.waiting });
   else if (seconds !== null) state = t("statusBar.reconnectIn", { count: seconds });
   else if (pane.status === "closed") state = t(pane.protocol === "local" ? "tabs.status.exited" : "tabs.status.closed");
   return (

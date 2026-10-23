@@ -4,6 +4,8 @@
     "closed": "[Verbindung beendet]",
     "closedWithStatus": "[Verbindung beendet, Exit-Status {status}]",
     "closedBySignal": "[Verbindung beendet, Shell durch Signal beendet: {signal}]",
+    "waitingForForwards": "[Shell beendet, warte auf das Schließen der Verbindungen der Portweiterleitung {forwards}]",
+    "waitingHint": "Drücken Sie die Eingabetaste, um eine neue Shell zu starten, Strg+C, um diese Verbindungen zu schließen, oder Strg+D, um zu schließen",
     "savedPasswordRejected": "Der Server hat das gespeicherte Passwort abgelehnt.",
     "incorrectPassphrase": "Falsche Passphrase.",
     "connectingVia": "Verbindung zu {user}@{host}:{port} über {jump} wird hergestellt ...",

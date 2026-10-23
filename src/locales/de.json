@@ -137,7 +137,9 @@
     "status": {
       "connecting": "Verbindung wird hergestellt",
       "closed": "Getrennt",
-      "exited": "Beendet"
+      "exited": "Beendet",
+      "waiting_one": "Warte auf {count} weitergeleitete Verbindung",
+      "waiting_other": "Warte auf {count} weitergeleitete Verbindungen"
     },
     "close": "Schließen",
     "closeWithShortcut": "Schließen ({shortcut})",
@@ -887,6 +889,12 @@
       "tab": "„{name}“ ist noch verbunden. Wenn Sie den Tab schließen, wird die Sitzung beendet.",
       "pane": "„{name}“ ist noch verbunden. Wenn Sie den Bereich schließen, wird die Sitzung beendet."
     },
+    "forwards": {
+      "tab_one": "Über die Portweiterleitung von „{name}“ wird noch eine Verbindung genutzt. Wenn Sie den Tab schließen, wird sie getrennt.",
+      "tab_other": "Über die Portweiterleitung von „{name}“ werden noch {count} Verbindungen genutzt. Wenn Sie den Tab schließen, werden sie getrennt.",
+      "pane_one": "Über die Portweiterleitung von „{name}“ wird noch eine Verbindung genutzt. Wenn Sie den Bereich schließen, wird sie getrennt.",
+      "pane_other": "Über die Portweiterleitung von „{name}“ werden noch {count} Verbindungen genutzt. Wenn Sie den Bereich schließen, werden sie getrennt."
+    },
     "process": {
       "tab": "In „{name}“ läuft noch „{process}“. Wenn Sie den Tab schließen, wird der Prozess beendet.",
       "pane": "In „{name}“ läuft noch „{process}“. Wenn Sie den Bereich schließen, wird der Prozess beendet."
@@ -928,6 +936,8 @@
   "closeForwards": {
     "title": "Portweiterleitung weiterlaufen lassen?",
     "message": "Diese Portweiterleitung läuft über die Verbindung, die geschlossen wird. Ein anderer Tab derselben Sitzung ist noch verbunden und kann sie weiter ausführen.",
+    "messageConnections_one": "Diese Portweiterleitung läuft über die Verbindung, die geschlossen wird. Ein anderer Tab derselben Sitzung ist noch verbunden und kann sie weiter ausführen. Eine Verbindung darüber wird genutzt und beim Schließen in jedem Fall getrennt.",
+    "messageConnections_other": "Diese Portweiterleitung läuft über die Verbindung, die geschlossen wird. Ein anderer Tab derselben Sitzung ist noch verbunden und kann sie weiter ausführen. {count} Verbindungen darüber werden genutzt und beim Schließen in jedem Fall getrennt.",
     "keep": "Weiterlaufen lassen",
     "stop": "Stoppen"
   },
