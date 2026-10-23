@@ -55,6 +55,11 @@ impl Draining {
     /// Adds the connections of `other`, forgetting those that have ended meanwhile.
     pub fn merge(&mut self, other: Draining) {
         self.0.extend(other.0);
+        self.forget_ended();
+    }
+
+    /// Forgets the connections that have ended, which [`Draining::len`] counts until then.
+    pub fn forget_ended(&mut self) {
         for (_, in_flight) in &mut self.0 {
             while in_flight.0.try_join_next().is_some() {}
         }

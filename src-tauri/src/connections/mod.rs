@@ -54,6 +54,14 @@ impl LiveConnection {
         self.sftp.browse(&self.ssh).await
     }
 
+    /// How many connections its forwarding carries: those of the rules running here, and those
+    /// its rules carried when an earlier shell exited, still open.
+    fn forward_connections(&self) -> usize {
+        let mut draining = self.draining.lock().unwrap();
+        draining.forget_ended();
+        self.forwards.connections() + draining.len()
+    }
+
     /// The SFTP session for transfers (see [`Channels::transfer`]), checking the connection as
     /// [`LiveConnection::sftp`] does.
     pub async fn transfer_sftp(&self) -> anyhow::Result<Arc<SftpSession>> {
@@ -365,9 +373,10 @@ impl Connections {
     }
 
     /// How many connections the rules on the connections that closing sessions `ids`
-    /// disconnects carry: those closing cuts (handing the rules over doesn't take them along).
+    /// disconnects carry, also those still open from before the shell last exited: those
+    /// closing cuts (handing the rules over doesn't take them along).
     pub fn forward_connections(&self, ids: &[SessionId]) -> usize {
-        closing(&self.map.lock().unwrap(), ids).iter().map(|connection| connection.forwards.connections()).sum()
+        closing(&self.map.lock().unwrap(), ids).iter().map(|connection| connection.forward_connections()).sum()
     }
 
     /// Moves the forwards of the connections that closing sessions `ids` disconnects to

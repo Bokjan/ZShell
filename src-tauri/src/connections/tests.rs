@@ -221,6 +221,12 @@ async fn starts_another_shell_on_enter_while_waiting() {
     assert_eq!(tab.next_kind("r1").await, "starting");
     assert_eq!(tab.next_kind("r1").await, "active");
     assert!(echoes(&mut client, b"pong").await);
+    // Closing the tab now would cut it too.
+    assert_eq!(connections.forward_connections(&[1]), 1);
+    let second = self::client(port).await;
+    until("the new connection to be counted", || connections.forward_connections(&[1]) == 2).await;
+    drop(second);
+    until("the new connection to end", || connections.forward_connections(&[1]) == 1).await;
 
     tab.typed("\r");
     assert!(connections.shell_exit(1).exited(&mut tab.io).await, "the connection wasn't waited for");
