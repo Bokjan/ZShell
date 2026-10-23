@@ -273,7 +273,9 @@ impl Connections {
     /// Unregisters session `id`; if no other session uses its connection, disconnects it in
     /// the background. Idempotent.
     fn close(&self, id: SessionId) {
-        let connection = {
+        // The rules to carry are set aside under the lock that removes the session, so that
+        // `forwards_to_carry` finds them either in the map or among those carried.
+        let (connection, rules, tasks, handover) = {
             let mut connections = self.map.lock().unwrap();
             let Some(connection) = connections.remove(&id) else {
                 return;
@@ -282,17 +284,17 @@ impl Connections {
             if connections.values().any(|other| Arc::ptr_eq(other, &connection)) {
                 return;
             }
-            connection
-        };
-        let (rules, tasks) = connection.forwards.stop_all();
-        let handover = connection.keep_forwards.load(Ordering::Relaxed) && !rules.is_empty();
-        if !handover && !rules.is_empty() {
-            let mut carried = self.carried.lock().unwrap();
-            if carried.len() == CARRIED {
-                carried.pop_front();
+            let (rules, tasks) = connection.forwards.stop_all();
+            let handover = connection.keep_forwards.load(Ordering::Relaxed) && !rules.is_empty();
+            if !handover && !rules.is_empty() {
+                let mut carried = self.carried.lock().unwrap();
+                if carried.len() == CARRIED {
+                    carried.pop_front();
+                }
+                carried.push_back((id, rules.iter().map(|rule| rule.id.clone()).collect()));
             }
-            carried.push_back((id, rules.iter().map(|rule| rule.id.clone()).collect()));
-        }
+            (connection, rules, tasks, handover)
+        };
         let connections = self.clone();
         tauri::async_runtime::spawn(async move {
             if handover {
