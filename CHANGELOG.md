@@ -2,6 +2,50 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.12.0] - 2026-10-23
+
+### Features
+
+- The computer can be kept from sleeping while sessions are connected, chosen in Settings › Power › Prevent sleep while connected: never (the default), when plugged in, or always. While an SSH, Telnet or serial session is connected, connecting or waiting to reconnect, inactivity no longer puts the computer to sleep, so the sessions stay connected; the display still turns off and the screen still locks, and closing the lid or choosing Sleep still puts it to sleep. On Windows computers with Modern Standby, Windows still sleeps on battery 5 minutes after its sleep time, as the settings say.
+- When the shell of a connection's last tab exits, connections already made through its port forwarding are no longer cut. As in OpenSSH, the tab stays open, says which forwarding it waits for and shows how many connections are left, and closes once they have ended; Enter starts a new shell on the same connection, Ctrl+C disconnects them at once and Ctrl+D closes the tab. The forwarding stops listening, and moves to another connected tab of the same session if there is one. Closing a tab whose forwarding carries connections asks first, saying how many it disconnects.
+- Deleting a session stops the port forwarding running in its connected tabs, which before kept their ports open with no way left to see or stop them. When any runs, the confirmation names the tabs using it, in other windows too.
+- New host keys are recorded hashed in known_hosts when ssh_config's `HashKnownHosts` is on for the host, as OpenSSH does (the system ssh_config of Debian and Ubuntu turns it on), rather than always with the host name in clear.
+
+### Bug Fixes
+
+- A connection that died while the computer slept or the network changed is noticed within seconds of typing, browsing or transferring with SFTP, a forward's client sending data or opening a connection, or the system waking, and reconnects as usual. Before, the tab looked connected while nothing worked for minutes, until keepalives gave up, or for good when the system couldn't send what was written. A busy connection or one on a slow link is not taken for a dead one, and sessions with keepalives turned off are not checked.
+- Automatic reconnection after a lost connection starts the forwarding rules that were running again, as reconnecting by hand did.
+- A forwarding rule's connection gives up after 30 seconds when the server hasn't connected to the target, and the rule's state says that the server took too long; before it could wait minutes, showing nothing wrong. Connecting through a jump host that can't reach the next hop gives up after 30 seconds too.
+- A forwarding rule on `*` listens on IPv6 as well as IPv4, as in OpenSSH, and `*` in ssh_config stays `*` when imported rather than becoming `0.0.0.0`.
+- A known_hosts file that can't be read (one left to root by sudo, for example) is reported as such, rather than as a failed handshake retried again and again by automatic reconnection.
+- SFTP:
+  - New files and folders get the permissions of those copied, as `sftp put` and `get` do, so an uploaded private key stays private and a script keeps its execute bit. Files written over keep their own.
+  - Transfers on a connection share the limit of files copied at once, so several large downloads at once no longer time out on a slow link.
+  - A downloaded file is written to the disk before it replaces the one it overwrites, so a power cut can't leave a partial file in its place.
+  - File and folder names are sorted in the interface language rather than the system's.
+- Resetting the vault after a forgotten master password keeps the old sessions file (renamed `vault.json.reset-<time>`) and its key, so it can be opened again if the password comes back to mind; the confirmation is now typed as RESET. Unencrypted vault and export files are checked after writing too, and encrypting leaves no stray copies of the sessions and passwords in memory.
+- Importing from ssh_config checks the sessions and proxies as saving does, names the proxy already here that an imported session will use, and shows IPv6 hosts in brackets. Sessions files over 16 MB are refused, and scanning one whose sessions jump through each other is no longer slow.
+- Quick commands and groups without an id in the vault keep the same one across restarts, so sessions' quick command groups keep finding them.
+- Settings and quick commands saved by another window while this one was starting are no longer undone by its next change.
+- A tab moved to another window and reconnected meanwhile no longer gets the old screen drawn over it, and a session offered to a new window that couldn't be created goes back to its tab.
+- A font whose ligature tables describe more than can be read no longer ends the app when ligatures are taken from the font; it gets the common sequences instead.
+- Telnet logs in with `?` for characters the session's encoding can't write, rather than HTML character references.
+- A ZMODEM peer sending only `*` is given up on once past the limit of bytes skipped.
+- Lists of names in messages are written as the interface language writes them ("a、b和c" in Chinese).
+- On macOS, ⌘↩ toggles terminal full screen also while the terminal or the compose bar has the focus.
+- On Windows, text fields show the focus in contrast themes.
+- On Linux, terminals no longer start with another font for a moment when another window changed the settings during startup.
+
+### Performance
+
+- Opening local terminals and serial ports, setting the window's theme, creating downloads and looking up a local terminal's foreground program no longer hold up other work; on Windows the last froze the window while it ran.
+
+### Internal
+
+- App's flows (opening sessions, the session editor, logging, dialogs, update notices and quick commands) moved into hooks of their own, which read the settings they need themselves; the window's actions, with their shortcuts and app menu items, are declared in one table.
+- Local and dynamic forwarding share their listening loop, and what changing or deleting a session does to its forwarding is decided in one place.
+- The vault's debug output leaves out saved passwords and the master password.
+
 ## [3.11.0] - 2026-10-21
 
 ### Features
