@@ -35,9 +35,11 @@ export function TooltipPopup({ anchor, text }: { anchor: Pick<Element, "getBound
 
 /**
  * Shows the `title` of the element under the pointer in a tooltip drawn by the page, for the
- * whole app: WKWebView shows no `title` tooltips at all. While the pointer is on the element,
- * its `title` is kept off so that WebView2 doesn't show its own tooltip as well: taken off when
- * the pointer comes, and again if React sets a new one meanwhile (whose text is then shown),
+ * whole app: WKWebView shows no `title` tooltips at all. The web view must never show one of
+ * its own beside it (WebView2 does, and so do some versions of WKWebView), which it does for
+ * the nearest element with a `title` around the pointer: while the pointer is on an element,
+ * its `title` and those of the elements around it are kept off. They are taken off when the
+ * pointer comes, again if React sets a new one meanwhile (the element's own is then shown),
  * and put back when the pointer leaves.
  */
 export function Tooltips() {
@@ -45,43 +47,55 @@ export function Tooltips() {
 
   useEffect(() => {
     let current: Element | null = null;
-    let saved = "";
+    /** The titles taken off: the element's own first, then those around it. */
+    let taken: { element: Element; title: string }[] = [];
     let timer: number | undefined;
-    const retitled = new MutationObserver(() => {
-      if (!current?.hasAttribute("title")) return;
-      saved = current.getAttribute("title") ?? "";
-      current.removeAttribute("title");
-      setShown((tip) => (tip && saved ? { anchor: tip.anchor, text: saved } : null));
+    const retitled = new MutationObserver((records) => {
+      for (const { target } of records) {
+        const entry = taken.find(({ element }) => element === target);
+        if (!entry || !(target instanceof Element) || !target.hasAttribute("title")) continue;
+        entry.title = target.getAttribute("title") ?? "";
+        target.removeAttribute("title");
+        if (target === current) setShown((tip) => (tip && entry.title ? { anchor: tip.anchor, text: entry.title } : null));
+      }
     });
 
     // On every key typed, too: nothing to do unless the pointer is on an element with a title.
     const hide = () => {
       if (!current) return;
       window.clearTimeout(timer);
-      // Before its title is put back, which would count as React's.
+      // Before the titles are put back, which would count as React's.
       retitled.disconnect();
-      if (!current.hasAttribute("title")) current.setAttribute("title", saved);
+      for (const { element, title } of taken) {
+        if (!element.hasAttribute("title")) element.setAttribute("title", title);
+      }
+      taken = [];
       current = null;
       setShown(null);
     };
     const onOver = (e: MouseEvent) => {
       const target = e.target instanceof Element ? e.target : null;
-      const titled = target?.closest("[title]") ?? null;
       // The element shown has no title now, so `closest` passes over it: it stays while the
       // pointer moves within it (between its icon and its text), unless onto an element with a
       // title of its own inside it. Otherwise its title would come back under the pointer, and
-      // WebView2's tooltip with it.
-      const within = current && target && current.contains(target) && !(titled && current.contains(titled));
-      const anchor = within ? current : titled;
-      if (anchor === current) return;
+      // the web view's tooltip with it.
+      const inner = target?.closest("[title]") ?? null;
+      if (current && target && current.contains(target) && !(inner && current.contains(inner))) return;
       hide();
+      // Found again with the titles around the element that was shown put back.
+      const anchor = target?.closest("[title]") ?? null;
       const text = anchor?.getAttribute("title");
       if (!anchor || !text) return;
       current = anchor;
-      saved = text;
-      anchor.removeAttribute("title");
-      retitled.observe(anchor, { attributes: true, attributeFilter: ["title"] });
-      timer = window.setTimeout(() => saved && setShown({ anchor, text: saved }), TOOLTIP_DELAY);
+      for (let element: Element | null = anchor; element; element = element.parentElement?.closest("[title]") ?? null) {
+        taken.push({ element, title: element.getAttribute("title") ?? "" });
+        element.removeAttribute("title");
+        retitled.observe(element, { attributes: true, attributeFilter: ["title"] });
+      }
+      timer = window.setTimeout(() => {
+        const title = taken[0]?.title;
+        if (title) setShown({ anchor, text: title });
+      }, TOOLTIP_DELAY);
     };
     // Leaving the window.
     const onOut = (e: MouseEvent) => {
