@@ -439,6 +439,9 @@ describe("ending", () => {
     opened[0].event({ type: "connected" });
     expect(events.waiting).toHaveBeenLastCalledWith(null);
     expect(pane.isConnected).toBe(true);
+    // The new shell exits before anything is typed into it: Enter went to the previous one.
+    opened[0].event(exited(1));
+    expect(events.exited).toHaveBeenLastCalledWith(1, null, false);
   });
 
   it("closes the pane on Ctrl+D while waiting for forwarded connections", async () => {

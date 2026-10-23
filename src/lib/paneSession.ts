@@ -593,10 +593,12 @@ export class PaneSession {
         if (stale()) return;
         switch (event.type) {
           case "connected":
-            // Also another shell on the connection, after one exited.
+            // Also another shell on the connection, after one exited: what was typed (Enter
+            // to start it) went into the previous one.
             this.stopWaiting();
             connected = true;
             this.connected = true;
+            this.typed = false;
             this.attempt = 0;
             this.carry = [];
             this.events.status("connected");
