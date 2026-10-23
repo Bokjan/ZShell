@@ -29,14 +29,18 @@ interface Props {
 /**
  * The lights for data sent and received through a connection's channels (see `lib/traffic`),
  * with the rates after them if asked. Its text is worked out every `TEXT_MS` and drawn again
- * only when it has changed. Not a live region: the rates change all the time.
+ * only when it has changed. Not a live region: the rates change all the time. While hidden (in a
+ * side panel not shown, which stays mounted) it is left alone, and brought up to date when
+ * shown again.
  */
 export function TrafficLights({ source, summary, rates = false, className }: Props) {
   const { t } = useTranslation();
   const { formatSize } = useLocale();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const { send, receive } = useLights(source, reduced ? LIGHT_REDUCED_MS : LIGHT_MS);
-  const text = useRecomputed(TEXT_MS, () => {
+  const [element, setElement] = useState<HTMLSpanElement | null>(null);
+  const shown = useShown(element);
+  const { send, receive } = useLights(shown ? source : undefined, reduced ? LIGHT_REDUCED_MS : LIGHT_MS);
+  const text = useRecomputed(shown ? TEXT_MS : null, () => {
     const rate = source?.rate() ?? { sent: 0, received: 0 };
     const sent = t("traffic.rate", { size: formatSize(Math.round(rate.sent)) });
     const received = t("traffic.rate", { size: formatSize(Math.round(rate.received)) });
@@ -46,7 +50,7 @@ export function TrafficLights({ source, summary, rates = false, className }: Pro
   const [sent, received, ...lines] = text.split("\n");
   const tooltip = rates ? lines.slice(1) : lines;
   return (
-    <span className={`traffic-lights${className ? ` ${className}` : ""}`} title={tooltip.join("\n")}>
+    <span ref={setElement} className={`traffic-lights${className ? ` ${className}` : ""}`} title={tooltip.join("\n")}>
       <span className={send ? "send on" : "send"}>
         <ActivityIcon direction="up" />
       </span>
@@ -125,10 +129,30 @@ function useLights(source: TrafficSource | undefined, hold: number) {
   return lights;
 }
 
-/** What `compute` returns, worked out again every `interval` ms: a render only when it changes. */
-function useRecomputed(interval: number, compute: () => string): string {
+/**
+ * Whether `element` is shown, rather than in something hidden with `display: none`: its size
+ * changes to nothing and back as that comes and goes. It must be a box (`.traffic-lights` is
+ * `inline-flex`): a plain inline element always has no size for a `ResizeObserver`.
+ */
+function useShown(element: Element | null): boolean {
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    if (!element) return;
+    const observer = new ResizeObserver(() => setShown(element.checkVisibility()));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return shown;
+}
+
+/**
+ * What `compute` returns, worked out again every `interval` ms (and not at all while that is
+ * null, until it is not): a render only when it changes.
+ */
+function useRecomputed(interval: number | null, compute: () => string): string {
   const [value, setValue] = useState(compute);
   useEffect(() => {
+    if (interval === null) return;
     const update = () => setValue(compute());
     update();
     const timer = setInterval(update, interval);
