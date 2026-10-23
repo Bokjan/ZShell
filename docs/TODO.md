@@ -109,7 +109,7 @@
 ### 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44
 
 - **现状**：正式版仍是 6.0.0（2025-12-22）。npm 的 `beta` 标签是 6.1.0-beta 系列（2026-10-21 为 6.1.0-beta.315），但其中的 kitty 键盘协议（[xtermjs/xterm.js#5600](https://github.com/xtermjs/xterm.js/pull/5600)）与 win32-input-mode 挂在 [7.0.0 里程碑](https://github.com/xtermjs/xterm.js/milestones)下，没有截止日期，下一个正式版可能叫 7.0.0。不提前用 beta。
-- **一起处理**：升级时 pnpm 会因 `patches/@xterm__xterm@6.0.0.patch` 打不上而报错，按下面三条（后台终端重建 DOM、输入法丢字、切换标签空白一帧）各自的「处理」逐条确认，重做或去掉补丁与绕过；`@xterm/addon-*` 一起升到配套版本。同一个版本里做 [ROADMAP.md](ROADMAP.md) 的 M43（kitty 键盘协议），那里写了要接的地方和要关注的输入法问题（#6112、#6036）；M44（终端图片）用配套的 `@xterm/addon-image`，重点测内存、CPU 与 GPU 的影响。版本是破坏性大版本时，先看 release notes 里的 API 变更。
+- **一起处理**：升级时 pnpm 会因 `patches/@xterm__xterm@6.0.0.patch` 打不上而报错，按下面三条（后台终端重建 DOM、输入法丢字、切换标签空白一帧）各自的「处理」逐条确认，重做或去掉补丁与绕过；`@xterm/addon-*` 一起升到配套版本，并确认 `FullWidthFitAddon`（`lib/terminalFit.ts`）读的单元格尺寸和 fit 插件的 `fit()` 仍然可用。同一个版本里做 [ROADMAP.md](ROADMAP.md) 的 M43（kitty 键盘协议），那里写了要接的地方和要关注的输入法问题（#6112、#6036）；M44（终端图片）用配套的 `@xterm/addon-image`，重点测内存、CPU 与 GPU 的影响。版本是破坏性大版本时，先看 release notes 里的 API 变更。
 - **关注**：npm 上 `@xterm/xterm` 的 `latest` 标签；7.0.0 里程碑的未关闭项。
 - **登记**：2026-10-21。
 

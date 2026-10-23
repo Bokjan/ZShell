@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Terminal, type IDisposable } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -24,6 +23,7 @@ import { KittyNotices, PointerShapes, osc52Text, parseOsc777, parseOsc9 } from "
 import { useShortcuts } from "../hooks/shortcuts";
 import { fontLigatureRules } from "../lib/fontLigatureRules";
 import { ligatureRanges } from "../lib/ligatures";
+import { FullWidthFitAddon } from "../lib/terminalFit";
 import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
@@ -192,7 +192,7 @@ export function TerminalView({
       allowProposedApi: true, // required by the unicode11 addon
       ...optionsRef.current,
     });
-    const fit = new FitAddon();
+    const fit = new FullWidthFitAddon();
     term.loadAddon(fit);
     const search = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
     term.loadAddon(search);

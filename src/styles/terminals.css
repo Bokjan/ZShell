@@ -128,6 +128,15 @@
   user-select: text;
   -webkit-user-select: text;
 }
+/* The scroll bar lies over the last column (see `FullWidthFitAddon`), so its slider is
+   narrower than the 14px xterm.js sets inline, along the right edge; the whole strip still
+   takes clicks and drags. */
+.terminal-view .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  left: auto !important;
+  right: 2px;
+  width: 8px !important;
+  border-radius: 4px;
+}
 /* Ligatures off. The DOM renderer (hidden tabs, or no WebGL) draws each run of cells in one
    style as one piece of text, which a font with ligatures would join; the WebGL renderer draws
    each cell apart unless told to join them. */
