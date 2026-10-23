@@ -248,8 +248,11 @@ impl Forwards {
         for (rule_id, old) in running.drain() {
             // A stopped rule's task has its signal already, and gives back nothing.
             if old.generation.is_some() {
+                // Whether it ended by a failure, asked before the signal: once signalled, its
+                // task may end on another thread at once.
+                let ended = old.task.inner().is_finished();
                 let _ = old.stop.send(signal);
-                if !old.task.inner().is_finished() {
+                if !ended {
                     self.0.report(&rule_id, ForwardState::Stopped);
                     rules.push(old.rule.clone());
                 }
