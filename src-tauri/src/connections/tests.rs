@@ -250,7 +250,9 @@ async fn waits_for_the_connections_to_end() {
     assert!(closing.is_finished());
 
     connections.restart_forwards(&connections.get(1).unwrap(), Draining::default(), vec![local_rule("r1", port)]);
-    until("the rule to run again", || connections.get(1).unwrap().forwards.is_running("r1")).await;
+    // Listening once active: it counts as running while it is still starting.
+    while tab.next_kind("r1").await != "starting" {}
+    assert_eq!(tab.next_kind("r1").await, "active");
     let mut client = self::client(port).await;
     tab.typed("\x03");
     assert!(!connections.shell_exit(1).exited(&mut tab.io).await);
