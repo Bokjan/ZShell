@@ -2,6 +2,12 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.13.1] - 2026-10-23
+
+### Bug Fixes
+
+- Updated the ctutils library used by the SSH cryptography, which could take a different time depending on secret values in some operations (RUSTSEC-2026-0385).
+
 ## [3.13.0] - 2026-10-23
 
 ### Features
