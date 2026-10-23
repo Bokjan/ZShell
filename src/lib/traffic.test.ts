@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Counts } from "../ipc/api";
-import { channelRanges, ForwardMeters, RATE_WINDOW_MS, TrafficMeter } from "./traffic";
+import { channelRanges, ForwardMeters, RATE_WINDOW_MS, SftpTraffic, TrafficMeter } from "./traffic";
 
 const counts = (sent: number, received: number, at: number | null = null): Counts => ({ sent, received, lastSent: at, lastReceived: at });
 
@@ -60,6 +60,33 @@ describe("TrafficMeter", () => {
     time = 50;
     meter.update(counts(0, 100), null);
     expect(meter.rate().received).toBe(100);
+  });
+});
+
+describe("SftpTraffic", () => {
+  const connection = { id: 3, localPort: null };
+
+  it("starts the transfers' rate again when they move to their own channel or onto the browsing one", () => {
+    let time = 0;
+    const traffic = new SftpTraffic(() => time);
+    // Shared: the transfers have the browsing channel's counts.
+    for (; time <= 1000; time += 50) {
+      const browse = { counts: counts(0, time * 10), channel: 0 };
+      traffic.update(connection, browse, browse);
+    }
+    time -= 50;
+    expect(traffic.transfer.rate().received).toBeCloseTo(10_000);
+    // Their own channel, with less on it than the browsing one had.
+    traffic.update(connection, { counts: counts(0, 10_000), channel: 0 }, { counts: counts(0, 500), channel: 1 });
+    expect(traffic.transfer.rate().received).toBe(0);
+    time += 50;
+    traffic.update(connection, { counts: counts(0, 10_000), channel: 0 }, { counts: counts(0, 1500), channel: 1 });
+    expect(traffic.transfer.rate().received).toBe(1000);
+    // Back onto the browsing channel, with more on it.
+    time += 50;
+    const browse = { counts: counts(0, 10_000), channel: 0 };
+    traffic.update(connection, browse, browse);
+    expect(traffic.transfer.rate().received).toBe(0);
   });
 });
 

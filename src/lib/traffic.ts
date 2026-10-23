@@ -46,9 +46,11 @@ export class TrafficMeter<D> implements TrafficSource {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  update(counts: Counts, detail: D) {
+  /** `restart`: the counts go on from another channel's, so the rate starts again from them. */
+  update(counts: Counts, detail: D, restart = false) {
     this.counts = counts;
     this.detail = detail;
+    if (restart) this.samples = [];
     const at = this.now();
     this.samples.push({ at, sent: counts.sent, received: counts.received });
     // The last one before the window stays, as where a rate starts.
@@ -111,9 +113,14 @@ export class SftpTraffic {
     this.transfer = new TrafficMeter(now);
   }
 
+  /**
+   * Transfers have the browsing channel's counts while they share it, and their own otherwise:
+   * when they change channel, their counts jump (down, or up), which is no traffic.
+   */
   update(connection: ConnectionInfo, browse: SftpChannelTraffic, transfer: SftpChannelTraffic) {
-    this.browse.update(browse.counts, { connection, channel: browse.channel });
-    this.transfer.update(transfer.counts, { connection, channel: transfer.channel });
+    const moved = (meter: TrafficMeter<SftpDetail>, channel: number | null) => meter.detail !== null && meter.detail.channel !== channel;
+    this.browse.update(browse.counts, { connection, channel: browse.channel }, moved(this.browse, browse.channel));
+    this.transfer.update(transfer.counts, { connection, channel: transfer.channel }, moved(this.transfer, transfer.channel));
   }
 
   reset() {
