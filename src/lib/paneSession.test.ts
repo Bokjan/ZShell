@@ -497,11 +497,11 @@ describe("traffic", () => {
     opened[0].event({ type: "forwardTraffic", ruleId: "r1", traffic: { counts, connection, channels: [7], channelCount: 1 } });
     expect(pane.traffic).toMatchObject({ counts, detail: { connection, channel: 2 } });
     expect(pane.sftpTraffic.transfer).toMatchObject({ counts, detail: { connection, channel: 6 } });
-    expect(pane.forwardTraffic.get("r1")?.counts).toEqual(counts);
+    expect(pane.forwardTraffic.rule("r1").counts).toEqual(counts);
 
     // A rule that stops (or starts again) starts its count afresh.
     opened[0].event({ type: "forward", ruleId: "r1", state: { type: "stopped" } });
-    expect(pane.forwardTraffic.get("r1")).toBeUndefined();
+    expect(pane.forwardTraffic.running()).toEqual([]);
 
     opened[0].event(lost());
     await vi.advanceTimersByTimeAsync(2000);

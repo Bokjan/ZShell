@@ -79,13 +79,29 @@ describe("ForwardMeters", () => {
     expect(meters.counts).toEqual({ sent: 3000, received: 4000, lastSent: 1900, lastReceived: 1800 });
     // Over the last second, which began after the first reports.
     expect(meters.rate()).toEqual({ sent: 3000, received: 4000 });
-    expect(meters.get("a")?.detail).toEqual(detail);
+    expect(meters.rule("a").detail).toEqual(detail);
 
     meters.clear("b");
-    expect(meters.all()).toHaveLength(1);
+    expect(meters.running()).toHaveLength(1);
+    // Only a rule that ran is told of.
+    meters.clear("c");
     meters.reset();
     expect(meters.counts).toEqual(counts(0, 0));
     expect(listener).toHaveBeenCalledTimes(6);
+  });
+
+  it("keeps a rule's meter from run to run, so that what shows it follows the next run", () => {
+    const meters = new ForwardMeters(() => 0);
+    const meter = meters.rule("a");
+    const listener = vi.fn();
+    meter.subscribe(listener);
+    meters.update("a", { counts: counts(5, 5), ...detail });
+    meters.clear("a");
+    expect(meter).toMatchObject({ counts: counts(0, 0), detail: null });
+    meters.update("a", { counts: counts(1, 0), ...detail });
+    expect(meters.rule("a")).toBe(meter);
+    expect(meter.counts.sent).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(3);
   });
 });
 

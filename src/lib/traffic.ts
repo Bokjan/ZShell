@@ -122,41 +122,50 @@ export class SftpTraffic {
   }
 }
 
-/** The meters of a session's forwarding rules that run, by rule id; also all of them together. */
+/**
+ * The meters of a session's forwarding rules, by rule id; also those of the rules that run, all
+ * together. A rule keeps the same meter from run to run, reset as a run ends, so that what shows
+ * it follows its next run without rendering again: a run's first report comes after its state.
+ */
 export class ForwardMeters implements TrafficSource {
   private readonly meters = new Map<string, TrafficMeter<ForwardDetail>>();
   private readonly listeners = new Listeners();
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  get(ruleId: string): TrafficMeter<ForwardDetail> | undefined {
-    return this.meters.get(ruleId);
+  /** The meter of rule `ruleId`, made the first time it is asked for: empty while it doesn't run. */
+  rule(ruleId: string): TrafficMeter<ForwardDetail> {
+    let meter = this.meters.get(ruleId);
+    if (!meter) this.meters.set(ruleId, (meter = new TrafficMeter(this.now)));
+    return meter;
   }
 
-  all(): TrafficMeter<ForwardDetail>[] {
-    return [...this.meters.values()];
+  /** The meters of the rules whose current run has reported. */
+  running(): TrafficMeter<ForwardDetail>[] {
+    return [...this.meters.values()].filter((meter) => meter.detail !== null);
   }
 
   update(ruleId: string, { counts, ...detail }: ForwardTraffic) {
-    let meter = this.meters.get(ruleId);
-    if (!meter) this.meters.set(ruleId, (meter = new TrafficMeter(this.now)));
-    meter.update(counts, detail);
+    this.rule(ruleId).update(counts, detail);
     this.listeners.notify();
   }
 
   /** The rule stopped, or starts again: a new run counts afresh. */
   clear(ruleId: string) {
-    if (this.meters.delete(ruleId)) this.listeners.notify();
+    const meter = this.meters.get(ruleId);
+    if (meter?.detail == null) return;
+    meter.reset();
+    this.listeners.notify();
   }
 
   reset() {
-    this.meters.clear();
+    for (const meter of this.meters.values()) meter.reset();
     this.listeners.notify();
   }
 
   get counts(): Counts {
     const latest = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b));
-    return this.all().reduce(
+    return this.running().reduce(
       (sum, { counts }) => ({
         sent: sum.sent + counts.sent,
         received: sum.received + counts.received,
@@ -168,7 +177,7 @@ export class ForwardMeters implements TrafficSource {
   }
 
   rate(): Rate {
-    return this.all().reduce(
+    return this.running().reduce(
       (sum, meter) => {
         const rate = meter.rate();
         return { sent: sum.sent + rate.sent, received: sum.received + rate.received };
@@ -177,7 +186,7 @@ export class ForwardMeters implements TrafficSource {
     );
   }
 
-  /** On a change of any rule's meter, or of which rules have one. */
+  /** On a change of any rule's meter, or of which rules run. */
   subscribe(listener: () => void): () => void {
     return this.listeners.subscribe(listener);
   }

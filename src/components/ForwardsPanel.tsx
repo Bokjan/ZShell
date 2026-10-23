@@ -84,7 +84,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, tr
   /** The tooltip of all the rules' lights: their channels on each connection they run on. */
   const allSummary = () => {
     const on = new Map<number, ForwardDetail>();
-    for (const { detail } of traffic?.all() ?? []) {
+    for (const { detail } of traffic?.running() ?? []) {
       if (!detail) continue;
       const seen = on.get(detail.connection.id);
       on.set(
@@ -103,7 +103,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, tr
 
   /** The tooltip of a rule's lights. */
   const ruleSummary = (ruleId: string) => {
-    const meter = traffic?.get(ruleId);
+    const meter = traffic?.rule(ruleId);
     const detail = meter?.detail;
     return [
       ...(detail ? [trafficText.channels(detail.connection, detail.channels, detail.channelCount)] : []),
@@ -171,7 +171,7 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, tr
                 </div>
                 {state?.type === "active" && (
                   <div className="forward-traffic">
-                    <TrafficLights source={traffic?.get(rule.id)} rates summary={() => ruleSummary(rule.id)} />
+                    <TrafficLights source={traffic?.rule(rule.id)} rates summary={() => ruleSummary(rule.id)} />
                   </div>
                 )}
                 {lastError && <div className="forward-last-error">{t("forwards.status.lastError", { error: lastError.message })}</div>}
