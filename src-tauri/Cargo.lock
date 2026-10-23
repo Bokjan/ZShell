@@ -7400,7 +7400,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zshell"
-version = "3.12.1"
+version = "3.13.0"
 dependencies = [
  "anyhow",
  "block2",

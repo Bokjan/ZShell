@@ -2,6 +2,21 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.13.0] - 2026-10-23
+
+### Features
+
+- The session list can be hidden, keeping the tabs and panels: with the button beside the app menu's button (beside the traffic lights on macOS), which stays in place and moves to the start of the tab bar while the list is hidden, with View › Hide / Show Session List in the app menu and the macOS menu bar, or with ⌃⌘S on macOS and Ctrl+Shift+B elsewhere. Searching or creating a session shows the list again, scrolled to the selected row, and whether it is hidden is kept per machine, like its width.
+- The terminal uses the whole width for text: the scroll bar, which fades out when unused, is drawn over the last column rather than keeping a strip free beside it, and is narrower.
+
+### Bug Fixes
+
+- Ctrl+, (⌘, on macOS) closes the settings as well as opening them, unless another dialog is open over them.
+
+### Internal
+
+- The bundled license notices store each paragraph once, which makes them less than half the size; every package shows the same text as before.
+
 ## [3.12.1] - 2026-10-23
 
 ### Bug Fixes
