@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { useConfirmButton } from "../hooks/confirm";
 import { useDialog } from "../hooks/dialogs";
-import { matches } from "../lib/keymap";
+import { chosenAction, matches } from "../lib/keymap";
 import { isMac } from "../lib/platform";
 import { CLIPBOARD_LIMIT_MAX, DEFAULT_SETTINGS } from "../ipc/api";
 import {
@@ -104,9 +104,15 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
     },
   });
 
-  // Ctrl+F also finds outside macOS: no shell has the focus here.
+  // The key that opens the settings closes them, but not the menu item, which opens them
+  // wherever it is chosen. On macOS the menu bar takes ⌘, and chooses its item, so there the
+  // two are one. Ctrl+F also finds outside macOS: no shell has the focus here.
   useShortcuts(
     (e) => {
+      if (matches(e, "settings") && (isMac || !chosenAction(e))) {
+        onClose();
+        return true;
+      }
       const ctrlF = !isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
       if (!matches(e, "find") && !ctrlF) return false;
       searchRef.current?.select();

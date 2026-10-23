@@ -22,10 +22,24 @@ interface Options {
 interface Registration {
   handle: ShortcutHandler;
   applies(): boolean;
+  /** A dialog's, which only apply while it is the top one. */
+  ofDialog: boolean;
 }
 
 const registrations = new Set<Registration>();
 let listening = false;
+
+/**
+ * Gives `e` to the first handler that applies now and takes it, returning whether one did.
+ * The top dialog's own come first, before the window's that also apply over dialogs: the
+ * settings close on the key that opens them.
+ */
+function dispatch(e: KeyboardEvent): boolean {
+  for (const ofDialog of [true, false])
+    for (const registration of registrations)
+      if (registration.ofDialog === ofDialog && registration.applies() && registration.handle(e)) return true;
+  return false;
+}
 
 // Capture phase, so the terminal never sees an app shortcut. Keys typed while an input
 // method composes are never shortcuts; `isComposing` alone, not `keyCode` 229 (see
@@ -40,14 +54,9 @@ function onKeyDown(e: KeyboardEvent) {
     e.stopPropagation();
     return;
   }
-  if (isAppLocked()) return;
-  for (const registration of registrations) {
-    if (registration.applies() && registration.handle(e)) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-  }
+  if (isAppLocked() || !dispatch(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
 }
 
 /**
@@ -55,10 +64,7 @@ function onKeyDown(e: KeyboardEvent) {
  * that applies now takes it. Returns whether one did.
  */
 export function runAction(action: Action): boolean {
-  if (isAppLocked()) return false;
-  const e = actionEvent(action);
-  for (const registration of registrations) if (registration.applies() && registration.handle(e)) return true;
-  return false;
+  return !isAppLocked() && dispatch(actionEvent(action));
 }
 
 /**
@@ -77,6 +83,7 @@ export function useShortcuts(handle: ShortcutHandler, { when = "tabs", dialog, e
     const registration: Registration = {
       handle: (e) => onShortcut(e),
       applies: () => (dialog ? dialog.isTop() : when === "always" || !isDialogOpen()),
+      ofDialog: !!dialog,
     };
     registrations.add(registration);
     return () => void registrations.delete(registration);
