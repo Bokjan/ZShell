@@ -226,216 +226,228 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
     <>
       <Modal dialog={dialog}>
         <div className="dialog settings-dialog">
-          <nav className="settings-nav">
+          <header className="settings-header">
             <h2>{t("settings.title")}</h2>
-            <input
-              ref={searchRef}
-              value={query}
-              placeholder={t("settings.search")}
-              aria-label={t("settings.search")}
-              onChange={(e) => search(e.target.value)}
-              autoCapitalize="off"
-              autoCorrect="off"
-            />
-            <ul className="settings-nav-list">
-              {SECTIONS.map((id) => (
-                <li key={id}>
-                  <button
-                    type="button"
-                    className={id === active ? "on" : undefined}
-                    aria-current={id === active ? "true" : undefined}
-                    disabled={!shown.includes(id)}
-                    onClick={() => jump(id)}
-                  >
-                    {t(`settings.${id}`)}
-                    {id === "about" && updates.available && (
-                      <>
-                        <DotIcon />
-                        <span className="visually-hidden">{t("updates.available", { version: updates.available.version })}</span>
-                      </>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <footer>
-              <button type="button" ref={resetRef} onClick={reset} onBlur={onResetBlur} title={t("settings.resetHint")}>
-                {resetArmed ? t("settings.resetConfirm") : t("settings.reset")}
-              </button>
-            </footer>
-          </nav>
+            <button
+              type="button"
+              className="icon-button settings-close"
+              title={t("common.close")}
+              aria-label={t("common.close")}
+              onClick={onClose}
+            >
+              <CloseIcon />
+            </button>
+          </header>
 
-          <div
-            className="settings-content"
-            ref={contentRef}
-            tabIndex={-1}
-            onScroll={scrolled}
-            onWheel={release}
-            onPointerDown={release}
-            onKeyDown={release}
-          >
-            <AppearanceSection />
+          <div className="settings-body">
+            <nav className="settings-nav">
+              <input
+                ref={searchRef}
+                value={query}
+                placeholder={t("settings.search")}
+                aria-label={t("settings.search")}
+                onChange={(e) => search(e.target.value)}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+              <ul className="settings-nav-list">
+                {SECTIONS.map((id) => (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      className={id === active ? "on" : undefined}
+                      aria-current={id === active ? "true" : undefined}
+                      disabled={!shown.includes(id)}
+                      onClick={() => jump(id)}
+                    >
+                      {t(`settings.${id}`)}
+                      {id === "about" && updates.available && (
+                        <>
+                          <DotIcon />
+                          <span className="visually-hidden">{t("updates.available", { version: updates.available.version })}</span>
+                        </>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <footer>
+                <button type="button" ref={resetRef} onClick={reset} onBlur={onResetBlur} title={t("settings.resetHint")}>
+                  {resetArmed ? t("settings.resetConfirm") : t("settings.reset")}
+                </button>
+              </footer>
+            </nav>
 
-            <TerminalSection />
+            <div
+              className="settings-content"
+              ref={contentRef}
+              tabIndex={-1}
+              onScroll={scrolled}
+              onWheel={release}
+              onPointerDown={release}
+              onKeyDown={release}
+            >
+              <AppearanceSection />
 
-            <Section id="mouseAndClipboard">
-              <Setting>
-                <div className="field">
-                  <span>{t("settings.rightClick")}</span>
-                  <RadioGroup
-                    className="segmented"
-                    label={t("settings.rightClick")}
-                    value={terminal.rightClick}
-                    options={RIGHT_CLICKS.map((rightClick) => ({ value: rightClick, content: t(`settings.rightClicks.${rightClick}`) }))}
-                    onChange={(rightClick) => setTerminal({ rightClick })}
-                  />
-                </div>
-                <p className="hint">{t("settings.rightClickHint")}</p>
-              </Setting>
-              <label className="checkbox">
-                <input type="checkbox" checked={terminal.copyOnSelect} onChange={(e) => setTerminal({ copyOnSelect: e.target.checked })} />
-                {t("settings.copyOnSelect")}
-              </label>
-              <Setting>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={terminal.confirmMultilinePaste}
-                    onChange={(e) => setTerminal({ confirmMultilinePaste: e.target.checked })}
-                  />
-                  {t("settings.confirmMultilinePaste")}
-                </label>
-                <p className="hint">{t("settings.confirmMultilinePasteHint")}</p>
-              </Setting>
-              <Setting>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={terminal.clipboardWrite}
-                    onChange={(e) => setTerminal({ clipboardWrite: e.target.checked })}
-                  />
-                  {t("settings.clipboardWrite")}
-                  <HelpTip text={t("settings.clipboardWriteTip")} />
-                </label>
-                {terminal.clipboardWrite && (
-                  <label className="clipboard-limit">
-                    <span>
-                      {t("settings.clipboardLimit")}
-                      <HelpTip text={t("settings.clipboardLimitTip")} />
-                    </span>
-                    <NumberField
-                      value={terminal.clipboardLimit}
-                      min={1}
-                      max={CLIPBOARD_LIMIT_MAX}
-                      step={256}
-                      onChange={(clipboardLimit) => setTerminal({ clipboardLimit })}
+              <TerminalSection />
+
+              <Section id="mouseAndClipboard">
+                <Setting>
+                  <div className="field">
+                    <span>{t("settings.rightClick")}</span>
+                    <RadioGroup
+                      className="segmented"
+                      label={t("settings.rightClick")}
+                      value={terminal.rightClick}
+                      options={RIGHT_CLICKS.map((rightClick) => ({ value: rightClick, content: t(`settings.rightClicks.${rightClick}`) }))}
+                      onChange={(rightClick) => setTerminal({ rightClick })}
                     />
-                  </label>
-                )}
-              </Setting>
-              {isMac && (
+                  </div>
+                  <p className="hint">{t("settings.rightClickHint")}</p>
+                </Setting>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={terminal.copyOnSelect}
+                    onChange={(e) => setTerminal({ copyOnSelect: e.target.checked })}
+                  />
+                  {t("settings.copyOnSelect")}
+                </label>
                 <Setting>
                   <label className="checkbox">
                     <input
                       type="checkbox"
-                      checked={terminal.optionAsMeta}
-                      onChange={(e) => setTerminal({ optionAsMeta: e.target.checked })}
+                      checked={terminal.confirmMultilinePaste}
+                      onChange={(e) => setTerminal({ confirmMultilinePaste: e.target.checked })}
                     />
-                    {t("settings.optionAsMeta")}
+                    {t("settings.confirmMultilinePaste")}
                   </label>
-                  <p className="hint">{t("settings.optionAsMetaHint")}</p>
+                  <p className="hint">{t("settings.confirmMultilinePasteHint")}</p>
                 </Setting>
-              )}
-            </Section>
+                <Setting>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={terminal.clipboardWrite}
+                      onChange={(e) => setTerminal({ clipboardWrite: e.target.checked })}
+                    />
+                    {t("settings.clipboardWrite")}
+                    <HelpTip text={t("settings.clipboardWriteTip")} />
+                  </label>
+                  {terminal.clipboardWrite && (
+                    <label className="clipboard-limit">
+                      <span>
+                        {t("settings.clipboardLimit")}
+                        <HelpTip text={t("settings.clipboardLimitTip")} />
+                      </span>
+                      <NumberField
+                        value={terminal.clipboardLimit}
+                        min={1}
+                        max={CLIPBOARD_LIMIT_MAX}
+                        step={256}
+                        onChange={(clipboardLimit) => setTerminal({ clipboardLimit })}
+                      />
+                    </label>
+                  )}
+                </Setting>
+                {isMac && (
+                  <Setting>
+                    <label className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={terminal.optionAsMeta}
+                        onChange={(e) => setTerminal({ optionAsMeta: e.target.checked })}
+                      />
+                      {t("settings.optionAsMeta")}
+                    </label>
+                    <p className="hint">{t("settings.optionAsMetaHint")}</p>
+                  </Setting>
+                )}
+              </Section>
 
-            <Section id="tabs">
-              <Setting>
+              <Section id="tabs">
+                <Setting>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.tabs.followRemoteTitle}
+                      onChange={(e) => setTabs({ followRemoteTitle: e.target.checked })}
+                    />
+                    {t("settings.followRemoteTitle")}
+                  </label>
+                  <p className="hint">{t("settings.followRemoteTitleHint")}</p>
+                </Setting>
                 <label className="checkbox">
                   <input
                     type="checkbox"
-                    checked={settings.tabs.followRemoteTitle}
-                    onChange={(e) => setTabs({ followRemoteTitle: e.target.checked })}
+                    checked={settings.tabs.confirmClose}
+                    onChange={(e) => setTabs({ confirmClose: e.target.checked })}
                   />
-                  {t("settings.followRemoteTitle")}
+                  {t("settings.confirmClose")}
                 </label>
-                <p className="hint">{t("settings.followRemoteTitleHint")}</p>
-              </Setting>
-              <label className="checkbox">
-                <input type="checkbox" checked={settings.tabs.confirmClose} onChange={(e) => setTabs({ confirmClose: e.target.checked })} />
-                {t("settings.confirmClose")}
-              </label>
-              <Setting>
+                <Setting>
+                  <label className="checkbox">
+                    <input type="checkbox" checked={settings.tabs.markOutput} onChange={(e) => setTabs({ markOutput: e.target.checked })} />
+                    {t("settings.markOutput")}
+                  </label>
+                  <p className="hint">{t("settings.markOutputHint")}</p>
+                </Setting>
+              </Section>
+
+              <Section id="sidebar">
                 <label className="checkbox">
-                  <input type="checkbox" checked={settings.tabs.markOutput} onChange={(e) => setTabs({ markOutput: e.target.checked })} />
-                  {t("settings.markOutput")}
-                </label>
-                <p className="hint">{t("settings.markOutputHint")}</p>
-              </Setting>
-            </Section>
-
-            <Section id="sidebar">
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={settings.sidebar.showRecent}
-                  onChange={(e) => setSidebar({ showRecent: e.target.checked })}
-                />
-                {t("settings.showRecent")}
-              </label>
-            </Section>
-
-            <PowerSection settings={settings.power} onChange={setPower} />
-
-            <FileSection settings={settings.files} onChange={setFiles} />
-
-            <ProxySection />
-
-            <KnownHostsSection />
-
-            <SecuritySection />
-
-            <Section id="zmodem">
-              <Setting>
-                <label>
-                  {t("settings.zmodemReceive")}
-                  <Select
-                    value={settings.zmodem.receive}
-                    onChange={(receive) => setZmodem({ receive })}
-                    options={ZMODEM_RECEIVE.map((receive) => ({ value: receive, label: t(`settings.zmodemReceiveOptions.${receive}`) }))}
+                  <input
+                    type="checkbox"
+                    checked={settings.sidebar.showRecent}
+                    onChange={(e) => setSidebar({ showRecent: e.target.checked })}
                   />
+                  {t("settings.showRecent")}
                 </label>
-                <p className="hint">{t("settings.zmodemReceiveHint")}</p>
-              </Setting>
-            </Section>
+              </Section>
 
-            <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
+              <PowerSection settings={settings.power} onChange={setPower} />
 
-            <Section id="shortcuts">
-              {shortcutRows().map(
-                (shortcut) =>
-                  (localAllowed || !shortcut.local) && (
-                    <div key={shortcut.id} className="shortcut">
-                      <span>{t(`settings.shortcutActions.${shortcut.id}`)}</span>
-                      <kbd>{shortcut.keys}</kbd>
-                    </div>
-                  ),
-              )}
-            </Section>
+              <FileSection settings={settings.files} onChange={setFiles} />
 
-            <AboutSection onShowLicenses={() => setLicensesOpen(true)} />
+              <ProxySection />
 
-            {shown.length === 0 && <p className="settings-empty">{t("settings.noMatches")}</p>}
+              <KnownHostsSection />
+
+              <SecuritySection />
+
+              <Section id="zmodem">
+                <Setting>
+                  <label>
+                    {t("settings.zmodemReceive")}
+                    <Select
+                      value={settings.zmodem.receive}
+                      onChange={(receive) => setZmodem({ receive })}
+                      options={ZMODEM_RECEIVE.map((receive) => ({ value: receive, label: t(`settings.zmodemReceiveOptions.${receive}`) }))}
+                    />
+                  </label>
+                  <p className="hint">{t("settings.zmodemReceiveHint")}</p>
+                </Setting>
+              </Section>
+
+              <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
+
+              <Section id="shortcuts">
+                {shortcutRows().map(
+                  (shortcut) =>
+                    (localAllowed || !shortcut.local) && (
+                      <div key={shortcut.id} className="shortcut">
+                        <span>{t(`settings.shortcutActions.${shortcut.id}`)}</span>
+                        <kbd>{shortcut.keys}</kbd>
+                      </div>
+                    ),
+                )}
+              </Section>
+
+              <AboutSection onShowLicenses={() => setLicensesOpen(true)} />
+
+              {shown.length === 0 && <p className="settings-empty">{t("settings.noMatches")}</p>}
+            </div>
           </div>
-
-          <button
-            type="button"
-            className="icon-button settings-close"
-            title={t("common.close")}
-            aria-label={t("common.close")}
-            onClick={onClose}
-          >
-            <CloseIcon />
-          </button>
         </div>
       </Modal>
       {licensesOpen && <LicensesDialog onClose={() => setLicensesOpen(false)} />}
