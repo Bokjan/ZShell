@@ -24,6 +24,8 @@
     "name": "ZShell",
     "placeholder": "Sélectionnez une session à gauche pour vous connecter, ou ouvrez un terminal local",
     "placeholderNoLocal": "Sélectionnez une session à gauche pour vous connecter",
+    "placeholderHidden": "Appuyez sur {shortcut} pour afficher la liste des sessions et sélectionner une session à laquelle vous connecter, ou ouvrez un terminal local",
+    "placeholderHiddenNoLocal": "Appuyez sur {shortcut} pour afficher la liste des sessions et sélectionner une session à laquelle vous connecter",
     "fullScreenHint": "Appuyez sur {shortcut} pour quitter le plein écran"
   },
   "appMenu": {

@@ -24,6 +24,8 @@
     "name": "ZShell",
     "placeholder": "Wählen Sie links eine Sitzung zum Verbinden aus, oder öffnen Sie ein lokales Terminal",
     "placeholderNoLocal": "Wählen Sie links eine Sitzung zum Verbinden aus",
+    "placeholderHidden": "Drücken Sie {shortcut}, um die Sitzungsliste einzublenden und eine Sitzung zum Verbinden auszuwählen, oder öffnen Sie ein lokales Terminal",
+    "placeholderHiddenNoLocal": "Drücken Sie {shortcut}, um die Sitzungsliste einzublenden und eine Sitzung zum Verbinden auszuwählen",
     "fullScreenHint": "Drücken Sie {shortcut}, um das Vollbild zu beenden"
   },
   "appMenu": {

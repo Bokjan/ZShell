@@ -320,7 +320,13 @@ function App() {
               {t("app.fullScreenHint", { shortcut: shortcutLabel("fullScreen") })}
             </div>
           )}
-          {tabs.length === 0 && <div className="placeholder">{t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}</div>}
+          {tabs.length === 0 && (
+            <div className="placeholder">
+              {sidebar.hidden
+                ? t(localAllowed ? "app.placeholderHidden" : "app.placeholderHiddenNoLocal", { shortcut: shortcutLabel("sidebar") })
+                : t(localAllowed ? "app.placeholder" : "app.placeholderNoLocal")}
+            </div>
+          )}
         </div>
         {quick.bar}
         {activePane && <StatusBar pane={activePane} profile={profileOf(activePane)} sessions={sessions} />}

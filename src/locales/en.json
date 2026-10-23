@@ -24,6 +24,8 @@
     "name": "ZShell",
     "placeholder": "Select a session on the left to connect, or open a local terminal",
     "placeholderNoLocal": "Select a session on the left to connect",
+    "placeholderHidden": "Press {shortcut} to show the session list and select a session to connect, or open a local terminal",
+    "placeholderHiddenNoLocal": "Press {shortcut} to show the session list and select a session to connect",
     "fullScreenHint": "Press {shortcut} to exit full screen"
   },
   "appMenu": {

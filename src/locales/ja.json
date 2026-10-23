@@ -24,6 +24,8 @@
     "name": "ZShell",
     "placeholder": "左のセッションを選択して接続するか、ローカルターミナルを開いてください",
     "placeholderNoLocal": "左のセッションを選択して接続してください",
+    "placeholderHidden": "{shortcut}を押してセッション一覧を表示し、セッションを選択して接続するか、ローカルターミナルを開いてください",
+    "placeholderHiddenNoLocal": "{shortcut}を押してセッション一覧を表示し、セッションを選択して接続してください",
     "fullScreenHint": "{shortcut}を押すとフルスクリーンを終了します"
   },
   "appMenu": {

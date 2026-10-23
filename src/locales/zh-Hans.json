@@ -24,6 +24,8 @@
     "name": "ZShell",
     "placeholder": "在左侧选择一个会话进行连接，或打开本地终端",
     "placeholderNoLocal": "在左侧选择一个会话进行连接",
+    "placeholderHidden": "按 {shortcut} 显示会话列表并选择一个会话进行连接，或打开本地终端",
+    "placeholderHiddenNoLocal": "按 {shortcut} 显示会话列表并选择一个会话进行连接",
     "fullScreenHint": "按 {shortcut} 退出全屏"
   },
   "appMenu": {
