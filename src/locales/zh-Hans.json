@@ -577,7 +577,7 @@
       "starting": "正在启动…",
       "listening": "正在监听 {address}",
       "listeningRemote": "正在服务器上监听 {address}",
-      "listeningWithConnections_other": "{listening} · {count} 个连接",
+      "connections_other": "{count} 个连接",
       "lastError": "上次连接失败：{error}"
     },
     "deleteTitle": "删除规则",

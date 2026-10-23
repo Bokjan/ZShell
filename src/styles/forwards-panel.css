@@ -126,9 +126,32 @@
 .forward-rule.failed .status-dot {
   background: var(--danger);
 }
+.forward-status-parts {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: 6px;
+  min-width: 0;
+}
+/* Wraps inside itself only when it is wider than the whole line (a long error). */
 .forward-status-text {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.forward-connections {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* A dot drawn rather than a character, which would sit differently in each font. */
+.forward-connections::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .forward-rule.failed .forward-status-text {
   color: var(--danger);

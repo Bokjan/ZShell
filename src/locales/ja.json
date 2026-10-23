@@ -577,7 +577,7 @@
       "starting": "開始中…",
       "listening": "{address}で待ち受け中",
       "listeningRemote": "サーバーの{address}で待ち受け中",
-      "listeningWithConnections_other": "{listening} · {count}件の接続",
+      "connections_other": "{count}件の接続",
       "lastError": "直前の接続に失敗しました：{error}"
     },
     "deleteTitle": "ルールを削除",

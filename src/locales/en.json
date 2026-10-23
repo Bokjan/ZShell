@@ -595,8 +595,8 @@
       "starting": "Starting…",
       "listening": "Listening on {address}",
       "listeningRemote": "Listening on {address} on the server",
-      "listeningWithConnections_one": "{listening} · {count} connection",
-      "listeningWithConnections_other": "{listening} · {count} connections",
+      "connections_one": "{count} connection",
+      "connections_other": "{count} connections",
       "lastError": "Last connection failed: {error}"
     },
     "deleteTitle": "Delete Rule",

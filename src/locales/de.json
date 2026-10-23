@@ -595,8 +595,8 @@
       "starting": "Wird gestartet…",
       "listening": "Lauscht auf {address}",
       "listeningRemote": "Lauscht auf {address} auf dem Server",
-      "listeningWithConnections_one": "{listening} · {count} Verbindung",
-      "listeningWithConnections_other": "{listening} · {count} Verbindungen",
+      "connections_one": "{count} Verbindung",
+      "connections_other": "{count} Verbindungen",
       "lastError": "Letzte Verbindung fehlgeschlagen: {error}"
     },
     "deleteTitle": "Regel löschen",

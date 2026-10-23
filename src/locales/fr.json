@@ -613,9 +613,9 @@
       "starting": "Démarrage…",
       "listening": "En écoute sur {address}",
       "listeningRemote": "En écoute sur {address} sur le serveur",
-      "listeningWithConnections_one": "{listening} · {count} connexion",
-      "listeningWithConnections_many": "{listening} · {count} connexions",
-      "listeningWithConnections_other": "{listening} · {count} connexions",
+      "connections_one": "{count} connexion",
+      "connections_many": "{count} connexions",
+      "connections_other": "{count} connexions",
       "lastError": "Échec de la dernière connexion : {error}"
     },
     "deleteTitle": "Supprimer la règle",

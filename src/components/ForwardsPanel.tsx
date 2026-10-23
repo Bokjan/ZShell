@@ -83,11 +83,9 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
       case "failed":
         return state.error.message;
       case "active": {
-        const listening =
-          rule.kind === "remote"
-            ? t("forwards.status.listeningRemote", { address: state.bound })
-            : t("forwards.status.listening", { address: state.bound });
-        return state.connections > 0 ? t("forwards.status.listeningWithConnections", { listening, count: state.connections }) : listening;
+        return rule.kind === "remote"
+          ? t("forwards.status.listeningRemote", { address: state.bound })
+          : t("forwards.status.listening", { address: state.bound });
       }
     }
   };
@@ -123,8 +121,14 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states }: 
                 {rule.description && <div className="forward-description">{rule.description}</div>}
                 <div className="forward-status">
                   <span className="status-dot" />
-                  <span className="forward-status-text">{status(rule, state)}</span>
-                  {rule.autoStart && <span className="forward-tag">{t("forwards.autoStartTag")}</span>}
+                  {/* Each part wraps as a whole, onto the next line, rather than squeezing the others. */}
+                  <span className="forward-status-parts">
+                    <span className="forward-status-text">{status(rule, state)}</span>
+                    {state?.type === "active" && state.connections > 0 && (
+                      <span className="forward-connections">{t("forwards.status.connections", { count: state.connections })}</span>
+                    )}
+                    {rule.autoStart && <span className="forward-tag">{t("forwards.autoStartTag")}</span>}
+                  </span>
                 </div>
                 {lastError && <div className="forward-last-error">{t("forwards.status.lastError", { error: lastError.message })}</div>}
               </div>
