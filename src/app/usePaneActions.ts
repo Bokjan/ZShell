@@ -51,10 +51,13 @@ export function usePaneActions(store: TabStore, sessions: SessionRegistry) {
 
   /**
    * A new pane running what `pane` runs: an SSH pane whose shell is up opens its copy on the
-   * same connection; anything else opens the same target anew.
+   * same connection; anything else opens the same target anew. So does one whose shell has
+   * exited and that waits for forwarded connections: its port forwarding has stopped or moved
+   * to another tab, and would not start again on the connection it shared.
    */
   const copyOf = (pane: Pane): PaneSpec => {
-    const shareFrom = pane.protocol === "ssh" && pane.status === "connected" ? (pane.sessionId ?? undefined) : undefined;
+    const shares = pane.protocol === "ssh" && pane.status === "connected" && pane.waiting === null;
+    const shareFrom = shares ? (pane.sessionId ?? undefined) : undefined;
     return { target: pane.target, protocol: protocolOf(pane.target), title: pane.title, shareFrom };
   };
 
