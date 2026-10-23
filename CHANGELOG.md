@@ -2,6 +2,13 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.12.1] - 2026-10-23
+
+### Bug Fixes
+
+- A port forwarding rule stopped as a shell exits, a tab closes or a connection is lost could, rarely, be taken for one that had failed: the forwarding panels went on showing it active, and it wasn't moved to another tab of the session, started again on reconnecting or started again with another shell.
+- A tab reconnecting at the very moment its connection was lost could start without the forwarding rules that had been running.
+
 ## [3.12.0] - 2026-10-23
 
 ### Features
