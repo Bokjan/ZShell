@@ -25,7 +25,9 @@ interface Notices {
   /** Set when the build had no cargo-about. */
   rustMissing: boolean;
   npm: Package[];
-  texts: string[];
+  /** Each text as indices into `paragraphs`, which join with a blank line. */
+  texts: number[][];
+  paragraphs: string[];
 }
 
 type Ecosystem = "rust" | "npm";
@@ -173,7 +175,9 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
                     )}
                   </div>
                   <pre className="licenses-text">
-                    {selected.pkg.texts.map((i) => notices.texts[i]).join("\n\n" + "-".repeat(40) + "\n\n")}
+                    {selected.pkg.texts
+                      .map((i) => notices.texts[i].map((p) => notices.paragraphs[p]).join("\n\n"))
+                      .join("\n\n" + "-".repeat(40) + "\n\n")}
                   </pre>
                 </>
               )}

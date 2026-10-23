@@ -9,7 +9,8 @@
 //   `pnpm licenses list --prod`, with the license files each package ships.
 //
 // The output lists every package with the indices of its license texts; identical texts
-// are stored once. A package whose license isn't in about.toml's `accepted` list fails the
+// are stored once, as the indices of their paragraphs, and each paragraph is stored once
+// too: most texts are MIT licenses that differ only in their copyright line. A package whose license isn't in about.toml's `accepted` list fails the
 // generation, npm packages as well as crates, so that a new dependency's license is
 // checked before it ships.
 //
@@ -193,11 +194,28 @@ if (refused.length > 0) {
 
 const byName = (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version, undefined, { numeric: true });
 const rust = rustPackages();
+
+// Joining a text's paragraphs with a blank line gives it back exactly, more blank lines
+// included (they start the next paragraph).
+const paragraphs = [];
+const paragraphIndex = new Map();
+const textParagraphs = texts.map((text) =>
+  text.split("\n\n").map((paragraph) => {
+    let index = paragraphIndex.get(paragraph);
+    if (index === undefined) {
+      index = paragraphs.push(paragraph) - 1;
+      paragraphIndex.set(paragraph, index);
+    }
+    return index;
+  }),
+);
+
 const notices = {
   rust: (rust ?? []).sort(byName),
   rustMissing: rust === null,
   npm: npm.sort(byName),
-  texts,
+  texts: textParagraphs,
+  paragraphs,
 };
 
 const json = JSON.stringify(notices);
@@ -205,5 +223,5 @@ mkdirSync(dirname(output), { recursive: true });
 writeFileSync(output, json);
 console.log(
   `wrote ${output} (${notices.rust.length} crates, ${notices.npm.length} npm packages, ` +
-    `${texts.length} texts, ${Math.round(Buffer.byteLength(json) / 1024)} KB)`,
+    `${texts.length} texts, ${paragraphs.length} paragraphs, ${Math.round(Buffer.byteLength(json) / 1024)} KB)`,
 );
