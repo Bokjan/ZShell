@@ -1,9 +1,7 @@
 import type { ChannelInfo, ConnectionInfo, Counts, ForwardTraffic, SftpChannelTraffic } from "../ipc/api";
 
 /** How far back a rate looks: long enough to read steadily, short enough to follow a change. */
-export const RATE_WINDOW_MS = 2000;
-/** The least time a rate is taken over, so that the first report doesn't make a spike. */
-const RATE_MIN_MS = 1000;
+export const RATE_WINDOW_MS = 1000;
 
 /** Nothing counted. */
 export const NO_COUNTS: Counts = { sent: 0, received: 0, lastSent: null, lastReceived: null };
@@ -67,7 +65,11 @@ export class TrafficMeter<D> implements TrafficSource {
     this.notify();
   }
 
-  /** What it carried a second over the last `RATE_WINDOW_MS`: 0 once reports have stopped for that long. */
+  /**
+   * What it carried a second over the last `RATE_WINDOW_MS`: 0 once reports have stopped for
+   * that long. The counts at the window's start are those of the last report before it (nothing
+   * came between that report and the next), or of the first report if none came before.
+   */
   rate(): Rate {
     const last = this.samples[this.samples.length - 1];
     if (!last) return { sent: 0, received: 0 };
@@ -77,7 +79,7 @@ export class TrafficMeter<D> implements TrafficSource {
       if (sample.at > now - RATE_WINDOW_MS) break;
       from = sample;
     }
-    const seconds = Math.max(now - from.at, RATE_MIN_MS) / 1000;
+    const seconds = RATE_WINDOW_MS / 1000;
     return { sent: (last.sent - from.sent) / seconds, received: (last.received - from.received) / seconds };
   }
 

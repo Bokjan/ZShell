@@ -42,6 +42,17 @@ describe("TrafficMeter", () => {
     expect(meter.rate().received).toBe(0);
   });
 
+  it("follows traffic that starts after a long quiet spell at once", () => {
+    let time = 0;
+    const meter = new TrafficMeter<null>(() => time);
+    meter.update(counts(0, 1000), null);
+    time = 60_000;
+    meter.update(counts(0, 1100), null);
+    time = 60_050;
+    meter.update(counts(0, 1200), null);
+    expect(meter.rate().received).toBe(200 / (RATE_WINDOW_MS / 1000));
+  });
+
   it("doesn't make a spike of the first report", () => {
     let time = 0;
     const meter = new TrafficMeter<null>(() => time);
@@ -66,7 +77,8 @@ describe("ForwardMeters", () => {
     meters.update("a", { counts: { sent: 1000, received: 4000, lastSent: 1500, lastReceived: 1800 }, ...detail });
     meters.update("b", { counts: { sent: 2000, received: 0, lastSent: 1900, lastReceived: null }, ...detail });
     expect(meters.counts).toEqual({ sent: 3000, received: 4000, lastSent: 1900, lastReceived: 1800 });
-    expect(meters.rate()).toEqual({ sent: 1500, received: 2000 });
+    // Over the last second, which began after the first reports.
+    expect(meters.rate()).toEqual({ sent: 3000, received: 4000 });
     expect(meters.get("a")?.detail).toEqual(detail);
 
     meters.clear("b");

@@ -14,10 +14,12 @@ import { ActivityIcon } from "./icons";
  */
 const LIGHT_MS = 150;
 const LIGHT_REDUCED_MS = 400;
+/** How often the rates and the tooltip are worked out again. */
+const TEXT_MS = 500;
 
 interface Props {
   source: TrafficSource | undefined;
-  /** The lines of the tooltip, which screen readers read too: worked out each second, for "last received". */
+  /** The lines of the tooltip, which screen readers read too: worked out again and again, for "last received". */
   summary: () => string[];
   /** Also shows what is sent and received a second, after each light. */
   rates?: boolean;
@@ -26,15 +28,15 @@ interface Props {
 
 /**
  * The lights for data sent and received through a connection's channels (see `lib/traffic`),
- * with the rates after them if asked. Its text is worked out each second and drawn again
- * only when it has changed. Not a live region: the rates change each second.
+ * with the rates after them if asked. Its text is worked out every `TEXT_MS` and drawn again
+ * only when it has changed. Not a live region: the rates change all the time.
  */
 export function TrafficLights({ source, summary, rates = false, className }: Props) {
   const { t } = useTranslation();
   const { formatSize } = useLocale();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const { send, receive } = useLights(source, reduced ? LIGHT_REDUCED_MS : LIGHT_MS);
-  const text = useEverySecond(() => {
+  const text = useRecomputed(TEXT_MS, () => {
     const rate = source?.rate() ?? { sent: 0, received: 0 };
     const sent = t("traffic.rate", { size: formatSize(Math.round(rate.sent)) });
     const received = t("traffic.rate", { size: formatSize(Math.round(rate.received)) });
@@ -123,14 +125,14 @@ function useLights(source: TrafficSource | undefined, hold: number) {
   return lights;
 }
 
-/** What `compute` returns, worked out again every second: a render only when it changes. */
-export function useEverySecond(compute: () => string): string {
+/** What `compute` returns, worked out again every `interval` ms: a render only when it changes. */
+function useRecomputed(interval: number, compute: () => string): string {
   const [value, setValue] = useState(compute);
   useEffect(() => {
     const update = () => setValue(compute());
     update();
-    const timer = setInterval(update, 1000);
+    const timer = setInterval(update, interval);
     return () => clearInterval(timer);
-  }, [compute]);
+  }, [interval, compute]);
   return value;
 }
