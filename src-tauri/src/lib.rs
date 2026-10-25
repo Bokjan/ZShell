@@ -10,6 +10,7 @@ mod color_pick;
 mod commands;
 mod config;
 mod connections;
+mod crash;
 mod crypto;
 #[cfg(target_os = "linux")]
 mod dbus;
@@ -190,6 +191,7 @@ pub fn run() {
                     Err(e) => eprintln!("can't lock {}, so another instance would go unnoticed: {e}", config_dir.display()),
                 }
             }
+            crash::record_panics(config_dir.join("crash.log"));
             let set_aside = SetAside::default();
             // First, so that backend text is in the chosen language from the start.
             let settings = SettingsStore::load(config_dir.join("settings.json"), &set_aside);

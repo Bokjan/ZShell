@@ -77,6 +77,7 @@
 | `instance.rs` | macOS 与 Linux 的单实例 |
 | `update.rs` | 检查更新 |
 | `i18n.rs` / `error.rs` | 后端消息目录、结构化错误（见 [I18N.md](I18N.md)） |
+| `crash.rs` | release 构建 panic 即退出（`panic = "abort"`，展开会让 panic 时持有的锁中毒，应用半坏），退出前把 panic 记进配置目录的 `crash.log` |
 | `events.rs` | 后端发给页面的事件，名字与 payload 类型在一处声明 |
 | `launch.rs` | 把前端的 `SessionSpec` 解析成后端（`Backend`）、日志命名与编码；`session/` 不认识具体后端 |
 | `commands/` | 前端能调用的全部命令，只做检查调用方、交给所属模块、通知其他窗口；跨模块的策略放在所属模块（会话变化时转发怎么办在 `connections/`，下载目录在 `settings.rs`） |
