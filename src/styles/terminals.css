@@ -107,6 +107,66 @@
     opacity: 0;
   }
 }
+/* The lines of output that arrived below the lines being read back, as a way back to the end;
+   in the style of the size overlay. */
+.new-output {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  z-index: 5;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 36px);
+  padding: 4px 12px;
+  font-size: calc(12px * var(--text-scale));
+  line-height: calc(16px * var(--text-scale));
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px var(--shadow);
+}
+.new-output:hover {
+  background: var(--bg-hover);
+}
+/* Wide enough for "999" (see `MOST_SHOWN` in NewOutputButton), in digits of one width, so that
+   neither the count nor the button moves as it changes. */
+.new-output-count {
+  display: inline-block;
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+/* Output removes the lines being read back (the scrollback is full): over the top of the
+   terminal like the full screen hint, fading out at the end of `TRIMMING_SHOWN_MS`. */
+.trimming-hint {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  z-index: 5;
+  translate: -50% 0;
+  width: max-content;
+  max-width: min(480px, calc(100% - 36px));
+  padding: 8px 14px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--shadow);
+  pointer-events: none;
+  /* A delay rather than a long animation, so that it also shows with reduced motion. */
+  animation: trimming-hint-out 0.6s ease-in 3.4s forwards;
+}
+@keyframes trimming-hint-out {
+  to {
+    opacity: 0;
+  }
+}
 /* A visual bell: the terminal's text color over it for a moment. */
 .bell-flash {
   position: absolute;

@@ -321,6 +321,12 @@
     "reconnectIn_other": "Reconnexion dans {count} secondes. Appuyez sur Entrée pour vous reconnecter maintenant, sur Ctrl+C pour annuler ou sur Ctrl+D pour fermer.",
     "reconnectCancelled": "Reconnexion automatique annulée. Appuyez sur Entrée pour vous reconnecter ou sur Ctrl+D pour fermer.",
     "logFailed": "Impossible de démarrer le journal de session : {message}",
+    "newLines_one": "<count>{lines}</count> nouvelle ligne",
+    "newLines_many": "<count>{lines}</count> nouvelles lignes",
+    "newLines_other": "<count>{lines}</count> nouvelles lignes",
+    "newOutput": "Nouvelle sortie plus bas.",
+    "scrollToEnd": "Faire défiler jusqu’à la fin",
+    "trimmingView": "L’historique de défilement est plein : la nouvelle sortie supprime les lignes que vous lisez. Paramètres › Terminal permet d’en garder davantage.",
     "menu": {
       "openLink": "Ouvrir le lien",
       "copyLink": "Copier l’adresse du lien",

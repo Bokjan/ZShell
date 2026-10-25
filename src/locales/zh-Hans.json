@@ -297,6 +297,10 @@
     "reconnectIn_other": "{count} 秒后重新连接。按 Enter 立即重新连接，按 Ctrl+C 取消，或按 Ctrl+D 关闭。",
     "reconnectCancelled": "已取消自动重新连接。按 Enter 重新连接，或按 Ctrl+D 关闭。",
     "logFailed": "无法开始记录会话日志：{message}",
+    "newLines_other": "<count>{lines}</count> 行新输出",
+    "newOutput": "下方有新输出。",
+    "scrollToEnd": "滚动到末尾",
+    "trimmingView": "回滚已满，新输出会删除你正在看的行。可以在“设置 › 终端”中保留更多行。",
     "menu": {
       "openLink": "打开链接",
       "copyLink": "复制链接地址",

@@ -246,7 +246,7 @@
 - **表单校验**：不用 `required`、`pattern`，它们弹出 WebView 自己的气泡，语言跟随系统而不是应用；空字段由表单自己的检查说明。`controls.test.ts` 检查以上几条。
 - **颜色**：`ColorField`。WebView2 的颜色框里吸管无效，后端的 `color_pick` 按平台从屏幕取色（`color_pick/`）。
 - **菜单与提示**：右键菜单是 `ContextMenu`（WebView 自带的只在文本框里保留）；WKWebView 不显示 `title`，悬停提示由 `Tooltips` 画，组件照常写 `title`。
-- **例外**：滚动条用系统的（跟随深浅色，保留 macOS 的悬浮滚动条），终端的由 xterm.js 自绘。终端的滚动条悬浮在文字上、不用时淡出，所以终端按整个宽度排列（`lib/terminalFit.ts` 的 `FullWidthFitAddon`，fit 插件原本给它留出 14px）；滑块收窄贴在右边，少挡最后一列。
+- **例外**：滚动条用系统的（跟随深浅色，保留 macOS 的悬浮滚动条），终端的由 xterm.js 自绘。终端的滚动条悬浮在文字上，只在视图滚动（不含停在末尾跟着输出走、或往回看时下方来了输出）、指针移到滚动条上或拖动滑块时显示，所以终端按整个宽度排列（`lib/terminalFit.ts` 的 `FullWidthFitAddon`，fit 插件原本给它留出 14px）；滑块收窄贴在右边，少挡最后一列。
 
 ### 快捷键与菜单
 

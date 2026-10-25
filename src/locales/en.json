@@ -309,6 +309,11 @@
     "reconnectIn_other": "Reconnecting in {count} seconds. Press Enter to reconnect now, Ctrl+C to cancel or Ctrl+D to close.",
     "reconnectCancelled": "Automatic reconnection cancelled. Press Enter to reconnect or Ctrl+D to close.",
     "logFailed": "Could not start the session log: {message}",
+    "newLines_one": "<count>{lines}</count> new line",
+    "newLines_other": "<count>{lines}</count> new lines",
+    "newOutput": "New output below.",
+    "scrollToEnd": "Scroll to the end",
+    "trimmingView": "The scrollback is full, so new output removes the lines you are reading. Settings › Terminal can keep more lines.",
     "menu": {
       "openLink": "Open Link",
       "copyLink": "Copy Link Address",

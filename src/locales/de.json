@@ -309,6 +309,11 @@
     "reconnectIn_other": "Neue Verbindung in {count} Sekunden. Drücken Sie die Eingabetaste, um sofort zu verbinden, Strg+C, um abzubrechen, oder Strg+D, um zu schließen.",
     "reconnectCancelled": "Automatisches Neuverbinden abgebrochen. Drücken Sie die Eingabetaste, um neu zu verbinden, oder Strg+D, um zu schließen.",
     "logFailed": "Das Sitzungsprotokoll konnte nicht gestartet werden: {message}",
+    "newLines_one": "<count>{lines}</count> neue Zeile",
+    "newLines_other": "<count>{lines}</count> neue Zeilen",
+    "newOutput": "Neue Ausgabe weiter unten.",
+    "scrollToEnd": "Zum Ende scrollen",
+    "trimmingView": "Der Verlauf ist voll, daher entfernt neue Ausgabe die Zeilen, die Sie gerade lesen. Unter Einstellungen › Terminal können Sie mehr Zeilen behalten.",
     "menu": {
       "openLink": "Link öffnen",
       "copyLink": "Linkadresse kopieren",

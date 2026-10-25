@@ -297,6 +297,10 @@
     "reconnectIn_other": "{count}秒後に再接続します。今すぐ再接続するにはEnter、キャンセルするにはCtrl+C、閉じるにはCtrl+Dを押してください。",
     "reconnectCancelled": "自動再接続をキャンセルしました。Enterキーを押すと再接続、Ctrl+Dキーを押すと閉じます。",
     "logFailed": "セッションログを開始できませんでした：{message}",
+    "newLines_other": "新しい出力 <count>{lines}</count> 行",
+    "newOutput": "下に新しい出力があります。",
+    "scrollToEnd": "末尾までスクロール",
+    "trimmingView": "スクロールバックがいっぱいのため、新しい出力によって表示中の行が削除されます。「設定」>「ターミナル」で保持する行数を増やせます。",
     "menu": {
       "openLink": "リンクを開く",
       "copyLink": "リンクのアドレスをコピー",

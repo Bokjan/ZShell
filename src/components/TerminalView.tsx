@@ -26,6 +26,7 @@ import { ligatureRanges } from "../lib/ligatures";
 import { FullWidthFitAddon } from "../lib/terminalFit";
 import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
+import { ReadBack } from "../lib/readBack";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { drawWithWebgl } from "../lib/webgl";
 import { attemptSync } from "../lib/attempt";
@@ -35,6 +36,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 import { TOOLTIP_DELAY, TooltipPopup } from "./Tooltip";
+import { NewOutputButton } from "./terminal/NewOutputButton";
 import { useZmodem } from "./terminal/useZmodem";
 
 interface Props {
@@ -82,6 +84,9 @@ const LINK_LEAVE_MS = 100;
 
 /** How long the scroll bar stays after the view last scrolled, as xterm.js's own (see `.scrolling`). */
 const SCROLLING_MS = 500;
+
+/** How long the notice that output removes the lines being read back stays, fading out at the end (see `.trimming-hint`). */
+const TRIMMING_SHOWN_MS = 4000;
 
 const ignore = () => {};
 
@@ -142,6 +147,10 @@ export function TerminalView({
   const [sizeShown, setSizeShown] = useState<{ cols: number; rows: number; count: number } | null>(null);
   // Counts the visual bells, each a new flash.
   const [flashes, setFlashes] = useState(0);
+  // Follows the view reading back through the scrollback, for the button back to the end.
+  const [readBack, setReadBack] = useState<ReadBack | null>(null);
+  // Counts the notices that output removes the lines being read back; 0 while none shows.
+  const [trimmingShown, setTrimmingShown] = useState(0);
   const visibleRef = useLatest(visible);
   const wrapRef = useRef<HTMLDivElement>(null);
   const transfer = useZmodem({ sessionRef, active, wrapRef, focus: () => termRef.current?.focus() });
@@ -434,22 +443,26 @@ export function TerminalView({
     };
     const kittyNotices = new KittyNotices();
 
-    // The scroll bar shows while the view scrolls (see `.scrolling`), but not for output that
-    // only moves it along at the end, where nothing is being read back, nor for output that
-    // arrives while the view stays where it was reading.
+    // Reading back through the scrollback (see `lib/readBack`). The scroll bar shows while the
+    // view moves (see `.scrolling`), not for output that arrives at the end or below the view.
+    // Called for every line of output: most return at once.
+    const readBack = new ReadBack(term);
+    setReadBack(readBack);
     let scrolling: ReturnType<typeof setTimeout> | undefined;
-    let atEnd = true;
-    let viewportY = 0;
+    let hideTrimming: ReturnType<typeof setTimeout> | undefined;
     const onScroll = () => {
-      const buffer = term.buffer.active;
-      const wasAtEnd = atEnd;
-      const moved = buffer.viewportY !== viewportY;
-      atEnd = buffer.viewportY === buffer.baseY;
-      viewportY = buffer.viewportY;
-      if ((atEnd && wasAtEnd) || !moved) return;
-      container.classList.add("scrolling");
-      clearTimeout(scrolling);
-      scrolling = setTimeout(() => container.classList.remove("scrolling"), SCROLLING_MS);
+      const { moved, trimmingView } = readBack.scrolled();
+      if (moved) {
+        container.classList.add("scrolling");
+        clearTimeout(scrolling);
+        scrolling = setTimeout(() => container.classList.remove("scrolling"), SCROLLING_MS);
+      }
+      if (trimmingView) {
+        if (visibleRef.current) announce(tRef.current("terminal.trimmingView"));
+        setTrimmingShown((count) => count + 1);
+        clearTimeout(hideTrimming);
+        hideTrimming = setTimeout(() => setTrimmingShown(0), TRIMMING_SHOWN_MS);
+      }
     };
 
     const subscriptions: IDisposable[] = [
@@ -513,6 +526,7 @@ export function TerminalView({
       }),
       term.onBinary((data) => session.inputBinary(data)),
       term.onResize(({ cols, rows }) => {
+        readBack.resize();
         session.resize(cols, rows);
         showSize(cols, rows);
       }),
@@ -544,6 +558,7 @@ export function TerminalView({
       clearTimeout(promptSettle);
       clearTimeout(hintTimer);
       clearTimeout(scrolling);
+      clearTimeout(hideTrimming);
       container.removeEventListener("mousedown", dismissHint, true);
       container.removeEventListener("wheel", dismissHint, true);
       shellDirs.forget(paneKey);
@@ -554,6 +569,8 @@ export function TerminalView({
       pasteRef.current = pasteAllRef.current = resetPointerRef.current = ignore;
       observer.disconnect();
       subscriptions.forEach((s) => s.dispose());
+      readBack.dispose();
+      setReadBack(null);
       sessionsRef.current.detach(paneKey, session);
       sessionRef.current = null;
       term.dispose();
@@ -674,6 +691,11 @@ export function TerminalView({
 
   const focus = () => termRef.current?.focus();
 
+  const scrollToEnd = () => {
+    termRef.current?.scrollToBottom();
+    focus();
+  };
+
   const menuItems = (term: Terminal, link?: string): MenuItem[] => {
     const linkItems: MenuItem[] = link
       ? [
@@ -732,6 +754,13 @@ export function TerminalView({
         // The status bar has the size for screen readers.
         <div key={sizeShown.count} className="size-overlay" aria-hidden="true" style={{ fontFamily }}>
           {t("terminal.size", { cols: sizeShown.cols, rows: sizeShown.rows })}
+        </div>
+      )}
+      {readBack && <NewOutputButton readBack={readBack} visible={visible} onClick={scrollToEnd} />}
+      {trimmingShown > 0 && (
+        // Announced as well, when it shows.
+        <div key={trimmingShown} className="trimming-hint" aria-hidden="true">
+          {t("terminal.trimmingView")}
         </div>
       )}
       {transfer.bar}

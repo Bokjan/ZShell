@@ -184,7 +184,7 @@ export function HelpIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-/** An arrow pointing up or down: moving up a folder or a list, the previous or next match, uploads and downloads. */
+/** An arrow pointing up or down: moving up a folder or a list, the previous or next match, uploads and downloads, back to the end of a terminal's output. */
 export function ArrowIcon({ direction, size = 14 }: { direction: "up" | "down"; size?: number }) {
   return (
     <Svg size={size}>
