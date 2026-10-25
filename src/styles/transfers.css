@@ -111,10 +111,6 @@
 .steady > [aria-hidden] {
   visibility: hidden;
 }
-.link-button {
-  border: none;
-  background: none;
+.transfers button.link {
   padding: 0 2px;
-  color: var(--accent);
-  font-size: calc(12px * var(--text-scale));
 }

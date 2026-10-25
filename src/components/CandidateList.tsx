@@ -31,10 +31,10 @@ export function CandidateList<T>({ candidates, keyOf, isExisting, selected, onCh
   return (
     <>
       <div className="import-select">
-        <button type="button" className="link-button" onClick={() => onChange(new Set(importable.map(keyOf)))}>
+        <button type="button" className="link" onClick={() => onChange(new Set(importable.map(keyOf)))}>
           {t("importDialog.selectAll")}
         </button>
-        <button type="button" className="link-button" onClick={() => onChange(new Set())}>
+        <button type="button" className="link" onClick={() => onChange(new Set())}>
           {t("importDialog.selectNone")}
         </button>
       </div>

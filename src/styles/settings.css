@@ -130,11 +130,6 @@
 .settings-dialog button.link {
   align-self: flex-start;
   margin-top: -6px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font-size: calc(12px * var(--text-scale));
 }
 .proxy-list {
   margin: 0;
@@ -223,7 +218,4 @@
 .settings-dialog .clipboard-limit {
   width: calc(200px * var(--text-scale));
   margin-left: 22px;
-}
-.settings-dialog button.link:hover {
-  text-decoration: underline;
 }

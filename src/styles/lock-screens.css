@@ -87,14 +87,6 @@
 }
 .unlock-panel button.link {
   align-self: center;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font-size: calc(12px * var(--text-scale));
-}
-.unlock-panel button.link:hover {
-  text-decoration: underline;
 }
 .unlock-actions {
   display: flex;

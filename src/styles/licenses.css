@@ -92,11 +92,6 @@
   color: var(--text-muted);
 }
 .licenses-heading button.link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font-size: calc(12px * var(--text-scale));
   overflow-wrap: anywhere;
   text-align: left;
 }

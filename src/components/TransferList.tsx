@@ -85,7 +85,7 @@ export function TransferList({
       <header>
         <span className="transfers-title">{t("transfer.title")}</span>
         {transfers.some(finished) && (
-          <button className="link-button" onClick={onClearFinished}>
+          <button className="link" onClick={onClearFinished}>
             {t("transfer.clearFinished")}
           </button>
         )}
@@ -170,18 +170,18 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
           {label}
         </span>
         {transfer.status === "running" && (
-          <button className="link-button" onClick={() => actions.onCancel(id)}>
+          <button className="link" onClick={() => actions.onCancel(id)}>
             {t("transfer.cancel")}
           </button>
         )}
         {finished(transfer) && transfer.results?.[0] && deleted == null && (
-          <button className="link-button" onClick={() => void revealItemInDir(transfer.results![0])}>
+          <button className="link" onClick={() => void revealItemInDir(transfer.results![0])}>
             {t("transfer.show")}
           </button>
         )}
         {deletable && (
           <IconButton
-            className="link-button"
+            className="link"
             label={
               upload && !connected
                 ? t("transfer.deleteNeedsConnection")
@@ -195,16 +195,16 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
         )}
         {transfer.status === "editing" && (
           <>
-            <button className="link-button" onClick={() => actions.onReopen(id)}>
+            <button className="link" onClick={() => actions.onReopen(id)}>
               {t("transfer.reopen")}
             </button>
-            <button className="link-button" onClick={() => actions.onStopEditing(id)}>
+            <button className="link" onClick={() => actions.onStopEditing(id)}>
               {t("transfer.stopEditing")}
             </button>
           </>
         )}
         {finished(transfer) && (
-          <IconButton className="link-button" label={t("transfer.remove")} onClick={() => actions.onDismiss(id)}>
+          <IconButton className="link" label={t("transfer.remove")} onClick={() => actions.onDismiss(id)}>
             <CloseIcon size={12} />
           </IconButton>
         )}

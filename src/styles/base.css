@@ -17,6 +17,14 @@ button {
   color: inherit;
   cursor: pointer;
 }
+/* A button that reads as a link, in or beside the text; the pointer is its only hover sign. */
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: calc(12px * var(--text-scale));
+}
 
 /* The keyboard focus on controls, the same on both platforms. Of no specificity beyond
    :focus-visible, so a component that marks its focus its own way (a field's border, a
