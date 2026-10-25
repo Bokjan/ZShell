@@ -36,6 +36,10 @@ use crate::vault::Vault;
 
 /// How often the system's idle time is checked: the lock comes at most this late.
 const IDLE_CHECK: Duration = Duration::from_secs(5);
+/// How often it is looked at whether to check, while the lock doesn't lock when idle (off, as
+/// it is by default, or locked already). Turning it on or unlocking takes the user's input, so
+/// the system has been idle only since then: checking a minute later is still in time.
+const IDLE_CHECK_OFF: Duration = Duration::from_secs(60);
 
 /// How the user unlocks, for the frontend to name it.
 // Each platform makes its own.
@@ -189,12 +193,13 @@ impl AppLock {
 
     /// Locks once the system has been idle for longer than the settings allow, counting from
     /// the last unlock at most.
-    fn check_idle(&self) {
-        let Some(settings) = self.vault.app_lock() else { return };
+    /// Locks if the system has been idle long enough; returns when to check again.
+    fn check_idle(&self) -> Duration {
+        let Some(settings) = self.vault.app_lock() else { return IDLE_CHECK_OFF };
         let since_unlock = {
             let state = self.state.lock().unwrap();
             if !settings.enabled || settings.idle_minutes == 0 || state.locked {
-                return;
+                return IDLE_CHECK_OFF;
             }
             state.unlocked_at.map(|at| at.elapsed().as_secs())
         };
@@ -202,6 +207,7 @@ impl AppLock {
         if idle.is_some_and(|idle| idle >= u64::from(settings.idle_minutes) * 60) {
             self.lock(Trigger::Idle);
         }
+        IDLE_CHECK
     }
 
     /// Asks the user to authenticate, and unlocks if they do. Blocks until they have.
@@ -258,16 +264,16 @@ impl AppLock {
     }
 }
 
-/// Checks the system's idle time every few seconds, for as long as the app runs.
+/// Checks the system's idle time every few seconds while the lock locks when idle, for as long
+/// as the app runs; otherwise only looks every minute whether it does now.
 pub fn watch_idle(lock: Arc<AppLock>) {
     tauri::async_runtime::spawn(async move {
-        let mut timer = tokio::time::interval(IDLE_CHECK);
         loop {
-            timer.tick().await;
             // Off the async threads: the vault's state may be held while the credential store
             // asks the user.
             let lock = lock.clone();
-            let _ = tauri::async_runtime::spawn_blocking(move || lock.check_idle()).await;
+            let next = tauri::async_runtime::spawn_blocking(move || lock.check_idle()).await.unwrap_or(IDLE_CHECK);
+            tokio::time::sleep(next).await;
         }
     });
 }
