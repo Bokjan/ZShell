@@ -665,8 +665,10 @@ async fn download_counting(
             run.start_file(file_name(remote));
             let mut src = sftp.open(remote).await.context(Error::new("transfer.openFailed").param("path", remote))?;
             // A file that would land where another of this download (or a folder) did, or
-            // where a folder is, gets a free name instead.
-            let local = if clashes || local.is_dir() {
+            // where a folder is, gets a free name instead. Looked at off the async threads:
+            // the download folder may be on a network drive.
+            let at_folder = || async { tokio::fs::metadata(local).await.is_ok_and(|metadata| metadata.is_dir()) };
+            let local = if clashes || at_folder().await {
                 let free = taken.lock().unwrap().create_free_file(local, mode);
                 free.context(Error::new("transfer.createFailed").param("path", local.display()))?.0
             } else {
