@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use futures_util::{StreamExt, TryStreamExt};
@@ -153,7 +153,7 @@ async fn download_counting(
         builder.create(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
     }
     let clashes = clashing(&plan.files, &mut taken);
-    let taken = Mutex::new(taken);
+    let taken = Arc::new(Mutex::new(taken));
     /// Where a file arrived, whether it replaced one there, and how it was left.
     #[derive(Clone)]
     struct Arrived {
@@ -175,7 +175,8 @@ async fn download_counting(
             // the download folder may be on a network drive.
             let at_folder = || async { tokio::fs::metadata(local).await.is_ok_and(|metadata| metadata.is_dir()) };
             let local = if clashes || at_folder().await {
-                let free = taken.lock().unwrap().create_free_file(local, mode);
+                let (taken, path) = (taken.clone(), local.clone());
+                let free = tokio::task::spawn_blocking(move || taken.lock().unwrap().create_free_file(&path, mode)).await?;
                 free.context(Error::new("transfer.createFailed").param("path", local.display()))?.0
             } else {
                 local.clone()
