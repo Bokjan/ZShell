@@ -186,9 +186,10 @@ export function Sidebar(props: Props) {
       const next = new Set(current);
       if (value) next.add(id);
       else next.delete(id);
-      storeCollapsed(next);
       return next;
     });
+  // Remembered once changed, rather than in the updater, which React may call twice.
+  useEffect(() => storeCollapsed(collapsed), [collapsed]);
 
   /** The folder new things go in: the selected folder, or the selected session's. */
   const currentFolder = () => {

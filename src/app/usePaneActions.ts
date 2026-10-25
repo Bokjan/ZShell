@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +22,7 @@ export function usePaneActions(store: TabStore, sessions: SessionRegistry) {
   // The pane that couldn't be split, flashing; `count` restarts the flash on each refusal.
   const [refused, setRefused] = useState<{ key: number; count: number } | null>(null);
   const refuseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(refuseTimer.current), []);
   // Each tab's pane area, as its page last measured it.
   const areas = useRef(new Map<number, Size>());
 

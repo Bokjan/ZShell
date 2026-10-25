@@ -133,12 +133,9 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
   const selected = useMemo(() => visible.filter((entry) => selection.paths.has(entry.path)), [visible, selection]);
   const { cursor } = selection;
 
-  const changeView = (patch: Partial<FileView>) =>
-    setView((current) => {
-      const next = { ...current, ...patch };
-      storeView(next);
-      return next;
-    });
+  const changeView = (patch: Partial<FileView>) => setView((current) => ({ ...current, ...patch }));
+  // Remembered once changed, rather than in the updater, which React may call twice.
+  useEffect(() => storeView(view), [view]);
 
   const select = (paths: string[]) => setSelection(selectOnly(paths));
 

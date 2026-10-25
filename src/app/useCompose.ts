@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CLOSED_COMPOSE, scopePanes, sendsToMany, syncTargets, type Compose, type SendResult } from "../lib/compose";
 import { findPane, paneLabel, type Pane, type Tab } from "../lib/panes";
@@ -25,6 +25,7 @@ export function useCompose(store: TabStore, sessions: SessionRegistry, tabs: Tab
   const composeRef = useLatest(compose);
   const [flashing, setFlashing] = useState<number[]>([]);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
   const optionsRef = useLatest(options);
   const { followRemoteTitle } = useSettings().settings.tabs;
 
