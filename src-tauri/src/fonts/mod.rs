@@ -27,6 +27,8 @@ use macos as platform;
 #[cfg(windows)]
 use win as platform;
 
+use std::sync::Mutex;
+
 pub use rules::LigatureRules;
 
 /// CSS's generic families, which stand for a font the page can't name.
@@ -70,6 +72,35 @@ pub fn ligature_rules(families: &[String]) -> Option<LigatureRules> {
         }
     }
     None
+}
+
+/// The rules found lately, by the families asked for, the latest last: otherwise every window
+/// opened reads its terminals' font again. Only rules found, as a font missing may be
+/// installed meanwhile; a font updated meanwhile keeps its old rules until the app starts again.
+static FOUND: Mutex<Vec<(Vec<String>, LigatureRules)>> = Mutex::new(Vec::new());
+/// How many fonts' rules [`FOUND`] keeps.
+const REMEMBERED: usize = 4;
+
+/// [`ligature_rules`], remembered for the next time the same families are asked for.
+pub fn remembered_ligature_rules(families: &[String]) -> Option<LigatureRules> {
+    let mut found = FOUND.lock().unwrap();
+    if let Some(at) = found.iter().position(|(asked, _)| asked == families) {
+        let entry = found.remove(at);
+        let rules = entry.1.clone();
+        found.push(entry);
+        return Some(rules);
+    }
+    // Not under the lock: reading a font takes a moment.
+    drop(found);
+    let rules = ligature_rules(families)?;
+    let mut found = FOUND.lock().unwrap();
+    if !found.iter().any(|(asked, _)| asked == families) {
+        if found.len() == REMEMBERED {
+            found.remove(0);
+        }
+        found.push((families.to_vec(), rules.clone()));
+    }
+    Some(rules)
 }
 
 /// The rules of a font with `tables` (those of [`sfnt::TABLES`] it has).

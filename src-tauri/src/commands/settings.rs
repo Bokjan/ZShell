@@ -36,7 +36,7 @@ pub async fn system_monospace_font() -> Option<String> {
 /// list in order. Reading the font takes a moment, so off the async threads.
 #[tauri::command]
 pub async fn terminal_ligature_rules(families: Vec<String>) -> Option<LigatureRules> {
-    tauri::async_runtime::spawn_blocking(move || crate::fonts::ligature_rules(&families)).await.ok().flatten()
+    tauri::async_runtime::spawn_blocking(move || crate::fonts::remembered_ligature_rules(&families)).await.ok().flatten()
 }
 
 /// Whether the system's screen reader is running; then `screen-reader-changed` tells.

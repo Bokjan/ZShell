@@ -66,7 +66,7 @@ const MARK_FILTERING_SET: u16 = 0x10;
 const MARK_ATTACHMENT_TYPE: u16 = 0xFF00;
 
 /// The substitutions of a terminal's font (see the module).
-#[derive(Serialize, TS, Debug, PartialEq)]
+#[derive(Clone, Serialize, TS, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LigatureRules {
     /// The family found, one of those asked for.
