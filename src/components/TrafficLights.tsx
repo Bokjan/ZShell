@@ -16,6 +16,13 @@ const LIGHT_MS = 150;
 const LIGHT_REDUCED_MS = 400;
 /** How often the rates and the tooltip are worked out again. */
 const TEXT_MS = 500;
+/**
+ * How often while nothing moves and nothing came within the last minute, when the text changes
+ * once a minute at most ("2 minutes ago"); at once when data moves again.
+ */
+const TEXT_IDLE_MS = 10_000;
+/** How long "last received" counts in seconds, as `formatAgo` does. */
+const AGO_IN_SECONDS_MS = 60_000;
 
 interface Props {
   source: TrafficSource | undefined;
@@ -28,8 +35,8 @@ interface Props {
 
 /**
  * The lights for data sent and received through a connection's channels (see `lib/traffic`),
- * with the rates after them if asked. Its text is worked out every `TEXT_MS` and drawn again
- * only when it has changed. Not a live region: the rates change all the time. While hidden (in a
+ * with the rates after them if asked. Its text is worked out every `TEXT_MS` (`TEXT_IDLE_MS`
+ * while idle) and drawn again only when it has changed. Not a live region: the rates change all the time. While hidden (in a
  * side panel not shown, which stays mounted) it is left alone, and brought up to date when
  * shown again.
  */
@@ -40,7 +47,7 @@ export function TrafficLights({ source, summary, rates = false, className }: Pro
   const [element, setElement] = useState<HTMLSpanElement | null>(null);
   const shown = useShown(element);
   const { send, receive } = useLights(shown ? source : undefined, reduced ? LIGHT_REDUCED_MS : LIGHT_MS);
-  const text = useRecomputed(shown ? TEXT_MS : null, () => {
+  const text = useRecomputed(shown ? source : null, () => {
     const rate = source?.rate() ?? { sent: 0, received: 0 };
     const sent = t("traffic.rate", { size: formatSize(Math.round(rate.sent)) });
     const received = t("traffic.rate", { size: formatSize(Math.round(rate.received)) });
@@ -146,17 +153,32 @@ function useShown(element: Element | null): boolean {
 }
 
 /**
- * What `compute` returns, worked out again every `interval` ms (and not at all while that is
- * null, until it is not): a render only when it changes.
+ * What `compute` returns about `source`, worked out again every `TEXT_MS`, or `TEXT_IDLE_MS`
+ * while it is idle until data moves again (and not at all while `source` is null, until it is
+ * not): a render only when it changes.
  */
-function useRecomputed(interval: number | null, compute: () => string): string {
+function useRecomputed(source: TrafficSource | undefined | null, compute: () => string): string {
   const [value, setValue] = useState(compute);
   useEffect(() => {
-    if (interval === null) return;
-    const update = () => setValue(compute());
+    if (source === null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let idle = false;
+    const update = () => {
+      clearTimeout(timer);
+      setValue(compute());
+      const rate = source?.rate();
+      const last = source?.counts.lastReceived;
+      idle = !rate?.sent && !rate?.received && (last == null || Date.now() - last >= AGO_IN_SECONDS_MS);
+      timer = setTimeout(update, idle ? TEXT_IDLE_MS : TEXT_MS);
+    };
     update();
-    const timer = setInterval(update, interval);
-    return () => clearInterval(timer);
-  }, [interval, compute]);
+    const unsubscribe = source?.subscribe(() => {
+      if (idle) update();
+    });
+    return () => {
+      clearTimeout(timer);
+      unsubscribe?.();
+    };
+  }, [source, compute]);
   return value;
 }
