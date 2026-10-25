@@ -107,6 +107,8 @@ impl Line {
         }
         self.cells.clear();
         self.cursor = 0;
+        // A blank line left out: the next one starts when it shows something.
+        self.started = None;
     }
 
     /// Moves the cursor to column `to`, within `MAX_COLUMNS`, padding the line to reach it.

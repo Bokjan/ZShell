@@ -53,6 +53,14 @@ fn lines_start_with_the_time_they_started() {
     let rewritten = Local::now().naive_local();
     parser.advance(&mut line, b"\r\x1b[Kdone\r\n");
     assert!(stamp(&mut line) >= rewritten - chrono::TimeDelta::milliseconds(1));
+
+    // A blank line finished at a note, left out, doesn't start the next one.
+    parser.advance(&mut line, b"  ");
+    line.finish();
+    thread::sleep(wait);
+    let next = Local::now().naive_local();
+    parser.advance(&mut line, b"next\r\n");
+    assert!(stamp(&mut line) >= next - chrono::TimeDelta::milliseconds(1));
 }
 
 #[test]
