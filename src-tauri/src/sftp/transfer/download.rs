@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use futures_util::{StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
@@ -301,12 +301,20 @@ pub(super) async fn scan_remote_dir(
     let mut level = vec![(root, local_root, root_mode)];
     while !level.is_empty() {
         reporter.check_cancelled()?;
-        // A level may have thousands of folders, listed for minutes on a distant server.
-        let listings = each_in_order(&level, CONCURRENT_DIRS, |(remote, _, _)| async move {
+        // A level may have thousands of folders, listed for minutes on a distant server, so
+        // none starts once the transfer is cancelled. Those started are left to finish: one
+        // dropped midway would leave the folder open at the server, which russh-sftp closes
+        // only once the listing ends.
+        let cancelled = &reporter.cancelled;
+        let listings: Vec<_> = each_in_order(&level, CONCURRENT_DIRS, |(remote, _, _)| async move {
+            if cancelled.is_cancelled() {
+                bail!(Error::new("transfer.cancelled"));
+            }
             sftp.read_dir(remote).await.context(Error::new("transfer.readFailed").param("path", remote))
         })
-        .collect::<Vec<_>>();
-        let listings = unless_cancelled(&reporter.cancelled, async { Ok(listings.await) }).await?;
+        .collect()
+        .await;
+        reporter.check_cancelled()?;
         let mut next = Vec::new();
         for ((remote, local, mode), listing) in level.into_iter().zip(listings) {
             plan.add_dir(local.clone(), mode);
@@ -325,7 +333,8 @@ pub(super) async fn scan_remote_dir(
             }
             // Follow symlinks to files only, so a link cycle can't recurse forever.
             let links: Vec<usize> = (0..entries.len()).filter(|&i| entries[i].2.file_type().is_symlink()).collect();
-            let targets: Vec<_> = each_in_order(&links, CONCURRENT_DIRS, |&i| sftp.metadata(&entries[i].0)).collect().await;
+            let targets = each_in_order(&links, CONCURRENT_DIRS, |&i| sftp.metadata(&entries[i].0)).collect::<Vec<_>>();
+            let targets = unless_cancelled(&reporter.cancelled, async { Ok(targets.await) }).await?;
             for (i, target) in links.into_iter().zip(targets) {
                 entries[i].2 = match target {
                     Ok(target) if target.file_type().is_file() => target,

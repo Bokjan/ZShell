@@ -321,7 +321,8 @@ impl<'a> Run<'a> {
 }
 
 /// `future`, unless the transfer is cancelled first: what it waits for (the server, or the
-/// connection's other transfers to let go of their slots) may take minutes.
+/// connection's other transfers to let go of their slots) may take minutes. Not for requests
+/// that open a file or folder at the server, which would stay open if dropped midway.
 async fn unless_cancelled<T>(cancelled: &CancellationToken, future: impl Future<Output = Result<T>>) -> Result<T> {
     tokio::select! {
         result = future => result,
