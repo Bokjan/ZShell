@@ -75,8 +75,9 @@ pub fn ligature_rules(families: &[String]) -> Option<LigatureRules> {
 }
 
 /// The rules found lately, by the families asked for, the latest last: otherwise every window
-/// opened reads its terminals' font again. Only rules found, as a font missing may be
-/// installed meanwhile; a font updated meanwhile keeps its old rules until the app starts again.
+/// opened reads its terminals' font again. Only rules of the list's first family, as a font
+/// missing may be installed meanwhile, and the web view would then draw with it; a font updated
+/// or uninstalled meanwhile keeps its old rules until the app starts again.
 static FOUND: Mutex<Vec<(Vec<String>, LigatureRules)>> = Mutex::new(Vec::new());
 /// How many fonts' rules [`FOUND`] keeps.
 const REMEMBERED: usize = 4;
@@ -93,6 +94,10 @@ pub fn remembered_ligature_rules(families: &[String]) -> Option<LigatureRules> {
     // Not under the lock: reading a font takes a moment.
     drop(found);
     let rules = ligature_rules(families)?;
+    let first = families.iter().map(|family| family.trim()).find(|family| !family.is_empty());
+    if first != Some(rules.family.as_str()) {
+        return Some(rules);
+    }
     let mut found = FOUND.lock().unwrap();
     if !found.iter().any(|(asked, _)| asked == families) {
         if found.len() == REMEMBERED {
