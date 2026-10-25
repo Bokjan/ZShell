@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useLocale } from "./hooks/locale";
@@ -45,7 +45,7 @@ import { useDirectory, useTabStore } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { createTabRest } from "./lib/tabRest";
 import { currentSettings } from "./lib/settings";
-import { timeFormatParts } from "./lib/timeFormat";
+import { followTimeFormat, timeFormatParts } from "./lib/timeFormat";
 import { useStableHandlers } from "./hooks/stableHandlers";
 import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
@@ -79,6 +79,8 @@ function App() {
       timeFormat: timeFormatParts,
     }),
   );
+  // From the start, so that the first of our messages in the terminal is in the settings' format.
+  useEffect(followTimeFormat, []);
 
   /** Moves the keyboard focus back to the active terminal (after a bar or the palette closes). */
   const focusActiveTerminal = useCallback(
