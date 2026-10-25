@@ -15,6 +15,7 @@
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
+| 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 给 russh-sftp 报 issue；上游还没有 |
 | 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
@@ -88,6 +89,13 @@
 - **原因**：windows-rs 2026-09-03 发布 0.100.0 时，`windows-core`、`windows-future`、`windows-implement` 等小 crate 上了 crates.io，`windows` 本体还没发，最新仍是 0.62.2。按 [microsoft/windows-rs#4867](https://github.com/microsoft/windows-rs/issues/4867)，`windows` 和 `windows-sys` 改用从 SDK 头文件生成的新元数据，可能晚些才发布。新元数据下很多 Win32 API 的签名、类型和 feature 名都会变。
 - **处理**：`.github/dependabot.yml` 已经忽略 `windows-core` 和 `windows-future`，两个 PR 已关闭。`windows` 0.100 发布后，Dependabot 会提它的升级。那时手动把三个 crate 一起升到同一版本，按新 API 改用到它们的代码（`sftp/drag/win.rs` 的拖放、`applock/win.rs` 的 Windows Hello、`pty/shell.rs` 的 `WindowsIntegrityPolicy`），交给 Windows 上的 CI 编译。`windows-sys` 0.61 版本号独立，不受影响。
 - **登记**：2026-10-15。
+
+### SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级
+
+- **现象**：列一个有十万个条目的文件夹，除了等服务器，还要花几秒 CPU。文件面板、下载和删除文件夹都经 `SftpSession::read_dir`。
+- **原因**：russh-sftp 3.0.1 的 `read_dir`（`client/session.rs` 约 187–196 行）每收到服务器的一批条目（OpenSSH 每批约一百个），就把这一批接在已收到的全部条目前面，`collect` 成一个新的 `Vec`。已收到的条目每批都整体搬一次，总量与条目数的平方成正比。顺带，各批的先后也颠倒了（面板自己排序，不受影响）。
+- **处理**：给 russh-sftp 报 issue（或直接提 PR）：每批 `extend` 到同一个 `Vec` 末尾即可，顺序也随之正确。上游发布后升级。上游不修、又有人遇到时，可以用 `RawSftpSession` 的 `opendir` / `readdir` / `close` 在 `sftp/` 里自己读。
+- **登记**：2026-10-25（性能与架构评审 P2-12）。
 
 ### 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数
 
