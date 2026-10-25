@@ -32,6 +32,17 @@ fn what_a_transfer_left_is_its_pages_until_forgotten() {
     transfers.forget("main", &["t1".into()]);
     assert!(transfers.take("main", "t1").is_none());
     assert!(matches!(transfers.take("main", "t2"), Some(Kept::Local(left)) if left.files == [(PathBuf::from("b"), stamp)]));
+    // Being deleted: not again meanwhile. What is left goes back, unless forgotten meanwhile.
+    assert!(transfers.take("main", "t2").is_none());
+    transfers.put_back("main", "t2", left("b"));
+    assert!(transfers.take("main", "t2").is_some());
+    transfers.forget("main", &["t2".into()]);
+    transfers.put_back("main", "t2", left("b"));
+    assert!(transfers.take("main", "t2").is_none());
+    transfers.keep("main", "t4", left("d"));
+    assert!(transfers.take("main", "t4").is_some());
+    transfers.put_back("main", "t4", Kept::Local(Left::default()));
+    assert!(!transfers.left.lock().unwrap().contains_key(&("main".into(), "t4".into())));
     transfers.cancel_webview("window-2");
     assert!(transfers.left.lock().unwrap().is_empty());
 }
@@ -154,15 +165,16 @@ mod unix {
             paths
         }
         let at = |path: &Path| path.to_str().unwrap().to_owned();
+        // Deleted files and folders, those kept as changed, and whether all went well.
+        let counts = |d: &Deletion| (d.deleted, d.deleted_folders, d.changed, d.created + d.folders, d.error.is_none());
 
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
         let mut up = Left::default();
         upload(&sftp, std::slice::from_ref(&source), &at(&remote), &mut reporter, &mut up).await.unwrap();
         let uploaded = (paths(&up.files), up.dirs.clone(), up.replaced);
         std::fs::write(remote.join("up/edited.txt"), "edited since").unwrap();
-        let (deletion, result) = delete_remote(&sftp, &mut up).await;
-        result.unwrap();
-        let after_upload = (deletion, names(&remote.join("up")), up);
+        let deletion = delete_remote(&sftp, &mut up).await;
+        let after_upload = (counts(&deletion), names(&remote.join("up")), up);
 
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
         let mut down = Left::default();
@@ -170,18 +182,17 @@ mod unix {
         let downloaded = (down.items.clone(), paths(&down.files), down.dirs.clone(), down.replaced);
         std::fs::write(back.join("up/mine"), "mine").unwrap();
         std::fs::write(back.join("up/keep"), "keep, edited since").unwrap();
-        let (deletion, result) = delete_local(&mut down);
-        result.unwrap();
-        let after_download = (deletion, names(&back.join("up")));
+        let deletion = delete_local(&mut down);
+        let after_download = (counts(&deletion), names(&back.join("up")));
         std::fs::remove_dir_all(&root).unwrap();
 
         let r = |path: &str| at(&remote.join(path));
         assert_eq!(uploaded, (vec![r("up/edited.txt"), r("up/new.txt"), r("up/sub/x.txt")], vec![r("up/sub")], 1));
         let kept = vec!["edited.txt".into(), "keep".into(), "old.txt".into()];
-        assert_eq!(after_upload, (Deletion { deleted: 2, changed: 1 }, kept, Left { replaced: 1, ..Left::default() }));
+        assert_eq!(after_upload, ((2, 1, 1, 0, true), kept, Left { replaced: 1, ..Left::default() }));
         let b = |path: &str| back.join(path);
         assert_eq!(downloaded, (vec![b("up")], vec![b("up/edited.txt"), b("up/keep"), b("up/old.txt")], vec![b("up")], 0));
-        assert_eq!(after_download, (Deletion { deleted: 2, changed: 1 }, vec!["keep".into(), "mine".into()]));
+        assert_eq!(after_download, ((2, 0, 1, 0, true), vec!["keep".into(), "mine".into()]));
     }
 
     /// New files and folders get the permission bits of those copied, as with `sftp put` and

@@ -21,16 +21,31 @@ export interface Transfer {
   error?: string;
   /** The local items an ended download left, to show. */
   results?: string[];
-  /** For an ended upload or download: how many files it created, which can be deleted, and how many it wrote over. */
+  /**
+   * For an ended upload or download: how many files and folders it created that are still to
+   * delete, and how many files it wrote over, which aren't.
+   */
   created?: number;
+  folders?: number;
   replaced?: number;
-  /** Deleting what it created: under way, or done, with how many files were deleted and how many kept as they changed since. */
-  deletion?: { state: "deleting" } | { state: "deleted"; count: number; changed: number };
+  /** Deleting what it created, once asked to. */
+  deletion?: Deletion;
   /** For an edit: the remote file. */
   remotePath?: string;
   /** For an edit: what became of the last save. */
   save?: EditSave;
 }
+
+/** What deleting what a transfer created has deleted so far, over each try, and whether a try is under way. */
+export interface Deletion {
+  deleting: boolean;
+  files: number;
+  folders: number;
+  /** Files kept, as they changed since the transfer. */
+  changed: number;
+}
+
+export const NO_DELETION: Deletion = { deleting: false, files: 0, folders: 0, changed: 0 };
 
 export type EditSave =
   { state: "uploading" | "waiting" | "skipped" } | { state: "uploaded"; at: number } | { state: "failed"; error: string };
@@ -118,17 +133,26 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
   const p = transfer.progress;
   const percent = p && p.total > 0 ? (p.transferred / p.total) * 100 : transfer.status === "done" ? 100 : 0;
 
-  const deleted = transfer.deletion?.state === "deleted" ? transfer.deletion.count : null;
-  // What it created can be deleted once it has ended, the files of an upload only through the connection.
-  const deletable = finished(transfer) && (transfer.created ?? 0) > 0 && deleted == null;
+  const toDelete = (transfer.created ?? 0) + (transfer.folders ?? 0);
+  // What it created can be deleted once it has ended, the files of an upload only through the
+  // connection; done once nothing is left to.
+  const deletable = finished(transfer) && toDelete > 0;
+  const deleted = transfer.deletion && !transfer.deletion.deleting && toDelete === 0 ? transfer.deletion : null;
   const upload = transfer.kind === "upload";
   const label = transferLabel(t, transfer.names);
 
   const detail = () => {
-    if (deleted != null) {
-      if (transfer.status === "cancelled") return t("transfer.cancelledDeleted", { count: deleted });
-      if (transfer.status === "error") return t("transfer.failedDeleted", { error: transfer.error, count: deleted });
-      return t("transfer.deleted", { count: deleted });
+    if (deleted && deleted.files === 0 && deleted.folders > 0) {
+      const count = deleted.folders;
+      if (transfer.status === "cancelled") return t("transfer.cancelledDeletedFolders", { count });
+      if (transfer.status === "error") return t("transfer.failedDeletedFolders", { error: transfer.error, count });
+      return t("transfer.deletedFolders", { count });
+    }
+    if (deleted) {
+      const count = deleted.files;
+      if (transfer.status === "cancelled") return t("transfer.cancelledDeleted", { count });
+      if (transfer.status === "error") return t("transfer.failedDeleted", { error: transfer.error, count });
+      return t("transfer.deleted", { count });
     }
     if (transfer.status === "error") return transfer.error;
     if (transfer.status === "editing") {
@@ -187,7 +211,7 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
                 ? t("transfer.deleteNeedsConnection")
                 : t(upload ? "transfer.deleteUploaded" : "transfer.deleteDownloaded")
             }
-            disabled={(upload && !connected) || transfer.deletion?.state === "deleting"}
+            disabled={(upload && !connected) || transfer.deletion?.deleting}
             onClick={() => actions.onDelete(id)}
           >
             <TrashIcon size={12} />
@@ -221,9 +245,7 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
           {detail()}
         </div>
       )}
-      {transfer.deletion?.state === "deleted" && transfer.deletion.changed > 0 && (
-        <div className="transfer-detail">{t("transfer.keptChanged", { count: transfer.deletion.changed })}</div>
-      )}
+      {deleted && deleted.changed > 0 && <div className="transfer-detail">{t("transfer.keptChanged", { count: deleted.changed })}</div>}
     </li>
   );
 }

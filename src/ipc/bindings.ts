@@ -1058,13 +1058,21 @@ export type TimePart = { "type": "text", text: string, } | { "type": "year" } | 
  */
 export type TransferDeletion = { 
 /**
- * How many files it deleted.
+ * How many files and folders it deleted.
  */
-deleted: number, 
+deleted: number, deletedFolders: number, 
 /**
- * How many it kept, changed since the transfer.
+ * How many files it kept, changed since the transfer.
  */
-changed: number, };
+changed: number, 
+/**
+ * How many files and folders are still to delete, after a failure (as in [`Ended`]).
+ */
+created: number, folders: number, 
+/**
+ * Why it stopped; what is still to delete can be deleted again.
+ */
+error: CommandError | null, };
 
 /**
  * How a transfer ended, for the file panel.
@@ -1075,9 +1083,10 @@ export type TransferEnd = {
  */
 paths: Array<string>, 
 /**
- * How many files it created, which `transfer_delete` deletes.
+ * How many files and folders it created, which `transfer_delete` deletes (the folders
+ * once nothing else is in them).
  */
-created: number, 
+created: number, folders: number, 
 /**
  * How many files it wrote over, which it doesn't.
  */

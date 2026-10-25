@@ -47,7 +47,8 @@ pub struct Progress {
 #[derive(Default)]
 pub struct Transfers {
     running: Mutex<HashMap<(String, String), Arc<AtomicBool>>>,
-    left: Mutex<HashMap<(String, String), Kept>>,
+    /// None while it is being deleted, until what couldn't be is put back.
+    left: Mutex<HashMap<(String, String), Option<Kept>>>,
 }
 
 impl Transfers {
@@ -83,13 +84,26 @@ impl Transfers {
     /// Keeps what an ended transfer left, unless there is nothing to delete.
     pub fn keep(&self, webview: &str, id: &str, kept: Kept) {
         if !kept.is_empty() {
-            self.left.lock().unwrap().insert((webview.to_owned(), id.to_owned()), kept);
+            self.left.lock().unwrap().insert((webview.to_owned(), id.to_owned()), Some(kept));
         }
     }
 
-    /// Takes what a transfer left, to delete it; what can't be is kept again.
+    /// Takes what a transfer left, to delete it, until [`Transfers::put_back`]; none while it
+    /// is being deleted already.
     pub fn take(&self, webview: &str, id: &str) -> Option<Kept> {
-        self.left.lock().unwrap().remove(&(webview.to_owned(), id.to_owned()))
+        self.left.lock().unwrap().get_mut(&(webview.to_owned(), id.to_owned()))?.take()
+    }
+
+    /// Puts back what deleting a transfer's files couldn't delete, unless the list stopped
+    /// showing it meanwhile.
+    pub fn put_back(&self, webview: &str, id: &str, kept: Kept) {
+        let mut left = self.left.lock().unwrap();
+        let key = (webview.to_owned(), id.to_owned());
+        match left.get_mut(&key) {
+            Some(_) if kept.is_empty() => drop(left.remove(&key)),
+            Some(slot) => *slot = Some(kept),
+            None => {}
+        }
     }
 
     /// Forgets what the transfers `ids` left, which the list no longer shows.

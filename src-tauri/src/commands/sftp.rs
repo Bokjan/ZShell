@@ -336,8 +336,9 @@ pub fn transfer_cancel(webview: Webview, transfers: State<'_, transfer::Transfer
 }
 
 /// Permanently deletes what an ended transfer created (see `transfer::left`): on the server
-/// through session `id`'s connection for an upload, if it still goes to the same server. Returns how many files were deleted, and
-/// how many were kept as they changed since; on a failure, what is left can be deleted again.
+/// through session `id`'s connection for an upload, if it still goes to the same server. Ends
+/// with what it deleted, and what is still to delete after a failure, which can be deleted
+/// again.
 #[tauri::command]
 pub async fn transfer_delete(
     app: AppHandle,
@@ -349,15 +350,16 @@ pub async fn transfer_delete(
     transfer_id: String,
 ) -> Result<transfer::Deletion> {
     let label = webview.label();
+    // Forgotten, or being deleted already.
     let Some(kept) = transfers.take(label, &transfer_id) else { return Ok(transfer::Deletion::default()) };
-    let (kept, (deletion, result)) = match kept {
+    let (kept, deletion) = match kept {
         transfer::Kept::Local(mut left) => {
-            let (left, outcome) = blocking(app, move |_| {
-                let outcome = transfer::delete_local(&mut left);
-                Ok((left, outcome))
+            let (left, deletion) = blocking(app, move |_| {
+                let deletion = transfer::delete_local(&mut left);
+                Ok((left, deletion))
             })
             .await?;
-            (transfer::Kept::Local(left), outcome)
+            (transfer::Kept::Local(left), deletion)
         }
         transfer::Kept::Remote(mut left, server) => {
             let sftp = async {
@@ -367,15 +369,15 @@ pub async fn transfer_delete(
                 }
                 Ok(connection.sftp().await?)
             };
-            let outcome = match sftp.await {
+            let deletion = match sftp.await {
                 Ok(sftp) => transfer::delete_remote(&sftp, &mut left).await,
-                Err(e) => (transfer::Deletion::default(), Err(e)),
+                Err(e) => transfer::Deletion { error: Some(e), ..Default::default() }.with_left(&left),
             };
-            (transfer::Kept::Remote(left, server), outcome)
+            (transfer::Kept::Remote(left, server), deletion)
         }
     };
-    transfers.keep(label, &transfer_id, kept);
-    result.map(|()| deletion)
+    transfers.put_back(label, &transfer_id, kept);
+    Ok(deletion)
 }
 
 /// Forgets what the transfers `transfer_ids` left, which the file panel no longer lists.

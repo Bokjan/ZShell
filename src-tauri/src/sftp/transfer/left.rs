@@ -117,8 +117,10 @@ impl Kept {
 pub struct Ended {
     /// The local items it left, to show (downloads).
     pub paths: Vec<PathBuf>,
-    /// How many files it created, which `transfer_delete` deletes.
+    /// How many files and folders it created, which `transfer_delete` deletes (the folders
+    /// once nothing else is in them).
     pub created: usize,
+    pub folders: usize,
     /// How many files it wrote over, which it doesn't.
     pub replaced: usize,
     /// Why it stopped, if it didn't finish.
@@ -127,18 +129,32 @@ pub struct Ended {
 
 impl Ended {
     pub fn new<P>(left: &Left<P>, error: Option<Error>, paths: Vec<PathBuf>) -> Self {
-        Self { paths, created: left.files.len(), replaced: left.replaced, error }
+        Self { paths, created: left.files.len(), folders: left.dirs.len(), replaced: left.replaced, error }
     }
 }
 
 /// What deleting what a transfer left did, for the file panel.
-#[derive(Debug, Default, PartialEq, Serialize, TS)]
+#[derive(Debug, Default, Serialize, TS)]
 #[ts(rename = "TransferDeletion")]
+#[serde(rename_all = "camelCase")]
 pub struct Deletion {
-    /// How many files it deleted.
+    /// How many files and folders it deleted.
     pub deleted: usize,
-    /// How many it kept, changed since the transfer.
+    pub deleted_folders: usize,
+    /// How many files it kept, changed since the transfer.
     pub changed: usize,
+    /// How many files and folders are still to delete, after a failure (as in [`Ended`]).
+    pub created: usize,
+    pub folders: usize,
+    /// Why it stopped; what is still to delete can be deleted again.
+    pub error: Option<Error>,
+}
+
+impl Deletion {
+    /// What is still to delete, once `left` has been through deleting.
+    pub fn with_left<P>(self, left: &Left<P>) -> Self {
+        Self { created: left.files.len(), folders: left.dirs.len(), ..self }
+    }
 }
 
 /// What became of one file.
@@ -166,8 +182,8 @@ pub async fn stamp_remote(sftp: &SftpSession, files: Vec<String>) -> Vec<(String
 /// Deletes the local files and then the folders of `left`, deepest first, those that are
 /// empty. A file changed since is kept and passed over, as is a file or folder no longer there
 /// and a folder where one of the files was; one that can't be deleted stays in `left`, and the
-/// first such failure is returned.
-pub fn delete_local(left: &mut Left<PathBuf>) -> (Deletion, Result<(), Error>) {
+/// first such failure is given.
+pub fn delete_local(left: &mut Left<PathBuf>) -> Deletion {
     let mut deletion = Deletion::default();
     let mut first = Ok(());
     left.files.retain(|(file, stamp)| {
@@ -191,10 +207,10 @@ pub fn delete_local(left: &mut Left<PathBuf>) -> (Deletion, Result<(), Error>) {
     if first.is_ok() {
         left.dirs.sort_by_key(|dir| std::cmp::Reverse(depth(dir)));
         for dir in left.dirs.drain(..) {
-            let _ = std::fs::remove_dir(dir);
+            deletion.deleted_folders += usize::from(std::fs::remove_dir(dir).is_ok());
         }
     }
-    (deletion, first)
+    Deletion { error: first.err(), ..deletion }.with_left(left)
 }
 
 impl Deletion {
@@ -212,7 +228,7 @@ fn depth(path: &Path) -> usize {
 }
 
 /// [`delete_local`] on the server, a few files at once.
-pub async fn delete_remote(sftp: &SftpSession, left: &mut Left<String>) -> (Deletion, Result<(), Error>) {
+pub async fn delete_remote(sftp: &SftpSession, left: &mut Left<String>) -> Deletion {
     let files = &left.files;
     let gone = |e: &SftpError| matches!(e, SftpError::Status(status) if status.status_code == StatusCode::NoSuchFile);
     // By index: closures given references make futures the compiler can't prove `Send`.
@@ -252,8 +268,8 @@ pub async fn delete_remote(sftp: &SftpSession, left: &mut Left<String>) -> (Dele
     if first.is_ok() {
         left.dirs.sort_by_key(|dir| std::cmp::Reverse(dir.matches('/').count()));
         for dir in left.dirs.drain(..) {
-            let _ = sftp.remove_dir(&dir).await;
+            deletion.deleted_folders += usize::from(sftp.remove_dir(&dir).await.is_ok());
         }
     }
-    (deletion, first)
+    Deletion { error: first.err(), ..deletion }.with_left(left)
 }

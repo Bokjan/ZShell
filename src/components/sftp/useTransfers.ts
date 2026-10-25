@@ -7,7 +7,7 @@ import { errorCode, errorMessage, notConnected, sftp, type FileEntry, type Sessi
 import { open, save } from "../../ipc/fileDialog";
 import { basename } from "../../lib/format";
 import { storedString, storeString } from "../../lib/storage";
-import { finished, transferLabel, type Transfer } from "../TransferList";
+import { finished, NO_DELETION, transferLabel, type Deletion, type Transfer } from "../TransferList";
 import { useLatest } from "../../hooks/latest";
 import { attempt } from "../../lib/attempt";
 import { parentPath } from "../../lib/remotePath";
@@ -59,6 +59,9 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
 
   const add = (transfer: Transfer) => setTransfers((ts) => [transfer, ...ts]);
   const update = (id: string, patch: Partial<Transfer>) => setTransfers((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  /** Changes transfer `id` from what deleting its files has done so far. */
+  const updateDeletion = (id: string, change: (deletion: Deletion) => Partial<Transfer>) =>
+    setTransfers((ts) => ts.map((t) => (t.id === id ? { ...t, ...change(t.deletion ?? NO_DELETION) } : t)));
   // What the ones no longer listed created can't be deleted from here any more.
   const remove = (id: string) => {
     void sftp.forget([id]);
@@ -91,7 +94,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     return attempt(
       async () => {
         const end = await work(id);
-        const left = { results: end.paths, created: end.created, replaced: end.replaced };
+        const left = { results: end.paths, created: end.created, folders: end.folders, replaced: end.replaced };
         if (end.error) failed(id, end.error, left);
         else update(id, { status: "done", ...left });
       },
@@ -171,10 +174,11 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
   /** Asks, then permanently deletes the files and folders an ended upload or download created. */
   const deleteLeft = (id: string) => {
     const transfer = transfersRef.current.find((t) => t.id === id);
-    if (!transfer?.created) return;
+    if (!transfer || !(transfer.created || transfer.folders)) return;
     const upload = transfer.kind === "upload";
-    const count = transfer.created;
-    const message = t(upload ? "transfer.deleteUploadedMessage" : "transfer.deleteDownloadedMessage", { count });
+    const message = transfer.created
+      ? t(upload ? "transfer.deleteUploadedMessage" : "transfer.deleteDownloadedMessage", { count: transfer.created })
+      : t(upload ? "transfer.deleteUploadedFoldersMessage" : "transfer.deleteDownloadedFoldersMessage", { count: transfer.folders });
     const replaced = transfer.replaced ? t("transfer.deleteReplacedNote", { count: transfer.replaced }) : null;
     ask({
       title: t("transfer.deleteTitle"),
@@ -182,16 +186,26 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
       confirmLabel: t("transfer.deleteConfirm"),
       danger: true,
       action: () => {
-        update(id, { deletion: { state: "deleting" } });
+        updateDeletion(id, (deletion) => ({ deletion: { ...deletion, deleting: true } }));
         void attempt(
           async () => {
-            const { deleted, changed } = await sftp.deleteLeft(id, upload ? currentSession() : null);
-            update(id, { deletion: { state: "deleted", count: deleted, changed } });
+            const done = await sftp.deleteLeft(id, upload ? currentSession() : null);
+            // Added to what earlier tries deleted; what is still to delete can be deleted again.
+            updateDeletion(id, (deletion) => ({
+              created: done.created,
+              folders: done.folders,
+              deletion: {
+                deleting: false,
+                files: deletion.files + done.deleted,
+                folders: deletion.folders + done.deletedFolders,
+                changed: deletion.changed + done.changed,
+              },
+            }));
+            if (done.error) fail(done.error);
           },
           {
             onError: (e) => {
-              // What is left can be deleted again.
-              update(id, { deletion: undefined });
+              updateDeletion(id, (deletion) => ({ deletion: { ...deletion, deleting: false } }));
               fail(e);
             },
           },
