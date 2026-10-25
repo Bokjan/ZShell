@@ -12,7 +12,6 @@ import { quickCommandStore } from "../lib/quickCommands";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import { activeTabOf, togglesPanel, type TabStore } from "../lib/tabs";
 import { checkForUpdates } from "../lib/updates";
-import type { usePaneActions } from "./usePaneActions";
 
 /** What terminal full screen hides, whose keys and menu items do nothing meanwhile. */
 const HIDDEN_IN_FULL_SCREEN: readonly Action[] = ["searchSessions", "sidebar", "composeBar", "filePanel", "forwardsPanel"];
@@ -29,10 +28,16 @@ interface Entry {
   always?: boolean;
 }
 
+/** Splitting the focused pane (see `usePaneActions`). */
+interface PaneActions {
+  roomToSplit(key: number, direction: Direction): boolean;
+  splitPane(key: number, direction: Direction): void;
+}
+
 interface Options {
   store: TabStore;
   sessions: SessionRegistry;
-  paneActions: ReturnType<typeof usePaneActions>;
+  paneActions: PaneActions;
   fullScreen: { on: boolean; toggle(): void };
   /** False on Windows in S mode, which blocks local shells. */
   localAllowed: boolean;

@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import type { Point } from "../ipc/bindings";
+import type { DropTarget } from "../ipc/windows";
 import { halfOn, sideAt, type Rect } from "../lib/layout";
-import { findPane, type Layout } from "../lib/panes";
+import { findPane, type Layout, type Tab } from "../lib/panes";
 import { createStore, type PatchStore } from "../lib/store";
 import { leavesSomething, type PanePlace, type PaneSide, type TabStore } from "../lib/tabs";
 import type { TabRest } from "../lib/tabRest";
 import { tabEdgeAt, tabIndexAt, tabStrip } from "../lib/tabStrip";
 import { followMouse, isOutside, pastThreshold, WindowDrag } from "../lib/windowDrag";
-import type { useWindows } from "./useWindows";
-import type { usePaneActions } from "./usePaneActions";
 
 /** What the page shows of a drag, in CSS pixels of the page. */
 interface DragView {
@@ -25,6 +24,20 @@ interface DragView {
 
 const NO_VIEW: DragView = { source: null, preview: null, marker: null, leaving: false };
 
+/** Where dragged panes go (see `usePaneActions`). */
+interface PaneActions {
+  /** Whether panes arranged as `added` fit next to `to`, `moving` leaving its place first. */
+  fitsBeside(added: Layout, to: PaneSide, moving?: number): boolean;
+  movePane(key: number, to: PanePlace): void;
+  mergeTab(key: number, to: PaneSide): void;
+}
+
+/** Dragging out of the window (see `useWindows`). */
+interface Windowing {
+  canMove(tab: Tab, only?: number): boolean;
+  dropTab(key: number, target: DropTarget, grab: Point, pane?: number): void;
+}
+
 /** Where a dragged pane goes if dropped now: see `PanePlace`, or out of the window. */
 type Drop = PanePlace | { kind: "out" } | null;
 
@@ -39,12 +52,7 @@ const rectOf = (element: Element): Rect => {
  * of the window, as tabs go. Tabs dragged from the tab bar over the panes of the tab shown
  * join them through `overPanes` and `dropOnPanes`. `layer` shows where they would go.
  */
-export function usePaneDrag(
-  store: TabStore,
-  actions: Pick<ReturnType<typeof usePaneActions>, "fitsBeside" | "movePane" | "mergeTab">,
-  windowing: Pick<ReturnType<typeof useWindows>, "canMove" | "dropTab">,
-  tabRest: TabRest,
-) {
+export function usePaneDrag(store: TabStore, actions: PaneActions, windowing: Windowing, tabRest: TabRest) {
   const [view] = useState(() => createStore<DragView>(NO_VIEW));
   /** Where a tab dragged over the panes would join them. */
   const tabTarget = useRef<PaneSide | null>(null);

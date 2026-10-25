@@ -4,19 +4,35 @@ import type { MenuItem } from "../components/ContextMenu";
 import type { QuickCommand } from "../ipc/api";
 import { useLocale } from "../hooks/locale";
 import { useSettings } from "../hooks/settings";
+import type { WindowInfo } from "../ipc/windows";
+import type { Direction } from "../lib/layout";
 import { findPane, tabTitle, type Pane, type Tab } from "../lib/panes";
-import { leavesSomething } from "../lib/tabs";
+import { leavesSomething, type PanePlace, type PaneSide } from "../lib/tabs";
 import type { CloseRequest } from "./useCloseFlow";
-import type { usePaneActions } from "./usePaneActions";
-import type { useWindows } from "./useWindows";
 
 /** Quick commands listed in the terminal's menu; the palette has them all. */
 const MENU_COMMANDS = 8;
 
+/** What the menu does to panes (see `usePaneActions`). */
+interface PaneActions {
+  roomToSplit(key: number, direction: Direction): boolean;
+  splitPane(key: number, direction: Direction): void;
+  /** Where a pane moved into the tab goes, or null when there is no room. */
+  placeIn(tabKey: number): PaneSide | null;
+  movePane(key: number, to: PanePlace): void;
+}
+
+/** The other windows, where panes can move to (see `useWindows`). */
+interface Windowing {
+  others: WindowInfo[];
+  canMove(tab: Tab, only?: number): boolean;
+  moveTab(key: number, target: string | null, options: { pane: number }): Promise<void>;
+}
+
 interface Options {
   tabs: Tab[];
-  paneActions: ReturnType<typeof usePaneActions>;
-  windowing: ReturnType<typeof useWindows>;
+  paneActions: PaneActions;
+  windowing: Windowing;
   requestClose(request: CloseRequest): unknown;
   fullScreen: { on: boolean; toggle(): void };
   /** The quick commands of a pane's group, or null when the menu lists none. */

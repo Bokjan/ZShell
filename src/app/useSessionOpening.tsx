@@ -7,13 +7,24 @@ import type { Folder, Profile, SessionTarget } from "../ipc/api";
 import { directory } from "../lib/directory";
 import { address, loginName, sessionsIn, type QuickTarget } from "../lib/sessions";
 import type { SessionRegistry } from "../lib/sessionRegistry";
-import { activeTabOf, type TabStore } from "../lib/tabs";
-import type { usePaneActions } from "./usePaneActions";
-import type { useWindows } from "./useWindows";
+import type { Direction } from "../lib/layout";
+import { activeTabOf, type PaneSpec, type TabStore } from "../lib/tabs";
+
+/** Where sessions open (see `usePaneActions`). */
+interface PaneActions {
+  specOf(target: SessionTarget, title: string): PaneSpec;
+  openTab(target: SessionTarget, title: string): void;
+  splitPane(key: number, direction: Direction, added?: PaneSpec): void;
+}
+
+/** Opening a saved session in a window of its own (see `useWindows`). */
+interface Windowing {
+  openInNewWindow(profileId: string, title: string): void;
+}
 
 interface Options {
-  paneActions: ReturnType<typeof usePaneActions>;
-  windowing: ReturnType<typeof useWindows>;
+  paneActions: PaneActions;
+  windowing: Windowing;
   /** The local shell's name ("zsh"), which titles local terminals, once known. */
   shellName: string | null;
   /** The local user's name, for quick SSH connections without one. */
