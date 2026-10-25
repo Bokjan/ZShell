@@ -4,7 +4,7 @@
 // the executable, brotli-compressed by Tauri) and Settings > About shows:
 //
 // - Rust crates: cargo-about's JSON output, with src-tauri/about.toml (accepted licenses,
-//   release targets, clarifications).
+//   release targets, clarifications), less the crates only proc macros use.
 // - npm packages: the runtime dependencies (not devDependencies) from
 //   `pnpm licenses list --prod`, with the license files each package ships.
 //
@@ -95,11 +95,14 @@ function rustPackages() {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+  const linked = linkedCrates();
   // cargo-about lists licenses with the crates using them; turn that around.
   const crates = new Map();
   for (const license of about.licenses) {
+    const used = license.used_by.filter(({ crate }) => linked.has(`${crate.name}@${crate.version}`));
+    if (used.length === 0) continue;
     const index = addText(license.text);
-    for (const { crate } of license.used_by) {
+    for (const { crate } of used) {
       const key = `${crate.name}@${crate.version}`;
       if (!crates.has(key)) {
         crates.set(key, {
@@ -117,14 +120,35 @@ function rustPackages() {
   return [...crates.values()];
 }
 
+const aboutToml = readFileSync(join(root, "src-tauri", "about.toml"), "utf8");
+/** The strings of one of about.toml's top-level arrays. */
+const aboutList = (key) =>
+  [...aboutToml.match(new RegExp(`^${key} = \\[([^\\]]*)\\]`, "m"))[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+
 /** The licenses we can comply with: about.toml's `accepted` list, which cargo-about enforces for crates. */
-const accepted = new Set(
-  [
-    ...readFileSync(join(root, "src-tauri", "about.toml"), "utf8")
-      .match(/^accepted = \[([^\]]*)\]/m)[1]
-      .matchAll(/"([^"]+)"/g),
-  ].map((match) => match[1]),
-);
+const accepted = new Set(aboutList("accepted"));
+
+/**
+ * The crates linked into the app on any of about.toml's targets, as `name@version`.
+ * cargo-about also lists what proc macros (serde_derive, tauri-macros) depend on, which
+ * only runs in the compiler and never ships; the code a macro generates is ours.
+ */
+function linkedCrates() {
+  const tree = run("cargo", [
+    "tree",
+    "--locked",
+    "--manifest-path",
+    "src-tauri/Cargo.toml",
+    "--edges",
+    "normal,no-proc-macro",
+    ...aboutList("targets").flatMap((target) => ["--target", target]),
+    "--prefix",
+    "none",
+    "--format",
+    "{p}",
+  ]);
+  return new Set([...tree.matchAll(/^(\S+) v(\S+)/gm)].map(([, name, version]) => `${name}@${version}`));
+}
 
 /** Whether an SPDX expression ("MIT", "(MIT OR Apache-2.0) AND BSD-3-Clause") can be met with accepted licenses. */
 function isAccepted(expression) {
