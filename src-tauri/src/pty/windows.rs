@@ -1,7 +1,6 @@
 //! Local shells on Windows: ConPTY's pipes only block, so each session runs three threads
 //! beside its task (see the module comment of `pty`).
 
-use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -14,7 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::{drain_output, pty_size, shell, Shell, KILL_GRACE, READ_BUFFER};
 use crate::error::Error;
-use crate::session::{Flow, Foreground, ForegroundProbe, SessionInput, SessionSink, TermIo};
+use crate::session::{Flow, Foreground, ForegroundProbe, Pending, PendingInput, SessionInput, SessionSink, TermIo};
 
 /// Input chunks waiting for the writer thread; beyond that, sending waits (a ZMODEM upload
 /// is paced by how fast the shell reads).
@@ -94,24 +93,20 @@ impl Pty {
     /// Input the writer thread has no room for yet (the shell isn't reading) waits here, so
     /// the shell exiting and resizes are still seen (see [`TermIo::recv`]).
     pub(super) async fn bridge(&mut self, io: &mut TermIo) -> Option<Option<ExitStatus>> {
-        let mut pending: VecDeque<Vec<u8>> = VecDeque::new();
-        let mut pending_bytes = 0;
+        let mut pending = PendingInput::default();
         loop {
             let writer = self.input.clone();
             tokio::select! {
                 status = &mut self.exit => return Some(status.ok().flatten()),
                 permit = async { writer?.reserve_owned().await.ok() }, if !pending.is_empty() => {
-                    let data = pending.pop_front().unwrap_or_default();
-                    pending_bytes -= data.len();
-                    if let Some(permit) = permit {
+                    if let (Some(Pending::Data(data)), Some(permit)) = (pending.pop(), permit) {
                         permit.send(data);
                     }
                 }
-                input = io.recv(pending_bytes) => match input {
+                input = io.recv(pending.bytes()) => match input {
                     Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
                         if self.input.is_some() {
-                            pending_bytes += data.len();
-                            pending.push_back(data);
+                            pending.push(data);
                         }
                     }
                     Some(SessionInput::Resize { cols, rows }) => {

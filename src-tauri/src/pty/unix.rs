@@ -2,7 +2,6 @@
 //! writable ([`AsyncFd`]) and for the shell to exit (SIGCHLD), so an idle session takes no
 //! thread and wakes nothing.
 
-use std::collections::VecDeque;
 use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::sync::Arc;
@@ -16,7 +15,7 @@ use tokio::sync::oneshot;
 use super::{drain_output, pty_size, Shell, KILL_GRACE, READ_BUFFER};
 use crate::error::Error;
 use crate::fd::{read_on, set_non_blocking, write_fd};
-use crate::session::{Flow, Foreground, ForegroundProbe, SessionInput, SessionSink, TermIo};
+use crate::session::{Flow, Foreground, ForegroundProbe, PendingInput, SessionInput, SessionSink, TermIo};
 
 /// A running shell. Dropping it (the shell exited, or the tab was closed and the session
 /// task aborted) ends the shell if it is still running.
@@ -92,43 +91,34 @@ impl Pty {
     /// still seen (see [`TermIo::recv`]).
     pub(super) async fn bridge(&mut self, io: &mut TermIo) -> Option<Option<ExitStatus>> {
         let process = self.process.as_mut()?;
-        let mut pending: VecDeque<Vec<u8>> = VecDeque::new();
-        let mut pending_bytes = 0;
+        let mut pending = PendingInput::default();
         // Until writing fails: the terminal is gone, and input goes nowhere.
         let mut writing = true;
         let status = loop {
             tokio::select! {
                 status = process.exit() => break status,
                 ready = self.terminal.writable(), if !pending.is_empty() => {
+                    let data = pending.data().unwrap_or_default();
                     let written = match ready {
-                        Ok(mut ready) => match ready.try_io(|terminal| write_fd(terminal.as_raw_fd(), &pending[0])) {
+                        Ok(mut ready) => match ready.try_io(|terminal| write_fd(terminal.as_raw_fd(), data)) {
                             Ok(written) => written,
                             Err(_would_block) => continue,
                         },
                         Err(e) => Err(e),
                     };
                     match written {
-                        Ok(n) => {
-                            pending_bytes -= n;
-                            if n == pending[0].len() {
-                                pending.pop_front();
-                            } else {
-                                pending[0].drain(..n);
-                            }
-                        }
+                        Ok(n) => pending.wrote(n),
                         Err(e) if e.kind() == ErrorKind::Interrupted => {}
                         Err(_) => {
                             writing = false;
                             pending.clear();
-                            pending_bytes = 0;
                         }
                     }
                 }
-                input = io.recv(pending_bytes) => match input {
+                input = io.recv(pending.bytes()) => match input {
                     Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
                         if writing {
-                            pending_bytes += data.len();
-                            pending.push_back(data);
+                            pending.push(data);
                         }
                     }
                     Some(SessionInput::Resize { cols, rows }) => {

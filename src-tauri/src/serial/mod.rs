@@ -10,7 +10,6 @@
 #[cfg(unix)]
 mod unix;
 
-use std::collections::VecDeque;
 use std::io::{ErrorKind, Read};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -23,7 +22,7 @@ use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::model::{FlowControl, Parity, SerialOptions};
-use crate::session::{Outcome, SessionEvent, SessionInput, SessionSink, TermIo, Tone};
+use crate::session::{Outcome, Pending, PendingInput, SessionEvent, SessionInput, SessionSink, TermIo, Tone};
 
 /// How long a read waits for data before checking whether the session has closed. On
 /// Windows, reads and writes on the port's handle take turns, so a waiting read also delays
@@ -217,17 +216,11 @@ fn not_inherited(port: &serialport::COMPort) {
     unsafe { SetHandleInformation(port.as_raw_handle(), HANDLE_FLAG_INHERIT, 0) };
 }
 
-/// What the writer thread sends to the device.
-enum Output {
-    Data(Vec<u8>),
-    Break,
-}
-
 /// An open serial port and its reader and writer threads (on Windows, or for a device tokio
 /// can't watch), which stop when it is dropped: the writer once its input closes, the reader
 /// (whose reads time out) once nothing receives its failures.
 struct Line {
-    input: mpsc::Sender<Output>,
+    input: mpsc::Sender<Pending>,
     /// Why the reader or writer stopped, if the device failed.
     failed: mpsc::UnboundedReceiver<String>,
 }
@@ -260,8 +253,7 @@ impl Line {
     /// keystrokes are still read: Ctrl+C cancels a ZMODEM upload that the line stalls (see
     /// [`TermIo::recv`]).
     async fn bridge(mut self, device: &str, io: &mut TermIo) -> Outcome {
-        let mut pending: VecDeque<Output> = VecDeque::new();
-        let mut pending_bytes = 0;
+        let mut pending = PendingInput::default();
         loop {
             tokio::select! {
                 reason = self.failed.recv() => {
@@ -273,18 +265,11 @@ impl Line {
                 }
                 // An error means the writer stopped; the reason arrives on `failed`.
                 Ok(permit) = self.input.reserve(), if !pending.is_empty() => {
-                    let output = pending.pop_front().unwrap();
-                    if let Output::Data(data) = &output {
-                        pending_bytes -= data.len();
-                    }
-                    permit.send(output);
+                    permit.send(pending.pop().expect("not empty"));
                 }
-                input = io.recv(pending_bytes) => match input {
-                    Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
-                        pending_bytes += data.len();
-                        pending.push_back(Output::Data(data));
-                    }
-                    Some(SessionInput::Break) => pending.push_back(Output::Break),
+                input = io.recv(pending.bytes()) => match input {
+                    Some(SessionInput::Data(data) | SessionInput::Raw(data)) => pending.push(data),
+                    Some(SessionInput::Break) => pending.push_break(),
                     Some(SessionInput::Resize { .. }) => {}
                     // The tab is closing.
                     None => return Outcome::Exited(None),
@@ -346,13 +331,13 @@ fn read_ready(port: &mut dyn SerialPort, buffer: &mut [u8], mut read: usize) -> 
     read
 }
 
-fn write_input(mut port: Box<dyn SerialPort>, mut inputs: mpsc::Receiver<Output>, failed: &mpsc::UnboundedSender<String>) {
+fn write_input(mut port: Box<dyn SerialPort>, mut inputs: mpsc::Receiver<Pending>, failed: &mpsc::UnboundedSender<String>) {
     while let Some(write) = inputs.blocking_recv() {
         let result = match write {
-            Output::Data(data) => write_data(&mut *port, &data, failed),
+            Pending::Data(data) => write_data(&mut *port, &data, failed),
             // Not every adapter (or pseudo terminal) can send a break; that is no reason to
             // end the session.
-            Output::Break => {
+            Pending::Break => {
                 if port.set_break().is_ok() {
                     thread::sleep(BREAK_DURATION);
                     let _ = port.clear_break();

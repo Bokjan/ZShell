@@ -3,7 +3,6 @@
 //! the line is quiet. Reads and writes go straight to the descriptor (non-blocking, see
 //! `open`): serialport's own wait for data first would hold up tokio's thread.
 
-use std::collections::VecDeque;
 use std::io::{self, ErrorKind};
 use std::os::fd::AsRawFd;
 use std::pin::Pin;
@@ -13,10 +12,10 @@ use serialport::{SerialPort, TTYPort};
 use tokio::io::unix::AsyncFd;
 use tokio::time::Sleep;
 
-use super::{Hold, Output, BREAK_DURATION, READ_BUFFER};
+use super::{Hold, BREAK_DURATION, READ_BUFFER};
 use crate::error::Error;
 use crate::fd::{read_on, write_fd};
-use crate::session::{Outcome, SessionInput, TermIo};
+use crate::session::{Outcome, PendingInput, SessionInput, TermIo};
 
 /// The port and our hold on it, let go of only once the port is closed (fields drop in
 /// order): closing a tab aborts its task, which is dropped on some worker thread maybe after
@@ -36,14 +35,13 @@ pub(super) async fn bridge(port: AsyncFd<TTYPort>, device: &str, io: &mut TermIo
     let sink = io.sink();
     let flow = sink.flow();
     let mut buffer = vec![0; READ_BUFFER];
-    let mut pending: VecDeque<Output> = VecDeque::new();
-    let mut pending_bytes = 0;
+    let mut pending = PendingInput::default();
     // While a break holds the line; what was typed after it waits.
     let mut breaking: Option<Pin<Box<Sleep>>> = None;
     loop {
         // Breaks are sent in turn with the data around them.
-        while breaking.is_none() && matches!(pending.front(), Some(Output::Break)) {
-            pending.pop_front();
+        while breaking.is_none() && pending.break_next() {
+            pending.pop();
             // Not every adapter (or pseudo terminal) can send a break; that is no reason to
             // end the session.
             if port.get_ref().set_break().is_ok() {
@@ -72,7 +70,7 @@ pub(super) async fn bridge(port: AsyncFd<TTYPort>, device: &str, io: &mut TermIo
                 }
             }
             ready = port.writable(), if writing => {
-                let Some(Output::Data(data)) = pending.front_mut() else { continue };
+                let Some(data) = pending.data() else { continue };
                 let written = match ready {
                     Ok(mut ready) => match ready.try_io(|port| write_fd(port.as_raw_fd(), data)) {
                         Ok(written) => written,
@@ -81,14 +79,7 @@ pub(super) async fn bridge(port: AsyncFd<TTYPort>, device: &str, io: &mut TermIo
                     Err(e) => Err(e),
                 };
                 match written {
-                    Ok(n) => {
-                        pending_bytes -= n;
-                        if n == data.len() {
-                            pending.pop_front();
-                        } else {
-                            data.drain(..n);
-                        }
-                    }
+                    Ok(n) => pending.wrote(n),
                     Err(e) if e.kind() == ErrorKind::Interrupted => {}
                     Err(e) => return lost(&e),
                 }
@@ -97,12 +88,9 @@ pub(super) async fn bridge(port: AsyncFd<TTYPort>, device: &str, io: &mut TermIo
                 breaking = None;
                 let _ = port.get_ref().clear_break();
             }
-            input = io.recv(pending_bytes) => match input {
-                Some(SessionInput::Data(data) | SessionInput::Raw(data)) => {
-                    pending_bytes += data.len();
-                    pending.push_back(Output::Data(data));
-                }
-                Some(SessionInput::Break) => pending.push_back(Output::Break),
+            input = io.recv(pending.bytes()) => match input {
+                Some(SessionInput::Data(data) | SessionInput::Raw(data)) => pending.push(data),
+                Some(SessionInput::Break) => pending.push_break(),
                 Some(SessionInput::Resize { .. }) => {}
                 // The tab is closing.
                 None => return Outcome::Exited(None),
