@@ -256,10 +256,14 @@ input::-ms-reveal {
   padding: 0;
   border: none;
 }
-/* A field's title (`Field`): the text of its label, or its group's legend, which looks the same. */
+/* A field's title (`Field`, `PasswordInput`): the text of its label, or its group's legend, set
+   apart from the hints in the text's own color and weight. */
+.field-title {
+  color: var(--text);
+  font-weight: 600;
+}
 .dialog legend {
   padding: 0 0 4px;
-  color: var(--text-muted);
   font-size: calc(12px * var(--text-scale));
 }
 .forward-dialog {
