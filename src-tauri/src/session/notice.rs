@@ -68,7 +68,7 @@ mod tests {
 
     const AT: &str = "[2026-03-05 07:08:09]";
 
-    /// The same example as `src/lib/notice.test.ts`.
+    /// The same example as `src/lib/terminalNotice.test.ts`.
     #[test]
     fn starts_each_line_with_the_time() {
         let notice = render(Tone::Error, "The connection was lost\nPress Enter\n", AT, true);
