@@ -42,7 +42,9 @@ export function followSize(term: Terminal, addon: FullWidthFitAddon, container: 
   const follow = () => {
     const proposed = addon.proposeDimensions();
     if (deps.arriving() || !proposed) return;
-    const step = resizeStep({ cols: term.cols, rows: term.rows }, proposed, term.buffer.active.length);
+    // The normal buffer's length even while a full-screen program shows the alternate one,
+    // which has no scrollback: xterm.js rewraps both on each resize.
+    const step = resizeStep({ cols: term.cols, rows: term.rows }, proposed, term.buffer.normal.length);
     if (step.now) addon.resizeTo(step.now);
     colsLater.clear();
     if (step.colsLater) {
