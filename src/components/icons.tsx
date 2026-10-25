@@ -184,11 +184,23 @@ export function HelpIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-/** An arrow pointing up or down: moving up a folder or a list, the previous or next match, uploads and downloads, back to the end of a terminal's output. */
+/** An arrow pointing up or down: moving up a folder or a list, the previous or next match, uploads and downloads. */
 export function ArrowIcon({ direction, size = 14 }: { direction: "up" | "down"; size?: number }) {
   return (
     <Svg size={size}>
       <path d={direction === "up" ? "M8 13V3M4 7l4-4 4 4" : "M8 3v10M4 9l4 4 4-4"} />
+    </Svg>
+  );
+}
+
+/**
+ * An arrow down onto a line: back to the end of a terminal's output. The line spans the grid,
+ * so that the icon leaves no margin of its own beside the text after it.
+ */
+export function ScrollToEndIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <path d="M8 2v9M4 7l4 4 4-4M1.5 14h13" />
     </Svg>
   );
 }

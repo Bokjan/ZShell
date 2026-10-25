@@ -3,7 +3,7 @@ import { Trans, useTranslation } from "react-i18next";
 
 import { announce } from "../../lib/announce";
 import type { ReadBack } from "../../lib/readBack";
-import { ArrowIcon } from "../icons";
+import { ScrollToEndIcon } from "../icons";
 
 /** The largest count shown as it is; past it the button says "999+", and keeps its width. */
 const MOST_SHOWN = 999;
@@ -51,7 +51,7 @@ export function NewOutputButton({ readBack, visible, onClick }: Props) {
   return (
     // Not focused by a click, which leaves the keyboard with the terminal.
     <button className="new-output" title={t("terminal.scrollToEnd")} onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
-      <ArrowIcon direction="down" size={12} />
+      <ScrollToEndIcon size={12} />
       <span>
         <Trans
           i18nKey="terminal.newLines"
