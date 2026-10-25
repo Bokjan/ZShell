@@ -20,6 +20,7 @@ import {
 } from "../ipc/api";
 import type { Notice, ProgressReport } from "./osc";
 import type { Arrival, Snapshot } from "./panes";
+import { noticeLines, type Tone } from "./terminalNotice";
 import { isTerminalReport } from "./terminalReports";
 import { ForwardMeters, SftpTraffic, TrafficMeter, type TerminalDetail } from "./traffic";
 
@@ -306,7 +307,7 @@ export class PaneSession {
     else if (data === "\x03" && this.retryTimer !== undefined) {
       this.cancelRetry();
       this.attempt = 0;
-      this.dim(this.config.t("terminal.reconnectCancelled"));
+      this.writeNotice(this.config.t("terminal.reconnectCancelled"));
     } else if (data === "\x04") this.events.close();
     return false;
   }
@@ -629,8 +630,8 @@ export class PaneSession {
             return;
           case "log":
             // A log that stopped midway says so itself; one that couldn't start, with ours.
-            if (event.error?.code === "log.writeFailed") this.dim(event.error.message);
-            else if (event.error) this.dim(t("terminal.logFailed", { message: event.error.message }));
+            if (event.error?.code === "log.writeFailed") this.writeNotice(event.error.message);
+            else if (event.error) this.writeNotice(t("terminal.logFailed", { message: event.error.message }));
             this.events.log(event.path);
             return;
           case "waiting":
@@ -666,7 +667,7 @@ export class PaneSession {
         if (event.reason === "exited" && !cut && this.events.exited(event.status, event.signal, this.typed)) return;
         this.events.status("closed");
         if (target.kind === "local") {
-          this.dim(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
+          this.writeNotice(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
           return;
         }
         // Retry lost connections, and keep retrying while the network or server is down.
@@ -677,7 +678,7 @@ export class PaneSession {
         if (retry) this.scheduleRetry();
         else {
           this.attempt = 0;
-          this.dim(t("terminal.reconnectHint"));
+          this.writeNotice(t("terminal.reconnectHint"));
         }
       },
       took,
@@ -699,8 +700,9 @@ export class PaneSession {
         this.closed = true;
         this.attempt = 0;
         this.events.status("closed");
-        this.port.write(`\r\n\x1b[31m${errorMessage(e)}\x1b[0m\r\n`);
-        this.dim(t("terminal.retryHint"));
+        this.port.write("\r\n");
+        this.writeNotice(errorMessage(e), "error");
+        this.writeNotice(t("terminal.retryHint"));
       });
   }
 
@@ -736,8 +738,9 @@ export class PaneSession {
     this.events.waiting(null);
   }
 
-  private dim(text: string) {
-    this.port.write(`\x1b[2m${text}\x1b[0m\r\n`);
+  /** One of our own messages, each line starting with the time (see `noticeLines`). */
+  private writeNotice(text: string, tone: Tone = "dim") {
+    this.port.write(noticeLines(text, tone, new Date()));
   }
 
   private stopLoginCommands() {
@@ -767,7 +770,7 @@ export class PaneSession {
   private scheduleRetry() {
     const delay = RETRY_DELAYS[Math.min(this.attempt, RETRY_DELAYS.length - 1)];
     this.attempt++;
-    this.dim(this.config.t("terminal.reconnectIn", { count: delay }));
+    this.writeNotice(this.config.t("terminal.reconnectIn", { count: delay }));
     this.events.retry(Date.now() + delay * 1000);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;

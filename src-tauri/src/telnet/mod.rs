@@ -19,7 +19,7 @@ use tokio::time::Instant;
 use crate::error::Error;
 use crate::model::Remote;
 use crate::net::{Route, Stream};
-use crate::session::{Outcome, SessionEvent, SessionInput, TermIo};
+use crate::session::{Outcome, SessionEvent, SessionInput, TermIo, Tone};
 use crate::ssh::{self, JumpChain};
 use protocol::{Telnet, BREAK};
 
@@ -47,7 +47,7 @@ async fn connect(remote: &Remote, route: &Route, io: &mut TermIo) -> Result<(Box
     let (host, port) = (remote.host.as_str(), remote.port);
     if let Some(tunnel) = ssh::tunnel(route, host, port, io).await? {
         let connecting = t!("terminal.connectingToVia", host = host, port = port, jump = tunnel.via);
-        io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
+        io.notice(Tone::Dim, &connecting);
         return Ok((Box::new(tunnel.stream), tunnel.jumps));
     }
     let proxy = route.proxy.as_ref();
@@ -55,7 +55,7 @@ async fn connect(remote: &Remote, route: &Route, io: &mut TermIo) -> Result<(Box
         Some(proxy) => t!("terminal.connectingToViaProxy", host = host, port = port, proxy = proxy.name),
         None => t!("terminal.connectingTo", host = host, port = port),
     };
-    io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
+    io.notice(Tone::Dim, &connecting);
     let (stream, _) = crate::net::connect(host, port, &remote.username, proxy, &route.passwords, remote.keepalive(), io).await?;
     Ok((stream, JumpChain::default()))
 }

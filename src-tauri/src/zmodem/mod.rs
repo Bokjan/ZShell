@@ -26,7 +26,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use ts_rs::TS;
 
 use crate::error::Error;
-use crate::session::{SessionEvent, SessionSink};
+use crate::session::{SessionEvent, SessionSink, Tone};
 use frame::{Kind, ZPAD};
 use link::Link;
 
@@ -364,22 +364,24 @@ impl TerminalReport {
             }
             (None, _) => t!("zmodem.receivingUnknownSize", name = name, done = done, speed = speed),
         };
-        self.sink.write(format!("\r\x1b[K\x1b[2m{line}\x1b[0m").into_bytes());
+        self.sink.notice_progress(Tone::Dim, &line);
         self.pending = true;
         self.last = Instant::now();
     }
 
     /// Replaces the progress line with a final one.
-    fn line(&mut self, text: &str, color: &str) {
-        let clear = if self.pending { "\r\x1b[K" } else { "" };
-        self.sink.write(format!("{clear}{color}{text}\x1b[0m\r\n").into_bytes());
+    fn line(&mut self, text: &str, tone: Tone) {
+        if self.pending {
+            self.sink.write(b"\r\x1b[K".to_vec());
+        }
+        self.sink.notice(tone, text);
         self.pending = false;
     }
 
     fn error(&mut self, error: anyhow::Error) {
         let error = Error::from(error);
-        let color = if error.code() == "zmodem.cancelled" { "\x1b[33m" } else { "\x1b[31m" };
-        self.line(&error.to_string(), color);
+        let tone = if error.code() == "zmodem.cancelled" { Tone::Warning } else { Tone::Error };
+        self.line(&error.to_string(), tone);
     }
 }
 
@@ -401,19 +403,19 @@ impl Report for TerminalReport {
 
     fn received(&mut self, path: &Path, size: u64) {
         let text = t!("zmodem.received", name = self.name, size = format_size(size), path = path.display());
-        self.line(&text, "");
+        self.line(&text, Tone::Plain);
     }
 
     fn sent(&mut self, name: &str, size: u64) {
-        self.line(&t!("zmodem.sent", name = name, size = format_size(size)), "");
+        self.line(&t!("zmodem.sent", name = name, size = format_size(size)), Tone::Plain);
     }
 
     fn skipped(&mut self, name: &str) {
-        self.line(&t!("zmodem.skipped", name = name), "\x1b[33m");
+        self.line(&t!("zmodem.skipped", name = name), Tone::Warning);
     }
 
     fn failed(&mut self, error: anyhow::Error) {
-        self.line(&Error::from(error).to_string(), "\x1b[31m");
+        self.line(&Error::from(error).to_string(), Tone::Error);
     }
 }
 

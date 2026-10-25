@@ -106,6 +106,7 @@
 - **背压**：输出通路都有上限。前端按已处理字节确认输出，未确认过多时后端暂停读取（`Flow`），因为 Tauri 的 IPC 队列与 xterm.js 的积压都不设防；输入不设上限：按键、粘贴与尺寸变化经无界队列交给各后端，对方不读时留在后端（ZMODEM 的数据另有 `INPUT_BACKLOG`），这样按键与尺寸变化总能读到，Ctrl+C 不会被卡住。代价是暂停读 SSH shell 时同一连接上的 SFTP 和转发一起等。阈值见 `session/`。
 - **字符编码**：内部一律 UTF-8，只在与远端交界处（输出、输入、SFTP 与 ZMODEM 的文件名）按会话的 `encoding` 转换。快速连接、本地终端与认证提示总是 UTF-8。
 - **会话事件**：`Closed` 的 `reason` 区分 `exited`、`lost`、`failed`，前端据此决定重连、自动关闭或提示。
+- **终端里我们自己的消息**：连接中、会话如何结束、等待转发连接、转发规则启动失败、ZMODEM 传输，以及前端写的重连倒计时与操作提示，每行以打印时的本地时间 `[YYYY-MM-DD HH:MM:SS]` 开头。后端走 `SessionSink::notice`（`session/notice.rs`），前端走 `lib/terminalNotice.ts`，格式写死不翻译，两边测试同一个例子。照 OpenSSH 的登录问答（主机密钥、密码、口令、keyboard-interactive）、输入回显和代理命令的 stderr 仍走 `print`，不加时间。日志按行写时间时，日志里不再写这个前缀，避免两个时间。
 - **线程与写入顺序**：同步命令跑在主线程，所以碰文件、凭据存储或设备的命令是 async 的（`commands/mod.rs`）。整体替换的写入由 `lib/latestSave.ts` 排队：同一时间只有一个请求，保存的是"修改"而不是整份值，两个窗口改的不同项都留下。转发规则逐条保存。
 - **内容安全策略**：严格的 CSP 作为纵深防御；样式需要 `unsafe-inline`（xterm.js），为此关掉 Tauri 给 `style-src` 加的 nonce。
 

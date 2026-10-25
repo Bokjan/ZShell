@@ -11,7 +11,7 @@ use tokio::time::Instant;
 
 use super::Connections;
 use crate::forward::{at, Draining, Throttle};
-use crate::session::{SessionEvent, SessionId, SessionInput, TermIo};
+use crate::session::{SessionEvent, SessionId, SessionInput, TermIo, Tone};
 use crate::ssh;
 
 /// Session `id`'s [`ssh::ShellExit`].
@@ -48,7 +48,8 @@ impl ssh::ShellExit for ShellExit {
 async fn wait(mut draining: Draining, io: &mut TermIo) -> Option<Draining> {
     let message = t!("terminal.waitingForForwards", forwards = draining.rules().join(", "));
     let hint = t!("terminal.waitingHint");
-    io.print(&format!("\n\x1b[2m{message}\n{hint}\x1b[0m\n"));
+    io.print("\n");
+    io.notice(Tone::Dim, &format!("{message}\n{hint}"));
     let report = |io: &TermIo, draining: &Draining| io.event(SessionEvent::Waiting { connections: draining.len() });
     let mut throttle = Throttle::default();
     throttle.changed(Instant::now());

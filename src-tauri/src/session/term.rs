@@ -6,7 +6,7 @@ use tauri::ipc::Channel;
 use tokio::sync::mpsc;
 use unicode_width::UnicodeWidthChar;
 
-use super::{CloseReason, Lifetime, Outcome, SessionEvent, SessionInput, SessionSink};
+use super::{CloseReason, Lifetime, Outcome, SessionEvent, SessionInput, SessionSink, Tone};
 use crate::encoding::Codec;
 use crate::logging::LogSlot;
 use crate::zmodem::Zmodem;
@@ -124,6 +124,11 @@ impl TermIo {
         self.sink.print(text);
     }
 
+    /// One of our own messages (see [`SessionSink::notice`]).
+    pub fn notice(&self, tone: Tone, text: &str) {
+        self.sink.notice(tone, text);
+    }
+
     pub fn event(&self, event: SessionEvent) {
         self.sink.event(event);
     }
@@ -145,12 +150,11 @@ impl TermIo {
                     Some(status) => t!("terminal.closedWithStatus", status = status),
                     None => t!("terminal.closed"),
                 };
-                self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
+                self.ended(Tone::Dim, &message);
                 (CloseReason::Exited, None, status, None)
             }
             Outcome::Signaled(signal) => {
-                let message = t!("terminal.closedBySignal", signal = signal);
-                self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
+                self.ended(Tone::Dim, &t!("terminal.closedBySignal", signal = signal));
                 (CloseReason::Exited, None, None, Some(signal))
             }
             Outcome::ProcessEnded { code, signal } => {
@@ -159,20 +163,26 @@ impl TermIo {
                     (None, Some(code)) if code != 0 => t!("terminal.processExitedWithCode", code = code),
                     _ => t!("terminal.processExited"),
                 };
-                self.print(&format!("\n\x1b[2m{message}\x1b[0m\n"));
+                self.ended(Tone::Dim, &message);
                 (CloseReason::Exited, None, code, signal)
             }
             Outcome::Lost(e) => {
-                // The remote program may have left the cursor mid-line.
-                self.print(&format!("\n\x1b[31m{e}\x1b[0m\n"));
+                self.ended(Tone::Error, &e.to_string());
                 (CloseReason::Lost, Some(e), None, None)
             }
             Outcome::Failed(e) => {
-                self.print(&format!("\x1b[31m{e}\x1b[0m\n"));
+                self.notice(Tone::Error, &e.to_string());
                 (CloseReason::Failed, Some(e), None, None)
             }
         };
         self.event(SessionEvent::Closed { reason, error, status, signal });
+    }
+
+    /// How the session ended, on a line of its own: the remote program may have left the
+    /// cursor mid-line.
+    fn ended(&self, tone: Tone, message: &str) {
+        self.print("\n");
+        self.notice(tone, message);
     }
 
     pub fn sink(&self) -> SessionSink {

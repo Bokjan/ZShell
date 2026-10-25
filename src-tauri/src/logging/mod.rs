@@ -89,6 +89,8 @@ struct Queue {
     failure: Arc<Mutex<Option<String>>>,
     /// Where `dropped` goes when the log stops, for the writer to note at the end.
     left_out: Arc<AtomicUsize>,
+    /// The log starts each line with the time.
+    stamps_lines: bool,
 }
 
 impl Drop for Queue {
@@ -146,6 +148,12 @@ impl LogSlot {
             }
         }
         None
+    }
+
+    /// Whether the log starts each line with the time, which our own messages then leave
+    /// out (see `SessionSink::notice`).
+    pub fn stamps_lines(&self) -> bool {
+        self.queue.lock().unwrap().as_ref().is_some_and(|queue| queue.stamps_lines)
     }
 }
 

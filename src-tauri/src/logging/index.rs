@@ -182,6 +182,7 @@ impl Logs {
         note: &str,
         after_others: bool,
     ) -> Result<()> {
+        let stamps_lines = settings.format == LogFormat::Text && settings.timestamps;
         let text =
             (settings.format == LogFormat::Text).then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
         let (failure, left_out) = (Arc::new(Mutex::new(None)), Arc::new(AtomicUsize::new(0)));
@@ -208,7 +209,7 @@ impl Logs {
             writer.note(note).map_err(|e| Error::new("log.createFailed").param("path", path.display()).detail(e))?;
             thread::spawn(move || writer.run(queued));
         }
-        *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0, path, failure, left_out });
+        *slot.queue.lock().unwrap() = Some(Queue { chunks, dropped: 0, path, failure, left_out, stamps_lines });
         Ok(())
     }
 

@@ -35,6 +35,7 @@
 mod flow;
 mod lifetime;
 mod manager;
+mod notice;
 mod sink;
 mod term;
 
@@ -49,6 +50,7 @@ pub use flow::Flow;
 pub use flow::ACK_BATCH;
 pub use lifetime::Lifetime;
 pub use manager::SessionManager;
+pub use notice::Tone;
 pub use sink::SessionSink;
 pub use term::{Foreground, ForegroundProbe, TermIo};
 

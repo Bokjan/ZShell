@@ -27,7 +27,7 @@ use crate::model::host_port;
 use crate::model::Proxy;
 use crate::model::SshProfile;
 use crate::net::Route;
-use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo};
+use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo, Tone};
 use crate::traffic::{ChannelInfo, ConnectionInfo};
 use crate::vault::SavedPasswords;
 pub use auth::{default_key_path, key_file_exists};
@@ -463,7 +463,7 @@ async fn connect(
             Some(proxy) => t!("terminal.connectingViaProxy", user = user, host = host, port = port, proxy = proxy.name),
             None => t!("terminal.connecting", user = user, host = host, port = port),
         };
-        io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
+        io.notice(Tone::Dim, &connecting);
         // SSH keepalives notice a dead connection once authenticated (russh sends none
         // before); TCP ones cover the time until then, as OpenSSH's `TCPKeepAlive` does.
         let (stream, local_port) = crate::net::connect(host, port, user, proxy, passwords, remote.keepalive(), io).await?;
@@ -471,7 +471,7 @@ async fn connect(
         return Ok((session, link, local_port));
     };
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);
-    io.print(&format!("\x1b[2m{connecting}\x1b[0m\n"));
+    io.notice(Tone::Dim, &connecting);
     let (session, link) = handshake(hop, options, stream, io).await?;
     Ok((session, link, None))
 }

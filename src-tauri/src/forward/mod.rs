@@ -46,7 +46,7 @@ use tokio::time::Instant;
 
 use crate::error::Error;
 use crate::model::{host_port, ForwardKind, ForwardRule};
-use crate::session::{ForwardState, ForwardTraffic, SessionEvent, SessionId, SessionSink};
+use crate::session::{ForwardState, ForwardTraffic, SessionEvent, SessionId, SessionSink, Tone};
 use crate::ssh::{Liveness, RemoteRoutes, SshHandle};
 use crate::traffic::{ConnectionInfo, Counted, Reporter};
 pub use draining::{Draining, InFlight};
@@ -128,9 +128,12 @@ impl Hub {
         watchers.traffic.insert(rule_id.to_owned(), traffic);
     }
 
-    fn print(&self, text: &str) {
+    /// A message in the terminal of each tab on the connection, on a line of its own: the
+    /// shell may be in the middle of one.
+    fn notice(&self, tone: Tone, text: &str) {
         for (_, sink) in &self.0.lock().unwrap().sinks {
-            sink.print(text);
+            sink.print("\n");
+            sink.notice(tone, text);
         }
     }
 }
@@ -292,8 +295,8 @@ impl Shared {
         self.hub.report(rule_id, state);
     }
 
-    fn print(&self, text: &str) {
-        self.hub.print(text);
+    fn notice(&self, tone: Tone, text: &str) {
+        self.hub.notice(tone, text);
     }
 }
 
@@ -359,7 +362,7 @@ async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<InFlight>>
         if announce {
             let forward = describe(&rule);
             let message = t!("forward.autoStartFailed", forward = forward, error = error);
-            ctx.shared.print(&format!("\r\n\x1b[33m{message}\x1b[0m\n"));
+            ctx.shared.notice(Tone::Warning, &message);
         }
         ctx.report(ForwardState::Failed { error });
         InFlight::default()

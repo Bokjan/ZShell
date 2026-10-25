@@ -91,6 +91,26 @@ fn output_reaches_the_file_within_the_flush_interval() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Our own messages start with the time once, whether or not the log starts its lines with it.
+#[tokio::test]
+async fn messages_are_stamped_once() {
+    let dir = std::env::temp_dir().join(format!("zshell-logs-notice-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let logs = Logs::load(dir.join("logs.json"), dir.join("Logs"), &SetAside::default());
+    for timestamps in [true, false] {
+        let (io, _input, _output, _events) = crate::session::TermIo::detached((80, 24));
+        let settings = LogSettings { timestamps, ..LogSettings::default() };
+        let path = logs.start(io.sink().log(), &settings).unwrap();
+        io.notice(crate::session::Tone::Dim, "Connecting");
+        logs.stop(io.sink().log());
+        logs.active.wait_closed(&path, Duration::from_secs(5));
+        let text = std::fs::read_to_string(&path).unwrap();
+        let line = text.lines().last().unwrap();
+        assert!(line.starts_with("[20") && line.ends_with("] Connecting") && line.matches("[20").count() == 1, "{line:?}");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// Waits until `done`, for long enough that only a writer that never gets there fails.
 fn until(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -129,7 +149,14 @@ fn output_is_not_flushed_with_every_chunk() {
 fn output_is_left_out_while_the_writer_is_behind() {
     let (chunks, queued) = sync_channel(2);
     let failure = Arc::new(Mutex::new(None));
-    let queue = Queue { chunks, dropped: 0, path: PathBuf::from("web.log"), failure: failure.clone(), left_out: Arc::default() };
+    let queue = Queue {
+        chunks,
+        dropped: 0,
+        path: PathBuf::from("web.log"),
+        failure: failure.clone(),
+        left_out: Arc::default(),
+        stamps_lines: false,
+    };
     let slot = LogSlot { info: LogInfo::default(), queue: Mutex::new(Some(queue)) };
     for chunk in [b"a".as_slice(), b"b", b"cc", b"ddd"] {
         slot.write(chunk);
@@ -166,7 +193,7 @@ fn output_left_out_at_the_end_is_noted() {
     let path = std::env::temp_dir().join(format!("zshell-log-left-out-{}", std::process::id()));
     let left_out = Arc::new(AtomicUsize::new(0));
     let (chunks, queued) = sync_channel(1);
-    let queue = Queue { chunks, dropped: 0, path: path.clone(), failure: Arc::default(), left_out: left_out.clone() };
+    let queue = Queue { chunks, dropped: 0, path: path.clone(), failure: Arc::default(), left_out: left_out.clone(), stamps_lines: false };
     let slot = LogSlot { info: LogInfo::default(), queue: Mutex::new(Some(queue)) };
     slot.write(b"kept");
     slot.write(b"lost");

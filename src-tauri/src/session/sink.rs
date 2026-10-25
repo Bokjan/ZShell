@@ -2,8 +2,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use chrono::Local;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
+use super::notice::{self, Tone};
 use super::{Flow, SessionEvent};
 use crate::encoding::Codec;
 use crate::logging::LogSlot;
@@ -132,10 +134,14 @@ impl SessionSink {
     /// Writes to the terminal directly (our own messages, or output already filtered), and
     /// to the session's log.
     pub fn write(&self, bytes: Vec<u8>) {
-        if let Some(error) = self.log.write(&bytes) {
+        self.log_output(&bytes);
+        self.send_output(&bytes);
+    }
+
+    fn log_output(&self, bytes: &[u8]) {
+        if let Some(error) = self.log.write(bytes) {
             self.event(SessionEvent::Log { path: None, error: Some(error) });
         }
-        self.send_output(&bytes);
     }
 
     fn send_output(&self, bytes: &[u8]) {
@@ -181,9 +187,30 @@ impl SessionSink {
         &self.log
     }
 
-    /// Writes text, translating bare `\n` to `\r\n`.
+    /// Writes text as it is, translating bare `\n` to `\r\n`: the login dialogue, echoed
+    /// input and other programs' output. Our own messages are [`SessionSink::notice`]s.
     pub fn print(&self, text: &str) {
         self.write(text.replace("\r\n", "\n").replace('\n', "\r\n").into_bytes());
+    }
+
+    /// One of our own messages, from where the cursor is (the start of a line), each line
+    /// starting with the time (see [`notice`]).
+    pub fn notice(&self, tone: Tone, text: &str) {
+        self.write_notice(tone, text, true);
+    }
+
+    /// A progress line, replacing the line the cursor is on and left open: the next one, or
+    /// the message it ends with, replaces it.
+    pub fn notice_progress(&self, tone: Tone, text: &str) {
+        self.write(b"\r\x1b[K".to_vec());
+        self.write_notice(tone, text, false);
+    }
+
+    fn write_notice(&self, tone: Tone, text: &str, end_line: bool) {
+        let notice = notice::render(tone, text, Local::now().naive_local(), end_line);
+        // Not twice in a log that starts its lines with the time itself.
+        self.log_output(if self.log.stamps_lines() { &notice.unstamped } else { &notice.shown }.as_bytes());
+        self.send_output(notice.shown.as_bytes());
     }
 
     pub fn event(&self, event: SessionEvent) {

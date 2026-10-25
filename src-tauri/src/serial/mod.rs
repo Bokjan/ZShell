@@ -23,7 +23,7 @@ use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::model::{FlowControl, Parity, SerialOptions};
-use crate::session::{Outcome, SessionEvent, SessionInput, SessionSink, TermIo};
+use crate::session::{Outcome, SessionEvent, SessionInput, SessionSink, TermIo, Tone};
 
 /// How long a read waits for data before checking whether the session has closed. On
 /// Windows, reads and writes on the port's handle take turns, so a waiting read also delays
@@ -122,7 +122,7 @@ async fn run_with(options: SerialOptions, mut io: TermIo, on_threads: bool) {
         Ok(port) => {
             // Before reading starts, so that what the device already sent comes after.
             let opened = t!("terminal.serialOpened", device = &options.device, settings = options.summary());
-            io.print(&format!("\x1b[2m{opened}\x1b[0m\n"));
+            io.notice(Tone::Dim, &opened);
             if on_threads {
                 bridge_on_threads(port, &options.device, &mut io).await
             } else {
