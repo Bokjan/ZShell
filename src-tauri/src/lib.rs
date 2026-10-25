@@ -354,6 +354,8 @@ pub fn run() {
             commands::sftp::sftp_edit_stop,
             commands::sftp::sftp_drag_out,
             commands::sftp::transfer_cancel,
+            commands::sftp::transfer_delete,
+            commands::sftp::transfer_forget,
             commands::forward::forward_start,
             commands::forward::forward_stop,
             commands::forward::forward_keep_candidates,

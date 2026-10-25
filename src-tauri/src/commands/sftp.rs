@@ -113,6 +113,8 @@ pub async fn sftp_chmod(
     sftp::chmod(&sftp, &path, mode).await.map_err(|e| Error::from(e.context(Error::new("sftp.chmodFailed").param("path", &path))))
 }
 
+/// Uploads into `remote_dir`. Ends with what it created on the server, kept for
+/// [`transfer_delete`], also when it fails.
 #[tauri::command]
 pub async fn sftp_upload(
     webview: Webview,
@@ -124,21 +126,25 @@ pub async fn sftp_upload(
     local_paths: Vec<PathBuf>,
     remote_dir: String,
     on_progress: Channel<transfer::Progress>,
-) -> Result<()> {
+) -> Result<transfer::Ended> {
     let cancelled = transfers.start(webview.label(), &transfer_id);
+    let mut left = transfer::Left::default();
     let result = async {
         let connection = connection(webview.label(), &sessions, &connections, id)?;
         let sftp = connection.transfer_sftp().await?;
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
-        Ok(transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter).await?)
+        Ok(transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter, &mut left).await?)
     };
-    let result = result.await;
+    let result: Result<()> = result.await;
     transfers.finish(webview.label(), &transfer_id);
-    result
+    let ended = transfer::Ended::new(&left, result.err(), Vec::new());
+    transfers.keep(webview.label(), &transfer_id, transfer::Kept::Remote(left));
+    Ok(ended)
 }
 
-/// Downloads into `local_dir` (default: the download folder from the settings); returns the
-/// created paths.
+/// Downloads into `local_dir` (default: the download folder from the settings). Ends with the
+/// top-level items it created, and keeps all it created for [`transfer_delete`], also when it
+/// fails.
 #[tauri::command]
 pub async fn sftp_download(
     app: AppHandle,
@@ -151,8 +157,9 @@ pub async fn sftp_download(
     remote_paths: Vec<String>,
     local_dir: Option<PathBuf>,
     on_progress: Channel<transfer::Progress>,
-) -> Result<Vec<PathBuf>> {
+) -> Result<transfer::Ended> {
     let cancelled = transfers.start(webview.label(), &transfer_id);
+    let mut left = transfer::Left::default();
     let result = async {
         let connection = connection(webview.label(), &sessions, &connections, id)?;
         let sftp = connection.transfer_sftp().await?;
@@ -162,14 +169,18 @@ pub async fn sftp_download(
             None => blocking(app, |app| app.state::<SettingsStore>().download_dir(app)).await?,
         };
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
-        Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter).await?)
+        Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter, &mut left).await?)
     };
-    let result = result.await;
+    let result: Result<()> = result.await;
     transfers.finish(webview.label(), &transfer_id);
-    result
+    let paths = std::mem::take(&mut left.items);
+    let ended = transfer::Ended::new(&left, result.err(), paths);
+    transfers.keep(webview.label(), &transfer_id, transfer::Kept::Local(left));
+    Ok(ended)
 }
 
-/// Downloads one item to `local_path`, replacing what is there (the save dialog asked).
+/// Downloads one item to `local_path`, replacing what is there (the save dialog asked). Ends
+/// like [`sftp_download`].
 #[tauri::command]
 pub async fn sftp_download_as(
     webview: Webview,
@@ -181,17 +192,21 @@ pub async fn sftp_download_as(
     remote_path: String,
     local_path: PathBuf,
     on_progress: Channel<transfer::Progress>,
-) -> Result<PathBuf> {
+) -> Result<transfer::Ended> {
     let cancelled = transfers.start(webview.label(), &transfer_id);
+    let mut left = transfer::Left::default();
     let result = async {
         let connection = connection(webview.label(), &sessions, &connections, id)?;
         let sftp = connection.transfer_sftp().await?;
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
-        Ok(transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter).await?)
+        Ok(transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter, &mut left).await?)
     };
-    let result = result.await;
+    let result: Result<()> = result.await;
     transfers.finish(webview.label(), &transfer_id);
-    result.map(|()| local_path)
+    let paths = if result.is_ok() { vec![local_path] } else { Vec::new() };
+    let ended = transfer::Ended::new(&left, result.err(), paths);
+    transfers.keep(webview.label(), &transfer_id, transfer::Kept::Local(left));
+    Ok(ended)
 }
 
 /// The folder downloads go to without asking, for the settings.
@@ -224,7 +239,7 @@ pub async fn sftp_edit_open(
         let local = edits.local_path(&edit_id, &remote_path)?;
         let remote_stamp = edit::remote_stamp(&sftp, &remote_path).await;
         let mut reporter = transfer::Reporter::new(on_progress, cancelled.clone());
-        transfer::download_to(&sftp, &[(remote_path.clone(), local.clone())], &mut reporter).await?;
+        transfer::download_to(&sftp, &[(remote_path.clone(), local.clone())], &mut reporter, &mut transfer::Left::default()).await?;
         edits.start(webview.label(), &edit_id, remote_path, local.clone(), remote_stamp, on_event);
         Result::Ok(local)
     };
@@ -313,4 +328,48 @@ pub async fn sftp_drag_out(
 #[tauri::command]
 pub fn transfer_cancel(webview: Webview, transfers: State<'_, transfer::Transfers>, transfer_id: String) {
     transfers.cancel(webview.label(), &transfer_id);
+}
+
+/// Permanently deletes what an ended transfer created (see `transfer::left`): on the server
+/// through session `id`'s connection for an upload. Returns how many files were deleted; on a
+/// failure, what is left can be deleted again.
+#[tauri::command]
+pub async fn transfer_delete(
+    app: AppHandle,
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    transfers: State<'_, transfer::Transfers>,
+    id: Option<SessionId>,
+    transfer_id: String,
+) -> Result<usize> {
+    let label = webview.label();
+    let Some(kept) = transfers.take(label, &transfer_id) else { return Ok(0) };
+    let (kept, (deleted, result)) = match kept {
+        transfer::Kept::Local(mut left) => {
+            let (left, outcome) = blocking(app, move |_| {
+                let outcome = transfer::delete_local(&mut left);
+                Ok((left, outcome))
+            })
+            .await?;
+            (transfer::Kept::Local(left), outcome)
+        }
+        transfer::Kept::Remote(mut left) => {
+            let sftp =
+                async { connection(label, &sessions, &connections, id.ok_or_else(|| Error::new("session.notConnected"))?)?.sftp().await };
+            let outcome = match sftp.await {
+                Ok(sftp) => transfer::delete_remote(&sftp, &mut left).await,
+                Err(e) => (0, Err(Error::from(e))),
+            };
+            (transfer::Kept::Remote(left), outcome)
+        }
+    };
+    transfers.keep(label, &transfer_id, kept);
+    result.map(|()| deleted)
+}
+
+/// Forgets what the transfers `transfer_ids` left, which the file panel no longer lists.
+#[tauri::command]
+pub fn transfer_forget(webview: Webview, transfers: State<'_, transfer::Transfers>, transfer_ids: Vec<String>) {
+    transfers.forget(webview.label(), &transfer_ids);
 }

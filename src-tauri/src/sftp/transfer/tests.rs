@@ -14,7 +14,25 @@ fn a_transfer_is_cancelled_only_by_its_page_or_with_it() {
     transfers.cancel_webview("main");
     assert!(mine.load(Ordering::Relaxed) && later.load(Ordering::Relaxed));
     transfers.finish("window-2", "t1");
-    assert!(transfers.0.lock().unwrap().is_empty());
+    assert!(transfers.running.lock().unwrap().is_empty());
+}
+
+#[test]
+fn what_a_transfer_left_is_its_pages_until_forgotten() {
+    let transfers = Transfers::default();
+    let left = |file: &str| Kept::Local(Left { files: vec![PathBuf::from(file)], ..Left::default() });
+    transfers.keep("main", "t1", left("a"));
+    transfers.keep("main", "t2", left("b"));
+    transfers.keep("main", "t3", Kept::Local(Left { replaced: 2, ..Left::default() }));
+    transfers.keep("window-2", "t1", left("c"));
+    assert!(transfers.take("window-2", "t2").is_none());
+    // Nothing to delete: not kept.
+    assert!(transfers.take("main", "t3").is_none());
+    transfers.forget("main", &["t1".into()]);
+    assert!(transfers.take("main", "t1").is_none());
+    assert!(matches!(transfers.take("main", "t2"), Some(Kept::Local(left)) if left.files == [PathBuf::from("b")]));
+    transfers.cancel_webview("window-2");
+    assert!(transfers.left.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -93,10 +111,10 @@ mod unix {
             let last = last.clone();
             Reporter::with_sink(move |progress| *last.lock().unwrap() = progress, Arc::default())
         };
-        let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter).await;
+        let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
         let uploaded = last.lock().unwrap().clone();
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
-        let down = download(&sftp, &[remote.join("tree").to_str().unwrap().to_owned()], &back, &mut reporter).await;
+        let down = download(&sftp, &[remote.join("tree").to_str().unwrap().to_owned()], &back, &mut reporter, &mut Left::default()).await;
         let same = |path: &str| std::fs::read(source.join(path)).ok() == std::fs::read(back.join("tree").join(path)).ok();
         let all_same = expected.iter().all(|path| same(path.trim_start_matches('/'))) && same("a/large.bin");
         std::fs::remove_dir_all(&root).unwrap();
@@ -105,6 +123,57 @@ mod unix {
         down.unwrap();
         assert_eq!((uploaded.files_done, uploaded.files_total), (81, 81));
         assert!(all_same);
+    }
+
+    /// What an upload or a download left is what it created: deleting it takes away the
+    /// files and folders it made, and leaves those it wrote over, those that were there, and
+    /// a folder where something else was put since. Skipped without `sftp-server`.
+    #[tokio::test]
+    async fn deletes_only_what_a_transfer_created() {
+        let Some(sftp) = crate::sftp::replace::tests::local_sftp_server().await else { return };
+        let root = std::env::temp_dir().join(format!("zshell-left-{}", uuid::Uuid::new_v4()));
+        let (source, remote, back) = (root.join("up"), root.join("remote"), root.join("back"));
+        std::fs::create_dir_all(source.join("sub")).unwrap();
+        std::fs::create_dir_all(remote.join("up")).unwrap();
+        std::fs::create_dir_all(&back).unwrap();
+        for file in ["new.txt", "old.txt", "sub/x.txt"] {
+            std::fs::write(source.join(file), file).unwrap();
+        }
+        std::fs::write(remote.join("up/old.txt"), "old").unwrap();
+        std::fs::write(remote.join("up/keep"), "keep").unwrap();
+        let names = |dir: &Path| {
+            let mut names: Vec<_> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+            names.sort();
+            names
+        };
+        let at = |path: &Path| path.to_str().unwrap().to_owned();
+
+        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut up = Left::default();
+        upload(&sftp, std::slice::from_ref(&source), &at(&remote), &mut reporter, &mut up).await.unwrap();
+        up.files.sort();
+        let uploaded = (up.files.clone(), up.dirs.clone(), up.replaced);
+        let (deleted, result) = delete_remote(&sftp, &mut up).await;
+        result.unwrap();
+        let after_upload = (deleted, names(&remote.join("up")), up);
+
+        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut down = Left::default();
+        download(&sftp, &[at(&remote.join("up"))], &back, &mut reporter, &mut down).await.unwrap();
+        down.files.sort();
+        let downloaded = (down.items.clone(), down.files.clone(), down.dirs.clone(), down.replaced);
+        std::fs::write(back.join("up/mine"), "mine").unwrap();
+        let (deleted, result) = delete_local(&mut down);
+        result.unwrap();
+        let after_download = (deleted, names(&back.join("up")));
+        std::fs::remove_dir_all(&root).unwrap();
+
+        let r = |path: &str| at(&remote.join(path));
+        assert_eq!(uploaded, (vec![r("up/new.txt"), r("up/sub/x.txt")], vec![r("up/sub")], 1));
+        assert_eq!(after_upload, (2, vec!["keep".into(), "old.txt".into()], Left { replaced: 1, ..Left::default() }));
+        let b = |path: &str| back.join(path);
+        assert_eq!(downloaded, (vec![b("up")], vec![b("up/keep"), b("up/old.txt")], vec![b("up")], 0));
+        assert_eq!(after_download, (2, vec!["mine".into()]));
     }
 
     /// New files and folders get the permission bits of those copied, as with `sftp put` and
@@ -127,11 +196,11 @@ mod unix {
         set(&source, 0o700);
 
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
-        let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter).await;
+        let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
         let uploaded = up.is_ok().then(|| (mode(remote.join("keys")), mode(remote.join("keys/id")), mode(remote.join("keys/run.sh"))));
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
         let paths = [remote.join("keys").to_str().unwrap().to_owned(), remote.join("keys/id").to_str().unwrap().to_owned()];
-        let down = download(&sftp, &paths, &back, &mut reporter).await;
+        let down = download(&sftp, &paths, &back, &mut reporter, &mut Left::default()).await;
         let downloaded = down.is_ok().then(|| (mode(back.join("keys")), mode(back.join("keys/id")), mode(back.join("id"))));
         set(&source, 0o755);
         set(&remote.join("keys"), 0o755);
@@ -162,7 +231,7 @@ mod unix {
 
         let paths: Vec<String> = ["empty", "secret", "later"].iter().map(|n| remote.join(n).to_str().unwrap().to_owned()).collect();
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
-        let result = download(&sftp, &paths, &local, &mut reporter).await;
+        let result = download(&sftp, &paths, &local, &mut reporter, &mut Left::default()).await;
         let mut left: Vec<_> = std::fs::read_dir(&local).unwrap().map(|e| e.unwrap().file_name()).collect();
         left.sort();
         std::fs::remove_dir_all(&root).unwrap();

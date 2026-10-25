@@ -187,6 +187,7 @@
       "createDirFailed": "Der Ordner {path} kann nicht erstellt werden",
       "uploadFailed": "{path} konnte nicht hochgeladen werden",
       "downloadFailed": "{path} konnte nicht heruntergeladen werden",
+      "deleteFailed": "{path} kann nicht gelöscht werden",
       "replaceFailed": "{path} wurde hochgeladen, konnte aber nicht an seinen Platz gebracht werden; der neue Inhalt liegt in {temporary}",
       "replaceInterrupted": "{path} wurde hochgeladen, konnte aber nicht an seinen Platz gebracht werden; der neue Inhalt liegt in {temporary}, der alte in {original}"
     },

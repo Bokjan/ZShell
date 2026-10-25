@@ -132,6 +132,7 @@ export type ErrorCode =
   | "transfer.cancelled"
   | "transfer.createDirFailed"
   | "transfer.createFailed"
+  | "transfer.deleteFailed"
   | "transfer.downloadFailed"
   | "transfer.invalidName"
   | "transfer.invalidPath"
@@ -1051,6 +1052,27 @@ export type TextSize = "normal" | "large" | "larger";
  */
 export type TimePart = { "type": "text", text: string, } | { "type": "year" } | { "type": "shortYear" } | { "type": "month" } | { "type": "day" } | { "type": "hour" } | { "type": "minute" } | { "type": "second" } | { "type": "millisecond" };
 
+/**
+ * How a transfer ended, for the file panel.
+ */
+export type TransferEnd = { 
+/**
+ * The local items it left, to show (downloads).
+ */
+paths: Array<string>, 
+/**
+ * How many files it created, which `transfer_delete` deletes.
+ */
+created: number, 
+/**
+ * How many files it wrote over, which it doesn't.
+ */
+replaced: number, 
+/**
+ * Why it stopped, if it didn't finish.
+ */
+error: CommandError | null, };
+
 export type TransferProgress = { transferred: number, total: number, filesDone: number, filesTotal: number, current: string, };
 
 /**
@@ -1231,8 +1253,8 @@ export type Commands = {
   settings_get: { args: Record<string, never>; result: Settings };
   settings_set: { args: { settings: Settings }; result: Settings };
   sftp_chmod: { args: { id: number; path: string; mode: number }; result: void };
-  sftp_download: { args: { id: number; transferId: string; remotePaths: string[]; localDir?: string | null; onProgress: Channel<TransferProgress> }; result: string[] };
-  sftp_download_as: { args: { id: number; transferId: string; remotePath: string; localPath: string; onProgress: Channel<TransferProgress> }; result: string };
+  sftp_download: { args: { id: number; transferId: string; remotePaths: string[]; localDir?: string | null; onProgress: Channel<TransferProgress> }; result: TransferEnd };
+  sftp_download_as: { args: { id: number; transferId: string; remotePath: string; localPath: string; onProgress: Channel<TransferProgress> }; result: TransferEnd };
   sftp_drag_out: { args: { id: number; transferId: string; items: DragItem[]; sincePress: number; onEvent: Channel<DragOutEvent> }; result: DragResult };
   sftp_edit_open: { args: { id: number; editId: string; remotePath: string; onProgress: Channel<TransferProgress>; onEvent: Channel<EditEvent> }; result: string };
   sftp_edit_reopen: { args: { editId: string }; result: void };
@@ -1244,7 +1266,7 @@ export type Commands = {
   sftp_remove: { args: { id: number; path: string }; result: void };
   sftp_rename: { args: { id: number; from: string; to: string }; result: void };
   sftp_shell_dir: { args: { id: number }; result: string | null };
-  sftp_upload: { args: { id: number; transferId: string; localPaths: string[]; remoteDir: string; onProgress: Channel<TransferProgress> }; result: void };
+  sftp_upload: { args: { id: number; transferId: string; localPaths: string[]; remoteDir: string; onProgress: Channel<TransferProgress> }; result: TransferEnd };
   ssh_config_default_path: { args: Record<string, never>; result: string | null };
   ssh_config_import: { args: { path: string; aliases: string[] }; result: Profile[] };
   ssh_config_scan: { args: { path: string }; result: ImportCandidate[] };
@@ -1255,6 +1277,8 @@ export type Commands = {
   tab_drag_move: { args: { id: string; outside: boolean }; result: DropTarget };
   terminal_ligature_rules: { args: { families: string[] }; result: LigatureRules | null };
   transfer_cancel: { args: { transferId: string }; result: void };
+  transfer_delete: { args: { id?: number | null; transferId: string }; result: number };
+  transfer_forget: { args: { transferIds: string[] }; result: void };
   tree_move: { args: { item: TreeItem; parent?: string | null; before?: TreeItem | null }; result: void };
   tree_order: { args: Record<string, never>; result: TreeItem[] };
   update_check: { args: Record<string, never>; result: UpdateStatus };

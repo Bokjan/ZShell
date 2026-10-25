@@ -137,6 +137,11 @@ impl RemoteTarget {
         Ok(())
     }
 
+    /// Whether there was a file at the path, which this one replaces.
+    pub fn replaces(&self) -> bool {
+        self.existed
+    }
+
     /// Gives up on the file after a failed or cancelled transfer.
     pub async fn abandon(mut self, sftp: &SftpSession) {
         let _ = self.file.shutdown().await;
@@ -283,6 +288,11 @@ impl LocalTarget {
         let _ = mode;
         let file = options.open(path).await.map_err(created)?;
         Ok(Self { file, path: path.to_owned(), temporary: None, existed: original.is_some(), permissions: None })
+    }
+
+    /// Whether there was a file at the path, which this one replaces.
+    pub fn replaces(&self) -> bool {
+        self.existed
     }
 
     /// Flushes the file and puts it in place. Removes what was written if that fails.

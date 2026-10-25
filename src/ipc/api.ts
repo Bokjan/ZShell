@@ -388,9 +388,13 @@ export const sftp = {
   rename: (id: SessionId, from: string, to: string) => call("sftp_rename", { id, from, to }),
   remove: (id: SessionId, path: string) => call("sftp_remove", { id, path }),
   chmod: (id: SessionId, path: string, mode: number) => call("sftp_chmod", { id, path, mode }),
+  /**
+   * The transfers below resolve to how they ended, also when they failed or were cancelled:
+   * what they created is kept for `deleteLeft` until `forget`.
+   */
   upload: (id: SessionId, transferId: string, localPaths: string[], remoteDir: string, onProgress: (p: TransferProgress) => void) =>
     call("sftp_upload", { id, transferId, localPaths, remoteDir, onProgress: progressChannel(onProgress) }),
-  /** `localDir` null downloads into the Downloads folder. Resolves to the created local paths. */
+  /** `localDir` null downloads into the Downloads folder. Ends with the top-level items it created. */
   download: (
     id: SessionId,
     transferId: string,
@@ -411,6 +415,13 @@ export const sftp = {
   /** The folder downloads go to without asking. */
   downloadsDirectory: () => call("downloads_directory"),
   cancel: (transferId: string) => call("transfer_cancel", { transferId }),
+  /**
+   * Permanently deletes what an ended transfer created, through session `id` for an upload;
+   * resolves to how many files were deleted.
+   */
+  deleteLeft: (transferId: string, id: SessionId | null) => call("transfer_delete", { transferId, id }),
+  /** Forgets what ended transfers created, once they are no longer listed. */
+  forget: (transferIds: string[]) => call("transfer_forget", { transferIds }),
   /**
    * Downloads a file into a temporary folder and opens it in the editor; `onChanged` is called
    * each time it is saved. `editId` also identifies the download for `cancel`.

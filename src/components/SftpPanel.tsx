@@ -557,7 +557,9 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
             }}
           />
         }
+        connected={connected}
         onCancel={(id) => void sftp.cancel(id)}
+        onDelete={transfers.deleteLeft}
         onDismiss={transfers.remove}
         onClearFinished={transfers.clearFinished}
         onReopen={(id) => void sftp.editReopen(id).catch(fail)}

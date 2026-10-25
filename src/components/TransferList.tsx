@@ -7,7 +7,7 @@ import { useLocale } from "../hooks/locale";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { IconButton } from "./IconButton";
-import { ArrowIcon, CloseIcon, PencilIcon } from "./icons";
+import { ArrowIcon, CloseIcon, PencilIcon, TrashIcon } from "./icons";
 
 export interface Transfer {
   id: string;
@@ -17,8 +17,13 @@ export interface Transfer {
   /** "editing" once a file opened in an editor is downloaded and watched. */
   status: "running" | "editing" | "done" | "error" | "cancelled";
   error?: string;
-  /** Local paths created by a finished download. */
+  /** The local items an ended download left, to show. */
   results?: string[];
+  /** For an ended upload or download: how many files it created, which can be deleted, and how many it wrote over. */
+  created?: number;
+  replaced?: number;
+  /** Deleting what it created: under way, or done. */
+  deletion?: { state: "deleting" } | { state: "deleted"; count: number };
   /** For an edit: the remote file. */
   remotePath?: string;
   /** For an edit: what became of the last save. */
@@ -32,7 +37,11 @@ interface Props {
   transfers: Transfer[];
   /** What the transfers' channel carries, shown at the header's end. */
   traffic?: ReactNode;
+  /** Whether the session is connected, which deleting what an upload created needs. */
+  connected: boolean;
   onCancel(id: string): void;
+  /** Asks, then deletes the files an ended transfer created. */
+  onDelete(id: string): void;
   onDismiss(id: string): void;
   onClearFinished(): void;
   /** Opens a file being edited in the editor again. */
@@ -47,12 +56,22 @@ const KIND_ICONS = {
   edit: <PencilIcon size={12} />,
 };
 
-const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
+export const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
 
-export function TransferList({ transfers, traffic, onCancel, onDismiss, onClearFinished, onReopen, onStopEditing }: Props) {
+export function TransferList({
+  transfers,
+  traffic,
+  connected,
+  onCancel,
+  onDelete,
+  onDismiss,
+  onClearFinished,
+  onReopen,
+  onStopEditing,
+}: Props) {
   const { t } = useTranslation();
   // The same from render to render, so that a transfer renders again only when it changes.
-  const actions = useStableHandlers<TransferActions>({ onCancel, onDismiss, onReopen, onStopEditing });
+  const actions = useStableHandlers<TransferActions>({ onCancel, onDelete, onDismiss, onReopen, onStopEditing });
   if (transfers.length === 0) return null;
 
   return (
@@ -69,7 +88,7 @@ export function TransferList({ transfers, traffic, onCancel, onDismiss, onClearF
       </header>
       <ul>
         {transfers.map((transfer) => (
-          <TransferItem key={transfer.id} transfer={transfer} actions={actions} />
+          <TransferItem key={transfer.id} transfer={transfer} connected={connected} actions={actions} />
         ))}
       </ul>
     </section>
@@ -77,23 +96,33 @@ export function TransferList({ transfers, traffic, onCancel, onDismiss, onClearF
 }
 
 /** What a transfer's buttons do: one object for every transfer, the same from render to render. */
-type TransferActions = Pick<Props, "onCancel" | "onDismiss" | "onReopen" | "onStopEditing">;
+type TransferActions = Pick<Props, "onCancel" | "onDelete" | "onDismiss" | "onReopen" | "onStopEditing">;
 
 /**
  * One transfer, its own component so that React Compiler memoizes it: the list renders again
  * with each running transfer's progress, ten times a second, and the others keep their
  * elements and handlers.
  */
-function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
+function TransferItem(props: { transfer: Transfer; connected: boolean; actions: TransferActions }) {
   useStableProps("TransferItem", props, ["actions"]);
-  const { transfer, actions } = props;
+  const { transfer, connected, actions } = props;
   const { t, i18n } = useTranslation();
   const { formatSize, widestSizes } = useLocale();
   const { id } = transfer;
   const p = transfer.progress;
   const percent = p && p.total > 0 ? (p.transferred / p.total) * 100 : transfer.status === "done" ? 100 : 0;
 
+  const deleted = transfer.deletion?.state === "deleted" ? transfer.deletion.count : null;
+  // What it created can be deleted once it has ended, the files of an upload only through the connection.
+  const deletable = finished(transfer) && (transfer.created ?? 0) > 0 && deleted == null;
+  const upload = transfer.kind === "upload";
+
   const detail = () => {
+    if (deleted != null) {
+      if (transfer.status === "cancelled") return t("transfer.cancelledDeleted", { count: deleted });
+      if (transfer.status === "error") return t("transfer.failedDeleted", { error: transfer.error, count: deleted });
+      return t("transfer.deleted", { count: deleted });
+    }
     if (transfer.status === "error") return transfer.error;
     if (transfer.status === "editing") {
       const save = transfer.save;
@@ -138,10 +167,24 @@ function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
             {t("transfer.cancel")}
           </button>
         )}
-        {transfer.status === "done" && transfer.results?.[0] && (
+        {finished(transfer) && transfer.results?.[0] && deleted == null && (
           <button className="link-button" onClick={() => void revealItemInDir(transfer.results![0])}>
             {t("transfer.show")}
           </button>
+        )}
+        {deletable && (
+          <IconButton
+            className="link-button"
+            label={
+              upload && !connected
+                ? t("transfer.deleteNeedsConnection")
+                : t(upload ? "transfer.deleteUploaded" : "transfer.deleteDownloaded")
+            }
+            disabled={(upload && !connected) || transfer.deletion?.state === "deleting"}
+            onClick={() => actions.onDelete(id)}
+          >
+            <TrashIcon size={12} />
+          </IconButton>
         )}
         {transfer.status === "editing" && (
           <>
@@ -164,7 +207,7 @@ function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
           <div style={{ width: `${percent}%` }} />
         </div>
       )}
-      {p && (transfer.status === "running" || transfer.status === "done") ? (
+      {p && (transfer.status === "running" || transfer.status === "done") && deleted == null ? (
         progress(p)
       ) : (
         <div className="transfer-detail" title={transfer.save?.state === "failed" ? transfer.save.error : transfer.error}>

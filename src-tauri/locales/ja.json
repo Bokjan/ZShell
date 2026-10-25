@@ -187,6 +187,7 @@
       "createDirFailed": "フォルダー{path}を作成できません",
       "uploadFailed": "{path}をアップロードできませんでした",
       "downloadFailed": "{path}をダウンロードできませんでした",
+      "deleteFailed": "{path}を削除できません",
       "replaceFailed": "{path}をアップロードしましたが、所定の場所に配置できませんでした。新しい内容は{temporary}にあります",
       "replaceInterrupted": "{path}をアップロードしましたが、所定の場所に配置できませんでした。新しい内容は{temporary}に、元の内容は{original}にあります"
     },

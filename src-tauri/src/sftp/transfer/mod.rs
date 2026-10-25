@@ -17,6 +17,10 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Semaphore;
 use ts_rs::TS;
 
+mod left;
+
+pub use left::{delete_local, delete_remote, Ended, Kept, Left};
+
 use super::replace::{LocalTarget, RemoteTarget};
 use super::{file_name, is_entry, join};
 use crate::error::Error;
@@ -36,38 +40,64 @@ pub struct Progress {
     pub current: String,
 }
 
-/// Cancellation flags of running transfers, by the webview that started each and the id its
-/// page chose. A transfer belongs to its page: only that page cancels it, and it is cancelled
-/// when the page is gone (reloaded, or its window closed), with nobody left to show it.
+/// Cancellation flags of running transfers, and what ended ones left (see [`left`]), by the
+/// webview that started each and the id its page chose. A transfer belongs to its page: only
+/// that page cancels it or deletes what it left, and when the page is gone (reloaded, or its
+/// window closed), with nobody left to show it, it is cancelled and what it left forgotten.
 #[derive(Default)]
-pub struct Transfers(Mutex<HashMap<(String, String), Arc<AtomicBool>>>);
+pub struct Transfers {
+    running: Mutex<HashMap<(String, String), Arc<AtomicBool>>>,
+    left: Mutex<HashMap<(String, String), Kept>>,
+}
 
 impl Transfers {
     pub fn start(&self, webview: &str, id: &str) -> Arc<AtomicBool> {
         let flag = Arc::new(AtomicBool::new(false));
-        self.0.lock().unwrap().insert((webview.to_owned(), id.to_owned()), flag.clone());
+        self.running.lock().unwrap().insert((webview.to_owned(), id.to_owned()), flag.clone());
         flag
     }
 
     pub fn finish(&self, webview: &str, id: &str) {
-        self.0.lock().unwrap().remove(&(webview.to_owned(), id.to_owned()));
+        self.running.lock().unwrap().remove(&(webview.to_owned(), id.to_owned()));
     }
 
     pub fn cancel(&self, webview: &str, id: &str) {
-        if let Some(flag) = self.0.lock().unwrap().get(&(webview.to_owned(), id.to_owned())) {
+        if let Some(flag) = self.running.lock().unwrap().get(&(webview.to_owned(), id.to_owned())) {
             flag.store(true, Ordering::Relaxed);
         }
     }
 
-    /// Cancels the transfers of `webview`, whose page is gone.
+    /// Cancels the transfers of `webview`, whose page is gone, and forgets what its ended ones
+    /// left.
     pub fn cancel_webview(&self, webview: &str) {
-        self.0.lock().unwrap().retain(|(owner, _), flag| {
+        self.running.lock().unwrap().retain(|(owner, _), flag| {
             let theirs = owner == webview;
             if theirs {
                 flag.store(true, Ordering::Relaxed);
             }
             !theirs
         });
+        self.left.lock().unwrap().retain(|(owner, _), _| owner != webview);
+    }
+
+    /// Keeps what an ended transfer left, unless there is nothing to delete.
+    pub fn keep(&self, webview: &str, id: &str, kept: Kept) {
+        if !kept.is_empty() {
+            self.left.lock().unwrap().insert((webview.to_owned(), id.to_owned()), kept);
+        }
+    }
+
+    /// Takes what a transfer left, to delete it; what can't be is kept again.
+    pub fn take(&self, webview: &str, id: &str) -> Option<Kept> {
+        self.left.lock().unwrap().remove(&(webview.to_owned(), id.to_owned()))
+    }
+
+    /// Forgets what the transfers `ids` left, which the list no longer shows.
+    pub fn forget(&self, webview: &str, ids: &[String]) {
+        let mut left = self.left.lock().unwrap();
+        for id in ids {
+            left.remove(&(webview.to_owned(), id.clone()));
+        }
     }
 }
 
@@ -272,7 +302,14 @@ where
     first.map_or(Ok(()), Err)
 }
 
-pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &str, reporter: &mut Reporter) -> Result<()> {
+/// Uploads into `remote_dir`, replacing files there; what it created goes into `left`.
+pub async fn upload(
+    sftp: &SftpSession,
+    local_paths: &[PathBuf],
+    remote_dir: &str,
+    reporter: &mut Reporter,
+    left: &mut Left<String>,
+) -> Result<()> {
     let mut plan = Plan::new();
     for local in local_paths {
         let name = local.file_name().context(Error::new("transfer.invalidPath").param("path", local.display()))?.to_string_lossy();
@@ -287,13 +324,17 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
     }
     reporter.progress.files_total = plan.files.len();
 
-    let created = create_remote_dirs(sftp, &plan.dirs, &plan.dir_modes).await?;
+    let mut created = HashSet::new();
+    let made = create_remote_dirs(sftp, &plan.dirs, &plan.dir_modes, &mut created).await;
+    left.dirs = created.iter().cloned().collect();
+    made?;
     let turns = same_name_turns(&plan.files);
+    let files = Mutex::new(Left::default());
     let run = Run::new(reporter);
     let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
     let result = copy_files(&sizes, &run, |i| {
         let ((local, remote, _), mode) = (&plan.files[i], plan.file_modes[i]);
-        let (run, turn) = (&run, turns.get(&remote.to_lowercase()));
+        let (run, turn, files) = (&run, turns.get(&remote.to_lowercase()), &files);
         // In a folder this upload created, nothing is there to replace, unless another file of
         // the same name went there first.
         let new = turn.is_none() && remote.rsplit_once('/').is_some_and(|(dir, _)| created.contains(dir));
@@ -309,6 +350,7 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
                 true => RemoteTarget::create_new(sftp, remote, mode).await?,
                 false => RemoteTarget::create(sftp, remote, mode).await?,
             };
+            let replaces = dst.replaces();
             let result = match copy(&mut src, &mut dst.file, run).await {
                 Ok(()) => dst.finish(sftp).await,
                 Err(e) => {
@@ -317,12 +359,22 @@ pub async fn upload(sftp: &SftpSession, local_paths: &[PathBuf], remote_dir: &st
                 }
             };
             result.map_err(|e| with_file_context(e, Error::new("transfer.uploadFailed").param("path", local.display())))?;
+            let mut files = files.lock().unwrap();
+            // A file of the same name that this upload put there before is its own still.
+            if !replaces {
+                files.files.push(remote.clone());
+            } else if !files.files.contains(remote) {
+                files.replaced += 1;
+            }
+            drop(files);
             run.finish_file();
             Ok(())
         }
     })
     .await;
     run.end();
+    let files = files.into_inner().unwrap();
+    (left.files, left.replaced) = (files.files, files.replaced);
     result
 }
 
@@ -339,25 +391,29 @@ fn same_name_turns(files: &[(PathBuf, String, u64)]) -> HashMap<String, tokio::s
 }
 
 /// Creates an upload's folders, parents first and those of one depth at once, with the
-/// permission bits `modes` gives each; returns those that weren't there.
-async fn create_remote_dirs(sftp: &SftpSession, dirs: &[String], modes: &[Option<u32>]) -> Result<HashSet<String>> {
+/// permission bits `modes` gives each; those that weren't there go into `created`, also when
+/// another fails.
+async fn create_remote_dirs(sftp: &SftpSession, dirs: &[String], modes: &[Option<u32>], created: &mut HashSet<String>) -> Result<()> {
     let depth = |dir: &(&String, Option<u32>)| dir.0.matches('/').count();
     let mut by_depth: Vec<(&String, Option<u32>)> = dirs.iter().zip(modes.iter().copied()).collect();
     by_depth.sort_by_key(depth);
-    let mut created = HashSet::new();
     for level in by_depth.chunk_by(|a, b| depth(a) == depth(b)) {
         let results: Vec<(usize, Result<bool>)> = stream::iter(0..level.len())
             .map(|i| async move { (i, create_remote_dir(sftp, level[i].0, level[i].1).await) })
             .buffer_unordered(CONCURRENT_DIRS)
             .collect()
             .await;
+        let mut first = Ok(());
         for (i, result) in results {
-            if result? {
-                created.insert(level[i].0.clone());
+            match result {
+                Ok(true) => drop(created.insert(level[i].0.clone())),
+                Ok(false) => {}
+                Err(e) => first = first.and(Err(e)),
             }
         }
+        first?;
     }
-    Ok(created)
+    Ok(())
 }
 
 /// Creates `dir` unless there is a folder there already; true if there wasn't. A new one gets
@@ -411,8 +467,15 @@ async fn scan_local_dir(root: &Path, remote_root: String, plan: &mut Plan<PathBu
 }
 
 /// Downloads into `local_dir`; top-level items get a unique name instead of overwriting
-/// existing files. Returns the local paths of the top-level items.
-pub async fn download(sftp: &SftpSession, remote_paths: &[String], local_dir: &Path, reporter: &mut Reporter) -> Result<Vec<PathBuf>> {
+/// existing files, so everything this creates is its own. What it created goes into `left`,
+/// with the local paths of the top-level items that are there.
+pub async fn download(
+    sftp: &SftpSession,
+    remote_paths: &[String],
+    local_dir: &Path,
+    reporter: &mut Reporter,
+    left: &mut Left<PathBuf>,
+) -> Result<()> {
     let mut items = Vec::with_capacity(remote_paths.len());
     let mut result = Ok(());
     for remote in remote_paths {
@@ -426,7 +489,7 @@ pub async fn download(sftp: &SftpSession, remote_paths: &[String], local_dir: &P
     }
     let mut whole = Vec::new();
     if result.is_ok() {
-        result = download_counting(sftp, &items, reporter, &mut whole).await;
+        result = download_counting(sftp, &items, reporter, &mut whole, left, true).await;
     }
     if let Err(e) = result {
         // Give back the names of the items that never arrived. Those that did stay, even an
@@ -439,9 +502,15 @@ pub async fn download(sftp: &SftpSession, remote_paths: &[String], local_dir: &P
                 _ => Ok(()),
             };
         }
+        for (_, local) in items {
+            if tokio::fs::symlink_metadata(&local).await.is_ok() {
+                left.items.push(local);
+            }
+        }
         return Err(e);
     }
-    Ok(items.into_iter().map(|(_, local)| local).collect())
+    left.items = items.into_iter().map(|(_, local)| local).collect();
+    Ok(())
 }
 
 /// Takes a free local name for the remote item, creating an empty file or folder there.
@@ -461,13 +530,23 @@ async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<Pat
 }
 
 /// Downloads each remote file or directory to the given local path, replacing files there.
-pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter) -> Result<()> {
-    download_counting(sftp, items, reporter, &mut Vec::new()).await
+/// The files it created and those it replaced go into `left`; not the folders, which may have
+/// been there.
+pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, left: &mut Left<PathBuf>) -> Result<()> {
+    download_counting(sftp, items, reporter, &mut Vec::new(), left, false).await
 }
 
 /// [`download_to`], keeping in `whole` which of the items have arrived whole: those copied at
-/// the same time as one that failed may have.
-async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, whole: &mut Vec<bool>) -> Result<()> {
+/// the same time as one that failed may have. With `claimed`, the items' paths were free
+/// before (see [`claim`]): all that arrives under them is new, folders too.
+async fn download_counting(
+    sftp: &SftpSession,
+    items: &[(String, PathBuf)],
+    reporter: &mut Reporter,
+    whole: &mut Vec<bool>,
+    left: &mut Left<PathBuf>,
+    claimed: bool,
+) -> Result<()> {
     let mut plan = Plan::new();
     // The items of one download go to one folder, or one disk at least.
     let first = items.first().map(|(_, local)| local.clone());
@@ -505,7 +584,8 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
     }
     let clashes = clashing(&plan.files, &mut taken);
     let taken = Mutex::new(taken);
-    let arrived = Mutex::new(vec![false; plan.files.len()]);
+    // Where each file arrived, and whether it replaced one there.
+    let arrived: Mutex<Vec<Option<(PathBuf, bool)>>> = Mutex::new(vec![None; plan.files.len()]);
     let run = Run::new(reporter);
     let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
     let result = copy_files(&sizes, &run, |i| {
@@ -523,6 +603,7 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
                 local.clone()
             };
             let mut dst = LocalTarget::create(&local, mode).await?;
+            let replaces = dst.replaces();
             let result = copy(&mut src, &mut dst.file, run).await;
             // Closed without waiting for the server's answer: all of it has been read.
             drop(src);
@@ -534,14 +615,24 @@ async fn download_counting(sftp: &SftpSession, items: &[(String, PathBuf)], repo
                 }
             };
             result.map_err(|e| with_file_context(e, Error::new("transfer.downloadFailed").param("path", remote)))?;
-            arrived.lock().unwrap()[i] = true;
+            arrived.lock().unwrap()[i] = Some((local, replaces));
             run.finish_file();
             Ok(())
         }
     })
     .await;
     run.end();
-    *whole = items_whole(&ends, &arrived.into_inner().unwrap());
+    let arrived = arrived.into_inner().unwrap();
+    *whole = items_whole(&ends, &arrived.iter().map(Option::is_some).collect::<Vec<_>>());
+    for (local, replaces) in arrived.into_iter().flatten() {
+        match replaces && !claimed {
+            true => left.replaced += 1,
+            false => left.files.push(local),
+        }
+    }
+    if claimed {
+        left.dirs = plan.dirs;
+    }
     result
 }
 

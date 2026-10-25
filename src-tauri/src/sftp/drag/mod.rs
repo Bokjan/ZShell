@@ -23,7 +23,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::oneshot;
 use ts_rs::TS;
 
-use super::transfer::{self, Progress, Reporter, TransferSlots, Transfers};
+use super::transfer::{self, Left, Progress, Reporter, TransferSlots, Transfers};
 use crate::error::{Error, Result};
 use crate::local_name::local_file_name;
 
@@ -180,7 +180,9 @@ impl DropDownload {
         };
         let result = if go {
             let mut reporter = self.reporter.lock().await;
-            transfer::download_to(&self.sftp, &[(remote.to_owned(), local.clone())], &mut reporter).await.map_err(Error::from)
+            transfer::download_to(&self.sftp, &[(remote.to_owned(), local.clone())], &mut reporter, &mut Left::default())
+                .await
+                .map_err(Error::from)
         } else {
             Err(Error::new("transfer.cancelled"))
         };
