@@ -23,7 +23,9 @@ use crate::session::{Outcome, SessionEvent, SessionInput, TermIo, Tone};
 use crate::ssh::{self, JumpChain};
 use protocol::{Telnet, BREAK};
 
-const READ_BUFFER: usize = 16 << 10;
+/// As much as the other backends pass on at once: each message to the page has a cost of its
+/// own on the main thread, whatever its size.
+const READ_BUFFER: usize = 64 << 10;
 /// What waits to be written to the server; beyond that, reading the server's output waits
 /// (see [`bridge`]), and so does a ZMODEM upload's data, paced by the connection, while
 /// keystrokes and resizes are still taken (see [`TermIo::recv`]).
