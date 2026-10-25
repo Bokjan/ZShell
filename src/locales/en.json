@@ -543,6 +543,8 @@
     "show": "Show",
     "remove": "Remove",
     "cancelled": "Cancelled",
+    "cancelledProgress_one": "Cancelled · {done}/{count} file done",
+    "cancelledProgress_other": "Cancelled · {done}/{count} files done",
     "preparing": "Preparing…",
     "labelMore_one": "{name} and {count} more",
     "labelMore_other": "{name} and {count} more",

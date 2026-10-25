@@ -543,6 +543,8 @@
     "show": "Anzeigen",
     "remove": "Entfernen",
     "cancelled": "Abgebrochen",
+    "cancelledProgress_one": "Abgebrochen · {done}/{count} Datei fertig",
+    "cancelledProgress_other": "Abgebrochen · {done}/{count} Dateien fertig",
     "preparing": "Wird vorbereitet…",
     "labelMore_one": "{name} und {count} weitere",
     "labelMore_other": "{name} und {count} weitere",

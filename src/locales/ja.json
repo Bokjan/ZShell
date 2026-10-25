@@ -527,6 +527,7 @@
     "show": "表示",
     "remove": "一覧から削除",
     "cancelled": "キャンセル済み",
+    "cancelledProgress_other": "キャンセル済み · ファイル{done}/{count}完了",
     "preparing": "準備中…",
     "labelMore_other": "{name}ほか{count}件",
     "size": "{transferred} / {total}",

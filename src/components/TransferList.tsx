@@ -102,7 +102,9 @@ function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
       if (save.state === "failed") return t("transfer.editFailed", { message: save.error });
       return t(`transfer.edit.${save.state}`);
     }
-    if (transfer.status === "cancelled") return t("transfer.cancelled");
+    if (transfer.status === "cancelled") {
+      return p ? t("transfer.cancelledProgress", { done: p.filesDone, count: p.filesTotal }) : t("transfer.cancelled");
+    }
     return t("transfer.preparing");
   };
 

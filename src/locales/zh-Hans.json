@@ -527,6 +527,7 @@
     "show": "显示",
     "remove": "移除",
     "cancelled": "已取消",
+    "cancelledProgress_other": "已取消 · 已完成 {done}/{count} 个文件",
     "preparing": "正在准备…",
     "labelMore_other": "{name} 及另外 {count} 项",
     "size": "{transferred} / {total}",
