@@ -55,7 +55,15 @@ export function SpinInput({ value, onChange, min, max, step = 1, start, onKeyDow
   const press = (steps: number) => (e: PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    window.addEventListener("pointerup", stop, { once: true });
+    // Also on leaving the window while held (switching apps from the keyboard), which sends
+    // no pointerup here, nor a pointerleave while the pointer stays on the button.
+    const end = () => {
+      stop();
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("blur", end);
+    };
+    window.addEventListener("pointerup", end);
+    window.addEventListener("blur", end);
     const again = (delay: number) => {
       repeat.current = window.setTimeout(() => {
         if (stepBy(steps)) again(REPEAT_INTERVAL);
