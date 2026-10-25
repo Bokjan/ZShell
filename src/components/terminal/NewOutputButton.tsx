@@ -5,8 +5,6 @@ import { announce } from "../../lib/announce";
 import type { ReadBack } from "../../lib/readBack";
 import { ArrowIcon } from "../icons";
 
-/** How often the count is drawn again while output keeps coming: often enough to follow, without a render every frame. */
-const COUNT_MS = 250;
 /** The largest count shown as it is; past it the button says "999+", and keeps its width. */
 const MOST_SHOWN = 999;
 
@@ -20,9 +18,9 @@ interface Props {
 /**
  * The lines of output that arrived below the lines being read back (see `lib/readBack`), as
  * a button back to the end. A component of its own, so that the count drawn again doesn't
- * render the whole terminal view. It shows and goes at once, and the count changes at most
- * every `COUNT_MS`, in a place of its own width (`.new-output-count`) so that the button
- * doesn't move as it does. Screen readers are told once each time it shows.
+ * render the whole terminal view. It is drawn again at most once a frame, the count in a place
+ * of its own width (`.new-output-count`) so that the button doesn't move as it changes. Screen
+ * readers are told once each time it shows.
  */
 export function NewOutputButton({ readBack, visible, onClick }: Props) {
   const { t } = useTranslation();
@@ -31,9 +29,9 @@ export function NewOutputButton({ readBack, visible, onClick }: Props) {
   useEffect(() => {
     if (!visible) return;
     let shown = readBack.newLines;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame = 0;
     const update = () => {
-      timer = undefined;
+      frame = 0;
       const now = readBack.newLines;
       if (now > 0 && shown === 0) announce(t("terminal.newOutput"));
       shown = now;
@@ -41,14 +39,11 @@ export function NewOutputButton({ readBack, visible, onClick }: Props) {
     };
     update();
     const unsubscribe = readBack.subscribe(() => {
-      if (readBack.newLines === 0 || shown === 0) {
-        clearTimeout(timer);
-        update();
-      } else if (timer === undefined) timer = setTimeout(update, COUNT_MS);
+      if (!frame) frame = requestAnimationFrame(update);
     });
     return () => {
       unsubscribe();
-      clearTimeout(timer);
+      cancelAnimationFrame(frame);
     };
   }, [readBack, visible, t]);
 
