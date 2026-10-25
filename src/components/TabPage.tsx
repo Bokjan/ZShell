@@ -47,7 +47,7 @@ export interface PaneHandlers {
   /** How many questions are waiting in the pane's file panel. */
   onQuestions(key: number, count: number): void;
   /** Added to the end of the pane's terminal menu, when it opens. */
-  menuItems(pane: Pane): MenuItem[];
+  menuItems(key: number): MenuItem[];
   /** The pane's grip was pressed: it may be dragged elsewhere (see `usePaneDrag`). */
   onGrab(e: MouseEvent, key: number): void;
 }

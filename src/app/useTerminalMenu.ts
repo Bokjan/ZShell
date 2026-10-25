@@ -38,7 +38,7 @@ export function useTerminalMenu({
   commandsOf,
   runCommand,
   openPalette,
-}: Options): (pane: Pane) => MenuItem[] {
+}: Options): (key: number) => MenuItem[] {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
   // The terminal builds its menu as it renders.
@@ -131,5 +131,10 @@ export function useTerminalMenu({
     ];
   };
 
-  return (pane) => [...paneMenu(pane), ...commandMenu(pane)];
+  // By key: the pane as it is when the menu opens, so that the terminal's props don't change
+  // with every change to its pane (its title, its progress).
+  return (key) => {
+    const pane = findPane(tabs, key)?.pane;
+    return pane ? [...paneMenu(pane), ...commandMenu(pane)] : [];
+  };
 }

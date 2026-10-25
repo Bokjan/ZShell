@@ -48,10 +48,12 @@ export function useQuickCommandBar(store: TabStore, { activePane, targets, send,
 
   const run = (command: QuickCommand) => send(asTyped(command.text, command.enter));
 
-  const bar = barOpen && activePane && group && (
+  // By key, not the pane: the bar needn't render again each time the pane's title changes.
+  const activeKey = activePane?.key;
+  const bar = barOpen && activeKey !== undefined && group && (
     <QuickCommandBar
       group={group}
-      onPickGroup={(id) => store.dispatch({ type: "updatePane", key: activePane.key, patch: { commandGroup: id } })}
+      onPickGroup={(id) => store.dispatch({ type: "updatePane", key: activeKey, patch: { commandGroup: id } })}
       onRun={run}
       targets={targets}
     />
