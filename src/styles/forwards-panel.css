@@ -75,7 +75,6 @@
   line-height: calc(14px * var(--text-scale));
   box-sizing: border-box;
   border-radius: 3px;
-  font-size: calc(10px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-align: center;
