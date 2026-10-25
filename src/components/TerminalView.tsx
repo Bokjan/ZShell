@@ -80,6 +80,9 @@ const PROMPT_SETTLE_MS = 300;
  */
 const LINK_LEAVE_MS = 100;
 
+/** How long the scroll bar stays after the view last scrolled, as xterm.js's own (see `.scrolling`). */
+const SCROLLING_MS = 500;
+
 const ignore = () => {};
 
 /**
@@ -431,6 +434,20 @@ export function TerminalView({
     };
     const kittyNotices = new KittyNotices();
 
+    // The scroll bar shows while the view scrolls (see `.scrolling`), but not for output that
+    // only moves it along at the end, where nothing is being read back.
+    let scrolling: ReturnType<typeof setTimeout> | undefined;
+    let atEnd = true;
+    const onScroll = () => {
+      const buffer = term.buffer.active;
+      const wasAtEnd = atEnd;
+      atEnd = buffer.viewportY === buffer.baseY;
+      if (atEnd && wasAtEnd) return;
+      container.classList.add("scrolling");
+      clearTimeout(scrolling);
+      scrolling = setTimeout(() => container.classList.remove("scrolling"), SCROLLING_MS);
+    };
+
     const subscriptions: IDisposable[] = [
       // Reports are for the program in this pane only, so not synced to other panes.
       term.onData((data) => {
@@ -495,6 +512,7 @@ export function TerminalView({
         session.resize(cols, rows);
         showSize(cols, rows);
       }),
+      term.onScroll(onScroll),
       term.onTitleChange((title) => onTitleRef.current(title)),
       term.onBell(() => session.bell()),
     ];
@@ -521,6 +539,7 @@ export function TerminalView({
       clearTimeout(hideSize);
       clearTimeout(promptSettle);
       clearTimeout(hintTimer);
+      clearTimeout(scrolling);
       container.removeEventListener("mousedown", dismissHint, true);
       container.removeEventListener("wheel", dismissHint, true);
       shellDirs.forget(paneKey);

@@ -137,6 +137,14 @@
   width: 8px !important;
   border-radius: 4px;
 }
+/* xterm.js shows the scroll bar for as long as the pointer is anywhere over the terminal; it
+   shows here only while the view scrolls (`.scrolling`, set by `TerminalView`), the pointer is
+   on its strip or its slider is dragged. Hidden, the strip still takes clicks while xterm.js
+   counts it as shown, and shows as the pointer reaches it. */
+.terminal-view:not(.scrolling) .xterm-scrollable-element > .scrollbar.vertical:not(:hover, :has(> .slider.active)) {
+  opacity: 0;
+  transition: opacity 800ms linear;
+}
 /* Ligatures off. The DOM renderer (hidden tabs, or no WebGL) draws each run of cells in one
    style as one piece of text, which a font with ligatures would join; the WebGL renderer draws
    each cell apart unless told to join them. */
