@@ -161,8 +161,6 @@ export function LogSection({
   );
 }
 
-/** The app's name and version, where its data is, the privacy policy and the third-party licenses. */
-
 /**
  * The format of the times that start log lines and our own messages in the terminal: one of
  * those offered, or typed. The backend checks it as it is typed, with an example of the
@@ -171,6 +169,7 @@ export function LogSection({
 function TimeFormatField({ value, onChange }: { value: string; onChange(format: string): void }) {
   const { t } = useTranslation();
   const noteId = useId();
+  const hintId = useId();
   const [text, setText] = useFieldText(value, (text, value) => text.trim() === value);
   // The example, or why the format can't be used.
   const [checked, setChecked] = useState<{ example: string } | { error: string } | null>(null);
@@ -211,7 +210,7 @@ function TimeFormatField({ value, onChange }: { value: string; onChange(format: 
           onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && commit()}
           suggestions={TIME_FORMATS.map(({ format, name }) => ({ value: format, description: t(`settings.logTimeFormats.${name}`) }))}
           aria-invalid={invalid}
-          aria-describedby={noteId}
+          aria-describedby={`${noteId} ${hintId}`}
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
@@ -220,7 +219,9 @@ function TimeFormatField({ value, onChange }: { value: string; onChange(format: 
       <p className={invalid ? "hint warning" : "hint"} id={noteId}>
         {checked && ("error" in checked ? checked.error : t("settings.logTimeFormatExample", { time: checked.example }))}
       </p>
-      <p className="hint">{t("settings.logTimeFormatHint")}</p>
+      <p className="hint" id={hintId}>
+        {t("settings.logTimeFormatHint")}
+      </p>
     </Setting>
   );
 }
