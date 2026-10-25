@@ -20,12 +20,11 @@ use russh_sftp::client::SftpSession;
 use crate::error::{Error, Result};
 use crate::forward::{Draining, Forwards, Hub};
 use crate::model::{ForwardRule, Profile};
-use crate::session::{SessionId, TermIo};
+use crate::session::{SessionId, TermIo, Viewers};
 use crate::sftp::channels::Channels;
 use crate::sftp::shell_dir::ShellDirs;
 use crate::sftp::transfer::TransferSlots;
 use crate::ssh;
-use crate::traffic::Viewers;
 
 /// A live SSH connection and what runs on it besides shells.
 pub struct LiveConnection {

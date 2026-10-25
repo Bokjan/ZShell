@@ -15,9 +15,9 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::transfer::TransferSlots;
 use crate::error::Error;
-use crate::session::{SessionEvent, SftpChannelTraffic};
+use crate::session::{SessionEvent, SftpChannelTraffic, Viewers};
 use crate::ssh;
-use crate::traffic::{ConnectionInfo, Counted, Meter, Reporter, Viewers, Wake};
+use crate::traffic::{ConnectionInfo, Counted, Meter, Reporter, Wake};
 
 /// How long an SFTP request may wait for its reply. Generous, since on a slow link a request
 /// waits behind the reads queued before it: russh-sftp's default of 10 s failed downloads

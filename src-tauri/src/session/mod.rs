@@ -53,7 +53,7 @@ pub use lifetime::Lifetime;
 pub use manager::SessionManager;
 pub use notice::Tone;
 pub use pending::{Pending, PendingInput};
-pub use sink::SessionSink;
+pub use sink::{SessionSink, Viewers};
 pub use term::{Foreground, ForegroundProbe, TermIo};
 
 pub type SessionId = u32;

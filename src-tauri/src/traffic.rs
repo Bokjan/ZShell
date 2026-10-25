@@ -11,7 +11,7 @@
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -20,8 +20,6 @@ use tauri::async_runtime::JoinHandle;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::Notify;
 use ts_rs::TS;
-
-use crate::session::{SessionEvent, SessionId, SessionSink};
 
 /// The least time between two reports of a count.
 pub const REPORT_INTERVAL: Duration = Duration::from_millis(50);
@@ -194,26 +192,6 @@ impl ConnectionInfo {
 pub struct ChannelInfo {
     pub connection: ConnectionInfo,
     pub channel: u32,
-}
-
-/// The tabs a count is reported to.
-#[derive(Clone, Default)]
-pub struct Viewers(Arc<Mutex<Vec<(SessionId, SessionSink)>>>);
-
-impl Viewers {
-    pub fn add(&self, id: SessionId, sink: SessionSink) {
-        self.0.lock().unwrap().push((id, sink));
-    }
-
-    pub fn remove(&self, id: SessionId) {
-        self.0.lock().unwrap().retain(|(viewer, _)| *viewer != id);
-    }
-
-    pub fn send(&self, event: &SessionEvent) {
-        for (_, sink) in self.0.lock().unwrap().iter() {
-            sink.event(event.clone());
-        }
-    }
 }
 
 #[cfg(test)]

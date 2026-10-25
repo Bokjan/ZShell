@@ -6,7 +6,7 @@ use chrono::Local;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::notice::{self, Tone};
-use super::{Flow, SessionEvent};
+use super::{Flow, SessionEvent, SessionId};
 use crate::encoding::Codec;
 use crate::logging::LogSlot;
 use crate::traffic::{ChannelInfo, Meter, Reporter, Wake};
@@ -23,6 +23,29 @@ fn event_message(event: &SessionEvent) -> Option<InvokeResponseBody> {
     let mut message = vec![EVENT];
     serde_json::to_writer(&mut message, event).ok()?;
     Some(InvokeResponseBody::Raw(message))
+}
+
+/// The tabs that something beside their sessions reports to (the counts of an SFTP channel,
+/// which every tab on its connection shows).
+#[derive(Clone, Default)]
+pub struct Viewers(Arc<Mutex<Vec<(SessionId, SessionSink)>>>);
+
+impl Viewers {
+    pub fn add(&self, id: SessionId, sink: SessionSink) {
+        self.0.lock().unwrap().push((id, sink));
+    }
+
+    pub fn remove(&self, id: SessionId) {
+        self.0.lock().unwrap().retain(|(viewer, _)| *viewer != id);
+    }
+
+    /// Sends `event` to each of them, put into a message once.
+    pub fn send(&self, event: &SessionEvent) {
+        let Some(message) = event_message(event) else { return };
+        for (_, sink) in self.0.lock().unwrap().iter() {
+            let _ = sink.channel.lock().unwrap().send(message.clone());
+        }
+    }
 }
 
 /// Output side of a session: terminal bytes and lifecycle events. Cloneable, so features
