@@ -7,6 +7,7 @@ import { languageName } from "../../lib/format";
 import { RadioGroup } from "../RadioGroup";
 import { Select } from "../Select";
 import { LiveTextField, Section, Setting } from "./common";
+import { Field } from "../Field";
 
 const APPEARANCES: Appearance[] = ["system", "dark", "light"];
 const TEXT_SIZES: TextSize[] = ["normal", "large", "larger"];
@@ -25,22 +26,18 @@ export function AppearanceSection() {
         onChange={(appearance) => update((settings) => ({ ...settings, appearance }))}
       />
       <Setting>
-        <div className="field">
-          <span>{t("settings.textSize")}</span>
+        <Field group title={t("settings.textSize")} hint={t("settings.textSizeHint")}>
           <RadioGroup
             className="segmented"
-            label={t("settings.textSize")}
             value={settings.textSize}
             options={TEXT_SIZES.map((textSize) => ({ value: textSize, content: t(`settings.textSizes.${textSize}`) }))}
             onChange={(textSize) => update((settings) => ({ ...settings, textSize }))}
           />
-        </div>
-        <p className="hint">{t("settings.textSizeHint")}</p>
+        </Field>
       </Setting>
       <Setting>
         <div className="row">
-          <label className="grow">
-            {t("settings.appFont")}
+          <Field className="grow" title={t("settings.appFont")}>
             <LiveTextField
               value={settings.appFont}
               onChange={(appFont) => update((settings) => ({ ...settings, appFont }), TYPING_SAVE_DELAY)}
@@ -48,7 +45,7 @@ export function AppearanceSection() {
               autoCapitalize="off"
               autoCorrect="off"
             />
-          </label>
+          </Field>
         </div>
         <p className="hint">{t("settings.appFontHint")}</p>
       </Setting>
@@ -64,8 +61,7 @@ export function AppearanceSection() {
         <p className="hint">{t("settings.showStatusBarHint")}</p>
       </Setting>
       <Setting>
-        <label className="field">
-          {t("settings.language")}
+        <Field title={t("settings.language")} hint={t("settings.languageHint")}>
           <Select
             value={settings.language}
             onChange={(language) => update((settings) => ({ ...settings, language }))}
@@ -74,8 +70,7 @@ export function AppearanceSection() {
               ...LANGUAGES.map((language) => ({ value: language, label: languageName(language), lang: language })),
             ]}
           />
-        </label>
-        <p className="hint">{t("settings.languageHint")}</p>
+        </Field>
       </Setting>
     </Section>
   );

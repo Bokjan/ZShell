@@ -38,6 +38,7 @@ import { LogSection, TIME_FORMAT_FIELD } from "./settings/LogSection";
 import { PowerSection } from "./settings/PowerSection";
 import { ProxySection } from "./settings/ProxySection";
 import { SecuritySection } from "./settings/SecuritySection";
+import { Field } from "./Field";
 
 interface Props {
   /** Whether the system allows local terminals (not Windows in S mode). */
@@ -309,17 +310,14 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
 
               <Section id="mouseAndClipboard">
                 <Setting>
-                  <div className="field">
-                    <span>{t("settings.rightClick")}</span>
+                  <Field group title={t("settings.rightClick")} hint={t("settings.rightClickHint")}>
                     <RadioGroup
                       className="segmented"
-                      label={t("settings.rightClick")}
                       value={terminal.rightClick}
                       options={RIGHT_CLICKS.map((rightClick) => ({ value: rightClick, content: t(`settings.rightClicks.${rightClick}`) }))}
                       onChange={(rightClick) => setTerminal({ rightClick })}
                     />
-                  </div>
-                  <p className="hint">{t("settings.rightClickHint")}</p>
+                  </Field>
                 </Setting>
                 <label className="checkbox">
                   <input
@@ -351,11 +349,15 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                     <HelpTip text={t("settings.clipboardWriteTip")} />
                   </label>
                   {terminal.clipboardWrite && (
-                    <label className="clipboard-limit">
-                      <span>
-                        {t("settings.clipboardLimit")}
-                        <HelpTip text={t("settings.clipboardLimitTip")} />
-                      </span>
+                    <Field
+                      className="clipboard-limit"
+                      title={
+                        <>
+                          {t("settings.clipboardLimit")}
+                          <HelpTip text={t("settings.clipboardLimitTip")} />
+                        </>
+                      }
+                    >
                       <NumberField
                         value={terminal.clipboardLimit}
                         min={1}
@@ -363,7 +365,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
                         step={256}
                         onChange={(clipboardLimit) => setTerminal({ clipboardLimit })}
                       />
-                    </label>
+                    </Field>
                   )}
                 </Setting>
                 {isMac && (
@@ -433,15 +435,13 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
 
               <Section id="zmodem">
                 <Setting>
-                  <label>
-                    {t("settings.zmodemReceive")}
+                  <Field title={t("settings.zmodemReceive")} hint={t("settings.zmodemReceiveHint")}>
                     <Select
                       value={settings.zmodem.receive}
                       onChange={(receive) => setZmodem({ receive })}
                       options={ZMODEM_RECEIVE.map((receive) => ({ value: receive, label: t(`settings.zmodemReceiveOptions.${receive}`) }))}
                     />
-                  </label>
-                  <p className="hint">{t("settings.zmodemReceiveHint")}</p>
+                  </Field>
                 </Setting>
               </Section>
 

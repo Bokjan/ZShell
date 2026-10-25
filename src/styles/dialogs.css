@@ -256,10 +256,11 @@ input::-ms-reveal {
   padding: 0;
   border: none;
 }
+/* A field's title (`Field`): the text of its label, or its group's legend, which looks the same. */
 .dialog legend {
-  padding: 0 0 6px;
+  padding: 0 0 4px;
+  color: var(--text-muted);
   font-size: calc(12px * var(--text-scale));
-  font-weight: 600;
 }
 .forward-dialog {
   width: calc(420px * var(--text-scale));

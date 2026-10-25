@@ -7,6 +7,7 @@ import { groupName } from "../lib/quickCommands";
 import { AutoTextarea } from "./AutoTextarea";
 import { Modal } from "./Modal";
 import { Select } from "./Select";
+import { Field } from "./Field";
 
 interface Props {
   /** Null creates a command. */
@@ -39,12 +40,10 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
     <Modal dialog={dialog}>
       <form className="dialog command-dialog" onSubmit={submit}>
         <h2>{command ? t("quick.editTitle") : t("quick.newTitle")}</h2>
-        <label>
-          {t("quick.name")}
+        <Field title={t("quick.name")}>
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder={t("quick.namePlaceholder")} />
-        </label>
-        <label>
-          {t("quick.text")}
+        </Field>
+        <Field title={t("quick.text")}>
           <AutoTextarea
             className="command-text"
             rows={5}
@@ -54,16 +53,15 @@ export function CommandDialog({ command, groupId, groups, onSave, onClose }: Pro
             autoCapitalize="off"
             autoCorrect="off"
           />
-        </label>
+        </Field>
         <label className="checkbox">
           <input type="checkbox" checked={enter} onChange={(e) => setEnter(e.target.checked)} />
           {t("quick.enter")}
         </label>
         <p className="hint">{t("quick.enterHint")}</p>
-        <label>
-          {t("quick.group")}
+        <Field title={t("quick.group")}>
           <Select value={group} onChange={setGroup} options={groups.map((g) => ({ value: g.id, label: groupName(g, t) }))} />
-        </label>
+        </Field>
         <footer>
           <span className="grow" />
           <button type="button" onClick={onClose}>

@@ -15,6 +15,7 @@ import { ErrorText } from "./ErrorMessage";
 import { LockHeading, LockScreen } from "./LockScreen";
 import { Modal } from "./Modal";
 import { PasswordInput } from "./PasswordInput";
+import { Field } from "./Field";
 
 interface Props {
   /** Locked. */
@@ -170,10 +171,9 @@ function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: Va
       <form className="dialog" onSubmit={submit}>
         <h2>{t("vault.resetTitle")}</h2>
         <p className="dialog-message">{t("vault.resetMessage")}</p>
-        <label>
-          {t("vault.resetWordLabel", { word: RESET_WORD })}
+        <Field title={t("vault.resetWordLabel", { word: RESET_WORD })}>
           <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus autoComplete="off" />
-        </label>
+        </Field>
         {error && <ErrorText>{error}</ErrorText>}
         <footer>
           <span className="grow" />

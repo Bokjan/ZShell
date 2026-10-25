@@ -7,6 +7,7 @@ import { basename } from "../../lib/format";
 import { isMac, isWindows } from "../../lib/platform";
 import type { FileSettings } from "../../hooks/settings";
 import { FolderField, Section, Setting } from "./common";
+import { Field } from "../Field";
 
 /** Remote files: where downloads go, and the editor remote files are edited with. */
 export function FileSection({ settings, onChange }: { settings: FileSettings; onChange(patch: Partial<FileSettings>): void }) {
@@ -51,8 +52,7 @@ export function FileSection({ settings, onChange }: { settings: FileSettings; on
         <p className="hint">{t("settings.downloadDirectoryHint")}</p>
       </Setting>
       <Setting>
-        <div className="field">
-          <span>{t("settings.editor")}</span>
+        <Field group title={t("settings.editor")}>
           <div className="row">
             <input
               className="grow"
@@ -65,7 +65,7 @@ export function FileSection({ settings, onChange }: { settings: FileSettings; on
               {t("settings.logChoose")}
             </button>
           </div>
-        </div>
+        </Field>
         {settings.editor && (
           <button type="button" className="link" onClick={() => onChange({ editor: "" })}>
             {t("settings.editorUseDefault")}

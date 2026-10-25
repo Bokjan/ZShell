@@ -15,6 +15,7 @@ import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { PasswordField } from "./PasswordField";
 import { Select } from "./Select";
+import { Field } from "./Field";
 
 interface Props {
   /** null creates a new proxy. */
@@ -134,25 +135,22 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
         <h2>{proxy ? t("proxy.titleEdit") : t("proxy.titleNew")}</h2>
 
         <div className="row">
-          <label className="grow">
-            {t("proxy.name")}
+          <Field className="grow" title={t("proxy.name")}>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t(server ? "proxy.namePlaceholder" : "proxy.namePlaceholderCommand")}
             />
-          </label>
-          <label>
-            {t("proxy.kind")}
+          </Field>
+          <Field title={t("proxy.kind")}>
             <Select value={kind} onChange={changeKind} options={KINDS.map((value) => ({ value, label: t(`proxy.kinds.${value}`) }))} />
-          </label>
+          </Field>
         </div>
 
         {server ? (
           <>
             <div className="row">
-              <label className="grow">
-                {t("profile.host")}
+              <Field className="grow" title={t("profile.host")}>
                 <input
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
@@ -161,14 +159,12 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
                   autoCapitalize="off"
                   autoCorrect="off"
                 />
-              </label>
-              <label className="port">
-                {t("profile.port")}
+              </Field>
+              <Field className="port" title={t("profile.port")}>
                 <input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
-              </label>
+              </Field>
             </div>
-            <label>
-              {t("profile.username")}
+            <Field title={t("profile.username")}>
               <input
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -176,7 +172,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
                 autoCapitalize="off"
                 autoCorrect="off"
               />
-            </label>
+            </Field>
             {username.trim() && (
               <PasswordField
                 value={password}
@@ -191,8 +187,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
           </>
         ) : (
           <>
-            <label>
-              {t("proxy.command")}
+            <Field title={t("proxy.command")} hint={t("proxy.commandHint")}>
               <AutoTextarea
                 className="command-text"
                 rows={2}
@@ -203,8 +198,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
                 autoCapitalize="off"
                 autoCorrect="off"
               />
-            </label>
-            <p className="hint">{t("proxy.commandHint")}</p>
+            </Field>
             <p className="hint">{t("proxy.commandPasswordHint")}</p>
           </>
         )}

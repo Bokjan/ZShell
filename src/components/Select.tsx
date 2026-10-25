@@ -21,6 +21,7 @@ interface Props<T> {
   placeholder?: string;
   /** Names it when no `<label>` is around it. */
   "aria-label"?: string;
+  "aria-describedby"?: string;
 }
 
 /** How many options PageUp and PageDown move. */
@@ -37,7 +38,15 @@ const PAGE = 10;
  * Inside a `<label>`, which names it; a click on the label's text opens or closes it, as a click
  * on a checkbox's text checks it.
  */
-export function Select<T extends string | number>({ value, options, onChange, disabled, placeholder, "aria-label": ariaLabel }: Props<T>) {
+export function Select<T extends string | number>({
+  value,
+  options,
+  onChange,
+  disabled,
+  placeholder,
+  "aria-label": ariaLabel,
+  "aria-describedby": describedBy,
+}: Props<T>) {
   const id = useId();
   const listId = `${id}-list`;
   const button = useRef<HTMLButtonElement>(null);
@@ -98,6 +107,7 @@ export function Select<T extends string | number>({ value, options, onChange, di
         className="select"
         role="combobox"
         aria-label={ariaLabel}
+        aria-describedby={describedBy}
         aria-haspopup="listbox"
         aria-expanded={shown}
         aria-controls={shown ? listId : undefined}

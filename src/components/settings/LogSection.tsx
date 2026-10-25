@@ -14,6 +14,7 @@ import { formatTime } from "../../lib/terminalNotice";
 import { ComboBox } from "../ComboBox";
 import { Select } from "../Select";
 import { FolderField, Section, Setting, useFieldText } from "./common";
+import { Field } from "../Field";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
 /** The time formats offered, with the key of their description. */
@@ -93,8 +94,7 @@ export function LogSection({
         />
       </Setting>
       <Setting>
-        <label>
-          {t("settings.logFileName")}
+        <Field title={t("settings.logFileName")} hint={t("settings.logFileNameHint")}>
           <input
             value={fileName}
             onChange={(e) => setFileName(e.target.value)}
@@ -103,20 +103,17 @@ export function LogSection({
             autoCapitalize="off"
             autoCorrect="off"
           />
-        </label>
-        <p className="hint">{t("settings.logFileNameHint")}</p>
+        </Field>
       </Setting>
       <div className="row">
-        <label className="grow">
-          {t("settings.logFormat")}
+        <Field className="grow" title={t("settings.logFormat")}>
           <Select
             value={settings.format}
             onChange={(format) => onChange({ format })}
             options={LOG_FORMATS.map((format) => ({ value: format, label: t(`settings.logFormats.${format}`) }))}
           />
-        </label>
-        <label className="grow">
-          {t("settings.logKeep")}
+        </Field>
+        <Field className="grow" title={t("settings.logKeep")}>
           <Select
             value={settings.keepDays}
             onChange={(keepDays) => onChange({ keepDays })}
@@ -126,7 +123,7 @@ export function LogSection({
               label: days === 0 ? t("settings.logKeepForever") : t("settings.logKeepDays", { count: days }),
             }))}
           />
-        </label>
+        </Field>
       </div>
       <label className="checkbox">
         <input
@@ -201,8 +198,7 @@ function TimeFormatField({ value, onChange }: { value: string; onChange(format: 
   const invalid = checked !== null && "error" in checked;
   return (
     <Setting>
-      <label>
-        {t("settings.logTimeFormat")}
+      <Field title={t("settings.logTimeFormat")}>
         <ComboBox
           id={TIME_FORMAT_FIELD}
           value={text}
@@ -220,7 +216,7 @@ function TimeFormatField({ value, onChange }: { value: string; onChange(format: 
           autoCorrect="off"
           spellCheck={false}
         />
-      </label>
+      </Field>
       <p className={invalid ? "hint warning" : "hint"} id={noteId}>
         {checked && ("error" in checked ? checked.error : t("settings.logTimeFormatExample", { time: checked.example }))}
       </p>

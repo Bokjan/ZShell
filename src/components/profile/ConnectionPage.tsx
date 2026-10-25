@@ -5,6 +5,7 @@ import type { ProfileForm } from "../../lib/profileForm";
 import { IconButton } from "../IconButton";
 import { ArrowIcon, CloseIcon } from "../icons";
 import { Select } from "../Select";
+import { Field } from "../Field";
 
 /** The proxy choice that opens a dialog to create one. */
 const NEW_PROXY = "\u0000new";
@@ -51,8 +52,7 @@ export function ConnectionPage({ form, set, profile, profiles, proxies, newProxy
     <>
       {protocol !== "serial" && (
         <>
-          <div className="field">
-            <span>{t("profile.jumpHosts")}</span>
+          <Field group title={t("profile.jumpHosts")}>
             {jumpHosts.length > 0 && (
               <ol className="jump-list">
                 {jumpHosts.map((id, index) => (
@@ -96,10 +96,9 @@ export function ConnectionPage({ form, set, profile, profiles, proxies, newProxy
               onChange={(id) => set({ jumpHosts: [...jumpHosts, id] })}
               options={candidates.map((p) => ({ value: p.id, label: p.name }))}
             />
-          </div>
+          </Field>
           <p className="hint">{t(ssh ? "profile.jumpHostsHint" : "profile.jumpHostsHintTelnet")}</p>
-          <label>
-            {t("profile.proxy")}
+          <Field title={t("profile.proxy")}>
             <Select
               value={shownProxy}
               disabled={!!firstJump}
@@ -111,17 +110,15 @@ export function ConnectionPage({ form, set, profile, profiles, proxies, newProxy
                 { value: NEW_PROXY, label: t("profile.newProxy") },
               ]}
             />
-          </label>
+          </Field>
           <p className="hint">
             {firstJump
               ? t("profile.proxyViaJumpHost", { name: firstJump.name, proxy: proxyLabel(proxyOf(firstJump)) })
               : t(isMissing(form.proxy) ? "profile.missingProxyHint" : "profile.proxyHint")}
           </p>
-          <label>
-            {t("profile.keepalive")}
+          <Field title={t("profile.keepalive")} hint={t(ssh ? "profile.keepaliveHint" : "profile.keepaliveHintTelnet")}>
             <input name="keepalive" value={form.keepalive} onChange={(e) => set({ keepalive: e.target.value })} inputMode="numeric" />
-          </label>
-          <p className="hint">{t(ssh ? "profile.keepaliveHint" : "profile.keepaliveHintTelnet")}</p>
+          </Field>
         </>
       )}
       <label className="checkbox">

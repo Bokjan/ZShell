@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { useDialog } from "../hooks/dialogs";
 import { Modal } from "./Modal";
+import { Field } from "./Field";
 
 interface Props {
   title: string;
@@ -30,10 +31,9 @@ export function NameDialog({ title, label, initial, onSave, onClose }: Props) {
     <Modal dialog={dialog}>
       <form className="dialog" onSubmit={submit}>
         <h2>{title}</h2>
-        <label>
-          {label}
+        <Field title={label}>
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus onFocus={(e) => e.target.select()} />
-        </label>
+        </Field>
         <footer>
           <span className="grow" />
           <button type="button" onClick={onClose}>

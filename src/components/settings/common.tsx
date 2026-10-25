@@ -8,6 +8,7 @@ import { isComposing } from "../../lib/platform";
 import { useSettings } from "../../hooks/settings";
 import { SpinInput } from "../SpinInput";
 import { useLatest } from "../../hooks/latest";
+import { Field } from "../Field";
 
 /**
  * The text of a field showing a stored `value`, which can also change in another window: a
@@ -101,12 +102,14 @@ export function NumberField({
   max,
   step,
   onChange,
+  "aria-describedby": describedBy,
 }: {
   value: number;
   min: number;
   max: number;
   step?: number;
   onChange(n: number): void;
+  "aria-describedby"?: string;
 }) {
   const [text, setText] = useFieldText(String(value));
   const valid = (n: number) => Number.isInteger(n) && n >= min && n <= max;
@@ -127,6 +130,7 @@ export function NumberField({
       step={step}
       start={value}
       aria-invalid={!valid(Number(text))}
+      aria-describedby={describedBy}
       onChange={(next, stepped) => {
         setText(next);
         if (stepped) commit(next);
@@ -191,8 +195,7 @@ export function FolderField({
   const { t } = useTranslation();
   return (
     <>
-      <div className="field">
-        <span>{label}</span>
+      <Field group title={label}>
         <div className="row">
           <input className="grow" value={path} readOnly title={path} aria-label={label} />
           {onChoose && (
@@ -204,7 +207,7 @@ export function FolderField({
             {t("settings.logShow")}
           </button>
         </div>
-      </div>
+      </Field>
       {reset && (
         <button type="button" className="link" onClick={reset.onReset}>
           {reset.label}

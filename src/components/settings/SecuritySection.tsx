@@ -10,6 +10,7 @@ import { useVault } from "../../hooks/vault";
 import { attempt } from "../../lib/attempt";
 import { useLocale } from "../../hooks/locale";
 import { Section, Setting } from "./common";
+import { Field } from "../Field";
 
 /** The idle times offered, in minutes (as the backend accepts, `applock/mod.rs`); 0 never locks. */
 const IDLE_MINUTES = [0, 1, 5, 15, 30, 60];
@@ -114,8 +115,7 @@ function AppLockSetting() {
       </Setting>
       {settings.enabled && status.idle && (
         <Setting>
-          <label>
-            {t("settings.appLock.idle")}
+          <Field title={t("settings.appLock.idle")}>
             <Select
               value={settings.idleMinutes}
               disabled={busy}
@@ -125,7 +125,7 @@ function AppLockSetting() {
                 label: minutes === 0 ? t("settings.appLock.idleNever") : t("settings.appLock.idleMinutes", { count: minutes }),
               }))}
             />
-          </label>
+          </Field>
         </Setting>
       )}
       {settings.enabled && status.systemLock && (

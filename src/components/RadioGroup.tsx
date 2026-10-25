@@ -8,8 +8,8 @@ export interface RadioOption<T> {
 }
 
 interface Props<T> {
-  /** The group's name for screen readers, usually the text shown beside it. */
-  label: string;
+  /** The group's name for screen readers; none in a `Field` group, whose legend names it. */
+  label?: string;
   value: T;
   options: RadioOption<T>[];
   onChange(value: T): void;

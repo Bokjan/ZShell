@@ -8,6 +8,7 @@ import { ColorField } from "../ColorField";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
 import { Select } from "../Select";
 import { SpinInput } from "../SpinInput";
+import { Field } from "../Field";
 
 interface Props {
   form: ProfileForm;
@@ -23,8 +24,7 @@ export function AppearancePage({ form, set }: Props) {
     <>
       <p className="hint profile-page-hint">{t("profile.appearanceHint")}</p>
       <div className="row profile-scheme">
-        <label className="grow">
-          {t("profile.colorScheme")}
+        <Field className="grow" title={t("profile.colorScheme")}>
           <Select
             value={form.colorScheme}
             onChange={(colorScheme) => set({ colorScheme })}
@@ -34,7 +34,7 @@ export function AppearancePage({ form, set }: Props) {
               ...TERMINAL_SCHEMES.map((scheme) => ({ value: scheme.id, label: schemeLabel(scheme, t) })),
             ]}
           />
-        </label>
+        </Field>
         <SchemePreview scheme={preview} />
       </div>
       <div className="row profile-background">
@@ -51,8 +51,7 @@ export function AppearancePage({ form, set }: Props) {
       </div>
       <p className="hint">{t("profile.customBackgroundHint")}</p>
       <div className="row">
-        <label className="grow">
-          {t("settings.fontFamily")}
+        <Field className="grow" title={t("settings.fontFamily")}>
           <input
             value={form.fontFamily}
             onChange={(e) => set({ fontFamily: e.target.value })}
@@ -60,9 +59,8 @@ export function AppearancePage({ form, set }: Props) {
             autoCapitalize="off"
             autoCorrect="off"
           />
-        </label>
-        <label className="port">
-          {t("settings.fontSize")}
+        </Field>
+        <Field className="port" title={t("settings.fontSize")}>
           <SpinInput
             name="fontSize"
             value={form.fontSize}
@@ -72,7 +70,7 @@ export function AppearancePage({ form, set }: Props) {
             start={settings.terminal.fontSize}
             placeholder={String(settings.terminal.fontSize)}
           />
-        </label>
+        </Field>
       </div>
     </>
   );

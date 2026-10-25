@@ -16,6 +16,7 @@ import { RadioGroup } from "../RadioGroup";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
 import { Select } from "../Select";
 import { LiveTextField, NumberField, Section, Setting } from "./common";
+import { Field } from "../Field";
 
 const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const SCREEN_READER_MODES: ScreenReaderMode[] = ["auto", "on", "off"];
@@ -35,12 +36,10 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
     update((settings) => ({ ...settings, terminal: { ...settings.terminal, ...patch } }), delay);
   return (
     <Section id="terminal">
-      <div className="field">
-        <span>{t("settings.colorScheme")}</span>
+      <Field group title={t("settings.colorScheme")}>
         <RadioGroup
           className="scheme-grid"
           optionClassName="scheme-card"
-          label={t("settings.colorScheme")}
           value={terminal.colorScheme}
           options={[
             {
@@ -64,12 +63,11 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
           ]}
           onChange={(colorScheme) => set({ colorScheme })}
         />
-      </div>
+      </Field>
 
       <Setting>
         <div className="row">
-          <label className="grow">
-            {t("settings.fontFamily")}
+          <Field className="grow" title={t("settings.fontFamily")}>
             <LiveTextField
               value={terminal.fontFamily}
               onChange={(fontFamily) => set({ fontFamily }, TYPING_SAVE_DELAY)}
@@ -82,40 +80,34 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
               autoCapitalize="off"
               autoCorrect="off"
             />
-          </label>
-          <label className="port">
-            {t("settings.fontSize")}
+          </Field>
+          <Field className="port" title={t("settings.fontSize")}>
             <NumberField value={terminal.fontSize} min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} onChange={(fontSize) => set({ fontSize })} />
-          </label>
+          </Field>
         </div>
         <p className="hint">{t("settings.fontHint")}</p>
       </Setting>
       <Setting>
-        <div className="field">
-          <span>{t("settings.ligatures")}</span>
+        <Field group title={t("settings.ligatures")} hint={t("settings.ligaturesHint")}>
           <RadioGroup
             className="segmented"
-            label={t("settings.ligatures")}
             value={terminal.ligatures}
             options={LIGATURE_MODES.map((mode) => ({ value: mode, content: t(`settings.ligatureModes.${mode}`) }))}
             onChange={(ligatures) => set({ ligatures })}
           />
-        </div>
-        <p className="hint">{t("settings.ligaturesHint")}</p>
+        </Field>
       </Setting>
 
       <Setting>
         <div className="row">
-          <label className="grow">
-            {t("settings.cursorStyle")}
+          <Field className="grow" title={t("settings.cursorStyle")}>
             <Select
               value={terminal.cursorStyle}
               onChange={(cursorStyle) => set({ cursorStyle })}
               options={CURSOR_STYLES.map((style) => ({ value: style, label: t(`settings.cursorStyles.${style}`) }))}
             />
-          </label>
-          <label className="grow">
-            {t("settings.scrollback")}
+          </Field>
+          <Field className="grow" title={t("settings.scrollback")}>
             <NumberField
               value={terminal.scrollback}
               min={0}
@@ -123,7 +115,7 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
               step={1000}
               onChange={(scrollback) => set({ scrollback })}
             />
-          </label>
+          </Field>
         </div>
         <p className="hint">{t("settings.scrollbackHint")}</p>
       </Setting>
@@ -132,21 +124,17 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
         {t("settings.cursorBlink")}
       </label>
       <Setting>
-        <div className="field">
-          <span>{t("settings.screenReader")}</span>
+        <Field group title={t("settings.screenReader")} hint={t("settings.screenReaderHint")}>
           <RadioGroup
             className="segmented"
-            label={t("settings.screenReader")}
             value={terminal.screenReaderMode}
             options={SCREEN_READER_MODES.map((mode) => ({ value: mode, content: t(`settings.screenReaderModes.${mode}`) }))}
             onChange={(screenReaderMode) => set({ screenReaderMode })}
           />
-        </div>
-        <p className="hint">{t("settings.screenReaderHint")}</p>
+        </Field>
       </Setting>
       <Setting>
-        <fieldset>
-          <legend>{t("settings.bell")}</legend>
+        <Field group title={t("settings.bell")}>
           <label className="checkbox">
             <input type="checkbox" checked={terminal.bellAlert} onChange={(e) => set({ bellAlert: e.target.checked })} />
             {t("settings.bellAlert")}
@@ -160,7 +148,7 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
             <input type="checkbox" checked={terminal.bellFlash} onChange={(e) => set({ bellFlash: e.target.checked })} />
             {t("settings.bellFlash")}
           </label>
-        </fieldset>
+        </Field>
       </Setting>
       <Setting>
         <label className="checkbox">
@@ -170,13 +158,12 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
         </label>
       </Setting>
       <Setting>
-        <div className="field">
-          <span>{t("settings.messageTimes")}</span>
-        </div>
-        <p className="hint">{t("settings.messageTimesHint")}</p>
-        <button type="button" className="link" onClick={onShowTimeFormat}>
-          {t("settings.messageTimesFormat")}
-        </button>
+        <Field group title={t("settings.messageTimes")}>
+          <p className="hint">{t("settings.messageTimesHint")}</p>
+          <button type="button" className="link" onClick={onShowTimeFormat}>
+            {t("settings.messageTimesFormat")}
+          </button>
+        </Field>
       </Setting>
     </Section>
   );

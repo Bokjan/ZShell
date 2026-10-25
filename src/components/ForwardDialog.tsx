@@ -9,6 +9,7 @@ import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { Select } from "./Select";
+import { Field } from "./Field";
 
 interface Props {
   /** null creates a new rule. */
@@ -107,24 +108,20 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
       <form className="dialog forward-dialog" onSubmit={submit}>
         <h2>{rule ? t("forwards.dialog.titleEdit") : t("forwards.dialog.titleNew")}</h2>
 
-        <label>
-          {t("forwards.dialog.type")}
+        <Field title={t("forwards.dialog.type")}>
           <Select
             value={kind}
             onChange={changeKind}
             options={(["local", "remote", "dynamic"] as const).map((value) => ({ value, label: t(`forwards.kindName.${value}`) }))}
           />
-        </label>
+        </Field>
 
-        <fieldset>
-          <legend>{t(listenLabel[kind])}</legend>
+        <Field group title={t(listenLabel[kind])}>
           <div className="row">
-            <label className="grow">
-              {t("forwards.dialog.address")}
+            <Field className="grow" title={t("forwards.dialog.address")}>
               <input value={bindHost} onChange={(e) => setBindHost(e.target.value)} autoCapitalize="off" autoCorrect="off" />
-            </label>
-            <label className="port">
-              {t("forwards.dialog.port")}
+            </Field>
+            <Field className="port" title={t("forwards.dialog.port")}>
               <input
                 value={bindPort}
                 onChange={(e) => setBindPort(e.target.value)}
@@ -132,39 +129,35 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
                 autoFocus
                 title={t("forwards.dialog.portZeroHint")}
               />
-            </label>
+            </Field>
           </div>
           {!isLoopback(host) && (
             <p className="hint warning">{kind === "remote" ? t("forwards.dialog.exposedRemote") : t("forwards.dialog.exposedLocal")}</p>
           )}
-        </fieldset>
+        </Field>
 
         {!dynamic && (
-          <fieldset>
-            <legend>{kind === "local" ? t("forwards.dialog.targetFromServer") : t("forwards.dialog.targetFromLocal")}</legend>
+          <Field group title={kind === "local" ? t("forwards.dialog.targetFromServer") : t("forwards.dialog.targetFromLocal")}>
             <div className="row">
-              <label className="grow">
-                {t("forwards.dialog.address")}
+              <Field className="grow" title={t("forwards.dialog.address")}>
                 <input value={targetHost} onChange={(e) => setTargetHost(e.target.value)} autoCapitalize="off" autoCorrect="off" />
-              </label>
-              <label className="port">
-                {t("forwards.dialog.port")}
+              </Field>
+              <Field className="port" title={t("forwards.dialog.port")}>
                 <input value={targetPort} onChange={(e) => setTargetPort(e.target.value)} inputMode="numeric" />
-              </label>
+              </Field>
             </div>
-          </fieldset>
+          </Field>
         )}
 
         <p className="hint">{preview}</p>
 
-        <label>
-          {t("forwards.dialog.description")}
+        <Field title={t("forwards.dialog.description")}>
           <input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={t("forwards.dialog.descriptionPlaceholder")}
           />
-        </label>
+        </Field>
         <label className="checkbox">
           <input type="checkbox" checked={autoStart} onChange={(e) => setAutoStart(e.target.checked)} />
           {t("forwards.dialog.autoStart")}

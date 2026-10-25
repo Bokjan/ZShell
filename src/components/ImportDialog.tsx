@@ -12,6 +12,7 @@ import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { address } from "../lib/sessions";
 import { useLocale } from "../hooks/locale";
+import { Field } from "./Field";
 
 interface Props {
   onClose(): void;
@@ -94,8 +95,7 @@ export function ImportDialog({ onClose }: Props) {
       <form className="dialog import-dialog" onSubmit={submit}>
         <h2>{t("importDialog.title")}</h2>
 
-        <div className="field">
-          <span>{t("importDialog.path")}</span>
+        <Field group title={t("importDialog.path")}>
           <div className="row">
             <input
               className="grow"
@@ -119,7 +119,7 @@ export function ImportDialog({ onClose }: Props) {
               {t("importDialog.browse")}
             </button>
           </div>
-        </div>
+        </Field>
 
         {candidates && candidates.length > 0 && (
           <>

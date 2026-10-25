@@ -43,7 +43,9 @@ export function PasswordInput({ label, id: givenId, ...props }: Props) {
   if (label === undefined) return field;
   return (
     <div className="labelled-field">
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id} className="field-title">
+        {label}
+      </label>
       {field}
     </div>
   );

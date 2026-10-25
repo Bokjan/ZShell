@@ -7,6 +7,7 @@ import { parseMode } from "../../lib/fileList";
 import { formatMode } from "../../lib/format";
 import { ErrorText } from "../ErrorMessage";
 import { Modal } from "../Modal";
+import { Field } from "../Field";
 
 interface Props {
   entry: FileEntry;
@@ -40,8 +41,7 @@ export function ChmodDialog({ entry, onSubmit, onClose }: Props) {
       <form className="dialog" onSubmit={submit}>
         <h2>{t("sftp.chmodTitle")}</h2>
         {entry.isSymlink && <p>{t("sftp.chmodSymlink", { name: entry.name })}</p>}
-        <label>
-          {t("sftp.chmodLabel", { name: entry.name })}
+        <Field title={t("sftp.chmodLabel", { name: entry.name })}>
           <input
             autoFocus
             value={value}
@@ -51,7 +51,7 @@ export function ChmodDialog({ entry, onSubmit, onClose }: Props) {
               setInvalid(false);
             }}
           />
-        </label>
+        </Field>
         {invalid ? (
           <ErrorText>{t("sftp.chmodInvalid")}</ErrorText>
         ) : (

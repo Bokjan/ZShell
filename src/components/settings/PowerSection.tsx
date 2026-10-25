@@ -5,6 +5,7 @@ import { appSettings } from "../../ipc/api";
 import type { KeepAwakeMode, PowerSettings } from "../../hooks/settings";
 import { Select } from "../Select";
 import { Section, Setting } from "./common";
+import { Field } from "../Field";
 
 const KEEP_AWAKE: KeepAwakeMode[] = ["off", "pluggedIn", "always"];
 
@@ -20,15 +21,13 @@ export function PowerSection({ settings, onChange }: { settings: PowerSettings; 
   return (
     <Section id="power">
       <Setting>
-        <label>
-          {t("settings.keepAwake")}
+        <Field title={t("settings.keepAwake")} hint={t("settings.keepAwakeHint")}>
           <Select
             value={settings.keepAwake}
             onChange={(keepAwake) => onChange({ keepAwake })}
             options={KEEP_AWAKE.map((mode) => ({ value: mode, label: t(`settings.keepAwakeOptions.${mode}`) }))}
           />
-        </label>
-        <p className="hint">{t("settings.keepAwakeHint")}</p>
+        </Field>
         {limited && settings.keepAwake === "always" && <p className="hint">{t("settings.keepAwakeLimited")}</p>}
       </Setting>
     </Section>

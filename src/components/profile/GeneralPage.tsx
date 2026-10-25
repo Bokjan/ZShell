@@ -12,6 +12,7 @@ import { IconButton } from "../IconButton";
 import { RefreshIcon } from "../icons";
 import { PasswordField } from "../PasswordField";
 import { Select } from "../Select";
+import { Field } from "../Field";
 
 const PROTOCOLS: Protocol[] = ["ssh", "telnet", "serial"];
 /** Suggestions for the baud rate; any value can be typed. */
@@ -65,8 +66,7 @@ export function GeneralPage({
 
   const address = (
     <div className="row">
-      <label className="grow">
-        {t("profile.host")}
+      <Field className="grow" title={t("profile.host")}>
         <input
           name="host"
           value={form.host}
@@ -76,17 +76,15 @@ export function GeneralPage({
           autoCapitalize="off"
           autoCorrect="off"
         />
-      </label>
-      <label className="port">
-        {t("profile.port")}
+      </Field>
+      <Field className="port" title={t("profile.port")}>
         <input name="port" value={form.port} onChange={(e) => set({ port: e.target.value })} inputMode="numeric" />
-      </label>
+      </Field>
     </div>
   );
 
   const usernameField = (
-    <label>
-      {t("profile.username")}
+    <Field title={t("profile.username")}>
       <input
         name="username"
         value={form.username}
@@ -95,7 +93,7 @@ export function GeneralPage({
         autoCapitalize="off"
         autoCorrect="off"
       />
-    </label>
+    </Field>
   );
 
   const passwordField = (
@@ -114,8 +112,7 @@ export function GeneralPage({
     <>
       {address}
       {usernameField}
-      <label>
-        {t("profile.auth")}
+      <Field title={t("profile.auth")}>
         <Select
           value={authType}
           onChange={(authType) => set({ authType })}
@@ -126,7 +123,7 @@ export function GeneralPage({
             { value: "agent", label: t("profile.authAgent") },
           ]}
         />
-      </label>
+      </Field>
       {authType === "auto" && (
         <p className="hint">
           {t("profile.autoHint")}
@@ -136,13 +133,16 @@ export function GeneralPage({
       {usesPassword && passwordField}
       {authType === "publicKey" && (
         <>
-          <label>
-            <span>
-              {t("profile.keyPath")}
-              {home && startsWithHome(form.keyPath.trim()) && (
-                <HelpTip text={t("profile.keyPathTip", { path: expandHome(form.keyPath.trim(), home) })} />
-              )}
-            </span>
+          <Field
+            title={
+              <>
+                {t("profile.keyPath")}
+                {home && startsWithHome(form.keyPath.trim()) && (
+                  <HelpTip text={t("profile.keyPathTip", { path: expandHome(form.keyPath.trim(), home) })} />
+                )}
+              </>
+            }
+          >
             <div className="input-with-button">
               <input
                 name="keyPath"
@@ -154,7 +154,7 @@ export function GeneralPage({
                 {t("profile.chooseKeyButton")}
               </button>
             </div>
-          </label>
+          </Field>
           {keyMissing && (
             <p className="hint warning" id={keyMissingId}>
               {t("profile.keyMissing")}
@@ -177,8 +177,7 @@ export function GeneralPage({
 
   const serialFields = (
     <>
-      <label>
-        {t("profile.device")}
+      <Field title={t("profile.device")}>
         <div className="input-with-button">
           <ComboBox
             name="device"
@@ -194,11 +193,10 @@ export function GeneralPage({
             <RefreshIcon />
           </IconButton>
         </div>
-      </label>
+      </Field>
       {ports?.length === 0 && <p className="hint">{t("profile.noDevices")}</p>}
       <div className="row">
-        <label className="grow">
-          {t("profile.baudRate")}
+        <Field className="grow" title={t("profile.baudRate")}>
           <ComboBox
             name="baudRate"
             value={form.baudRate}
@@ -206,73 +204,64 @@ export function GeneralPage({
             suggestions={BAUD_RATES}
             inputMode="numeric"
           />
-        </label>
-        <label className="grow">
-          {t("profile.dataBits")}
+        </Field>
+        <Field className="grow" title={t("profile.dataBits")}>
           <Select
             value={form.dataBits}
             onChange={(dataBits) => set({ dataBits })}
             options={[8, 7, 6, 5].map((bits) => ({ value: bits, label: String(bits) }))}
           />
-        </label>
+        </Field>
       </div>
       <div className="row">
-        <label className="grow">
-          {t("profile.parity")}
+        <Field className="grow" title={t("profile.parity")}>
           <Select
             value={form.parity}
             onChange={(parity) => set({ parity })}
             options={PARITIES.map((value) => ({ value, label: t(`profile.parities.${value}`) }))}
           />
-        </label>
-        <label className="grow">
-          {t("profile.stopBits")}
+        </Field>
+        <Field className="grow" title={t("profile.stopBits")}>
           <Select
             value={form.stopBits}
             onChange={(stopBits) => set({ stopBits })}
             options={[1, 2].map((bits) => ({ value: bits, label: String(bits) }))}
           />
-        </label>
+        </Field>
       </div>
-      <label>
-        {t("profile.flowControl")}
+      <Field title={t("profile.flowControl")} hint={t("profile.serialHint")}>
         <Select
           value={form.flowControl}
           onChange={(flowControl) => set({ flowControl })}
           options={FLOW_CONTROLS.map((value) => ({ value, label: t(`profile.flowControls.${value}`) }))}
         />
-      </label>
-      <p className="hint">{t("profile.serialHint")}</p>
+      </Field>
     </>
   );
 
   return (
     <>
       <div className="row">
-        <label className="grow">
-          {t("profile.name")}
+        <Field className="grow" title={t("profile.name")}>
           <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={t(NAME_PLACEHOLDERS[protocol])} />
-        </label>
-        <label>
-          {t("profile.protocol")}
+        </Field>
+        <Field title={t("profile.protocol")}>
           <Select
             value={protocol}
             onChange={changeProtocol}
             options={PROTOCOLS.map((value) => ({ value, label: t(`profile.protocols.${value}`) }))}
           />
-        </label>
+        </Field>
       </div>
       {protocol === "ssh" ? sshFields : protocol === "telnet" ? telnetFields : serialFields}
-      <label>
-        {t("profile.notes")}
+      <Field title={t("profile.notes")} hint={t("profile.notesHint")}>
         <AutoTextarea
           rows={3}
           value={form.notes}
           onChange={(e) => set({ notes: e.target.value })}
           placeholder={t("profile.notesPlaceholder")}
         />
-      </label>
-      <p className="hint">{t("profile.notesHint")}</p>
+      </Field>
     </>
   );
 }
