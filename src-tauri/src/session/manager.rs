@@ -59,8 +59,6 @@ enum Snapshot {
     Waiting(oneshot::Sender<SessionSnapshot>),
     /// Handed over before the new tab asked.
     Arrived(SessionSnapshot),
-    /// The new tab stopped waiting: one handed over late is dropped.
-    Late,
 }
 
 /// The page a session is opened for: a webview, and the page it shows at the time. A
@@ -209,28 +207,17 @@ impl SessionManager {
         withdrawn
     }
 
-    /// The webview a session has moved to, for the screen that `webview`, which it moved from
-    /// with `move_id`, hands over; once.
-    pub fn handover(&self, webview: &str, id: SessionId, move_id: &str) -> Result<String> {
-        let mut sessions = self.sessions.lock().unwrap();
-        let entry = sessions.get_mut(&id).ok_or_else(|| Error::new("session.notFound"))?;
-        match &entry.moved_from {
-            Some((from, moved)) if from == webview && moved == move_id => {
-                entry.moved_from = None;
-                Ok(entry.webview.clone())
-            }
-            _ => Err(Error::new("session.notFound")),
-        }
-    }
-
-    /// Passes the screen of a session that moved away from `webview` (see [`Self::handover`])
-    /// to the window it moved to, which takes it with [`Self::snapshot`].
+    /// Passes the screen of a session that moved away from `webview` (see [`handover`]) to the
+    /// window it moved to, which takes it with [`Self::snapshot`]. Under the sessions' lock
+    /// throughout, so that neither that window's page going away nor its giving up on the
+    /// screen comes between finding where the screen goes and leaving it there, which would
+    /// leave it in `snapshots` for good.
     pub fn hand_over(&self, webview: &str, snapshot: SessionSnapshot) -> Result<()> {
-        let owner = self.handover(webview, snapshot.id, &snapshot.move_id)?;
+        let mut sessions = self.sessions.lock().unwrap();
+        let owner = handover(&mut sessions, webview, snapshot.id, &snapshot.move_id)?;
         let mut snapshots = self.snapshots.lock().unwrap();
         match snapshots.remove(&snapshot.move_id) {
             Some((_, Snapshot::Waiting(waiting))) => drop(waiting.send(snapshot)),
-            Some((_, Snapshot::Late)) => {}
             _ => drop(snapshots.insert(snapshot.move_id.clone(), (owner, Snapshot::Arrived(snapshot)))),
         }
         Ok(())
@@ -242,7 +229,7 @@ impl SessionManager {
     /// page runs, which with a long scrollback is megabytes on the main thread.
     pub async fn snapshot(&self, webview: &str, id: SessionId, move_id: &str) -> Result<Option<SessionSnapshot>> {
         owned(&self.sessions.lock().unwrap(), webview, id)?;
-        let arrives = {
+        let mut arrives = {
             let mut snapshots = self.snapshots.lock().unwrap();
             if let Some((_, Snapshot::Arrived(snapshot))) = snapshots.remove(move_id) {
                 return Ok(Some(snapshot));
@@ -251,13 +238,16 @@ impl SessionManager {
             snapshots.insert(move_id.to_owned(), (webview.to_owned(), Snapshot::Waiting(waiting)));
             arrives
         };
-        match tokio::time::timeout(SNAPSHOT_WAIT, arrives).await {
-            Ok(Ok(snapshot)) => Ok(Some(snapshot)),
-            _ => {
-                self.snapshots.lock().unwrap().insert(move_id.to_owned(), (webview.to_owned(), Snapshot::Late));
-                Ok(None)
-            }
+        if let Ok(arrived) = tokio::time::timeout(SNAPSHOT_WAIT, &mut arrives).await {
+            return Ok(arrived.ok());
         }
+        // The old window can no longer hand it over, unless it just has (see `hand_over`).
+        let mut sessions = self.sessions.lock().unwrap();
+        if let Some(entry) = sessions.get_mut(&id).filter(|entry| entry.moved_from.as_ref().is_some_and(|(_, moved)| moved == move_id)) {
+            entry.moved_from = None;
+        }
+        self.snapshots.lock().unwrap().remove(move_id);
+        Ok(arrives.try_recv().ok())
     }
 
     /// How many sessions `webview`'s tabs show.
@@ -313,6 +303,19 @@ impl SessionManager {
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.sessions.lock().unwrap().len()
+    }
+}
+
+/// The webview a session has moved to, for the screen that `webview`, which it moved from with
+/// `move_id`, hands over; once.
+fn handover(sessions: &mut HashMap<SessionId, SessionEntry>, webview: &str, id: SessionId, move_id: &str) -> Result<String> {
+    let entry = sessions.get_mut(&id).ok_or_else(|| Error::new("session.notFound"))?;
+    match &entry.moved_from {
+        Some((from, moved)) if from == webview && moved == move_id => {
+            entry.moved_from = None;
+            Ok(entry.webview.clone())
+        }
+        _ => Err(Error::new("session.notFound")),
     }
 }
 
@@ -464,10 +467,11 @@ mod tests {
         assert!(sessions.owns("other", id) && !sessions.owns("main", id));
         assert_eq!((sessions.owned("main"), sessions.owned("other")), (0, 1));
         // The old window hands its screen over to the new one, once, for that move only.
-        assert_eq!(sessions.handover("other", id, "m1").unwrap_err().code(), "session.notFound");
-        assert_eq!(sessions.handover("main", id, "m0").unwrap_err().code(), "session.notFound");
-        assert_eq!(sessions.handover("main", id, "m1").unwrap(), "other");
-        assert_eq!(sessions.handover("main", id, "m1").unwrap_err().code(), "session.notFound");
+        let handover = |webview, move_id| handover(&mut sessions.sessions.lock().unwrap(), webview, id, move_id);
+        assert_eq!(handover("other", "m1").unwrap_err().code(), "session.notFound");
+        assert_eq!(handover("main", "m0").unwrap_err().code(), "session.notFound");
+        assert_eq!(handover("main", "m1").unwrap(), "other");
+        assert_eq!(handover("main", "m1").unwrap_err().code(), "session.notFound");
 
         let unacked = || sink.flow().unacked();
         assert_eq!(unacked(), 5);
@@ -518,6 +522,21 @@ mod tests {
         eventually(|| sessions.snapshots.lock().unwrap().contains_key("m2")).await;
         sessions.hand_over("other", screen("m2")).unwrap();
         assert_eq!(asking.await.unwrap().unwrap().map(|s| s.data), Some("<m2>".into()));
+        assert!(sessions.snapshots.lock().unwrap().is_empty());
+    }
+
+    /// Once the new window stops waiting for the screen, the old one can't hand it over, and
+    /// nothing of the move is kept.
+    #[tokio::test(start_paused = true)]
+    async fn a_screen_handed_over_late_is_not_kept() {
+        let sessions = SessionManager::default();
+        let (id, _, _) = hold(&sessions, "main");
+        sessions.offer("main", &[id], "other").unwrap();
+        sessions.adopt(id, &sessions.page("other"), Channel::new(|_| Ok(())), "m1".into()).unwrap();
+        assert!(sessions.snapshot("other", id, "m1").await.unwrap().is_none());
+        assert!(sessions.snapshots.lock().unwrap().is_empty());
+        let screen = SessionSnapshot { id, move_id: "m1".into(), data: "<m1>".into(), cols: 80, rows: 24 };
+        assert_eq!(sessions.hand_over("main", screen).unwrap_err().code(), "session.notFound");
         assert!(sessions.snapshots.lock().unwrap().is_empty());
     }
 
