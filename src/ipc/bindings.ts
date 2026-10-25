@@ -72,6 +72,9 @@ export type ErrorCode =
   | "knownHosts.readFailed"
   | "knownHosts.writeFailed"
   | "log.createFailed"
+  | "log.timeFormatControl"
+  | "log.timeFormatTooLong"
+  | "log.timeFormatUnknown"
   | "log.writeFailed"
   | "net.connectFailed"
   | "net.connectTimeout"
@@ -538,6 +541,11 @@ fileName: string, format: LogFormat,
  * Start each line with the time it was written (plain text only).
  */
 timestamps: boolean, 
+/**
+ * How that time is written, as are the times of our own messages in the terminal (see
+ * `logging/time_format.rs`).
+ */
+timeFormat: string, 
 /**
  * Record local terminals from the start, as sessions can be set to.
  */
@@ -1038,6 +1046,11 @@ bellFlash: boolean, };
  */
 export type TextSize = "normal" | "large" | "larger";
 
+/**
+ * A part of a parsed time format.
+ */
+export type TimePart = { "type": "text", text: string, } | { "type": "year" } | { "type": "shortYear" } | { "type": "month" } | { "type": "day" } | { "type": "hour" } | { "type": "minute" } | { "type": "second" } | { "type": "millisecond" };
+
 export type TransferProgress = { transferred: number, total: number, filesDone: number, filesTotal: number, current: string, };
 
 /**
@@ -1186,6 +1199,7 @@ export type Commands = {
   logs_delete: { args: { profileId?: string | null }; result: number };
   logs_directory: { args: { create: boolean }; result: string };
   logs_summary: { args: Record<string, never>; result: LogSummary };
+  logs_time_format: { args: { format: string }; result: TimePart[] };
   profile_delete: { args: { id: string }; result: void };
   profile_duplicate: { args: { id: string; name: string }; result: Profile };
   profile_forward_delete: { args: { profileId: string; ruleId: string }; result: Profile };
@@ -1292,7 +1306,10 @@ export const DEFAULT_GROUP = "default";
 export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;
 
 /** The settings before any change, which "Restore Defaults" goes back to. */
-export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timestamps: false }, power: { keepAwake: "off" }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timeFormat: "[%Y-%m-%d %H:%M:%S]", timestamps: false }, power: { keepAwake: "off" }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+
+/** The parts of the default time format of logs and of our own messages in the terminal. */
+export const DEFAULT_TIME_FORMAT_PARTS: TimePart[] = [{ text: "[", type: "text" }, { type: "year" }, { text: "-", type: "text" }, { type: "month" }, { text: "-", type: "text" }, { type: "day" }, { text: " ", type: "text" }, { type: "hour" }, { text: ":", type: "text" }, { type: "minute" }, { text: ":", type: "text" }, { type: "second" }, { text: "]", type: "text" }];
 
 /** The smallest terminal font size, in the settings and in sessions. */
 export const FONT_SIZE_MIN = 6;

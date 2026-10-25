@@ -359,6 +359,11 @@ mod tests {
                 "DEFAULT_SETTINGS: Settings",
                 js(model::Settings::default()),
             ),
+            (
+                "The parts of the default time format of logs and of our own messages in the terminal.",
+                "DEFAULT_TIME_FORMAT_PARTS: TimePart[]",
+                js(logging::TimeFormat::default().0),
+            ),
             ("The smallest terminal font size, in the settings and in sessions.", "FONT_SIZE_MIN", js(model::FONT_SIZE_MIN)),
             ("The largest terminal font size, in the settings and in sessions.", "FONT_SIZE_MAX", js(model::FONT_SIZE_MAX)),
             ("The most lines a terminal keeps above the screen.", "SCROLLBACK_MAX", js(model::SCROLLBACK_MAX)),
@@ -409,6 +414,7 @@ mod tests {
         visitor.visit::<applock::AppLockStatus>();
         visitor.visit::<logging::LogOpen>();
         visitor.visit::<logging::LogSummary>();
+        visitor.visit::<logging::TimePart>();
         visitor.visit::<session::SessionEvent>();
         visitor.visit::<serial::PortInfo>();
         visitor.visit::<sftp::Listing>();

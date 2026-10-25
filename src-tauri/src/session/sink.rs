@@ -207,7 +207,8 @@ impl SessionSink {
     }
 
     fn write_notice(&self, tone: Tone, text: &str, end_line: bool) {
-        let notice = notice::render(tone, text, Local::now().naive_local(), end_line);
+        let time = crate::logging::time_format::current().format(Local::now().naive_local());
+        let notice = notice::render(tone, text, &time, end_line);
         // Not twice in a log that starts its lines with the time itself.
         self.log_output(if self.log.stamps_lines() { &notice.unstamped } else { &notice.shown }.as_bytes());
         self.send_output(notice.shown.as_bytes());

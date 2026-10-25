@@ -21,6 +21,7 @@ function setUp() {
     markOutput: () => false,
     bell: () => ({ bellAlert: false, bellSound: false, bellFlash: false }),
     notifications: () => true,
+    timeFormat: () => [],
   });
   return { key, sessions };
 }

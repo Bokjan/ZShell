@@ -36,6 +36,7 @@ export {
   DEFAULT_SERIAL,
   DEFAULT_SETTINGS,
   DEFAULT_TERM_TYPE,
+  DEFAULT_TIME_FORMAT_PARTS,
   ENCODINGS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
@@ -349,6 +350,8 @@ export const logs = {
   count: (profileId: string) => call("logs_count", { profileId }),
   /** Deletes a session's logs, or all of them; those being written are kept. Returns how many were deleted. */
   delete: (profileId?: string) => call("logs_delete", { profileId }),
+  /** The parts of a time format (`logs.timeFormat`), which the backend checks; rejects with why it can't be used. */
+  timeFormat: (format: string) => call("logs_time_format", { format }),
 };
 
 /**

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { logs } from "../../ipc/api";
+import { DEFAULT_SETTINGS, errorMessage, logs } from "../../ipc/api";
 import { useConfirmButton } from "../../hooks/confirm";
 import { open as openDialog } from "../../ipc/fileDialog";
 import { isComposing } from "../../lib/platform";
@@ -10,10 +10,21 @@ import type { LogFormat, LogSettings } from "../../hooks/settings";
 import { useWindowFocus } from "../../hooks/windowEvents";
 import { useLatest } from "../../hooks/latest";
 import { useLocale } from "../../hooks/locale";
+import { formatTime } from "../../lib/terminalNotice";
+import { ComboBox } from "../ComboBox";
 import { Select } from "../Select";
 import { FolderField, Section, Setting, useFieldText } from "./common";
 
 const LOG_FORMATS: LogFormat[] = ["text", "raw"];
+/** The time formats offered, with the key of their description. */
+const TIME_FORMATS = [
+  { format: "[%Y-%m-%d %H:%M:%S]", name: "dateTime" },
+  { format: "[%Y-%m-%d %H:%M:%S.%3f]", name: "dateTimeMs" },
+  { format: "[%H:%M:%S]", name: "time" },
+  { format: "[%H:%M:%S.%3f]", name: "timeMs" },
+] as const;
+/** The id of the time format field, which the terminal settings point to. */
+export const TIME_FORMAT_FIELD = "settings-time-format";
 /** Retention choices, in days; 0 keeps logs. */
 const KEEP_DAYS = [0, 7, 30, 90, 365];
 
@@ -126,6 +137,7 @@ export function LogSection({
         />
         {t("settings.logTimestamps")}
       </label>
+      <TimeFormatField value={settings.timeFormat} onChange={(timeFormat) => onChange({ timeFormat })} />
       <Setting>
         {localAllowed && (
           <label className="checkbox">
@@ -153,3 +165,69 @@ export function LogSection({
 }
 
 /** The app's name and version, where its data is, the privacy policy and the third-party licenses. */
+
+/**
+ * The format of the times that start log lines and our own messages in the terminal: one of
+ * those offered, or typed. The backend checks it as it is typed, with an example of the
+ * current time in it, and it is saved when the field is left, if the backend took it.
+ */
+function TimeFormatField({ value, onChange }: { value: string; onChange(format: string): void }) {
+  const { t } = useTranslation();
+  const noteId = useId();
+  const [text, setText] = useFieldText(value, (text, value) => text.trim() === value);
+  // The example, or why the format can't be used.
+  const [checked, setChecked] = useState<{ example: string } | { error: string } | null>(null);
+  const format = text.trim() || DEFAULT_SETTINGS.logs.timeFormat;
+
+  useEffect(() => {
+    let current = true;
+    logs.timeFormat(format).then(
+      (parts) => current && setChecked({ example: formatTime(parts, new Date()) }),
+      (e: unknown) => current && setChecked({ error: errorMessage(e) }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [format]);
+
+  // Saved only once the backend has taken it; the field goes on showing why otherwise.
+  const commit = (next = format) => {
+    if (next === value) return;
+    logs.timeFormat(next).then(() => onChange(next), ignoreInvalid);
+  };
+  const commitRef = useLatest(commit);
+  useEffect(() => () => commitRef.current(), []);
+
+  const invalid = checked !== null && "error" in checked;
+  return (
+    <Setting>
+      <label>
+        {t("settings.logTimeFormat")}
+        <ComboBox
+          id={TIME_FORMAT_FIELD}
+          value={text}
+          onChange={(next) => {
+            setText(next);
+            // Picked from the list rather than typed.
+            if (TIME_FORMATS.some(({ format }) => format === next)) commit(next);
+          }}
+          onBlur={() => commit()}
+          onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && commit()}
+          suggestions={TIME_FORMATS.map(({ format, name }) => ({ value: format, description: t(`settings.logTimeFormats.${name}`) }))}
+          aria-invalid={invalid}
+          aria-describedby={noteId}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      </label>
+      <p className={invalid ? "hint warning" : "hint"} id={noteId}>
+        {checked && ("error" in checked ? checked.error : t("settings.logTimeFormatExample", { time: checked.example }))}
+      </p>
+      <p className="hint">{t("settings.logTimeFormatHint")}</p>
+    </Setting>
+  );
+}
+
+/** A format the backend refused: the field already says why. */
+const ignoreInvalid = () => {};

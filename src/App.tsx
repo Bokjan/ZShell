@@ -45,6 +45,7 @@ import { useDirectory, useTabStore } from "./hooks/stores";
 import { createSessionRegistry } from "./lib/sessionRegistry";
 import { createTabRest } from "./lib/tabRest";
 import { currentSettings } from "./lib/settings";
+import { timeFormatParts } from "./lib/timeFormat";
 import { useStableHandlers } from "./hooks/stableHandlers";
 import { activeTabOf, createTabStore, type PanePatch } from "./lib/tabs";
 import { tabMark } from "./lib/terminalSchemes";
@@ -75,6 +76,7 @@ function App() {
       markOutput: () => currentSettings().tabs.markOutput,
       bell: () => currentSettings().terminal,
       notifications: () => currentSettings().terminal.notifications,
+      timeFormat: timeFormatParts,
     }),
   );
 

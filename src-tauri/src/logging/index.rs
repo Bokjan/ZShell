@@ -183,8 +183,8 @@ impl Logs {
         after_others: bool,
     ) -> Result<()> {
         let stamps_lines = settings.format == LogFormat::Text && settings.timestamps;
-        let text =
-            (settings.format == LogFormat::Text).then(|| (vte::Parser::new(), Line { timestamps: settings.timestamps, ..Line::default() }));
+        let times = stamps_lines.then(|| TimeFormat::parse(&settings.time_format).unwrap_or_default());
+        let text = (settings.format == LogFormat::Text).then(|| (vte::Parser::new(), Line { times, ..Line::default() }));
         let (failure, left_out) = (Arc::new(Mutex::new(None)), Arc::new(AtomicUsize::new(0)));
         let mut writer = LogWriter {
             file: BufWriter::new(file),

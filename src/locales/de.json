@@ -779,6 +779,18 @@
     "logKeepDays_one": "{count} Tag",
     "logKeepDays_other": "{count} Tage",
     "logTimestamps": "Jede Zeile mit ihrer Uhrzeit beginnen",
+    "logTimeFormat": "Zeitformat",
+    "logTimeFormats": {
+      "dateTime": "Datum und Uhrzeit",
+      "dateTimeMs": "Datum und Uhrzeit mit Millisekunden",
+      "time": "Uhrzeit",
+      "timeMs": "Uhrzeit mit Millisekunden"
+    },
+    "logTimeFormatExample": "Beispiel: {time}",
+    "logTimeFormatHint": "Gilt auch für die eigenen Meldungen von ZShell im Terminal, etwa beim Verbinden und erneuten Verbinden. %Y steht für das Jahr, %y für seine letzten zwei Ziffern, %m für den Monat, %d für den Tag, %H für die Stunde, %M für die Minute, %S für die Sekunde, %3f für die Millisekunden und %% für ein Prozentzeichen.",
+    "messageTimes": "Uhrzeit der Meldungen",
+    "messageTimesHint": "Die eigenen Meldungen von ZShell im Terminal, etwa beim Verbinden und erneuten Verbinden, beginnen mit der Uhrzeit, zu der sie ausgegeben wurden.",
+    "messageTimesFormat": "Zeitformat ändern",
     "logAutoLocal": "Lokale Terminals automatisch aufzeichnen",
     "logAutoHint": "Gespeicherte Sitzungen werden automatisch aufgezeichnet, wenn dies in der Sitzung eingestellt ist. In jedem Tab lässt sich die Protokollierung über sein Menü starten und beenden.",
     "logSummary_one": "{count} Protokoll, {size}",

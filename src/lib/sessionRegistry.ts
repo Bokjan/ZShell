@@ -99,6 +99,8 @@ interface Options {
   bell(): Pick<TerminalSettings, "bellAlert" | "bellSound" | "bellFlash">;
   /** Whether programs can notify the user (a setting). */
   notifications(): boolean;
+  /** The format of the time our own messages in the terminal start with (a setting). */
+  timeFormat: SessionConfig["timeFormat"];
 }
 
 /** How a pane's next session starts logging (see `Pane.logPath`). */
@@ -112,7 +114,7 @@ const logOpen = (pane: Pane): LogOpen =>
  */
 export function createSessionRegistry(
   store: TabStore,
-  { profiles, t, announce, markOutput, bell, notifications }: Options,
+  { profiles, t, announce, markOutput, bell, notifications, timeFormat }: Options,
 ): SessionRegistry {
   const sessions = new Map<number, PaneSession>();
   const views = new Map<number, PaneView>();
@@ -153,6 +155,7 @@ export function createSessionRegistry(
           logOpen: () => logOpen(pane()),
           loginCommands: () => profile()?.loginCommands ?? [],
           autoReconnect: () => profile()?.autoReconnect ?? true,
+          timeFormat,
           t,
         },
         {

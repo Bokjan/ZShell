@@ -21,8 +21,12 @@ const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 const SCREEN_READER_MODES: ScreenReaderMode[] = ["auto", "on", "off"];
 const LIGATURE_MODES: Ligatures[] = ["off", "rules", "full"];
 
-/** The terminals: color scheme, font, ligatures, cursor, scrollback, screen readers, the bell and programs' notifications. */
-export function TerminalSection() {
+/**
+ * The terminals: color scheme, font, ligatures, cursor, scrollback, screen readers, the bell,
+ * programs' notifications, and where the times of our own messages are set
+ * (`onShowTimeFormat`, with the logs').
+ */
+export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void }) {
   const { t } = useTranslation();
   const { cjk } = useLocale();
   const { settings, theme, update } = useSettings();
@@ -164,6 +168,15 @@ export function TerminalSection() {
           {t("settings.notifications")}
           <HelpTip text={t("settings.notificationsTip")} />
         </label>
+      </Setting>
+      <Setting>
+        <div className="field">
+          <span>{t("settings.messageTimes")}</span>
+        </div>
+        <p className="hint">{t("settings.messageTimesHint")}</p>
+        <button type="button" className="link" onClick={onShowTimeFormat}>
+          {t("settings.messageTimesFormat")}
+        </button>
       </Setting>
     </Section>
   );

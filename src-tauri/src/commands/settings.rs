@@ -60,6 +60,7 @@ pub async fn settings_set(app: AppHandle, window: WebviewWindow, settings: Setti
     let stored = blocking(app.clone(), move |app| {
         app.state::<SettingsStore>().set(settings, |settings| {
             crate::i18n::apply(&settings.language);
+            crate::logging::time_format::apply(&settings.logs.time_format);
             app.state::<Arc<KeepAwake>>().set_mode(settings.power.keep_awake);
         })
     })

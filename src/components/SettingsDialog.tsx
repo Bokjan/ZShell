@@ -34,7 +34,7 @@ import { TerminalSection } from "./settings/TerminalSection";
 import { filterSettings, NumberField, Section, SECTION_REACHED, SECTIONS, Setting, type SectionId } from "./settings/common";
 import { FileSection } from "./settings/FileSection";
 import { KnownHostsSection } from "./settings/KnownHostsSection";
-import { LogSection } from "./settings/LogSection";
+import { LogSection, TIME_FORMAT_FIELD } from "./settings/LogSection";
 import { PowerSection } from "./settings/PowerSection";
 import { ProxySection } from "./settings/ProxySection";
 import { SecuritySection } from "./settings/SecuritySection";
@@ -198,14 +198,30 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
     setQuery(next);
   };
 
-  const jump = (id: SectionId) => {
+  /** Scrolls to a section, or to `target` in it, which then goes to the middle of the content. */
+  const jump = (id: SectionId, target?: HTMLElement) => {
     const content = contentRef.current!;
     const section = content.querySelector<HTMLElement>(`section[data-section="${id}"]`);
     if (!section) return;
     chosen.current = true;
     restoring.current = null;
     setActive(id);
-    content.scrollTo({ top: section.offsetTop - parseFloat(getComputedStyle(content).paddingTop), behavior: "smooth" });
+    let top = section.offsetTop - parseFloat(getComputedStyle(content).paddingTop);
+    if (target) {
+      const [shown, wanted] = [content.getBoundingClientRect(), target.getBoundingClientRect()];
+      top = content.scrollTop + wanted.top - shown.top - (content.clientHeight - wanted.height) / 2;
+    }
+    content.scrollTo({ top, behavior: "smooth" });
+  };
+  // Wherever the field is in its section.
+  const showTimeFormat = () => {
+    if (query) search("");
+    requestAnimationFrame(() => {
+      const field = document.getElementById(TIME_FORMAT_FIELD);
+      if (!field) return;
+      jump("logs", field);
+      field.focus({ preventScroll: true });
+    });
   };
   const release = () => {
     chosen.current = false;
@@ -289,7 +305,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
             >
               <AppearanceSection />
 
-              <TerminalSection />
+              <TerminalSection onShowTimeFormat={showTimeFormat} />
 
               <Section id="mouseAndClipboard">
                 <Setting>

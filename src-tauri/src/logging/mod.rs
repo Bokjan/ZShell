@@ -36,10 +36,12 @@ use crate::persist::{JsonFile, SetAside};
 
 mod index;
 mod text;
+pub mod time_format;
 
 use index::Active;
 pub use index::{LogSummary, Logs};
 use text::Line;
+pub use time_format::{TimeFormat, TimePart};
 
 /// What a session's log is named after.
 #[derive(Clone, Debug, Default)]

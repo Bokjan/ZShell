@@ -757,6 +757,18 @@
     "logKeepForever": "永久",
     "logKeepDays_other": "{count} 天",
     "logTimestamps": "在每行开头加上时间",
+    "logTimeFormat": "时间格式",
+    "logTimeFormats": {
+      "dateTime": "日期和时间",
+      "dateTimeMs": "日期和时间，含毫秒",
+      "time": "时间",
+      "timeMs": "时间，含毫秒"
+    },
+    "logTimeFormatExample": "示例：{time}",
+    "logTimeFormatHint": "ZShell 在终端里的提示（如连接、重连）也使用这个格式。%Y 为年，%y 为年份后两位，%m 为月，%d 为日，%H 为时，%M 为分，%S 为秒，%3f 为毫秒，%% 为百分号。",
+    "messageTimes": "提示的时间",
+    "messageTimesHint": "ZShell 在终端里的提示（如连接、重连）以打印时的时间开头。",
+    "messageTimesFormat": "更改时间格式",
     "logAutoLocal": "自动记录本地终端",
     "logAutoHint": "已保存的会话如在会话设置中开启，会自动记录。任何标签页都可以在其菜单中开始或停止记录日志。",
     "logSummary_other": "{count} 个日志，{size}",

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import {
   ACK_BATCH,
+  DEFAULT_TIME_FORMAT_PARTS,
   forwards,
   handOver,
   type adoptSession,
@@ -169,6 +170,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
       logOpen: () => ({ mode: "auto" }),
       loginCommands: () => [],
       autoReconnect: () => true,
+      timeFormat: () => DEFAULT_TIME_FORMAT_PARTS,
       t: ((key: string) => key) as unknown as TFunction,
       ...config,
     },

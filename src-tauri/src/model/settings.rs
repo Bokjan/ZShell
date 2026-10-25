@@ -281,6 +281,9 @@ pub struct LogSettings {
     pub format: LogFormat,
     /// Start each line with the time it was written (plain text only).
     pub timestamps: bool,
+    /// How that time is written, as are the times of our own messages in the terminal (see
+    /// `logging/time_format.rs`).
+    pub time_format: String,
     /// Record local terminals from the start, as sessions can be set to.
     pub auto_local: bool,
     /// Delete logs older than this many days; 0 keeps them.
@@ -296,6 +299,7 @@ impl Default for LogSettings {
             file_name: DEFAULT_LOG_FILE_NAME.to_owned(),
             format: LogFormat::Text,
             timestamps: false,
+            time_format: crate::logging::time_format::DEFAULT_TIME_FORMAT.to_owned(),
             auto_local: false,
             keep_days: 0,
         }
@@ -391,6 +395,10 @@ impl Settings {
             logs.file_name = DEFAULT_LOG_FILE_NAME.to_owned();
         }
         logs.keep_days = logs.keep_days.min(3650);
+        logs.time_format = logs.time_format.trim().to_owned();
+        if logs.time_format.is_empty() || crate::logging::TimeFormat::parse(&logs.time_format).is_err() {
+            logs.time_format = crate::logging::time_format::DEFAULT_TIME_FORMAT.to_owned();
+        }
         self
     }
 
@@ -424,6 +432,15 @@ mod tests {
         assert!(settings.status_bar.show);
         assert_eq!(settings.power.keep_awake, KeepAwakeMode::Off);
         assert_eq!(settings.language, "system");
+    }
+
+    #[test]
+    fn time_formats_that_cannot_be_used_fall_back_to_the_default() {
+        let format = |json: &str| serde_json::from_str::<Settings>(json).unwrap().normalize().logs.time_format;
+        assert_eq!(format("{}"), "[%Y-%m-%d %H:%M:%S]");
+        assert_eq!(format(r#"{"logs":{"timeFormat":" %H:%M:%S.%3f "}}"#), "%H:%M:%S.%3f");
+        assert_eq!(format(r#"{"logs":{"timeFormat":"%A"}}"#), "[%Y-%m-%d %H:%M:%S]");
+        assert_eq!(format(r#"{"logs":{"timeFormat":"  "}}"#), "[%Y-%m-%d %H:%M:%S]");
     }
 
     #[test]

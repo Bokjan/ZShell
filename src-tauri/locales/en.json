@@ -93,7 +93,10 @@
     },
     "log": {
       "createFailed": "Could not write the session log {path}",
-      "writeFailed": "The session log stopped: {path} could not be written"
+      "writeFailed": "The session log stopped: {path} could not be written",
+      "timeFormatUnknown": "The time format cannot use {spec}; use %Y, %y, %m, %d, %H, %M, %S, %3f or %%",
+      "timeFormatControl": "The time format cannot contain control characters",
+      "timeFormatTooLong": "The time format can be at most {max} characters long"
     },
     "credentialStore": "Credential store error",
     "session": {

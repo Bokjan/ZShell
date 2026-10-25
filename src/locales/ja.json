@@ -757,6 +757,18 @@
     "logKeepForever": "無期限",
     "logKeepDays_other": "{count}日",
     "logTimestamps": "各行の先頭に時刻を付ける",
+    "logTimeFormat": "時刻の書式",
+    "logTimeFormats": {
+      "dateTime": "日付と時刻",
+      "dateTimeMs": "日付と時刻（ミリ秒付き）",
+      "time": "時刻",
+      "timeMs": "時刻（ミリ秒付き）"
+    },
+    "logTimeFormatExample": "例：{time}",
+    "logTimeFormatHint": "ターミナルに表示されるZShellのメッセージ（接続や再接続など）にも使われます。%Yは年、%yは年の下2桁、%mは月、%dは日、%Hは時、%Mは分、%Sは秒、%3fはミリ秒、%%はパーセント記号です。",
+    "messageTimes": "メッセージの時刻",
+    "messageTimesHint": "ターミナルに表示されるZShellのメッセージ（接続や再接続など）は、表示された時刻で始まります。",
+    "messageTimesFormat": "時刻の書式を変更",
     "logAutoLocal": "ローカルターミナルを自動的に記録",
     "logAutoHint": "保存済みのセッションは、セッションで設定されていれば自動的に記録されます。どのタブでも、メニューからログの記録を開始・停止できます。",
     "logSummary_other": "{count}件のログ、{size}",

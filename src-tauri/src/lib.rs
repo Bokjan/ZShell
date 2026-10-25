@@ -194,6 +194,7 @@ pub fn run() {
             // First, so that backend text is in the chosen language from the start.
             let settings = SettingsStore::load(config_dir.join("settings.json"), &set_aside);
             i18n::apply(&settings.get().language);
+            logging::time_format::apply(&settings.get().logs.time_format);
             let keep_awake = Arc::new(KeepAwake::for_platform(settings.get().power.keep_awake));
             keep_awake::watch_power(keep_awake.clone());
             app.manage(keep_awake);
@@ -325,6 +326,7 @@ pub fn run() {
             commands::logs::logs_directory,
             commands::logs::logs_count,
             commands::logs::logs_delete,
+            commands::logs::logs_time_format,
             commands::session::session_write,
             commands::session::session_write_bytes,
             commands::session::session_resize,

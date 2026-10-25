@@ -16,11 +16,12 @@ import {
   type SessionId,
   type SessionTarget,
   type TaskProgress,
+  type TimePart,
   type ZmodemPhase,
 } from "../ipc/api";
 import type { Notice, ProgressReport } from "./osc";
 import type { Arrival, Snapshot } from "./panes";
-import { noticeLines, type Tone } from "./terminalNotice";
+import { formatTime, noticeLines, type Tone } from "./terminalNotice";
 import { isTerminalReport } from "./terminalReports";
 import { ForwardMeters, SftpTraffic, TrafficMeter, type TerminalDetail } from "./traffic";
 
@@ -95,6 +96,8 @@ export interface SessionConfig {
   loginCommands(): string[];
   /** Reconnect automatically when an established connection is lost. */
   autoReconnect(): boolean;
+  /** The format of the time our own messages start with (a setting). */
+  timeFormat(): TimePart[];
   t: TFunction;
 }
 
@@ -740,7 +743,7 @@ export class PaneSession {
 
   /** One of our own messages, each line starting with the time (see `noticeLines`). */
   private writeNotice(text: string, tone: Tone = "dim") {
-    this.port.write(noticeLines(text, tone, new Date()));
+    this.port.write(noticeLines(text, tone, formatTime(this.config.timeFormat(), new Date())));
   }
 
   private stopLoginCommands() {

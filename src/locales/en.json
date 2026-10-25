@@ -779,6 +779,18 @@
     "logKeepDays_one": "{count} day",
     "logKeepDays_other": "{count} days",
     "logTimestamps": "Start each line with its time",
+    "logTimeFormat": "Time format",
+    "logTimeFormats": {
+      "dateTime": "Date and time",
+      "dateTimeMs": "Date and time, with milliseconds",
+      "time": "Time",
+      "timeMs": "Time, with milliseconds"
+    },
+    "logTimeFormatExample": "Example: {time}",
+    "logTimeFormatHint": "Also used for ZShell's own messages in the terminal, such as connecting and reconnecting. %Y is the year, %y its last two digits, %m the month, %d the day, %H the hour, %M the minute, %S the second, %3f the milliseconds and %% a percent sign.",
+    "messageTimes": "Message times",
+    "messageTimesHint": "ZShell's own messages in the terminal, such as connecting and reconnecting, start with the time they were printed.",
+    "messageTimesFormat": "Change the time format",
     "logAutoLocal": "Record local terminals automatically",
     "logAutoHint": "Saved sessions are recorded automatically if set in the session. Any tab can start or stop logging from its menu.",
     "logSummary_one": "{count} log, {size}",

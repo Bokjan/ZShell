@@ -801,6 +801,18 @@
     "logKeepDays_many": "{count} jours",
     "logKeepDays_other": "{count} jours",
     "logTimestamps": "Commencer chaque ligne par son heure",
+    "logTimeFormat": "Format de l’heure",
+    "logTimeFormats": {
+      "dateTime": "Date et heure",
+      "dateTimeMs": "Date et heure, avec les millisecondes",
+      "time": "Heure",
+      "timeMs": "Heure, avec les millisecondes"
+    },
+    "logTimeFormatExample": "Exemple : {time}",
+    "logTimeFormatHint": "Sert aussi aux messages de ZShell dans le terminal, comme la connexion et la reconnexion. %Y est l’année, %y ses deux derniers chiffres, %m le mois, %d le jour, %H l’heure, %M la minute, %S la seconde, %3f les millisecondes et %% un signe pour cent.",
+    "messageTimes": "Heure des messages",
+    "messageTimesHint": "Les messages de ZShell dans le terminal, comme la connexion et la reconnexion, commencent par l’heure à laquelle ils ont été affichés.",
+    "messageTimesFormat": "Modifier le format de l’heure",
     "logAutoLocal": "Journaliser automatiquement les terminaux locaux",
     "logAutoHint": "Les sessions enregistrées sont journalisées automatiquement si leurs réglages le prévoient. Tout onglet peut démarrer ou arrêter le journal depuis son menu.",
     "logSummary_one": "{count} journal, {size}",

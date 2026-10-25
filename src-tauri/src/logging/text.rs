@@ -1,8 +1,10 @@
 //! Plain-text logs: the line being shown, with the cursor's column, as a shell's line editing
 //! leaves it (see the module docs of `logging`).
 
-use chrono::Local;
+use chrono::{Local, NaiveDateTime};
 use unicode_width::UnicodeWidthChar;
+
+use super::TimeFormat;
 
 /// Columns kept for the line being edited. Output is not to be trusted with memory (a long
 /// minified file, or cursor movements of up to 65535 columns each): text going past this
@@ -54,9 +56,10 @@ pub(super) struct Line {
     pub(super) cursor: usize,
     /// Part of the line has already gone to `out`.
     pub(super) spilled: bool,
-    pub(super) timestamps: bool,
-    /// The last timestamp written, with the second it is for.
-    pub(super) stamp: Option<(i64, String)>,
+    /// How the time each line starts with is written, if it starts with one.
+    pub(super) times: Option<TimeFormat>,
+    /// When what the line shows started: its first character, since it was last emptied.
+    pub(super) started: Option<NaiveDateTime>,
     /// The cells' text, kept to be reused.
     pub(super) text: String,
     pub(super) out: Vec<u8>,
@@ -88,15 +91,11 @@ impl Line {
     }
 
     pub(super) fn start_out(&mut self) {
-        if self.timestamps && !self.spilled {
-            let now = Local::now();
-            let second = now.timestamp();
-            if self.stamp.as_ref().is_none_or(|(at, _)| *at != second) {
-                self.stamp = Some((second, now.format("[%Y-%m-%d %H:%M:%S] ").to_string()));
-            }
-            if let Some((_, stamp)) = &self.stamp {
-                self.out.extend(stamp.as_bytes());
-            }
+        let started = self.started.take();
+        if let (Some(times), false) = (&self.times, self.spilled) {
+            let at = started.unwrap_or_else(|| Local::now().naive_local());
+            self.out.extend(times.format(at).as_bytes());
+            self.out.push(b' ');
         }
     }
 
@@ -126,6 +125,9 @@ impl Line {
 
 impl vte::Perform for Line {
     fn print(&mut self, c: char) {
+        if self.started.is_none() && self.times.is_some() {
+            self.started = Some(Local::now().naive_local());
+        }
         match c.width().unwrap_or(0) {
             0 => {
                 if let Some(cell) = self.cursor.checked_sub(1).and_then(|i| self.cells.get_mut(i)) {
@@ -165,11 +167,17 @@ impl vte::Perform for Line {
             'D' => self.cursor = self.cursor.saturating_sub(count),
             'G' => self.move_to(count - 1),
             // Erase to the end of the line, from its start, or all of it.
-            'K' => match first {
-                0 => self.cells.truncate(self.cursor),
-                1 => self.cells.iter_mut().take(self.cursor + 1).for_each(|cell| *cell = Cell::BLANK),
-                _ => self.cells.clear(),
-            },
+            'K' => {
+                match first {
+                    0 => self.cells.truncate(self.cursor),
+                    1 => self.cells.iter_mut().take(self.cursor + 1).for_each(|cell| *cell = Cell::BLANK),
+                    _ => self.cells.clear(),
+                }
+                // A line written over (a progress line) starts again.
+                if self.cells.is_empty() && !self.spilled {
+                    self.started = None;
+                }
+            }
             // Delete, insert or blank characters at the cursor.
             'P' => {
                 let end = (self.cursor + count).min(self.cells.len());

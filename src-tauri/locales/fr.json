@@ -93,7 +93,10 @@
     },
     "log": {
       "createFailed": "Impossible d’écrire le journal de session {path}",
-      "writeFailed": "Le journal de session s’est arrêté : impossible d’écrire dans {path}"
+      "writeFailed": "Le journal de session s’est arrêté : impossible d’écrire dans {path}",
+      "timeFormatUnknown": "Le format de l’heure ne peut pas utiliser {spec} ; utilisez %Y, %y, %m, %d, %H, %M, %S, %3f ou %%",
+      "timeFormatControl": "Le format de l’heure ne peut pas contenir de caractères de contrôle",
+      "timeFormatTooLong": "Le format de l’heure ne peut pas dépasser {max} caractères"
     },
     "credentialStore": "Erreur du magasin d’identifiants",
     "session": {

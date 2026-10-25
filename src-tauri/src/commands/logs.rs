@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
-use crate::logging::{LogSummary, Logs};
+use crate::logging::{LogSummary, Logs, TimeFormat, TimePart};
 use crate::settings::SettingsStore;
 
 use super::blocking;
@@ -28,6 +28,12 @@ pub async fn logs_directory(app: AppHandle, create: bool) -> Result<PathBuf> {
         Ok(dir)
     })
     .await
+}
+
+/// The parts of a time format for the settings (`logs.timeFormat`), or why it can't be used.
+#[tauri::command]
+pub fn logs_time_format(format: String) -> Result<Vec<TimePart>> {
+    Ok(TimeFormat::parse(&format)?.0)
 }
 
 /// How many logs a saved session has.
