@@ -1,5 +1,5 @@
 import { useRef, type MouseEvent as ReactMouseEvent } from "react";
-import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import type { Folder, Profile, TreeItem } from "../../ipc/api";
 import { isComposing } from "../../lib/platform";
@@ -45,10 +45,11 @@ export function SessionRow(props: {
   /** More classes. */
   extra: string;
   actions: RowActions;
+  /** The list's, rather than each row listening for the language. */
+  t: TFunction;
 }) {
   useStableProps("SessionRow", props, ["actions"]);
-  const { id, rowKey: key, profile, depth, meta, searching, current, selected, extra, actions } = props;
-  const { t } = useTranslation();
+  const { id, rowKey: key, profile, depth, meta, searching, current, selected, extra, actions, t } = props;
   return (
     <div
       id={id}
@@ -94,10 +95,11 @@ export function FolderRow(props: {
   /** More classes. */
   extra: string;
   actions: RowActions;
+  /** As for `SessionRow`. */
+  t: TFunction;
 }) {
   useStableProps("FolderRow", props, ["actions"]);
-  const { id, folder, depth, expanded, count, selected, renaming, extra, actions } = props;
-  const { t } = useTranslation();
+  const { id, folder, depth, expanded, count, selected, renaming, extra, actions, t } = props;
   const key = `f:${folder.id}`;
   return (
     <div

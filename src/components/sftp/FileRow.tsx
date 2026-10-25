@@ -1,10 +1,10 @@
 import type { FormEvent, MouseEvent } from "react";
-import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import type { FileEntry } from "../../ipc/api";
 import { formatMode } from "../../lib/format";
 import { isComposing } from "../../lib/platform";
-import { useLocale } from "../../hooks/locale";
+import type { Locale } from "../../hooks/locale";
 import { useStableProps } from "../../hooks/stableProps";
 import { FileIcon, FolderIcon } from "../icons";
 
@@ -34,6 +34,9 @@ interface Props {
   /** The new name typed so far, while the entry is being renamed. */
   renaming: string | null;
   actions: RowActions;
+  /** The panel's, rather than each row listening for the language (see `useLocale`). */
+  t: TFunction;
+  locale: Locale;
 }
 
 const rowClass = (selected: boolean, dropTarget: boolean) =>
@@ -46,9 +49,8 @@ const rowClass = (selected: boolean, dropTarget: boolean) =>
  */
 export function FileRow(props: Props) {
   useStableProps("FileRow", props, ["actions"]);
-  const { entry, id, rowIndex, selected, dropTarget, renaming, actions } = props;
-  const { t } = useTranslation();
-  const { formatSize, formatTime } = useLocale();
+  const { entry, id, rowIndex, selected, dropTarget, renaming, actions, t, locale } = props;
+  const { formatSize, formatTime } = locale;
   return (
     <tr
       id={id}

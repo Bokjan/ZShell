@@ -439,6 +439,7 @@ export function Sidebar(props: Props) {
       selected={selected === `p:${profile.id}`}
       extra={extra}
       actions={rowActions}
+      t={t}
     />
   );
 
@@ -456,6 +457,7 @@ export function Sidebar(props: Props) {
         renaming={renaming === row.folder.id}
         extra={dropClass(key)}
         actions={rowActions}
+        t={t}
       />
     );
   };

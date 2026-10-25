@@ -124,7 +124,8 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
   });
 
   // Sorted apart from the filter, which keeps their order: typing in the filter sorts nothing.
-  const { compareNames } = useLocale();
+  const locale = useLocale();
+  const { compareNames } = locale;
   const sorted = useMemo(() => sortedEntries(entries, view, compareNames), [entries, view, compareNames]);
   const visible = useMemo(() => filterEntries(sorted, filter ?? ""), [sorted, filter]);
   const rows = useMemo(() => visible.map((entry) => entry.path), [visible]);
@@ -354,6 +355,8 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
         dropTarget={dropDir === entry.path}
         renaming={renaming?.path === entry.path ? renaming.value : null}
         actions={rowActions}
+        t={t}
+        locale={locale}
       />
     );
   };

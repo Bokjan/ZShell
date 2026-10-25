@@ -12,6 +12,9 @@ import { shortcutLabel, shortcutRows, type Action } from "../lib/keymap";
  * functions whenever the language changes, so what they produced is worked out again. Event
  * handlers and code outside React can call the ones in `lib/` (`locale.test.ts` checks).
  */
+/** What `useLocale` gives, which a component can pass to its many rows rather than each row taking its own. */
+export type Locale = ReturnType<typeof useLocale>;
+
 export function useLocale() {
   const { i18n } = useTranslation();
   const language = i18n.language;

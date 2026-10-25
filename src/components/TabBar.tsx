@@ -11,6 +11,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import { focusedPane, isLogging, mergeProgress, tabId, tabPanelId, tabTitle, type SidePanel, type Tab } from "../lib/panes";
 import type { Direction } from "../lib/layout";
@@ -24,7 +25,7 @@ import { DRAG_REGION } from "../hooks/titleBar";
 import { tabDrag, type DropTarget, type WindowInfo } from "../ipc/windows";
 import { useWindowEvent } from "../hooks/windowEvents";
 import { useLatest } from "../hooks/latest";
-import { useLocale } from "../hooks/locale";
+import { useLocale, type Locale } from "../hooks/locale";
 import { useMediaQuery, useSettings } from "../hooks/settings";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
@@ -124,7 +125,8 @@ export function TabBar({
   titleStartRef,
 }: Props) {
   const { t } = useTranslation();
-  const { shortcutLabel } = useLocale();
+  const locale = useLocale();
+  const { shortcutLabel } = locale;
   const { followRemoteTitle, markOutput } = useSettings().settings.tabs;
   const { bellAlert } = useSettings().settings.terminal;
   const {
@@ -402,6 +404,8 @@ export function TabBar({
             noticed={tab.attention === "notice"}
             questionWaiting={questionWaiting(tab)}
             actions={actions}
+            t={t}
+            locale={locale}
           />
         ))}
         {dropLeft !== null && <span className="tab-drop-marker" style={{ left: dropLeft }} aria-hidden="true" />}
@@ -499,6 +503,9 @@ interface TabItemProps {
   noticed: boolean;
   questionWaiting: boolean;
   actions: TabActions;
+  /** The tab bar's, rather than each tab listening for the language (see `useLocale`). */
+  t: TFunction;
+  locale: Locale;
 }
 
 /**
@@ -507,9 +514,8 @@ interface TabItemProps {
  */
 function TabItem(props: TabItemProps) {
   useStableProps("TabItem", props, ["actions"]);
-  const { tab, title, active, marks, editing, color, where, newOutput, bellRang, noticed, questionWaiting, actions } = props;
-  const { t } = useTranslation();
-  const { shortcutLabel, formatList } = useLocale();
+  const { tab, title, active, marks, editing, color, where, newOutput, bellRang, noticed, questionWaiting, actions, t, locale } = props;
+  const { shortcutLabel, formatList } = locale;
   const { key } = tab;
   const pane = focusedPane(tab);
   const progress = mergeProgress(tab.panes.map((p) => p.progress));
