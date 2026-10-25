@@ -347,6 +347,14 @@ export const zmodem = {
  *  allow local terminals (Windows in S mode). */
 export const localShellName = () => call("local_shell_name");
 
+let conpty: Promise<number | null> | undefined;
+
+/**
+ * The Windows build whose ConPTY local terminals run in, which xterm.js needs to redraw them as
+ * ConPTY does when resized (`windowsPty`); null on other systems. Asked once.
+ */
+export const conptyBuild = () => (conpty ??= call("local_terminal_conpty").catch(() => null));
+
 function progressChannel(onProgress: (p: TransferProgress) => void) {
   const channel = new Channel<TransferProgress>();
   channel.onmessage = onProgress;

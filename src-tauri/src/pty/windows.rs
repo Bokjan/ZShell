@@ -10,6 +10,8 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, ChildKiller, ExitStatus, MasterPty};
 use tokio::sync::{mpsc, oneshot};
+use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
 
 use super::{drain_output, pty_size, shell, Shell, KILL_GRACE, READ_BUFFER};
 use crate::error::Error;
@@ -279,4 +281,30 @@ fn write_input(mut writer: Box<dyn Write + Send>, mut inputs: mpsc::Receiver<Vec
         // The shell outlived being killed: leaking the handle is the lesser harm.
         std::mem::forget(writer);
     }
+}
+
+/// The system's build number, as the registry has it (`CurrentBuildNumber`, which unlike
+/// `GetVersionEx` doesn't depend on the app's manifest).
+pub(super) fn build_number() -> Option<u32> {
+    let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let mut buffer = [0u16; 32];
+    let mut size = size_of_val(&buffer) as u32;
+    // SAFETY: NUL-terminated wide strings; `buffer` holds `size` bytes, and RRF_RT_REG_SZ lets
+    // only a string through, NUL-terminated within them.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            wide(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion").as_ptr(),
+            wide("CurrentBuildNumber").as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buffer.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let length = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    String::from_utf16(&buffer[..length]).ok()?.trim().parse().ok()
 }

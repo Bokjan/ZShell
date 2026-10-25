@@ -93,6 +93,7 @@ const PaneHost = memo(function PaneHost(props: PaneHostProps) {
             onInput={(data) => h.onInput(key, data)}
             pasteTargets={() => h.pasteTargets(key)}
             menuItems={() => h.menuItems(key)}
+            local={pane.protocol === "local"}
             appearance={profile?.appearance}
           />
         </DialogsHidden.Provider>,

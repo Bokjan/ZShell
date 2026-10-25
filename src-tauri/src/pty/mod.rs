@@ -27,6 +27,16 @@ use tokio::sync::oneshot;
 use crate::error::Error;
 use crate::session::{Flow, Outcome, SessionEvent, TermIo};
 pub use shell::{default_shell, local_shells_allowed, Shell};
+
+/// The Windows build whose ConPTY local terminals run in: xterm.js redraws a resized terminal
+/// the way it does (`windowsPty`), and before build 21376 leaves the rewrapping of lines to
+/// it. `None` on other systems, or when it can't be read.
+pub fn conpty_build() -> Option<u32> {
+    #[cfg(windows)]
+    return windows::build_number();
+    #[cfg(not(windows))]
+    None
+}
 #[cfg(unix)]
 use unix::Pty;
 #[cfg(windows)]

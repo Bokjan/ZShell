@@ -1237,6 +1237,7 @@ export type Commands = {
   known_hosts_path: { args: Record<string, never>; result: string | null };
   known_hosts_remove: { args: { line: number; text: string }; result: void };
   local_shell_name: { args: Record<string, never>; result: string | null };
+  local_terminal_conpty: { args: Record<string, never>; result: number | null };
   local_username: { args: Record<string, never>; result: string };
   locale_get: { args: Record<string, never>; result: Locales };
   logs_count: { args: { profileId: string }; result: number };

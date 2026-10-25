@@ -321,6 +321,7 @@ pub fn run() {
             commands::ssh_files::ssh_config_import,
             commands::session::session_open,
             commands::session::local_shell_name,
+            commands::session::local_terminal_conpty,
             commands::session::session_log_start,
             commands::session::session_log_stop,
             commands::logs::logs_summary,

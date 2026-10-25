@@ -159,6 +159,7 @@
 
 - 作为 `SessionManager` 的另一种后端，沿用 SSH 会话的命令。`session_foreground` 报告前台程序，用于关闭前确认。
 - 默认用登录 shell（Windows 优先 PowerShell 7），macOS 补全从 Finder 启动时缺失的 PATH（`pty/shell.rs`）。
+- Windows 上把系统的构建号告诉 xterm.js（`windowsPty`）：ConPTY 在终端改变大小时自己重画，21376 之前还自己重排换行，xterm.js 这时不再重排（`pty::conpty_build`）。
 
 ### 配置与设置
 

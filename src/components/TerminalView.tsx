@@ -9,7 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import "@xterm/xterm/css/xterm.css";
 
-import type { ProfileAppearance } from "../ipc/api";
+import { conptyBuild, type ProfileAppearance } from "../ipc/api";
 import { afterDialogs, isDialogOpen } from "../hooks/dialogs";
 import { chosenAction, clipboardKeyOf, matches } from "../lib/keymap";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
@@ -57,6 +57,8 @@ interface Props {
   pasteTargets(): PasteTarget[];
   /** Added to the end of the context menu when it opens (pane actions, quick commands). */
   menuItems(): MenuItem[];
+  /** A local shell, which on Windows runs in ConPTY. */
+  local: boolean;
   /** The session's own colors and font, over the settings. */
   appearance?: ProfileAppearance;
 }
@@ -113,6 +115,7 @@ export function TerminalView({
   onInput,
   pasteTargets,
   menuItems: extraMenuItems,
+  local,
   appearance,
 }: Props) {
   const { t } = useTranslation();
@@ -649,6 +652,19 @@ export function TerminalView({
       redraw();
     };
   }, [terminal, ligatures, fontFamily]);
+
+  // ConPTY redraws the screen as the terminal is resized, and before Windows build 21376 also
+  // rewraps its lines: xterm.js does neither itself then (see `windowsPty`).
+  useEffect(() => {
+    if (!terminal || !local) return;
+    let current = true;
+    void conptyBuild().then((buildNumber) => {
+      if (current && buildNumber !== null) terminal.options.windowsPty = { backend: "conpty", buildNumber };
+    });
+    return () => {
+      current = false;
+    };
+  }, [terminal, local]);
 
   // Before the page is painted, so that it doesn't show the terminal at its old size first.
   useLayoutEffect(() => {

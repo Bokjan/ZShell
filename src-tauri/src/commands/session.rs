@@ -105,6 +105,12 @@ pub async fn local_shell_name() -> Option<String> {
     tauri::async_runtime::spawn_blocking(|| pty::local_shells_allowed().then(|| pty::default_shell().name())).await.ok().flatten()
 }
 
+/// The Windows build local terminals run in (see `pty::conpty_build`); `null` elsewhere.
+#[tauri::command]
+pub fn local_terminal_conpty() -> Option<u32> {
+    pty::conpty_build()
+}
+
 #[tauri::command]
 pub fn session_write(webview: Webview, sessions: State<'_, SessionManager>, id: SessionId, data: String) -> Result<()> {
     sessions.send(webview.label(), id, SessionInput::Data(data.into_bytes()))
