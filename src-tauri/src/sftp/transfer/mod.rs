@@ -27,7 +27,7 @@ use crate::error::Error;
 use crate::local_name::{create_dir, create_unique, create_unique_file, local_file_name, new_file, numbered};
 
 const BUFFER_SIZE: usize = 256 * 1024;
-const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+pub(super) const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Default, Serialize, TS)]
 #[ts(rename = "TransferProgress")]
@@ -598,7 +598,6 @@ async fn download_counting(
         }
         ends.push(plan.files.len());
     }
-    // `+=`: the items of a drag are downloaded one call at a time with the same reporter.
     reporter.progress.files_total += plan.files.len();
 
     // The folders the items go into (for files given a path of their own), then the remote

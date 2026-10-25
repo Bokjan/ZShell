@@ -76,10 +76,7 @@ impl Shared {
         if start {
             let this = self.clone();
             tauri::async_runtime::spawn(async move {
-                let mut ok = true;
-                for (remote, local) in &this.items {
-                    ok &= this.download.fetch(remote, local.clone()).await.is_ok();
-                }
+                let ok = this.download.fetch(&this.items).await.is_ok();
                 *this.fetch.lock().unwrap() = Fetch::Done { ok };
             });
         }

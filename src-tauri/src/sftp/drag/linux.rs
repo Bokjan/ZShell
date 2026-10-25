@@ -46,10 +46,7 @@ impl Shared {
             let this = self.clone();
             let waker = context.clone();
             tauri::async_runtime::spawn(async move {
-                let mut ok = true;
-                for (remote, local) in &this.items {
-                    ok &= this.download.fetch(remote, local.clone()).await.is_ok();
-                }
+                let ok = this.download.fetch(&this.items).await.is_ok();
                 this.fetch.store(if ok { FETCH_OK } else { FETCH_FAILED }, Ordering::Release);
                 waker.wakeup();
             });

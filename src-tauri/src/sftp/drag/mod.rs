@@ -23,7 +23,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::oneshot;
 use ts_rs::TS;
 
-use super::transfer::{self, Left, Progress, Reporter, TransferSlots, Transfers};
+use super::transfer::{self, Left, Progress, Reporter, TransferSlots, Transfers, PROGRESS_INTERVAL};
 use crate::error::{Error, Result};
 use crate::local_name::local_file_name;
 
@@ -101,7 +101,7 @@ pub enum DragEvent {
 const IDLE_LIMIT: Duration = Duration::from_secs(300);
 
 /// The downloads of one drop, shared by its items, which may be asked for separately (each
-/// file promise on macOS) and are downloaded one after another.
+/// file promise on macOS) and download at once, within the connection's transfer slots.
 pub struct DropDownload {
     app: AppHandle,
     sftp: Arc<SftpSession>,
@@ -109,7 +109,9 @@ pub struct DropDownload {
     webview: String,
     transfer_id: String,
     events: Channel<DragEvent>,
-    reporter: tokio::sync::Mutex<Reporter>,
+    /// The progress of all its items, which each download adds its own to.
+    total: Arc<Mutex<Total>>,
+    slots: Arc<TransferSlots>,
     cancelled: Arc<AtomicBool>,
     count: usize,
     /// One lock for all of it: an item starting to download and the drop ending (after the
@@ -131,6 +133,14 @@ struct State {
     paths: Vec<PathBuf>,
 }
 
+/// The progress of a drop's items together, reported as one transfer.
+#[derive(Default)]
+struct Total {
+    progress: Progress,
+    /// When it was last sent; `None` before the first time, which is at once.
+    last_emit: Option<Instant>,
+}
+
 /// What ending a drop (under the lock) leaves to do (outside it).
 struct Ended {
     /// The items to report done; `None` when the drop failed.
@@ -149,8 +159,6 @@ impl DropDownload {
         let app = window.app_handle();
         let webview = window.label().to_owned();
         let cancelled = app.state::<Transfers>().start(&webview, &transfer_id);
-        let progress = events.clone();
-        let reporter = Reporter::with_sink(move |p| drop(progress.send(DragEvent::Progress(p))), cancelled.clone()).sharing(slots);
         let state = State { pending: count, active: 0, last_activity: Instant::now(), failed: false, finished: false, paths: Vec::new() };
         Arc::new(Self {
             app: app.clone(),
@@ -158,17 +166,42 @@ impl DropDownload {
             webview,
             transfer_id,
             events,
-            reporter: tokio::sync::Mutex::new(reporter),
+            total: Arc::default(),
+            slots,
             cancelled,
             count,
             state: Mutex::new(state),
         })
     }
 
-    /// Downloads one item to `local`, replacing what is there; reports the end of the drop
-    /// with the last item. After a failure, or once the drop is over, the remaining items are
-    /// not downloaded.
-    async fn fetch(&self, remote: &str, local: PathBuf) -> Result<()> {
+    /// A reporter for one download of the drop, which adds its progress to the drop's.
+    fn reporter(&self) -> Reporter {
+        let (total, events) = (self.total.clone(), self.events.clone());
+        // What this download reported before: all of it counts up.
+        let before = Mutex::new(Progress::default());
+        let send = move |now: Progress| {
+            let mut before = before.lock().unwrap();
+            let mut total = total.lock().unwrap();
+            let sum = &mut total.progress;
+            sum.transferred += now.transferred - before.transferred;
+            sum.total += now.total - before.total;
+            sum.files_done += now.files_done - before.files_done;
+            sum.files_total += now.files_total - before.files_total;
+            sum.current.clone_from(&now.current);
+            *before = now;
+            if total.last_emit.is_none_or(|at| at.elapsed() >= PROGRESS_INTERVAL) {
+                total.last_emit = Some(Instant::now());
+                let _ = events.send(DragEvent::Progress(total.progress.clone()));
+            }
+        };
+        Reporter::with_sink(send, self.cancelled.clone()).sharing(self.slots.clone())
+    }
+
+    /// Downloads items to their local paths, replacing what is there: all of them at once on
+    /// Windows and Linux, each as it is asked for on macOS. Reports the end of the drop with
+    /// the last item. After a failure, or once the drop is over, the remaining items are not
+    /// downloaded.
+    async fn fetch(&self, items: &[(String, PathBuf)]) -> Result<()> {
         let go = {
             let mut state = self.state.lock().unwrap();
             state.last_activity = Instant::now();
@@ -179,10 +212,7 @@ impl DropDownload {
             go
         };
         let result = if go {
-            let mut reporter = self.reporter.lock().await;
-            transfer::download_to(&self.sftp, &[(remote.to_owned(), local.clone())], &mut reporter, &mut Left::default())
-                .await
-                .map_err(Error::from)
+            transfer::download_to(&self.sftp, items, &mut self.reporter(), &mut Left::default()).await.map_err(Error::from)
         } else {
             Err(Error::new("transfer.cancelled"))
         };
@@ -194,14 +224,14 @@ impl DropDownload {
             }
             let mut report = false;
             match &result {
-                Ok(()) => state.paths.push(local),
+                Ok(()) => state.paths.extend(items.iter().map(|(_, local)| local.clone())),
                 Err(_) => {
                     // Once: the first failure is the drop's.
                     report = !state.failed && !state.finished;
                     state.failed = true;
                 }
             }
-            state.pending = state.pending.saturating_sub(1);
+            state.pending = state.pending.saturating_sub(items.len());
             let ended = (state.pending == 0).then(|| Self::end(&mut state)).flatten();
             (report, ended)
         };

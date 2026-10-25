@@ -73,7 +73,7 @@ define_class!(
                 (Some(item), Some(local)) => {
                     let remote = item.path.clone();
                     let download = download.clone();
-                    tauri::async_runtime::block_on(async move { download.fetch(&remote, local).await })
+                    tauri::async_runtime::block_on(async move { download.fetch(&[(remote, local)]).await })
                 }
                 _ => Err(Error::new("transfer.invalidPath").param("path", url_text(url))),
             };
