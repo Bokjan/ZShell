@@ -82,6 +82,26 @@ impl Transfers {
         self.left.lock().unwrap().retain(|(owner, _), _| owner != webview);
     }
 
+    /// Ends a transfer with `result`: lets go of its cancellation, and keeps what it `left`
+    /// as `kept` makes it (none when it left nothing, without a connection). Returns how it
+    /// ended, with the local `paths` to show.
+    pub fn end<P>(
+        &self,
+        webview: &str,
+        id: &str,
+        left: Left<P>,
+        result: crate::error::Result<()>,
+        paths: Vec<PathBuf>,
+        kept: impl FnOnce(Left<P>) -> Option<Kept>,
+    ) -> Ended {
+        self.finish(webview, id);
+        let ended = Ended::new(&left, result.err(), paths);
+        if let Some(kept) = kept(left) {
+            self.keep(webview, id, kept);
+        }
+        ended
+    }
+
     /// Keeps what an ended transfer left, unless there is nothing to delete.
     pub fn keep(&self, webview: &str, id: &str, kept: Kept) {
         if !kept.is_empty() {

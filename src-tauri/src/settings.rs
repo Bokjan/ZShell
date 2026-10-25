@@ -7,8 +7,18 @@ use std::sync::{Mutex, RwLock};
 use tauri::{AppHandle, Manager};
 
 use crate::error::{Error, Result};
+use crate::keep_awake::KeepAwake;
 use crate::model::Settings;
 use crate::persist::{JsonFile, SetAside};
+
+/// Puts what the backend does with `settings` into effect: the language of its messages, the
+/// time format of our own messages in the terminal, and when the system is kept awake. As the
+/// app starts, and each time they are stored.
+pub fn apply(settings: &Settings, keep_awake: &KeepAwake) {
+    crate::i18n::apply(&settings.language);
+    crate::logging::time_format::apply(&settings.logs.time_format);
+    keep_awake.set_mode(settings.power.keep_awake);
+}
 
 pub struct SettingsStore {
     file: JsonFile,

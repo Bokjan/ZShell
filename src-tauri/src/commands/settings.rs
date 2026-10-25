@@ -58,11 +58,7 @@ pub fn keep_awake_limited() -> bool {
 #[tauri::command]
 pub async fn settings_set(app: AppHandle, window: WebviewWindow, settings: Settings) -> Result<Settings> {
     let stored = blocking(app.clone(), move |app| {
-        app.state::<SettingsStore>().set(settings, |settings| {
-            crate::i18n::apply(&settings.language);
-            crate::logging::time_format::apply(&settings.logs.time_format);
-            app.state::<Arc<KeepAwake>>().set_mode(settings.power.keep_awake);
-        })
+        app.state::<SettingsStore>().set(settings, |settings| crate::settings::apply(settings, &app.state::<Arc<KeepAwake>>()))
     })
     .await;
     let settings = notified(&window, Change::Settings, stored)?;

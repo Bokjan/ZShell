@@ -193,11 +193,10 @@ pub fn run() {
             }
             crash::record_panics(config_dir.join("crash.log"));
             let set_aside = SetAside::default();
-            // First, so that backend text is in the chosen language from the start.
             let settings = SettingsStore::load(config_dir.join("settings.json"), &set_aside);
-            i18n::apply(&settings.get().language);
-            logging::time_format::apply(&settings.get().logs.time_format);
             let keep_awake = Arc::new(KeepAwake::for_platform(settings.get().power.keep_awake));
+            // First, so that backend text is in the chosen language from the start.
+            settings::apply(&settings.get(), &keep_awake);
             keep_awake::watch_power(keep_awake.clone());
             app.manage(keep_awake);
             app.manage(settings);

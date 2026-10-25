@@ -136,14 +136,10 @@ pub async fn sftp_upload(
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter, &mut left).await?)
     };
-    let result: Result<()> = result.await;
-    transfers.finish(webview.label(), &transfer_id);
-    let ended = transfer::Ended::new(&left, result.err(), Vec::new());
+    let result = result.await;
     // Without a connection, it left nothing.
-    if let Some(server) = server {
-        transfers.keep(webview.label(), &transfer_id, transfer::Kept::Remote(left, server));
-    }
-    Ok(ended)
+    Ok(transfers
+        .end(webview.label(), &transfer_id, left, result, Vec::new(), |left| server.map(|server| transfer::Kept::Remote(left, server))))
 }
 
 /// Downloads into `local_dir` (default: the download folder from the settings). Ends with the
@@ -175,12 +171,9 @@ pub async fn sftp_download(
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter, &mut left).await?)
     };
-    let result: Result<()> = result.await;
-    transfers.finish(webview.label(), &transfer_id);
+    let result = result.await;
     let paths = std::mem::take(&mut left.items);
-    let ended = transfer::Ended::new(&left, result.err(), paths);
-    transfers.keep(webview.label(), &transfer_id, transfer::Kept::Local(left));
-    Ok(ended)
+    Ok(transfers.end(webview.label(), &transfer_id, left, result, paths, |left| Some(transfer::Kept::Local(left))))
 }
 
 /// Downloads one item to `local_path`, replacing what is there (the save dialog asked). Ends
@@ -205,12 +198,9 @@ pub async fn sftp_download_as(
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter, &mut left).await?)
     };
-    let result: Result<()> = result.await;
-    transfers.finish(webview.label(), &transfer_id);
+    let result = result.await;
     let paths = if result.is_ok() { vec![local_path] } else { Vec::new() };
-    let ended = transfer::Ended::new(&left, result.err(), paths);
-    transfers.keep(webview.label(), &transfer_id, transfer::Kept::Local(left));
-    Ok(ended)
+    Ok(transfers.end(webview.label(), &transfer_id, left, result, paths, |left| Some(transfer::Kept::Local(left))))
 }
 
 /// The folder downloads go to without asking, for the settings.
@@ -363,9 +353,7 @@ pub async fn transfer_delete(
         transfer::Kept::Remote(mut left, server) => {
             let sftp = async {
                 let connection = connection(label, &sessions, &connections, id.ok_or_else(|| Error::new("session.notConnected"))?)?;
-                if transfer::Server::of(&connection.ssh().profile().ssh.remote) != server {
-                    return Err(Error::new("transfer.deleteElsewhere").param("server", server.name()));
-                }
+                server.check_same(&transfer::Server::of(&connection.ssh().profile().ssh.remote))?;
                 Ok(connection.sftp().await?)
             };
             let deletion = match sftp.await {

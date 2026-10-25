@@ -78,6 +78,15 @@ pub struct Server {
 
 impl Server {
     /// Where a connection goes, as its session was when connecting.
+    /// What an upload left is deleted only on the server it went to, through a connection
+    /// that goes there (`now`): the tab may have connected elsewhere since.
+    pub fn check_same(&self, now: &Server) -> Result<(), Error> {
+        match self == now {
+            true => Ok(()),
+            false => Err(Error::new("transfer.deleteElsewhere").param("server", self.name())),
+        }
+    }
+
     pub fn of(remote: &Remote) -> Self {
         Self {
             host: remote.host.clone(),
