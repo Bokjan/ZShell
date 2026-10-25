@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::time_format::{TimeFormat, DEFAULT_TIME_FORMAT};
+
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -282,7 +284,7 @@ pub struct LogSettings {
     /// Start each line with the time it was written (plain text only).
     pub timestamps: bool,
     /// How that time is written, as are the times of our own messages in the terminal (see
-    /// `logging/time_format.rs`).
+    /// `model/time_format.rs`).
     pub time_format: String,
     /// Record local terminals from the start, as sessions can be set to.
     pub auto_local: bool,
@@ -299,7 +301,7 @@ impl Default for LogSettings {
             file_name: DEFAULT_LOG_FILE_NAME.to_owned(),
             format: LogFormat::Text,
             timestamps: false,
-            time_format: crate::logging::time_format::DEFAULT_TIME_FORMAT.to_owned(),
+            time_format: DEFAULT_TIME_FORMAT.to_owned(),
             auto_local: false,
             keep_days: 0,
         }
@@ -396,8 +398,8 @@ impl Settings {
         }
         logs.keep_days = logs.keep_days.min(3650);
         logs.time_format = logs.time_format.trim().to_owned();
-        if logs.time_format.is_empty() || crate::logging::TimeFormat::parse(&logs.time_format).is_err() {
-            logs.time_format = crate::logging::time_format::DEFAULT_TIME_FORMAT.to_owned();
+        if logs.time_format.is_empty() || TimeFormat::parse(&logs.time_format).is_err() {
+            logs.time_format = DEFAULT_TIME_FORMAT.to_owned();
         }
         self
     }

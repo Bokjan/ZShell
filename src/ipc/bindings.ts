@@ -545,7 +545,7 @@ fileName: string, format: LogFormat,
 timestamps: boolean, 
 /**
  * How that time is written, as are the times of our own messages in the terminal (see
- * `logging/time_format.rs`).
+ * `model/time_format.rs`).
  */
 timeFormat: string, 
 /**

@@ -13,7 +13,7 @@ const SGR: Record<Tone, string> = { plain: "", dim: "\x1b[2m", warning: "\x1b[33
 
 const pad = (n: number, digits = 2) => String(n).padStart(digits, "0");
 
-/** `at` in a time format, as the backend parsed it (`logging/time_format.rs`). */
+/** `at` in a time format, as the backend parsed it (`model/time_format.rs`). */
 export function formatTime(parts: TimePart[], at: Date): string {
   return parts
     .map((part) => {

@@ -14,6 +14,7 @@ mod profile;
 mod proxy;
 mod quick;
 mod settings;
+pub mod time_format;
 
 pub use app_lock::AppLockSettings;
 #[cfg(test)]

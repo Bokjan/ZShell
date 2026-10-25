@@ -5,7 +5,7 @@ import { formatTime, noticeLines } from "./terminalNotice";
 
 const at = new Date(2026, 2, 5, 7, 8, 9, 45);
 
-// The same examples as `logging/time_format.rs` and `session/notice.rs`.
+// The same examples as `model/time_format.rs` and `session/notice.rs`.
 describe("formatTime", () => {
   it("writes each part", () => {
     expect(formatTime(DEFAULT_TIME_FORMAT_PARTS, at)).toBe("[2026-03-05 07:08:09]");
