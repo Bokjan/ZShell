@@ -18,11 +18,17 @@
   font-size: calc(11px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0.06em;
+  white-space: nowrap;
   color: var(--text-muted);
 }
+/* Shortened rather than run under "Clear Finished" where the panel is too narrow for both
+   (in German, say). */
 .transfers-title {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .transfers ul {
   list-style: none;
