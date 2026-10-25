@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
-use futures_util::{stream, StreamExt, TryStreamExt};
+use futures_util::{StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
 
@@ -17,6 +17,7 @@ use super::{
 };
 use crate::error::Error;
 use crate::local_name::{create_dir, create_unique, create_unique_file, local_file_name, new_file, numbered};
+use crate::sftp::batch::each_in_order;
 use crate::sftp::replace::LocalTarget;
 use crate::sftp::{file_name, is_entry, join};
 
@@ -74,15 +75,11 @@ pub async fn download(
 /// The attributes of each remote item, in order, asked at once: one after another, choosing
 /// 500 files to download waited a minute on a server 100 ms away before the first byte.
 async fn stat_all(sftp: &SftpSession, remote_paths: &[&str]) -> Result<Vec<FileAttributes>> {
-    // By index, as in `copy_files`.
-    stream::iter(0..remote_paths.len())
-        .map(|i| {
-            let remote = remote_paths[i];
-            async move { sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote)) }
-        })
-        .buffered(CONCURRENT_DIRS)
-        .try_collect()
-        .await
+    each_in_order(remote_paths, CONCURRENT_DIRS, |&remote| async move {
+        sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))
+    })
+    .try_collect()
+    .await
 }
 
 /// Takes a free local name for the remote item, creating an empty file or folder there.
@@ -305,13 +302,10 @@ pub(super) async fn scan_remote_dir(
     while !level.is_empty() {
         reporter.check_cancelled()?;
         // A level may have thousands of folders, listed for minutes on a distant server.
-        let listings = stream::iter(0..level.len())
-            .map(|i| {
-                let remote = &level[i].0;
-                async move { sftp.read_dir(remote).await.context(Error::new("transfer.readFailed").param("path", remote)) }
-            })
-            .buffered(CONCURRENT_DIRS)
-            .collect::<Vec<_>>();
+        let listings = each_in_order(&level, CONCURRENT_DIRS, |(remote, _, _)| async move {
+            sftp.read_dir(remote).await.context(Error::new("transfer.readFailed").param("path", remote))
+        })
+        .collect::<Vec<_>>();
         let listings = unless_cancelled(&reporter.cancelled, async { Ok(listings.await) }).await?;
         let mut next = Vec::new();
         for ((remote, local, mode), listing) in level.into_iter().zip(listings) {
@@ -331,8 +325,7 @@ pub(super) async fn scan_remote_dir(
             }
             // Follow symlinks to files only, so a link cycle can't recurse forever.
             let links: Vec<usize> = (0..entries.len()).filter(|&i| entries[i].2.file_type().is_symlink()).collect();
-            let targets: Vec<_> =
-                stream::iter(links.clone()).map(|i| sftp.metadata(&entries[i].0)).buffered(CONCURRENT_DIRS).collect().await;
+            let targets: Vec<_> = each_in_order(&links, CONCURRENT_DIRS, |&i| sftp.metadata(&entries[i].0)).collect().await;
             for (i, target) in links.into_iter().zip(targets) {
                 entries[i].2 = match target {
                     Ok(target) if target.file_type().is_file() => target,

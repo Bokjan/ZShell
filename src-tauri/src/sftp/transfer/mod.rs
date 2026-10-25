@@ -359,19 +359,37 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
+    run.check_cancelled()?;
+    pump(src, dst, anyhow::Error::from, |n| {
+        run.advance(n as u64);
+        run.check_cancelled()
+    })
+    .await
+}
+
+/// Copies `src` to `dst` a buffer at a time, with `copied` told each one's length once it is
+/// written; it stops the copy by failing. A read's error is passed through `read_failed`.
+/// Not flushed here: the targets do as they finish. A remote file's flush also has the server
+/// sync it to disk (`fsync@openssh.com`), a round trip and a wait for every file.
+pub(super) async fn pump<R, W>(
+    src: &mut R,
+    dst: &mut W,
+    read_failed: impl Fn(std::io::Error) -> anyhow::Error,
+    mut copied: impl FnMut(usize) -> Result<()>,
+) -> Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
     let mut buf = vec![0; BUFFER_SIZE];
     loop {
-        run.check_cancelled()?;
-        let n = src.read(&mut buf).await?;
+        let n = src.read(&mut buf).await.map_err(&read_failed)?;
         if n == 0 {
-            break;
+            return Ok(());
         }
         dst.write_all(&buf[..n]).await?;
-        run.advance(n as u64);
+        copied(n)?;
     }
-    // Not flushed here: the targets do as they finish. A remote file's flush also has the
-    // server sync it to disk (`fsync@openssh.com`), a round trip and a wait for every file.
-    Ok(())
 }
 
 /// Adds which file failed, except for cancellation, which is reported as is.

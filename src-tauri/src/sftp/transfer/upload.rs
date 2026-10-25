@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{bail, Context, Result};
-use futures_util::{stream, StreamExt};
+use futures_util::StreamExt;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
 use tokio_util::sync::CancellationToken;
@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 use super::left::{self, Left};
 use super::{copy, copy_files, uploaded_mode, with_file_context, Plan, Reporter, Run, CONCURRENT_DIRS, CREATE_BATCH};
 use crate::error::Error;
+use crate::sftp::batch::{each, levels, Order};
 use crate::sftp::replace::RemoteTarget;
 use crate::sftp::{file_name, join};
 
@@ -118,23 +119,18 @@ async fn create_remote_dirs(
     created: &mut HashSet<String>,
     cancelled: &CancellationToken,
 ) -> Result<()> {
-    let depth = |dir: &(&String, Option<u32>)| dir.0.matches('/').count();
     let mut by_depth: Vec<(&String, Option<u32>)> = dirs.iter().zip(modes.iter().copied()).collect();
-    by_depth.sort_by_key(depth);
     // A level may have thousands of folders: a batch of them at a time.
-    for level in by_depth.chunk_by(|a, b| depth(a) == depth(b)).flat_map(|level| level.chunks(CREATE_BATCH)) {
+    for level in levels(&mut by_depth, |dir| dir.0, Order::ParentsFirst).flat_map(|level| level.chunks(CREATE_BATCH)) {
         if cancelled.is_cancelled() {
             bail!(Error::new("transfer.cancelled"));
         }
-        let results: Vec<(usize, Result<bool>)> = stream::iter(0..level.len())
-            .map(|i| async move { (i, create_remote_dir(sftp, level[i].0, level[i].1).await) })
-            .buffer_unordered(CONCURRENT_DIRS)
-            .collect()
-            .await;
+        let results: Vec<(&String, Result<bool>)> =
+            each(level, CONCURRENT_DIRS, |&(dir, mode)| async move { (dir, create_remote_dir(sftp, dir, mode).await) }).collect().await;
         let mut first = Ok(());
-        for (i, result) in results {
+        for (dir, result) in results {
             match result {
-                Ok(true) => drop(created.insert(level[i].0.clone())),
+                Ok(true) => drop(created.insert(dir.clone())),
                 Ok(false) => {}
                 Err(e) => first = first.and(Err(e)),
             }

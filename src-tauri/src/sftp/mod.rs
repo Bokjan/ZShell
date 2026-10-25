@@ -1,5 +1,6 @@
 //! Remote file management over SFTP. Remote paths are POSIX-style strings.
 
+mod batch;
 pub mod channels;
 pub mod drag;
 pub mod edit;
@@ -11,7 +12,7 @@ pub mod transfer;
 use std::sync::Arc;
 
 use anyhow::Result;
-use futures_util::{stream, StreamExt, TryStreamExt};
+use futures_util::{StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
 use serde::Serialize;
@@ -140,7 +141,7 @@ pub async fn remove(sftp: &SftpSession, path: &str) -> Result<()> {
     let mut levels = vec![vec![path.to_owned()]];
     loop {
         let level = levels.last().unwrap();
-        let listings: Vec<_> = stream::iter(0..level.len()).map(|i| sftp.read_dir(&level[i])).buffered(CONCURRENT_REMOVALS).collect().await;
+        let listings: Vec<_> = batch::each_in_order(level, CONCURRENT_REMOVALS, |dir| sftp.read_dir(dir)).collect().await;
         let (mut files, mut dirs) = (Vec::new(), Vec::new());
         for (dir, listing) in level.iter().zip(listings) {
             for entry in listing? {
@@ -156,22 +157,14 @@ pub async fn remove(sftp: &SftpSession, path: &str) -> Result<()> {
                 }
             }
         }
-        stream::iter(files)
-            .map(|file| async move { sftp.remove_file(&file).await })
-            .buffer_unordered(CONCURRENT_REMOVALS)
-            .try_collect::<()>()
-            .await?;
+        batch::each(&files, CONCURRENT_REMOVALS, |file| sftp.remove_file(file)).try_collect::<()>().await?;
         if dirs.is_empty() {
             break;
         }
         levels.push(dirs);
     }
     for level in levels.into_iter().rev() {
-        stream::iter(level)
-            .map(|dir| async move { sftp.remove_dir(&dir).await })
-            .buffer_unordered(CONCURRENT_REMOVALS)
-            .try_collect::<()>()
-            .await?;
+        batch::each(&level, CONCURRENT_REMOVALS, |dir| sftp.remove_dir(dir)).try_collect::<()>().await?;
     }
     Ok(())
 }

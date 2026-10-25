@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use futures_util::{stream, StreamExt};
+use futures_util::StreamExt;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileAttributes, FileType, StatusCode};
@@ -18,6 +18,7 @@ use ts_rs::TS;
 use super::CONCURRENT_DIRS;
 use crate::error::Error;
 use crate::model::{host_port, Remote};
+use crate::sftp::batch::{each, each_in_order, levels, Order};
 
 /// How many files an upload looks up at once to stamp them, once copied: one request each, many
 /// at a time so that they add little to it.
@@ -178,13 +179,11 @@ enum Fate {
 /// The files an upload created, with their stamps; one that can't be looked up is left out,
 /// and kept.
 pub async fn stamp_remote(sftp: &SftpSession, files: Vec<String>) -> Vec<(String, Stamp)> {
-    let paths = &files;
-    // By index: closures given references make futures the compiler can't prove `Send`.
-    let stamps: Vec<Option<Stamp>> = stream::iter(0..paths.len())
-        .map(|i| async move { sftp.symlink_metadata(&paths[i]).await.ok().and_then(|attributes| Stamp::remote(&attributes)) })
-        .buffered(CONCURRENT_STAMPS)
-        .collect()
-        .await;
+    let stamps: Vec<Option<Stamp>> = each_in_order(&files, CONCURRENT_STAMPS, |file| async move {
+        sftp.symlink_metadata(file).await.ok().and_then(|attributes| Stamp::remote(&attributes))
+    })
+    .collect()
+    .await;
     files.into_iter().zip(stamps).filter_map(|(file, stamp)| Some((file, stamp?))).collect()
 }
 
@@ -238,27 +237,22 @@ fn depth(path: &Path) -> usize {
 
 /// [`delete_local`] on the server, a few files at once.
 pub async fn delete_remote(sftp: &SftpSession, left: &mut Left<String>) -> Deletion {
-    let files = &left.files;
     let gone = |e: &SftpError| matches!(e, SftpError::Status(status) if status.status_code == StatusCode::NoSuchFile);
-    // By index: closures given references make futures the compiler can't prove `Send`.
-    let results: Vec<Result<Fate, SftpError>> = stream::iter(0..files.len())
-        .map(|i| async move {
-            let (file, stamp) = &files[i];
-            match sftp.symlink_metadata(file).await {
-                Ok(attributes) if Stamp::remote(&attributes) != Some(*stamp) => return Ok(Fate::Changed),
-                Ok(_) => {}
-                Err(e) if gone(&e) => return Ok(Fate::Gone),
-                Err(e) => return Err(e),
-            }
-            match sftp.remove_file(file).await {
-                Ok(()) => Ok(Fate::Deleted),
-                Err(e) if gone(&e) => Ok(Fate::Gone),
-                Err(e) => Err(e),
-            }
-        })
-        .buffered(CONCURRENT_DIRS)
-        .collect()
-        .await;
+    let results: Vec<Result<Fate, SftpError>> = each_in_order(&left.files, CONCURRENT_DIRS, |(file, stamp)| async move {
+        match sftp.symlink_metadata(file).await {
+            Ok(attributes) if Stamp::remote(&attributes) != Some(*stamp) => return Ok(Fate::Changed),
+            Ok(_) => {}
+            Err(e) if gone(&e) => return Ok(Fate::Gone),
+            Err(e) => return Err(e),
+        }
+        match sftp.remove_file(file).await {
+            Ok(()) => Ok(Fate::Deleted),
+            Err(e) if gone(&e) => Ok(Fate::Gone),
+            Err(e) => Err(e),
+        }
+    })
+    .collect()
+    .await;
     let mut deletion = Deletion::default();
     let mut first = Ok(());
     let mut results = results.into_iter();
@@ -277,18 +271,8 @@ pub async fn delete_remote(sftp: &SftpSession, left: &mut Left<String>) -> Delet
     if first.is_ok() {
         // Deepest first, those of one depth at once: one at a time, 2,000 folders waited
         // minutes on a distant server.
-        let depth = |dir: &String| dir.matches('/').count();
-        left.dirs.sort_by_key(|dir| std::cmp::Reverse(depth(dir)));
-        for level in left.dirs.chunk_by(|a, b| depth(a) == depth(b)) {
-            // By index: closures given references make futures the compiler can't prove `Send`.
-            let removed: Vec<bool> = stream::iter(0..level.len())
-                .map(|i| {
-                    let dir = &level[i];
-                    async move { sftp.remove_dir(dir).await.is_ok() }
-                })
-                .buffer_unordered(CONCURRENT_DIRS)
-                .collect()
-                .await;
+        for level in levels(&mut left.dirs, String::as_str, Order::DeepestFirst) {
+            let removed: Vec<bool> = each(level, CONCURRENT_DIRS, |dir| async move { sftp.remove_dir(dir).await.is_ok() }).collect().await;
             deletion.deleted_folders += removed.into_iter().filter(|&removed| removed).count();
         }
         left.dirs.clear();

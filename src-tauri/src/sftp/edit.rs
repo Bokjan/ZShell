@@ -13,12 +13,12 @@ use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Notify;
 use ts_rs::TS;
 
 use super::file_name;
 use super::replace::RemoteTarget;
+use super::transfer::pump;
 use crate::error::{Error, Result};
 use crate::local_name::local_file_name;
 
@@ -201,19 +201,8 @@ impl Edits {
         let result: anyhow::Result<()> = async {
             // Replaced only once complete, keeping its owner and mode (see `replace`).
             let mut target = RemoteTarget::create(sftp, remote, None).await?;
-            let written: anyhow::Result<()> = async {
-                // Streamed: the file may be large.
-                let mut buf = vec![0; 256 << 10];
-                loop {
-                    let n = local.read(&mut buf).await.map_err(read_failed)?;
-                    if n == 0 {
-                        break;
-                    }
-                    target.file.write_all(&buf[..n]).await?;
-                }
-                Ok(())
-            }
-            .await;
+            // Streamed: the file may be large.
+            let written = pump(&mut local, &mut target.file, |e| read_failed(e).into(), |_| Ok(())).await;
             match written {
                 Ok(()) => target.finish(sftp).await,
                 Err(e) => {
