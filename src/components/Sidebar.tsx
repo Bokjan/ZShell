@@ -157,7 +157,12 @@ export function Sidebar(props: Props) {
     searchRef.current?.select();
   }, [searchFocusKey]);
 
-  useEffect(() => setHighlight(0), [query]);
+  // The first result is highlighted as the query changes: set with it, rather than in an
+  // effect that renders the list a second time after each keystroke.
+  const changeQuery = (value: string) => {
+    setQuery(value);
+    setHighlight(0);
+  };
 
   // The focus was on what is gone (the button, pressed from the keyboard or with its key, or
   // the list with no terminal to take it, see `useSidebar`): the button takes it where it is now.
@@ -334,11 +339,11 @@ export function Sidebar(props: Props) {
     const pick = (index: number) => {
       if (index < results.length) onOpen(results[index], "connect");
       else if (quick) onQuickConnect(quick);
-      setQuery("");
+      changeQuery("");
     };
     if (navigateList(e, resultCount, highlighted, setHighlight, pick) || isComposing(e)) return;
     if (e.key === "Escape") {
-      if (query) setQuery("");
+      if (query) changeQuery("");
       else searchRef.current?.blur();
     } else return;
     e.preventDefault();
@@ -579,7 +584,7 @@ export function Sidebar(props: Props) {
           <input
             ref={searchRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => changeQuery(e.target.value)}
             onKeyDown={onSearchKeyDown}
             role="combobox"
             aria-label={t("sidebar.searchLabel")}
@@ -642,7 +647,7 @@ export function Sidebar(props: Props) {
                   className={`tree-row quick${highlighted === results.length ? " highlighted" : ""}`}
                   onClick={() => {
                     onQuickConnect(quick);
-                    setQuery("");
+                    changeQuery("");
                   }}
                 >
                   <span className="tree-icon">
