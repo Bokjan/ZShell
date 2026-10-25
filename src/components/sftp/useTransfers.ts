@@ -7,7 +7,7 @@ import { errorCode, errorMessage, notConnected, sftp, type FileEntry, type Sessi
 import { open, save } from "../../ipc/fileDialog";
 import { basename } from "../../lib/format";
 import { storedString, storeString } from "../../lib/storage";
-import { finished, type Transfer } from "../TransferList";
+import { finished, transferLabel, type Transfer } from "../TransferList";
 import { useLatest } from "../../hooks/latest";
 import { attempt } from "../../lib/attempt";
 import { parentPath } from "../../lib/remotePath";
@@ -51,8 +51,9 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     for (const transfer of transfers) {
       if (statuses.current.get(transfer.id) === transfer.status) continue;
       statuses.current.set(transfer.id, transfer.status);
-      if (transfer.status === "done") announce(t("announce.transferDone", { name: transfer.label }));
-      else if (transfer.status === "error") announce(t("announce.transferFailed", { name: transfer.label, error: transfer.error ?? "" }));
+      if (transfer.status === "done") announce(t("announce.transferDone", { name: transferLabel(t, transfer.names) }));
+      else if (transfer.status === "error")
+        announce(t("announce.transferFailed", { name: transferLabel(t, transfer.names), error: transfer.error ?? "" }));
     }
   }, [transfers, t]);
 
@@ -84,12 +85,9 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     return sessionId;
   };
 
-  const labelFor = (names: string[]) =>
-    names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 });
-
   const run = async (kind: Transfer["kind"], names: string[], work: (id: string) => Promise<TransferEnd>) => {
     const id = crypto.randomUUID();
-    add({ id, kind, label: labelFor(names), progress: null, status: "running" });
+    add({ id, kind, names, progress: null, status: "running" });
     return attempt(
       async () => {
         const end = await work(id);
@@ -227,15 +225,15 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
         onError: (e) => {
           if (errorCode(e) !== "edit.conflict") {
             // Saved in another app: the transfer list may be out of sight, or the panel closed.
-            announce(t("announce.editUploadFailed", { name: transfer.label, error: errorMessage(e) }));
+            announce(t("announce.editUploadFailed", { name: transfer.names[0], error: errorMessage(e) }));
             return update(id, { save: { state: "failed", error: errorMessage(e) } });
           }
           // Until the user decides. The question waits in the panel if it isn't shown.
           update(id, { save: { state: "skipped" } });
-          if (!activeRef.current) announce(t("announce.editConflict", { name: transfer.label }));
+          if (!activeRef.current) announce(t("announce.editConflict", { name: transfer.names[0] }));
           ask({
             title: t("sftp.editConflictTitle"),
-            message: t("sftp.editConflictMessage", { name: transfer.label }),
+            message: t("sftp.editConflictMessage", { name: transfer.names[0] }),
             confirmLabel: t("sftp.editConflictReplace"),
             danger: true,
             action: () => void uploadEdit(id, true),
@@ -285,7 +283,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     const current = transfersRef.current.find((t) => t.status === "editing" && t.remotePath === entry.path);
     if (current) return void sftp.editReopen(current.id).catch(fail);
     const id = crypto.randomUUID();
-    add({ id, kind: "edit", label: entry.name, remotePath: entry.path, progress: null, status: "running" });
+    add({ id, kind: "edit", names: [entry.name], remotePath: entry.path, progress: null, status: "running" });
     try {
       await sftp.editOpen(
         sessionId,
@@ -312,7 +310,6 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     remove,
     clearFinished,
     failed,
-    labelFor,
     upload,
     download,
     downloadTo,

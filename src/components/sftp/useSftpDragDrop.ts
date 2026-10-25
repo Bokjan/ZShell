@@ -38,7 +38,6 @@ interface Options {
     add(transfer: Transfer): void;
     update(id: string, patch: Partial<Transfer>): void;
     failed(id: string, e: unknown): void;
-    labelFor(names: string[]): string;
   };
   fail(e: unknown): void;
 }
@@ -82,7 +81,7 @@ export function useSftpDragDrop(options: Options) {
             transfers.add({
               id,
               kind: "download",
-              label: transfers.labelFor(items.map((entry) => entry.name)),
+              names: items.map((entry) => entry.name),
               progress: null,
               status: "running",
             });

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
@@ -12,7 +13,8 @@ import { ArrowIcon, CloseIcon, PencilIcon, TrashIcon } from "./icons";
 export interface Transfer {
   id: string;
   kind: "upload" | "download" | "edit";
-  label: string;
+  /** The names of what it copies, which name it in the current language (see `transferLabel`). */
+  names: string[];
   progress: TransferProgress | null;
   /** "editing" once a file opened in an editor is downloaded and watched. */
   status: "running" | "editing" | "done" | "error" | "cancelled";
@@ -55,6 +57,10 @@ const KIND_ICONS = {
   download: <ArrowIcon direction="down" size={12} />,
   edit: <PencilIcon size={12} />,
 };
+
+/** What a transfer of `names` is called: the first name, and how many more. */
+export const transferLabel = (t: TFunction, names: string[]) =>
+  names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 });
 
 export const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
 
@@ -116,6 +122,7 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
   // What it created can be deleted once it has ended, the files of an upload only through the connection.
   const deletable = finished(transfer) && (transfer.created ?? 0) > 0 && deleted == null;
   const upload = transfer.kind === "upload";
+  const label = transferLabel(t, transfer.names);
 
   const detail = () => {
     if (deleted != null) {
@@ -159,8 +166,8 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
         <span className="transfer-kind" role="img" aria-label={t(`transfer.kind.${transfer.kind}`)}>
           {KIND_ICONS[transfer.kind]}
         </span>
-        <span className="transfer-label" title={transfer.label}>
-          {transfer.label}
+        <span className="transfer-label" title={label}>
+          {label}
         </span>
         {transfer.status === "running" && (
           <button className="link-button" onClick={() => actions.onCancel(id)}>
