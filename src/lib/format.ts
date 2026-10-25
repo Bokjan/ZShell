@@ -16,18 +16,33 @@ export function parsePort(text: string, { allowZero = false } = {}): number | nu
   return port >= (allowZero ? 0 : 1) && port <= 65535 ? port : null;
 }
 
+const SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"];
+
+/** The unit `formatSize` writes `bytes` in, as an index of `SIZE_UNITS`. */
+function sizeUnit(bytes: number): number {
+  let unit = 0;
+  for (let value = bytes; value >= 1024 && unit < SIZE_UNITS.length - 1; value /= 1024) unit++;
+  return unit;
+}
+
 /** Binary-prefixed size with locale-aware digits, e.g. "1.5 MB" ("1,5 MB" in German). */
 export function formatSize(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
+  const unit = sizeUnit(bytes);
+  const value = bytes / 1024 ** unit;
   const digits = unit === 0 || value >= 10 ? 0 : 1;
   const number = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: digits }).format(value);
-  return `${number} ${units[unit]}`;
+  return `${number} ${SIZE_UNITS[unit]}`;
+}
+
+/**
+ * Sizes at least as wide as any `formatSize` gives up to `bytes`, with tabular digits: four
+ * digits in its unit and in the one below ("1,023 MB", "1,023 KB"). Laid under a size that
+ * grows towards `bytes`, they keep it from changing width.
+ */
+export function widestSizes(bytes: number): string[] {
+  const unit = sizeUnit(bytes);
+  const number = new Intl.NumberFormat(i18n.language).format(1023);
+  return SIZE_UNITS.slice(Math.max(0, unit - 1), unit + 1).map((name) => `${number} ${name}`);
 }
 
 /** Compact, locale-formatted timestamp: date and time this year, date only for older files. */

@@ -81,6 +81,30 @@
 .transfers li.error .transfer-detail {
   color: var(--danger);
 }
+/* The file being copied, then the amounts at the end: digits of one width, and each amount as
+   wide as its widest (`Steady`), so that nothing on the line moves as they change. */
+.transfer-progress {
+  display: flex;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.steady {
+  display: inline-grid;
+  flex-shrink: 0;
+  justify-items: end;
+}
+.steady > * {
+  grid-area: 1 / 1;
+}
+.steady > [aria-hidden] {
+  visibility: hidden;
+}
 .link-button {
   border: none;
   background: none;

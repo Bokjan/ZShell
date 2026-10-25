@@ -88,7 +88,7 @@ function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
   useStableProps("TransferItem", props, ["actions"]);
   const { transfer, actions } = props;
   const { t, i18n } = useTranslation();
-  const { formatSize } = useLocale();
+  const { formatSize, widestSizes } = useLocale();
   const { id } = transfer;
   const p = transfer.progress;
   const percent = p && p.total > 0 ? (p.transferred / p.total) * 100 : transfer.status === "done" ? 100 : 0;
@@ -103,14 +103,23 @@ function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
       return t(`transfer.edit.${save.state}`);
     }
     if (transfer.status === "cancelled") return t("transfer.cancelled");
-    if (!p) return t("transfer.preparing");
-    const progress = t("transfer.progress", {
-      transferred: formatSize(p.transferred),
-      total: formatSize(p.total),
-      done: p.filesDone,
-      count: p.filesTotal,
-    });
-    return transfer.status === "running" && p.current ? t("transfer.progressCurrent", { progress, file: p.current }) : progress;
+    return t("transfer.preparing");
+  };
+
+  // The file being copied on the left; the amounts on the right, each as wide as it will
+  // ever be, so that neither moves as the numbers grow.
+  const progress = (p: TransferProgress) => {
+    const size = (transferred: string) => t("transfer.size", { transferred, total: formatSize(p.total) });
+    const files = (done: number) => t("transfer.files", { done, count: p.filesTotal });
+    return (
+      <div className="transfer-detail transfer-progress">
+        <span className="transfer-current" title={transfer.status === "running" ? p.current : undefined}>
+          {transfer.status === "running" ? p.current : ""}
+        </span>
+        <Steady text={size(formatSize(p.transferred))} samples={widestSizes(p.total).map(size)} />
+        <Steady text={files(p.filesDone)} samples={[files(p.filesTotal)]} />
+      </div>
+    );
   };
 
   return (
@@ -153,9 +162,27 @@ function TransferItem(props: { transfer: Transfer; actions: TransferActions }) {
           <div style={{ width: `${percent}%` }} />
         </div>
       )}
-      <div className="transfer-detail" title={transfer.save?.state === "failed" ? transfer.save.error : transfer.error}>
-        {detail()}
-      </div>
+      {p && (transfer.status === "running" || transfer.status === "done") ? (
+        progress(p)
+      ) : (
+        <div className="transfer-detail" title={transfer.save?.state === "failed" ? transfer.save.error : transfer.error}>
+          {detail()}
+        </div>
+      )}
     </li>
+  );
+}
+
+/** `text`, as wide as the widest of `samples` (laid under it, unseen), so that it keeps its width as it changes. */
+function Steady({ text, samples }: { text: string; samples: string[] }) {
+  return (
+    <span className="steady">
+      {samples.map((sample, i) => (
+        <span key={i} aria-hidden="true">
+          {sample}
+        </span>
+      ))}
+      <span>{text}</span>
+    </span>
   );
 }

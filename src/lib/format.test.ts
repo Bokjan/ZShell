@@ -1,7 +1,25 @@
 import i18n from "i18next";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { compareNames, formatAgo, formatList, languageName } from "./format";
+import { compareNames, formatAgo, formatList, formatSize, languageName, widestSizes } from "./format";
+
+describe("formatSize", () => {
+  beforeAll(() => i18n.init({ lng: "en", resources: {} }));
+
+  it("writes one decimal below ten, none in bytes", () => {
+    expect(formatSize(0)).toBe("0 B");
+    expect(formatSize(1023)).toBe("1,023 B");
+    expect(formatSize(1536)).toBe("1.5 KB");
+    expect(formatSize(40 * 1024 ** 2)).toBe("40 MB");
+    expect(formatSize(3 * 1024 ** 5)).toBe("3,072 TB");
+  });
+
+  it("gives the widest sizes up to a total in its unit and the one below", () => {
+    expect(widestSizes(500)).toEqual(["1,023 B"]);
+    expect(widestSizes(40 * 1024 ** 2)).toEqual(["1,023 KB", "1,023 MB"]);
+    expect(widestSizes(2 * 1024 ** 3)).toEqual(["1,023 MB", "1,023 GB"]);
+  });
+});
 
 describe("formatAgo", () => {
   // In the app's language, which tests set: otherwise it is the system's (LANG), and the
