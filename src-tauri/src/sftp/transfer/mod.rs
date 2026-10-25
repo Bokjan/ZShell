@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use futures_util::{stream, StreamExt};
+use futures_util::{stream, StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
 use serde::Serialize;
@@ -491,10 +491,13 @@ pub async fn download(
     reporter: &mut Reporter,
     left: &mut Left<PathBuf>,
 ) -> Result<()> {
+    let attributes = stat_all(sftp, &remote_paths.iter().map(String::as_str).collect::<Vec<_>>()).await?;
     let mut items = Vec::with_capacity(remote_paths.len());
     let mut result = Ok(());
-    for remote in remote_paths {
-        match claim(sftp, remote, local_dir).await {
+    // One at a time, in order: which of two names that clash locally gets `name (1)` stays
+    // the same from one download to the next.
+    for (remote, attributes) in remote_paths.iter().zip(&attributes) {
+        match claim(remote, attributes, local_dir).await {
             Ok(local) => items.push((remote.clone(), local)),
             Err(e) => {
                 result = Err(e);
@@ -504,7 +507,7 @@ pub async fn download(
     }
     let mut whole = Vec::new();
     if result.is_ok() {
-        result = download_counting(sftp, &items, reporter, &mut whole, left, true).await;
+        result = download_counting(sftp, &items, attributes, reporter, &mut whole, left, true).await;
     }
     if let Err(e) = result {
         // Give back the names of the items that never arrived. Those that did stay, even an
@@ -528,12 +531,25 @@ pub async fn download(
     Ok(())
 }
 
+/// The attributes of each remote item, in order, asked at once: one after another, choosing
+/// 500 files to download waited a minute on a server 100 ms away before the first byte.
+async fn stat_all(sftp: &SftpSession, remote_paths: &[&str]) -> Result<Vec<FileAttributes>> {
+    // By index, as in `copy_files`.
+    stream::iter(0..remote_paths.len())
+        .map(|i| {
+            let remote = remote_paths[i];
+            async move { sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote)) }
+        })
+        .buffered(CONCURRENT_DIRS)
+        .try_collect()
+        .await
+}
+
 /// Takes a free local name for the remote item, creating an empty file or folder there.
-async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<PathBuf> {
+async fn claim(remote: &str, metadata: &FileAttributes, local_dir: &Path) -> Result<PathBuf> {
     let name = local_file_name(file_name(remote)).ok_or_else(|| Error::new("transfer.invalidName").param("name", remote))?;
-    let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
     let path = local_dir.join(name);
-    let (is_dir, dir_mode, file_mode) = (metadata.file_type().is_dir(), downloaded_dir_mode(&metadata), downloaded_mode(&metadata));
+    let (is_dir, dir_mode, file_mode) = (metadata.file_type().is_dir(), downloaded_dir_mode(metadata), downloaded_mode(metadata));
     let wanted = path.clone();
     let created = tokio::task::spawn_blocking(move || match is_dir {
         true => create_unique(&wanted, |path| create_dir(path, dir_mode, false)),
@@ -548,15 +564,18 @@ async fn claim(sftp: &SftpSession, remote: &str, local_dir: &Path) -> Result<Pat
 /// The files it created and those it replaced go into `left`; not the folders, which may have
 /// been there.
 pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, left: &mut Left<PathBuf>) -> Result<()> {
-    download_counting(sftp, items, reporter, &mut Vec::new(), left, false).await
+    let attributes = stat_all(sftp, &items.iter().map(|(remote, _)| remote.as_str()).collect::<Vec<_>>()).await?;
+    download_counting(sftp, items, attributes, reporter, &mut Vec::new(), left, false).await
 }
 
-/// [`download_to`], keeping in `whole` which of the items have arrived whole: those copied at
-/// the same time as one that failed may have. With `claimed`, the items' paths were free
-/// before (see [`claim`]): all that arrives under them is new, folders too.
+/// [`download_to`], given the items' `attributes`, keeping in `whole` which of the items have
+/// arrived whole: those copied at the same time as one that failed may have. With `claimed`,
+/// the items' paths were free before (see [`claim`]): all that arrives under them is new,
+/// folders too.
 async fn download_counting(
     sftp: &SftpSession,
     items: &[(String, PathBuf)],
+    attributes: Vec<FileAttributes>,
     reporter: &mut Reporter,
     whole: &mut Vec<bool>,
     left: &mut Left<PathBuf>,
@@ -569,8 +588,7 @@ async fn download_counting(
     let mut taken = Taken::new(ignores_case);
     // Where each item's files end in `plan.files`.
     let mut ends = Vec::with_capacity(items.len());
-    for (remote, local) in items {
-        let metadata = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
+    for ((remote, local), metadata) in items.iter().zip(attributes) {
         if metadata.file_type().is_dir() {
             scan_remote_dir(sftp, remote.clone(), local.clone(), downloaded_dir_mode(&metadata), &mut plan, &mut taken, reporter).await?;
         } else {
