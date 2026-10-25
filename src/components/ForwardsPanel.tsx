@@ -156,7 +156,11 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, tr
             <li key={rule.id} className={`forward-rule ${state?.type ?? "stopped"}`} title={explainRule(t, rule)}>
               <span className="forward-badges">
                 <span className={`forward-kind ${rule.kind}`}>{t(`forwards.kind.${rule.kind}`)}</span>
-                {rule.autoStart && <span className="forward-tag">{t("forwards.autoStartTag")}</span>}
+                {rule.autoStart && (
+                  <span className="forward-tag" title={t("forwards.autoStartHint")}>
+                    {t("forwards.autoStartTag")}
+                  </span>
+                )}
               </span>
               <div className="forward-main">
                 <div className="forward-mapping">{mapping(rule)}</div>

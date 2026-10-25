@@ -163,9 +163,12 @@
   color: var(--danger);
 }
 .forward-tag {
-  /* As wide as the kind above it, wrapping rather than widening the column (French "Démarrage auto"). */
+  /* As wide as the kind above it, cut short rather than widening the column; its tooltip says it in full. */
   width: 0;
   min-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 0 5px;
   box-sizing: border-box;
   border: 1px solid var(--input-border);

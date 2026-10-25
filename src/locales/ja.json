@@ -577,6 +577,7 @@
     "start": "開始",
     "stop": "停止",
     "autoStartTag": "自動開始",
+    "autoStartHint": "セッションの接続時に自動的に開始します。",
     "kind": {
       "local": "ローカル",
       "remote": "リモート",

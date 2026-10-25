@@ -608,6 +608,7 @@
     "start": "Start",
     "stop": "Stop",
     "autoStartTag": "Auto-start",
+    "autoStartHint": "Starts automatically when the session connects.",
     "kind": {
       "local": "Local",
       "remote": "Remote",

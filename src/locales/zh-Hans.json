@@ -577,6 +577,7 @@
     "start": "启动",
     "stop": "停止",
     "autoStartTag": "自动启动",
+    "autoStartHint": "会话连接后自动启动。",
     "kind": {
       "local": "本地",
       "remote": "远程",

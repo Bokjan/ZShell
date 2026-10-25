@@ -608,6 +608,7 @@
     "start": "Starten",
     "stop": "Stoppen",
     "autoStartTag": "Autostart",
+    "autoStartHint": "Startet automatisch, sobald die Sitzung verbunden ist.",
     "kind": {
       "local": "Lokal",
       "remote": "Remote",

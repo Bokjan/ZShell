@@ -638,7 +638,8 @@
     "runRule": "Démarrer {rule}",
     "start": "Démarrer",
     "stop": "Arrêter",
-    "autoStartTag": "Démarrage auto",
+    "autoStartTag": "Auto",
+    "autoStartHint": "Démarre automatiquement à la connexion de la session.",
     "kind": {
       "local": "Locale",
       "remote": "Distante",
