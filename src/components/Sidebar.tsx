@@ -1,9 +1,8 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
-import type { AppMenuButton } from "../app/useAppMenu";
 import type { Release } from "../ipc/bindings";
 import { announce } from "../lib/announce";
 import { duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, type TreeItem } from "../ipc/api";
@@ -66,6 +65,13 @@ export interface SidebarHandlers {
   onSettings(): void;
   /** Hides or shows the session list (see `useSidebar`). */
   onToggleHidden(): void;
+}
+
+/** The app menu's button, which the sidebar draws and `useAppMenu` opens the menu below. */
+export interface AppMenuButton {
+  ref: RefObject<HTMLButtonElement | null>;
+  /** Opens or closes the menu; `fromKeyboard` highlights its first item. */
+  toggle(fromKeyboard: boolean): void;
 }
 
 interface Props {

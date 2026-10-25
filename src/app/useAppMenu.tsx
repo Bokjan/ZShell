@@ -1,7 +1,8 @@
-import { useRef, useState, type RefObject } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ContextMenu, type MenuItem } from "../components/ContextMenu";
+import type { AppMenuButton } from "../components/Sidebar";
 import { menuLabel } from "../hooks/appMenu";
 import { appMenu, matches, type MenuAction, type MenuEntry } from "../lib/keymap";
 import { isMac } from "../lib/platform";
@@ -17,12 +18,6 @@ const CORNER = 4;
  * The button's ref and what it does: one object that stays the same (see `useStableHandlers`).
  * Whether the menu is open and the newer version come beside it, as values that change.
  */
-export interface AppMenuButton {
-  ref: RefObject<HTMLButtonElement | null>;
-  /** Opens or closes the menu; `fromKeyboard` highlights its first item. */
-  toggle(fromKeyboard: boolean): void;
-}
-
 /**
  * The app menu outside macOS (see `appMenu` in keymap.ts): opened by the app's icon and name in
  * the title bar (`button`), or by its shortcut, below the button or, while the button is out

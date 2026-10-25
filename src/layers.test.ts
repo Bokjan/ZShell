@@ -36,6 +36,29 @@ describe("lib", () => {
   });
 });
 
+// Components and hooks: shared by the app's flows (`app/`), which own them, never the reverse.
+const shared = import.meta.glob<string>(["./components/**/*.{ts,tsx}", "./hooks/**/*.{ts,tsx}", "!./**/*.test.ts"], {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+
+describe("components and hooks", () => {
+  it("are found", () => {
+    expect(Object.keys(shared).length).toBeGreaterThan(50);
+  });
+
+  it("depend on no flow of the app, not even for a type", () => {
+    const allImports = (source: string) => [...source.matchAll(/^import [^;]*?from "([^"]+)";/gms)].map((match) => match[1]);
+    const found = Object.entries(shared).flatMap(([path, source]) =>
+      allImports(source)
+        .filter((module) => /^(\.\.\/)+app\//.test(module) || /^(\.\.\/)+App\b/.test(module))
+        .map((module) => `${path}: ${module}`),
+    );
+    expect(found).toEqual([]);
+  });
+});
+
 describe("ipc", () => {
   it("is found", () => {
     expect(Object.keys(outside).length).toBeGreaterThan(50);
