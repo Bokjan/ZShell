@@ -1,5 +1,6 @@
 //! The output side of a session.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::Local;
@@ -61,6 +62,8 @@ pub struct SessionSink {
     /// The session's character encoding; `None` for UTF-8.
     pub(super) codec: Option<Arc<Codec>>,
     traffic: Arc<TerminalTraffic>,
+    /// Its tab is gone (see [`SessionSink::detach`]).
+    detached: Arc<AtomicBool>,
 }
 
 /// What a session's terminal sends and receives, as the remote side has it (before the
@@ -109,7 +112,14 @@ impl SessionSink {
     pub(super) fn new(channel: Channel, zmodem: Arc<Zmodem>, log: Arc<LogSlot>, codec: Option<Arc<Codec>>) -> Self {
         let channel = Arc::new(Mutex::new(channel));
         let traffic = Arc::new(TerminalTraffic::new(channel.clone()));
-        Self { channel, flow: Arc::default(), zmodem, log, codec, traffic }
+        Self { channel, flow: Arc::default(), zmodem, log, codec, traffic, detached: Arc::default() }
+    }
+
+    /// Stops sending output to the tab, which has closed: a local program that ignores the
+    /// hang-up may go on writing until it is killed, for nobody to see. It still goes to the
+    /// log.
+    pub(super) fn detach(&self) {
+        self.detached.store(true, Ordering::Relaxed);
     }
 
     pub fn traffic(&self) -> &TerminalTraffic {
@@ -168,6 +178,9 @@ impl SessionSink {
     }
 
     fn send_output(&self, bytes: &[u8]) {
+        if self.detached.load(Ordering::Relaxed) {
+            return;
+        }
         let mut message = Vec::with_capacity(bytes.len() + 1);
         message.push(OUTPUT);
         message.extend_from_slice(bytes);

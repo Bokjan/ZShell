@@ -268,6 +268,7 @@ fn owned<'a>(sessions: &'a HashMap<SessionId, SessionEntry>, webview: &str, id: 
 
 /// Releases what a session holds, then aborts its task.
 fn close(entry: SessionEntry) {
+    entry.sink.detach();
     entry.lifetime.close();
     entry.task.abort();
 }
