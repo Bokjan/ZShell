@@ -1,23 +1,44 @@
 import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 
 /**
+ * Follows a press of the left mouse button until it is released, also outside the window,
+ * where the page doesn't hear it (seen on the next move). Returns a function that stops
+ * following without `onUp`.
+ */
+function followPress(onMove: (e: MouseEvent) => void, onUp: () => void): () => void {
+  const move = (ev: MouseEvent) => {
+    if ((ev.buttons & 1) === 0) return up();
+    onMove(ev);
+  };
+  const stop = () => {
+    window.removeEventListener("mousemove", move);
+    window.removeEventListener("mouseup", up);
+  };
+  const up = () => {
+    stop();
+    onUp();
+  };
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", up);
+  return stop;
+}
+
+/**
  * Follows a splitter drag until the mouse is released, reporting the pointer's x position
  * (or y, for a splitter between stacked areas). While dragging, `body.resizing` keeps the
  * resize cursor and stops terminals from swallowing the mouse.
  */
 export function dragSplitter(e: ReactMouseEvent, axis: "x" | "y", onMove: (position: number) => void, onEnd?: () => void) {
   e.preventDefault();
-  const move = (ev: MouseEvent) => onMove(axis === "x" ? ev.clientX : ev.clientY);
   const classes = axis === "x" ? ["resizing"] : ["resizing", "rows"];
-  const up = () => {
-    window.removeEventListener("mousemove", move);
-    window.removeEventListener("mouseup", up);
-    document.body.classList.remove(...classes);
-    onEnd?.();
-  };
-  window.addEventListener("mousemove", move);
-  window.addEventListener("mouseup", up);
   document.body.classList.add(...classes);
+  followPress(
+    (ev) => onMove(axis === "x" ? ev.clientX : ev.clientY),
+    () => {
+      document.body.classList.remove(...classes);
+      onEnd?.();
+    },
+  );
 }
 
 export const dragHorizontally = (e: ReactMouseEvent, onMove: (clientX: number) => void, onEnd?: () => void) =>
@@ -48,8 +69,6 @@ export function usePressDrag(): (e: ReactMouseEvent, drag: PressDrag) => void {
     const [startX, startY] = [e.clientX, e.clientY];
     let moved = false;
     const move = (ev: MouseEvent) => {
-      // Released outside the window, where the page doesn't hear it.
-      if ((ev.buttons & 1) === 0) return up();
       if (!moved) {
         const distance = drag.axis === "x" ? Math.abs(ev.clientX - startX) : Math.hypot(ev.clientX - startX, ev.clientY - startY);
         if (distance < drag.threshold) return;
@@ -58,19 +77,18 @@ export function usePressDrag(): (e: ReactMouseEvent, drag: PressDrag) => void {
       }
       drag.onMove(ev);
     };
-    const stop = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+    const end = () => {
       if (drag.bodyClass) document.body.classList.remove(drag.bodyClass);
       stopCurrent.current = null;
     };
-    const up = () => {
-      stop();
-      drag.onEnd(moved);
-    };
     stopCurrent.current?.();
-    stopCurrent.current = stop;
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    const unfollow = followPress(move, () => {
+      end();
+      drag.onEnd(moved);
+    });
+    stopCurrent.current = () => {
+      unfollow();
+      end();
+    };
   }, []);
 }
