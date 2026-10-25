@@ -1,3 +1,9 @@
+use std::collections::HashSet;
+use std::path::Path;
+
+use super::download::*;
+use super::left::Stamp;
+use super::upload::*;
 use super::*;
 
 #[test]
