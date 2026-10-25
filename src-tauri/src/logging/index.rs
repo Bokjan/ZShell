@@ -1,6 +1,8 @@
 //! The logs ZShell has written (`logs.json`), the ones being written now, and cleaning them
 //! up (see the module docs of `logging`).
 
+use std::collections::HashSet;
+
 use super::*;
 
 /// The logs being written, by path, with how many writers each has: a reconnection's writer
@@ -237,23 +239,25 @@ impl Logs {
         }
     }
 
-    /// The logs that still exist, forgetting the others (deleted by hand). Here and after
-    /// deleting, the index is only written for what is gone: if that fails, it is forgotten
-    /// again next time.
-    fn existing(&self) -> std::sync::MutexGuard<'_, Vec<Entry>> {
+    /// The logs that still exist, forgetting the others (deleted by hand). The files are
+    /// looked at outside the index's lock: in a slow log folder (a network drive) that takes
+    /// long, and opening a session that logs waits for the lock. Here and after deleting, the
+    /// index is only written for what is gone: if that fails, it is forgotten again next time.
+    fn existing(&self) -> Vec<Entry> {
+        let listed = self.index.lock().unwrap().clone();
+        let gone: HashSet<PathBuf> = listed.into_iter().filter(|entry| !entry.path.is_file()).map(|entry| entry.path).collect();
         let mut index = self.index.lock().unwrap();
-        let before = index.len();
-        index.retain(|entry| entry.path.is_file());
-        if index.len() != before {
+        if !gone.is_empty() {
+            index.retain(|entry| !gone.contains(&entry.path));
             let _ = self.index_file.write(&*index);
         }
-        index
+        index.clone()
     }
 
     pub fn summary(&self) -> LogSummary {
-        let index = self.existing();
-        let bytes = index.iter().filter_map(|entry| entry.path.metadata().ok()).map(|m| m.len()).sum();
-        LogSummary { count: index.len(), bytes }
+        let logs = self.existing();
+        let bytes = logs.iter().filter_map(|entry| entry.path.metadata().ok()).map(|m| m.len()).sum();
+        LogSummary { count: logs.len(), bytes }
     }
 
     /// How many logs a saved session has.
@@ -261,19 +265,35 @@ impl Logs {
         self.existing().iter().filter(|entry| entry.profile.as_deref() == Some(profile)).count()
     }
 
-    /// Deletes the logs that `matches`, except those being written; returns how many.
+    /// Deletes the logs that `matches`, except those being written; returns how many. Which
+    /// match and the deleting are done outside the index's lock (see `existing`).
     fn delete(&self, matches: impl Fn(&Entry) -> bool) -> usize {
-        // Under the index's lock, which going on with a log takes to count it (see `append`).
-        let mut index = self.existing();
-        let mut deleted = 0;
-        index.retain(|entry| {
-            if !matches(entry) || self.active.contains(&entry.path) || std::fs::remove_file(&entry.path).is_err() {
-                return true;
+        let wanted: HashSet<PathBuf> = self.existing().into_iter().filter(|entry| matches(entry)).map(|entry| entry.path).collect();
+        // Taken out of the index under its lock, except those being written: going on with
+        // one of these (`append`, which counts it as written under the lock) then starts a
+        // new log rather than writing to one being deleted.
+        let mut taken = Vec::new();
+        self.index.lock().unwrap().retain(|entry| {
+            let take = wanted.contains(&entry.path) && !self.active.contains(&entry.path);
+            if take {
+                taken.push(entry.clone());
             }
-            deleted += 1;
-            false
+            !take
         });
-        let _ = self.index_file.write(&*index);
+        let (mut deleted, mut kept) = (0, Vec::new());
+        for entry in &taken {
+            match std::fs::remove_file(&entry.path) {
+                Ok(()) => deleted += 1,
+                // Those that couldn't be deleted go back.
+                Err(_) if entry.path.is_file() => kept.push(entry.clone()),
+                Err(_) => {}
+            }
+        }
+        let mut index = self.index.lock().unwrap();
+        index.extend(kept);
+        if !taken.is_empty() {
+            let _ = self.index_file.write(&*index);
+        }
         deleted
     }
 
