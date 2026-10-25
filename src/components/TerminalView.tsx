@@ -435,14 +435,18 @@ export function TerminalView({
     const kittyNotices = new KittyNotices();
 
     // The scroll bar shows while the view scrolls (see `.scrolling`), but not for output that
-    // only moves it along at the end, where nothing is being read back.
+    // only moves it along at the end, where nothing is being read back, nor for output that
+    // arrives while the view stays where it was reading.
     let scrolling: ReturnType<typeof setTimeout> | undefined;
     let atEnd = true;
+    let viewportY = 0;
     const onScroll = () => {
       const buffer = term.buffer.active;
       const wasAtEnd = atEnd;
+      const moved = buffer.viewportY !== viewportY;
       atEnd = buffer.viewportY === buffer.baseY;
-      if (atEnd && wasAtEnd) return;
+      viewportY = buffer.viewportY;
+      if ((atEnd && wasAtEnd) || !moved) return;
       container.classList.add("scrolling");
       clearTimeout(scrolling);
       scrolling = setTimeout(() => container.classList.remove("scrolling"), SCROLLING_MS);
