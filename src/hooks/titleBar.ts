@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { windows } from "../ipc/windows";
 import { isLinux, isMac, isWindows } from "../lib/platform";
+import { oneAtATime } from "../lib/oneAtATime";
 
 /** Marks an element as part of the title bar that moves the window (only the element itself, not its children). */
 export const DRAG_REGION = { "data-window-drag": "" };
@@ -84,16 +85,18 @@ export function useTitleBar() {
     window.addEventListener("mouseup", onMouseUp, true);
     window.addEventListener("contextmenu", onContextMenu, true);
 
-    // The traffic lights hide in full screen, and their space with them.
-    const updateFullscreen = () =>
+    // The traffic lights hide in full screen, and their space with them. Asked once at a time,
+    // as a resize sends an event each frame.
+    const updateFullscreen = oneAtATime(() =>
       window_
         .isFullscreen()
         .then((fullscreen) => {
           if (fullscreen) root.dataset.fullscreen = "";
           else delete root.dataset.fullscreen;
         })
-        .catch(console.error);
-    void updateFullscreen();
+        .catch(console.error),
+    );
+    updateFullscreen();
     const unlistenResize = window_.onResized(updateFullscreen);
     const unlistenFocus = window_.onFocusChanged(({ payload: focused }) => {
       if (focused) delete root.dataset.windowInactive;

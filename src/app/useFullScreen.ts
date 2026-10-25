@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useLatest } from "../hooks/latest";
+import { oneAtATime } from "../lib/oneAtATime";
 
 /** How long the hint with the keys that leave full screen stays. */
 const HINT_MS = 3000;
@@ -47,12 +48,13 @@ export function useFullScreen(hasTabs: boolean, onChange: (on: boolean) => void)
   }, [hint]);
 
   // The window leaving full screen by itself. On macOS it reaches full screen only once its
-  // animation has started, so a size change before that doesn't count.
+  // animation has started, so a size change before that doesn't count. Asked once at a time,
+  // as a resize sends an event each frame.
   useEffect(() => {
     if (!on) return;
     const window_ = getCurrentWindow();
     let reached = false;
-    const unlisten = window_.onResized(() =>
+    const check = oneAtATime(() =>
       window_
         .isFullscreen()
         .then((fullScreen) => {
@@ -61,6 +63,7 @@ export function useFullScreen(hasTabs: boolean, onChange: (on: boolean) => void)
         })
         .catch(console.error),
     );
+    const unlisten = window_.onResized(check);
     return () => void unlisten.then((f) => f());
   }, [on]);
 
