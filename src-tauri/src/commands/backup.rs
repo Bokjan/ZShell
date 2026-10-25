@@ -47,7 +47,8 @@ pub async fn sessions_import(
     passphrase: Option<String>,
 ) -> Result<()> {
     let result = blocking(app, move |app| {
-        app.state::<ProfileStore>().add_all(|here| backup::plan(&path, passphrase.as_deref(), &ids, &digest, here))?;
+        let file = backup::open(&path, passphrase.as_deref(), &digest)?;
+        app.state::<ProfileStore>().add_all(|here| backup::plan(&file, &ids, here))?;
         Ok(())
     })
     .await;

