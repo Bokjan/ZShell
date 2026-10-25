@@ -266,10 +266,23 @@ pub async fn delete_remote(sftp: &SftpSession, left: &mut Left<String>) -> Delet
         }
     });
     if first.is_ok() {
-        left.dirs.sort_by_key(|dir| std::cmp::Reverse(dir.matches('/').count()));
-        for dir in left.dirs.drain(..) {
-            deletion.deleted_folders += usize::from(sftp.remove_dir(&dir).await.is_ok());
+        // Deepest first, those of one depth at once: one at a time, 2,000 folders waited
+        // minutes on a distant server.
+        let depth = |dir: &String| dir.matches('/').count();
+        left.dirs.sort_by_key(|dir| std::cmp::Reverse(depth(dir)));
+        for level in left.dirs.chunk_by(|a, b| depth(a) == depth(b)) {
+            // By index: closures given references make futures the compiler can't prove `Send`.
+            let removed: Vec<bool> = stream::iter(0..level.len())
+                .map(|i| {
+                    let dir = &level[i];
+                    async move { sftp.remove_dir(dir).await.is_ok() }
+                })
+                .buffer_unordered(CONCURRENT_DIRS)
+                .collect()
+                .await;
+            deletion.deleted_folders += removed.into_iter().filter(|&removed| removed).count();
         }
+        left.dirs.clear();
     }
     Deletion { error: first.err(), ..deletion }.with_left(left)
 }

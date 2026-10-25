@@ -375,10 +375,11 @@ pub async fn upload(
             };
             result.map_err(|e| with_file_context(e, Error::new("transfer.uploadFailed").param("path", local.display())))?;
             let mut files = files.lock().unwrap();
-            // A file of the same name that this upload put there before is its own still.
+            // A file of the same name that this upload put there before is its own still: only
+            // then looked for, as going through all of them for each replaced file adds up.
             if !replaces {
                 files.0.push(remote.clone());
-            } else if !files.0.contains(remote) {
+            } else if turn.is_none() || !files.0.contains(remote) {
                 files.1 += 1;
             }
             drop(files);
