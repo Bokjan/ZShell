@@ -91,10 +91,34 @@ async fn a_large_file_leaves_room_for_a_small_one() {
 }
 
 #[tokio::test]
+async fn large_files_waiting_leave_room_for_a_small_one() {
+    use std::sync::atomic::AtomicUsize;
+    let (large_done, large_done_by_small) = (AtomicUsize::new(0), AtomicUsize::new(usize::MAX));
+    let sizes = [SMALL_FILE + 1, SMALL_FILE + 1, SMALL_FILE + 1, 1];
+    let copy = |i| {
+        let (large_done, large_done_by_small) = (&large_done, &large_done_by_small);
+        async move {
+            if sizes[i] > SMALL_FILE {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                large_done.fetch_add(1, Ordering::SeqCst);
+            } else {
+                large_done_by_small.store(large_done.load(Ordering::SeqCst), Ordering::SeqCst);
+            }
+            Ok(())
+        }
+    };
+    let mut reporter = Reporter::with_sink(|_| {}, Default::default());
+    let run = Run::new(&mut reporter);
+    copy_files(&sizes, &run, copy).await.unwrap();
+    // Beside the first large one, not after the others waiting for their slots.
+    assert_eq!(large_done_by_small.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn a_transfer_waiting_for_its_turn_is_cancelled_at_once() {
     let slots = Arc::new(TransferSlots::default());
     // Another transfer copies files for as long as the test runs.
-    let _busy = slots.0.acquire_many(CONCURRENT_FILES as u32).await.unwrap();
+    let _busy = slots.files.acquire_many(CONCURRENT_FILES as u32).await.unwrap();
     let cancelled = CancellationToken::new();
     let mut reporter = Reporter::with_sink(|_| {}, cancelled.clone()).sharing(slots.clone());
     let run = Run::new(&mut reporter);

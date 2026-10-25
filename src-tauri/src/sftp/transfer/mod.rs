@@ -136,12 +136,19 @@ impl Transfers {
     }
 }
 
-/// What the transfers on one connection copy files at once by (see [`copy_files`]).
-pub struct TransferSlots(Semaphore);
+/// What the transfers on one connection copy files at once by (see [`copy_files`]): the files'
+/// slots, and the turn of the large ones. A large file waits for its turn before it waits for
+/// its slots, so that only one waits for them at a time: the semaphore gives one waiting for
+/// several slots those free at once and queues the others behind it, so large ones waiting
+/// side by side would each take the slot left to small files.
+pub struct TransferSlots {
+    files: Semaphore,
+    large: Semaphore,
+}
 
 impl Default for TransferSlots {
     fn default() -> Self {
-        Self(Semaphore::new(CONCURRENT_FILES))
+        Self { files: Semaphore::new(CONCURRENT_FILES), large: Semaphore::new(1) }
     }
 }
 
@@ -267,8 +274,8 @@ const CONCURRENT_FILES: usize = 8;
 /// Files larger than this are copied without another large one: one keeps the channel's
 /// window full by itself, and with others beside it the requests waiting at the server could
 /// outlast their timeout on a slow link (see `channels`). They leave one of the slots to small
-/// files, so that a large download doesn't hold up a small file of another transfer (a drag,
-/// a file opened in an editor) until it is done.
+/// files, so that a large download doesn't hold up a small file of another transfer (such as
+/// a drag) until it is done.
 const SMALL_FILE: u64 = 256 << 10;
 /// The slots a large file takes.
 const LARGE_FILE_SLOTS: u32 = CONCURRENT_FILES as u32 - 1;
@@ -331,12 +338,17 @@ async fn copy_files<F>(sizes: &[u64], run: &Run<'_>, copy_file: impl Fn(usize) -
 where
     F: Future<Output = Result<()>>,
 {
-    let (slots, copy_file) = (&run.slots.0, &copy_file);
+    let (slots, copy_file) = (&*run.slots, &copy_file);
     // By index: closures given references make futures the compiler can't prove `Send`.
     let mut copies = stream::iter(0..sizes.len())
         .map(|i| async move {
-            let weight = if sizes[i] > SMALL_FILE { LARGE_FILE_SLOTS } else { 1 };
-            let _slots = unless_cancelled(&run.cancelled, async { Ok(slots.acquire_many(weight).await.expect("never closed")) }).await?;
+            let large = sizes[i] > SMALL_FILE;
+            let _slots = unless_cancelled(&run.cancelled, async {
+                let turn = if large { Some(slots.large.acquire().await.expect("never closed")) } else { None };
+                let weight = if large { LARGE_FILE_SLOTS } else { 1 };
+                Ok((turn, slots.files.acquire_many(weight).await.expect("never closed")))
+            })
+            .await?;
             if run.failed.load(Ordering::Relaxed) {
                 bail!(Error::new("transfer.cancelled"));
             }
