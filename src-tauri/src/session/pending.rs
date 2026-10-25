@@ -13,6 +13,7 @@ pub enum Pending {
 /// that is, which [`super::TermIo::recv`] is told. Part of the first piece may have been
 /// written: a pseudo terminal or a serial line takes a few KiB at a time, and moving the rest
 /// of a large paste to the front after each write would copy it over and over.
+/// The writers on Unix write what fits; those on Windows take whole pieces.
 #[derive(Default)]
 pub struct PendingInput {
     queue: VecDeque<Pending>,
@@ -41,11 +42,13 @@ impl PendingInput {
     }
 
     /// Whether a break comes next.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn break_next(&self) -> bool {
         matches!(self.queue.front(), Some(Pending::Break))
     }
 
     /// The data to write next, unless nothing or a break comes first.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn data(&self) -> Option<&[u8]> {
         match self.queue.front()? {
             Pending::Data(data) => Some(&data[self.written..]),
@@ -54,6 +57,7 @@ impl PendingInput {
     }
 
     /// Counts `n` bytes of [`PendingInput::data`] as written.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn wrote(&mut self, n: usize) {
         let Some(Pending::Data(data)) = self.queue.front() else { return };
         self.written += n;
@@ -76,6 +80,7 @@ impl PendingInput {
     }
 
     /// Drops all of it: the writer is gone.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn clear(&mut self) {
         self.queue.clear();
         (self.written, self.bytes) = (0, 0);

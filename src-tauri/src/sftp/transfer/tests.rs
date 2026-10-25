@@ -1,9 +1,4 @@
-use std::collections::HashSet;
-use std::path::Path;
-
-use super::download::*;
 use super::left::Stamp;
-use super::upload::*;
 use super::*;
 
 #[test]
@@ -113,6 +108,11 @@ async fn a_transfer_waiting_for_its_turn_is_cancelled_at_once() {
 
 #[cfg(unix)]
 mod unix {
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    use super::super::download::*;
+    use super::super::upload::*;
     use super::*;
 
     #[tokio::test]
