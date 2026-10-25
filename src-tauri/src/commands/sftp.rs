@@ -4,7 +4,6 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
@@ -252,7 +251,7 @@ pub async fn sftp_edit_open(
     // download was cancelled with it, and the edit, watched too late for the page to stop it,
     // stops here.
     let result = result.await.and_then(|local| {
-        if !cancelled.load(Ordering::Relaxed) {
+        if !cancelled.is_cancelled() {
             return Ok(local);
         }
         edits.stop(webview.label(), &edit_id);

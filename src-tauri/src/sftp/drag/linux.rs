@@ -185,7 +185,7 @@ fn begin(window: &WebviewWindow, shared: Arc<Shared>, icon: &'static str, finish
         // an application the drag then wasn't dropped on, and none has them, as each waits for
         // them before it is done with a drop.
         if shared.fetch.load(Ordering::Acquire) == FETCH_RUNNING {
-            shared.download.cancelled.store(true, Ordering::Relaxed);
+            shared.download.cancelled.cancel();
             if result.outcome == Outcome::Outside {
                 result = DragResult::cancelled();
             }

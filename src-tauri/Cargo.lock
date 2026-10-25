@@ -7440,6 +7440,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
+ "tokio-util",
  "ts-rs",
  "unicode-width",
  "uuid",

@@ -12,7 +12,6 @@ mod macos;
 mod win;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -21,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 use super::transfer::{self, Left, Progress, Reporter, TransferSlots, Transfers, PROGRESS_INTERVAL};
@@ -112,7 +112,7 @@ pub struct DropDownload {
     /// The progress of all its items, which each download adds its own to.
     total: Arc<Mutex<Total>>,
     slots: Arc<TransferSlots>,
-    cancelled: Arc<AtomicBool>,
+    cancelled: CancellationToken,
     count: usize,
     /// One lock for all of it: an item starting to download and the drop ending (after the
     /// receiver went quiet) must not cross, or the item would download into a drop that has
@@ -287,7 +287,7 @@ impl DropDownload {
                     let idle = state.last_activity.elapsed() >= IDLE_LIMIT;
                     // A receiver that never asked for anything did not take the drop.
                     let untouched = state.pending == self.count;
-                    let cancel = self.cancelled.load(Ordering::Relaxed) || (idle && untouched);
+                    let cancel = self.cancelled.is_cancelled() || (idle && untouched);
                     if !cancel && !idle {
                         continue;
                     }

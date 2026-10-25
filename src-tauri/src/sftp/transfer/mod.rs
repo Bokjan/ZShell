@@ -15,6 +15,7 @@ use std::future::Future;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 mod left;
@@ -40,22 +41,22 @@ pub struct Progress {
     pub current: String,
 }
 
-/// Cancellation flags of running transfers, and what ended ones left (see [`left`]), by the
+/// Cancellation of running transfers, and what ended ones left (see [`left`]), by the
 /// webview that started each and the id its page chose. A transfer belongs to its page: only
 /// that page cancels it or deletes what it left, and when the page is gone (reloaded, or its
 /// window closed), with nobody left to show it, it is cancelled and what it left forgotten.
 #[derive(Default)]
 pub struct Transfers {
-    running: Mutex<HashMap<(String, String), Arc<AtomicBool>>>,
+    running: Mutex<HashMap<(String, String), CancellationToken>>,
     /// None while it is being deleted, until what couldn't be is put back.
     left: Mutex<HashMap<(String, String), Option<Kept>>>,
 }
 
 impl Transfers {
-    pub fn start(&self, webview: &str, id: &str) -> Arc<AtomicBool> {
-        let flag = Arc::new(AtomicBool::new(false));
-        self.running.lock().unwrap().insert((webview.to_owned(), id.to_owned()), flag.clone());
-        flag
+    pub fn start(&self, webview: &str, id: &str) -> CancellationToken {
+        let cancelled = CancellationToken::new();
+        self.running.lock().unwrap().insert((webview.to_owned(), id.to_owned()), cancelled.clone());
+        cancelled
     }
 
     pub fn finish(&self, webview: &str, id: &str) {
@@ -63,18 +64,18 @@ impl Transfers {
     }
 
     pub fn cancel(&self, webview: &str, id: &str) {
-        if let Some(flag) = self.running.lock().unwrap().get(&(webview.to_owned(), id.to_owned())) {
-            flag.store(true, Ordering::Relaxed);
+        if let Some(cancelled) = self.running.lock().unwrap().get(&(webview.to_owned(), id.to_owned())) {
+            cancelled.cancel();
         }
     }
 
     /// Cancels the transfers of `webview`, whose page is gone, and forgets what its ended ones
     /// left.
     pub fn cancel_webview(&self, webview: &str) {
-        self.running.lock().unwrap().retain(|(owner, _), flag| {
+        self.running.lock().unwrap().retain(|(owner, _), cancelled| {
             let theirs = owner == webview;
             if theirs {
-                flag.store(true, Ordering::Relaxed);
+                cancelled.cancel();
             }
             !theirs
         });
@@ -126,7 +127,7 @@ impl Default for TransferSlots {
 
 pub struct Reporter {
     send: Box<dyn Fn(Progress) + Send + Sync>,
-    cancelled: Arc<AtomicBool>,
+    cancelled: CancellationToken,
     /// Shared with the connection's other transfers ([`Reporter::sharing`]), else its own.
     slots: Arc<TransferSlots>,
     progress: Progress,
@@ -135,12 +136,12 @@ pub struct Reporter {
 }
 
 impl Reporter {
-    pub fn new(channel: Channel<Progress>, cancelled: Arc<AtomicBool>) -> Self {
+    pub fn new(channel: Channel<Progress>, cancelled: CancellationToken) -> Self {
         Self::with_sink(move |progress| drop(channel.send(progress)), cancelled)
     }
 
     /// Reports progress to `send` instead of a channel of its own.
-    pub fn with_sink(send: impl Fn(Progress) + Send + Sync + 'static, cancelled: Arc<AtomicBool>) -> Self {
+    pub fn with_sink(send: impl Fn(Progress) + Send + Sync + 'static, cancelled: CancellationToken) -> Self {
         Self { send: Box::new(send), cancelled, slots: Arc::default(), progress: Progress::default(), last_emit: None }
     }
 
@@ -150,7 +151,7 @@ impl Reporter {
     }
 
     fn check_cancelled(&self) -> Result<()> {
-        if self.cancelled.load(Ordering::Relaxed) {
+        if self.cancelled.is_cancelled() {
             bail!(Error::new("transfer.cancelled"));
         }
         Ok(())
@@ -243,24 +244,32 @@ fn downloaded_mode(attributes: &FileAttributes) -> Option<u32> {
 /// which copying one file after another waits for in turn: 10,000 small files took over an
 /// hour from a server 100 ms away.
 const CONCURRENT_FILES: usize = 8;
-/// Files larger than this are copied alone: one keeps the channel's window full by itself,
-/// and with others beside it the requests waiting at the server could outlast their timeout
-/// on a slow link (see `channels`).
+/// Files larger than this are copied without another large one: one keeps the channel's
+/// window full by itself, and with others beside it the requests waiting at the server could
+/// outlast their timeout on a slow link (see `channels`). They leave one of the slots to small
+/// files, so that a large download doesn't hold up a small file of another transfer (a drag,
+/// a file opened in an editor) until it is done.
 const SMALL_FILE: u64 = 256 << 10;
+/// The slots a large file takes.
+const LARGE_FILE_SLOTS: u32 = CONCURRENT_FILES as u32 - 1;
 /// Folders listed, created or looked up at once.
 const CONCURRENT_DIRS: usize = 8;
+/// Folders created between looks at whether the upload was cancelled.
+const CREATE_BATCH: usize = 64;
 
 /// A transfer copying files: its reporter, shared by the files copied at once, and whether
 /// one of them failed, after which no other starts.
 struct Run<'a> {
     reporter: Mutex<&'a mut Reporter>,
     slots: Arc<TransferSlots>,
+    cancelled: CancellationToken,
     failed: AtomicBool,
 }
 
 impl<'a> Run<'a> {
     fn new(reporter: &'a mut Reporter) -> Self {
-        Self { slots: reporter.slots.clone(), reporter: Mutex::new(reporter), failed: AtomicBool::new(false) }
+        let (slots, cancelled) = (reporter.slots.clone(), reporter.cancelled.clone());
+        Self { slots, cancelled, reporter: Mutex::new(reporter), failed: AtomicBool::new(false) }
     }
 
     fn check_cancelled(&self) -> Result<()> {
@@ -284,8 +293,17 @@ impl<'a> Run<'a> {
     }
 }
 
+/// `future`, unless the transfer is cancelled first: what it waits for (the server, or the
+/// connection's other transfers to let go of their slots) may take minutes.
+async fn unless_cancelled<T>(cancelled: &CancellationToken, future: impl Future<Output = Result<T>>) -> Result<T> {
+    tokio::select! {
+        result = future => result,
+        () = cancelled.cancelled() => bail!(Error::new("transfer.cancelled")),
+    }
+}
+
 /// Copies the files of `sizes` with `copy_file` (given each one's index), in order, up to
-/// [`CONCURRENT_FILES`] small ones at once and a large one alone, counting those that the
+/// [`CONCURRENT_FILES`] small ones at once, or a large one and a small one, counting those that the
 /// connection's other transfers copy (see [`Reporter::sharing`]). After a failure no other
 /// starts, those being copied finish (as they would have before it, one at a time), and the
 /// first failure is returned.
@@ -297,8 +315,8 @@ where
     // By index: closures given references make futures the compiler can't prove `Send`.
     let mut copies = stream::iter(0..sizes.len())
         .map(|i| async move {
-            let weight = if sizes[i] > SMALL_FILE { CONCURRENT_FILES } else { 1 };
-            let _slots = slots.acquire_many(weight as u32).await.expect("never closed");
+            let weight = if sizes[i] > SMALL_FILE { LARGE_FILE_SLOTS } else { 1 };
+            let _slots = unless_cancelled(&run.cancelled, async { Ok(slots.acquire_many(weight).await.expect("never closed")) }).await?;
             if run.failed.load(Ordering::Relaxed) {
                 bail!(Error::new("transfer.cancelled"));
             }
@@ -339,7 +357,7 @@ pub async fn upload(
     reporter.progress.files_total = plan.files.len();
 
     let mut created = HashSet::new();
-    let made = create_remote_dirs(sftp, &plan.dirs, &plan.dir_modes, &mut created).await;
+    let made = create_remote_dirs(sftp, &plan.dirs, &plan.dir_modes, &mut created, &reporter.cancelled).await;
     left.dirs = created.iter().cloned().collect();
     made?;
     let turns = same_name_turns(&plan.files);
@@ -408,12 +426,23 @@ fn same_name_turns(files: &[(PathBuf, String, u64)]) -> HashMap<String, tokio::s
 
 /// Creates an upload's folders, parents first and those of one depth at once, with the
 /// permission bits `modes` gives each; those that weren't there go into `created`, also when
-/// another fails.
-async fn create_remote_dirs(sftp: &SftpSession, dirs: &[String], modes: &[Option<u32>], created: &mut HashSet<String>) -> Result<()> {
+/// another fails. Once `cancelled`, stops after those being created: each of them is noted,
+/// to be deleted with the rest of what the upload left.
+async fn create_remote_dirs(
+    sftp: &SftpSession,
+    dirs: &[String],
+    modes: &[Option<u32>],
+    created: &mut HashSet<String>,
+    cancelled: &CancellationToken,
+) -> Result<()> {
     let depth = |dir: &(&String, Option<u32>)| dir.0.matches('/').count();
     let mut by_depth: Vec<(&String, Option<u32>)> = dirs.iter().zip(modes.iter().copied()).collect();
     by_depth.sort_by_key(depth);
-    for level in by_depth.chunk_by(|a, b| depth(a) == depth(b)) {
+    // A level may have thousands of folders: a batch of them at a time.
+    for level in by_depth.chunk_by(|a, b| depth(a) == depth(b)).flat_map(|level| level.chunks(CREATE_BATCH)) {
+        if cancelled.is_cancelled() {
+            bail!(Error::new("transfer.cancelled"));
+        }
         let results: Vec<(usize, Result<bool>)> = stream::iter(0..level.len())
             .map(|i| async move { (i, create_remote_dir(sftp, level[i].0, level[i].1).await) })
             .buffer_unordered(CONCURRENT_DIRS)
@@ -492,7 +521,8 @@ pub async fn download(
     reporter: &mut Reporter,
     left: &mut Left<PathBuf>,
 ) -> Result<()> {
-    let attributes = stat_all(sftp, &remote_paths.iter().map(String::as_str).collect::<Vec<_>>()).await?;
+    let names: Vec<&str> = remote_paths.iter().map(String::as_str).collect();
+    let attributes = unless_cancelled(&reporter.cancelled, stat_all(sftp, &names)).await?;
     let mut items = Vec::with_capacity(remote_paths.len());
     let mut result = Ok(());
     // One at a time, in order: which of two names that clash locally gets `name (1)` stays
@@ -565,7 +595,8 @@ async fn claim(remote: &str, metadata: &FileAttributes, local_dir: &Path) -> Res
 /// The files it created and those it replaced go into `left`; not the folders, which may have
 /// been there.
 pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, left: &mut Left<PathBuf>) -> Result<()> {
-    let attributes = stat_all(sftp, &items.iter().map(|(remote, _)| remote.as_str()).collect::<Vec<_>>()).await?;
+    let names: Vec<&str> = items.iter().map(|(remote, _)| remote.as_str()).collect();
+    let attributes = unless_cancelled(&reporter.cancelled, stat_all(sftp, &names)).await?;
     download_counting(sftp, items, attributes, reporter, &mut Vec::new(), left, false).await
 }
 
@@ -762,14 +793,15 @@ async fn scan_remote_dir(
     let mut level = vec![(root, local_root, root_mode)];
     while !level.is_empty() {
         reporter.check_cancelled()?;
-        let listings: Vec<_> = stream::iter(0..level.len())
+        // A level may have thousands of folders, listed for minutes on a distant server.
+        let listings = stream::iter(0..level.len())
             .map(|i| {
                 let remote = &level[i].0;
                 async move { sftp.read_dir(remote).await.context(Error::new("transfer.readFailed").param("path", remote)) }
             })
             .buffered(CONCURRENT_DIRS)
-            .collect()
-            .await;
+            .collect::<Vec<_>>();
+        let listings = unless_cancelled(&reporter.cancelled, async { Ok(listings.await) }).await?;
         let mut next = Vec::new();
         for ((remote, local, mode), listing) in level.into_iter().zip(listings) {
             plan.add_dir(local.clone(), mode);

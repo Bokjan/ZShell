@@ -6,13 +6,13 @@ fn a_transfer_is_cancelled_only_by_its_page_or_with_it() {
     let mine = transfers.start("main", "t1");
     let other = transfers.start("window-2", "t1");
     transfers.cancel("window-2", "t2");
-    assert!(!mine.load(Ordering::Relaxed) && !other.load(Ordering::Relaxed));
+    assert!(!mine.is_cancelled() && !other.is_cancelled());
     transfers.cancel("window-2", "t1");
-    assert!(!mine.load(Ordering::Relaxed) && other.load(Ordering::Relaxed));
+    assert!(!mine.is_cancelled() && other.is_cancelled());
 
     let later = transfers.start("main", "t2");
     transfers.cancel_webview("main");
-    assert!(mine.load(Ordering::Relaxed) && later.load(Ordering::Relaxed));
+    assert!(mine.is_cancelled() && later.is_cancelled());
     transfers.finish("window-2", "t1");
     assert!(transfers.running.lock().unwrap().is_empty());
 }
@@ -61,13 +61,48 @@ async fn transfers_on_one_connection_share_the_files_copied_at_once() {
         Ok(())
     };
     let small = vec![1; 20];
-    let mut first = Reporter::with_sink(|_| {}, Arc::default()).sharing(slots.clone());
-    let mut second = Reporter::with_sink(|_| {}, Arc::default()).sharing(slots);
+    let mut first = Reporter::with_sink(|_| {}, Default::default()).sharing(slots.clone());
+    let mut second = Reporter::with_sink(|_| {}, Default::default()).sharing(slots);
     let (one, two) = (Run::new(&mut first), Run::new(&mut second));
     let (a, b) = tokio::join!(copy_files(&small, &one, copy), copy_files(&small, &two, copy));
     a.unwrap();
     b.unwrap();
     assert_eq!(most.load(Ordering::SeqCst), CONCURRENT_FILES);
+}
+
+#[tokio::test]
+async fn a_large_file_leaves_room_for_a_small_one() {
+    use std::sync::atomic::AtomicUsize;
+    let (copying, most) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let copy = |_| async {
+        let now = copying.fetch_add(1, Ordering::SeqCst) + 1;
+        most.fetch_max(now, Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        copying.fetch_sub(1, Ordering::SeqCst);
+        Ok(())
+    };
+    let sizes = [SMALL_FILE + 1, SMALL_FILE + 1, 1, 1, 1];
+    let mut reporter = Reporter::with_sink(|_| {}, Default::default());
+    let run = Run::new(&mut reporter);
+    copy_files(&sizes, &run, copy).await.unwrap();
+    // A large one and a small one; never two large ones.
+    assert_eq!(most.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn a_transfer_waiting_for_its_turn_is_cancelled_at_once() {
+    let slots = Arc::new(TransferSlots::default());
+    // Another transfer copies files for as long as the test runs.
+    let _busy = slots.0.acquire_many(CONCURRENT_FILES as u32).await.unwrap();
+    let cancelled = CancellationToken::new();
+    let mut reporter = Reporter::with_sink(|_| {}, cancelled.clone()).sharing(slots.clone());
+    let run = Run::new(&mut reporter);
+    let copy = |_| async { Ok(()) };
+    let (result, ()) = tokio::join!(copy_files(&[1], &run, copy), async {
+        tokio::task::yield_now().await;
+        cancelled.cancel();
+    });
+    assert_eq!(result.unwrap_err().downcast_ref::<Error>().map(Error::code), Some("transfer.cancelled"));
 }
 
 #[cfg(unix)]
@@ -83,7 +118,7 @@ mod unix {
         std::os::unix::fs::symlink("a.txt", root.join("sub/link.txt")).unwrap();
 
         let mut plan = Plan::new();
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let result = scan_local_dir(&root, "/r".into(), &mut plan, &mut reporter).await;
         std::fs::remove_dir_all(&root).unwrap();
         result.unwrap();
@@ -121,11 +156,11 @@ mod unix {
         let last = Arc::new(Mutex::new(Progress::default()));
         let mut reporter = {
             let last = last.clone();
-            Reporter::with_sink(move |progress| *last.lock().unwrap() = progress, Arc::default())
+            Reporter::with_sink(move |progress| *last.lock().unwrap() = progress, Default::default())
         };
         let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
         let uploaded = last.lock().unwrap().clone();
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let down = download(&sftp, &[remote.join("tree").to_str().unwrap().to_owned()], &back, &mut reporter, &mut Left::default()).await;
         let same = |path: &str| std::fs::read(source.join(path)).ok() == std::fs::read(back.join("tree").join(path)).ok();
         let all_same = expected.iter().all(|path| same(path.trim_start_matches('/'))) && same("a/large.bin");
@@ -168,7 +203,7 @@ mod unix {
         // Deleted files and folders, those kept as changed, and whether all went well.
         let counts = |d: &Deletion| (d.deleted, d.deleted_folders, d.changed, d.created + d.folders, d.error.is_none());
 
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let mut up = Left::default();
         upload(&sftp, std::slice::from_ref(&source), &at(&remote), &mut reporter, &mut up).await.unwrap();
         let uploaded = (paths(&up.files), up.dirs.clone(), up.replaced);
@@ -176,7 +211,7 @@ mod unix {
         let deletion = delete_remote(&sftp, &mut up).await;
         let after_upload = (counts(&deletion), names(&remote.join("up")), up);
 
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let mut down = Left::default();
         download(&sftp, &[at(&remote.join("up"))], &back, &mut reporter, &mut down).await.unwrap();
         let downloaded = (down.items.clone(), paths(&down.files), down.dirs.clone(), down.replaced);
@@ -214,10 +249,10 @@ mod unix {
         set(&source.join("run.sh"), 0o755);
         set(&source, 0o700);
 
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
         let uploaded = up.is_ok().then(|| (mode(remote.join("keys")), mode(remote.join("keys/id")), mode(remote.join("keys/run.sh"))));
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let paths = [remote.join("keys").to_str().unwrap().to_owned(), remote.join("keys/id").to_str().unwrap().to_owned()];
         let down = download(&sftp, &paths, &back, &mut reporter, &mut Left::default()).await;
         let downloaded = down.is_ok().then(|| (mode(back.join("keys")), mode(back.join("keys/id")), mode(back.join("id"))));
@@ -249,7 +284,7 @@ mod unix {
         std::fs::write(remote.join("later"), "").unwrap();
 
         let paths: Vec<String> = ["empty", "secret", "later"].iter().map(|n| remote.join(n).to_str().unwrap().to_owned()).collect();
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let result = download(&sftp, &paths, &local, &mut reporter, &mut Left::default()).await;
         let mut left: Vec<_> = std::fs::read_dir(&local).unwrap().map(|e| e.unwrap().file_name()).collect();
         left.sort();
@@ -340,7 +375,7 @@ mod unix {
 
         let mut plan = Plan::new();
         let mut taken = Taken::new(true);
-        let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let result =
             scan_remote_dir(&sftp, remote.to_str().unwrap().to_owned(), local.join("r"), None, &mut plan, &mut taken, &mut reporter).await;
         std::fs::remove_dir_all(&root).unwrap();
