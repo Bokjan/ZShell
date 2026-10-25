@@ -2,6 +2,29 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.14.0] - 2026-10-25
+
+### Features
+
+- Activity lights in the file and forwarding panels. The file panel shows lights for its browsing channel beside the upload buttons, and lights with the transfer rate in the transfer list's header; the forwarding panel shows the rate of all running rules in its header, and of each rule under its status. Their tooltips, like the status bar's, name the SSH connection and the channels the traffic goes through. Rates follow traffic within a second of it starting, keep their place as the numbers change, and lights in a hidden panel stop working until it is shown again.
+- Uploads and downloads can be undone: once a transfer ends, done, failed or cancelled, a trash button in its row permanently deletes the files and folders it created, after a confirmation. Files it wrote over, and files changed since it created them, are kept and counted, so nothing that was there before is lost; what an upload created is deleted only on the server it went to. A cancelled or failed download can also be shown in Finder / File Explorer.
+- ZShell's own messages in the terminal (connecting, how a session ended, a lost connection, reconnecting, forwarding and ZMODEM) start each line with the local time they were printed. The login prompts, echoed input and a proxy command's errors are printed as before, and a session log that already starts its lines with the time doesn't get it twice.
+- Settings › Session Logs has a time format for log lines and the terminal's messages: date and time, or the time alone, with or without milliseconds, or a format of your own with %Y, %y, %m, %d, %H, %M, %S, %3f and %%. The field shows an example of the current time, or why a format can't be used. A log line's time is now when the line started rather than when it ended.
+
+### Bug Fixes
+
+- On Windows, pressing F11 in a maximized window no longer leaves a black strip where the taskbar was.
+- The web view no longer shows its own tooltip beside the app's for the element around the one under the pointer, such as a forwarding rule's explanation over its lights.
+- Field titles in dialogs and settings are set apart from the hints below them, in the text's color and semibold, and the hint that belongs to a field is read with it by screen readers.
+- The settings put the title and the close button in a row of their own, with the same margins on both sides as the other dialogs.
+- With the session list hidden, the hint in an empty window names the shortcut that shows the list instead of pointing to the left.
+- A cancelled transfer tells how many files it finished, and the progress line keeps the file name and amounts still as the numbers grow.
+- The transfer list's title is shortened in a narrow panel instead of running under "Clear Finished", and a transfer of several items is named in the current language after the language changes.
+- A forwarding rule's connection count moves to the next line as a whole in a narrow panel instead of breaking mid-word.
+- Buttons that read as links look the same everywhere, without an underline on hover.
+- The third-party notices list only what the app is built from, leaving out about 100 crates used only while compiling.
+
+
 ## [3.13.1] - 2026-10-23
 
 ### Bug Fixes
