@@ -16,6 +16,7 @@ import {
 } from "../ipc/api";
 import type { Arrival } from "./panes";
 import {
+  AckCounter,
   BELL_MS,
   NOTIFY_MS,
   PROGRESS_MS,
@@ -968,5 +969,26 @@ describe("moving to another window", () => {
     const { pane, opened } = setup({}, undefined, { sessionId: null, connected: false, snapshot: null, reconnect: true, from });
     pane.start();
     expect(opened).toHaveLength(1);
+  });
+});
+
+describe("AckCounter", () => {
+  it("has nothing due until a batch has been processed, then all of it", () => {
+    const acks = new AckCounter();
+    acks.count(ACK_BATCH - 1);
+    expect(acks.due()).toBe(0);
+    acks.count(2);
+    expect(acks.due()).toBe(ACK_BATCH + 1);
+    expect(acks.due()).toBe(0);
+  });
+
+  it("counts afresh after what was due", () => {
+    const acks = new AckCounter();
+    acks.count(ACK_BATCH);
+    expect(acks.due()).toBe(ACK_BATCH);
+    acks.count(ACK_BATCH / 2);
+    expect(acks.due()).toBe(0);
+    acks.count(ACK_BATCH / 2);
+    expect(acks.due()).toBe(ACK_BATCH);
   });
 });

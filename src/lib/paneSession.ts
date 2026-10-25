@@ -161,6 +161,44 @@ const looksLikePrompt = (line: string) => {
 const ignore = () => {};
 
 /**
+ * Counts the output bytes the terminal has processed and not yet acknowledged to the session,
+ * which sends no more once it has a window's worth outstanding (see `session/flow.rs`).
+ */
+export class AckCounter {
+  private bytes = 0;
+
+  /** Bytes the terminal has processed. */
+  count(bytes: number) {
+    this.bytes += bytes;
+  }
+
+  /** The bytes to acknowledge now, counted afresh from then; 0 until a batch (`ACK_BATCH`) has been processed. */
+  due(): number {
+    if (this.bytes < ACK_BATCH) return 0;
+    const bytes = this.bytes;
+    this.bytes = 0;
+    return bytes;
+  }
+}
+
+/** A session `follow` follows, and what it has learned of it. */
+interface Followed {
+  /** Whether the pane has moved on to another session since, or is gone. */
+  stale(): boolean;
+  target: SessionTarget;
+  /** The session whose connection the first attempt shares (see `shareFrom`). */
+  source: SessionId | undefined;
+  /** The session, once `start` says which it is. */
+  handle: Session | undefined;
+  ended: boolean;
+  /** Whether its shell is up, or was. */
+  connected: boolean;
+  /** The session is another window's now: never closed from here. */
+  given: boolean;
+  acks: AckCounter;
+}
+
+/**
  * Turns off what a program on the closed connection may have turned on: the alternate
  * screen, mouse reporting, then (soft reset) bracketed paste, application cursor keys, a
  * hidden cursor and so on; otherwise the next shell would get mouse reports as typed text.
@@ -561,152 +599,174 @@ export class PaneSession {
     failed?: (stale: boolean) => void,
   ) {
     const current = ++this.generation;
-    const stale = () => this.disposed || current !== this.generation;
-    let ended = false;
-    let connected = wasConnected;
-    let handle: Session | undefined;
-    // The session is another window's now: never closed from here.
-    let given = false;
-    // Output bytes processed by the terminal and not yet acknowledged.
-    let processed = 0;
-    const acknowledge = () => {
-      if (!handle || processed < ACK_BATCH) return;
-      void handle.ack(processed).catch(ignore);
-      processed = 0;
+    const followed: Followed = {
+      stale: () => this.disposed || current !== this.generation,
+      target,
+      source,
+      handle: undefined,
+      ended: false,
+      connected: wasConnected,
+      given: false,
+      acks: new AckCounter(),
     };
-    const { t } = this.config;
-    const took = (s: Session) => {
-      if (handle) return;
-      handle = s;
-      if (stale() || ended) {
-        if (!given) void s.close().catch(ignore);
-        return;
-      }
-      this.session = s;
-      this.events.session(s.id);
-      // Output can arrive before the session id does.
-      acknowledge();
-      this.awaitPrompt();
-    };
+    const took = (session: Session) => this.took(followed, session);
     start(
-      (data) => {
-        if (stale()) return;
-        if (performance.now() - this.nudgedAt >= ECHO_MS) this.events.output();
-        this.port.write(data, () => {
-          processed += data.byteLength;
-          acknowledge();
-          this.awaitPrompt();
-        });
-      },
-      (event) => {
-        if (stale()) return;
-        switch (event.type) {
-          case "connected":
-            // Also another shell on the connection, after one exited: what was typed (Enter
-            // to start it) went into the previous one.
-            this.stopWaiting();
-            connected = true;
-            this.connected = true;
-            this.typed = false;
-            this.attempt = 0;
-            this.carry = [];
-            this.events.status("connected");
-            this.loginPending = [...this.config.loginCommands()];
-            this.awaitPrompt();
-            return;
-          case "forward":
-            // A new run of the rule counts afresh.
-            if (event.state.type !== "active") this.forwardTraffic.clear(event.ruleId);
-            this.events.forward(event.ruleId, event.state);
-            return;
-          case "terminalTraffic":
-            this.traffic.update(event.counts, event.channel);
-            return;
-          case "sftpTraffic":
-            this.sftpTraffic.update(event.connection, event.browse, event.transfer);
-            return;
-          case "forwardTraffic":
-            this.forwardTraffic.update(event.ruleId, event.traffic);
-            return;
-          case "zmodem":
-            this.events.zmodem(event.phase);
-            return;
-          case "log":
-            // A log that stopped midway says so itself; one that couldn't start, with ours.
-            if (event.error?.code === "log.writeFailed") this.writeNotice(event.error.message);
-            else if (event.error) this.writeNotice(t("terminal.logFailed", { message: event.error.message }));
-            this.events.log(event.path);
-            return;
-          case "waiting":
-            this.waiting = true;
-            this.events.waiting(event.connections);
-            return;
-          case "moved":
-            // The last message: the session is now another window's.
-            given = true;
-            if (handle) this.moveAway(handle.id, event.moveId);
-            return;
-        }
-        ended = true;
-        const cut = this.cut;
-        this.cut = false;
-        this.dropSession();
-        // The rules the lost connection ran, which reconnecting (automatically too) starts
-        // again: asked before the session closes, which forgets them.
-        const lostRules = event.reason === "lost" && handle ? forwards.carry(handle.id).catch((): string[] => []) : Promise.resolve([]);
-        void lostRules
-          .then((running) => {
-            if (!stale()) this.carry = [...new Set([...this.carry, ...running])];
-            return handle?.close();
-          })
-          .catch(ignore);
-        // The duplicated tab's connection had died without its session noticing yet (a
-        // laptop waking up, say): connect as usual.
-        if (source !== undefined && !connected && event.reason === "failed") {
-          this.connect();
-          return;
-        }
-        // Ending the forwarded connections by hand is not closing the pane.
-        if (event.reason === "exited" && !cut && this.events.exited(event.status, event.signal, this.typed)) return;
-        this.events.status("closed");
-        if (target.kind === "local") {
-          this.writeNotice(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
-          return;
-        }
-        // Retry lost connections, and keep retrying while the network or server is down.
-        const retry =
-          this.config.autoReconnect() &&
-          (event.reason === "lost" || (event.reason === "failed" && this.attempt > 0)) &&
-          !isPermanent(event.error);
-        if (retry) this.scheduleRetry();
-        else {
-          this.attempt = 0;
-          this.writeNotice(t("terminal.reconnectHint"));
-        }
-      },
+      (data) => this.onOutput(followed, data),
+      (event) => this.onEvent(followed, event),
       took,
-      stale,
+      followed.stale,
     )
       .then(took)
-      .catch((e) => {
-        // Even for a pane that has closed since: the other window learns it still has the session.
-        if (failed) {
-          failed(stale());
-          return;
-        }
-        if (stale()) return;
-        // The duplicated tab's connection is gone: connect as usual.
-        if (source !== undefined && errorCode(e) === "session.notConnected") {
-          this.connect();
-          return;
-        }
-        this.closed = true;
+      .catch((e) => this.onStartFailed(followed, e, failed));
+  }
+
+  /** `start` of `follow` says which session it is. */
+  private took(followed: Followed, session: Session) {
+    if (followed.handle) return;
+    followed.handle = session;
+    if (followed.stale() || followed.ended) {
+      if (!followed.given) void session.close().catch(ignore);
+      return;
+    }
+    this.session = session;
+    this.events.session(session.id);
+    // Output can arrive before the session id does.
+    this.acknowledge(followed);
+    this.awaitPrompt();
+  }
+
+  /** Tells the session what the terminal has processed, once a batch of it. */
+  private acknowledge(followed: Followed) {
+    if (!followed.handle) return;
+    const bytes = followed.acks.due();
+    if (bytes > 0) void followed.handle.ack(bytes).catch(ignore);
+  }
+
+  private onOutput(followed: Followed, data: Uint8Array) {
+    if (followed.stale()) return;
+    if (performance.now() - this.nudgedAt >= ECHO_MS) this.events.output();
+    this.port.write(data, () => {
+      followed.acks.count(data.byteLength);
+      this.acknowledge(followed);
+      this.awaitPrompt();
+    });
+  }
+
+  private onEvent(followed: Followed, event: SessionEvent) {
+    if (followed.stale()) return;
+    const { t } = this.config;
+    switch (event.type) {
+      case "connected":
+        // Also another shell on the connection, after one exited: what was typed (Enter
+        // to start it) went into the previous one.
+        this.stopWaiting();
+        followed.connected = true;
+        this.connected = true;
+        this.typed = false;
         this.attempt = 0;
-        this.events.status("closed");
-        this.port.write("\r\n");
-        this.writeNotice(errorMessage(e), "error");
-        this.writeNotice(t("terminal.retryHint"));
-      });
+        this.carry = [];
+        this.events.status("connected");
+        this.loginPending = [...this.config.loginCommands()];
+        this.awaitPrompt();
+        return;
+      case "forward":
+        // A new run of the rule counts afresh.
+        if (event.state.type !== "active") this.forwardTraffic.clear(event.ruleId);
+        this.events.forward(event.ruleId, event.state);
+        return;
+      case "terminalTraffic":
+        this.traffic.update(event.counts, event.channel);
+        return;
+      case "sftpTraffic":
+        this.sftpTraffic.update(event.connection, event.browse, event.transfer);
+        return;
+      case "forwardTraffic":
+        this.forwardTraffic.update(event.ruleId, event.traffic);
+        return;
+      case "zmodem":
+        this.events.zmodem(event.phase);
+        return;
+      case "log":
+        // A log that stopped midway says so itself; one that couldn't start, with ours.
+        if (event.error?.code === "log.writeFailed") this.writeNotice(event.error.message);
+        else if (event.error) this.writeNotice(t("terminal.logFailed", { message: event.error.message }));
+        this.events.log(event.path);
+        return;
+      case "waiting":
+        this.waiting = true;
+        this.events.waiting(event.connections);
+        return;
+      case "moved":
+        // The last message: the session is now another window's.
+        followed.given = true;
+        if (followed.handle) this.moveAway(followed.handle.id, event.moveId);
+        return;
+    }
+    this.onClosed(followed, event);
+  }
+
+  /** The session has ended: the pane closes, or offers to connect again, or retries. */
+  private onClosed(followed: Followed, event: Extract<SessionEvent, { type: "closed" }>) {
+    const { t } = this.config;
+    const { handle, target, source } = followed;
+    followed.ended = true;
+    const cut = this.cut;
+    this.cut = false;
+    this.dropSession();
+    // The rules the lost connection ran, which reconnecting (automatically too) starts
+    // again: asked before the session closes, which forgets them.
+    const lostRules = event.reason === "lost" && handle ? forwards.carry(handle.id).catch((): string[] => []) : Promise.resolve([]);
+    void lostRules
+      .then((running) => {
+        if (!followed.stale()) this.carry = [...new Set([...this.carry, ...running])];
+        return followed.handle?.close();
+      })
+      .catch(ignore);
+    // The duplicated tab's connection had died without its session noticing yet (a
+    // laptop waking up, say): connect as usual.
+    if (source !== undefined && !followed.connected && event.reason === "failed") {
+      this.connect();
+      return;
+    }
+    // Ending the forwarded connections by hand is not closing the pane.
+    if (event.reason === "exited" && !cut && this.events.exited(event.status, event.signal, this.typed)) return;
+    this.events.status("closed");
+    if (target.kind === "local") {
+      this.writeNotice(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
+      return;
+    }
+    // Retry lost connections, and keep retrying while the network or server is down.
+    const retry =
+      this.config.autoReconnect() &&
+      (event.reason === "lost" || (event.reason === "failed" && this.attempt > 0)) &&
+      !isPermanent(event.error);
+    if (retry) this.scheduleRetry();
+    else {
+      this.attempt = 0;
+      this.writeNotice(t("terminal.reconnectHint"));
+    }
+  }
+
+  /** `start` of `follow` failed: the session never opened. */
+  private onStartFailed(followed: Followed, e: unknown, failed: ((stale: boolean) => void) | undefined) {
+    // Even for a pane that has closed since: the other window learns it still has the session.
+    if (failed) {
+      failed(followed.stale());
+      return;
+    }
+    if (followed.stale()) return;
+    // The duplicated tab's connection is gone: connect as usual.
+    if (followed.source !== undefined && errorCode(e) === "session.notConnected") {
+      this.connect();
+      return;
+    }
+    const { t } = this.config;
+    this.closed = true;
+    this.attempt = 0;
+    this.events.status("closed");
+    this.port.write("\r\n");
+    this.writeNotice(errorMessage(e), "error");
+    this.writeNotice(t("terminal.retryHint"));
   }
 
   /**
