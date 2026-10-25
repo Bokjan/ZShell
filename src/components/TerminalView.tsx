@@ -23,13 +23,14 @@ import { KittyNotices, PointerShapes, osc52Text, parseOsc777, parseOsc9 } from "
 import { useShortcuts } from "../hooks/shortcuts";
 import { fontLigatureRules } from "../lib/fontLigatureRules";
 import { ligatureRanges } from "../lib/ligatures";
-import { FullWidthFitAddon } from "../lib/terminalFit";
+import { COLS_DEBOUNCE_MS, FullWidthFitAddon, resizeStep } from "../lib/terminalFit";
 import { extraModes } from "../lib/terminalModes";
 import { isTerminalReport } from "../lib/terminalReports";
 import { ReadBack } from "../lib/readBack";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { drawWithWebgl } from "../lib/webgl";
 import { attemptSync } from "../lib/attempt";
+import { createStore } from "../lib/store";
 import { useLatest } from "../hooks/latest";
 import { useLocale } from "../hooks/locale";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -37,6 +38,7 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
 import { TOOLTIP_DELAY, TooltipPopup } from "./Tooltip";
 import { NewOutputButton } from "./terminal/NewOutputButton";
+import { SizeOverlay, type SizeShown } from "./terminal/SizeOverlay";
 import { useZmodem } from "./terminal/useZmodem";
 
 interface Props {
@@ -144,7 +146,7 @@ export function TerminalView({
   // Multi-line text waiting for the user to confirm the paste.
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   // The size shown while the terminal is resized; `count` starts its fade-out over at each change.
-  const [sizeShown, setSizeShown] = useState<{ cols: number; rows: number; count: number } | null>(null);
+  const [sizeShown] = useState(() => createStore<SizeShown>({ size: null }));
   // Counts the visual bells, each a new flash.
   const [flashes, setFlashes] = useState(0);
   // Follows the view reading back through the scrollback, for the button back to the end.
@@ -412,9 +414,9 @@ export function TerminalView({
     const showSize = (cols: number, rows: number) => {
       // Out of sight (a hidden tab resized with the window), nobody would see it.
       if (!visibleRef.current || Date.now() - opened < SIZE_SETTLE_MS) return;
-      setSizeShown((shown) => ({ cols, rows, count: (shown?.count ?? 0) + 1 }));
+      sizeShown.set({ size: { cols, rows, count: (sizeShown.get().size?.count ?? 0) + 1 } });
       clearTimeout(hideSize);
-      hideSize = setTimeout(() => setSizeShown(null), SIZE_SHOWN_MS);
+      hideSize = setTimeout(() => sizeShown.set({ size: null }), SIZE_SHOWN_MS);
     };
 
     // Once a command is entered (Enter, or a paste with a line break), the next pause in the
@@ -538,10 +540,27 @@ export function TerminalView({
     // terminal in every tab on each frame: those out of sight fit once shown again, except
     // the first time (a tab opened in the background starts its session at its size).
     let fitted = false;
+    let colsLater: ReturnType<typeof setTimeout> | undefined;
+    // As the window's edge or a splitter is dragged (see `resizeStep`).
+    const follow = () => {
+      const proposed = fit.proposeDimensions();
+      if (session.isArriving || !proposed) return;
+      const step = resizeStep({ cols: term.cols, rows: term.rows }, proposed, term.buffer.active.length);
+      if (step.now) fit.resizeTo(step.now);
+      clearTimeout(colsLater);
+      if (step.colsLater) {
+        colsLater = setTimeout(() => {
+          if (visibleRef.current) fitRef.current?.fit();
+          else unfittedRef.current = true;
+        }, COLS_DEBOUNCE_MS);
+      }
+    };
     const observer = new ResizeObserver(() => {
-      if (visibleRef.current || !fitted) {
+      if (!fitted) {
         fitted = true;
         fitRef.current?.fit();
+      } else if (visibleRef.current) {
+        follow();
       } else {
         unfittedRef.current = true;
       }
@@ -554,6 +573,7 @@ export function TerminalView({
 
     return () => {
       clearTimeout(start);
+      clearTimeout(colsLater);
       clearTimeout(hideSize);
       clearTimeout(promptSettle);
       clearTimeout(hintTimer);
@@ -750,12 +770,7 @@ export function TerminalView({
     <div className="terminal-wrap" ref={wrapRef} style={{ background: scheme.theme.background }}>
       <div className={ligatures === "off" ? "terminal-view no-ligatures" : "terminal-view"} ref={containerRef} />
       {flashes > 0 && <div key={flashes} className="bell-flash" aria-hidden="true" style={{ background: scheme.theme.foreground }} />}
-      {sizeShown && (
-        // The status bar has the size for screen readers.
-        <div key={sizeShown.count} className="size-overlay" aria-hidden="true" style={{ fontFamily }}>
-          {t("terminal.size", { cols: sizeShown.cols, rows: sizeShown.rows })}
-        </div>
-      )}
+      <SizeOverlay shown={sizeShown} fontFamily={fontFamily} />
       {readBack && <NewOutputButton readBack={readBack} visible={visible} onClick={scrollToEnd} />}
       {trimmingShown > 0 && (
         // Announced as well, when it shows.
