@@ -24,8 +24,8 @@ export interface Transfer {
   /** For an ended upload or download: how many files it created, which can be deleted, and how many it wrote over. */
   created?: number;
   replaced?: number;
-  /** Deleting what it created: under way, or done. */
-  deletion?: { state: "deleting" } | { state: "deleted"; count: number };
+  /** Deleting what it created: under way, or done, with how many files were deleted and how many kept as they changed since. */
+  deletion?: { state: "deleting" } | { state: "deleted"; count: number; changed: number };
   /** For an edit: the remote file. */
   remotePath?: string;
   /** For an edit: what became of the last save. */
@@ -220,6 +220,9 @@ function TransferItem(props: { transfer: Transfer; connected: boolean; actions: 
         <div className="transfer-detail" title={transfer.save?.state === "failed" ? transfer.save.error : transfer.error}>
           {detail()}
         </div>
+      )}
+      {transfer.deletion?.state === "deleted" && transfer.deletion.changed > 0 && (
+        <div className="transfer-detail">{t("transfer.keptChanged", { count: transfer.deletion.changed })}</div>
       )}
     </li>
   );

@@ -185,8 +185,8 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
         update(id, { deletion: { state: "deleting" } });
         void attempt(
           async () => {
-            const count = await sftp.deleteLeft(id, upload ? currentSession() : null);
-            update(id, { deletion: { state: "deleted", count } });
+            const { deleted, changed } = await sftp.deleteLeft(id, upload ? currentSession() : null);
+            update(id, { deletion: { state: "deleted", count: deleted, changed } });
           },
           {
             onError: (e) => {

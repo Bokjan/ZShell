@@ -420,6 +420,7 @@ mod tests {
         visitor.visit::<sftp::Listing>();
         visitor.visit::<sftp::transfer::Progress>();
         visitor.visit::<sftp::transfer::Ended>();
+        visitor.visit::<sftp::transfer::Deletion>();
         visitor.visit::<sftp::edit::EditEvent>();
         visitor.visit::<sftp::drag::Item>();
         visitor.visit::<sftp::drag::DragResult>();

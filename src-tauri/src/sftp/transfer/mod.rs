@@ -19,7 +19,7 @@ use ts_rs::TS;
 
 mod left;
 
-pub use left::{delete_local, delete_remote, Ended, Kept, Left};
+pub use left::{delete_local, delete_remote, Deletion, Ended, Kept, Left, Stamp};
 
 use super::replace::{LocalTarget, RemoteTarget};
 use super::{file_name, is_entry, join};
@@ -329,7 +329,8 @@ pub async fn upload(
     left.dirs = created.iter().cloned().collect();
     made?;
     let turns = same_name_turns(&plan.files);
-    let files = Mutex::new(Left::default());
+    // The files it created, and how many it replaced.
+    let files = Mutex::new((Vec::new(), 0));
     let run = Run::new(reporter);
     let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
     let result = copy_files(&sizes, &run, |i| {
@@ -362,9 +363,9 @@ pub async fn upload(
             let mut files = files.lock().unwrap();
             // A file of the same name that this upload put there before is its own still.
             if !replaces {
-                files.files.push(remote.clone());
-            } else if !files.files.contains(remote) {
-                files.replaced += 1;
+                files.0.push(remote.clone());
+            } else if !files.0.contains(remote) {
+                files.1 += 1;
             }
             drop(files);
             run.finish_file();
@@ -373,8 +374,8 @@ pub async fn upload(
     })
     .await;
     run.end();
-    let files = files.into_inner().unwrap();
-    (left.files, left.replaced) = (files.files, files.replaced);
+    let (files, replaced) = files.into_inner().unwrap();
+    (left.files, left.replaced) = (left::stamp_remote(sftp, files).await, replaced);
     result
 }
 
@@ -584,8 +585,14 @@ async fn download_counting(
     }
     let clashes = clashing(&plan.files, &mut taken);
     let taken = Mutex::new(taken);
-    // Where each file arrived, and whether it replaced one there.
-    let arrived: Mutex<Vec<Option<(PathBuf, bool)>>> = Mutex::new(vec![None; plan.files.len()]);
+    /// Where a file arrived, whether it replaced one there, and how it was left.
+    #[derive(Clone)]
+    struct Arrived {
+        local: PathBuf,
+        replaces: bool,
+        stamp: Option<Stamp>,
+    }
+    let arrived: Mutex<Vec<Option<Arrived>>> = Mutex::new(vec![None; plan.files.len()]);
     let run = Run::new(reporter);
     let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
     let result = copy_files(&sizes, &run, |i| {
@@ -615,7 +622,8 @@ async fn download_counting(
                 }
             };
             result.map_err(|e| with_file_context(e, Error::new("transfer.downloadFailed").param("path", remote)))?;
-            arrived.lock().unwrap()[i] = Some((local, replaces));
+            let stamp = tokio::fs::symlink_metadata(&local).await.ok().and_then(|metadata| Stamp::local(&metadata));
+            arrived.lock().unwrap()[i] = Some(Arrived { local, replaces, stamp });
             run.finish_file();
             Ok(())
         }
@@ -624,10 +632,12 @@ async fn download_counting(
     run.end();
     let arrived = arrived.into_inner().unwrap();
     *whole = items_whole(&ends, &arrived.iter().map(Option::is_some).collect::<Vec<_>>());
-    for (local, replaces) in arrived.into_iter().flatten() {
-        match replaces && !claimed {
-            true => left.replaced += 1,
-            false => left.files.push(local),
+    for Arrived { local, replaces, stamp } in arrived.into_iter().flatten() {
+        match (replaces && !claimed, stamp) {
+            (true, _) => left.replaced += 1,
+            (false, Some(stamp)) => left.files.push((local, stamp)),
+            // Not found as it was just written: not deleted.
+            (false, None) => {}
         }
     }
     if claimed {

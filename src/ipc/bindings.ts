@@ -1053,6 +1053,19 @@ export type TextSize = "normal" | "large" | "larger";
 export type TimePart = { "type": "text", text: string, } | { "type": "year" } | { "type": "shortYear" } | { "type": "month" } | { "type": "day" } | { "type": "hour" } | { "type": "minute" } | { "type": "second" } | { "type": "millisecond" };
 
 /**
+ * What deleting what a transfer left did, for the file panel.
+ */
+export type TransferDeletion = { 
+/**
+ * How many files it deleted.
+ */
+deleted: number, 
+/**
+ * How many it kept, changed since the transfer.
+ */
+changed: number, };
+
+/**
  * How a transfer ended, for the file panel.
  */
 export type TransferEnd = { 
@@ -1277,7 +1290,7 @@ export type Commands = {
   tab_drag_move: { args: { id: string; outside: boolean }; result: DropTarget };
   terminal_ligature_rules: { args: { families: string[] }; result: LigatureRules | null };
   transfer_cancel: { args: { transferId: string }; result: void };
-  transfer_delete: { args: { id?: number | null; transferId: string }; result: number };
+  transfer_delete: { args: { id?: number | null; transferId: string }; result: TransferDeletion };
   transfer_forget: { args: { transferIds: string[] }; result: void };
   tree_move: { args: { item: TreeItem; parent?: string | null; before?: TreeItem | null }; result: void };
   tree_order: { args: Record<string, never>; result: TreeItem[] };

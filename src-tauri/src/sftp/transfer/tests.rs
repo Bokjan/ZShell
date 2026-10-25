@@ -20,7 +20,8 @@ fn a_transfer_is_cancelled_only_by_its_page_or_with_it() {
 #[test]
 fn what_a_transfer_left_is_its_pages_until_forgotten() {
     let transfers = Transfers::default();
-    let left = |file: &str| Kept::Local(Left { files: vec![PathBuf::from(file)], ..Left::default() });
+    let stamp = Stamp { size: 1, modified: None };
+    let left = |file: &str| Kept::Local(Left { files: vec![(PathBuf::from(file), stamp)], ..Left::default() });
     transfers.keep("main", "t1", left("a"));
     transfers.keep("main", "t2", left("b"));
     transfers.keep("main", "t3", Kept::Local(Left { replaced: 2, ..Left::default() }));
@@ -30,7 +31,7 @@ fn what_a_transfer_left_is_its_pages_until_forgotten() {
     assert!(transfers.take("main", "t3").is_none());
     transfers.forget("main", &["t1".into()]);
     assert!(transfers.take("main", "t1").is_none());
-    assert!(matches!(transfers.take("main", "t2"), Some(Kept::Local(left)) if left.files == [PathBuf::from("b")]));
+    assert!(matches!(transfers.take("main", "t2"), Some(Kept::Local(left)) if left.files == [(PathBuf::from("b"), stamp)]));
     transfers.cancel_webview("window-2");
     assert!(transfers.left.lock().unwrap().is_empty());
 }
@@ -126,8 +127,9 @@ mod unix {
     }
 
     /// What an upload or a download left is what it created: deleting it takes away the
-    /// files and folders it made, and leaves those it wrote over, those that were there, and
-    /// a folder where something else was put since. Skipped without `sftp-server`.
+    /// files and folders it made, and leaves those it wrote over, those that were there, those
+    /// changed since, and a folder where something else was put since. Skipped without
+    /// `sftp-server`.
     #[tokio::test]
     async fn deletes_only_what_a_transfer_created() {
         let Some(sftp) = crate::sftp::replace::tests::local_sftp_server().await else { return };
@@ -136,7 +138,7 @@ mod unix {
         std::fs::create_dir_all(source.join("sub")).unwrap();
         std::fs::create_dir_all(remote.join("up")).unwrap();
         std::fs::create_dir_all(&back).unwrap();
-        for file in ["new.txt", "old.txt", "sub/x.txt"] {
+        for file in ["new.txt", "old.txt", "edited.txt", "sub/x.txt"] {
             std::fs::write(source.join(file), file).unwrap();
         }
         std::fs::write(remote.join("up/old.txt"), "old").unwrap();
@@ -146,34 +148,40 @@ mod unix {
             names.sort();
             names
         };
+        fn paths<P: Clone + Ord>(files: &[(P, Stamp)]) -> Vec<P> {
+            let mut paths: Vec<_> = files.iter().map(|(path, _)| path.clone()).collect();
+            paths.sort();
+            paths
+        }
         let at = |path: &Path| path.to_str().unwrap().to_owned();
 
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
         let mut up = Left::default();
         upload(&sftp, std::slice::from_ref(&source), &at(&remote), &mut reporter, &mut up).await.unwrap();
-        up.files.sort();
-        let uploaded = (up.files.clone(), up.dirs.clone(), up.replaced);
-        let (deleted, result) = delete_remote(&sftp, &mut up).await;
+        let uploaded = (paths(&up.files), up.dirs.clone(), up.replaced);
+        std::fs::write(remote.join("up/edited.txt"), "edited since").unwrap();
+        let (deletion, result) = delete_remote(&sftp, &mut up).await;
         result.unwrap();
-        let after_upload = (deleted, names(&remote.join("up")), up);
+        let after_upload = (deletion, names(&remote.join("up")), up);
 
         let mut reporter = Reporter::with_sink(|_| {}, Arc::default());
         let mut down = Left::default();
         download(&sftp, &[at(&remote.join("up"))], &back, &mut reporter, &mut down).await.unwrap();
-        down.files.sort();
-        let downloaded = (down.items.clone(), down.files.clone(), down.dirs.clone(), down.replaced);
+        let downloaded = (down.items.clone(), paths(&down.files), down.dirs.clone(), down.replaced);
         std::fs::write(back.join("up/mine"), "mine").unwrap();
-        let (deleted, result) = delete_local(&mut down);
+        std::fs::write(back.join("up/keep"), "keep, edited since").unwrap();
+        let (deletion, result) = delete_local(&mut down);
         result.unwrap();
-        let after_download = (deleted, names(&back.join("up")));
+        let after_download = (deletion, names(&back.join("up")));
         std::fs::remove_dir_all(&root).unwrap();
 
         let r = |path: &str| at(&remote.join(path));
-        assert_eq!(uploaded, (vec![r("up/new.txt"), r("up/sub/x.txt")], vec![r("up/sub")], 1));
-        assert_eq!(after_upload, (2, vec!["keep".into(), "old.txt".into()], Left { replaced: 1, ..Left::default() }));
+        assert_eq!(uploaded, (vec![r("up/edited.txt"), r("up/new.txt"), r("up/sub/x.txt")], vec![r("up/sub")], 1));
+        let kept = vec!["edited.txt".into(), "keep".into(), "old.txt".into()];
+        assert_eq!(after_upload, (Deletion { deleted: 2, changed: 1 }, kept, Left { replaced: 1, ..Left::default() }));
         let b = |path: &str| back.join(path);
-        assert_eq!(downloaded, (vec![b("up")], vec![b("up/keep"), b("up/old.txt")], vec![b("up")], 0));
-        assert_eq!(after_download, (2, vec!["mine".into()]));
+        assert_eq!(downloaded, (vec![b("up")], vec![b("up/edited.txt"), b("up/keep"), b("up/old.txt")], vec![b("up")], 0));
+        assert_eq!(after_download, (Deletion { deleted: 2, changed: 1 }, vec!["keep".into(), "mine".into()]));
     }
 
     /// New files and folders get the permission bits of those copied, as with `sftp put` and

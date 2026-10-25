@@ -331,8 +331,8 @@ pub fn transfer_cancel(webview: Webview, transfers: State<'_, transfer::Transfer
 }
 
 /// Permanently deletes what an ended transfer created (see `transfer::left`): on the server
-/// through session `id`'s connection for an upload. Returns how many files were deleted; on a
-/// failure, what is left can be deleted again.
+/// through session `id`'s connection for an upload. Returns how many files were deleted, and
+/// how many were kept as they changed since; on a failure, what is left can be deleted again.
 #[tauri::command]
 pub async fn transfer_delete(
     app: AppHandle,
@@ -342,10 +342,10 @@ pub async fn transfer_delete(
     transfers: State<'_, transfer::Transfers>,
     id: Option<SessionId>,
     transfer_id: String,
-) -> Result<usize> {
+) -> Result<transfer::Deletion> {
     let label = webview.label();
-    let Some(kept) = transfers.take(label, &transfer_id) else { return Ok(0) };
-    let (kept, (deleted, result)) = match kept {
+    let Some(kept) = transfers.take(label, &transfer_id) else { return Ok(transfer::Deletion::default()) };
+    let (kept, (deletion, result)) = match kept {
         transfer::Kept::Local(mut left) => {
             let (left, outcome) = blocking(app, move |_| {
                 let outcome = transfer::delete_local(&mut left);
@@ -359,13 +359,13 @@ pub async fn transfer_delete(
                 async { connection(label, &sessions, &connections, id.ok_or_else(|| Error::new("session.notConnected"))?)?.sftp().await };
             let outcome = match sftp.await {
                 Ok(sftp) => transfer::delete_remote(&sftp, &mut left).await,
-                Err(e) => (0, Err(Error::from(e))),
+                Err(e) => (transfer::Deletion::default(), Err(Error::from(e))),
             };
             (transfer::Kept::Remote(left), outcome)
         }
     };
     transfers.keep(label, &transfer_id, kept);
-    result.map(|()| deleted)
+    result.map(|()| deletion)
 }
 
 /// Forgets what the transfers `transfer_ids` left, which the file panel no longer lists.

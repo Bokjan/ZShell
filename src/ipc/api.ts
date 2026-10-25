@@ -417,7 +417,7 @@ export const sftp = {
   cancel: (transferId: string) => call("transfer_cancel", { transferId }),
   /**
    * Permanently deletes what an ended transfer created, through session `id` for an upload;
-   * resolves to how many files were deleted.
+   * resolves to how many files were deleted, and how many were kept as they changed since.
    */
   deleteLeft: (transferId: string, id: SessionId | null) => call("transfer_delete", { transferId, id }),
   /** Forgets what ended transfers created, once they are no longer listed. */
