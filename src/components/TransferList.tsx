@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import type { TransferProgress } from "../ipc/api";
+import type { TransferProgresses } from "../lib/transferProgress";
 import { useLocale } from "../hooks/locale";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
@@ -15,7 +16,6 @@ export interface Transfer {
   kind: "upload" | "download" | "edit";
   /** The names of what it copies, which name it in the current language (see `transferLabel`). */
   names: string[];
-  progress: TransferProgress | null;
   /** "editing" once a file opened in an editor is downloaded and watched. */
   status: "running" | "editing" | "done" | "error" | "cancelled";
   error?: string;
@@ -52,6 +52,8 @@ export type EditSave =
 
 interface Props {
   transfers: Transfer[];
+  /** How far each has got, which renders only its own row again. */
+  progress: TransferProgresses;
   /** What the transfers' channel carries, shown at the header's end. */
   traffic?: ReactNode;
   /** Whether the session is connected, which deleting what an upload created needs. */
@@ -81,6 +83,7 @@ export const finished = (transfer: Transfer) => transfer.status !== "running" &&
 
 export function TransferList({
   transfers,
+  progress,
   traffic,
   connected,
   onCancel,
@@ -109,7 +112,7 @@ export function TransferList({
       </header>
       <ul>
         {transfers.map((transfer) => (
-          <TransferItem key={transfer.id} transfer={transfer} connected={connected} actions={actions} />
+          <TransferItem key={transfer.id} transfer={transfer} progress={progress} connected={connected} actions={actions} />
         ))}
       </ul>
     </section>
@@ -121,16 +124,19 @@ type TransferActions = Pick<Props, "onCancel" | "onDelete" | "onDismiss" | "onRe
 
 /**
  * One transfer, its own component so that React Compiler memoizes it: the list renders again
- * with each running transfer's progress, ten times a second, and the others keep their
- * elements and handlers.
+ * as transfers start, end or change, and the others keep their elements and handlers. Its
+ * progress, ten times a second while it runs, renders only this row again.
  */
-function TransferItem(props: { transfer: Transfer; connected: boolean; actions: TransferActions }) {
-  useStableProps("TransferItem", props, ["actions"]);
-  const { transfer, connected, actions } = props;
+function TransferItem(props: { transfer: Transfer; progress: TransferProgresses; connected: boolean; actions: TransferActions }) {
+  useStableProps("TransferItem", props, ["actions", "progress"]);
+  const { transfer, progress: progresses, connected, actions } = props;
   const { t, i18n } = useTranslation();
   const { formatSize, widestSizes } = useLocale();
   const { id } = transfer;
-  const p = transfer.progress;
+  const p = useSyncExternalStore(
+    (listener) => progresses.subscribe(id, listener),
+    () => progresses.get(id),
+  );
   const percent = p && p.total > 0 ? (p.transferred / p.total) * 100 : transfer.status === "done" ? 100 : 0;
 
   const toDelete = (transfer.created ?? 0) + (transfer.folders ?? 0);

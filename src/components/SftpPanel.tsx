@@ -543,6 +543,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
 
       <TransferList
         transfers={transfers.transfers}
+        progress={transfers.progress}
         traffic={
           <TrafficLights
             source={traffic?.transfer}

@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { sftp, type FileEntry, type SessionId } from "../../ipc/api";
 import { windows } from "../../ipc/windows";
 import { isAppLocked } from "../../lib/appLock";
+import type { TransferProgresses } from "../../lib/transferProgress";
 import { usePressDrag } from "../../hooks/drag";
 import { isMac, isWindows } from "../../lib/platform";
 import type { Transfer } from "../TransferList";
@@ -38,6 +39,7 @@ interface Options {
     add(transfer: Transfer): void;
     update(id: string, patch: Partial<Transfer>): void;
     failed(id: string, e: unknown): void;
+    progress: TransferProgresses;
   };
   fail(e: unknown): void;
 }
@@ -82,11 +84,10 @@ export function useSftpDragDrop(options: Options) {
               id,
               kind: "download",
               names: items.map((entry) => entry.name),
-              progress: null,
               status: "running",
             });
           }
-          if (event.type === "progress") transfers.update(id, { progress: event });
+          if (event.type === "progress") transfers.progress.set(id, event);
           else if (event.type === "done") transfers.update(id, { status: "done", results: event.paths });
           else transfers.failed(id, event.error);
         });

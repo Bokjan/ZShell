@@ -11,6 +11,7 @@ import { finished, NO_DELETION, transferLabel, type Deletion, type Transfer } fr
 import { useLatest } from "../../hooks/latest";
 import { attempt } from "../../lib/attempt";
 import { parentPath } from "../../lib/remotePath";
+import { TransferProgresses } from "../../lib/transferProgress";
 import type { Confirm } from "./useConfirmQueue";
 
 const DOWNLOAD_TO_KEY = "zshell.downloadToDirectory";
@@ -40,6 +41,8 @@ interface Options {
 export function useTransfers({ sessionId, connected, active, cwdRef, entries, load, ask, fail, onTransfers, onEdits }: Options) {
   const { t } = useTranslation();
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  // Apart from the transfers, so that each report renders only the transfer's row.
+  const [progress] = useState(() => new TransferProgresses());
   const transfersRef = useLatest(transfers);
   const sessionRef = useLatest({ sessionId, connected });
   const activeRef = useLatest(active);
@@ -65,11 +68,13 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
   // What the ones no longer listed created can't be deleted from here any more.
   const remove = (id: string) => {
     void sftp.forget([id]);
+    progress.forget([id]);
     setTransfers((ts) => ts.filter((t) => t.id !== id));
   };
   const clearFinished = () => {
     const ids = transfersRef.current.filter(finished).map((t) => t.id);
     if (ids.length > 0) void sftp.forget(ids);
+    progress.forget(ids);
     setTransfers((ts) => ts.filter((t) => !finished(t)));
   };
   const failed = (id: string, e: unknown, patch: Partial<Transfer> = {}) =>
@@ -90,7 +95,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
 
   const run = async (kind: Transfer["kind"], names: string[], work: (id: string) => Promise<TransferEnd>) => {
     const id = crypto.randomUUID();
-    add({ id, kind, names, progress: null, status: "running" });
+    add({ id, kind, names, status: "running" });
     return attempt(
       async () => {
         const end = await work(id);
@@ -109,7 +114,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     if (sessionId == null || localPaths.length === 0) return;
     const start = () =>
       run("upload", localPaths.map(basename), async (id) => {
-        const end = await sftp.upload(currentSession(), id, localPaths, remoteDir, (progress) => update(id, { progress }));
+        const end = await sftp.upload(currentSession(), id, localPaths, remoteDir, (p) => progress.set(id, p));
         if (cwdRef.current === remoteDir) void load(remoteDir);
         return end;
       });
@@ -145,7 +150,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
           id,
           targets.map((e) => e.path),
           localDir,
-          (progress) => update(id, { progress }),
+          (p) => progress.set(id, p),
         ),
     );
   };
@@ -160,9 +165,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
       const path = await save({ defaultPath, title: t("sftp.downloadToTitle") }).catch(() => null);
       if (!path) return;
       storeString(DOWNLOAD_TO_KEY, await dirname(path));
-      void run("download", [first.name], async (id) =>
-        sftp.downloadAs(currentSession(), id, first.path, path, (progress) => update(id, { progress })),
-      );
+      void run("download", [first.name], async (id) => sftp.downloadAs(currentSession(), id, first.path, path, (p) => progress.set(id, p)));
       return;
     }
     const dir = await open({ directory: true, defaultPath: last ?? undefined, title: t("sftp.downloadToFolderTitle") }).catch(() => null);
@@ -297,13 +300,13 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     const current = transfersRef.current.find((t) => t.status === "editing" && t.remotePath === entry.path);
     if (current) return void sftp.editReopen(current.id).catch(fail);
     const id = crypto.randomUUID();
-    add({ id, kind: "edit", names: [entry.name], remotePath: entry.path, progress: null, status: "running" });
+    add({ id, kind: "edit", names: [entry.name], remotePath: entry.path, status: "running" });
     try {
       await sftp.editOpen(
         sessionId,
         id,
         entry.path,
-        (progress) => update(id, { progress }),
+        (p) => progress.set(id, p),
         () => void uploadEditRef.current(id),
       );
       update(id, { status: "editing" });
@@ -319,6 +322,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
 
   return {
     transfers,
+    progress,
     add,
     update,
     remove,
