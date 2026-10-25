@@ -190,11 +190,15 @@ impl DropDownload {
             sum.current.clone_from(&now.current);
             *before = now;
             if total.last_emit.is_none_or(|at| at.elapsed() >= PROGRESS_INTERVAL) {
-                total.last_emit = Some(Instant::now());
-                let _ = events.send(DragEvent::Progress(total.progress.clone()));
+                Self::emit(&mut total, &events);
             }
         };
         Reporter::with_sink(send, self.cancelled.clone()).sharing(self.slots.clone())
+    }
+
+    fn emit(total: &mut Total, events: &Channel<DragEvent>) {
+        total.last_emit = Some(Instant::now());
+        let _ = events.send(DragEvent::Progress(total.progress.clone()));
     }
 
     /// Downloads items to their local paths, replacing what is there: all of them at once on
@@ -212,7 +216,11 @@ impl DropDownload {
             go
         };
         let result = if go {
-            transfer::download_to(&self.sftp, items, &mut self.reporter(), &mut Left::default()).await.map_err(Error::from)
+            let downloaded = transfer::download_to(&self.sftp, items, &mut self.reporter(), &mut Left::default()).await;
+            // As it is now, which the last report of the download, sent as it ended, may not
+            // have been: it came within `PROGRESS_INTERVAL` of another download's.
+            Self::emit(&mut self.total.lock().unwrap(), &self.events);
+            downloaded.map_err(Error::from)
         } else {
             Err(Error::new("transfer.cancelled"))
         };
