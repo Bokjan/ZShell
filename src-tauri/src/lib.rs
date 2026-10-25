@@ -336,6 +336,7 @@ pub fn run() {
             commands::session::session_ack,
             commands::session::session_adopt,
             commands::session::session_handover,
+            commands::session::session_snapshot,
             commands::session::session_foreground,
             commands::session::session_close,
             commands::sftp::sftp_open,

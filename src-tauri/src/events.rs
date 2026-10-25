@@ -118,8 +118,6 @@ events! {
     /// How many of its tabs quitting would end, asked of each window by an id that its
     /// answer (`window_busy_reply`) gives back.
     BusyQuery(u64) = "busy-query";
-    /// The screen of a session that moved to this window, from the window it moved from.
-    SessionSnapshot(crate::session::SessionSnapshot) = "session-snapshot";
     /// Where a tab dragged from another window would go in this one's tab bar, in CSS pixels
     /// from the left; `null` once it would go elsewhere.
     TabDragOver(Option<f64>) = "tab-drag-over";

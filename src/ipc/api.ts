@@ -1,7 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 
 import { call } from "./call";
-import { listenHere } from "./events";
 
 import type {
   AppLockSettings,
@@ -291,45 +290,21 @@ const sessionHandle = (id: SessionId): Session => ({
   close: () => call("session_close", { id }),
 });
 
-/** How long a session moving here waits for its old window's screen; it goes on without it. */
-const SNAPSHOT_TIMEOUT_MS = 5000;
-
-/** Who waits for the screen of each session moving to this window, by move. */
-const snapshotWaiters = new Map<string, (snapshot: SessionSnapshot) => void>();
-let snapshotListener: Promise<unknown> | undefined;
-
 /**
  * Takes over a session that another window's tab showed (a tab moved here): its output and
  * events come here from now on. `snapshot` is what its terminal showed there, which the other
- * window hands over once the session has moved (null if it doesn't in time); output that
- * comes meanwhile goes after it.
+ * window hands over once the session has moved (null if it doesn't in time, which the backend
+ * waits for); output that comes meanwhile goes after it.
  */
 export async function adoptSession(
   id: SessionId,
   onOutput: (data: Uint8Array) => void,
   onEvent: (event: SessionEvent) => void,
 ): Promise<{ session: Session; snapshot: Promise<SessionSnapshot | null> }> {
-  snapshotListener ??= listenHere("session-snapshot", ({ payload }) => snapshotWaiters.get(payload.moveId)?.(payload));
-  await snapshotListener;
   // A screen handed over late for an earlier move of the session isn't this one's.
   const moveId = crypto.randomUUID();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const snapshot = new Promise<SessionSnapshot | null>((resolve) => {
-    const done = (value: SessionSnapshot | null) => {
-      clearTimeout(timer);
-      snapshotWaiters.delete(moveId);
-      resolve(value);
-    };
-    timer = setTimeout(() => done(null), SNAPSHOT_TIMEOUT_MS);
-    snapshotWaiters.set(moveId, done);
-  });
-  try {
-    await call("session_adopt", { id, moveId, channel: sessionChannel(onOutput, onEvent) });
-  } catch (e) {
-    clearTimeout(timer);
-    snapshotWaiters.delete(moveId);
-    throw e;
-  }
+  await call("session_adopt", { id, moveId, channel: sessionChannel(onOutput, onEvent) });
+  const snapshot = call("session_snapshot", { id, moveId }).catch(() => null);
   return { session: sessionHandle(id), snapshot };
 }
 

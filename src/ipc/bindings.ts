@@ -1194,7 +1194,6 @@ export type Events = {
   "pane-stayed": number;
   "quit-requested": null;
   "screen-reader-changed": boolean;
-  "session-snapshot": SessionSnapshot;
   "tab-drag-native-end": TabDragNativeEnd;
   "tab-drag-over": number | null;
   "tab-received": null;
@@ -1268,6 +1267,7 @@ export type Commands = {
   session_log_stop: { args: { id: number }; result: void };
   session_open: { args: { spec: SessionSpec; cols: number; rows: number; log?: LogOpen | null; channel: Channel<ArrayBuffer> }; result: number };
   session_resize: { args: { id: number; cols: number; rows: number }; result: void };
+  session_snapshot: { args: { id: number; moveId: string }; result: SessionSnapshot | null };
   session_write: { args: { id: number; data: string }; result: void };
   session_write_bytes: { args: { id: number; data: number[] }; result: void };
   sessions_export: { args: { path: string; passphrase?: string | null }; result: void };

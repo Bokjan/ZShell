@@ -10,7 +10,6 @@ use tauri::{AppHandle, Manager, State, Webview};
 use crate::config::ProfileStore;
 use crate::connections::Connections;
 use crate::error::Result;
-use crate::events;
 use crate::launch::{self, Launch, SessionSpec, Sources};
 use crate::logging::{LogOpen, LogSlot, Logs};
 use crate::pty;
@@ -155,12 +154,23 @@ pub fn session_adopt(
 }
 
 /// Passes the screen of a session that moved away from this window to the window showing it
-/// now, as the `session-snapshot` event.
+/// now, which takes it with [`session_snapshot`]. Off the main thread: with a long scrollback
+/// it is megabytes.
 #[tauri::command]
-pub fn session_handover(app: AppHandle, webview: Webview, sessions: State<'_, SessionManager>, snapshot: SessionSnapshot) -> Result<()> {
-    let owner = sessions.handover(webview.label(), snapshot.id, &snapshot.move_id)?;
-    events::emit_to(&app, owner, events::SessionSnapshot(snapshot));
-    Ok(())
+pub async fn session_handover(webview: Webview, sessions: State<'_, SessionManager>, snapshot: SessionSnapshot) -> Result<()> {
+    sessions.hand_over(webview.label(), snapshot)
+}
+
+/// The screen of session `id`, which moved to this window with `move_id`, once its old window
+/// hands it over; `null` if that doesn't come in time.
+#[tauri::command]
+pub async fn session_snapshot(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    id: SessionId,
+    move_id: String,
+) -> Result<Option<SessionSnapshot>> {
+    sessions.snapshot(webview.label(), id, &move_id).await
 }
 
 /// The program running in the session's terminal other than the shell (an empty string if

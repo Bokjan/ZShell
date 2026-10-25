@@ -10,12 +10,13 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::Channel;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
-use super::{Flow, Foreground, Lifetime, SessionId, SessionInput, SessionSink, TermIo};
+use super::{Flow, Foreground, Lifetime, SessionId, SessionInput, SessionSink, SessionSnapshot, TermIo};
 use crate::error::{Error, Result};
 use crate::logging::LogSlot;
 use crate::zmodem::Zmodem;
@@ -44,6 +45,22 @@ pub struct SessionManager {
     /// How many times each webview's page has gone away (see [`Page`]). Locked after
     /// `sessions`, never before.
     pages: Mutex<HashMap<String, u64>>,
+    /// The screens of sessions that moved, by move, with the webview they moved to (see
+    /// [`SessionManager::snapshot`]).
+    snapshots: Mutex<HashMap<String, (String, Snapshot)>>,
+}
+
+/// How long a session that moved waits for its old tab's screen: it goes on without it.
+const SNAPSHOT_WAIT: Duration = Duration::from_secs(5);
+
+/// The screen of a move, between the two windows.
+enum Snapshot {
+    /// The new tab waits for it.
+    Waiting(oneshot::Sender<SessionSnapshot>),
+    /// Handed over before the new tab asked.
+    Arrived(SessionSnapshot),
+    /// The new tab stopped waiting: one handed over late is dropped.
+    Late,
 }
 
 /// The page a session is opened for: a webview, and the page it shows at the time. A
@@ -206,6 +223,43 @@ impl SessionManager {
         }
     }
 
+    /// Passes the screen of a session that moved away from `webview` (see [`Self::handover`])
+    /// to the window it moved to, which takes it with [`Self::snapshot`].
+    pub fn hand_over(&self, webview: &str, snapshot: SessionSnapshot) -> Result<()> {
+        let owner = self.handover(webview, snapshot.id, &snapshot.move_id)?;
+        let mut snapshots = self.snapshots.lock().unwrap();
+        match snapshots.remove(&snapshot.move_id) {
+            Some((_, Snapshot::Waiting(waiting))) => drop(waiting.send(snapshot)),
+            Some((_, Snapshot::Late)) => {}
+            _ => drop(snapshots.insert(snapshot.move_id.clone(), (owner, Snapshot::Arrived(snapshot)))),
+        }
+        Ok(())
+    }
+
+    /// The screen of session `id`, which moved to `webview` with `move_id`, once its old
+    /// window hands it over; `None` if that doesn't come within [`SNAPSHOT_WAIT`]. Taken
+    /// rather than sent in an event: Tauri writes an event's payload into a script that the
+    /// page runs, which with a long scrollback is megabytes on the main thread.
+    pub async fn snapshot(&self, webview: &str, id: SessionId, move_id: &str) -> Result<Option<SessionSnapshot>> {
+        owned(&self.sessions.lock().unwrap(), webview, id)?;
+        let arrives = {
+            let mut snapshots = self.snapshots.lock().unwrap();
+            if let Some((_, Snapshot::Arrived(snapshot))) = snapshots.remove(move_id) {
+                return Ok(Some(snapshot));
+            }
+            let (waiting, arrives) = oneshot::channel();
+            snapshots.insert(move_id.to_owned(), (webview.to_owned(), Snapshot::Waiting(waiting)));
+            arrives
+        };
+        match tokio::time::timeout(SNAPSHOT_WAIT, arrives).await {
+            Ok(Ok(snapshot)) => Ok(Some(snapshot)),
+            _ => {
+                self.snapshots.lock().unwrap().insert(move_id.to_owned(), (webview.to_owned(), Snapshot::Late));
+                Ok(None)
+            }
+        }
+    }
+
     /// How many sessions `webview`'s tabs show.
     pub fn owned(&self, webview: &str) -> u32 {
         let sessions = self.sessions.lock().unwrap();
@@ -252,6 +306,7 @@ impl SessionManager {
             let ids: Vec<SessionId> = sessions.iter().filter(|(_, entry)| entry.webview == webview).map(|(id, _)| *id).collect();
             ids.iter().filter_map(|id| sessions.remove(id)).collect()
         };
+        self.snapshots.lock().unwrap().retain(|_, (to, _)| to != webview);
         entries.into_iter().for_each(close);
     }
 
@@ -438,6 +493,32 @@ mod tests {
         assert!(sessions.withdraw_offers("fifth", &HashSet::new()).is_empty());
         let page = sessions.page("fifth");
         assert_eq!(sessions.adopt(id, &page, Channel::new(|_| Ok(())), "m4".into()).unwrap_err().code(), "session.notFound");
+    }
+
+    /// The new window takes the screen its session showed in the old one, whether the old one
+    /// hands it over before or after the new one asks; only the new window can take it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_moved_sessions_screen_goes_to_its_new_window() {
+        let sessions = Arc::new(SessionManager::default());
+        let (id, _, _) = hold(&sessions, "main");
+        let screen = |move_id: &str| SessionSnapshot { id, move_id: move_id.into(), data: format!("<{move_id}>"), cols: 80, rows: 24 };
+
+        sessions.offer("main", &[id], "other").unwrap();
+        sessions.adopt(id, &sessions.page("other"), Channel::new(|_| Ok(())), "m1".into()).unwrap();
+        sessions.hand_over("main", screen("m1")).unwrap();
+        assert_eq!(sessions.snapshot("main", id, "m1").await.err().map(|e| e.code()), Some("session.notFound"));
+        assert_eq!(sessions.snapshot("other", id, "m1").await.unwrap().map(|s| s.data), Some("<m1>".into()));
+
+        sessions.offer("other", &[id], "third").unwrap();
+        sessions.adopt(id, &sessions.page("third"), Channel::new(|_| Ok(())), "m2".into()).unwrap();
+        let asking = tokio::spawn({
+            let sessions = sessions.clone();
+            async move { sessions.snapshot("third", id, "m2").await }
+        });
+        eventually(|| sessions.snapshots.lock().unwrap().contains_key("m2")).await;
+        sessions.hand_over("other", screen("m2")).unwrap();
+        assert_eq!(asking.await.unwrap().unwrap().map(|s| s.data), Some("<m2>".into()));
+        assert!(sessions.snapshots.lock().unwrap().is_empty());
     }
 
     /// Only the window showing a session can act on it, or give it to another window.
