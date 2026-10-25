@@ -1,43 +1,46 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Terminal, type IDisposable } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import "@xterm/xterm/css/xterm.css";
 
 import { conptyBuild, type ProfileAppearance } from "../ipc/api";
 import { afterDialogs, isDialogOpen } from "../hooks/dialogs";
-import { chosenAction, clipboardKeyOf, matches } from "../lib/keymap";
-import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
+import { chosenAction, matches } from "../lib/keymap";
 import type { PaneSession } from "../lib/paneSession";
 import { isMac } from "../lib/platform";
 import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../hooks/settings";
-import { parseOsc7, shellDirs } from "../lib/shellDirs";
+import { shellDirs } from "../lib/shellDirs";
 import { announce } from "../lib/announce";
-import { KittyNotices, PointerShapes, osc52Text, parseOsc777, parseOsc9 } from "../lib/osc";
+import { Disposables } from "../lib/disposables";
+import { PromptWatch } from "../lib/promptWatch";
+import { handleOsc } from "../lib/terminalOsc";
 import { useShortcuts } from "../hooks/shortcuts";
 import { fontLigatureRules } from "../lib/fontLigatureRules";
 import { ligatureRanges } from "../lib/ligatures";
-import { COLS_DEBOUNCE_MS, FullWidthFitAddon, resizeStep } from "../lib/terminalFit";
-import { extraModes } from "../lib/terminalModes";
+import { FullWidthFitAddon } from "../lib/terminalFit";
 import { isTerminalReport } from "../lib/terminalReports";
-import { ReadBack } from "../lib/readBack";
+import type { ReadBack } from "../lib/readBack";
 import { fontStack, searchDecorations, sessionScheme } from "../lib/terminalSchemes";
 import { drawWithWebgl } from "../lib/webgl";
-import { attemptSync } from "../lib/attempt";
 import { createStore } from "../lib/store";
 import { useLatest } from "../hooks/latest";
 import { useLocale } from "../hooks/locale";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./SearchBar";
-import { TOOLTIP_DELAY, TooltipPopup } from "./Tooltip";
+import { TooltipPopup } from "./Tooltip";
+import { attachClipboard, copyText, pasteClipboard, type MenuAt } from "./terminal/clipboard";
+import { attachLinks, type LinkHint } from "./terminal/links";
 import { NewOutputButton } from "./terminal/NewOutputButton";
+import { terminalPort, terminalScreen } from "./terminal/port";
+import { followReadBack } from "./terminal/readBackView";
+import { followSize, showSize } from "./terminal/size";
 import { SizeOverlay, type SizeShown } from "./terminal/SizeOverlay";
 import { useZmodem } from "./terminal/useZmodem";
 
@@ -66,43 +69,7 @@ interface Props {
 /** Characters of a multi-line paste shown in the confirmation dialog. */
 const PASTE_PREVIEW = 4000;
 
-/**
- * How long the terminal's size shows after it changes: a second, then it fades out (see
- * `.size-overlay`). Not in a pane that opened less than `SIZE_SETTLE_MS` ago, whose terminal is
- * still settling into its place.
- */
-const SIZE_SHOWN_MS = 1150;
-const SIZE_SETTLE_MS = 500;
-
-/**
- * How long the output pauses after a command is entered before the shell counts as back at its
- * prompt, maybe in another folder (which the file panel may follow).
- */
-const PROMPT_SETTLE_MS = 300;
-
-/**
- * How long a link's tooltip stays after the pointer leaves the link: xterm.js leaves and hovers
- * it again whenever its line is drawn again (the cursor blinking on it, output).
- */
-const LINK_LEAVE_MS = 100;
-
-/** How long the scroll bar stays after the view last scrolled, as xterm.js's own (see `.scrolling`). */
-const SCROLLING_MS = 500;
-
-/** How long the notice that output removes the lines being read back stays, fading out at the end (see `.trimming-hint`). */
-const TRIMMING_SHOWN_MS = 4000;
-
 const ignore = () => {};
-
-/**
- * Links open with ⌘-click on macOS and Ctrl+click elsewhere, as in other terminals. xterm.js
- * activates a link on any button's release: with the right one, the context menu opens.
- */
-const opensLink = (e: MouseEvent) => e.button === 0 && (isMac ? e.metaKey : e.ctrlKey);
-
-// Through the clipboard plugin: pasting from a menu can't raise the browser's paste event,
-// and WKWebView's `navigator.clipboard.readText` asks the user with a system "Paste" button.
-const copyText = (text: string) => void writeText(text).catch(console.error);
 
 const lineCount = (text: string) => text.replace(/(\r\n|\r|\n)$/, "").split(/\r\n|\r|\n/).length;
 
@@ -142,10 +109,8 @@ export function TerminalView({
   const sessionRef = useRef<PaneSession | null>(null);
   // Incremented by the find shortcut; 0 means the search bar is closed.
   const [searchKey, setSearchKey] = useState(0);
-  // `link`: the link the menu was opened on.
-  const [menu, setMenu] = useState<{ x: number; y: number; link?: string } | null>(null);
-  // The tooltip of the link under the pointer; `uri` for links whose text may not say where they go.
-  const [linkHint, setLinkHint] = useState<{ anchor: Pick<Element, "getBoundingClientRect">; uri: string | null } | null>(null);
+  const [menu, setMenu] = useState<MenuAt | null>(null);
+  const [linkHint, setLinkHint] = useState<LinkHint | null>(null);
   // Multi-line text waiting for the user to confirm the paste.
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   // The size shown while the terminal is resized; `count` starts its fade-out over at each change.
@@ -217,55 +182,9 @@ export function TerminalView({
     term.loadAddon(serialize);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
-    // Links: addresses in the text, and those programs mark (OSC 8: `ls --hyperlink`, gcc),
-    // whose text may be anything, so their tooltip shows where they go. A plain click only
-    // selects or focuses, as on any other text. xterm.js only gives http and https ones.
-    let link: string | null = null;
-    let hintTimer: ReturnType<typeof setTimeout> | undefined;
-    // The link whose tooltip is shown, and the one whose tooltip was dismissed (until left).
-    let hinted: string | null = null;
-    let dismissed: string | null = null;
-    const activate = (e: MouseEvent, uri: string) => {
-      if (opensLink(e)) void openUrl(uri).catch(console.error);
-    };
-    const hover = (e: MouseEvent, uri: string, marked: boolean) => {
-      clearTimeout(hintTimer);
-      link = uri;
-      if (uri === hinted || uri === dismissed) return;
-      // Below the line the pointer is on.
-      const screen = term.element?.querySelector(".xterm-screen")?.getBoundingClientRect() ?? container.getBoundingClientRect();
-      const height = screen.height / term.rows;
-      const top = screen.top + Math.floor((e.clientY - screen.top) / height) * height;
-      const rect = new DOMRect(e.clientX, top, 0, height);
-      const hint = { anchor: { getBoundingClientRect: () => rect }, uri: marked ? uri : null };
-      hintTimer = setTimeout(
-        () => {
-          hinted = uri;
-          setLinkHint(hint);
-        },
-        hinted === null ? TOOLTIP_DELAY : 0,
-      );
-    };
-    const leave = () => {
-      clearTimeout(hintTimer);
-      link = null;
-      hintTimer = setTimeout(() => {
-        hinted = dismissed = null;
-        setLinkHint(null);
-      }, LINK_LEAVE_MS);
-    };
-    // Clicking or scrolling dismisses it, as other tooltips are.
-    const dismissHint = () => {
-      if (!link) return;
-      clearTimeout(hintTimer);
-      dismissed = link;
-      hinted = null;
-      setLinkHint(null);
-    };
-    term.options.linkHandler = { activate, hover: (e, uri) => hover(e, uri, true), leave };
-    term.loadAddon(new WebLinksAddon(activate, { hover: (e, uri) => hover(e, uri, false), leave }));
-    container.addEventListener("mousedown", dismissHint, true);
-    container.addEventListener("wheel", dismissHint, true);
+    // Let go of in the reverse order, before the session and the terminal.
+    const held = new Disposables();
+    const links = held.add(attachLinks(term, container, setLinkHint));
     term.open(container);
     fit.fit();
     termRef.current = term;
@@ -274,36 +193,8 @@ export function TerminalView({
     setSearchAddon(search);
 
     const session = sessionsRef.current.attach(paneKey, {
-      port: {
-        write: (data, done) => term.write(data, done),
-        size: () => ({ cols: term.cols, rows: term.rows }),
-        lineBeforeCursor: () => {
-          const buffer = term.buffer.active;
-          return buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX) ?? "";
-        },
-        alternateScreen: () => term.buffer.active.type === "alternate",
-        // With the modes programs set (mouse reporting, bracketed paste and so on), and what
-        // the addon doesn't keep.
-        snapshot: () => ({ data: serialize.serialize() + extraModes(term), cols: term.cols, rows: term.rows }),
-        // Drawn at the size it was taken at, as the addon advises; fitted to the pane after.
-        restore: (snapshot, done) => {
-          term.resize(snapshot.cols, snapshot.rows);
-          term.write(snapshot.data, done);
-        },
-        fit: () => fit.fit(),
-      },
-      screen: {
-        size: () => ({ cols: term.cols, rows: term.rows }),
-        cursor: () => {
-          const buffer = term.buffer.active;
-          // Past the last column while a line waits to wrap.
-          return { row: buffer.cursorY + 1, column: Math.min(buffer.cursorX, term.cols - 1) + 1 };
-        },
-        subscribe: (listener) => {
-          const events = [term.onCursorMove(listener), term.onResize(listener), term.buffer.onBufferChange(listener)];
-          return () => events.forEach((e) => e.dispose());
-        },
-      },
+      port: terminalPort(term, serialize, fit),
+      screen: terminalScreen(term),
       zmodem: (phase) => transfer.onPhaseRef.current(phase),
       paste: {
         bracketed: () => term.modes.bracketedPasteMode,
@@ -320,280 +211,83 @@ export function TerminalView({
       flash: () => setFlashes((count) => count + 1),
     });
     sessionRef.current = session;
-    fitRef.current = {
-      fit: () => {
-        if (!session.isArriving) fit.fit();
-      },
-    };
 
-    // While syncing, a paste isn't passed on as typed input (wrapped for bracketed paste, or
-    // not, as this terminal is): each synced pane pastes it as its own terminal requires.
-    let pasting = false;
-    pasteAllRef.current = (text: string) => {
-      const others = pasteTargetsRef.current();
-      pasting = true;
-      attemptSync(
-        () => term.paste(text),
-        () => (pasting = false),
-      );
-      for (const other of others) other.paste(text);
-    };
-    pasteRef.current = (text: string) => {
-      // Nowhere to go; a line break in it would otherwise read as Enter, which reconnects.
-      if (!text || session.isClosed) return;
-      // With bracketed paste the shell inserts the lines without running them: asked unless
-      // every pane it goes to does.
-      const bracketed = term.modes.bracketedPasteMode && pasteTargetsRef.current().every((other) => other.bracketed());
-      const confirm = settingsRef.current.terminal.confirmMultilinePaste && !bracketed;
-      if (confirm && /[\r\n]/.test(text)) setPendingPaste(text);
-      else pasteAllRef.current(text);
-    };
+    const clipboard = held.add(
+      attachClipboard(term, container, {
+        closed: () => session.isClosed,
+        pasteTargets: () => pasteTargetsRef.current(),
+        settings: () => settingsRef.current.terminal,
+        confirm: setPendingPaste,
+        openMenu: setMenu,
+        link: links.current,
+      }),
+    );
+    pasteRef.current = clipboard.paste;
+    pasteAllRef.current = clipboard.pasteAll;
 
-    // Ctrl+Shift+C / Ctrl+V and friends outside macOS (see `clipboardKeyOf`).
-    term.attachCustomKeyEventHandler((e) => {
-      // The menu key and Shift+F10 open the context menu, at the cursor (where xterm.js keeps
-      // its text field), whatever the program does with the mouse and right-clicks do. The
-      // browser may fire `contextmenu` for them as well, which can't tell them from a click.
-      if (isMenuKey(e)) {
-        if (e.type === "keydown") {
-          e.preventDefault();
-          openedByMenuKey();
-          const at = term.textarea?.getBoundingClientRect() ?? container.getBoundingClientRect();
-          setMenu({ x: at.left, y: at.bottom });
-        }
-        return false;
-      }
-      const key = clipboardKeyOf(e);
-      if (!key || (key === "copyIfSelected" && !term.hasSelection())) return true;
-      if (e.type === "keydown") {
-        e.preventDefault();
-        if (key === "paste") readText().then(pasteRef.current, ignore);
+    const prompt = held.add(new PromptWatch(() => shellDirs.mayHaveMoved(paneKey)));
+    held.defer(() => shellDirs.forget(paneKey));
+    const osc = held.add(
+      handleOsc(term, {
+        folder: (path) => shellDirs.report(paneKey, path),
+        copyLimit: () => {
+          const { clipboardWrite, clipboardLimit } = settingsRef.current.terminal;
+          return clipboardWrite ? clipboardLimit * 1024 : null;
+        },
+        copy: (text) => void writeText(text).then(() => announce(tRef.current("announce.copied")), console.error),
+        progress: (report) => session.progress(report),
+        notify: (notice) => session.notify(notice),
+        // A link's hand and column selection's crosshair still show over it (see `.program-pointer`).
+        pointer: (shape) => {
+          container.classList.toggle("program-pointer", shape !== "");
+          container.style.setProperty("--program-pointer", shape || null);
+        },
+      }),
+    );
+    resetPointerRef.current = osc.resetPointer;
+
+    const { readBack } = held.add(
+      followReadBack(term, container, (shown) => {
+        if (!shown) setTrimmingShown(0);
         else {
-          copyText(term.getSelection());
-          // So that the next Ctrl+C interrupts again.
-          term.clearSelection();
+          if (visibleRef.current) announce(tRef.current("terminal.trimmingView"));
+          setTrimmingShown((count) => count + 1);
         }
-      }
-      return false;
-    });
-
-    // ⌘V (the native Edit menu), and pastes from the browser's own key handling.
-    const onPaste = (e: ClipboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      pasteRef.current(e.clipboardData?.getData("text/plain") ?? "");
-    };
-    container.addEventListener("paste", onPaste, true);
-
-    // Copy on select: once a mouse selection is finished, wherever the button is released.
-    let selecting = false;
-    const onMouseDown = (e: MouseEvent) => {
-      selecting = e.button === 0;
-    };
-    const onMouseUp = () => {
-      if (!selecting) return;
-      selecting = false;
-      if (settingsRef.current.terminal.copyOnSelect && term.hasSelection()) copyText(term.getSelection());
-    };
-    container.addEventListener("mousedown", onMouseDown, true);
-    window.addEventListener("mouseup", onMouseUp);
-
-    // After xterm.js's own handler (which may select the word under the pointer).
-    const onContextMenu = (e: MouseEvent) => {
-      if (followsMenuKey(e)) return;
-      e.preventDefault();
-      // Programs using the mouse get the click; Shift+right-click still opens the menu.
-      if (term.modes.mouseTrackingMode !== "none" && !e.shiftKey) return;
-      if (settingsRef.current.terminal.rightClick === "paste" && !e.shiftKey) {
-        readText().then(pasteRef.current, ignore);
-        return;
-      }
-      setMenu({ x: e.clientX, y: e.clientY, link: link ?? undefined });
-    };
-    container.addEventListener("contextmenu", onContextMenu);
-
-    const opened = Date.now();
-    let hideSize: ReturnType<typeof setTimeout> | undefined;
-    const showSize = (cols: number, rows: number) => {
-      // Out of sight (a hidden tab resized with the window), nobody would see it.
-      if (!visibleRef.current || Date.now() - opened < SIZE_SETTLE_MS) return;
-      sizeShown.set({ size: { cols, rows, count: (sizeShown.get().size?.count ?? 0) + 1 } });
-      clearTimeout(hideSize);
-      hideSize = setTimeout(() => sizeShown.set({ size: null }), SIZE_SHOWN_MS);
-    };
-
-    // Once a command is entered (Enter, or a paste with a line break), the next pause in the
-    // output tells the file panel that the shell may have changed folders.
-    let entered = false;
-    let promptSettle: ReturnType<typeof setTimeout> | undefined;
-    const waitForPrompt = () => {
-      clearTimeout(promptSettle);
-      promptSettle = setTimeout(() => {
-        entered = false;
-        shellDirs.mayHaveMoved(paneKey);
-      }, PROMPT_SETTLE_MS);
-    };
-
-    // The pointer shape programs set (OSC 22), for each screen; a link's hand and column
-    // selection's crosshair still show over it (see `.program-pointer`).
-    const pointers = new PointerShapes();
-    const showPointer = () => {
-      const shape = pointers.shape(term.buffer.active.type);
-      container.classList.toggle("program-pointer", shape !== "");
-      container.style.setProperty("--program-pointer", shape || null);
-    };
-    resetPointerRef.current = () => {
-      pointers.reset();
-      showPointer();
-    };
-    const kittyNotices = new KittyNotices();
-
-    // Reading back through the scrollback (see `lib/readBack`). The scroll bar shows while the
-    // view moves (see `.scrolling`), not for output that arrives at the end or below the view.
-    // Called for every line of output: most return at once.
-    const readBack = new ReadBack(term);
+      }),
+    );
     setReadBack(readBack);
-    let scrolling: ReturnType<typeof setTimeout> | undefined;
-    let hideTrimming: ReturnType<typeof setTimeout> | undefined;
-    const onScroll = () => {
-      const { moved, trimmingView } = readBack.scrolled();
-      if (moved) {
-        container.classList.add("scrolling");
-        clearTimeout(scrolling);
-        scrolling = setTimeout(() => container.classList.remove("scrolling"), SCROLLING_MS);
-      }
-      if (trimmingView) {
-        if (visibleRef.current) announce(tRef.current("terminal.trimmingView"));
-        setTrimmingShown((count) => count + 1);
-        clearTimeout(hideTrimming);
-        hideTrimming = setTimeout(() => setTrimmingShown(0), TRIMMING_SHOWN_MS);
-      }
-    };
+    held.defer(() => setReadBack(null));
 
-    const subscriptions: IDisposable[] = [
-      // Reports are for the program in this pane only, so not synced to other panes.
+    held.add(term.onResize(({ cols, rows }) => session.resize(cols, rows)));
+    held.add(showSize(term, sizeShown, () => visibleRef.current));
+    // Reports are for the program in this pane only, so not synced to other panes.
+    held.add(
       term.onData((data) => {
         const report = isTerminalReport(data);
-        if (!report && data.includes("\r")) {
-          entered = true;
-          waitForPrompt();
-        }
-        if (session.input(data) && !pasting && !report) onInputRef.current(data);
+        if (!report) prompt.typed(data);
+        if (session.input(data) && !clipboard.pasting() && !report) onInputRef.current(data);
       }),
-      term.onWriteParsed(() => {
-        if (entered) waitForPrompt();
+    );
+    held.add(term.onWriteParsed(() => prompt.output()));
+    held.add(term.onBinary((data) => session.inputBinary(data)));
+    held.add(term.onTitleChange((title) => onTitleRef.current(title)));
+    held.add(term.onBell(() => session.bell()));
+
+    fitRef.current = held.add(
+      followSize(term, fit, container, {
+        arriving: () => session.isArriving,
+        visible: () => visibleRef.current,
+        unfitted: () => (unfittedRef.current = true),
       }),
-      // The folder the shell reports, where it is set up to (OSC 7).
-      term.parser.registerOscHandler(7, (data) => {
-        const path = parseOsc7(data);
-        if (path) shellDirs.report(paneKey, path);
-        return true;
-      }),
-      // Text a program copies (OSC 52), as far as the settings allow. Asking for the
-      // clipboard's text is never answered.
-      term.parser.registerOscHandler(52, (data) => {
-        const { clipboardWrite, clipboardLimit } = settingsRef.current.terminal;
-        const text = clipboardWrite ? osc52Text(data, clipboardLimit * 1024) : null;
-        if (text !== null) void writeText(text).then(() => announce(tRef.current("announce.copied")), console.error);
-        return true;
-      }),
-      // Progress (ConEmu's OSC 9;4) and notifications (iTerm2's OSC 9, OSC 777, kitty's OSC 99).
-      term.parser.registerOscHandler(9, (data) => {
-        const parsed = parseOsc9(data);
-        if (parsed && "progress" in parsed) session.progress(parsed.progress);
-        else if (parsed) session.notify(parsed.notice);
-        return true;
-      }),
-      term.parser.registerOscHandler(777, (data) => {
-        const notice = parseOsc777(data);
-        if (notice) session.notify(notice);
-        return true;
-      }),
-      term.parser.registerOscHandler(99, (data) => {
-        const notice = kittyNotices.feed(data);
-        if (notice) session.notify(notice);
-        return true;
-      }),
-      term.parser.registerOscHandler(22, (data) => {
-        if (pointers.feed(data, term.buffer.active.type)) showPointer();
-        return true;
-      }),
-      // The alternate screen's shapes go with its text, so that the next full-screen program
-      // doesn't start with those the last one left.
-      term.buffer.onBufferChange((buffer) => {
-        if (buffer.type === "normal") pointers.clear("alternate");
-        showPointer();
-      }),
-      // A full reset (RIS) puts back the terminal's own pointer too; xterm.js resets the rest.
-      term.parser.registerEscHandler({ final: "c" }, () => {
-        resetPointerRef.current();
-        return false;
-      }),
-      term.onBinary((data) => session.inputBinary(data)),
-      term.onResize(({ cols, rows }) => {
-        readBack.resize();
-        session.resize(cols, rows);
-        showSize(cols, rows);
-      }),
-      term.onScroll(onScroll),
-      term.onTitleChange((title) => onTitleRef.current(title)),
-      term.onBell(() => session.bell()),
-    ];
-    // A hidden tab keeps its size, and resizing the window would refit (and reflow) every
-    // terminal in every tab on each frame: those out of sight fit once shown again, except
-    // the first time (a tab opened in the background starts its session at its size).
-    let fitted = false;
-    let colsLater: ReturnType<typeof setTimeout> | undefined;
-    // As the window's edge or a splitter is dragged (see `resizeStep`).
-    const follow = () => {
-      const proposed = fit.proposeDimensions();
-      if (session.isArriving || !proposed) return;
-      const step = resizeStep({ cols: term.cols, rows: term.rows }, proposed, term.buffer.active.length);
-      if (step.now) fit.resizeTo(step.now);
-      clearTimeout(colsLater);
-      if (step.colsLater) {
-        colsLater = setTimeout(() => {
-          if (visibleRef.current) fitRef.current?.fit();
-          else unfittedRef.current = true;
-        }, COLS_DEBOUNCE_MS);
-      }
-    };
-    const observer = new ResizeObserver(() => {
-      if (!fitted) {
-        fitted = true;
-        fitRef.current?.fit();
-      } else if (visibleRef.current) {
-        follow();
-      } else {
-        unfittedRef.current = true;
-      }
-    });
-    observer.observe(container);
+    );
     // A tick later: React's StrictMode (in development) mounts, unmounts and mounts again at
     // once, which would open a backend session (and a log file, or a serial device that is
     // then busy) for the first mount too.
-    const start = setTimeout(() => session.start(), 0);
+    held.timer().start(() => session.start(), 0);
 
     return () => {
-      clearTimeout(start);
-      clearTimeout(colsLater);
-      clearTimeout(hideSize);
-      clearTimeout(promptSettle);
-      clearTimeout(hintTimer);
-      clearTimeout(scrolling);
-      clearTimeout(hideTrimming);
-      container.removeEventListener("mousedown", dismissHint, true);
-      container.removeEventListener("wheel", dismissHint, true);
-      shellDirs.forget(paneKey);
-      window.removeEventListener("mouseup", onMouseUp);
-      container.removeEventListener("paste", onPaste, true);
-      container.removeEventListener("mousedown", onMouseDown, true);
-      container.removeEventListener("contextmenu", onContextMenu);
       pasteRef.current = pasteAllRef.current = resetPointerRef.current = ignore;
-      observer.disconnect();
-      subscriptions.forEach((s) => s.dispose());
-      readBack.dispose();
-      setReadBack(null);
+      held.dispose();
       sessionsRef.current.detach(paneKey, session);
       sessionRef.current = null;
       term.dispose();
@@ -713,7 +407,7 @@ export function TerminalView({
       if (matches(e, "find")) setSearchKey((key) => key + 1);
       else if (chosenAction(e) === "copy") {
         if (term?.hasSelection()) copyText(term.getSelection());
-      } else if (chosenAction(e) === "paste") void readText().then(pasteRef.current, ignore);
+      } else if (chosenAction(e) === "paste") pasteClipboard(pasteRef.current);
       else return false;
       return true;
     },
@@ -751,7 +445,7 @@ export function TerminalView({
       {
         label: t("terminal.menu.paste"),
         shortcut: shortcutLabel("paste"),
-        onSelect: () => void readText().then(pasteRef.current, ignore),
+        onSelect: () => pasteClipboard(pasteRef.current),
       },
       { label: t("terminal.menu.selectAll"), shortcut: shortcutLabel("selectAll"), onSelect: () => term.selectAll() },
       "separator" as const,

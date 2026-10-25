@@ -89,7 +89,7 @@
 - **外部 store**：跨组件共享的状态是每个窗口一份的 store（`lib/store.ts`），组件经 `useSyncExternalStore` 订阅，模块直接 `get()`，不经 `App` 转交。整体保存到后端的值（设置、快速命令）经 `lib/savedStore.ts` 与 `latestSave`。设置同样不经 `App` 转交：渲染时用到的经 `useSettings()` 订阅，只在事件与回调里用到的直接读 `currentSettings()`。谁读入谁负责重读：收到其他窗口的 `config-changed` 时重读。
 - **标签页与窗格**：每个修改是一个 action，由纯函数 `reduceTabs`（`lib/tabs.ts`）处理；`App` 的各流程各是 `app/` 下的一个 hook，流程要问用户或显示的对话框、面板由这个 hook 自己保管状态并返回要渲染的元素（`dialog`），`App` 只负责组装和摆放。
 - **会话目录**：已保存的会话、文件夹、代理和最近打开的会话（`lib/directory.ts`），用到的组件直接订阅。最近打开的存在 `localStorage`，经 `storage` 事件在窗口间同步。
-- **窗格的会话**：每个窗格一个 `PaneSession`（`lib/paneSession.ts`），负责打开、重连、共享连接、登录后命令和流控，只经小接口读写终端；`TerminalView` 只管终端。注册表（`lib/sessionRegistry.ts`）以事件通知拥有关闭、移动流程的 hook，依赖只从拥有者指向它。
+- **窗格的会话**：每个窗格一个 `PaneSession`（`lib/paneSession.ts`），负责打开、重连、共享连接、登录后命令和流控，只经小接口读写终端；`TerminalView` 只管终端，它的各部分（链接、剪贴板与右键菜单、尺寸跟随、回看在 `components/terminal/`，OSC 与提示符检测在 `lib/`）各返回一个 disposable，收进 `Disposables`（`lib/disposables.ts`）一起释放。注册表（`lib/sessionRegistry.ts`）以事件通知拥有关闭、移动流程的 hook，依赖只从拥有者指向它。
 - **会话结束**：和 Xshell 一样，用户退出 shell 后窗格自动关闭；服务器一连上就结束、被信号结束或文件面板有工作时不关（`closesOnExit`，`lib/panes.ts`），这时 Enter 重连。
 - **挂载顺序**：`SettingsProvider` → `VaultGate`（锁定时只显示解锁界面）→ `AppLockGate` → `App`。
 - **对话框与快捷键**：对话框登记到一个栈（`hooks/dialogs.ts`），只有最上层响应 Esc、点击背景和关闭标签页的快捷键（⌘W，其他平台 Ctrl+Shift+W，由 `Modal` 处理）；快捷键在捕获阶段统一分发（`hooks/shortcuts.ts`）。
@@ -274,7 +274,7 @@
 
 ### 程序的 OSC 请求
 
-xterm.js 处理标题、调色板、OSC 8 与颜色查询；其余由 `TerminalView` 注册，解析在 `lib/osc.ts`，各项的协议细节见那里。都只作用于发出序列的窗格。
+xterm.js 处理标题、调色板、OSC 8 与颜色查询；其余由 `lib/terminalOsc.ts` 注册（去处由 `TerminalView` 给出），解析在 `lib/osc.ts`，各项的协议细节见那里。都只作用于发出序列的窗格。
 
 - **OSC 7**：文件夹，见「文件传输与端口转发」。
 - **OSC 52**：只写剪贴板，从不回应读取；可关闭，有大小上限。
