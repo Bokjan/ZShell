@@ -98,11 +98,6 @@ interface Props {
 
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
-/**
- * The narrowest list that shows the app's name in its title bar, which goes first to leave
- * room for the buttons; the same while the list is hidden, so that they stay in place.
- */
-const NAME_MIN_WIDTH = 210;
 
 /**
  * The saved sessions and folders, with search and quick connect. It doesn't depend on the tabs,
@@ -122,7 +117,7 @@ export function Sidebar(props: Props) {
   const state = useDirectory();
   const { profiles, folders } = state;
   const asideRef = useRef<HTMLElement>(null);
-  const { width, widthPercent, startResize, nudgeWidth, resetWidth } = useSidebarWidth(asideRef);
+  const { width, showsName, widthPercent, startResize, nudgeWidth, resetWidth } = useSidebarWidth(asideRef);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -499,7 +494,7 @@ export function Sidebar(props: Props) {
         }}
       >
         <img src={appIcon} alt="" />
-        {width >= NAME_MIN_WIDTH && <span className="sidebar-brand-name">{t("app.name")}</span>}
+        {showsName && <span className="sidebar-brand-name">{t("app.name")}</span>}
         {/* On macOS, the settings button has the mark. */}
         {update && !isMac ? <DotIcon /> : <ChevronIcon />}
       </button>

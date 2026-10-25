@@ -11,6 +11,11 @@ const MAX_WIDTH = 480;
 /** Space always left for the terminal area. */
 const MIN_MAIN = 400;
 const WIDTH_KEY = "zshell.sidebarWidth";
+/**
+ * The narrowest list that shows the app's name in its title bar, which goes first to leave
+ * room for the buttons; the same while the list is hidden, so that they stay in place.
+ */
+const NAME_MIN_WIDTH = 210;
 
 /** The width saved by the last resize; layout state, so kept per machine rather than in the settings. */
 function storedWidth(): number {
@@ -25,18 +30,30 @@ const clampWidth = (width: number) => Math.round(Math.max(MIN_WIDTH, Math.min(wi
 
 /**
  * The sidebar's width (`aside`), which its edge resizes: dragged, moved with the keyboard,
- * or back to the default; remembered once changed.
+ * or back to the default; remembered once changed. While dragged, the width goes on the
+ * element directly and into the state as the drag ends: rendering the list for each move
+ * would run every row of a long list of sessions again. The state follows meanwhile only as
+ * the app's name comes and goes.
  */
 export function useSidebarWidth(aside: RefObject<HTMLElement | null>) {
   const [width, setWidth] = useState(storedWidth);
   const widthRef = useLatest(width);
 
   const startResize = (e: ReactMouseEvent) => {
-    const left = aside.current!.getBoundingClientRect().left;
+    const element = aside.current!;
+    const left = element.getBoundingClientRect().left;
+    let latest = widthRef.current;
     dragHorizontally(
       e,
-      (x) => setWidth(clampWidth(x - left)),
-      () => storeWidth(widthRef.current),
+      (x) => {
+        latest = clampWidth(x - left);
+        element.style.width = `${latest}px`;
+        if (latest >= NAME_MIN_WIDTH !== widthRef.current >= NAME_MIN_WIDTH) setWidth(latest);
+      },
+      () => {
+        setWidth(latest);
+        storeWidth(latest);
+      },
     );
   };
 
@@ -54,5 +71,5 @@ export function useSidebarWidth(aside: RefObject<HTMLElement | null>) {
   /** Where the width is between the narrowest and the widest, for the edge's slider role. */
   const widthPercent = ((width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH)) * 100;
 
-  return { width, widthPercent, startResize, nudgeWidth, resetWidth };
+  return { width, showsName: width >= NAME_MIN_WIDTH, widthPercent, startResize, nudgeWidth, resetWidth };
 }
