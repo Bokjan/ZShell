@@ -309,7 +309,7 @@ impl DropDownload {
     }
 }
 
-/// Makes the folder of a drop in `root` (`root/<transfer id>`, after deleting old ones) with
+/// Makes the folder of a drop in `root` (`root/<transfer id>`, deleting old ones meanwhile) with
 /// a placeholder for each item, in case the application dragged over looks at the files before
 /// the drop; returns each remote item with where it goes. Each takes a free name: items the
 /// file system can't tell apart (`README` and `readme` on Windows, or `a:b` and `a_b`, both
@@ -318,7 +318,10 @@ impl DropDownload {
 fn placeholders(root: &std::path::Path, transfer_id: &str, items: &[Item]) -> Result<Vec<(String, PathBuf)>> {
     use crate::local_name::{create_dir, create_unique, create_unique_file};
 
-    super::edit::remove_old(root);
+    // On a thread of its own: a large tree left from an earlier drop would hold up the drag,
+    // with the mouse button down. This drop's folder is too new to go.
+    let old = root.to_owned();
+    std::thread::spawn(move || super::edit::remove_old(&old));
     if !super::is_folder_id(transfer_id) {
         return Err(Error::new("transfer.invalidPath").param("path", transfer_id));
     }
