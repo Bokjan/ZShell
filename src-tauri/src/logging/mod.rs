@@ -212,10 +212,15 @@ impl LogWriter {
 
 impl LogWriter {
     /// Writes what the session gives until it stops the log (or a write fails), flushing
-    /// once output pauses for [`FLUSH_INTERVAL`].
+    /// once output pauses for [`FLUSH_INTERVAL`]. With nothing to flush it sleeps until there
+    /// is output, rather than waking every interval for the life of the session.
     fn run(mut self, chunks: std::sync::mpsc::Receiver<Chunk>) {
         loop {
-            let written = match chunks.recv_timeout(FLUSH_INTERVAL) {
+            let next = match self.dirty {
+                true => chunks.recv_timeout(FLUSH_INTERVAL),
+                false => chunks.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
+            let written = match next {
                 Ok(Chunk::Output(bytes)) => self.write(&bytes),
                 Ok(Chunk::Dropped(bytes)) => self.note(&t!("log.dropped", bytes = bytes)),
                 Err(RecvTimeoutError::Timeout) if self.dirty => self.flush(),
