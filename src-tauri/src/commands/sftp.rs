@@ -129,8 +129,10 @@ pub async fn sftp_upload(
 ) -> Result<transfer::Ended> {
     let cancelled = transfers.start(webview.label(), &transfer_id);
     let mut left = transfer::Left::default();
+    let mut server = None;
     let result = async {
         let connection = connection(webview.label(), &sessions, &connections, id)?;
+        server = Some(transfer::Server::of(&connection.ssh().profile().ssh.remote));
         let sftp = connection.transfer_sftp().await?;
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter, &mut left).await?)
@@ -138,7 +140,10 @@ pub async fn sftp_upload(
     let result: Result<()> = result.await;
     transfers.finish(webview.label(), &transfer_id);
     let ended = transfer::Ended::new(&left, result.err(), Vec::new());
-    transfers.keep(webview.label(), &transfer_id, transfer::Kept::Remote(left));
+    // Without a connection, it left nothing.
+    if let Some(server) = server {
+        transfers.keep(webview.label(), &transfer_id, transfer::Kept::Remote(left, server));
+    }
     Ok(ended)
 }
 
@@ -331,7 +336,7 @@ pub fn transfer_cancel(webview: Webview, transfers: State<'_, transfer::Transfer
 }
 
 /// Permanently deletes what an ended transfer created (see `transfer::left`): on the server
-/// through session `id`'s connection for an upload. Returns how many files were deleted, and
+/// through session `id`'s connection for an upload, if it still goes to the same server. Returns how many files were deleted, and
 /// how many were kept as they changed since; on a failure, what is left can be deleted again.
 #[tauri::command]
 pub async fn transfer_delete(
@@ -354,14 +359,19 @@ pub async fn transfer_delete(
             .await?;
             (transfer::Kept::Local(left), outcome)
         }
-        transfer::Kept::Remote(mut left) => {
-            let sftp =
-                async { connection(label, &sessions, &connections, id.ok_or_else(|| Error::new("session.notConnected"))?)?.sftp().await };
+        transfer::Kept::Remote(mut left, server) => {
+            let sftp = async {
+                let connection = connection(label, &sessions, &connections, id.ok_or_else(|| Error::new("session.notConnected"))?)?;
+                if transfer::Server::of(&connection.ssh().profile().ssh.remote) != server {
+                    return Err(Error::new("transfer.deleteElsewhere").param("server", server.name()));
+                }
+                Ok(connection.sftp().await?)
+            };
             let outcome = match sftp.await {
                 Ok(sftp) => transfer::delete_remote(&sftp, &mut left).await,
-                Err(e) => (transfer::Deletion::default(), Err(Error::from(e))),
+                Err(e) => (transfer::Deletion::default(), Err(e)),
             };
-            (transfer::Kept::Remote(left), outcome)
+            (transfer::Kept::Remote(left, server), outcome)
         }
     };
     transfers.keep(label, &transfer_id, kept);

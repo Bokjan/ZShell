@@ -188,6 +188,7 @@
       "uploadFailed": "{path} konnte nicht hochgeladen werden",
       "downloadFailed": "{path} konnte nicht heruntergeladen werden",
       "deleteFailed": "{path} kann nicht gelöscht werden",
+      "deleteElsewhere": "Die Dateien wurden auf {server} hochgeladen, mit dem dieser Tab nicht mehr verbunden ist",
       "replaceFailed": "{path} wurde hochgeladen, konnte aber nicht an seinen Platz gebracht werden; der neue Inhalt liegt in {temporary}",
       "replaceInterrupted": "{path} wurde hochgeladen, konnte aber nicht an seinen Platz gebracht werden; der neue Inhalt liegt in {temporary}, der alte in {original}"
     },

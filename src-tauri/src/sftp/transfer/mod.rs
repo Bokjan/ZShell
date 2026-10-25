@@ -19,7 +19,7 @@ use ts_rs::TS;
 
 mod left;
 
-pub use left::{delete_local, delete_remote, Deletion, Ended, Kept, Left, Stamp};
+pub use left::{delete_local, delete_remote, Deletion, Ended, Kept, Left, Server, Stamp};
 
 use super::replace::{LocalTarget, RemoteTarget};
 use super::{file_name, is_entry, join};

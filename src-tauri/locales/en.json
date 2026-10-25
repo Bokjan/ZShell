@@ -188,6 +188,7 @@
       "uploadFailed": "Failed to upload {path}",
       "downloadFailed": "Failed to download {path}",
       "deleteFailed": "Cannot delete {path}",
+      "deleteElsewhere": "The files were uploaded to {server}, which this tab is no longer connected to",
       "replaceFailed": "Uploaded {path} but could not put it in place; the new contents are in {temporary}",
       "replaceInterrupted": "Uploaded {path} but could not put it in place; the new contents are in {temporary} and the old ones in {original}"
     },

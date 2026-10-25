@@ -17,6 +17,7 @@ use ts_rs::TS;
 
 use super::CONCURRENT_DIRS;
 use crate::error::Error;
+use crate::model::{host_port, Remote};
 
 /// How many files an upload looks up at once to stamp them, once copied: one request each, many
 /// at a time so that they add little to it.
@@ -64,10 +65,39 @@ impl<P> Left<P> {
     }
 }
 
+/// The server an upload went to: what it left is deleted there only, though the tab may have
+/// been connected elsewhere since (its session edited, then connected again).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Server {
+    host: String,
+    port: u16,
+    username: String,
+    jump_hosts: Vec<String>,
+    proxy: Option<String>,
+}
+
+impl Server {
+    /// Where a connection goes, as its session was when connecting.
+    pub fn of(remote: &Remote) -> Self {
+        Self {
+            host: remote.host.clone(),
+            port: remote.port,
+            username: remote.username.clone(),
+            jump_hosts: remote.jump_hosts.clone(),
+            proxy: remote.proxy.clone(),
+        }
+    }
+
+    /// `user@host:port`, for messages.
+    pub fn name(&self) -> String {
+        format!("{}@{}", self.username, host_port(&self.host, self.port))
+    }
+}
+
 /// What a transfer left, kept by [`super::Transfers`] for `transfer_delete`.
 pub enum Kept {
     Local(Left<PathBuf>),
-    Remote(Left<String>),
+    Remote(Left<String>, Server),
 }
 
 impl Kept {
@@ -75,7 +105,7 @@ impl Kept {
     pub fn is_empty(&self) -> bool {
         match self {
             Kept::Local(left) => left.is_empty(),
-            Kept::Remote(left) => left.is_empty(),
+            Kept::Remote(left, _) => left.is_empty(),
         }
     }
 }

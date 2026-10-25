@@ -132,6 +132,7 @@ export type ErrorCode =
   | "transfer.cancelled"
   | "transfer.createDirFailed"
   | "transfer.createFailed"
+  | "transfer.deleteElsewhere"
   | "transfer.deleteFailed"
   | "transfer.downloadFailed"
   | "transfer.invalidName"

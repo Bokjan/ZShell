@@ -188,6 +188,7 @@
       "uploadFailed": "Échec du téléversement de {path}",
       "downloadFailed": "Échec du téléchargement de {path}",
       "deleteFailed": "Impossible de supprimer {path}",
+      "deleteElsewhere": "Les fichiers ont été téléversés sur {server}, auquel cet onglet n’est plus connecté",
       "replaceFailed": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary}",
       "replaceInterrupted": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary} et l’ancien dans {original}"
     },

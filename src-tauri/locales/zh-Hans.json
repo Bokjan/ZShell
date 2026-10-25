@@ -188,6 +188,7 @@
       "uploadFailed": "上传 {path} 失败",
       "downloadFailed": "下载 {path} 失败",
       "deleteFailed": "无法删除 {path}",
+      "deleteElsewhere": "这些文件是上传到 {server} 的，这个标签页现在连接的已不是它",
       "replaceFailed": "已上传 {path}，但无法将其替换到位；新内容在 {temporary} 中",
       "replaceInterrupted": "已上传 {path}，但无法将其替换到位；新内容在 {temporary} 中，旧内容在 {original} 中"
     },
