@@ -154,7 +154,10 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, tr
           const lastError = state?.type === "active" ? state.lastError : null;
           return (
             <li key={rule.id} className={`forward-rule ${state?.type ?? "stopped"}`} title={explainRule(t, rule)}>
-              <span className={`forward-kind ${rule.kind}`}>{t(`forwards.kind.${rule.kind}`)}</span>
+              <span className="forward-badges">
+                <span className={`forward-kind ${rule.kind}`}>{t(`forwards.kind.${rule.kind}`)}</span>
+                {rule.autoStart && <span className="forward-tag">{t("forwards.autoStartTag")}</span>}
+              </span>
               <div className="forward-main">
                 <div className="forward-mapping">{mapping(rule)}</div>
                 {rule.description && <div className="forward-description">{rule.description}</div>}
@@ -166,7 +169,6 @@ export function ForwardsPanel({ sessionId, connected, profile, quick, states, tr
                     {state?.type === "active" && state.connections > 0 && (
                       <span className="forward-connections">{t("forwards.status.connections", { count: state.connections })}</span>
                     )}
-                    {rule.autoStart && <span className="forward-tag">{t("forwards.autoStartTag")}</span>}
                   </span>
                 </div>
                 {state?.type === "active" && (

@@ -59,11 +59,18 @@
 .forward-rule:hover {
   background: var(--bg-hover);
 }
-.forward-kind {
+.forward-badges {
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
+  /* With the tag, as tall as the mapping and the status line together, so a stopped rule keeps its height. */
+  gap: 3px;
   /* Wide enough for every language's longest kind (French "DISTANTE"), so the mappings line up. */
   min-width: 6.6em;
   margin-top: calc((var(--rule-line) - var(--kind-height)) / 2);
+  font-size: calc(10px * var(--text-scale));
+}
+.forward-kind {
   padding: 1px 5px;
   line-height: calc(14px * var(--text-scale));
   box-sizing: border-box;
@@ -157,14 +164,16 @@
   color: var(--danger);
 }
 .forward-tag {
-  flex-shrink: 0;
+  /* As wide as the kind above it, wrapping rather than widening the column (French "Démarrage auto"). */
+  width: 0;
+  min-width: 100%;
   padding: 0 5px;
+  box-sizing: border-box;
   border: 1px solid var(--input-border);
   border-radius: 3px;
-  font-size: calc(10px * var(--text-scale));
-  /* On the status's first line, as the dot. */
   line-height: calc(14px * var(--text-scale));
-  margin-top: calc((16px * var(--text-scale) - 14px * var(--text-scale) - 2px) / 2);
+  text-align: center;
+  color: var(--text-muted);
 }
 .forward-traffic {
   margin-top: 2px;
