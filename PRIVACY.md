@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 ZShell is an SSH, Telnet and serial terminal that runs entirely on your computer. It does not collect, transmit or share any personal data: there is no telemetry, analytics, crash reporting, advertising or user account, and the developer receives nothing from your use of the app. The only connection ZShell makes on its own is the update check described below, which you can turn off.
 
@@ -21,7 +21,7 @@ Everything ZShell saves stays on your computer, in its configuration folder unle
 - **Session logs** are recorded only when you turn them on, in the folder shown in the settings (`Documents/ZShellLogs` by default).
 - **Exported sessions** are written to the file you choose. Saved passwords are included only if you ask, and then the whole file is encrypted with a passphrase you give, which is not saved.
 - **Temporary files** are created in the system's temporary folder (on Linux, `~/.cache/org.boyin.zshell`) while you edit a remote file in a local editor or drag files out of the file panel.
-- **Crash log**: if ZShell stops because of an internal error, a line saying when, which version, where in its code and the error's message is added to `crash.log`. It stays on your computer and is never sent; you can delete it at any time.
+- **Crash log**: if ZShell stops because of an internal error, a line saying when, which version on which operating system and processor architecture, which of its threads, where in its code and the error's message is added to `crash.log`. It stays on your computer and is never sent; you can delete it at any time.
 - **Interface state**, such as panel widths and recently opened sessions, is kept with the web view's cache in its storage (see below).
 
 The clipboard is read only when you paste, and written only when you copy.
