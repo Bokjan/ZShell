@@ -54,7 +54,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
   const saving = useSubmitting();
   const server = kind !== "command";
 
-  const dialog = useDialog(onClose);
+  const dialog = useDialog(onClose, { persistent: saving.busy });
 
   // The port follows the kind unless it was changed from a usual one.
   const changeKind = (next: ProxyKind) => {
@@ -219,7 +219,7 @@ export function ProxyDialog({ proxy, onClose, onSaved }: Props) {
             </button>
           )}
           <span className="grow" />
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={saving.busy}>
             {t("common.cancel")}
           </button>
           <button type="submit" className="primary" disabled={saving.busy}>

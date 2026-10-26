@@ -99,6 +99,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
 
   // In the search box, Escape clears the search first.
   const dialog = useDialog(onClose, {
+    dismissable: true,
     onEscape: (e) => {
       if (e.target !== searchRef.current || !queryRef.current) onClose();
       else setQuery("");

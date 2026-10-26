@@ -30,7 +30,7 @@ export function CommandPalette({ firstGroup, targets, onRun, onClose }: Props) {
   const { commands } = useQuickCommands();
   const matches = commands ? searchCommands(commands, query, firstGroup, t) : [];
   const index = clampIndex(selected, matches.length);
-  const dialog = useDialog(onClose);
+  const dialog = useDialog(onClose, { dismissable: true });
 
   useEffect(() => {
     listRef.current?.querySelector(".palette-item.selected")?.scrollIntoView({ block: "nearest" });

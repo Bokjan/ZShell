@@ -149,9 +149,9 @@ const RESET_WORD = "RESET";
 /** Deleting the vault, once its typed confirmation matches. */
 function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: VaultStatus): void }) {
   const { t } = useTranslation();
-  const dialog = useDialog(onClose);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
+  const dialog = useDialog(onClose, { persistent: busy });
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: FormEvent) => {
@@ -177,7 +177,7 @@ function ResetDialog({ onClose, onReset }: { onClose(): void; onReset(status: Va
         {error && <ErrorText>{error}</ErrorText>}
         <footer>
           <span className="grow" />
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={busy}>
             {t("common.cancel")}
           </button>
           <button type="submit" className="primary danger-fill" disabled={busy || typed.trim() !== RESET_WORD}>

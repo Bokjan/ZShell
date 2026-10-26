@@ -28,9 +28,11 @@ export function ImportDialog({ onClose }: Props) {
   const [scanned, setScanned] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  // Importing, unlike reading the file, isn't left halfway by closing the dialog.
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dialog = useDialog(onClose);
+  const dialog = useDialog(onClose, { persistent: importing });
   // The latest scan: an earlier one finishing later (the default file, read as the dialog
   // opened, after a file chosen meanwhile) is dropped.
   const loads = useRef(0);
@@ -81,12 +83,14 @@ export function ImportDialog({ onClose }: Props) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
+    setImporting(true);
     try {
       await directory.changed(sshConfig.import(scanned, [...selected]));
       onClose();
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
+      setImporting(false);
     }
   };
 
@@ -155,7 +159,7 @@ export function ImportDialog({ onClose }: Props) {
 
         <footer>
           <span className="grow" />
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={importing}>
             {t("common.cancel")}
           </button>
           <button type="submit" className="primary" disabled={busy || selected.size === 0}>

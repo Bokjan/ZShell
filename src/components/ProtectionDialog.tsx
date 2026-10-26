@@ -29,7 +29,6 @@ interface Props {
  */
 export function ProtectionDialog({ intro, status, onDone, onClose }: Props) {
   const { t } = useTranslation();
-  const dialog = useDialog(onClose);
   // Unlocked, so known.
   const current = status.protection!;
   const store = t(`vault.store.${status.store}`);
@@ -42,6 +41,7 @@ export function ProtectionDialog({ intro, status, onDone, onClose }: Props) {
   // Whether the credential store can be used; null while checking (Linux may have none).
   const [storeAvailable, setStoreAvailable] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const dialog = useDialog(onClose, { persistent: busy });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

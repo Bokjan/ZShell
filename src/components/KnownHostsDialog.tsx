@@ -44,7 +44,7 @@ export function KnownHostsDialog({ onClose, onChanged }: Props) {
   // of a list that has changed since fails rather than removing another line.
   useWindowFocus(reload);
 
-  const dialog = useDialog(onClose);
+  const dialog = useDialog(onClose, { dismissable: true });
 
   useEffect(() => {
     if (!entries?.some((entry) => entry.hosts.some(isHashed)) || !query.trim()) return;

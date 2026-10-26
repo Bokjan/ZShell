@@ -138,8 +138,8 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
   };
 
   const changed = isChanged(form, started) || password !== "" || clearPassword;
-  // Esc and a click outside: the Cancel button closes without asking.
-  const dialog = useDialog(() => (changed ? setDiscarding(true) : onClose()));
+  // Esc and closing the tab: the Cancel button closes without asking.
+  const dialog = useDialog(() => (changed ? setDiscarding(true) : onClose()), { persistent: saving.busy });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -277,7 +277,7 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
               </button>
             )}
             <span className="grow" />
-            <button type="button" onClick={onClose}>
+            <button type="button" onClick={onClose} disabled={saving.busy}>
               {t("common.cancel")}
             </button>
             <button type="submit" className="primary" disabled={saving.busy}>

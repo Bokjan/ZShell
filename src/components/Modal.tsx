@@ -20,16 +20,17 @@ interface Props {
 }
 
 /**
- * A dialog's backdrop, over the whole window: pressing on it outside the dialog closes the
- * dialog. Rendered at the end of the body, so that styles of whatever opened it don't apply
- * and later dialogs are drawn above earlier ones.
+ * A dialog's backdrop, over the whole window: pressing on it outside the dialog closes a
+ * `dismissable` dialog, and leaves any other as it is, the focus included. Rendered at the
+ * end of the body, so that styles of whatever opened it don't apply and later dialogs are
+ * drawn above earlier ones.
  *
  * For screen readers it is the modal dialog, named by its title. It takes the focus when it
  * opens (unless a control in it already has it, `autoFocus`), Tab stays within it (see
  * `useDialog`), and the focus goes back to where it was once it closes.
  *
  * Closing a tab (⌘W, the File menu's Close; Ctrl+Shift+W elsewhere) closes the top dialog
- * instead, as a click on its backdrop does.
+ * instead, as its Cancel button does.
  */
 export function Modal({ dialog, label, alert, className, children }: Props) {
   const id = useId();
@@ -85,7 +86,11 @@ export function Modal({ dialog, label, alert, className, children }: Props) {
       // Focusable by script only, for a dialog without controls.
       tabIndex={-1}
       hidden={hidden}
-      onMouseDown={(e) => e.target === e.currentTarget && dialog.isTop() && dialog.close()}
+      onMouseDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        e.preventDefault();
+        if (dialog.isTop()) dialog.dismiss();
+      }}
     >
       {children}
     </div>,

@@ -64,7 +64,7 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
     };
   }, []);
 
-  const dialog = useDialog(onClose);
+  const dialog = useDialog(onClose, { dismissable: true });
 
   const entries = useMemo(() => {
     if (!notices) return [];

@@ -36,7 +36,7 @@ export function SessionImportDialog({ path, onClose }: Props) {
   const [passphrase, setPassphrase] = useState("");
   const passphraseRef = useRef<HTMLInputElement>(null);
 
-  const dialog = useDialog(onClose);
+  const dialog = useDialog(onClose, { persistent: busy });
 
   const read = useCallback(
     async (passphrase?: string) => {
@@ -181,7 +181,7 @@ export function SessionImportDialog({ path, onClose }: Props) {
 
         <footer>
           <span className="grow" />
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={busy}>
             {t("common.cancel")}
           </button>
           {scan ? (

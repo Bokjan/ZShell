@@ -92,7 +92,7 @@
 - **窗格的会话**：每个窗格一个 `PaneSession`（`lib/paneSession.ts`），负责打开、重连、共享连接、登录后命令和流控，只经小接口读写终端；`TerminalView` 只管终端，它的各部分（链接、剪贴板与右键菜单、尺寸跟随、回看在 `components/terminal/`，OSC 与提示符检测在 `lib/`）各返回一个 disposable，收进 `Disposables`（`lib/disposables.ts`）一起释放。注册表（`lib/sessionRegistry.ts`）以事件通知拥有关闭、移动流程的 hook，依赖只从拥有者指向它。
 - **会话结束**：和 Xshell 一样，用户退出 shell 后窗格自动关闭；服务器一连上就结束、被信号结束或文件面板有工作时不关（`closesOnExit`，`lib/panes.ts`），这时 Enter 重连。
 - **挂载顺序**：`SettingsProvider` → `VaultGate`（锁定时只显示解锁界面）→ `AppLockGate` → `App`。
-- **对话框与快捷键**：对话框登记到一个栈（`hooks/dialogs.ts`），只有最上层响应 Esc、点击背景和关闭标签页的快捷键（⌘W，其他平台 Ctrl+Shift+W，由 `Modal` 处理）；快捷键在捕获阶段统一分发（`hooks/shortcuts.ts`）。
+- **对话框与快捷键**：对话框登记到一个栈（`hooks/dialogs.ts`），只有最上层响应 Esc、点击背景和关闭标签页的快捷键（⌘W，其他平台 Ctrl+Shift+W，由 `Modal` 处理）；快捷键在捕获阶段统一分发（`hooks/shortcuts.ts`）。Esc 和关闭标签页的快捷键等同于取消按钮；点击背景只关闭关掉也不丢东西的对话框（`dismissable`：命令面板、设置、已知主机、许可证），确认问题和表单与原生对话框一样不理会，免得误点一下就替用户作答或丢掉输入。对话框正在保存或执行操作时（`persistent`），取消按钮禁用，三种方式都关不掉。
 - **样式**：`styles.css` 按顺序引入 `styles/` 下的各部分，先后即层叠顺序，所以新规则写进所属部分，不由组件自己引入。
 
 ## 设计决策

@@ -43,7 +43,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const dialog = useDialog(onClose);
+  const dialog = useDialog(onClose, { persistent: saving });
 
   const changeKind = (next: ForwardKind) => {
     // Follow the default bind address unless the user changed it.
@@ -167,7 +167,7 @@ export function ForwardDialog({ rule, onSave, onClose }: Props) {
 
         <footer>
           <span className="grow" />
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </button>
           <button type="submit" className="primary" disabled={saving}>

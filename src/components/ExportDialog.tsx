@@ -17,11 +17,11 @@ import { PasswordInput } from "./PasswordInput";
  */
 export function ExportDialog({ onClose }: { onClose(): void }) {
   const { t } = useTranslation();
-  const dialog = useDialog(onClose);
   const [includePasswords, setIncludePasswords] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
+  const dialog = useDialog(onClose, { persistent: busy });
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: FormEvent) => {
@@ -72,7 +72,7 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
         {error && <ErrorText>{error}</ErrorText>}
         <footer>
           <span className="grow" />
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={busy}>
             {t("common.cancel")}
           </button>
           <button type="submit" className="primary" disabled={busy}>

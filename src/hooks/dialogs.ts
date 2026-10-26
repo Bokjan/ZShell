@@ -106,8 +106,10 @@ export interface DialogHandle {
   hidden: boolean;
   /** Whether this is the top dialog shown, which gets Escape and clicks on its backdrop. */
   isTop(): boolean;
-  /** A click on its backdrop: closes it, unless it is `persistent`. */
+  /** Closing the tab (⌘W): closes it as its Cancel button does, unless it is `persistent`. */
   close(): void;
+  /** A click on its backdrop: closes it if it is `dismissable` and not `persistent`. */
+  dismiss(): void;
   /** The dialog's element, set by `Modal`. */
   element: RefObject<HTMLDivElement | null>;
 }
@@ -116,8 +118,14 @@ interface Options {
   /** Instead of closing on Escape, e.g. to clear a search field first. */
   onEscape?(e: KeyboardEvent): void;
   /**
-   * Closed only by its own buttons, not by Escape or a click on its backdrop: a question
-   * that must be answered (how to protect the sessions, asked once).
+   * Also closed by a click on its backdrop, for a dialog that loses nothing by it: a list to
+   * look through, or settings that apply as they change. A question or a form is not, so that
+   * a stray click neither answers it nor throws away what was typed, as in a native dialog.
+   */
+  dismissable?: boolean;
+  /**
+   * Closed only by its own buttons, not by Escape, closing the tab or a click on its backdrop:
+   * while it is busy saving, say, with its Cancel button disabled.
    */
   persistent?: boolean;
 }
@@ -156,6 +164,10 @@ export function useDialog(onClose: () => void, options: Options = {}): DialogHan
       isTop: () => topOrder() === order,
       close: () => {
         if (!latestRef.current.persistent) latestRef.current.onClose();
+      },
+      dismiss: () => {
+        const { dismissable, persistent, onClose } = latestRef.current;
+        if (dismissable && !persistent) onClose();
       },
     }),
     [order, hidden, latestRef],
