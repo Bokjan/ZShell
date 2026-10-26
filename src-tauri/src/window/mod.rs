@@ -259,6 +259,17 @@ pub struct MaximizeButtonState {
     pub pressed: bool,
 }
 
+/// The mouse's back or forward button pressed over the web view, at `x`, `y` in its CSS pixels
+/// (macOS and Linux, whose web views don't hand the page those buttons; see `macos.rs`,
+/// `linux.rs`).
+#[cfg_attr(windows, allow(dead_code))]
+#[derive(Clone, Copy, Debug, Serialize, TS)]
+pub struct MouseNavigation {
+    pub forward: bool,
+    pub x: f64,
+    pub y: f64,
+}
+
 /// Another window, as the tab menu lists it.
 #[derive(Serialize, TS)]
 pub struct WindowInfo {

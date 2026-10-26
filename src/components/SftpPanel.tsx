@@ -6,11 +6,13 @@ import { announce } from "../lib/announce";
 import { sftp, type FileEntry, type SessionId } from "../ipc/api";
 import type { SftpDetail, SftpTraffic, TrafficMeter } from "../lib/traffic";
 import { open } from "../ipc/fileDialog";
+import { historyKey } from "../lib/folderHistory";
 import { filterEntries, sortedEntries, storeView, storedView, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
 import { useLocale } from "../hooks/locale";
+import { useMouseNavigation } from "../hooks/mouseNavigation";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -95,7 +97,8 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
     },
     startDir,
   );
-  const { cwd, entries, loading, error, fail, load, reload } = listing;
+  const { cwd, entries, loading, error, fail, load, reload, go } = listing;
+  useMouseNavigation(panelRef, (forward) => go(forward ? 1 : -1));
   const shellFollow = useShellFollow({
     paneKey,
     sessionId,
@@ -259,6 +262,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
     if ((e.target as HTMLElement).closest("input")) return;
     const index = visible.findIndex((entry) => entry.path === cursor);
     const mod = isMod(e);
+    const step = historyKey(e, isMac);
     let handled = true;
     if (e.key === "ArrowDown") moveCursor(index < 0 ? 0 : index + 1, e.shiftKey);
     else if (e.key === "ArrowUp") moveCursor(index < 0 ? visible.length - 1 : index - 1, e.shiftKey);
@@ -270,6 +274,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
     } else if ((e.key === "Delete" || e.key === "Backspace") && connected) askRemove(selected);
     else if (e.key === "F2" && selected.length === 1 && connected) startRename(selected[0]);
     else if (isMenuKey(e)) openMenuFromKeyboard();
+    else if (step) go(step);
     else if (e.key === "Escape") {
       if (filter !== null) closeFilter();
       else select([]);

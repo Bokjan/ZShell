@@ -570,6 +570,13 @@ export type MaximizeButtonState = { hover: boolean, pressed: boolean, };
  */
 export type MenuSection = "app" | "file" | "edit" | "view" | "help";
 
+/**
+ * The mouse's back or forward button pressed over the web view, at `x`, `y` in its CSS pixels
+ * (macOS and Linux, whose web views don't hand the page those buttons; see `macos.rs`,
+ * `linux.rs`).
+ */
+export type MouseNavigation = { forward: boolean, x: number, y: number, };
+
 export type NativeMenuItem = { "kind": "separator" } | { "kind": "action", id: string, label: string, keys: string | null, };
 
 /**
@@ -1190,6 +1197,7 @@ export type Events = {
   "busy-query": number;
   "config-changed": Change;
   "menu-action": string;
+  "mouse-navigation": MouseNavigation;
   "offers-withdrawn": Array<number>;
   "pane-stayed": number;
   "quit-requested": null;

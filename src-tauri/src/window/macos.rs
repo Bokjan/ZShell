@@ -10,6 +10,10 @@
 //! gets its own `acceptsFirstMouse:`, `shouldDelayWindowOrderingForEvent:` and `mouseDown:`,
 //! which defer to the originals outside the area.
 //!
+//! The mouse's back and forward buttons (`otherMouseDown:` with button numbers 3 and 4) are
+//! taken from the web view the same way and sent to the page with where they were pressed:
+//! WebKit before 2026 hands them to the page as the middle button, which closes a tab.
+//!
 //! Also the rest of macOS's part of `window` (see its module docs): the overlay title bar
 //! with the traffic lights, what entering or leaving full screen does ([`watch_full_screen`]),
 //! and what is kept for each window, which goes when it is destroyed ([`forget`]).
@@ -30,7 +34,8 @@ use objc2_app_kit::{NSApplication, NSEvent, NSView, NSWindowDidEnterFullScreenNo
 use objc2_foundation::{NSNotification, NSNotificationCenter};
 use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
 
-use super::{DoubleClick, Rect, WindowButton};
+use super::{DoubleClick, MouseNavigation, Rect, WindowButton};
+use crate::events;
 use crate::model::Appearance;
 
 // Only touched on the main thread, where AppKit asks about presses and posts the window's
@@ -39,6 +44,9 @@ thread_local! {
     /// Each web view's drag area (by the view's address), in its CSS pixels, with the label of
     /// its window.
     static AREAS: RefCell<HashMap<usize, (String, Rect)>> = RefCell::new(HashMap::new());
+    /// Each web view's window (by the view's address), which hears of its back and forward
+    /// buttons.
+    static WINDOWS: RefCell<HashMap<usize, WebviewWindow>> = RefCell::new(HashMap::new());
     /// Each window's full screen observers, by its label.
     static OBSERVERS: RefCell<HashMap<String, Vec<Observer>>> = RefCell::new(HashMap::new());
     /// The press being handled is on a drag area, with the window's ordering delayed.
@@ -55,12 +63,19 @@ type EventHandler = unsafe extern "C-unwind" fn(&NSView, Sel, &NSEvent);
 static ACCEPTS_FIRST_MOUSE: OnceLock<EventQuery> = OnceLock::new();
 static SHOULD_DELAY: OnceLock<EventQuery> = OnceLock::new();
 static MOUSE_DOWN: OnceLock<EventHandler> = OnceLock::new();
+static OTHER_MOUSE_DOWN: OnceLock<EventHandler> = OnceLock::new();
+static OTHER_MOUSE_UP: OnceLock<EventHandler> = OnceLock::new();
+
+/// Replaces the methods of the web view class, which `view` is, once.
+fn install_once(view: &NSView) {
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| install(view.class()));
+}
 
 /// Sets the drag area of `view`, window `label`'s web view; `None` removes it. On the main
 /// thread.
 fn set_area(view: &NSView, label: &str, rect: Option<Rect>) {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| install(view.class()));
+    install_once(view);
     AREAS.with_borrow_mut(|areas| match rect {
         Some(rect) => areas.insert(view as *const NSView as usize, (label.to_owned(), rect)),
         None => areas.remove(&(view as *const NSView as usize)),
@@ -110,6 +125,7 @@ fn watch_full_screen(window: &WebviewWindow) -> tauri::Result<()> {
 pub(super) fn forget(window: &tauri::Window) {
     let label = window.label();
     AREAS.with_borrow_mut(|areas| areas.retain(|_, (owner, _)| owner != label));
+    WINDOWS.with_borrow_mut(|windows| windows.retain(|_, owner| owner.label() != label));
     if let Some(observers) = OBSERVERS.with_borrow_mut(|all| all.remove(label)) {
         let center = NSNotificationCenter::defaultCenter();
         for observer in observers {
@@ -140,16 +156,32 @@ fn install(class: &AnyClass) {
         replace::<EventQuery>(class, sel!(acceptsFirstMouse:), accepts_first_mouse, &ACCEPTS_FIRST_MOUSE);
         replace::<EventQuery>(class, sel!(shouldDelayWindowOrderingForEvent:), should_delay_window_ordering, &SHOULD_DELAY);
         replace::<EventHandler>(class, sel!(mouseDown:), mouse_down, &MOUSE_DOWN);
+        replace::<EventHandler>(class, sel!(otherMouseDown:), other_mouse_down, &OTHER_MOUSE_DOWN);
+        replace::<EventHandler>(class, sel!(otherMouseUp:), other_mouse_up, &OTHER_MOUSE_UP);
     }
+}
+
+/// Where `event` is in `view`, in the page's coordinates (CSS pixels, which grow downwards).
+fn page_point(view: &NSView, event: &NSEvent) -> (f64, f64) {
+    let point = view.convertPoint_fromView(event.locationInWindow(), None);
+    let y = if view.isFlipped() { point.y } else { view.bounds().size.height - point.y };
+    (point.x, y)
 }
 
 /// Whether `event`, a press, is on the drag area of `view`.
 fn in_area(view: &NSView, event: &NSEvent) -> bool {
     let Some(rect) = AREAS.with_borrow(|areas| areas.get(&(view as *const NSView as usize)).map(|(_, rect)| *rect)) else { return false };
-    let point = view.convertPoint_fromView(event.locationInWindow(), None);
-    // The page's coordinates grow downwards.
-    let y = if view.isFlipped() { point.y } else { view.bounds().size.height - point.y };
-    point.x >= rect.x && point.x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
+    let (x, y) = page_point(view, event);
+    x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
+}
+
+/// Whether `event` is the mouse's forward button (or back).
+fn navigation(event: &NSEvent) -> Option<bool> {
+    match event.buttonNumber() {
+        3 => Some(false),
+        4 => Some(true),
+        _ => None,
+    }
 }
 
 unsafe extern "C-unwind" fn accepts_first_mouse(this: &NSView, sel: Sel, event: &NSEvent) -> Bool {
@@ -185,6 +217,28 @@ unsafe extern "C-unwind" fn mouse_down(this: &NSView, sel: Sel, event: &NSEvent)
     }
 }
 
+unsafe extern "C-unwind" fn other_mouse_down(this: &NSView, sel: Sel, event: &NSEvent) {
+    if let Some(forward) = navigation(event) {
+        let (x, y) = page_point(this, event);
+        if let Some(window) = WINDOWS.with_borrow(|windows| windows.get(&(this as *const NSView as usize)).cloned()) {
+            events::emit_to(&window, window.label(), events::MouseNavigation(MouseNavigation { forward, x, y }));
+        }
+        return;
+    }
+    if let Some(original) = OTHER_MOUSE_DOWN.get() {
+        original(this, sel, event);
+    }
+}
+
+unsafe extern "C-unwind" fn other_mouse_up(this: &NSView, sel: Sel, event: &NSEvent) {
+    if navigation(event).is_some() {
+        return;
+    }
+    if let Some(original) = OTHER_MOUSE_UP.get() {
+        original(this, sel, event);
+    }
+}
+
 /// Where the traffic lights sit, centered in the frontend's 34px title bar.
 const TRAFFIC_LIGHTS: tauri::LogicalPosition<f64> = tauri::LogicalPosition { x: 14.0, y: 19.0 };
 
@@ -209,9 +263,18 @@ pub(super) fn prepare(_window: &WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Once the window is shown: follows it entering and leaving full screen.
+/// Once the window is shown: follows it entering and leaving full screen, and takes its web
+/// view's back and forward buttons.
 pub(super) fn created(window: &WebviewWindow) -> tauri::Result<()> {
-    watch_full_screen(window)
+    watch_full_screen(window)?;
+    let window_ = window.clone();
+    // On the main thread, where the web view runs this.
+    window.with_webview(move |webview| {
+        // SAFETY: on macOS the platform webview is a WKWebView, an NSView.
+        let view: &NSView = unsafe { &*(webview.inner() as *const NSView) };
+        install_once(view);
+        WINDOWS.with_borrow_mut(|windows| windows.insert(view as *const NSView as usize, window_));
+    })
 }
 
 /// Nothing to set up before the first window.

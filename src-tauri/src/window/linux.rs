@@ -20,7 +20,8 @@ use gtk::glib::Propagation;
 use gtk::prelude::*;
 use tauri::{AppHandle, Manager, Theme, WebviewWindow, WebviewWindowBuilder, Wry};
 
-use super::{DoubleClick, Rect, WindowButton};
+use super::{DoubleClick, MouseNavigation, Rect, WindowButton};
+use crate::events;
 use crate::model::Appearance;
 
 thread_local! {
@@ -30,16 +31,37 @@ thread_local! {
 }
 
 /// Before the window is first shown, on the main thread: gives it an empty title bar (which
-/// GTK only takes before the window is realized), and keeps its web view's button presses
-/// for the window menu.
+/// GTK only takes before the window is realized), keeps its web view's button presses for the
+/// window menu, and sends the page the mouse's back and forward buttons.
 fn replace_title_bar(window: &WebviewWindow) -> tauri::Result<()> {
     window.gtk_window()?.set_titlebar(Some(&gtk::EventBox::new()));
-    window.with_webview(|webview| {
-        webview.inner().connect_button_press_event(|_, event| {
+    let window = window.clone();
+    window.clone().with_webview(move |webview| {
+        let view = webview.inner();
+        view.connect_button_press_event(move |_, event| {
+            if let Some(forward) = navigation(event) {
+                // Not the second press of a double click, which follows the press itself.
+                if event.event_type() == gtk::gdk::EventType::ButtonPress {
+                    let (x, y) = event.position();
+                    events::emit_to(&window, window.label(), events::MouseNavigation(MouseNavigation { forward, x, y }));
+                }
+                return Propagation::Stop;
+            }
             LAST_PRESS.with(|press| *press.borrow_mut() = Some((**event).clone()));
             Propagation::Proceed
         });
+        view.connect_button_release_event(|_, event| if navigation(event).is_some() { Propagation::Stop } else { Propagation::Proceed });
     })
+}
+
+/// Whether `event` is the mouse's forward button (or back): X11's buttons 9 and 8, which
+/// WebKitGTK hands the page as no button at all.
+fn navigation(event: &gtk::gdk::EventButton) -> Option<bool> {
+    match event.button() {
+        8 => Some(false),
+        9 => Some(true),
+        _ => None,
+    }
 }
 
 /// The window's web view: the first child of the box Tao puts in the window.

@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errorMessage, sftp, type FileEntry, type SessionId } from "../../ipc/api";
 import { attempt } from "../../lib/attempt";
+import { NO_HISTORY, stepFrom, visited, wentTo } from "../../lib/folderHistory";
 import { useLatest } from "../../hooks/latest";
 
 /**
  * The folder the file panel shows and its entries. `onNewFolder` runs when another folder is
  * shown (not when the same one is listed again), to start its selection afresh. The panel
  * opens in `startDir` (the terminal's folder), or in the remote home folder without one or if
- * it can't be listed.
+ * it can't be listed. The folders shown are kept for going back and forward (`go`): every other
+ * folder listed, however it was opened, as following the terminal opens one too.
  */
 export function useSftpListing(
   sessionId: SessionId | null,
@@ -35,9 +37,18 @@ export function useSftpListing(
 
   /** Counts listings asked for: only the latest one's answer is shown. */
   const seqRef = useRef(0);
-  /** Shows the folder at `path`; resolves to whether it did. `quiet`: a failure shows no error. */
-  const load = useCallback(
-    async (path: string, quiet = false) => {
+  const historyRef = useRef(NO_HISTORY);
+  /**
+   * Where in the history a step back or forward goes, while its listing is on its way: a
+   * second step goes on from there, rather than to the same folder again.
+   */
+  const steppingRef = useRef<number | null>(null);
+  /**
+   * Shows the folder at `path`; resolves to whether it did. `quiet`: a failure shows no error.
+   * `historyIndex`: the place in the history it is gone back or forward to.
+   */
+  const list = useCallback(
+    async (path: string, quiet: boolean, historyIndex: number | null) => {
       if (sessionId == null) return false;
       const seq = ++seqRef.current;
       // A slower answer for a folder opened before, or from the connection before a
@@ -50,6 +61,8 @@ export function useSftpListing(
           if (stale()) return false;
           // Refreshing keeps the selection; another folder starts afresh.
           if (listing.path !== cwdRef.current) onNewFolderRef.current();
+          historyRef.current =
+            historyIndex == null ? visited(historyRef.current, listing.path) : wentTo(historyRef.current, historyIndex, listing.path);
           setCwd(listing.path);
           if (!editingRef.current) setPathInput(listing.path);
           setEntries(listing.entries);
@@ -64,12 +77,28 @@ export function useSftpListing(
             return false;
           },
           cleanup: () => {
-            if (seq === seqRef.current) setLoading(false);
+            if (seq !== seqRef.current) return;
+            setLoading(false);
+            steppingRef.current = null;
           },
         },
       );
     },
     [sessionId, fail, cwdRef, sessionRef, onNewFolderRef],
+  );
+
+  const load = useCallback((path: string, quiet = false) => list(path, quiet, null), [list]);
+
+  /** Goes back (-1) or forward (1) through the folders shown, if there is a folder that way. */
+  const go = useCallback(
+    (step: -1 | 1) => {
+      if (sessionId == null || !connected) return;
+      const target = stepFrom(historyRef.current, steppingRef.current ?? historyRef.current.index, step);
+      if (!target) return;
+      steppingRef.current = target.index;
+      void list(target.path, false, target.index);
+    },
+    [sessionId, connected, list],
   );
 
   /**
@@ -89,6 +118,7 @@ export function useSftpListing(
       // A listing still on its way is the lost connection's: it would show the panel as
       // connected again, or an error over the disconnected notice.
       seqRef.current++;
+      steppingRef.current = null;
       setLoading(false);
       return;
     }
@@ -115,5 +145,5 @@ export function useSftpListing(
     editingRef.current = editing;
   };
 
-  return { cwd, cwdRef, pathInput, setPathInput, setEditing, entries, loading, error, setError, fail, load, reload };
+  return { cwd, cwdRef, pathInput, setPathInput, setEditing, entries, loading, error, setError, fail, load, reload, go };
 }
