@@ -98,7 +98,10 @@ impl Channels {
     /// What the channels have carried so far, for a tab that starts showing it; `None` before
     /// any has opened.
     pub fn traffic(&self, connection: ConnectionInfo) -> Option<SessionEvent> {
-        self.traffic.browse_channel.lock().unwrap().is_some().then(|| self.traffic.event(connection))
+        // Its own statement: a guard taken in the `then` chain would live through `event`,
+        // which locks the same channel again.
+        let opened = self.traffic.browse_channel.lock().unwrap().is_some();
+        opened.then(|| self.traffic.event(connection))
     }
 
     /// What its transfers copy files at once by, shared: two large files downloaded at once
@@ -220,5 +223,27 @@ impl AsyncWrite for Watched {
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::*;
+
+    /// A tab that joins a connection whose file panel has a channel open gets its traffic,
+    /// rather than hanging the thread that opens it (and every command waiting on that).
+    #[test]
+    fn traffic_once_a_channel_is_open() {
+        let connection = ConnectionInfo::next(None);
+        let channels = Arc::new(Channels::new(connection, Viewers::default()));
+        assert!(channels.traffic(connection).is_none());
+        *channels.traffic.browse_channel.lock().unwrap() = Some(3);
+        let (sender, receiver) = mpsc::channel();
+        let asked = channels.clone();
+        std::thread::spawn(move || sender.send(asked.traffic(connection).is_some()));
+        assert_eq!(receiver.recv_timeout(Duration::from_secs(5)), Ok(true));
     }
 }
