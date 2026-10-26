@@ -2,6 +2,42 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.15.0] - 2026-10-26
+
+### Features
+
+- While the terminal is scrolled back, output that arrives below no longer goes unnoticed: a button at the bottom of the pane counts the new lines and scrolls back to the end, and screen readers are told once. Lines a program draws over (a progress bar, a prompt being redrawn) aren't counted until it writes a new one. Once the scrollback is full and new output starts removing the lines being read, a notice at the top of the pane says so and where to keep more lines.
+- When an internal error ends the app, a line about it (the time, the version and system, the thread, where and the message) is added to `crash.log` in the configuration folder, so there is a record of why it closed, also on Windows. The file starts again past 64 KiB, and the privacy policy says so.
+
+### Bug Fixes
+
+- A password, passphrase or verification code prompt, or a wait for a Duo push, no longer keeps a CPU core busy until it is answered. The update of russh this comes with also fixes its handling of unbounded EXT_INFO messages and of a peer declaring a zero maximum packet size.
+- A click outside a dialog no longer answers a confirmation (overwriting or deleting files, deleting sessions, closing a window) with Cancel or throws away what was typed in a form; as in native dialogs, it closes only the command palette, the settings, the known hosts and the licenses. While a dialog saves or applies something, it can't be closed or cancelled, so its outcome or error is never lost.
+- The terminal's scroll bar no longer stays shown while the pointer is anywhere over the terminal: it shows while the view scrolls, while the pointer is on its strip or while its slider is dragged, and fades out half a second after scrolling stops. Output arriving below the lines being read back doesn't show it either.
+- Cancelling a transfer takes effect at once even while it waits behind a large download on the same connection, lists folders or creates an upload's folders. A cancelled download no longer leaves folders open at the server for as long as the connection lasts.
+- A large file always leaves one of the connection's transfer slots to small files, also with several large files waiting, so a drag or a file opened in an editor no longer waits for large downloads to end.
+- A folder of files dragged out of the window shows as fully done once its files have arrived, instead of sometimes staying at "0 of 300 files".
+- On Windows 10, making a local terminal narrower no longer shows lines twice or garbled: the terminal is told which Windows build its ConPTY comes with.
+- With a long scrollback, a terminal's columns follow a resize once it pauses also while a full-screen program such as vim, tmux or less runs.
+- A window opened after installing a font that was missing from the font list forms that font's ligatures, rather than those of the next font in the list, without restarting the app.
+- Splitters for panes, the side panel and the sidebar stop following the pointer when the mouse button is released outside the window, instead of going on until the next click while the terminals ignored the mouse.
+- Holding a number field's arrow and then switching apps from the keyboard no longer keeps stepping to the end of its range.
+- A forwarding rule's auto-start tag sits under its kind, cut short with an ellipsis and explained in its tooltip, so the mappings stay lined up and every rule has the same height in every language.
+
+### Performance
+
+- Downloading many items is much faster: those dragged out of the window are downloaded together rather than one by one (500 small files from a distant server took minutes), and the items chosen are looked up at the server all at once rather than twice each, one after another, which made 500 files wait over a minute before the first byte. Deleting what an upload created removes a level of folders at a time.
+- Resizing the window or a splitter no longer rewraps a long scrollback on every frame: the rows follow at once, and the columns of a terminal with more than 200 lines once the resizing pauses, as in VS Code.
+- Moving a tab to another window no longer freezes both windows for a moment with a long scrollback: its screen is handed over through the backend instead of in an event.
+- Pasting a few MiB into a local shell or serial line no longer copies gigabytes of memory, and Telnet passes on up to 64 KiB of output at once, like the other connections.
+- Long lists render less: the file panel and session list no longer render every row on each progress update, keystroke in the search field or move of the sidebar's edge, rows no longer each listen for the language, and a terminal no longer renders again whenever its title or progress changes.
+- Work that a network drive could hold up no longer stalls other sessions or tabs: finding where a downloaded file goes and a free name for it, looking at session log files, and clearing the folders of earlier drops when a drag out of the window starts. Importing sessions no longer holds up saving or unlocking in other windows.
+- The app does less while idle: the traffic lights' text is worked out every 10 seconds while nothing moves, the app lock checks the idle time once a minute while it can't lock, a session log's writer sleeps while there is nothing to write, a closed tab's session no longer sends output to the window, and windows opened later reuse the font's ligature rules.
+
+### Internal
+
+- Large modules are split into parts that stand on their own: SFTP uploads and downloads, how a transfer ends and what its undo deletes, the SSH module's tests, and how a pane follows its session. The terminal view's main effect is split into parts that each set up and clean up their own, and components and hooks no longer depend on the app's flows, which a test checks.
+
 ## [3.14.0] - 2026-10-25
 
 ### Features
