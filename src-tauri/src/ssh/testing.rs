@@ -115,7 +115,8 @@ async fn connect_with<H: russh::server::Handler + Send + 'static>(
         }
     });
     let stall = Stall::default();
-    let (client_side, guard) = super::abortable::abortable(Stalling { inner: client_side, stall: stall.clone(), rested: false });
+    let (client_side, guard) =
+        super::abortable::abortable(Stalling { inner: client_side, stall: stall.clone(), rested: false }, super::stall_limit(keepalive));
     let mut profile = SshProfile::quick("test".into(), Remote::new("localhost".into(), 22, "alice".into()));
     profile.id = profile_id.into();
     let routes = RemoteRoutes::default();

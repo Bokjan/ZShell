@@ -8,7 +8,6 @@
 
 | 分类 | 事项 | 等什么 / 下一步 |
 |---|---|---|
-| 等待上游 | SSH：认证完成前 keepalive 定时器空转，占满一个核 | russh 合入并发布我们的 #791 |
 | 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥；上游还没有 issue |
 | 等待上游 | SSH：一个通道窗口用完，整条连接的发送都停下 | 给 russh 报 issue；上游还没有 |
 | 等待上游 | CI：pnpm/action-setup 停在 v6.0.10 | pnpm/action-setup#291 修复后合入 Dependabot 的 PR |
@@ -29,31 +28,17 @@
 
 ## 等待上游
 
-### SSH：认证完成前 keepalive 定时器空转，占满一个核
-
-- **现象**：密码、口令或验证码提示停在终端里超过 keepalive 间隔（默认 30 秒），或者在等 Duo 推送时，ZShell 占满一个 CPU 核。用户输入、服务器断开（`LoginGraceTime` 默认 120 秒）或关掉标签后恢复。
-- **原因**：russh 0.64.1 客户端主循环（`client/mod.rs` 约 1426–1438 行）在 `keepalive_timer` 到期时，只有状态是 `Authenticated` 才发 keepalive；定时器只在 `received_data || sent_keepalive` 时重置（约 1515–1521 行）。认证完成前到期，这个分支什么都不做，也不重置。tokio 的 `Sleep` 到期后每次 poll 都是 Ready，`select!` 就一直空转，直到对端再发数据。`ssh/mod.rs` 在连接时就把 `keepalive_interval` 交给 russh。2026-10-12 用同一份 `Cargo.lock` 写小程序复现：keepalive 设 1 秒，认证前空等 4 秒用掉 3.16 秒 CPU，不设 keepalive 时是 0。
-- **上游修复**：我们提了 [Eugeny/russh#791](https://github.com/Eugeny/russh/pull/791)（2026-10-16），等待合入。问题由 [Eugeny/russh#642](https://github.com/Eugeny/russh/pull/642)（认证前不发 keepalive，2026-02-28 合入）引入。修法：定时器到期时不论是否发出 keepalive 都记下 `keepalive_elapsed`，用它代替 `sent_keepalive` 决定重置 keepalive 定时器、不重置 inactivity 定时器（空转时 inactivity 定时器每圈都被重置，认证前 `inactivity_timeout` 也一直不生效，这个 PR 一并修好）。附两个测试：认证前 500 毫秒内套接字读取次数，以及认证前 `inactivity_timeout` 能触发。
-- **处理**：russh 发布修复后，在 `src-tauri/` 下升级 russh，用上面的方法确认认证提示停留时 CPU 不再升高，作为补丁版本发布。注意这个 PR 让 `inactivity_timeout` 在认证前也生效，而 `ssh::client_config` 把它设成了 keepalive 间隔的 5 倍、至少 2 分钟（防止写卡住的兜底）：升级后，停在密码提示或等 Duo 推送超过这个时间的连接会被断开（服务器的 `LoginGraceTime` 默认 120 秒，通常先断）。升级时要么接受，要么改成认证后才计时，例如在 `ssh/liveness.rs` 里自己看写挂起了多久。
-- **复现素材**（PR 说明里已经用到）：
-  - 受影响版本：0.57.1（2026-02-28，第一个包含 #642 的版本）到 0.64.1，main 到 `a0ded76`（2026-10-04）为止。
-  - 复现：客户端 `Config { keepalive_interval: Some(1s), .. }`，用 `client::connect_stream` 连一个 `russh::server::run_stream` 起的本地服务器（服务器密钥任意，handler 用默认实现），`authenticate_none` 被拒后什么都不做，睡 4 秒，前后用 `getrusage(RUSAGE_SELF)` 量 CPU。结果：keepalive 1 秒时 4 秒里用掉约 3.2 秒 CPU，`keepalive_interval: None` 时是 0。另一种：本地监听只发 `SSH-2.0-silent\r\n` 之后不说话，`timeout(2s, connect_stream(..))` 超时丢掉 future 后，被 spawn 的会话任务照样空转（4 秒里约 4.3 秒 CPU）。
-  - 补丁思路：`keepalive_timer` 的分支里，未认证时记下「到期了」，循环末尾重置定时器的条件 `received_data || sent_keepalive` 加上它；或者在分支的 else 里直接重置。
-- **相关**：重交换时 russh 不调用 `check_server_key`，见下一条。
-- **备选**：上游迟迟不修时，用 `[patch.crates-io]` 指向打了补丁的 russh（russh 是 Apache-2.0，可以分发修改版）；或者 `keepalive_interval` 传 `None`，认证完成后用 `Handle::send_keepalive` 自己计时，但要自己实现 `keepalive_max` 的断线判断，而且流控会暂停整条连接，可能把暂停误判为断线。
-- **登记**：2026-10-12（代码审查 H1）。
-
 ### SSH：一个通道窗口用完，整条连接的发送都停下
 
 - **现象**：某个通道（多半是端口转发的一条连接）的对端窗口用完，而服务器迟迟不调整窗口（比如服务器那头连向转发目标的一段卡住了）时，同一连接上的终端输入、新开的转发、SFTP 都发不出去；服务器照常回应 keepalive，连接也不会被判定断开。
-- **原因**：russh 0.64.1 客户端主循环（`client/mod.rs` 约 1376 行）只要任何一个通道有待发数据（`has_any_pending_data()`），就不再从 `Handle` 的队列（`receiver`、`inbound_channel_receiver`）取消息，而我们发起的通道的数据、开通道请求都走这条队列。keepalive 由主循环自己发，不受影响；`ssh/liveness.rs` 的检查发的请求却走这条队列，发不出去，这时检查不下结论，不会把连接当成断线。
+- **原因**：russh 0.65.0 客户端主循环（`client/mod.rs` 约 1429 行）只要任何一个通道有待发数据（`has_any_pending_data()`），就不再从 `Handle` 的队列（`receiver`、`inbound_channel_receiver`）取消息，而我们发起的通道的数据、开通道请求都走这条队列。keepalive 由主循环自己发，不受影响；`ssh/liveness.rs` 的检查发的请求却走这条队列，发不出去，这时检查不下结论，不会把连接当成断线。
 - **处理**：给 russh 报 issue，提议只暂停窗口用完的那个通道。上游不修时再看能否在转发里给每条连接限速或设超时。
 - **登记**：2026-10-23（排查睡眠唤醒后连接假死时发现，那次的原因不是这个）。
 
 ### SSH：重交换时不比对主机密钥
 
 - **现象**：会话中途的密钥重交换不检查服务器的主机密钥。已经握有会话密钥的一方（实际上就是服务器本身）可以在重交换时换一把主机密钥而不被发现；网络上的中间人做不到。
-- **原因**：russh 0.64.1 只在初次密钥交换（`encrypted.is_none()`，`client/mod.rs` 约 2008–2023 行）调用 `Handler::check_server_key`，重交换那一支（约 1986 行起）不调用。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
+- **原因**：russh 0.65.0 只在初次密钥交换（`encrypted.is_some()` 的 else 分支，`client/mod.rs` 约 2062–2079 行）调用 `Handler::check_server_key`，重交换那一支（约 2041 行起）不调用。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
 - **上游修复**：还没有，上游也没有相关 issue。
 - **处理**：russh 在重交换时也调用 `check_server_key`（或把主机密钥交给 `kex_done`）之后，在 `ssh/handler.rs` 里记下初次接受的密钥，重交换时要求同一把，不再询问用户。之前那段比对代码因为永远走不到，已经删掉（v2.11.1）。
 - **上游 issue 的素材**：重交换时 `KexProgress::Done` 带着 `server_host_key`，只是没有交给 handler；OpenSSH 每次密钥交换都验证主机密钥，并要求和初次的一致。
@@ -189,7 +174,7 @@
 ### SFTP：远距离服务器上单个文件的速度受 2 MiB 窗口限制
 
 - **现状**：一个文件在途的数据最多约 2 MiB，速度上限约为 2 MiB ÷ RTT：10 ms 时约 200 MiB/s，100 ms 约 20 MiB/s，250 ms 约 8 MiB/s，与 OpenSSH 的 `sftp` 相同。下载受 russh 默认的通道窗口（2 MiB）和每个文件 8 个读请求（`sftp/channels.rs` 的 `SFTP_CONCURRENT_READS`）限制；上传受服务器给的窗口限制（OpenSSH 是 2 MiB），客户端改不了。
-- **为什么不改**：russh 0.64.1 的窗口按连接设置（`client::Config::window_size`，开每个通道都用它，没有按通道指定的接口）。整体调大会让 shell 在 Ctrl+C 后多出几倍的积压输出（2026-10-17 性能评审 P0-3）。
+- **为什么不改**：russh 0.65.0 的窗口按连接设置（`client::Config::window_size`，开每个通道都用它，没有按通道指定的接口）。整体调大会让 shell 在 Ctrl+C 后多出几倍的积压输出（2026-10-17 性能评审 P0-3）。
 - **可选做法**：
   - 给 russh 提 PR，开通道时可以指定窗口，只调大传输通道（8–16 MiB），同时把传输通道的并发读提到 32 左右。只对下载有效。
   - 传输另开一条 SSH 连接（WinSCP、FileZilla 的做法），在那条连接上调大窗口。代价是要再认证一次，要输验证码的服务器会再问一次；跳板机与代理也要重走。

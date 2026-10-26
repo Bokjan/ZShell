@@ -479,28 +479,33 @@ async fn connect(
 /// Keepalives unanswered in a row that end a connection, as OpenSSH's `ServerAliveCountMax`.
 const KEEPALIVE_MAX: u32 = 3;
 
-/// The least `inactivity_timeout`, which also limits each of russh's writes: on a slow link,
-/// writing what a channel's window allows takes a minute (2 MiB at 256 kbit/s). None in tests,
-/// which wait for stalled connections to end.
-const INACTIVITY_MIN: Duration = Duration::from_secs(if cfg!(test) { 0 } else { 120 });
+/// The least [`stall_limit`]: on a lossy link, TCP's retransmissions back off to as much as two
+/// minutes (Linux's `TCP_RTO_MAX`) before the peer makes room again. None in tests, which wait
+/// for stalled connections to end.
+const STALL_MIN: Duration = Duration::from_secs(if cfg!(test) { 0 } else { 120 });
 
 /// russh's settings for a connection sending keepalives every `keepalive`, if at all.
 ///
-/// russh waits for its writes with no limit but `inactivity_timeout`. Once a peer gone silently
-/// has left the system's send buffer full (with what a forward carries, say), the connection
-/// task waits on a write for good, and its keepalives with it, until the system gives up
-/// retransmitting many minutes later. Anything that happens on the connection but our own
-/// keepalives starts the timeout again, a server's answer to them included, so an idle
-/// connection stays open; it is a keepalive longer than the keepalives take to give up, which
-/// stay the reason given for a server that stops answering, and no less than
-/// [`INACTIVITY_MIN`].
+/// No `inactivity_timeout`: it runs from the handshake on, so a connection waiting for the user
+/// to answer a prompt or a Duo push would end once it is up, where OpenSSH waits as long as the
+/// server does (`LoginGraceTime`). The writes it would limit are limited by [`stall_limit`].
 fn client_config(keepalive: Option<Duration>) -> client::Config {
-    client::Config {
-        keepalive_interval: keepalive,
-        keepalive_max: KEEPALIVE_MAX as usize,
-        inactivity_timeout: keepalive.map(|interval| (interval * (KEEPALIVE_MAX + 2)).max(INACTIVITY_MIN)),
-        ..Default::default()
-    }
+    client::Config { keepalive_interval: keepalive, keepalive_max: KEEPALIVE_MAX as usize, ..Default::default() }
+}
+
+/// How long a write to a connection sending keepalives every `keepalive` may wait for room, the
+/// server taking nothing of what was sent meanwhile, before the connection is taken for lost
+/// (see [`abortable`]).
+///
+/// russh waits for its writes with no limit. Once a peer gone silently has left the system's
+/// send buffer full (with what a forward carries, say), the connection task waits on a write for
+/// good, and its keepalives with it, until the system gives up retransmitting many minutes
+/// later. The limit is a keepalive longer than the keepalives take to give up, which stay the
+/// reason given for a server that stops answering while writes go out, and no less than
+/// [`STALL_MIN`]. A connection with nothing to write, waiting at a prompt or idle, is never
+/// ended by it.
+fn stall_limit(keepalive: Option<Duration>) -> Option<Duration> {
+    keepalive.map(|interval| (interval * (KEEPALIVE_MAX + 2)).max(STALL_MIN))
 }
 
 /// How long the SSH version and key exchange may take, not counting the time a host key
@@ -530,7 +535,7 @@ where
     let handler = ClientHandler::new(remote.host.clone(), remote.port, forward_agent, queries_tx, routes, disconnect);
 
     // Drive the handshake while answering host key questions from the handler.
-    let (stream, abort) = abortable::abortable(stream);
+    let (stream, abort) = abortable::abortable(stream, stall_limit(remote.keepalive()));
     let handshake = client::connect_stream(config, stream, handler);
     tokio::pin!(handshake);
     let deadline = tokio::time::sleep(HANDSHAKE_TIMEOUT);

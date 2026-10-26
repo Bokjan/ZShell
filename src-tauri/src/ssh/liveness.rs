@@ -206,7 +206,7 @@ mod tests {
 
         const ANSWER: Duration = Duration::from_millis(300);
         let (stream, mut peer) = tokio::io::duplex(64);
-        let (stream, guard) = super::super::abortable::abortable(stream);
+        let (stream, guard) = super::super::abortable::abortable(stream, None);
         let inner = Inner { link: guard.keep(), handle: Weak::new(), checking: AtomicBool::new(false) };
         let unanswered = || inner.unanswered(inner.link.heard(), inner.link.sent(), ANSWER);
         let (mut reader, mut writer) = tokio::io::split(stream);

@@ -44,11 +44,11 @@ impl server::Handler for Server {
     type Error = russh::Error;
 
     // Keys are refused before they are signed with, as sshd does with keys it doesn't know.
-    async fn auth_publickey_offered(&mut self, _user: &str, _key: &PublicKey) -> Result<ServerAuth, Self::Error> {
+    async fn auth_publickey_offered(&mut self, _user: &str, _key: server::PublicKeyOffer<'_>) -> Result<ServerAuth, Self::Error> {
         Ok(if self.steps.get(self.passed) == Some(&MethodKind::PublicKey) { ServerAuth::Accept } else { ServerAuth::reject() })
     }
 
-    async fn auth_publickey(&mut self, _user: &str, _key: &PublicKey) -> Result<ServerAuth, Self::Error> {
+    async fn auth_publickey(&mut self, _user: &str, _key: server::VerifiedPublicKey<'_>) -> Result<ServerAuth, Self::Error> {
         Ok(self.pass(MethodKind::PublicKey))
     }
 
@@ -120,7 +120,7 @@ async fn sign_in_with_key(
         ..defaults
     };
     let (client_side, server_side) = tokio::io::duplex(1 << 16);
-    let (server_side, hang_up) = abortable(server_side);
+    let (server_side, hang_up) = abortable(server_side, None);
     match server.hangs_up {
         true => server.hang_up = Some(hang_up),
         false => drop(hang_up.keep()),

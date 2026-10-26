@@ -45,6 +45,27 @@ async fn a_stalled_connection_ends() {
     assert!(ended.is_ok(), "the connection is still open");
 }
 
+/// A connection not yet signed in, as one waiting for the user to answer a prompt, stays open
+/// however long it waits, though it sends keepalives.
+#[tokio::test]
+async fn a_connection_waiting_to_sign_in_stays_open() {
+    let config = russh::server::Config { keys: vec![russh::keys::PrivateKey::from_openssh(TEST_KEY).unwrap()], ..Default::default() };
+    let (client_side, server_side) = tokio::io::duplex(1 << 16);
+    tokio::spawn(async move {
+        if let Ok(session) = russh::server::run_stream(Arc::new(config), server_side, testing::Anyone).await {
+            let _ = session.await;
+        }
+    });
+    let keepalive = Some(Duration::from_millis(100));
+    let (client_side, _guard) = abortable::abortable(client_side, stall_limit(keepalive));
+    let (queries, _) = mpsc::channel(1);
+    let handler =
+        ClientHandler::new("localhost".into(), 22, false, queries, RemoteRoutes::default(), watch::channel(None).0).with_any_host_key();
+    let handle = client::connect_stream(Arc::new(client_config(keepalive)), client_side, handler).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(!handle.is_closed());
+}
+
 /// A server whose shell prints without end if `flood` (and nothing otherwise), and that
 /// reports what it is sent: window changes and typed data.
 struct Server {

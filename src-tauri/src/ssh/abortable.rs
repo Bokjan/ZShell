@@ -8,20 +8,26 @@
 //! proxy command) goes with it.
 //!
 //! So does a connection found dead (see `super::liveness`): russh's connection task may itself
-//! be stuck writing to the stream, and a disconnect message would wait behind that write.
+//! be stuck writing to the stream, and a disconnect message would wait behind that write. And so
+//! does a write left waiting for room too long (see `super::stall_limit`), which russh would
+//! wait for with no limit.
 
+use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::time::Sleep;
 
-/// Wraps `stream`; the guard ends it when dropped, unless kept first.
-pub fn abortable<S>(stream: S) -> (Abortable<S>, AbortOnDrop) {
+/// Wraps `stream`; the guard ends it when dropped, unless kept first. A write left waiting for
+/// room for `stall` (if given), the peer taking nothing meanwhile, fails and ends the stream.
+pub fn abortable<S>(stream: S, stall: Option<Duration>) -> (Abortable<S>, AbortOnDrop) {
     let shared = Arc::new(Shared::default());
-    (Abortable { inner: stream, shared: shared.clone() }, AbortOnDrop(Some(shared)))
+    (Abortable { inner: stream, shared: shared.clone(), stall, stalled: None }, AbortOnDrop(Some(shared)))
 }
 
 #[derive(Default)]
@@ -86,6 +92,31 @@ fn noting<T>(waiting: &AtomicBool, poll: Poll<T>) -> Poll<T> {
 pub struct Abortable<S> {
     inner: S,
     shared: Arc<Shared>,
+    /// How long a write may wait for room.
+    stall: Option<Duration>,
+    /// Since the write waiting for room began to wait, when one is: until when it may.
+    stalled: Option<Pin<Box<Sleep>>>,
+}
+
+impl<S> Abortable<S> {
+    /// Fails a write (or flush) left waiting for room for [`Self::stall`], which ends the
+    /// stream; one that goes on, or that may wait longer, is left as it is. The wait counts
+    /// from the first write that found no room since the last that made progress, and wakes
+    /// the task when it is up: a peer gone silently wakes nobody.
+    fn limit_stall<T>(&mut self, cx: &mut Context<'_>, poll: Poll<io::Result<T>>) -> Poll<io::Result<T>> {
+        let Some(stall) = self.stall else { return poll };
+        if poll.is_ready() {
+            self.stalled = None;
+            return poll;
+        }
+        let until = self.stalled.get_or_insert_with(|| Box::pin(tokio::time::sleep(stall)));
+        if until.as_mut().poll(cx).is_pending() {
+            return poll;
+        }
+        self.stalled = None;
+        self.shared.end(io::ErrorKind::TimedOut);
+        Poll::Ready(Err(io::ErrorKind::TimedOut.into()))
+    }
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Abortable<S> {
@@ -106,6 +137,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Abortable<S> {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         check(&self.shared, cx, |s| &mut s.writer)?;
         let poll = Pin::new(&mut self.inner).poll_write(cx, buf);
+        let poll = self.limit_stall(cx, poll);
         if let Poll::Ready(Ok(written @ 1..)) = poll {
             self.shared.sent.fetch_add(1, Ordering::Relaxed);
             self.shared.bytes_written.fetch_add(written as u64, Ordering::Relaxed);
@@ -119,6 +151,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Abortable<S> {
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         check(&self.shared, cx, |s| &mut s.writer)?;
         let poll = Pin::new(&mut self.inner).poll_flush(cx);
+        let poll = self.limit_stall(cx, poll);
         noting(&self.shared.writing, poll)
     }
 
@@ -200,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn dropping_the_guard_ends_a_waiting_read() {
         let (stream, mut peer) = tokio::io::duplex(64);
-        let (mut stream, guard) = abortable(stream);
+        let (mut stream, guard) = abortable(stream, None);
         let reading = tokio::spawn(async move {
             let mut buf = [0; 8];
             let first = stream.read(&mut buf).await;
@@ -221,7 +254,7 @@ mod tests {
     #[tokio::test]
     async fn room_made_by_the_peer_is_heard() {
         let (stream, mut peer) = tokio::io::duplex(4);
-        let (mut stream, guard) = abortable(stream);
+        let (mut stream, guard) = abortable(stream, None);
         let link = guard.keep();
         stream.write_all(b"abcd").await.unwrap();
         assert_eq!(link.heard(), 0);
@@ -236,11 +269,38 @@ mod tests {
         assert_eq!(link.bytes(), (8, 0));
     }
 
+    /// A write left waiting for room fails once it has waited too long, which ends the stream;
+    /// the wait starts again whenever the peer makes room.
+    #[tokio::test(start_paused = true)]
+    async fn a_write_left_waiting_for_room_ends_the_stream() {
+        use std::time::Duration;
+        use tokio::time::Instant;
+
+        const STALL: Duration = Duration::from_secs(10);
+        let (stream, mut peer) = tokio::io::duplex(4);
+        let (mut stream, _guard) = abortable(stream, Some(STALL));
+        stream.write_all(b"abcd").await.unwrap();
+        let writing = tokio::spawn(async move {
+            let written = stream.write_all(b"efgh").await;
+            written.map(|()| stream)
+        });
+        tokio::time::sleep(STALL - Duration::from_secs(2)).await;
+        let mut buf = [0; 4];
+        peer.read_exact(&mut buf).await.unwrap();
+        let mut stream = writing.await.unwrap().unwrap();
+
+        let start = Instant::now();
+        let written = stream.write_all(b"ijkl").await;
+        assert_eq!(written.map_err(|e| e.kind()), Err(io::ErrorKind::TimedOut));
+        assert!(start.elapsed() >= STALL);
+        assert_eq!(stream.read(&mut buf).await.map_err(|e| e.kind()), Err(io::ErrorKind::TimedOut));
+    }
+
     /// Kept, the stream works as before, and the link tells what it does until it ends it.
     #[tokio::test]
     async fn a_kept_stream_runs_until_its_link_ends_it() {
         let (stream, mut peer) = tokio::io::duplex(64);
-        let (mut stream, guard) = abortable(stream);
+        let (mut stream, guard) = abortable(stream, None);
         let link = guard.keep();
         stream.write_all(b"hello").await.unwrap();
         let mut buf = [0; 5];
