@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useConfirmButton } from "../hooks/confirm";
 import { useDialog } from "../hooks/dialogs";
 import { chosenAction, matches } from "../lib/keymap";
+import { isKey } from "../lib/keys";
 import { isMac } from "../lib/platform";
 import { CLIPBOARD_LIMIT_MAX, DEFAULT_SETTINGS } from "../ipc/api";
 import {
@@ -115,7 +116,7 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
         onClose();
         return true;
       }
-      const ctrlF = !isMac && e.code === "KeyF" && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+      const ctrlF = !isMac && isKey(e, "f") && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
       if (!matches(e, "find") && !ctrlF) return false;
       searchRef.current?.select();
       return true;

@@ -13,9 +13,11 @@ import {
   toAppMenu,
 } from "./keymap";
 
-const key = (code: string, modifiers: { ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {}) =>
+/** A key press of `code`, typing `char` (by default what the key types on a US keyboard). */
+const key = (code: string, modifiers: { ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {}, char?: string) =>
   ({
     code,
+    key: char ?? (/^Key.$/.test(code) ? (modifiers.shift ? code[3] : code[3].toLowerCase()) : code === "Comma" ? "," : code),
     ctrlKey: !!modifiers.ctrl,
     altKey: !!modifiers.alt,
     shiftKey: !!modifiers.shift,
@@ -33,8 +35,28 @@ describe("keymap", () => {
   it("matches every key of an action and the keypad's like the main keyboard's", () => {
     expect(matches(key("Insert", { shift: true }), "paste")).toBe(true);
     expect(matches(key("KeyV", { ctrl: true }), "paste")).toBe(true);
+    expect(actionOf(key("KeyS", { ctrl: true, shift: true }), ["splitRight", "splitDown"])).toBe("splitRight");
+    expect(actionOf(key("KeyD", { ctrl: true, shift: true }), ["splitRight", "splitDown"])).toBe("splitDown");
     expect(matches(key("NumpadAdd", { alt: true, shift: true }), "splitRight")).toBe(true);
     expect(actionOf(key("Minus", { alt: true, shift: true }), ["splitRight", "splitDown"])).toBe("splitDown");
+  });
+
+  it("matches letters and punctuation by the character they type", () => {
+    // Dvorak: F on the US Y key.
+    expect(matches(key("KeyY", { ctrl: true, shift: true }, "F"), "find")).toBe(true);
+    expect(matches(key("KeyF", { ctrl: true, shift: true }, "U"), "find")).toBe(false);
+    // AZERTY: the comma on the US M key, and the US comma key typing ";".
+    expect(matches(key("KeyM", { ctrl: true }, ","), "settings")).toBe(true);
+    expect(matches(key("Comma", { ctrl: true }, ";"), "settings")).toBe(false);
+    // By the US key where the layout types no Latin letters there (Russian).
+    expect(matches(key("KeyF", { ctrl: true, shift: true }, "А"), "find")).toBe(true);
+  });
+
+  it("matches digits and punctuation with Shift by the key", () => {
+    // AZERTY types & on the 1 key.
+    expect(matches(key("Digit1", { alt: true }, "&"), "tab1")).toBe(true);
+    // The - key of a Japanese keyboard types = with Shift.
+    expect(actionOf(key("Minus", { alt: true, shift: true }, "="), ["splitRight", "splitDown"])).toBe("splitDown");
   });
 
   it("finds tabs and panes", () => {
@@ -62,7 +84,7 @@ describe("keymap", () => {
     expect(labelsOn("filePanel", true)).toEqual(["⇧⌘E"]);
     expect(labelsOn("filePanel", false)).toEqual(["Ctrl+Shift+E"]);
     expect(labelsOn("focusLeft", true)).toEqual(["⌥⌘←"]);
-    expect(labelsOn("splitRight", false)).toEqual(["Alt+Shift+="]);
+    expect(labelsOn("splitRight", false)).toEqual(["Ctrl+Shift+S", "Alt+Shift+="]);
     expect(labelsOn("settings", true)).toEqual(["⌘,"]);
     expect(labelsOn("copy", false)).toEqual(["Ctrl+Shift+C", "Ctrl+Insert"]);
     expect(labelsOn("closeWindow", false)).toEqual([]);

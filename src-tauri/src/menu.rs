@@ -190,12 +190,40 @@ pub fn set(app: AppHandle, menu: &NativeMenu, sections: Vec<Section>) -> tauri::
         if built.sections.as_ref() != Some(&sections) {
             let full_screen = window::current(&app).is_some_and(|window| window.is_fullscreen().unwrap_or(false));
             app.set_menu(build(&app, &sections, &built.labels, full_screen)?)?;
+            // After Tauri puts the menu in place, which it also does on the main thread.
+            app.run_on_main_thread(keep_keys)?;
             built.sections = Some(sections);
         }
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (app, menu, sections);
     Ok(())
+}
+
+/// Keeps AppKit from moving the menu bar's keys to other keys on some layouts (the automatic
+/// localization of key equivalents, from macOS 12): the page leaves the menu's keys to it by
+/// the characters they type (`toAppMenu` in keymap.ts), so the menu must take them the same way.
+#[cfg(target_os = "macos")]
+fn keep_keys() {
+    use objc2::{sel, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSMenu};
+    use objc2_foundation::NSObjectProtocol;
+
+    fn keep(menu: &NSMenu) {
+        for item in menu.itemArray() {
+            item.setAllowsAutomaticKeyEquivalentLocalization(false);
+            if let Some(submenu) = item.submenu() {
+                keep(&submenu);
+            }
+        }
+    }
+
+    let Some(main) = MainThreadMarker::new() else { return };
+    let Some(menu) = NSApplication::sharedApplication(main).mainMenu() else { return };
+    let Some(item) = menu.itemArray().firstObject() else { return };
+    if item.respondsToSelector(sel!(setAllowsAutomaticKeyEquivalentLocalization:)) {
+        keep(&menu);
+    }
 }
 
 /// Changes the label of one of the page's items: one that tells the state of the window that

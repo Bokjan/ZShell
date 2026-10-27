@@ -1,4 +1,5 @@
 import type { MenuSection } from "../ipc/bindings";
+import { isKey, usCode, usPunctuation } from "./keys";
 import { isMac } from "./platform";
 
 export type { MenuSection } from "../ipc/bindings";
@@ -6,8 +7,12 @@ export type { MenuSection } from "../ipc/bindings";
 /**
  * The app's actions and their keyboard shortcuts: the keys of each action on macOS and on
  * other platforms (Windows, and Linux, which follows it). Keys are written as on a US
- * keyboard (`Cmd+Shift+E`, `Alt+Shift+=`) and matched by `KeyboardEvent.code`, the physical
- * key, so they stay in place on other layouts. Outside macOS, keys the shell reads (Ctrl+F,
+ * keyboard (`Cmd+Shift+E`, `Ctrl+,`). Letters and punctuation are matched by the character
+ * they type (`isKey`), so a shortcut is on the key labeled so whatever the layout, as in the
+ * system's own menus. Digits are matched by the key (`KeyboardEvent.code`), since they are on
+ * the same row on every layout but typed with Shift on AZERTY, and so are named keys (Tab, the
+ * arrows) and punctuation with Shift, whose character with Shift depends on the layout (the
+ * `=` key of a Japanese keyboard is Shift and `-`). Outside macOS, keys the shell reads (Ctrl+F,
  * Ctrl+T, Ctrl+W…) get Shift added. The first keys of an action are the ones menus and
  * tooltips show; the list of shortcuts in the settings shows all of them. Some actions have
  * no keys, and are only chosen from the app menu (`appMenu`).
@@ -36,9 +41,10 @@ const KEYMAP = {
   // The focused pane of a split tab.
   closeTab: { mac: "Cmd+W", other: "Ctrl+Shift+W" },
   closeWindow: { mac: "Cmd+Shift+W" },
-  // As in iTerm2 on macOS and Windows Terminal elsewhere.
-  splitRight: { mac: "Cmd+D", other: "Alt+Shift+=" },
-  splitDown: { mac: "Cmd+Shift+D", other: "Alt+Shift+-" },
+  // As in iTerm2 on macOS, and elsewhere in Tabby, whose keys for the focus are these too;
+  // then Windows Terminal's, the only ones before 3.16.
+  splitRight: { mac: "Cmd+D", other: ["Ctrl+Shift+S", "Alt+Shift+="] },
+  splitDown: { mac: "Cmd+Shift+D", other: ["Ctrl+Shift+D", "Alt+Shift+-"] },
   // Elsewhere with Ctrl, since shells read Alt + arrow (moving by words).
   focusLeft: { mac: "Alt+Cmd+Left", other: "Ctrl+Alt+Left" },
   focusUp: { mac: "Alt+Cmd+Up", other: "Ctrl+Alt+Up" },
@@ -175,6 +181,8 @@ export function setNativeMenu() {
 }
 
 interface Chord {
+  /** The letter or punctuation the key types, matched as `isKey` says; null for one matched by `code`. */
+  char: string | null;
   code: string;
   ctrl: boolean;
   alt: boolean;
@@ -182,11 +190,8 @@ interface Chord {
   meta: boolean;
 }
 
-/** Keys written by name or as the character they type, by their `code`. */
+/** Keys written by name, by their `code`. */
 const NAMED_KEYS: Record<string, string> = {
-  ",": "Comma",
-  "=": "Equal",
-  "-": "Minus",
   Tab: "Tab",
   Enter: "Enter",
   Insert: "Insert",
@@ -196,16 +201,23 @@ const NAMED_KEYS: Record<string, string> = {
   Down: "ArrowDown",
 };
 
-/** Keys of the numeric keypad that count as the main keyboard's. */
+/** Keys of the numeric keypad that count as the main keyboard's, where they are matched by `code`. */
 const KEYPAD: Record<string, string> = { NumpadAdd: "Equal", NumpadSubtract: "Minus", NumpadEnter: "Enter" };
 
 function parse(keys: string): Chord {
   const parts = keys.split("+");
   const key = parts.pop()!;
-  const code = /^[A-Z]$/.test(key) ? `Key${key}` : /^[0-9]$/.test(key) ? `Digit${key}` : /^F[0-9]+$/.test(key) ? key : NAMED_KEYS[key];
-  if (!code || parts.some((part) => !["Ctrl", "Alt", "Shift", "Cmd"].includes(part))) throw new Error(`Invalid shortcut: ${keys}`);
   const has = (modifier: string) => parts.includes(modifier);
-  return { code, ctrl: has("Ctrl"), alt: has("Alt"), shift: has("Shift"), meta: has("Cmd") };
+  const letter = /^[A-Z]$/.test(key);
+  const punctuation = !/^[a-z]$/.test(key) ? usCode(key) : undefined;
+  const code = letter
+    ? `Key${key}`
+    : (punctuation ?? (/^[0-9]$/.test(key) ? `Digit${key}` : /^F[0-9]+$/.test(key) ? key : NAMED_KEYS[key]));
+  if (!code || parts.some((part) => !["Ctrl", "Alt", "Shift", "Cmd"].includes(part))) throw new Error(`Invalid shortcut: ${keys}`);
+  const shift = has("Shift");
+  // Letters, and punctuation without Shift, by the character they type (see `KEYMAP`).
+  const char = letter ? key.toLowerCase() : punctuation && !shift ? key : null;
+  return { char, code, ctrl: has("Ctrl"), alt: has("Alt"), shift, meta: has("Cmd") };
 }
 
 function chordsOf(action: Action, mac: boolean): Chord[] {
@@ -218,7 +230,7 @@ function chordsOf(action: Action, mac: boolean): Chord[] {
 const CHORDS = new Map((Object.keys(KEYMAP) as Action[]).map((action) => [action, chordsOf(action, isMac)]));
 
 const sameChord = (e: KeyboardEvent, chord: Chord) =>
-  (KEYPAD[e.code] ?? e.code) === chord.code &&
+  (chord.char ? isKey(e, chord.char) : (KEYPAD[e.code] ?? e.code) === chord.code) &&
   e.ctrlKey === chord.ctrl &&
   e.altKey === chord.alt &&
   e.shiftKey === chord.shift &&
@@ -315,7 +327,7 @@ function keyLabel(code: string, mac: boolean): string {
   if (named) return named;
   const letterOrDigit = /^(?:Key|Digit)(.)$/.exec(code);
   if (letterOrDigit) return letterOrDigit[1];
-  return Object.keys(NAMED_KEYS).find((key) => NAMED_KEYS[key] === code) ?? code;
+  return usPunctuation(code) ?? Object.keys(NAMED_KEYS).find((key) => NAMED_KEYS[key] === code) ?? code;
 }
 
 /** A chord's modifiers and key, as macOS (⌃⌥⇧⌘) or Windows ("Ctrl+Alt+Shift") write them. */

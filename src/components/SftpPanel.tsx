@@ -7,6 +7,7 @@ import { sftp, type FileEntry, type SessionId } from "../ipc/api";
 import type { SftpDetail, SftpTraffic, TrafficMeter } from "../lib/traffic";
 import { open } from "../ipc/fileDialog";
 import { historyKey } from "../lib/folderHistory";
+import { isKey } from "../lib/keys";
 import { filterEntries, sortedEntries, storeView, storedView, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
@@ -278,7 +279,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
     else if (e.key === "Escape") {
       if (filter !== null) closeFilter();
       else select([]);
-    } else if (e.code === "KeyA" && mod && !e.shiftKey && !e.altKey) select(visible.map((entry) => entry.path));
+    } else if (isKey(e, "a") && mod && !e.shiftKey && !e.altKey) select(visible.map((entry) => entry.path));
     else if (e.key.length === 1 && e.key !== " " && !e.metaKey && !e.ctrlKey && !e.altKey) openFilter(e.key);
     else handled = false;
     if (handled) {

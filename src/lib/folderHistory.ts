@@ -1,3 +1,5 @@
+import { isKey } from "./keys";
+
 /**
  * The folders a file panel has shown, for going back and forward as in a file manager: the
  * paths in the order shown, and which of them is shown now.
@@ -49,15 +51,10 @@ export interface HistoryKey {
   shiftKey: boolean;
 }
 
-/** US keys of the brackets, for layouts whose keys give other letters there (Russian). */
-const BRACKET_CODES: Record<string, string> = { BracketLeft: "[", BracketRight: "]" };
-
 /**
  * Back (-1) or forward (1) by a key: Cmd+[ and Cmd+] on macOS, as in Finder, and Alt+Left and
- * Alt+Right elsewhere, as in Explorer. The brackets go by the character, as Finder's do, not by
- * the key (`code`) as the app's shortcuts do: they are where the layout puts them, which on a
- * Japanese keyboard is on other keys than on a US one. Option is allowed, which some layouts
- * need for them (German).
+ * Alt+Right elsewhere, as in Explorer. The brackets go by the character, as the app's shortcuts
+ * do (`isKey`). Option is allowed, which some layouts need for them (German).
  */
 export function historyKey(e: HistoryKey, mac: boolean): -1 | 1 | null {
   if (e.shiftKey || e.ctrlKey) return null;
@@ -66,6 +63,5 @@ export function historyKey(e: HistoryKey, mac: boolean): -1 | 1 | null {
     return e.code === "ArrowLeft" ? -1 : e.code === "ArrowRight" ? 1 : null;
   }
   if (!e.metaKey) return null;
-  const char = /^[\x21-\x7e]$/.test(e.key) ? e.key : BRACKET_CODES[e.code];
-  return char === "[" ? -1 : char === "]" ? 1 : null;
+  return isKey(e, "[") ? -1 : isKey(e, "]") ? 1 : null;
 }
