@@ -1,15 +1,19 @@
 //! The logs ZShell has written (`logs.json`), the ones being written now, and cleaning them
 //! up (see the module docs of `logging`).
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
+use std::sync::atomic::AtomicU64;
 
 use super::*;
 
-/// The logs being written, by path, with how many writers each has: a reconnection's writer
-/// may start before the previous connection's has finished.
+/// The logs being written, by path, with their writers in the order they started: a
+/// reconnection's writer may start before the previous connection's has finished.
 #[derive(Default)]
 pub(super) struct ActiveLogs {
-    pub(super) paths: Mutex<HashMap<PathBuf, usize>>,
+    pub(super) paths: Mutex<HashMap<PathBuf, BTreeSet<u64>>>,
+    /// The turn the next writer gets; taken under `paths`, so a log's turns go up in the
+    /// order its writers were counted.
+    next: AtomicU64,
     closed: Condvar,
 }
 
@@ -27,16 +31,23 @@ impl ActiveLogs {
         let _paths = self.closed.wait_timeout_while(paths, timeout, |paths| !paths.is_empty()).unwrap();
     }
 
-    /// Waits until one writer of `path` is left: the caller's.
-    pub(super) fn wait_alone(&self, path: &Path) {
+    /// Waits until the writers of `path` that started before `turn` have finished. Not until
+    /// `turn` is the only one left: two reconnections that start while the previous writer
+    /// still writes would each wait for the other forever.
+    pub(super) fn wait_turn(&self, path: &Path, turn: u64) {
         let paths = self.paths.lock().unwrap();
-        let _paths = self.closed.wait_while(paths, |paths| paths.get(path).is_some_and(|&count| count > 1)).unwrap();
+        let _paths = self
+            .closed
+            .wait_while(paths, |paths| paths.get(path).and_then(|turns| turns.first()).is_some_and(|&first| first < turn))
+            .unwrap();
     }
 
     /// Counts a writer of `path` until the returned value is dropped.
     pub(super) fn add(self: &Arc<Self>, path: PathBuf) -> Active {
-        *self.paths.lock().unwrap().entry(path.clone()).or_default() += 1;
-        Active { path, set: self.clone() }
+        let mut paths = self.paths.lock().unwrap();
+        let turn = self.next.fetch_add(1, Ordering::Relaxed);
+        paths.entry(path.clone()).or_default().insert(turn);
+        Active { path, turn, set: self.clone() }
     }
 
     pub(super) fn contains(&self, path: &Path) -> bool {
@@ -47,15 +58,17 @@ impl ActiveLogs {
 /// A writer of a log, counted in the active set while it exists.
 pub(super) struct Active {
     pub(super) path: PathBuf,
+    /// When it started among the writers of its log.
+    pub(super) turn: u64,
     set: Arc<ActiveLogs>,
 }
 
 impl Drop for Active {
     fn drop(&mut self) {
         let mut paths = self.set.paths.lock().unwrap();
-        if let Some(count) = paths.get_mut(&self.path) {
-            *count -= 1;
-            if *count == 0 {
+        if let Some(turns) = paths.get_mut(&self.path) {
+            turns.remove(&self.turn);
+            if turns.is_empty() {
                 paths.remove(&self.path);
             }
         }
@@ -188,6 +201,7 @@ impl Logs {
         let times = stamps_lines.then(|| TimeFormat::parse(&settings.time_format).unwrap_or_default());
         let text = (settings.format == LogFormat::Text).then(|| (vte::Parser::new(), Line { times, ..Line::default() }));
         let (failure, left_out) = (Arc::new(Mutex::new(None)), Arc::new(AtomicUsize::new(0)));
+        let turn = active.turn;
         let mut writer = LogWriter {
             file: BufWriter::new(file),
             text,
@@ -201,7 +215,7 @@ impl Logs {
         if after_others {
             let (active, path, note) = (self.active.clone(), path.clone(), note.to_owned());
             thread::spawn(move || {
-                active.wait_alone(&path);
+                active.wait_turn(&path, turn);
                 match writer.note(&note) {
                     Ok(()) => writer.run(queued),
                     Err(e) => *writer.failure.lock().unwrap() = Some(e.to_string()),

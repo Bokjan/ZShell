@@ -394,3 +394,33 @@ fn waits_for_every_log_to_close() {
     set.wait_empty(Duration::from_millis(20));
     assert!(set.contains(Path::new("c.log")));
 }
+
+/// Two reconnections that go on with a log while an earlier writer still writes it each
+/// wait only for the writers before them, in turn: waiting to be the only writer left, the
+/// two waited for each other forever, and the log silently stopped.
+#[test]
+fn appenders_take_turns_after_a_slow_writer() {
+    let dir = std::env::temp_dir().join(format!("zshell-logs-turns-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let logs = Logs::load(dir.join("logs.json"), dir.join("Logs"), &SetAside::default());
+    let settings = LogSettings { format: LogFormat::Raw, ..LogSettings::default() };
+    let slot = LogSlot::new(LogInfo::default());
+    let path = logs.start(&slot, &settings).unwrap();
+    logs.stop(&slot);
+    logs.active.wait_closed(&path, Duration::from_secs(5));
+
+    // Still writing.
+    let previous = logs.active.add(path.clone());
+    for text in [b"second", b"third!"] {
+        let slot = LogSlot::new(LogInfo::default());
+        logs.open(&slot, LogOpen::Append { path: path.clone() }, false, &settings).unwrap().unwrap();
+        slot.write(text);
+    }
+    drop(previous);
+    logs.active.wait_closed(&path, Duration::from_secs(5));
+    let content = String::from_utf8(std::fs::read(&path).unwrap()).unwrap();
+    assert!(!logs.active.contains(&path), "writers still waiting: {content:?}");
+    let (second, third) = (content.find("second"), content.find("third!"));
+    assert!(second.is_some() && third.is_some() && second < third, "{content:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
