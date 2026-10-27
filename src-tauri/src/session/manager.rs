@@ -94,9 +94,6 @@ impl SessionManager {
         F: FnOnce(SessionId, TermIo) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        // Held until the session is in, so that `remove_webview` either sees it or has
-        // already moved the page on.
-        let mut sessions = self.sessions.lock().unwrap();
         if self.page(&page.webview).generation != page.generation {
             return Err(Error::new("session.pageGone"));
         }
@@ -107,7 +104,23 @@ impl SessionManager {
         let flow = io.sink.flow();
         let foreground = io.foreground();
         let zmodem = io.sink.zmodem.clone();
-        let task = tauri::async_runtime::spawn(backend(id, io));
+        // Outside the sessions' lock, which every keystroke, resize and acknowledgement on the
+        // main thread takes: the backend may register with its connection (and its forwards
+        // and file panel) here, and anything there that blocked or locked something twice
+        // would freeze every window.
+        let backend = backend(id, io);
+        // Held from checking the page until the session is in, so that `remove_webview`
+        // either sees it or has already moved the page on.
+        let mut sessions = self.sessions.lock().unwrap();
+        if self.page(&page.webview).generation != page.generation {
+            drop(sessions);
+            // What the backend registered is released as for a closed session, before its
+            // task (holding the terminal) is dropped.
+            sink.detach();
+            lifetime.close();
+            return Err(Error::new("session.pageGone"));
+        }
+        let task = tauri::async_runtime::spawn(backend);
         let entry = SessionEntry {
             webview: page.webview.clone(),
             offered_to: None,
@@ -135,20 +148,22 @@ impl SessionManager {
     }
 
     pub fn send(&self, webview: &str, id: SessionId, input: SessionInput) -> Result<()> {
-        let sessions = self.sessions.lock().unwrap();
-        let entry = owned(&sessions, webview, id)?;
+        let sender = owned(&self.sessions.lock().unwrap(), webview, id)?.input.clone();
         // A send error means the backend already exited; it will be removed on close.
-        let _ = entry.input.send(input);
+        let _ = sender.send(input);
         Ok(())
     }
 
     /// Records that the frontend has processed `bytes` of output, in `webview`. Ignored from
     /// a webview the session has moved away from, whose output no longer counts.
     pub fn ack(&self, webview: &str, id: SessionId, bytes: usize) -> Result<()> {
-        let sessions = self.sessions.lock().unwrap();
-        let entry = sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?;
-        if entry.webview == webview {
-            entry.flow.ack(bytes);
+        let flow = {
+            let sessions = self.sessions.lock().unwrap();
+            let entry = sessions.get(&id).ok_or_else(|| Error::new("session.notFound"))?;
+            (entry.webview == webview).then(|| entry.flow.clone())
+        };
+        if let Some(flow) = flow {
+            flow.ack(bytes);
         }
         Ok(())
     }
@@ -424,6 +439,53 @@ mod tests {
         assert_eq!(sessions.len(), 0);
         let _ = hold(&sessions, "main");
         assert_eq!(sessions.len(), 1);
+    }
+
+    /// A session's backend starts outside the sessions' lock, which every keystroke, resize
+    /// and acknowledgement takes on the main thread: a backend that blocked there (as one
+    /// registering with its connection did in 3.14) froze every window.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_backend_starts_outside_the_sessions_lock() {
+        let sessions = Arc::new(SessionManager::default());
+        let page = sessions.page("main");
+        let mut answered = None;
+        let id = sessions
+            .spawn(&page, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, |_, io| {
+                let (sender, receiver) = std::sync::mpsc::channel();
+                let asked = sessions.clone();
+                std::thread::spawn(move || sender.send(asked.check("main", 0).is_err()));
+                answered = Some(receiver.recv_timeout(Duration::from_secs(5)));
+                async move { drop(io) }
+            })
+            .unwrap();
+        assert_eq!(answered, Some(Ok(true)));
+        sessions.remove("main", id).unwrap();
+    }
+
+    /// A page that goes away while a session's backend starts refuses the session, and what the
+    /// backend registered is released.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_page_gone_while_a_backend_starts_releases_it() {
+        let sessions = Arc::new(SessionManager::default());
+        let page = sessions.page("main");
+        let (released, released_count) = counter();
+        let refused =
+            sessions.spawn(&page, Channel::new(|_| Ok(())), (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, |_, io| {
+                io.on_close(move || {
+                    released.fetch_add(1, Ordering::SeqCst);
+                });
+                // On another thread, as the page reloading would be.
+                let (sender, receiver) = std::sync::mpsc::channel();
+                let closing = sessions.clone();
+                std::thread::spawn(move || {
+                    closing.remove_webview("main");
+                    sender.send(())
+                });
+                let _ = receiver.recv_timeout(Duration::from_secs(5));
+                async move { drop(io) }
+            });
+        assert_eq!(refused.unwrap_err().code(), "session.pageGone");
+        assert_eq!((sessions.len(), released_count()), (0, 1));
     }
 
     /// A channel that keeps what it is sent.
