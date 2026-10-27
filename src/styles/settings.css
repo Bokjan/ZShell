@@ -111,7 +111,9 @@
   color: var(--text-muted);
   font-size: calc(12px * var(--text-scale));
 }
-.settings-dialog .row button {
+/* Only the row's own buttons: a menu (`Select`) or a number field's buttons in a row are drawn as
+   in the other dialogs. */
+.settings-dialog .row > button {
   flex-shrink: 0;
   padding: 5px 12px;
   border: 1px solid var(--input-border);
@@ -119,11 +121,11 @@
   background: var(--bg-active);
   font-size: calc(12px * var(--text-scale));
 }
-.settings-dialog .row button.danger {
+.settings-dialog .row > button.danger {
   color: var(--danger);
 }
-.settings-dialog .row button:disabled,
-.settings-dialog .row button[aria-disabled="true"] {
+.settings-dialog .row > button:disabled,
+.settings-dialog .row > button[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
 }
