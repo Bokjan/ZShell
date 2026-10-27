@@ -27,12 +27,14 @@ use crate::traffic::{ConnectionInfo, Counted, Meter, Reporter, Wake};
 /// end the connection, the channel closes and the waiting requests fail.
 const SFTP_REQUEST_TIMEOUT_SECS: u64 = 120;
 /// How long the server may take to open an SFTP session's channel and start the subsystem on
-/// it. Usually a moment, but the answers wait behind what the server already sends on the
-/// connection: on a slow link, behind a transfer's full channel window (2 MiB), this is reached
-/// below about 70 KB/s. One that never answers would otherwise hold every SFTP operation on the
-/// connection, waiting for the session, until the connection ends. Longer than a check of the
-/// connection (`ssh::liveness`), so that one gone dead ends as lost first; a tenth in tests, as
-/// those checks are.
+/// it, counting only the time russh waits for it (see `ssh::Connection::waited_for_server`):
+/// not while a terminal on the connection is behind on its output, when the answer, sent or
+/// not, isn't read. Usually a moment, but the answers wait behind what the server already sends
+/// on the connection: on a slow link, behind a transfer's full channel window (2 MiB), this is
+/// reached below about 70 KB/s. One that never answers would otherwise hold every SFTP operation
+/// on the connection, waiting for the session, until the connection ends. Longer than a check
+/// of the connection (`ssh::liveness`), so that one gone dead ends as lost first; a tenth in
+/// tests, as those checks are.
 const SFTP_OPEN_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 3000 } else { 30000 });
 /// Reads kept in flight per file. The SSH channel window (2 MiB) already limits what is on
 /// the way, so more only makes later requests (listing a folder) queue longer.
@@ -191,16 +193,17 @@ async fn open(
 }
 
 /// A channel on `connection` with the SFTP subsystem started, within [`SFTP_OPEN_TIMEOUT`].
-/// Fails with `sftp.openFailed` (russh's error underneath), `sftp.unsupported` or
-/// `sftp.openTimeout`. A channel given up on is closed, rather than left open at the server,
-/// where it counts against `MaxSessions`.
+/// Fails with `sftp.openFailed` (russh's error underneath), `sftp.unsupported`,
+/// `sftp.openTimeout` or `net.connectionLost`. A channel given up on is closed, rather than
+/// left open at the server, where it counts against `MaxSessions`.
 async fn subsystem(connection: &ssh::Connection) -> anyhow::Result<Channel<Msg>> {
-    let deadline = tokio::time::Instant::now() + SFTP_OPEN_TIMEOUT;
+    let limit = connection.waited_for_server(SFTP_OPEN_TIMEOUT);
+    tokio::pin!(limit);
     let handle = connection.handle().clone();
     let mut opening = Box::pin(async move { handle.channel_open_session().await });
-    let mut channel = match tokio::time::timeout_at(deadline, &mut opening).await {
-        Ok(opened) => opened.context(Error::new("sftp.openFailed"))?,
-        Err(_) => {
+    let mut channel = tokio::select! {
+        opened = &mut opening => opened.context(Error::new("sftp.openFailed"))?,
+        () = &mut limit => {
             // The server may open it yet: closed then. Waiting ends with the connection at the
             // latest.
             tokio::spawn(async move {
@@ -211,26 +214,29 @@ async fn subsystem(connection: &ssh::Connection) -> anyhow::Result<Channel<Msg>>
             return Err(Error::new("sftp.openTimeout").into());
         }
     };
-    // Sent without waiting for the answer, which comes below: this fails only when the
-    // connection is gone.
-    channel.request_subsystem(true, "sftp").await.context(Error::new("net.connectionLost"))?;
-    // A server without the subsystem answers with a failure but keeps the channel open, and
-    // russh-sftp would wait for its greeting until the request times out.
-    let started = tokio::time::timeout_at(deadline, async {
+    let start = async {
+        // Sent without waiting for the answer, which comes below: this fails only when the
+        // connection is gone (or waits, while russh is held up on this side).
+        channel.request_subsystem(true, "sftp").await.context(Error::new("net.connectionLost"))?;
+        // A server without the subsystem answers with a failure but keeps the channel open,
+        // and russh-sftp would wait for its greeting until the request times out.
         loop {
             match channel.wait().await {
-                Some(ChannelMsg::Success) => return true,
-                Some(ChannelMsg::Failure | ChannelMsg::Close | ChannelMsg::Eof) | None => return false,
+                Some(ChannelMsg::Success) => return anyhow::Ok(true),
+                Some(ChannelMsg::Failure | ChannelMsg::Close | ChannelMsg::Eof) | None => return Ok(false),
                 Some(_) => {}
             }
         }
-    })
-    .await;
-    if started == Ok(true) {
+    };
+    let started = tokio::select! {
+        started = start => Some(started?),
+        () = &mut limit => None,
+    };
+    if started == Some(true) {
         return Ok(channel);
     }
     let _ = channel.close().await;
-    Err(Error::new(if started.is_ok() { "sftp.unsupported" } else { "sftp.openTimeout" }).into())
+    Err(Error::new(if started.is_some() { "sftp.unsupported" } else { "sftp.openTimeout" }).into())
 }
 
 /// An SFTP session's stream, noting when reading from it ends: russh-sftp doesn't tell.

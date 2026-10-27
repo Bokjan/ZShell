@@ -283,6 +283,26 @@ async fn output_is_read_on_while_the_main_thread_waits_for_a_download() {
     shell.bridge.abort();
 }
 
+/// Waiting for the server counts only while russh waits for it: not while its connection task
+/// is held up on this side, by a shell's output that nobody reads (an SFTP channel opening
+/// then would otherwise time out, its answer unread).
+#[tokio::test]
+async fn waiting_for_the_server_leaves_out_holdups_on_this_side() {
+    const WAIT: Duration = Duration::from_millis(300);
+    let (sizes, _) = mpsc::unbounded_channel();
+    let (typed, _) = mpsc::unbounded_channel();
+    let connection = testing::connect(Server { flood: true, sizes, typed }, "").await;
+    tokio::time::timeout(Duration::from_secs(5), connection.waited_for_server(WAIT)).await.expect("waiting never counted");
+
+    let channel = connection.handle().channel_open_session().await.unwrap();
+    channel.request_shell(false).await.unwrap();
+    // Never read: the connection task fills the channel's queue and waits.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let held_up = tokio::time::timeout(WAIT * 4, connection.waited_for_server(WAIT)).await;
+    assert!(held_up.is_err(), "counted while held up on this side");
+    drop(channel);
+}
+
 /// A shell the server reports as killed by a signal is told apart from one that exited.
 #[tokio::test]
 async fn a_shell_ended_by_a_signal_is_reported_as_such() {

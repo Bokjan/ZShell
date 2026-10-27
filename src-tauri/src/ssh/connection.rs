@@ -3,6 +3,7 @@
 //! by session) open their channels on.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use russh::client;
 use tokio::sync::watch;
@@ -33,6 +34,8 @@ pub struct Connection {
     disconnect: watch::Receiver<Option<EndReason>>,
     /// Its tabs' shells.
     shells: Arc<Shells>,
+    /// Its transport.
+    link: Link,
     liveness: Liveness,
 }
 
@@ -49,8 +52,8 @@ impl Connection {
         disconnect: watch::Receiver<Option<EndReason>>,
     ) -> Arc<Self> {
         let handle = Arc::new(handle);
-        let liveness = Liveness::new(link, &handle, profile.ssh.remote.keepalive().is_some());
-        Arc::new(Self { handle, info, profile, _jumps: jumps, routes, disconnect, shells: Arc::default(), liveness })
+        let liveness = Liveness::new(link.clone(), &handle, profile.ssh.remote.keepalive().is_some());
+        Arc::new(Self { handle, info, profile, _jumps: jumps, routes, disconnect, shells: Arc::default(), link, liveness })
     }
 
     pub fn handle(&self) -> &Arc<SshHandle> {
@@ -81,6 +84,25 @@ impl Connection {
     /// Checks that the connection is still alive (see [`Liveness`]).
     pub fn liveness(&self) -> &Liveness {
         &self.liveness
+    }
+
+    /// Completes once russh has waited for the server for `time` in all, from now: for an
+    /// answer that may never come. The time russh is held up on this side doesn't count (a
+    /// terminal behind on its output, see `super::bridge`): whatever the server answered then
+    /// waits to be read.
+    pub async fn waited_for_server(&self, time: Duration) {
+        /// How often it looks whether russh waits for the server.
+        const LOOK: Duration = Duration::from_millis(if cfg!(test) { 10 } else { 100 });
+        let mut left = time;
+        let mut since = tokio::time::Instant::now();
+        while !left.is_zero() {
+            tokio::time::sleep(LOOK.min(left)).await;
+            let now = tokio::time::Instant::now();
+            if self.link.waiting() {
+                left = left.saturating_sub(now - since);
+            }
+            since = now;
+        }
     }
 
     /// Notes that session `id` opens its shell now, until the session closes.
