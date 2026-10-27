@@ -2,6 +2,13 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.16.1] - 2026-10-27
+
+### Bug Fixes
+
+- A tab in the background with new output is marked again by a ring around its status dot, rather than a block of color over its title. Introduced in 3.15.0.
+- The menus side by side in the settings (the cursor style, the log format and how long logs are kept) are drawn like the other menus, rather than as gray buttons. Introduced in 3.10.0.
+
 ## [3.16.0] - 2026-10-27
 
 ### Features
