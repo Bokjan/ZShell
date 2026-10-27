@@ -19,7 +19,7 @@ interface Props {
  * The lines of output that arrived below the lines being read back (see `lib/readBack`), as
  * a button back to the end. A component of its own, so that the count drawn again doesn't
  * render the whole terminal view. It is drawn again at most once a frame, the count in a place
- * of its own width (`.new-output-count`) so that the button doesn't move as it changes. Screen
+ * of its own width (`.scroll-to-end-count`) so that the button doesn't move as it changes. Screen
  * readers are told once each time it shows.
  */
 export function NewOutputButton({ readBack, visible, onClick }: Props) {
@@ -50,14 +50,14 @@ export function NewOutputButton({ readBack, visible, onClick }: Props) {
   if (lines === 0) return null;
   return (
     // Not focused by a click, which leaves the keyboard with the terminal.
-    <button className="new-output" title={t("terminal.scrollToEnd")} onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
+    <button className="scroll-to-end" title={t("terminal.scrollToEnd")} onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
       <ScrollToEndIcon size={12} />
       <span>
         <Trans
           i18nKey="terminal.newLines"
           count={lines}
           values={{ lines: lines > MOST_SHOWN ? `${MOST_SHOWN}+` : String(lines) }}
-          components={{ count: <span className="new-output-count" /> }}
+          components={{ count: <span className="scroll-to-end-count" /> }}
         />
       </span>
     </button>

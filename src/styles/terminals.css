@@ -109,7 +109,7 @@
 }
 /* The lines of output that arrived below the lines being read back, as a way back to the end;
    in the style of the size overlay. */
-.new-output {
+.scroll-to-end {
   position: absolute;
   bottom: 14px;
   left: 50%;
@@ -129,12 +129,12 @@
   border-radius: 6px;
   box-shadow: 0 4px 14px var(--shadow);
 }
-.new-output:hover {
+.scroll-to-end:hover {
   background: var(--bg-hover);
 }
 /* Wide enough for "999" (see `MOST_SHOWN` in NewOutputButton), in digits of one width, so that
    neither the count nor the button moves as it changes. */
-.new-output-count {
+.scroll-to-end-count {
   display: inline-block;
   min-width: 3ch;
   font-variant-numeric: tabular-nums;
