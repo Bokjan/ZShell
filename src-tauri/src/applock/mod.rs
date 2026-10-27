@@ -192,8 +192,7 @@ impl AppLock {
     }
 
     /// Locks once the system has been idle for longer than the settings allow, counting from
-    /// the last unlock at most.
-    /// Locks if the system has been idle long enough; returns when to check again.
+    /// the last unlock at most; returns when to check again.
     fn check_idle(&self) -> Duration {
         let Some(settings) = self.vault.app_lock() else { return IDLE_CHECK_OFF };
         let since_unlock = {
@@ -269,8 +268,8 @@ impl AppLock {
 pub fn watch_idle(lock: Arc<AppLock>) {
     tauri::async_runtime::spawn(async move {
         loop {
-            // Off the async threads: the vault's state may be held while the credential store
-            // asks the user.
+            // Off the async threads: on Linux the idle time is a D-Bus call, which may wait
+            // for the session bus.
             let lock = lock.clone();
             let next = tauri::async_runtime::spawn_blocking(move || lock.check_idle()).await.unwrap_or(IDLE_CHECK);
             tokio::time::sleep(next).await;
