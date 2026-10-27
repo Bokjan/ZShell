@@ -51,6 +51,8 @@ impl Shared {
                 waker.wakeup();
             });
         }
+        // Output the main loop can't show meanwhile must not stop the download's connection.
+        let _reading = crate::ssh::KeepReading::hold();
         loop {
             match self.fetch.load(Ordering::Acquire) {
                 FETCH_OK => return true,

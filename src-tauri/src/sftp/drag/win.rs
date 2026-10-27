@@ -80,6 +80,9 @@ impl Shared {
                 *this.fetch.lock().unwrap() = Fetch::Done { ok };
             });
         }
+        // Output the main thread can't show meanwhile (it is held up in a drag) must not stop
+        // the download's connection.
+        let _reading = crate::ssh::KeepReading::hold();
         // Once the application is quitting, its WM_QUIT stays queued for the main loop, and
         // waiting for messages would return at once: just wait.
         let mut quitting = false;

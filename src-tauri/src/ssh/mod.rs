@@ -221,6 +221,32 @@ async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> 
     Ok(channel)
 }
 
+/// How many [`KeepReading`] are held.
+static KEEP_READING: std::sync::LazyLock<watch::Sender<usize>> = std::sync::LazyLock::new(|| watch::channel(0).0);
+
+/// While held, SSH output is read on however far behind the terminals are: for the main
+/// thread waiting for a download (files dragged out of the window, on Windows and Linux),
+/// which meanwhile shows no output and so acknowledges none. Pausing then would stop the
+/// connection the download runs on (see [`bridge`]), or the jump host's it runs through, and
+/// the main thread would wait until the download's requests time out. What is read meanwhile
+/// waits for the main thread, as much as arrives during the download.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+pub struct KeepReading(());
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+impl KeepReading {
+    pub fn hold() -> Self {
+        KEEP_READING.send_modify(|held| *held += 1);
+        Self(())
+    }
+}
+
+impl Drop for KeepReading {
+    fn drop(&mut self) {
+        KEEP_READING.send_modify(|held| *held -= 1);
+    }
+}
+
 /// Copies between the shell channel and the terminal until either side ends.
 ///
 /// Output is not read while the terminal is too far behind ([`crate::session::Flow`]): the
@@ -228,6 +254,7 @@ async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> 
 /// connection (russh's connection task waits for the channel to be read), including SFTP and
 /// forwards on it and the shells of duplicated tabs, for as long as the slowest of its
 /// terminals is behind: a bounded wait, where reading on would grow memory without bound.
+/// Except while the main thread waits for a download ([`KeepReading`]).
 ///
 /// Output keeps being read while a write waits for the server's window: russh delivers output
 /// into a bounded queue from its connection task, so a full queue would stall that task, and
@@ -255,6 +282,7 @@ async fn bridge(
     let writer = Arc::new(writer);
     let mut close = CloseOnDrop(Some(writer.clone()));
     let flow = io.sink().flow();
+    let mut keep_reading = KEEP_READING.subscribe();
     let mut exit_status = None;
     let mut exit_signal = None;
     let mut sending: Option<Sending> = None;
@@ -280,9 +308,10 @@ async fn bridge(
                 (_, None) => None,
             };
         }
-        let paused = flow.is_paused();
+        let paused = flow.is_paused() && *keep_reading.borrow_and_update() == 0;
         let sent = tokio::select! {
             () = flow.ready(), if paused => Ok(()),
+            _ = keep_reading.changed(), if paused => Ok(()),
             msg = reader.wait(), if !paused => {
                 let msg = match msg {
                     Some(ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. }) => {

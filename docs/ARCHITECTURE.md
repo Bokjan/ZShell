@@ -104,7 +104,7 @@
 - **会话是后台任务**：`SessionManager` 为每个会话创建 `TermIo`（输出 / 事件 Channel、输入队列）；新后端只需实现同样的任务形态。关闭只经 `SessionManager`，任务之外的资源登记在会话的 `Lifetime` 上，无论怎样结束都只释放一次。
 - **会话属于 webview**：页面重载或窗口销毁时关闭它的全部会话。按会话 id 操作的命令只接受归属窗口的调用，其他窗口得到与"不存在"相同的 `session.notFound`。移动标签的几个命令是例外：`session_ack` 对非归属窗口静默返回成功（会话刚移走时旧窗口的确认），`session_handover` 只接受迁出的窗口，`session_adopt` 只接受被 offer 的窗口；传输与本地编辑同样属于发起它们的页面。会话可以移到另一个窗口（见「多窗口」）。
 - **终端输出走 Channel**：原始字节直接 `term.write`，会话事件走同一个 Channel，保证"已关闭"在最后一段输出之后；输入走 `invoke`。各后端把已就绪的输出合成一条再发，减少主线程上的消息数。
-- **背压**：输出通路都有上限。前端按已处理字节确认输出，未确认过多时后端暂停读取（`Flow`），因为 Tauri 的 IPC 队列与 xterm.js 的积压都不设防；输入不设上限：按键、粘贴与尺寸变化经无界队列交给各后端，对方不读时留在后端（ZMODEM 的数据另有 `INPUT_BACKLOG`），这样按键与尺寸变化总能读到，Ctrl+C 不会被卡住。代价是暂停读 SSH shell 时同一连接上的 SFTP 和转发一起等。阈值见 `session/`。
+- **背压**：输出通路都有上限。前端按已处理字节确认输出，未确认过多时后端暂停读取（`Flow`），因为 Tauri 的 IPC 队列与 xterm.js 的积压都不设防；输入不设上限：按键、粘贴与尺寸变化经无界队列交给各后端，对方不读时留在后端（ZMODEM 的数据另有 `INPUT_BACKLOG`），这样按键与尺寸变化总能读到，Ctrl+C 不会被卡住。代价是暂停读 SSH shell 时同一连接上的 SFTP 和转发一起等。例外是 Windows 与 Linux 上拖出文件时主线程等下载：这期间输出显示不出来也就没有确认，SSH 照常读（`ssh::KeepReading`），否则下载所在的连接停住，主线程要等到 SFTP 请求超时。阈值见 `session/`。
 - **字符编码**：内部一律 UTF-8，只在与远端交界处（输出、输入、SFTP 与 ZMODEM 的文件名）按会话的 `encoding` 转换。快速连接、本地终端与认证提示总是 UTF-8。
 - **会话事件**：`Closed` 的 `reason` 区分 `exited`、`lost`、`failed`，前端据此决定重连、自动关闭或提示。
 - **终端里我们自己的消息**：连接中、会话如何结束、等待转发连接、转发规则启动失败、ZMODEM 传输，以及前端写的重连倒计时与操作提示，每行以打印时的本地时间开头，格式与日志的按行时间共用设置 `logs.timeFormat`（见「会话日志」）。后端走 `SessionSink::notice`（`session/notice.rs`），前端走 `lib/terminalNotice.ts`，两边测试同一个例子。照 OpenSSH 的登录问答（主机密钥、密码、口令、keyboard-interactive）、输入回显和代理命令的 stderr 仍走 `print`，不加时间。日志按行写时间时，日志里不再写这个前缀，避免两个时间。

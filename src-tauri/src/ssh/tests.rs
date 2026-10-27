@@ -249,6 +249,40 @@ async fn typing_while_output_is_paused_keeps_the_connection() {
     shell.bridge.abort();
 }
 
+/// While the main thread waits for files dragged out of the window, it shows no output and
+/// acknowledges none: output is read on rather than paused, which would stop the connection
+/// the download runs on until its requests time out.
+#[tokio::test]
+async fn output_is_read_on_while_the_main_thread_waits_for_a_download() {
+    let shell = Shell::start(true).await;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !shell.flow.is_paused() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("output never paused");
+    // Until the bridge has stopped reading.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = shell.output.try_iter().count();
+
+    let reading = KeepReading::hold();
+    let read: usize = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let read = shell.output.try_iter().map(|bytes| bytes.len()).sum();
+            if read > 0 {
+                break read;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("output stayed paused");
+    drop(reading);
+    assert!(read > 0 && shell.flow.is_paused());
+    shell.bridge.abort();
+}
+
 /// A shell the server reports as killed by a signal is told apart from one that exited.
 #[tokio::test]
 async fn a_shell_ended_by_a_signal_is_reported_as_such() {
