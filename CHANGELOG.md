@@ -2,6 +2,25 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.16.0] - 2026-10-27
+
+### Features
+
+- The file panel goes back and forward through the folders it showed, including those it went to while following the terminal: with its new back and forward buttons, the mouse's side buttons, Cmd+[ / Cmd+] on macOS or Alt+Left / Alt+Right elsewhere. A folder that turns out to be gone is left out of the history, and listing a folder that doesn't exist says so. Its toolbar is rearranged: back, forward, up, refresh and the path on the first row; upload, new folder, the filter, hidden files and the terminal's folder on the second.
+- Letter and punctuation shortcuts are on the keys labeled so on every keyboard layout (AZERTY, QWERTZ, Dvorak, Japanese), as in other apps; where a layout types no Latin letters (Russian), they stay where they are on a US keyboard. The macOS menu bar no longer moves its shortcuts to other keys on some layouts. Outside macOS, panes are also split with Ctrl+Shift+S (right) and Ctrl+Shift+D (down); Alt+Shift+= and Alt+Shift+- still work.
+
+### Bug Fixes
+
+- Splitting a pane or duplicating a tab on a connection whose file panel had been opened no longer freezes the app. Introduced in 3.14.0.
+- On Windows and Linux, dragging files out of the window while a terminal on the same connection prints a lot no longer freezes every window for up to two minutes and fails the drop.
+- A server that keeps the connection up but never answers opening an SFTP channel no longer leaves the file panel and transfers on that connection waiting for good: after 30 seconds of waiting for the server, the operation fails and the next one tries again. Channels given up on are closed rather than left open at the server.
+- On Windows, while the title bar's window menu (a right click or Alt+Space) is open, typing, resizing and busy terminals in every window no longer wait for it to close.
+- A session log no longer silently stops being written after two reconnections while the previous connection was still finishing writing it, to a slow or network drive for example; such a log also couldn't be cleaned up or deleted until a restart, and quitting waited for it. Introduced in 2.5.4.
+
+### Internal
+
+- Starting a session no longer runs its backend's first step while holding the lock that every keystroke and resize takes, so a fault there can no longer freeze every window.
+
 ## [3.15.0] - 2026-10-26
 
 ### Features
