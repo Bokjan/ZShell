@@ -32,14 +32,14 @@ use windows_sys::Win32::System::SystemInformation::GetTickCount;
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT};
-use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, EnableMenuItem, GetClassNameW, GetCursorPos, GetForegroundWindow, GetParent, GetSystemMenu,
     GetWindowLongPtrW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, IsZoomed, LoadCursorW, PostMessageW, RegisterClassW,
     RegisterWindowMessageW, SetMenuDefaultItem, SetWindowPos, ShowCursor, ShowWindow, TrackPopupMenu, EVENT_SYSTEM_FOREGROUND, GWL_EXSTYLE,
     HTMAXBUTTON, HWND_TOP, IDC_ARROW, MA_NOACTIVATE, MF_BYCOMMAND, MF_ENABLED, MF_GRAYED, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_MOVE,
     SC_RESTORE, SC_SIZE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    WINEVENT_OUTOFCONTEXT, WM_DESTROY, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
+    WINEVENT_OUTOFCONTEXT, WM_DESTROY, WM_MOUSEACTIVATE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
     WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_TOPMOST,
 };
 
@@ -534,10 +534,14 @@ fn system_menu_message() -> u32 {
 }
 
 /// Shows the system menu at [`system_menu_message`]; Tao's procedure has the other messages.
+/// Removed as the window goes, as a subclass must be before its window is destroyed.
 unsafe extern "system" fn system_menu_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
     if msg == system_menu_message() {
         show_system_menu(hwnd);
         return 0;
+    }
+    if msg == WM_NCDESTROY {
+        RemoveWindowSubclass(hwnd, Some(system_menu_proc), SYSTEM_MENU_SUBCLASS);
     }
     DefSubclassProc(hwnd, msg, wparam, lparam)
 }
