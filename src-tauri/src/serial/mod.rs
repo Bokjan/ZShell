@@ -374,7 +374,7 @@ mod tests {
     use std::ffi::CStr;
     use std::fs::File;
     use std::io::Write as _;
-    use std::os::fd::FromRawFd;
+    use std::os::fd::AsRawFd;
     use std::sync::mpsc::Receiver;
 
     use super::*;
@@ -408,17 +408,12 @@ mod tests {
     /// A pseudo terminal standing in for a device: the session opens its slave side, the
     /// test plays the device on the master side.
     fn fake_device() -> (File, String) {
-        let (mut master, mut slave) = (0, 0);
-        // SAFETY: openpty fills in two file descriptors; null name, termios and window size
-        // are allowed.
-        let result = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
-        assert_eq!(result, 0);
+        let (master, slave) = crate::fd::test_pty();
         // SAFETY: `slave` is an open terminal; ttyname returns a C string or null.
-        let name = unsafe { CStr::from_ptr(libc::ttyname(slave)) }.to_string_lossy().into_owned();
-        // SAFETY: both descriptors are open and owned here; the slave is reopened by name.
-        unsafe { libc::close(slave) };
-        // SAFETY: `master` is open and owned here, by the file from now on.
-        let master = unsafe { File::from_raw_fd(master) };
+        let name = unsafe { CStr::from_ptr(libc::ttyname(slave.as_raw_fd())) }.to_string_lossy().into_owned();
+        // The slave is reopened by name.
+        drop(slave);
+        let master = File::from(master);
         (master, name)
     }
 

@@ -48,6 +48,30 @@ pub fn write_fd(fd: RawFd, data: &[u8]) -> io::Result<usize> {
     usize::try_from(written).map_err(|_| io::Error::last_os_error())
 }
 
+/// A new pseudo terminal's master and slave sides, for tests. macOS at times fails to open
+/// one, at `posix_openpt`, with `ENXIO` though few are open (seen for a while after the system
+/// started, while the whole test suite ran): tried again for a few seconds.
+#[cfg(test)]
+pub fn test_pty() -> (std::os::fd::OwnedFd, std::os::fd::OwnedFd) {
+    use std::os::fd::{FromRawFd, OwnedFd};
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let (mut master, mut slave) = (0, 0);
+        // SAFETY: openpty fills in two descriptors; null name, termios and window size are
+        // allowed.
+        let result = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
+        if result == 0 {
+            // SAFETY: just opened, and owned by nothing else.
+            return unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+        }
+        let error = io::Error::last_os_error();
+        assert!(error.raw_os_error() == Some(libc::ENXIO) && Instant::now() < deadline, "openpty: {error}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};

@@ -296,12 +296,7 @@ mod tests {
     /// terminal open (on Linux, a program that ignores the hangup).
     #[tokio::test(flavor = "multi_thread")]
     async fn reading_stops_once_shut_down() {
-        let (mut master, mut slave) = (0, 0);
-        // SAFETY: openpty fills in two descriptors; null name, termios and size are allowed.
-        let result = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
-        assert_eq!(result, 0);
-        // SAFETY: just opened, and owned by nothing else.
-        let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+        let (master, slave) = crate::fd::test_pty();
         let terminal = watch(non_blocking_copy(master.as_raw_fd()).unwrap()).unwrap();
         let (io, _input, output, _events) = TermIo::detached((80, 24));
         let sink = io.sink();
