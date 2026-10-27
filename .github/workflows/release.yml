@@ -143,10 +143,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The packages CI downloaded on main, on this same runner (see ci.yml), since the runners'
+      # Ubuntu mirror is at times very slow. Not saved here: a tag's cache serves no other run.
+      - name: Restore Linux packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: apt-ubuntu-22.04
+          restore-keys: apt-ubuntu-22.04-
       - name: Linux libraries
         run: |
+          mkdir -p ~/apt-archives/partial
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev libxdo-dev librsvg2-dev libdbus-1-dev
+          sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-archives" libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev libxdo-dev librsvg2-dev libdbus-1-dev
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12

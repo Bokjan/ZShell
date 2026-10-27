@@ -48,12 +48,37 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # What Tauri needs on Linux (WebKitGTK, GTK), and libdbus for Tao.
+      # What Tauri needs on Linux (WebKitGTK, GTK), and libdbus for Tao. The packages downloaded
+      # are kept from run to run, since the runners' Ubuntu mirror is at times very slow (over
+      # 20 minutes for them): only those Ubuntu updated since are downloaded. The release
+      # restores them too, under the same key.
+      - name: Restore Linux packages
+        id: apt-cache
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: apt-${{ matrix.os }}
+          restore-keys: apt-${{ matrix.os }}-
       - name: Linux libraries
         if: runner.os == 'Linux'
         run: |
+          # Into a folder of the runner's own, which the cache can read (apt's `partial` folder
+          # is closed to it). Packages Ubuntu no longer has are dropped, so it doesn't grow.
+          archives=(-o Dir::Cache::Archives="$HOME/apt-archives" -o APT::Keep-Downloaded-Packages=true)
+          mkdir -p ~/apt-archives/partial
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev libxdo-dev librsvg2-dev libdbus-1-dev
+          sudo apt-get install -y "${archives[@]}" libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev libxdo-dev librsvg2-dev libdbus-1-dev
+          sudo apt-get autoclean "${archives[@]}"
+          # The cache's key: the packages' file names, which hold their versions.
+          echo "APT_PACKAGES=apt-${{ matrix.os }}-$(ls ~/apt-archives/*.deb | xargs -n1 basename | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
+      # Saved from main only, as Rust's cache below, and only when packages changed.
+      - name: Save Linux packages
+        if: runner.os == 'Linux' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-matched-key != env.APT_PACKAGES
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: ${{ env.APT_PACKAGES }}
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12
