@@ -185,6 +185,9 @@ impl SessionSink {
         message.push(OUTPUT);
         message.extend_from_slice(bytes);
         // Counted and sent under the lock, so that a move falls before both or after both.
+        // Sending never waits for the main thread: off it, the message is only posted to the
+        // event loop. Tauri's `tracing` feature would make it wait for the web view's answer,
+        // and the main thread, which takes this lock to move a session, could then wait here.
         let channel = self.channel.lock().unwrap();
         self.flow.sent(bytes.len());
         // A send error means the frontend is gone; the session will be closed shortly.
