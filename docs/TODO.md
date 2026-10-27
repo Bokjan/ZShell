@@ -10,6 +10,7 @@
 |---|---|---|
 | 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥；上游还没有 issue |
 | 等待上游 | SSH：一个通道窗口用完，整条连接的发送都停下 | 给 russh 报 issue；上游还没有 |
+| 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 给 russh 报 issue 或提 PR；上游还没有 |
 | 等待上游 | CI：pnpm/action-setup 停在 v6.0.10 | pnpm/action-setup#291 修复后合入 Dependabot 的 PR |
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
@@ -34,6 +35,14 @@
 - **原因**：russh 0.65.0 客户端主循环（`client/mod.rs` 约 1429 行）只要任何一个通道有待发数据（`has_any_pending_data()`），就不再从 `Handle` 的队列（`receiver`、`inbound_channel_receiver`）取消息，而我们发起的通道的数据、开通道请求都走这条队列。keepalive 由主循环自己发，不受影响；`ssh/liveness.rs` 的检查发的请求却走这条队列，发不出去，这时检查不下结论，不会把连接当成断线。
 - **处理**：给 russh 报 issue，提议只暂停窗口用完的那个通道。上游不修时再看能否在转发里给每条连接限速或设超时。
 - **登记**：2026-10-23（排查睡眠唤醒后连接假死时发现，那次的原因不是这个）。
+
+### SSH：一个通道没读，整条连接的接收都停下（已绕过）
+
+- **现象**：终端输出积压到暂停读取（`session::Flow`）时，同一连接上的 SFTP、端口转发和复制出来的标签页一起停住，直到终端赶上。这是 ARCHITECTURE.md「背压」里写的代价。
+- **原因**：russh 0.65.0 收到 `CHANNEL_DATA` 时（`client/encrypted.rs` 约 590 行），只要窗口降到一半以下，就立即发 `WINDOW_ADJUST`（`session.rs` 的 `adjust_window_size`），不管应用读没读走；随后用 `chan.send(...).await` 把数据放进按条数计的有界队列，队列满了，整个连接任务就停在这里。SSH 本有按通道的窗口，却没有用来做背压，所以我们只能停读整条连接。`Handler::adjust_window` 帮不上忙：它只能改下次的目标大小，而 0.65 调整时用的是 `config.window_size`，返回值没有生效；russh 也没有手动发窗口调整的公开 API。
+- **绕过**：`ssh::KeepReading`（Windows、Linux 拖出文件时照常读）；SFTP 打开通道的超时只计 russh 等服务器的时间（`ssh::Connection::waited_for_server`）。后者仍有漏洞：经跳板机的连接，跳板机自己的标签页积压输出时，内层连接看起来在等服务器，计时照算，可能误报 `sftp.openTimeout`；需要跳板机上的标签页积压 30 秒以上，暂不处理。
+- **处理**：像 OpenSSH 那样，按应用读走的量调整窗口：通道读端被消费时通知会话任务再发 `WINDOW_ADJUST`，通道队列改为按字节计、上限即窗口（超出窗口的数据丢弃或关通道），连接任务不再因某个通道没读而阻塞。改动在 russh 的收数据路径，先给上游报 issue 问维护者的意见，再决定提 PR 还是用 `[patch]` 维护分支（Apache-2.0，可以修改后分发）。russh 支持后，`bridge` 暂停时只需不读，删掉 `KeepReading`，`waited_for_server` 不必再排除本地卡顿，ARCHITECTURE.md 的「背压」一条随之改写。与上一条（发送方向）同在 russh 的连接主循环，可以一起提。
+- **登记**：2026-10-27（评审 3.16.0 的改动时查明）。
 
 ### SSH：重交换时不比对主机密钥
 
