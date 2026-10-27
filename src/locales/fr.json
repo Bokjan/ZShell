@@ -495,6 +495,8 @@
     "folderKind": "Dossier",
     "notConnectedYet": "Les fichiers distants seront disponibles une fois la connexion établie",
     "disconnected": "Déconnecté",
+    "back": "Précédent ({shortcut})",
+    "forward": "Suivant ({shortcut})",
     "parentFolder": "Dossier parent",
     "refresh": "Actualiser",
     "goToTerminalFolder": "Aller au dossier du terminal",

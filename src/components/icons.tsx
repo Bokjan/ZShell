@@ -184,11 +184,21 @@ export function HelpIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-/** An arrow pointing up or down: moving up a folder or a list, the previous or next match, uploads and downloads. */
-export function ArrowIcon({ direction, size = 14 }: { direction: "up" | "down"; size?: number }) {
+const ARROWS = {
+  up: "M8 13V3M4 7l4-4 4 4",
+  down: "M8 3v10M4 9l4 4 4-4",
+  left: "M13 8H3M7 4L3 8l4 4",
+  right: "M3 8h10M9 4l4 4-4 4",
+};
+
+/**
+ * An arrow: moving up a folder or a list, back and forward through folders, the previous or
+ * next match, uploads and downloads.
+ */
+export function ArrowIcon({ direction, size = 14 }: { direction: keyof typeof ARROWS; size?: number }) {
   return (
     <Svg size={size}>
-      <path d={direction === "up" ? "M8 13V3M4 7l4-4 4 4" : "M8 3v10M4 9l4 4 4-4"} />
+      <path d={ARROWS[direction]} />
     </Svg>
   );
 }

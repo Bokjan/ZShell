@@ -481,6 +481,8 @@
     "folderKind": "Folder",
     "notConnectedYet": "Remote files are available once connected",
     "disconnected": "Disconnected",
+    "back": "Back ({shortcut})",
+    "forward": "Forward ({shortcut})",
     "parentFolder": "Parent folder",
     "refresh": "Refresh",
     "goToTerminalFolder": "Go to the terminal's folder",

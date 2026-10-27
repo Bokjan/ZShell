@@ -481,6 +481,8 @@
     "folderKind": "Ordner",
     "notConnectedYet": "Remote-Dateien sind verfügbar, sobald eine Verbindung besteht",
     "disconnected": "Getrennt",
+    "back": "Zurück ({shortcut})",
+    "forward": "Vorwärts ({shortcut})",
     "parentFolder": "Übergeordneter Ordner",
     "refresh": "Aktualisieren",
     "goToTerminalFolder": "Zum Ordner des Terminals",

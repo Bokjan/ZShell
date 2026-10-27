@@ -18,7 +18,7 @@
   .search-flag.on,
   .scheme-card.on,
   .path-suggestion.selected,
-  .sftp-toolbar .icon-button.on,
+  .sftp-view-buttons .icon-button.on,
   .tree-row.drop-into,
   .sftp-list tbody tr.drop-target,
   .sftp-toolbar .icon-button.drop-target {

@@ -6,7 +6,7 @@ import { announce } from "../lib/announce";
 import { sftp, type FileEntry, type SessionId } from "../ipc/api";
 import type { SftpDetail, SftpTraffic, TrafficMeter } from "../lib/traffic";
 import { open } from "../ipc/fileDialog";
-import { historyKey } from "../lib/folderHistory";
+import { historyKey, historyKeyLabel } from "../lib/folderHistory";
 import { isKey } from "../lib/keys";
 import { filterEntries, sortedEntries, storeView, storedView, type FileView, type SortKey } from "../lib/fileList";
 import { clicked, movedTo, NO_SELECTION, pressed, selectOnly, type Selection } from "../lib/fileSelection";
@@ -98,7 +98,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
     },
     startDir,
   );
-  const { cwd, entries, loading, error, fail, load, reload, go } = listing;
+  const { cwd, entries, loading, error, fail, load, reload, go, canGoBack, canGoForward } = listing;
   useMouseNavigation(panelRef, (forward) => go(forward ? 1 : -1));
   const shellFollow = useShellFollow({
     paneKey,
@@ -369,6 +369,22 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
     <div className={`sftp-panel${dragOver && !dropDir ? " drag-over" : ""}`} ref={panelRef}>
       <div className="sftp-toolbar">
         <IconButton
+          className="icon-button"
+          label={t("sftp.back", { shortcut: historyKeyLabel(-1, isMac, t("keys.alt")) })}
+          disabled={!connected || !canGoBack}
+          onClick={() => go(-1)}
+        >
+          <ArrowIcon direction="left" />
+        </IconButton>
+        <IconButton
+          className="icon-button"
+          label={t("sftp.forward", { shortcut: historyKeyLabel(1, isMac, t("keys.alt")) })}
+          disabled={!connected || !canGoForward}
+          onClick={() => go(1)}
+        >
+          <ArrowIcon direction="right" />
+        </IconButton>
+        <IconButton
           className={`icon-button${parent && dropDir === parent ? " drop-target" : ""}`}
           label={t("sftp.parentFolder")}
           disabled={!parent}
@@ -380,6 +396,53 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
         <div className="sftp-toolbar-rest">
           <IconButton className="icon-button" label={t("sftp.refresh")} disabled={!cwd} onClick={reload}>
             <RefreshIcon />
+          </IconButton>
+          <form
+            className="sftp-path"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void load(listing.pathInput.trim() || ".");
+            }}
+          >
+            <PathField
+              sessionId={sessionId}
+              value={listing.pathInput}
+              onChange={listing.setPathInput}
+              onGo={(path) => void load(path)}
+              onEditing={listing.setEditing}
+              showHidden={view.showHidden}
+            />
+          </form>
+          {/* Where dragged files go, over the refresh button and the path: a place for the
+            folder shown, which the list's folders may leave none of, that doesn't move the
+            list. The parent folder's button before them is a place of its own. */}
+          {dragOver && (
+            <div className={`sftp-drop-zone${dropDir ? "" : " drop-target"}`}>
+              <span>{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="sftp-actions">
+        <UploadButton disabled={!connected || !cwd} onUpload={(directory) => void pickAndUpload(directory)} />
+        <button disabled={!connected || !cwd} onClick={() => setNewFolder("")}>
+          {t("sftp.newFolder")}
+        </button>
+        <div className="sftp-view-buttons">
+          <IconButton
+            className={`icon-button${filter !== null ? " on" : ""}`}
+            label={t("sftp.filter")}
+            aria-pressed={filter !== null}
+            onClick={() => (filter === null ? openFilter() : closeFilter())}
+          >
+            <SearchIcon />
+          </IconButton>
+          <IconButton
+            className="icon-button"
+            label={view.showHidden ? t("sftp.hideHiddenFiles") : t("sftp.showHiddenFiles")}
+            onClick={() => changeView({ showHidden: !view.showHidden })}
+          >
+            <EyeIcon crossed={!view.showHidden} />
           </IconButton>
           <IconButton
             className="icon-button"
@@ -401,52 +464,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
           >
             <LinkIcon />
           </IconButton>
-          <form
-            className="sftp-path"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void load(listing.pathInput.trim() || ".");
-            }}
-          >
-            <PathField
-              sessionId={sessionId}
-              value={listing.pathInput}
-              onChange={listing.setPathInput}
-              onGo={(path) => void load(path)}
-              onEditing={listing.setEditing}
-              showHidden={view.showHidden}
-            />
-          </form>
-          <IconButton
-            className={`icon-button${filter !== null ? " on" : ""}`}
-            label={t("sftp.filter")}
-            aria-pressed={filter !== null}
-            onClick={() => (filter === null ? openFilter() : closeFilter())}
-          >
-            <SearchIcon />
-          </IconButton>
-          <IconButton
-            className="icon-button"
-            label={view.showHidden ? t("sftp.hideHiddenFiles") : t("sftp.showHiddenFiles")}
-            onClick={() => changeView({ showHidden: !view.showHidden })}
-          >
-            <EyeIcon crossed={!view.showHidden} />
-          </IconButton>
-          {/* Where dragged files go, over the toolbar but for the parent folder's button: a
-            place for the folder shown, which the list's folders may leave none of, that
-            doesn't move the list. */}
-          {dragOver && (
-            <div className={`sftp-drop-zone${dropDir ? "" : " drop-target"}`}>
-              <span>{t("sftp.dropHint", { path: dropDir ?? cwd ?? "" })}</span>
-            </div>
-          )}
         </div>
-      </div>
-      <div className="sftp-actions">
-        <UploadButton disabled={!connected || !cwd} onUpload={(directory) => void pickAndUpload(directory)} />
-        <button disabled={!connected || !cwd} onClick={() => setNewFolder("")}>
-          {t("sftp.newFolder")}
-        </button>
         <TrafficLights
           className="sftp-traffic"
           source={traffic?.browse}

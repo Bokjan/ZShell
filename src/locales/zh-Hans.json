@@ -467,6 +467,8 @@
     "folderKind": "文件夹",
     "notConnectedYet": "连接后即可查看远程文件",
     "disconnected": "已断开连接",
+    "back": "后退（{shortcut}）",
+    "forward": "前进（{shortcut}）",
     "parentFolder": "上级文件夹",
     "refresh": "刷新",
     "goToTerminalFolder": "转到终端所在文件夹",

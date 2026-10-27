@@ -467,6 +467,8 @@
     "folderKind": "フォルダー",
     "notConnectedYet": "接続するとリモートファイルを表示できます",
     "disconnected": "切断済み",
+    "back": "戻る（{shortcut}）",
+    "forward": "進む（{shortcut}）",
     "parentFolder": "親フォルダー",
     "refresh": "更新",
     "goToTerminalFolder": "ターミナルのフォルダーへ移動",

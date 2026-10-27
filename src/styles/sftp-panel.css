@@ -28,7 +28,7 @@
   gap: 2px;
   padding: 6px 8px 4px;
 }
-/* All but the parent folder's button, which the drop zone covers. */
+/* After the parent folder's button: what the drop zone covers. */
 .sftp-toolbar-rest {
   position: relative;
   flex: 1;
@@ -98,11 +98,12 @@
 .sftp-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   padding: 2px 8px 8px;
   border-bottom: 1px solid var(--border);
 }
-.sftp-actions button {
+.sftp-actions button:not(.icon-button) {
   display: inline-flex;
   align-items: center;
   padding: 3px 10px;
@@ -112,11 +113,17 @@
   background: var(--bg-active);
   font-size: calc(12px * var(--text-scale));
 }
-.sftp-traffic {
-  align-self: center;
+/* How the list is shown and its terminal, at the end of the row. */
+.sftp-view-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
 }
-.sftp-toolbar .icon-button.on {
+.sftp-traffic {
+  align-self: center;
+}
+.sftp-view-buttons .icon-button.on {
   background: var(--bg-active);
   color: var(--text);
 }

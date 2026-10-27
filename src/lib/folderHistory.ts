@@ -65,3 +65,7 @@ export function historyKey(e: HistoryKey, mac: boolean): -1 | 1 | null {
   if (!e.metaKey) return null;
   return isKey(e, "[") ? -1 : isKey(e, "]") ? 1 : null;
 }
+
+/** The keys of `historyKey` as tooltips write them: "⌘[", or "Alt+←" with `alt` the Alt key's name. */
+export const historyKeyLabel = (step: -1 | 1, mac: boolean, alt: string): string =>
+  mac ? (step < 0 ? "⌘[" : "⌘]") : `${alt}+${step < 0 ? "←" : "→"}`;

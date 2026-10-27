@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { HISTORY_LIMIT, historyKey, NO_HISTORY, stepFrom, visited, wentTo, type FolderHistory, type HistoryKey } from "./folderHistory";
+import {
+  HISTORY_LIMIT,
+  historyKey,
+  historyKeyLabel,
+  NO_HISTORY,
+  stepFrom,
+  visited,
+  wentTo,
+  type FolderHistory,
+  type HistoryKey,
+} from "./folderHistory";
 
 const history = (paths: string[], index = paths.length - 1): FolderHistory => ({ paths, index });
 
@@ -94,5 +104,14 @@ describe("historyKey", () => {
     expect(historyKey(press("[", "BracketLeft", { metaKey: true, ctrlKey: true }), true)).toBeNull();
     expect(historyKey(press("ArrowLeft", "ArrowLeft", { altKey: true, ctrlKey: true }), false)).toBeNull();
     expect(historyKey(press("ArrowLeft", "ArrowLeft"), false)).toBeNull();
+  });
+});
+
+describe("historyKeyLabel", () => {
+  it("writes the keys as each platform does", () => {
+    expect(historyKeyLabel(-1, true, "Alt")).toBe("⌘[");
+    expect(historyKeyLabel(1, true, "Alt")).toBe("⌘]");
+    expect(historyKeyLabel(-1, false, "Alt")).toBe("Alt+←");
+    expect(historyKeyLabel(1, false, "Alt")).toBe("Alt+→");
   });
 });

@@ -38,6 +38,8 @@ export function useSftpListing(
   /** Counts listings asked for: only the latest one's answer is shown. */
   const seqRef = useRef(0);
   const historyRef = useRef(NO_HISTORY);
+  /** `historyRef`'s value, for showing which ways there are folders to go. */
+  const [history, setHistory] = useState(NO_HISTORY);
   /**
    * Where in the history a step back or forward goes, while its listing is on its way: a
    * second step goes on from there, rather than to the same folder again.
@@ -63,6 +65,7 @@ export function useSftpListing(
           if (listing.path !== cwdRef.current) onNewFolderRef.current();
           historyRef.current =
             historyIndex == null ? visited(historyRef.current, listing.path) : wentTo(historyRef.current, historyIndex, listing.path);
+          setHistory(historyRef.current);
           setCwd(listing.path);
           if (!editingRef.current) setPathInput(listing.path);
           setEntries(listing.entries);
@@ -145,5 +148,24 @@ export function useSftpListing(
     editingRef.current = editing;
   };
 
-  return { cwd, cwdRef, pathInput, setPathInput, setEditing, entries, loading, error, setError, fail, load, reload, go };
+  const canGoBack = stepFrom(history, history.index, -1) !== null;
+  const canGoForward = stepFrom(history, history.index, 1) !== null;
+
+  return {
+    cwd,
+    cwdRef,
+    pathInput,
+    setPathInput,
+    setEditing,
+    entries,
+    loading,
+    error,
+    setError,
+    fail,
+    load,
+    reload,
+    go,
+    canGoBack,
+    canGoForward,
+  };
 }
