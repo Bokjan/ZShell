@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { errorMessage, sftp, type FileEntry, type SessionId } from "../../ipc/api";
+import { errorCode, errorMessage, sftp, type FileEntry, type SessionId } from "../../ipc/api";
 import { attempt } from "../../lib/attempt";
-import { NO_HISTORY, stepFrom, visited, wentTo } from "../../lib/folderHistory";
+import { forgot, NO_HISTORY, stepFrom, visited, wentTo } from "../../lib/folderHistory";
 import { useLatest } from "../../hooks/latest";
 
 /**
@@ -10,7 +10,8 @@ import { useLatest } from "../../hooks/latest";
  * shown (not when the same one is listed again), to start its selection afresh. The panel
  * opens in `startDir` (the terminal's folder), or in the remote home folder without one or if
  * it can't be listed. The folders shown are kept for going back and forward (`go`): every other
- * folder listed, however it was opened, as following the terminal opens one too.
+ * folder listed, however it was opened, as following the terminal opens one too; one found
+ * gone (`sftp.notFound`) is forgotten.
  */
 export function useSftpListing(
   sessionId: SessionId | null,
@@ -74,7 +75,12 @@ export function useSftpListing(
         },
         {
           onError: (e) => {
-            if (stale() || quiet) return false;
+            if (stale()) return false;
+            if (errorCode(e) === "sftp.notFound") {
+              historyRef.current = forgot(historyRef.current, path);
+              setHistory(historyRef.current);
+            }
+            if (quiet) return false;
             if (!editingRef.current) setPathInput(cwdRef.current ?? "");
             fail(e);
             return false;

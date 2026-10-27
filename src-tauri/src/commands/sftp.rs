@@ -59,7 +59,11 @@ pub async fn sftp_list(
     path: String,
 ) -> Result<Listing> {
     let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
-    sftp::list(&sftp, &path).await.map_err(|e| Error::from(e.context(Error::new("sftp.listFailed").param("path", &path))))
+    sftp::list(&sftp, &path).await.map_err(|e| {
+        // Told apart, so that the panel forgets a folder gone since (one gone back to, say).
+        let code = if sftp::is_gone(&e) { "sftp.notFound" } else { "sftp.listFailed" };
+        Error::from(e.context(Error::new(code).param("path", &path)))
+    })
 }
 
 #[tauri::command]

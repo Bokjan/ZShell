@@ -173,6 +173,7 @@
       "openFailed": "SFTPチャネルを開けません",
       "openTimeout": "サーバーでSFTPチャネルを開く処理がタイムアウトしました",
       "listFailed": "{path}を一覧表示できません",
+      "notFound": "{path}は存在しません",
       "mkdirFailed": "フォルダー{path}を作成できません",
       "renameFailed": "{from}の名前を{to}に変更できません",
       "removeFailed": "{path}を削除できません",

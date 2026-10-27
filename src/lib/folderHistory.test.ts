@@ -4,6 +4,7 @@ import {
   HISTORY_LIMIT,
   historyKey,
   historyKeyLabel,
+  forgot,
   NO_HISTORY,
   stepFrom,
   visited,
@@ -50,6 +51,37 @@ describe("stepFrom", () => {
     expect(stepFrom(h, 0, -1)).toBeNull();
     expect(stepFrom(h, 2, 1)).toBeNull();
     expect(stepFrom(NO_HISTORY, -1, 1)).toBeNull();
+  });
+});
+
+describe("forgot", () => {
+  it("drops the folder, keeping the one shown in place", () => {
+    expect(forgot(history(["/a", "/b", "/c"], 2), "/a")).toEqual(history(["/b", "/c"], 1));
+    expect(forgot(history(["/a", "/b", "/c"], 0), "/c")).toEqual(history(["/a", "/b"], 0));
+  });
+
+  it("drops every place of it and the folders in it, but not those whose names only start alike", () => {
+    expect(forgot(history(["/a", "/x", "/x/y", "/xy", "/x", "/b"], 5), "/x")).toEqual(history(["/a", "/xy", "/b"], 2));
+  });
+
+  it("keeps the folder shown, even inside the one gone", () => {
+    expect(forgot(history(["/x", "/a", "/x/y"], 2), "/x")).toEqual(history(["/a", "/x/y"], 1));
+  });
+
+  it("makes one of the same folder left side by side", () => {
+    expect(forgot(history(["/a", "/x", "/a", "/b"], 3), "/x")).toEqual(history(["/a", "/b"], 1));
+    expect(forgot(history(["/a", "/x", "/a"], 2), "/x")).toEqual(history(["/a"], 0));
+  });
+
+  it("leaves nothing to go back to once the only folder that way is gone", () => {
+    const h = forgot(history(["/x", "/a"], 1), "/x");
+    expect(stepFrom(h, h.index, -1)).toBeNull();
+  });
+
+  it("changes nothing for a folder not in it", () => {
+    const h = history(["/a", "/b"]);
+    expect(forgot(h, "/c")).toBe(h);
+    expect(forgot(h, "/b")).toBe(h);
   });
 });
 

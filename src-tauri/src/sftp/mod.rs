@@ -13,8 +13,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures_util::{StreamExt, TryStreamExt};
+use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::FileAttributes;
+use russh_sftp::protocol::{FileAttributes, StatusCode};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -74,6 +75,14 @@ pub fn is_folder_id(id: &str) -> bool {
 /// Symlinks whose targets are looked up at once when listing, rather than one round trip
 /// after another (a folder such as `/usr/lib` has hundreds).
 const SYMLINK_LOOKUPS: usize = 16;
+
+/// Whether `e` comes from the server saying a path doesn't exist. OpenSSH says so also of a
+/// folder's path that leads to a file now.
+pub fn is_gone(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        matches!(cause.downcast_ref::<SftpError>(), Some(SftpError::Status(status)) if status.status_code == StatusCode::NoSuchFile)
+    })
+}
 
 pub async fn list(sftp: &Arc<SftpSession>, path: &str) -> Result<Listing> {
     let path = sftp.canonicalize(path).await?;
@@ -195,6 +204,30 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
         result.unwrap();
         assert!(gone && kept);
+    }
+
+    /// A folder gone, or turned into a file, is told apart from one that can't be listed for
+    /// another reason. Skipped without `sftp-server`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_gone_folder_is_told_apart() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let Some(sftp) = replace::tests::local_sftp_server().await else { return };
+        let root = std::env::temp_dir().join(format!("zshell-gone-{}", uuid::Uuid::new_v4()));
+        let shut = root.join("shut");
+        std::fs::create_dir_all(&shut).unwrap();
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::fs::write(root.join("file"), "x").unwrap();
+        let sftp = Arc::new(sftp);
+        let gone = async |name: &str| list(&sftp, root.join(name).to_str().unwrap()).await.err().map(|e| is_gone(&e));
+        let results = (gone("missing").await, gone("file").await, gone("shut").await, gone("").await);
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        // Root reads a folder without permissions all the same.
+        // SAFETY: geteuid takes nothing and always succeeds.
+        let shut_fails = (unsafe { libc::geteuid() } != 0).then_some(false);
+        assert_eq!(results, (Some(true), Some(true), shut_fails, None));
     }
 
     #[test]

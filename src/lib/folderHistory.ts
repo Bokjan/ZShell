@@ -41,6 +41,24 @@ export function wentTo(history: FolderHistory, index: number, path: string): Fol
   return { paths, index };
 }
 
+/**
+ * The folder at `path` turned out to be gone: it and the folders in it leave the history, but
+ * for the one shown, so that going back or forward skips them and is off once none is left
+ * that way. Two places of one folder that end up side by side become one.
+ */
+export function forgot(history: FolderHistory, path: string): FolderHistory {
+  const inside = path.endsWith("/") ? path : `${path}/`;
+  const paths: string[] = [];
+  let index = -1;
+  history.paths.forEach((p, i) => {
+    const shown = i === history.index;
+    if (!shown && (p === path || p.startsWith(inside))) return;
+    if (paths[paths.length - 1] !== p) paths.push(p);
+    if (shown) index = paths.length - 1;
+  });
+  return paths.length === history.paths.length ? history : { paths, index };
+}
+
 /** What of a key press `historyKey` reads. */
 export interface HistoryKey {
   key: string;

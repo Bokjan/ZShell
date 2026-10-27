@@ -173,6 +173,7 @@
       "openFailed": "Es kann kein SFTP-Kanal geöffnet werden",
       "openTimeout": "Der Server hat zu lange gebraucht, um einen SFTP-Kanal zu öffnen",
       "listFailed": "{path} kann nicht aufgelistet werden",
+      "notFound": "{path} existiert nicht",
       "mkdirFailed": "Der Ordner {path} kann nicht erstellt werden",
       "renameFailed": "{from} kann nicht in {to} umbenannt werden",
       "removeFailed": "{path} kann nicht gelöscht werden",

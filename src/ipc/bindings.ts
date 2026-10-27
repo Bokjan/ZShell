@@ -120,6 +120,7 @@ export type ErrorCode =
   | "sftp.chmodFailed"
   | "sftp.listFailed"
   | "sftp.mkdirFailed"
+  | "sftp.notFound"
   | "sftp.openFailed"
   | "sftp.openTimeout"
   | "sftp.removeFailed"

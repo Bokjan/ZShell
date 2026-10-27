@@ -173,6 +173,7 @@
       "openFailed": "无法打开 SFTP 通道",
       "openTimeout": "服务器打开 SFTP 通道超时",
       "listFailed": "无法列出 {path}",
+      "notFound": "{path} 不存在",
       "mkdirFailed": "无法创建文件夹 {path}",
       "renameFailed": "无法将 {from} 重命名为 {to}",
       "removeFailed": "无法删除 {path}",
