@@ -171,6 +171,7 @@
     "sftp": {
       "unsupported": "Der Server unterstützt kein SFTP",
       "openFailed": "Es kann kein SFTP-Kanal geöffnet werden",
+      "openTimeout": "Der Server hat zu lange gebraucht, um einen SFTP-Kanal zu öffnen",
       "listFailed": "{path} kann nicht aufgelistet werden",
       "mkdirFailed": "Der Ordner {path} kann nicht erstellt werden",
       "renameFailed": "{from} kann nicht in {to} umbenannt werden",

@@ -1,10 +1,10 @@
 //! An SSH server in the test process and connections to it, for the tests of what runs on a
-//! connection: shells here, port forwarding in `crate::forward` and `crate::connections`. The
-//! client is ZShell's own (`ClientHandler`), taking the server's key without reading the
-//! user's known_hosts.
+//! connection: shells here, port forwarding in `crate::forward` and `crate::connections`, SFTP
+//! channels in `crate::sftp`. The client is ZShell's own (`ClientHandler`), taking the server's
+//! key without reading the user's known_hosts.
 
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -81,6 +81,56 @@ impl russh::server::Handler for Echoing {
             let (mut reader, mut writer) = tokio::io::split(channel.into_stream());
             let _ = tokio::io::copy(&mut reader, &mut writer).await;
         });
+        Ok(())
+    }
+}
+
+/// A server that lets anyone in and is slow to start SFTP, as one that is up but stuck: it
+/// opens session channels only after a while (or never), and never answers a request to start
+/// a subsystem on them. Counts the channels the client closes.
+pub struct Unanswering {
+    open: Option<Duration>,
+    closed: Arc<AtomicUsize>,
+    pending: Vec<russh::server::ChannelOpenHandle>,
+    channels: Vec<russh::Channel<russh::server::Msg>>,
+}
+
+impl Unanswering {
+    /// Opening each channel after `open`, never if `None`; and what counts the channels closed.
+    pub fn new(open: Option<Duration>) -> (Self, Arc<AtomicUsize>) {
+        let closed = Arc::new(AtomicUsize::new(0));
+        (Self { open, closed: closed.clone(), pending: Vec::new(), channels: Vec::new() }, closed)
+    }
+}
+
+impl russh::server::Handler for Unanswering {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+        Ok(russh::server::Auth::Accept)
+    }
+
+    async fn channel_open_session(
+        &mut self,
+        channel: russh::Channel<russh::server::Msg>,
+        reply: russh::server::ChannelOpenHandle,
+        _session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        match self.open {
+            None => self.pending.push(reply),
+            Some(after) => {
+                self.channels.push(channel);
+                tokio::spawn(async move {
+                    tokio::time::sleep(after).await;
+                    reply.accept().await;
+                });
+            }
+        }
+        Ok(())
+    }
+
+    async fn channel_close(&mut self, _channel: russh::ChannelId, _session: &mut russh::server::Session) -> Result<(), Self::Error> {
+        self.closed.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }

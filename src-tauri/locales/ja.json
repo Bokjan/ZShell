@@ -171,6 +171,7 @@
     "sftp": {
       "unsupported": "サーバーはSFTPに対応していません",
       "openFailed": "SFTPチャネルを開けません",
+      "openTimeout": "サーバーでSFTPチャネルを開く処理がタイムアウトしました",
       "listFailed": "{path}を一覧表示できません",
       "mkdirFailed": "フォルダー{path}を作成できません",
       "renameFailed": "{from}の名前を{to}に変更できません",

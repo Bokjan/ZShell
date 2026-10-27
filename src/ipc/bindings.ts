@@ -121,6 +121,7 @@ export type ErrorCode =
   | "sftp.listFailed"
   | "sftp.mkdirFailed"
   | "sftp.openFailed"
+  | "sftp.openTimeout"
   | "sftp.removeFailed"
   | "sftp.renameFailed"
   | "sftp.unsupported"
