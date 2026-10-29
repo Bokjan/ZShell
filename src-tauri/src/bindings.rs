@@ -377,6 +377,11 @@ mod tests {
             ("The most records of the backend the debug log keeps.", "DEBUG_LOG_BACKEND_LINES", js(debug_log::BACKEND_LINES)),
             ("The most records of the pages the debug log keeps.", "DEBUG_LOG_FRONTEND_LINES", js(debug_log::FRONTEND_LINES)),
             (
+                "The menu bar's items that act on the debug log window while it has the focus (macOS).",
+                "DEBUG_LOG_MENU_ACTIONS",
+                format!("{} as const", js(menu::DEBUG_LOG_ACTIONS)),
+            ),
+            (
                 "How many of a forwarding rule's channels its traffic reports list.",
                 "FORWARD_CHANNELS_LISTED",
                 js(session::FORWARD_CHANNELS_LISTED),

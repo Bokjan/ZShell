@@ -1270,7 +1270,7 @@ export type Commands = {
   config_directory: { args: Record<string, never>; result: string };
   config_set_aside: { args: Record<string, never>; result: SetAsideFile[] };
   credential_store_available: { args: Record<string, never>; result: boolean };
-  debug_log_clear: { args: { source: DebugLogSource }; result: void };
+  debug_log_clear: { args: { source: DebugLogSource }; result: number };
   debug_log_open: { args: Record<string, never>; result: void };
   debug_log_snapshot: { args: Record<string, never>; result: DebugLogEntry[] };
   debug_log_write: { args: { records: DebugLogRecord[] }; result: void };
@@ -1437,6 +1437,9 @@ export const DEBUG_LOG_BACKEND_LINES = 10000;
 
 /** The most records of the pages the debug log keeps. */
 export const DEBUG_LOG_FRONTEND_LINES = 2000;
+
+/** The menu bar's items that act on the debug log window while it has the focus (macOS). */
+export const DEBUG_LOG_MENU_ACTIONS = ["find", "closeTab", "closeWindow", "debugLog"] as const;
 
 /** How many of a forwarding rule's channels its traffic reports list. */
 export const FORWARD_CHANNELS_LISTED = 20;

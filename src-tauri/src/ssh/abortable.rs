@@ -70,7 +70,7 @@ pub struct Greeting {
 /// Reads [`Greeting`] from the bytes the server sent first.
 fn greeting(bytes: &[u8]) -> Greeting {
     let text = String::from_utf8_lossy(bytes);
-    let escaped = |before: &str| (!before.is_empty()).then(|| before.escape_debug().to_string());
+    let escaped = |before: &str| (!before.is_empty()).then(|| crate::debug_log::escape(before));
     let mut start = 0;
     for line in text.split_inclusive('\n') {
         if line.starts_with("SSH-") && line.ends_with('\n') {
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(version, Greeting { version: Some("SSH-2.0-OpenSSH_9.3".into()), before: None });
         let gateway = greeting(b"HTTP/1.1 403 Forbidden\r\nX-Rendered-By: gateway\r\n\r\nno\x1b[2J");
         assert_eq!(gateway.version, None);
-        assert_eq!(gateway.before.as_deref(), Some(r"HTTP/1.1 403 Forbidden\r\nX-Rendered-By: gateway\r\n\r\nno\u{1b}[2J"));
+        assert_eq!(gateway.before.as_deref(), Some(r"HTTP/1.1 403 Forbidden\r\nX-Rendered-By: gateway\r\n\r\nno\x1b[2J"));
         let banner = greeting(b"Welcome\r\nSSH-2.0-dropbear\r\n");
         assert_eq!((banner.version.as_deref(), banner.before.as_deref()), (Some("SSH-2.0-dropbear"), Some("Welcome")));
         // Not a whole line yet.

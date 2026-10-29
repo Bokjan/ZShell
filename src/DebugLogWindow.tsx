@@ -19,18 +19,20 @@ import { useLocale } from "./hooks/locale";
 import { useMediaQuery, useSettings } from "./hooks/settings";
 import { DRAG_REGION, useTitleBar } from "./hooks/titleBar";
 import { useWindowEvent } from "./hooks/windowEvents";
+import { DEBUG_LOG_MENU_ACTIONS } from "./ipc/bindings";
 import { debugLog } from "./ipc/debugLog";
 import { listenHere } from "./ipc/events";
 import { windows } from "./ipc/windows";
 import { announce } from "./lib/announce";
 import {
   addEntries,
+  clearUpTo,
   LEVELS,
+  nextWriting,
+  NO_LOGS,
   plainLine,
   shown,
   terminalLine,
-  toAppend,
-  written,
   type DebugLogFilter,
   type DebugLogs,
   type DebugLogSource,
@@ -38,7 +40,7 @@ import {
 } from "./lib/debugLog";
 import { fontLigatureRules } from "./lib/fontLigatureRules";
 import { isKey } from "./lib/keys";
-import { matches } from "./lib/keymap";
+import { matches, type MenuAction } from "./lib/keymap";
 import { ligatureRanges } from "./lib/ligatures";
 import type { ReadBack } from "./lib/readBack";
 import { isMac } from "./lib/platform";
@@ -56,6 +58,12 @@ const HIDE_CURSOR = "\x1b[?25l";
 const NO_FILTER: DebugLogFilter = { level: "debug", query: "" };
 
 /**
+ * The menu bar's items sent here (macOS, see `menu::chosen`): those this page handles, and the
+ * debug log's own, which finds it open. The others act on an app window.
+ */
+const MENU_ACTIONS: readonly MenuAction[] = DEBUG_LOG_MENU_ACTIONS;
+
+/**
  * The debug log window (`debug-log`, opened from the Help menu): the backend's and the pages'
  * records (see `debug_log/` in the backend), one side at a time, filtered by level and text.
  * They are written to a read-only terminal, in the terminal's font and colors, which draws
@@ -68,7 +76,7 @@ export function DebugLogWindow() {
   const { t } = useTranslation();
   const { settings, theme, screenReader } = useSettings();
   const { cjk, shortcutLabel } = useLocale();
-  const [logs, setLogs] = useState<DebugLogs>({ backend: [], frontend: [] });
+  const [logs, setLogs] = useState<DebugLogs>(NO_LOGS);
   const [source, setSource] = useState<DebugLogSource>("backend");
   const [filters, setFilters] = useState<Record<DebugLogSource, DebugLogFilter>>({ backend: NO_FILTER, frontend: NO_FILTER });
   // What is typed into the filter field, which the filter takes once typing pauses.
@@ -77,6 +85,8 @@ export function DebugLogWindow() {
   // Follows the view reading back through the records, for the button back to the end.
   const [readBack, setReadBack] = useState<ReadBack | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // How many of the side's records the filter shows, counted as they are written.
+  const [shownCount, setShownCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FullWidthFitAddon | null>(null);
@@ -199,24 +209,20 @@ export function DebugLogWindow() {
   }, [query, filter.query, source]);
 
   // New records are written at the end; anything else (another side or filter, records that
-  // came out of order, a cleared side) writes the terminal anew (see `toAppend`).
+  // came out of order, a cleared side) writes the terminal anew (see `nextWriting`).
   const list = logs[source];
   useEffect(() => {
     if (!terminal) return;
-    const fresh = toAppend(writtenRef.current, list, source, filter);
-    if (!fresh) {
+    const writing = nextWriting(writtenRef.current, logs, source, filter);
+    if (writing.anew) {
       terminal.reset();
       terminal.write(HIDE_CURSOR);
     }
-    const text = (fresh ?? list)
-      .filter((entry) => shown(entry, filter))
-      .map(terminalLine)
-      .join("");
+    const text = writing.entries.map(terminalLine).join("");
     if (text) terminal.write(text);
-    writtenRef.current = written(list, source, filter);
-  }, [terminal, list, source, filter]);
-
-  const visible = list.filter((entry) => shown(entry, filter));
+    writtenRef.current = writing.written;
+    setShownCount(writing.written.shown);
+  }, [terminal, logs, source, filter]);
 
   const focusFilter = () => {
     searchRef.current?.focus();
@@ -242,12 +248,15 @@ export function DebugLogWindow() {
     return () => window.removeEventListener("keydown", listener, true);
   }, []);
   useWindowEvent("menu-action", (action) => {
+    if (!MENU_ACTIONS.includes(action as MenuAction)) return;
     if (action === "find") focusFilter();
     else if (action === "closeTab" || action === "closeWindow") close();
   });
 
   const copyText = (text: string) => void writeText(text).catch(console.error);
+  // Filtered here rather than as the window renders, which new records do ten times a second.
   const copyShown = () => {
+    const visible = list.filter((entry) => shown(entry, filter));
     const text = visible.map(plainLine).join("\n");
     writeText(text).then(() => announce(t("debugLog.copied", { count: visible.length })), console.error);
   };
@@ -264,12 +273,12 @@ export function DebugLogWindow() {
     },
     { label: t("terminal.menu.selectAll"), shortcut: shortcutLabel("selectAll"), onSelect: () => term.selectAll() },
     "separator",
-    { label: t("debugLog.copyShown"), disabled: visible.length === 0, onSelect: copyShown },
+    { label: t("debugLog.copyShown"), disabled: shownCount === 0, onSelect: copyShown },
     { label: t("debugLog.clear"), disabled: list.length === 0, onSelect: () => clear() },
   ];
   const clear = () => {
-    debugLog.clear(source).then(() => {
-      setLogs((logs) => ({ ...logs, [source]: [] }));
+    debugLog.clear(source).then((upTo) => {
+      setLogs((logs) => clearUpTo(logs, source, upTo));
       announce(t("debugLog.cleared"));
     }, console.error);
   };
@@ -311,7 +320,7 @@ export function DebugLogWindow() {
           }}
         />
         <span className="debug-log-count" {...DRAG_REGION}>
-          {t("debugLog.count", { shown: visible.length, total: list.length })}
+          {t("debugLog.count", { shown: shownCount, total: list.length })}
         </span>
         <IconButton className="icon-button" label={t("debugLog.clear")} onClick={clear} disabled={list.length === 0}>
           <TrashIcon />

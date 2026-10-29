@@ -3,17 +3,19 @@ import { afterEach, describe as group, expect, it, vi } from "vitest";
 import { DEBUG_LOG_FRONTEND_LINES } from "../ipc/bindings";
 import {
   addEntries,
+  clearUpTo,
   clockTime,
   describe,
+  nextWriting,
+  NO_LOGS,
   plainLine,
   report,
   sendRecordsWith,
   shown,
   terminalLine,
-  toAppend,
   visible,
-  written,
   type DebugLogEntry,
+  type DebugLogFilter,
   type DebugLogs,
 } from "./debugLog";
 
@@ -33,7 +35,7 @@ const entry = (seq: number, fields: Partial<DebugLogEntry> = {}): DebugLogEntry 
 const seqs = (logs: DebugLogs) => ({ backend: logs.backend.map((e) => e.seq), frontend: logs.frontend.map((e) => e.seq) });
 
 group("addEntries", () => {
-  const empty: DebugLogs = { backend: [], frontend: [] };
+  const empty = NO_LOGS;
 
   it("adds each record to its side, in order and once", () => {
     const logs = addEntries(empty, [entry(1), entry(2, { source: "frontend" }), entry(3)]);
@@ -53,27 +55,54 @@ group("addEntries", () => {
   });
 });
 
-group("toAppend", () => {
-  const filter = { level: "debug" as const, query: "" };
-  const list = [entry(1), entry(2), entry(3)];
+it("drops what was cleared, even when it comes after", () => {
+  const logs = addEntries(NO_LOGS, [entry(1), entry(2, { source: "frontend" }), entry(3), entry(4)]);
+  // Record 4 came after the backend cleared up to 3, before its answer.
+  const cleared = clearUpTo(logs, "backend", 3);
+  expect(seqs(cleared)).toEqual({ backend: [4], frontend: [2] });
+  // A batch sent before the clearing, heard after.
+  expect(seqs(addEntries(cleared, [entry(2), entry(3), entry(5)]))).toEqual({ backend: [4, 5], frontend: [2] });
+  expect(clearUpTo(cleared, "backend", 1).clearedUpTo.backend).toBe(3);
+});
 
-  it("gives the records after those written", () => {
-    expect(toAppend(written([], "backend", filter), list, "backend", filter)).toEqual(list);
-    const shown = written(list.slice(0, 2), "backend", filter);
-    expect(toAppend(shown, list, "backend", filter)?.map((e) => e.seq)).toEqual([3]);
-    expect(toAppend(written(list, "backend", filter), list, "backend", filter)).toEqual([]);
-    // The oldest dropped at the side's limit.
-    expect(toAppend(shown, [entry(2), entry(3), entry(4)], "backend", filter)?.map((e) => e.seq)).toEqual([3, 4]);
+group("nextWriting", () => {
+  const filter = { level: "debug" as const, query: "" };
+  const warnings = { level: "warn" as const, query: "" };
+  const logsOf = (...entries: DebugLogEntry[]): DebugLogs => ({ ...NO_LOGS, backend: entries });
+  const ids = (writing: { entries: DebugLogEntry[] }) => writing.entries.map((e) => e.seq);
+  const at = (logs: DebugLogs, f: DebugLogFilter = filter) => nextWriting(null, logs, "backend", f).written;
+
+  it("adds the records after those written, counting those shown", () => {
+    const first = nextWriting(null, logsOf(entry(1), entry(2)), "backend", filter);
+    expect([first.anew, ids(first), first.written.shown]).toEqual([true, [1, 2], 2]);
+    const next = nextWriting(first.written, logsOf(entry(1), entry(2), entry(3)), "backend", filter);
+    expect([next.anew, ids(next), next.written.shown]).toEqual([false, [3], 3]);
+    // Nothing new for this side.
+    const same = nextWriting(next.written, { ...NO_LOGS, backend: next.written.list as DebugLogEntry[] }, "backend", filter);
+    expect([same.anew, ids(same)]).toEqual([false, []]);
+    // The oldest dropped at the side's limit stop counting.
+    const shifted = nextWriting(
+      at(logsOf(entry(1), entry(2), entry(3)), warnings),
+      logsOf(entry(2), entry(3), entry(4, { level: "warn" })),
+      "backend",
+      warnings,
+    );
+    expect([shifted.anew, ids(shifted), shifted.written.shown]).toEqual([false, [4], 1]);
+    const all = logsOf(entry(1, { level: "warn" }), entry(2, { level: "warn" }));
+    const replaced = nextWriting(at(all, warnings), logsOf(entry(5), entry(6, { level: "error" })), "backend", warnings);
+    expect([replaced.anew, ids(replaced), replaced.written.shown]).toEqual([false, [6], 1]);
   });
 
-  it("writes anew for another side or filter, records before the last written, or the last gone", () => {
-    const shown = written(list.slice(1), "backend", filter);
-    expect(toAppend(null, list, "backend", filter)).toBeNull();
-    expect(toAppend(shown, list, "frontend", filter)).toBeNull();
-    expect(toAppend(shown, list, "backend", { ...filter })).toBeNull();
+  it("writes anew for another side or filter, a cleared side, or records before the last written", () => {
+    const logs = logsOf(entry(1), entry(2), entry(3));
+    const written = at(logsOf(entry(2), entry(3)));
+    expect(nextWriting(written, logs, "frontend", filter).anew).toBe(true);
+    expect(nextWriting(written, logs, "backend", { ...filter }).anew).toBe(true);
     // The snapshot's record 1 came after the event's 2 and 3.
-    expect(toAppend(shown, list, "backend", filter)).toBeNull();
-    expect(toAppend(shown, [], "backend", filter)).toBeNull();
+    expect(nextWriting(written, logs, "backend", filter).anew).toBe(true);
+    // Cleared, with records written meanwhile kept.
+    const cleared = nextWriting(at(logs), clearUpTo(logsOf(entry(1), entry(2), entry(3), entry(4)), "backend", 2), "backend", filter);
+    expect([cleared.anew, ids(cleared), cleared.written.shown]).toEqual([true, [3, 4], 2]);
   });
 });
 

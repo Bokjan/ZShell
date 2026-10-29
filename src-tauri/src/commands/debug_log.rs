@@ -19,10 +19,11 @@ pub fn debug_log_snapshot() -> Vec<LogEntry> {
     debug_log::snapshot()
 }
 
-/// Forgets one side's records.
+/// Forgets one side's records; the `seq` up to which they are gone, for the window to drop
+/// those it has or is still sent.
 #[tauri::command]
-pub fn debug_log_clear(source: LogSource) {
-    debug_log::clear(source);
+pub fn debug_log_clear(source: LogSource) -> u64 {
+    debug_log::clear(source)
 }
 
 /// Records what this window's page reports.

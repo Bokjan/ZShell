@@ -3,9 +3,10 @@
 //! items get keys like ⌘W and ⌘Q before the web view does. The page sends it when it loads;
 //! until then the menu bar has only the system's items. Its items act on the window that last
 //! had the focus: the page runs the action (`menu-action`), except for Close Window and Quit,
-//! handled here so that they work whatever the page shows. An item that tells that window's
-//! state (terminal full screen) gets its label from it; the window's own full screen is
-//! labeled here (`show_full_screen`). Elsewhere the page draws the menu.
+//! handled here so that they work whatever the page shows; the debug log window takes only a few
+//! (see [`chosen`]). An item that tells that window's state (terminal full screen) gets its
+//! label from it; the window's own full screen is labeled here (`show_full_screen`). Elsewhere
+//! the page draws the menu.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -22,6 +23,9 @@ use crate::window;
 const QUIT: &str = "quit";
 /// Closed here; the page may ask first, and the last window closing quits.
 const CLOSE_WINDOW: &str = "closeWindow";
+/// The items that act on the debug log window while it has the focus (its page handles them,
+/// and finds itself already open); the others act on an app window, which comes forward.
+pub(crate) const DEBUG_LOG_ACTIONS: [&str; 4] = ["find", "closeTab", CLOSE_WINDOW, "debugLog"];
 /// The View menu, whose last item is the window's own full screen.
 #[cfg(target_os = "macos")]
 const VIEW_SUBMENU_ID: &str = "view";
@@ -274,10 +278,12 @@ pub fn show_full_screen(app: &AppHandle) {
     }
 }
 
-/// An item of the menu bar was chosen. While the debug log window has the focus, the items act
-/// on it (its page handles those it has, closing it and finding), Quit aside.
+/// An item of the menu bar was chosen. While the debug log window has the focus, those of
+/// [`DEBUG_LOG_ACTIONS`] act on it; the others bring the app window forward and act on it, so
+/// that what they show (a dialog, a new tab, the lock screen) is seen.
 pub fn chosen(app: &AppHandle, id: &str) {
-    if let Some(debug_log) = window::focused_debug_log(app).filter(|_| id != QUIT) {
+    let debug_log = window::focused_debug_log(app);
+    if let Some(debug_log) = debug_log.as_ref().filter(|_| DEBUG_LOG_ACTIONS.contains(&id)) {
         match id {
             CLOSE_WINDOW => drop(debug_log.close()),
             _ => events::emit_to(app, debug_log.label(), events::MenuAction(id.to_owned())),
@@ -290,6 +296,9 @@ pub fn chosen(app: &AppHandle, id: &str) {
         }
         return;
     };
+    if debug_log.is_some() {
+        let _ = current.set_focus();
+    }
     match id {
         QUIT => {
             events::emit_to(app, current.label(), events::QuitRequested);

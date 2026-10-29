@@ -161,16 +161,25 @@ impl State {
     fn push(&mut self, mut entry: LogEntry) -> bool {
         entry.seq = self.next_seq;
         self.next_seq += 1;
+        // At most what came within a `DELIVERY_INTERVAL`: `deliver` takes it all each time,
+        // whether or not the page reads what it is sent.
         if let Some(pending) = &mut self.pending {
-            // A window that stopped taking them (its page hung) doesn't grow this for good:
-            // it keeps at most what it would show.
-            if pending.len() < BACKEND_LINES + FRONTEND_LINES {
-                pending.push(entry.clone());
-            }
+            pending.push(entry.clone());
         }
         let watched = self.pending.is_some();
         self.ring(entry.source).push(entry);
         watched
+    }
+
+    /// Forgets `source`'s records, those waiting for the window too; returns the `seq` up to
+    /// which they are gone, by which the window drops them as well, those already on their way
+    /// to it included (`lib/debugLog.ts`).
+    fn clear(&mut self, source: LogSource) -> u64 {
+        self.ring(source).clear();
+        if let Some(pending) = &mut self.pending {
+            pending.retain(|entry| entry.source != source);
+        }
+        self.next_seq - 1
     }
 }
 
@@ -213,6 +222,24 @@ fn cut(mut message: String) -> String {
     message.truncate(end);
     message.push_str(&format!(" [cut short: {total} bytes]"));
     message
+}
+
+/// `text` on one line with its control characters shown as escapes (`\r`, `\n`, `\t`, `\x1b`),
+/// as the window shows those of the other records (`visible` in `lib/debugLog.ts`), for what a
+/// server sends that may be any bytes.
+pub fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\r' => out.push_str("\\r"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\u{2028}' | '\u{2029}' => out.push_str(&format!("\\u{{{:x}}}", c as u32)),
+            c if c.is_control() => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn record(entry: LogEntry) {
@@ -319,13 +346,9 @@ pub fn unwatch() {
     LOG.state.lock().unwrap().pending = None;
 }
 
-/// Forgets one side's records.
-pub fn clear(source: LogSource) {
-    let mut state = LOG.state.lock().unwrap();
-    state.ring(source).clear();
-    if let Some(pending) = &mut state.pending {
-        pending.retain(|entry| entry.source != source);
-    }
+/// Forgets one side's records; returns the `seq` of the last one forgotten (see [`State::clear`]).
+pub fn clear(source: LogSource) -> u64 {
+    LOG.state.lock().unwrap().clear(source)
 }
 
 /// Sends the open window what is recorded, every [`DELIVERY_INTERVAL`] at most.

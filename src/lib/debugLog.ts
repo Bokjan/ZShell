@@ -19,7 +19,14 @@ export type { DebugLogEntry, DebugLogLevel, DebugLogSource } from "../ipc/bindin
 export const LEVELS: readonly DebugLogLevel[] = ["error", "warn", "info", "debug"];
 
 /** The records the window has of each side, oldest first. */
-export type DebugLogs = Record<DebugLogSource, DebugLogEntry[]>;
+export interface DebugLogs {
+  backend: DebugLogEntry[];
+  frontend: DebugLogEntry[];
+  /** Each side's `seq` up to which its records were cleared, 0 if never: those are dropped as they come. */
+  clearedUpTo: Record<DebugLogSource, number>;
+}
+
+export const NO_LOGS: DebugLogs = { backend: [], frontend: [], clearedUpTo: { backend: 0, frontend: 0 } };
 
 /** What the window shows of a side: the least a record must matter, and text its line must have (any case). */
 export interface DebugLogFilter {
@@ -32,13 +39,13 @@ const LIMITS: Record<DebugLogSource, number> = { backend: DEBUG_LOG_BACKEND_LINE
 /**
  * `logs` with `entries` added, each to its side, in order and once (a record may come both in
  * the snapshot and in an event, in either order), keeping the latest within the backend's
- * limits. Unchanged when nothing is new.
+ * limits and leaving out those cleared. Unchanged when nothing is new.
  */
 export function addEntries(logs: DebugLogs, entries: readonly DebugLogEntry[]): DebugLogs {
   let next = logs;
   for (const source of ["backend", "frontend"] as const) {
     const list = logs[source];
-    const added = entries.filter((entry) => entry.source === source);
+    const added = entries.filter((entry) => entry.source === source && entry.seq > logs.clearedUpTo[source]);
     if (added.length === 0) continue;
     let merged: DebugLogEntry[];
     // Usually all after the last, in order.
@@ -55,6 +62,18 @@ export function addEntries(logs: DebugLogs, entries: readonly DebugLogEntry[]): 
   return next;
 }
 
+/**
+ * `logs` without `source`'s records up to `seq`, where the backend cleared them (`debug_log_clear`
+ * answers with it), nor those of them still on their way here; those that came since stay.
+ */
+export function clearUpTo(logs: DebugLogs, source: DebugLogSource, seq: number): DebugLogs {
+  return {
+    ...logs,
+    [source]: logs[source].filter((entry) => entry.seq > seq),
+    clearedUpTo: { ...logs.clearedUpTo, [source]: Math.max(logs.clearedUpTo[source], seq) },
+  };
+}
+
 /** The `seq` of the last of `list`, 0 when it is empty. */
 const lastSeq = (list: readonly DebugLogEntry[]) => (list.length > 0 ? list[list.length - 1].seq : 0);
 
@@ -69,38 +88,52 @@ function countUpTo(list: readonly DebugLogEntry[], seq: number): number {
   return low;
 }
 
-/** What the window's terminal shows: of which side, under which filter, up to which record. */
+/** What the window's terminal shows: of which side, under which filter, from which of its records. */
 export interface Written {
   source: DebugLogSource;
   filter: DebugLogFilter;
-  /** The last record of the side then, 0 if it had none. */
-  last: number;
-  /** How many records the side had then. */
-  count: number;
+  /** The side's `clearedUpTo` then. */
+  clearedUpTo: number;
+  /** The side's records then. */
+  list: readonly DebugLogEntry[];
+  /** How many of `list` the filter shows. */
+  shown: number;
 }
 
-/** What the terminal shows once it has written `list`, the records of `source`, under `filter`. */
-export function written(list: readonly DebugLogEntry[], source: DebugLogSource, filter: DebugLogFilter): Written {
-  return { source, filter, last: lastSeq(list), count: list.length };
+/** What to write to the terminal, after what it shows, to show `logs`' records of `source` under `filter`. */
+export interface Writing {
+  /** The terminal is written anew, rather than added to. */
+  anew: boolean;
+  /** The records to write, those the filter shows. */
+  entries: DebugLogEntry[];
+  /** What the terminal shows then. */
+  written: Written;
 }
 
 /**
- * The records of `list` to write after what the terminal shows (`shown`), or null when it must
- * be written anew: another side or filter, records that came before the last one written (the
- * snapshot after an event), or the last one gone (the side cleared). Records the side no longer
- * keeps stay in the terminal.
+ * What to write to the terminal after `before`, what it shows. New records are added at the end,
+ * only those the filter shows going through it; anything else writes the terminal anew: nothing
+ * written yet, another side or filter, a cleared side, or records that came before the last one
+ * written (the snapshot after an event). Records the side no longer keeps (past its limit) stay
+ * in the terminal, but no longer count as shown.
  */
-export function toAppend(
-  shown: Written | null,
-  list: readonly DebugLogEntry[],
-  source: DebugLogSource,
-  filter: DebugLogFilter,
-): DebugLogEntry[] | null {
-  if (!shown || shown.source !== source || shown.filter !== filter) return null;
-  if (shown.last === 0) return list.slice();
-  const upTo = countUpTo(list, shown.last);
-  if (upTo === 0 || list[upTo - 1].seq !== shown.last || upTo > shown.count) return null;
-  return list.slice(upTo);
+export function nextWriting(before: Written | null, logs: DebugLogs, source: DebugLogSource, filter: DebugLogFilter): Writing {
+  const list = logs[source];
+  const clearedUpTo = logs.clearedUpTo[source];
+  const matching = (entries: readonly DebugLogEntry[]) => entries.filter((entry) => shown(entry, filter));
+  const anew = (): Writing => {
+    const entries = matching(list);
+    return { anew: true, entries, written: { source, filter, clearedUpTo, list, shown: entries.length } };
+  };
+  if (!before || before.source !== source || before.filter !== filter || before.clearedUpTo !== clearedUpTo) return anew();
+  if (before.list === list) return { anew: false, entries: [], written: before };
+  // Those of `list` written before: the end of `before.list`, the records before them gone.
+  const kept = countUpTo(list, lastSeq(before.list));
+  const dropped = before.list.length - kept;
+  if (dropped < 0 || (kept > 0 && list[0].seq !== before.list[dropped].seq)) return anew();
+  const entries = matching(list.slice(kept));
+  const shownCount = before.shown - matching(before.list.slice(0, dropped)).length + entries.length;
+  return { anew: false, entries, written: { source, filter, clearedUpTo, list, shown: shownCount } };
 }
 
 const pad = (n: number, width = 2) => String(n).padStart(width, "0");

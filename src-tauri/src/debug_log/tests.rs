@@ -67,3 +67,28 @@ fn the_window_gets_what_comes_after_its_snapshot() {
     assert_eq!((pending.len(), pending[0].seq, pending[0].message.as_str()), (1, 2, "after"));
     assert_eq!(state.frontend.entries[0].seq, 2);
 }
+
+#[test]
+fn clearing_a_side_says_up_to_which_record() {
+    let mut state = State { next_seq: 1, backend: Ring::new(10), frontend: Ring::new(10), pending: Some(Vec::new()) };
+    state.push(entry(LogSource::Backend, "one"));
+    state.push(entry(LogSource::Frontend, "two"));
+    state.push(entry(LogSource::Backend, "three"));
+    assert_eq!(state.clear(LogSource::Backend), 3);
+    assert!(state.backend.entries.is_empty());
+    assert_eq!(state.backend.bytes, 0);
+    let pending: Vec<&str> = state.pending.as_ref().unwrap().iter().map(|entry| entry.message.as_str()).collect();
+    assert_eq!(pending, ["two"]);
+    assert_eq!(state.frontend.entries.len(), 1);
+    // Nothing recorded yet: none forgotten.
+    let mut empty = State { next_seq: 1, backend: Ring::new(10), frontend: Ring::new(10), pending: None };
+    assert_eq!(empty.clear(LogSource::Frontend), 0);
+}
+
+#[test]
+fn escaping_keeps_a_line_and_shows_control_characters() {
+    assert_eq!(
+        escape("HTTP/1.1 403\r\nno\x1b[2J\t\u{7f}\u{9b} \"quoted\" 中文\u{2028}"),
+        r#"HTTP/1.1 403\r\nno\x1b[2J\t\x7f\x9b "quoted" 中文\u{2028}"#
+    );
+}
