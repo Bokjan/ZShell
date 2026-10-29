@@ -16,7 +16,7 @@
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
 | 等待上游 | Linux：zbus 停在 5 | keyring、tauri-plugin-opener、tauri-plugin-notification 升到 zbus 6 后跟着升 |
-| 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 给 russh-sftp 报 issue；上游还没有 |
+| 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 我们的 AspectUnk/russh-sftp#106 合入并发布 |
 | 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
@@ -104,9 +104,10 @@
 
 ### SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级
 
-- **现象**：列一个有十万个条目的文件夹，除了等服务器，还要花几秒 CPU。文件面板、下载和删除文件夹都经 `SftpSession::read_dir`。
+- **现象**：列一个条目很多的文件夹时，除了等服务器，还要多花 CPU。2026-10-30 在 M5 Pro 上用进程内的客户端和服务端（release 构建，十万个条目，每批一百个）测：约 660 ms，修复后约 27 ms。文件面板、下载和删除文件夹都经 `SftpSession::read_dir`。远程服务器上这点开销被逐批往返的等待盖住，局域网或本机的服务器上才明显。
 - **原因**：russh-sftp 3.0.1 的 `read_dir`（`client/session.rs` 约 187–196 行）每收到服务器的一批条目（OpenSSH 每批约一百个），就把这一批接在已收到的全部条目前面，`collect` 成一个新的 `Vec`。已收到的条目每批都整体搬一次，总量与条目数的平方成正比。顺带，各批的先后也颠倒了（面板自己排序，不受影响）。
-- **处理**：给 russh-sftp 报 issue（或直接提 PR）：每批 `extend` 到同一个 `Vec` 末尾即可，顺序也随之正确。上游发布后升级。上游不修、又有人遇到时，可以用 `RawSftpSession` 的 `opendir` / `readdir` / `close` 在 `sftp/` 里自己读。
+- **上游**：之前没有相关的 issue 或 PR。我们提了 [AspectUnk/russh-sftp#106](https://github.com/AspectUnk/russh-sftp/pull/106)（2026-10-30）：每批 `extend` 到同一个 `Vec` 末尾，附了检查顺序的测试（在 master 上失败）。首次贡献，上游 CI 要等维护者批准才会跑。
+- **处理**：#106 合入并发布后升级 russh-sftp，删掉这一条。上游不修、又有人遇到时，可以用 `RawSftpSession` 的 `opendir` / `readdir` / `close` 在 `sftp/` 里自己读。
 - **登记**：2026-10-25（性能与架构评审 P2-12）。
 
 ### 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数
@@ -119,7 +120,7 @@
 
 ### 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44
 
-- **现状**：正式版仍是 6.0.0（2025-12-22）。npm 的 `beta` 标签是 6.1.0-beta 系列（2026-10-21 为 6.1.0-beta.315），但其中的 kitty 键盘协议（[xtermjs/xterm.js#5600](https://github.com/xtermjs/xterm.js/pull/5600)）与 win32-input-mode 挂在 [7.0.0 里程碑](https://github.com/xtermjs/xterm.js/milestones)下，没有截止日期，下一个正式版可能叫 7.0.0。不提前用 beta。
+- **现状**：正式版仍是 6.0.0（2025-12-22）。npm 的 `beta` 标签是 6.1.0-beta 系列（2026-10-30 为 6.1.0-beta.332），但其中的 kitty 键盘协议（[xtermjs/xterm.js#5600](https://github.com/xtermjs/xterm.js/pull/5600)）与 win32-input-mode 挂在 [7.0.0 里程碑](https://github.com/xtermjs/xterm.js/milestones)下，没有截止日期，下一个正式版可能叫 7.0.0。不提前用 beta。
 - **一起处理**：升级时 pnpm 会因 `patches/@xterm__xterm@6.0.0.patch` 打不上而报错，按下面三条（后台终端重建 DOM、输入法丢字、切换标签空白一帧）各自的「处理」逐条确认，重做或去掉补丁与绕过；`@xterm/addon-*` 一起升到配套版本，并确认 `FullWidthFitAddon`（`lib/terminalFit.ts`）读的单元格尺寸和 fit 插件的 `fit()` 仍然可用。同一个版本里做 [ROADMAP.md](ROADMAP.md) 的 M43（kitty 键盘协议），那里写了要接的地方和要关注的输入法问题（#6112、#6036）；M44（终端图片）用配套的 `@xterm/addon-image`，重点测内存、CPU 与 GPU 的影响。版本是破坏性大版本时，先看 release notes 里的 API 变更。
 - **关注**：npm 上 `@xterm/xterm` 的 `latest` 标签；7.0.0 里程碑的未关闭项。
 - **登记**：2026-10-21。
@@ -139,7 +140,7 @@
 
 - **现象**：终端里用中文输入法打 `？`、`！`、`：` 等要按 Shift 的标点，第一次按下没有反应，再按一次才出来。日文输入法下的 `#`、`"` 也一样。
 - **原因**：WebKit 开着输入法时，输入法提交的字符先以 `input` 事件到达，字符自己的 keydown 在后面。xterm.js 6.0.0 的 `_keyDown` 对任何 keydown 都置 `_keyDownSeen`，`_inputEvent` 见它为真就认为这个字会由 keydown 处理，丢掉 `input`；按住的 Shift 的 keydown 已经把它置上了。随后字符的 keydown（keyCode 229）走 `CompositionHelper._handleAnyTextareaChanges`，比对输入框前后的内容，但字符已经在里面，差值为空，也没补回来。字符的 keyup 把标志清掉，所以只丢第一次。
-- **上游**：[xtermjs/xterm.js#5374](https://github.com/xtermjs/xterm.js/issues/5374)（未关闭），修复是 [xtermjs/xterm.js#6200](https://github.com/xtermjs/xterm.js/pull/6200)（2026-10-02 提出，2026-10-28 合入 master，里程碑 7.0.0，尚未发布）：只按修饰键的 keydown 不置 `_keyDownSeen`。PR 说明快速连打时第二个字丢失的情况（#5887）不在修复范围内。
+- **上游**：[xtermjs/xterm.js#5374](https://github.com/xtermjs/xterm.js/issues/5374)，修复是 [xtermjs/xterm.js#6200](https://github.com/xtermjs/xterm.js/pull/6200)（2026-10-02 提出，2026-10-28 合入 master，里程碑 7.0.0，尚未发布）：只按修饰键的 keydown 不置 `_keyDownSeen`。PR 说明快速连打时第二个字丢失的情况（#5887）不在修复范围内；#5374 剩下的就是这种情况，2026-10-29 作为 #5887 的重复关闭。
 - **绕过**：在同一个 `patches/@xterm__xterm@6.0.0.patch` 里照 #6200 改：`_keyDown` 里的 `this._keyDownSeen=!0` 改成 `this._keyDownSeen=!Tc(e)`，`Tc` 是压缩后的 `wasModifierKeyOnlyEvent`（`_keyUp` 里也用它）。
 - **处理**：升级到包含 #6200 的版本（预计 7.0.0）时从补丁里去掉这一处；升级的版本还不包含它，就在新版本上重做。在 macOS 上用拼音输入法在终端里按一次 Shift+/，应该立刻出现 `？`。
 - **登记**：2026-10-21。
@@ -152,10 +153,11 @@
   2. **显示时终端还在暂停**：隐藏页在视口外，RenderService 是暂停的；移回视口后，IntersectionObserver 的回调要等这一帧画完才到，这一帧里 `setRenderer` 请求的刷新因为暂停被推迟。任何缩放下都有，前提是隐藏页移出视口（`styles/terminals.css`）。
 - **上游**：
   - 第 1 条是 [xtermjs/xterm.js#4922](https://github.com/xtermjs/xterm.js/issues/4922)，由 [xtermjs/xterm.js#5529](https://github.com/xtermjs/xterm.js/pull/5529) 修复（2025-12-28 合入 master，晚于 6.0.0）：重设画布后发出 `sync: true`，同步重画。6.1.0-beta 已包含，正式版尚未发布（见上面的升级一条）。
-  - 第 2 条是我们提的 [xtermjs/xterm.js#6239](https://github.com/xtermjs/xterm.js/issues/6239)（2026-10-17 提出，之前上游没有人报过），修复是 [xtermjs/xterm.js#6240](https://github.com/xtermjs/xterm.js/pull/6240)，等待评审。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到包含 #5529 的版本，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。#6240 就是这样改的，附了单元测试；issue 里有最小复现（npm 6.1.0-beta.315 上每次切换都空白一帧）。
+  - 第 2 条是我们提的 [xtermjs/xterm.js#6239](https://github.com/xtermjs/xterm.js/issues/6239)（2026-10-17 提出，之前上游没有人报过），修复是 [xtermjs/xterm.js#6240](https://github.com/xtermjs/xterm.js/pull/6240)。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到包含 #5529 的版本，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。#6240 就是这样改的，附了单元测试；issue 里有最小复现（npm 6.1.0-beta.315 上每次切换都空白一帧）。
+  - #6240 的评审（2026-10-29，`xtermjs-bot`，要求修改）确认复现已修好，但暂停中的 WebGL 终端改大小时会栈溢出：`WebglRenderer.handleResize` 末尾发同步重画，`refreshRows` 又去 flush 正在执行的那个 resize 任务，`handleResize` 无限递归。2026-10-30 推了第二个提交 `4f678152`：`RenderService` 在调用 `renderer.handleResize` 期间置 `_isResizingRenderer`，这时的同步重画只绘制、不 flush；评审要的三种情形都补了测试，两条行内意见已回复，等再次评审。ZShell 的绕过直接调 `_renderRows`，不经过 flush，没有这个问题。
 - **关注**：
   - `@xterm/xterm` 下一个正式版的发布。它若只带第 1 条的修复，绕过要保留。
-  - #6239 和 #6240：评审意见（要改补丁时，从 fork `Bokjan/xterm.js` 的 `paused-blank-render` 分支继续），是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
+  - #6239 和 #6240：再次评审的意见（要改时，从 fork `Bokjan/xterm.js` 的 `paused-blank-render` 分支继续，分支基于 10 月中的 master，没有 rebase），是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
   - 维护者如果选了别的修法，要看它能不能让显示的那一帧就有内容。例如只在 IntersectionObserver 恢复渲染时同步补画是不够的：回调本来就晚一帧，补画时那一帧已经空白地画出去了。
 - **绕过**：`webgl.ts` 加载插件后，给新的 WebGL 画布再挂一个 ResizeObserver。它创建在插件的之后，同一轮回调里排在插件后面，也就是画布刚被重设之后、这一帧绘制之前；第一次回调时断开，并调用私有的 `_core._renderService._renderRows` 同步画整屏，这个函数不看暂停。可选链访问，xterm.js 内部改名时什么都不做，空白帧又会出现，不会报错。图集重建时重新加载插件也走这里。
 - **验证**：在临时目录里搭测试页（用仓库里打过补丁的 xterm.js 和 `webgl.ts`，照应用的 `.tab-page` CSS 放两个终端，切换时先改 class，再释放旧终端的 WebGL、加载新终端的），在独立配置目录的 Chrome 里用 `--force-device-scale-factor` 设缩放，用 CDP 录屏，按两个终端的文字颜色把每帧分成「A」「B」「空白」。Chrome 要加 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`，否则窗口被遮住后 rAF 停止。每种情形切换 6 次，空白帧数：
