@@ -1,0 +1,125 @@
+/* The debug log window (see `DebugLogWindow`): its bar, which is also the title bar, and the
+   terminal the records are written to. */
+
+.debug-log {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.debug-log-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  height: var(--titlebar-height);
+  box-sizing: border-box;
+  padding: 0 0 0 calc(10px + var(--traffic-lights-width));
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  font-size: calc(12px * var(--text-scale));
+}
+/* The controls, of one height, centered in the bar. */
+.debug-log-bar :is(.debug-log-sources button, .select, .debug-log-filter) {
+  box-sizing: border-box;
+  height: calc(24px * var(--text-scale));
+  font-size: inherit;
+}
+/* Room after the last button where no window buttons end the bar (macOS, and Linux without any). */
+.debug-log-bar > :last-child:not(.window-controls) {
+  margin-right: 8px;
+}
+/* Never pushed out of a narrow window: the filter field gives way first. */
+.debug-log-bar > .window-controls {
+  flex-shrink: 0;
+  align-self: stretch;
+}
+.debug-log-sources {
+  flex-shrink: 0;
+  align-self: center;
+}
+.debug-log-sources button {
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.debug-log-sources button:hover:not(.on) {
+  color: var(--text);
+}
+.debug-log-bar .select {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  white-space: nowrap;
+}
+.debug-log-bar .select:hover {
+  border-color: var(--text-muted);
+}
+.debug-log-filter {
+  flex: 0 1 240px;
+  min-width: 48px;
+  padding: 0 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+}
+.debug-log-filter:focus {
+  border-color: var(--accent);
+}
+/* Takes the room left, which moves the window like the rest of the bar. */
+.debug-log-count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  /* Centered by the figures rather than the font's line, whose room above the text is larger
+     than below it (Segoe UI): beside the button, the line's middle sits low. */
+  text-box: trim-both cap alphabetic;
+}
+.debug-log-bar > .icon-button {
+  flex-shrink: 0;
+}
+.debug-log-bar > .icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.debug-log-bar > .icon-button:disabled:hover {
+  background: none;
+  color: var(--text-muted);
+}
+/* The button back to the end is placed over the records. */
+.debug-log-view {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0 0 8px;
+}
+.debug-log-terminal {
+  flex: 1;
+  min-width: 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* The scroll bar as the terminals' (see `.terminal-view`): narrow, and shown only while the view
+   scrolls or the pointer is on it. */
+.debug-log-terminal .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  left: auto !important;
+  right: 2px;
+  width: 8px !important;
+  border-radius: 4px;
+}
+.debug-log-terminal:not(.scrolling) .xterm-scrollable-element > .scrollbar.vertical:not(:hover, :has(> .slider.active)) {
+  opacity: 0;
+  transition: opacity 800ms linear;
+}

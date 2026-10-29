@@ -68,7 +68,7 @@ pub trait Report {
     fn failed(&mut self, error: anyhow::Error);
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Direction {
     /// The remote runs `sz`.
     Receive,
@@ -266,13 +266,15 @@ async fn run(zmodem: Arc<Zmodem>, direction: Direction, mut link: Link, sink: Se
     let mut report = TerminalReport::new(sink.clone(), direction);
     let mut started = true;
     match transfer(&zmodem, direction, &mut link, &sink, &mut report).await {
-        Ok(()) => {}
+        Ok(()) => log::debug!("ZMODEM {direction:?}: done"),
         Err(e) => {
             let code = e.downcast_ref::<Error>().map(Error::code);
             if code == Some("zmodem.notStarted") {
                 // Output that only looked like a transfer (e.g. `cat` of a binary file).
+                log::debug!("output looked like the start of a ZMODEM transfer, but wasn't");
                 started = false;
             } else {
+                log::warn!("ZMODEM {direction:?}: {}", crate::error::logged(&e));
                 if code != Some("zmodem.remoteCancelled") {
                     link.abort().await;
                 }
@@ -387,6 +389,10 @@ impl TerminalReport {
 
 impl Report for TerminalReport {
     fn start(&mut self, name: &str, size: Option<u64>) {
+        match size {
+            Some(size) => log::debug!("ZMODEM: {name}, {size} bytes"),
+            None => log::debug!("ZMODEM: {name}"),
+        }
         self.name = name.to_owned();
         self.size = size;
         self.done = 0;
@@ -411,10 +417,12 @@ impl Report for TerminalReport {
     }
 
     fn skipped(&mut self, name: &str) {
+        log::debug!("ZMODEM: {name} skipped");
         self.line(&t!("zmodem.skipped", name = name), Tone::Warning);
     }
 
     fn failed(&mut self, error: anyhow::Error) {
+        log::warn!("ZMODEM: {}", crate::error::logged(&error));
         self.line(&Error::from(error).to_string(), Tone::Error);
     }
 }

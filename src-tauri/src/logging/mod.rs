@@ -229,7 +229,7 @@ impl LogWriter {
                     // Nothing is told of a failure now: the session may be gone, or stopped
                     // logging.
                     if let Err(e) = self.close() {
-                        eprintln!("session log {}: {e}", self._active.path.display());
+                        log::warn!("session log {}: {e}", self._active.path.display());
                     }
                     return;
                 }

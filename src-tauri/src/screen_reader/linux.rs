@@ -10,7 +10,7 @@ use super::Changed;
 pub fn watch(changed: Changed) {
     std::thread::spawn(move || {
         if let Err(e) = watch_status(&changed) {
-            eprintln!("screen reader: can't watch AT-SPI: {e}");
+            log::warn!("screen reader: can't watch AT-SPI: {e}");
         }
     });
 }

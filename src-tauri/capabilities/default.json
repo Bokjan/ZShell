@@ -4,7 +4,8 @@
   "description": "Capability for the app's windows",
   "windows": [
     "main",
-    "window-*"
+    "window-*",
+    "debug-log"
   ],
   "permissions": [
     "core:app:default",

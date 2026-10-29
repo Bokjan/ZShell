@@ -623,7 +623,18 @@ impl Vault {
                 created = made;
             }
         }
-        VaultStatus { created, ..self.status() }
+        let status = VaultStatus { created, ..self.status() };
+        log::info!(
+            "vault: {}",
+            if status.locked.is_some() {
+                "locked, waiting for the master password"
+            } else if created {
+                "made"
+            } else {
+                "open"
+            }
+        );
+        status
     }
 
     /// Unlocks with the master password: `vault.wrongPassword` if it isn't the one. Blocks
@@ -639,10 +650,14 @@ impl Vault {
                     // Shown on the unlock screen instead.
                     Found::Unusable(lock) => State::Locked { sealing: None, lock },
                     Found::File(file) => {
-                        let key = file.header.unwrap_key(password).ok_or_else(|| Error::new("vault.wrongPassword"))?;
+                        let key = file.header.unwrap_key(password).ok_or_else(|| {
+                            log::info!("vault: a wrong master password");
+                            Error::new("vault.wrongPassword")
+                        })?;
                         let data = file.open(Some(&key));
                         match data {
                             Ok(data) => {
+                                log::info!("vault: opened with the master password");
                                 opened = true;
                                 State::Open(Open { sealing: file.header, key: Some(key), data: Arc::new(data) })
                             }
@@ -683,6 +698,7 @@ impl Vault {
                 }
                 _ => {}
             }
+            log::warn!("vault: started again, the old file is now {}", aside.display());
             self.replace(&mut state, State::locked(None, LockReason::New, None));
             self.resets.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }

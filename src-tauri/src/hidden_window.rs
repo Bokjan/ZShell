@@ -37,11 +37,11 @@ pub fn spawn(name: &'static str, procedure: WNDPROC, ready: impl FnOnce(HWND) ->
                 std::ptr::null(),
             );
             if hwnd.is_null() {
-                eprintln!("{name}: can't create the window: {}", std::io::Error::last_os_error());
+                log::warn!("{name}: can't create the window: {}", std::io::Error::last_os_error());
                 return;
             }
             if !ready(hwnd) {
-                eprintln!("{name}: can't register for the system's messages: {}", std::io::Error::last_os_error());
+                log::warn!("{name}: can't register for the system's messages: {}", std::io::Error::last_os_error());
                 return;
             }
             let mut message: MSG = std::mem::zeroed();

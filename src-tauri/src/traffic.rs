@@ -178,11 +178,18 @@ pub struct ConnectionInfo {
     pub local_port: Option<u16>,
 }
 
+/// A number for a new connection, as it starts (before it is up, so that the debug log can name
+/// it): jump hosts get theirs too.
+pub fn next_connection_id() -> u32 {
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 impl ConnectionInfo {
     /// A new connection's.
+    #[cfg(test)]
     pub fn next(local_port: Option<u16>) -> Self {
-        static NEXT: AtomicU32 = AtomicU32::new(1);
-        Self { id: NEXT.fetch_add(1, Ordering::Relaxed), local_port }
+        Self { id: next_connection_id(), local_port }
     }
 }
 

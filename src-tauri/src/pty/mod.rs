@@ -61,6 +61,7 @@ pub const RELEASED_WITHIN: Duration = KILL_GRACE;
 
 /// Session backend: runs `shell` in a pseudo terminal until it exits.
 pub async fn run(shell: Shell, mut io: TermIo) {
+    log::debug!("starting {:?} in a {}x{} terminal, ConPTY build {:?}", shell.command.get_argv(), io.size.0, io.size.1, conpty_build());
     let mut pty = match Pty::start(shell, &io) {
         Ok(pty) => pty,
         Err(e) => return io.finish(Outcome::Failed(Error::from(e))),

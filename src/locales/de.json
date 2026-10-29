@@ -63,9 +63,30 @@
       "checkForUpdates": "Nach Updates suchen…",
       "releaseNotes": "Versionshinweise",
       "reportIssue": "Problem melden",
+      "debugLog": "Debug-Protokoll",
       "about": "Über ZShell",
       "quit": "Beenden"
     }
+  },
+  "debugLog": {
+    "title": "Debug-Protokoll",
+    "source": "Einträge",
+    "backend": "Backend",
+    "frontend": "Frontend",
+    "level": "Niedrigste angezeigte Stufe",
+    "levels": {
+      "error": "Fehler",
+      "warn": "Warnung",
+      "info": "Info",
+      "debug": "Debug"
+    },
+    "filter": "Filtern",
+    "count": "{shown} von {total}",
+    "copyShown": "Alle angezeigten Einträge kopieren",
+    "copied_one": "{count} Eintrag kopiert",
+    "copied_other": "{count} Einträge kopiert",
+    "clear": "Leeren",
+    "cleared": "Einträge geleert"
   },
   "updates": {
     "available": "ZShell {version} ist verfügbar.",

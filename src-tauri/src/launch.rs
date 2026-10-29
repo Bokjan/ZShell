@@ -137,6 +137,19 @@ fn log_info(profile: &Profile) -> LogInfo {
     LogInfo { session: profile.name.clone(), host, user, profile: None }
 }
 
+/// How `route` goes, for the debug log: the jump hosts and the proxy, if any.
+fn describe_route(route: &Route) -> String {
+    let jumps: Vec<String> = route.jumps.iter().map(|jump| format!("\"{}\"", jump.name)).collect();
+    let mut text = String::new();
+    if !jumps.is_empty() {
+        text.push_str(&format!(", through jump hosts {}", jumps.join(", ")));
+    }
+    if let Some(proxy) = &route.proxy {
+        text.push_str(&format!(", through proxy \"{}\"", proxy.name));
+    }
+    text
+}
+
 /// A session's backend, with what it runs on.
 pub enum Backend {
     Ssh {
@@ -170,6 +183,21 @@ impl Backend {
     }
 
     async fn run(self, id: SessionId, io: TermIo) {
+        match &self {
+            Backend::Ssh { profile, route, .. } => {
+                let remote = &profile.ssh.remote;
+                let target = model::host_port(&remote.host, remote.port);
+                log::info!("session {id}: SSH \"{}\", {}@{target}{}", profile.name, remote.username, describe_route(route));
+            }
+            Backend::Shared { connection, .. } => {
+                log::info!(conn = connection.ssh().info().id; "session {id}: another shell on the connection of \"{}\"", connection.ssh().profile().name);
+            }
+            Backend::Telnet { remote, route, .. } => {
+                log::info!("session {id}: Telnet {}{}", model::host_port(&remote.host, remote.port), describe_route(route));
+            }
+            Backend::Serial(options) => log::info!("session {id}: serial port {}", options.device),
+            Backend::Local(shell) => log::info!("session {id}: local shell {}", shell.name()),
+        }
         match self {
             Backend::Ssh { profile, route, connections, carry } => {
                 let exit = connections.shell_exit(id);

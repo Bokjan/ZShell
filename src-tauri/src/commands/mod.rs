@@ -13,6 +13,7 @@
 
 pub mod applock;
 pub mod backup;
+pub mod debug_log;
 pub mod forward;
 pub mod logs;
 pub mod menu;

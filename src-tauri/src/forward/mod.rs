@@ -343,12 +343,19 @@ impl Ctx {
 }
 
 /// A run of `rule`, which gives back the connections it still carries if it was released.
-async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<InFlight>>, announce: bool, mut stopping: Stopping) -> InFlight {
+async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<InFlight>>, announce: bool, stopping: Stopping) -> InFlight {
+    let conn = ctx.shared.info.id;
+    crate::debug_log::about(conn, run_on(rule, ctx, previous, announce, stopping)).await
+}
+
+async fn run_on(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<InFlight>>, announce: bool, mut stopping: Stopping) -> InFlight {
     // Let the previous run release its port (and, for remote rules, the server's listener)
     // before binding it again. Its connections end.
     if let Some(previous) = previous {
         let _ = previous.await;
     }
+    let described = describe(&rule);
+    log::info!("forward {described}: starting");
     let reporting = ctx.clone();
     let _reporter = Reporter::start(&ctx.traffic.wake, move || reporting.report_traffic());
     // Ends with `Ok` once stopped.
@@ -357,11 +364,14 @@ async fn run(rule: ForwardRule, ctx: Ctx, previous: Option<JoinHandle<InFlight>>
         ForwardKind::Remote => remote::run(&rule, &ctx, &mut stopping).await,
         ForwardKind::Dynamic => dynamic::run(&rule, &ctx, &mut stopping).await,
     };
+    if result.is_ok() {
+        log::info!("forward {described}: stopped");
+    }
     result.unwrap_or_else(|e| {
         let error = Error::from(e);
+        log::warn!("forward {described}: {}", error.logged());
         if announce {
-            let forward = describe(&rule);
-            let message = t!("forward.autoStartFailed", forward = forward, error = error);
+            let message = t!("forward.autoStartFailed", forward = described, error = error);
             ctx.shared.notice(Tone::Warning, &message);
         }
         ctx.report(ForwardState::Failed { error });
@@ -433,6 +443,7 @@ struct Tracker<'a> {
 
 impl<'a> Tracker<'a> {
     fn new(ctx: &'a Ctx, bound: String) -> Self {
+        log::debug!("listening on {bound}");
         let mut tracker = Self { ctx, bound, connections: JoinSet::new(), last_error: None, throttle: Throttle::default() };
         tracker.changed();
         tracker
@@ -440,6 +451,7 @@ impl<'a> Tracker<'a> {
 
     fn spawn(&mut self, connection: impl Future<Output = anyhow::Result<()>> + Send + 'static) {
         self.connections.spawn(connection);
+        log::debug!("{}: a new connection, {} carried", self.bound, self.connections.len());
         self.changed();
     }
 
@@ -458,13 +470,17 @@ impl<'a> Tracker<'a> {
 
     fn finished(&mut self, result: std::result::Result<anyhow::Result<()>, JoinError>) {
         if let Ok(Err(e)) = result {
-            self.last_error = Some(e.into());
+            let error = Error::from(e);
+            log::debug!("{}: a connection failed: {}", self.bound, error.logged());
+            self.last_error = Some(error);
         }
         self.changed();
     }
 
     fn failed(&mut self, error: impl Into<Error>) {
-        self.last_error = Some(error.into());
+        let error = error.into();
+        log::warn!("{}: {}", self.bound, error.logged());
+        self.last_error = Some(error);
         self.changed();
     }
 

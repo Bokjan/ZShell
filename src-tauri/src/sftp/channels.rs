@@ -179,7 +179,10 @@ async fn open(
             return Ok(sftp.clone());
         }
     }
-    let channel = subsystem(connection).await?;
+    let conn = connection.info().id;
+    log::debug!(conn; "opening an SFTP channel");
+    let channel = subsystem(connection).await.inspect_err(|e| log::warn!(conn; "no SFTP channel: {}", crate::error::logged(e)))?;
+    log::debug!(conn; "SFTP channel {} open", channel.id());
     let ended = Arc::new(AtomicBool::new(false));
     let encoding = crate::encoding::for_profile(&connection.profile().encoding);
     let (meter, noted) = traffic;
@@ -187,7 +190,9 @@ async fn open(
     meter.changed();
     let counted = Counted::new(channel.into_stream(), meter.clone());
     let stream = Watched { inner: super::names::convert(counted, encoding), ended: ended.clone() };
-    let sftp = Arc::new(SftpSession::new_with_config(stream, config).await.context(Error::new("sftp.unsupported"))?);
+    let sftp = SftpSession::new_with_config(stream, config).await;
+    let sftp =
+        Arc::new(sftp.inspect_err(|e| log::warn!(conn; "the SFTP server didn't start: {e}")).context(Error::new("sftp.unsupported"))?);
     *cached = Some((sftp.clone(), ended));
     Ok(sftp)
 }

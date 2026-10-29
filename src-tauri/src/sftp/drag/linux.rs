@@ -128,7 +128,7 @@ pub(super) fn start(
                 }
             };
             if let Err(error) = begin(&window_, shared, icon, finish) {
-                eprintln!("drag out: {error}");
+                log::warn!("drag out: {error}");
             }
         })
         .map_err(Error::from)

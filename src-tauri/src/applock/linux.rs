@@ -119,7 +119,7 @@ pub fn watch_system(on_event: Box<dyn Fn(SystemEvent) + Send + Sync>) {
     let on_event: &'static (dyn Fn(SystemEvent) + Send + Sync) = Box::leak(on_event);
     std::thread::spawn(move || {
         if let Err(e) = watch(on_event) {
-            eprintln!("app lock: can't watch the session: {e}");
+            log::warn!("app lock: can't watch the session: {e}");
         }
     });
 }

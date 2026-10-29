@@ -89,6 +89,19 @@ button > svg:only-child:not(.inline-icon) {
   margin-left: 4px;
 }
 
+/* A drop-down as wide as its widest option (`Select`'s `widest`): the options are laid over
+   one another, all but the chosen one unseen. */
+.select-widest {
+  display: inline-grid;
+  text-align: start;
+}
+.select-widest > * {
+  grid-area: 1 / 1;
+}
+.select-widest > [aria-hidden] {
+  visibility: hidden;
+}
+
 /* Checkboxes and radio buttons in the theme's colors, rather than each platform's (the system's
    accent color on macOS); still the native inputs, for the keyboard, labels and screen readers.
    A switch (`.switch`) draws its own. Windows contrast themes get the native ones back. */

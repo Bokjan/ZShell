@@ -274,8 +274,16 @@ pub fn show_full_screen(app: &AppHandle) {
     }
 }
 
-/// An item of the menu bar was chosen.
+/// An item of the menu bar was chosen. While the debug log window has the focus, the items act
+/// on it (its page handles those it has, closing it and finding), Quit aside.
 pub fn chosen(app: &AppHandle, id: &str) {
+    if let Some(debug_log) = window::focused_debug_log(app).filter(|_| id != QUIT) {
+        match id {
+            CLOSE_WINDOW => drop(debug_log.close()),
+            _ => events::emit_to(app, debug_log.label(), events::MenuAction(id.to_owned())),
+        }
+        return;
+    }
     let Some(current) = window::current(app) else {
         if id == QUIT {
             app.exit(0);

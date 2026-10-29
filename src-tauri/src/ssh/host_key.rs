@@ -50,6 +50,7 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
     let fingerprint = query.key.fingerprint(HashAlg::Sha256);
     match &query.status {
         HostKeyStatus::Changed { path, line } => {
+            log::warn!("host key refused: {algorithm} {fingerprint} differs from the one on line {line} of {}", path.display());
             let banner = t!("hostKey.changedBanner");
             // The real path, as OpenSSH shows it, rather than `~` (unfamiliar on Windows).
             // Settings only list the user's own file. The `ssh-keygen -f "<path>" -R "<host>"`
@@ -68,12 +69,14 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             false
         }
         HostKeyStatus::Revoked { path } => {
+            log::warn!("host key refused: {algorithm} {fingerprint} is revoked in {}", path.display());
             let banner = t!("hostKey.revokedBanner");
             let details = t!("hostKey.revokedDetails", algorithm = algorithm, host = host_pattern(host, port), path = path.display());
             io.print(&format!("\x1b[1;31m{banner}\x1b[0m\n{details}\n"));
             false
         }
         HostKeyStatus::RevokedAuthority { path } => {
+            log::warn!("host certificate refused: its authority is revoked in {}", path.display());
             // OpenSSH shows the revoked key banner here too, with the certificate's type.
             let banner = t!("hostKey.revokedBanner");
             let details = t!("hostKey.revokedAuthorityDetails", host = host_pattern(host, port), path = path.display());
@@ -81,10 +84,12 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             false
         }
         HostKeyStatus::BadCertificateSignature => {
+            log::warn!("host certificate refused: its signature doesn't verify");
             io.print(&format!("\x1b[1;31m{}\x1b[0m\n", t!("hostKey.certificateBadSignature", host = host)));
             false
         }
         HostKeyStatus::Unknown { others } => {
+            log::debug!("unknown host key {algorithm} {fingerprint} ({} of other types known): asking the user", others.len());
             // As OpenSSH: the keys of other types it has for the host, then a question that
             // says so, since a server the user trusts would normally show one of those.
             for other in others {
@@ -105,7 +110,10 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             loop {
                 match io.read_line(true).await.as_deref().map(str::trim) {
                     Some(answer) if answer.eq_ignore_ascii_case("yes") => break,
-                    Some(answer) if answer.eq_ignore_ascii_case("no") => return false,
+                    Some(answer) if answer.eq_ignore_ascii_case("no") => {
+                        log::info!("host key rejected by the user");
+                        return false;
+                    }
                     None => return false,
                     Some(_) => io.print(&format!("{} ", t!("hostKey.typeYesOrNo"))),
                 }
@@ -113,8 +121,14 @@ pub async fn confirm(io: &mut TermIo, host: &str, port: u16, query: &HostKeyQuer
             let (learned, key) = (host.to_owned(), query.key.clone());
             let learned = tokio::task::spawn_blocking(move || known_hosts::learn(&learned, port, &key)).await;
             match learned.unwrap_or_else(|e| Err(crate::error::Error::new("unexpected").detail(e))) {
-                Ok(()) => io.print(&format!("{}\n", t!("hostKey.added", host = host, algorithm = algorithm))),
-                Err(e) => io.print(&format!("\x1b[33m{}\x1b[0m\n", t!("hostKey.saveFailed", error = e))),
+                Ok(()) => {
+                    log::info!("host key accepted by the user and added to known_hosts");
+                    io.print(&format!("{}\n", t!("hostKey.added", host = host, algorithm = algorithm)));
+                }
+                Err(e) => {
+                    log::warn!("host key accepted by the user, but can't be saved: {}", e.logged());
+                    io.print(&format!("\x1b[33m{}\x1b[0m\n", t!("hostKey.saveFailed", error = e)));
+                }
             }
             true
         }

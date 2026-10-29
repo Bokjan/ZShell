@@ -7,7 +7,7 @@ async fn handshake_gives_up_on_a_silent_server() {
     let (stream, _server) = tokio::io::duplex(1024);
     let profile = SshProfile::quick("t".into(), Remote::new("example.com".into(), 22, "alice".into()));
     let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
-    let result = handshake(&profile, HopOptions::jump_host(), stream, &mut io).await;
+    let result = handshake(&profile, 0, HopOptions::jump_host(), stream, &mut io).await;
     let error = Error::from(result.err().unwrap());
     assert_eq!(error.code(), "ssh.handshakeTimeout");
 }
@@ -25,7 +25,7 @@ async fn giving_up_on_a_handshake_closes_the_connection() {
     let (mut io, _input, _output, _events) = TermIo::detached((80, 24));
     let mut buf = vec![0; 4096];
     tokio::select! {
-        _ = handshake(&profile, HopOptions::jump_host(), stream, &mut io) => panic!("the handshake ended"),
+        _ = handshake(&profile, 0, HopOptions::jump_host(), stream, &mut io) => panic!("the handshake ended"),
         // The client's version line and key exchange offer.
         read = server.read(&mut buf) => assert!(read.unwrap() > 0),
     }
@@ -60,7 +60,7 @@ async fn a_connection_waiting_to_sign_in_stays_open() {
     let (client_side, _guard) = abortable::abortable(client_side, stall_limit(keepalive));
     let (queries, _) = mpsc::channel(1);
     let handler =
-        ClientHandler::new("localhost".into(), 22, false, queries, RemoteRoutes::default(), watch::channel(None).0).with_any_host_key();
+        ClientHandler::new(0, "localhost".into(), 22, false, queries, RemoteRoutes::default(), watch::channel(None).0).with_any_host_key();
     let handle = client::connect_stream(Arc::new(client_config(keepalive)), client_side, handler).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert!(!handle.is_closed());

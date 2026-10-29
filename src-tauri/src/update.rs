@@ -84,7 +84,8 @@ impl Updates {
     /// Asks GitHub, and tells every window what was found.
     pub async fn check(&self, app: &AppHandle) -> Result<Status> {
         let _checking = self.checking.lock().await;
-        let latest = latest().await?;
+        let latest = latest().await.inspect_err(|e| log::warn!("checking for updates: {}", e.logged()))?;
+        log::debug!("the latest release is {}", latest.version);
         let saved = Saved { checked: Some(now()), latest: Some(latest) };
         *self.saved.lock().unwrap() = saved.clone();
         // Only a cache: a failed write means checking again at the next start. Off the async

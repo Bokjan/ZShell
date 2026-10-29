@@ -179,7 +179,7 @@ pub fn listen(dir: &Path, come_forward: impl Fn(String) + Send + 'static) {
     let listener = match std::os::unix::net::UnixListener::bind(&path) {
         Ok(listener) => listener,
         Err(error) => {
-            eprintln!("can't listen for later instances at {}: {error}", path.display());
+            log::warn!("can't listen for later instances at {}: {error}", path.display());
             return;
         }
     };

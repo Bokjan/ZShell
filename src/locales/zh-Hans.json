@@ -63,9 +63,29 @@
       "checkForUpdates": "检查更新…",
       "releaseNotes": "发行说明",
       "reportIssue": "报告问题",
+      "debugLog": "调试日志",
       "about": "关于 ZShell",
       "quit": "退出"
     }
+  },
+  "debugLog": {
+    "title": "调试日志",
+    "source": "记录",
+    "backend": "后端",
+    "frontend": "前端",
+    "level": "显示的最低级别",
+    "levels": {
+      "error": "错误",
+      "warn": "警告",
+      "info": "信息",
+      "debug": "调试"
+    },
+    "filter": "筛选",
+    "count": "{shown} / {total} 条",
+    "copyShown": "复制所有显示的记录",
+    "copied_other": "已复制 {count} 条记录",
+    "clear": "清空",
+    "cleared": "已清空记录"
   },
   "updates": {
     "available": "ZShell {version} 已发布。",

@@ -53,7 +53,7 @@ impl Drop for Inhibitor {
             }
         };
         if let Err(e) = result {
-            eprintln!("can't let the system sleep again: {e}");
+            log::warn!("can't let the system sleep again: {e}");
         }
     }
 }
@@ -63,7 +63,7 @@ pub fn hold(reason: &str) -> Option<Hold> {
     let bus = match crate::dbus::session() {
         Ok(bus) => bus,
         Err(e) => {
-            eprintln!("can't keep the system awake: {e}");
+            log::warn!("can't keep the system awake: {e}");
             return None;
         }
     };
@@ -78,7 +78,7 @@ pub fn hold(reason: &str) -> Option<Hold> {
     match gnome().or_else(|_| freedesktop()) {
         Ok(inhibition) => Some(Box::new(Inhibitor { bus, inhibition })),
         Err(e) => {
-            eprintln!("can't keep the system awake: {e}");
+            log::warn!("can't keep the system awake: {e}");
             None
         }
     }
@@ -89,7 +89,7 @@ pub fn hold(reason: &str) -> Option<Hold> {
 pub fn watch_power(changed: PowerChanged) {
     std::thread::spawn(move || {
         if let Err(e) = watch(changed) {
-            eprintln!("can't watch the power source: {e}");
+            log::warn!("can't watch the power source: {e}");
         }
     });
 }

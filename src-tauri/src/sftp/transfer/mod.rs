@@ -95,6 +95,10 @@ impl Transfers {
         kept: impl FnOnce(Left<P>) -> Option<Kept>,
     ) -> Ended {
         self.finish(webview, id);
+        match &result {
+            Ok(()) => log::debug!("transfer {id}: done"),
+            Err(e) => log::warn!("transfer {id}: {}", e.logged()),
+        }
         let ended = Ended::new(&left, result.err(), paths);
         if let Some(kept) = kept(left) {
             self.keep(webview, id, kept);

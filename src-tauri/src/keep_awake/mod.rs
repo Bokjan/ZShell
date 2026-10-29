@@ -133,7 +133,9 @@ fn work(state: &Mutex<State>, reason: impl Fn() -> String, hold: impl Fn(&str) -
             Message::Apply => {
                 // The latest state, whichever change sent this.
                 if !state.lock().unwrap().wanted() {
-                    held = None;
+                    if held.take().is_some() {
+                        log::debug!("the system may sleep again");
+                    }
                     continue;
                 }
                 let reason = reason();
@@ -141,6 +143,9 @@ fn work(state: &Mutex<State>, reason: impl Fn() -> String, hold: impl Fn(&str) -
                     continue;
                 }
                 if let Some(hold) = hold(&reason) {
+                    if held.is_none() {
+                        log::debug!("keeping the system awake");
+                    }
                     held = Some((hold, reason));
                 }
             }

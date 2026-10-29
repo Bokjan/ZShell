@@ -11,6 +11,9 @@
 //! be stuck writing to the stream, and a disconnect message would wait behind that write. And so
 //! does a write left waiting for room too long (see `super::stall_limit`), which russh would
 //! wait for with no limit.
+//!
+//! It also keeps what the server sends first, up to its version line, for the debug log: russh
+//! skips the lines before it, and keeps neither (see [`AbortOnDrop::greeting`]).
 
 use std::future::Future;
 use std::io;
@@ -46,6 +49,48 @@ struct Shared {
     /// The last read, and the last write, were left waiting for the peer.
     reading: AtomicBool,
     writing: AtomicBool,
+    /// What the peer sent first, until its version line has come or [`GREETING_LIMIT`] bytes
+    /// have (`greeted`).
+    greeting: Mutex<Vec<u8>>,
+    greeted: AtomicBool,
+}
+
+/// The most of what the server sends first that is kept, as RFC 4253 allows lines before the
+/// version line (russh reads at most 256 of them).
+const GREETING_LIMIT: usize = 2048;
+
+/// What the server sent before the SSH key exchange: its version line, once it has come, and
+/// whatever came before it, as text with its control characters escaped.
+#[derive(Debug, Default, PartialEq)]
+pub struct Greeting {
+    pub version: Option<String>,
+    pub before: Option<String>,
+}
+
+/// Reads [`Greeting`] from the bytes the server sent first.
+fn greeting(bytes: &[u8]) -> Greeting {
+    let text = String::from_utf8_lossy(bytes);
+    let escaped = |before: &str| (!before.is_empty()).then(|| before.escape_debug().to_string());
+    let mut start = 0;
+    for line in text.split_inclusive('\n') {
+        if line.starts_with("SSH-") && line.ends_with('\n') {
+            return Greeting { version: Some(line.trim_end().to_owned()), before: escaped(text[..start].trim_end()) };
+        }
+        start += line.len();
+    }
+    Greeting { version: None, before: escaped(text.trim_end()) }
+}
+
+impl Shared {
+    /// Keeps the first of `read`, until the version line has come.
+    fn note_greeting(&self, read: &[u8]) {
+        let mut kept = self.greeting.lock().unwrap();
+        let room = GREETING_LIMIT.saturating_sub(kept.len());
+        kept.extend_from_slice(&read[..read.len().min(room)]);
+        if kept.len() >= GREETING_LIMIT || greeting(&kept).version.is_some() {
+            self.greeted.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -114,6 +159,7 @@ impl<S> Abortable<S> {
             return poll;
         }
         self.stalled = None;
+        log::warn!("a write waited {stall:?} for room, the server taking nothing meanwhile: the connection is taken for lost");
         self.shared.end(io::ErrorKind::TimedOut);
         Poll::Ready(Err(io::ErrorKind::TimedOut.into()))
     }
@@ -126,6 +172,9 @@ impl<S: AsyncRead + Unpin> AsyncRead for Abortable<S> {
         let poll = Pin::new(&mut self.inner).poll_read(cx, buf);
         let read = buf.filled().len() - before;
         if read > 0 {
+            if !self.shared.greeted.load(Ordering::Relaxed) {
+                self.shared.note_greeting(&buf.filled()[before..]);
+            }
             self.shared.heard.fetch_add(1, Ordering::Relaxed);
             self.shared.bytes_read.fetch_add(read as u64, Ordering::Relaxed);
         }
@@ -169,6 +218,11 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Abortable<S> {
 pub struct AbortOnDrop(Option<Arc<Shared>>);
 
 impl AbortOnDrop {
+    /// What the server has sent before the key exchange so far.
+    pub fn greeting(&self) -> Greeting {
+        self.0.as_ref().map(|shared| greeting(&shared.greeting.lock().unwrap())).unwrap_or_default()
+    }
+
     /// Leaves the stream to run for as long as the connection does; the link ends it sooner.
     pub fn keep(mut self) -> Link {
         Link(self.0.take().expect("kept once"))
@@ -228,6 +282,36 @@ impl Link {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn the_greeting_is_the_version_line_and_what_came_before() {
+        assert_eq!(greeting(b""), Greeting::default());
+        let version = greeting(b"SSH-2.0-OpenSSH_9.3\r\n\0\0\0");
+        assert_eq!(version, Greeting { version: Some("SSH-2.0-OpenSSH_9.3".into()), before: None });
+        let gateway = greeting(b"HTTP/1.1 403 Forbidden\r\nX-Rendered-By: gateway\r\n\r\nno\x1b[2J");
+        assert_eq!(gateway.version, None);
+        assert_eq!(gateway.before.as_deref(), Some(r"HTTP/1.1 403 Forbidden\r\nX-Rendered-By: gateway\r\n\r\nno\u{1b}[2J"));
+        let banner = greeting(b"Welcome\r\nSSH-2.0-dropbear\r\n");
+        assert_eq!((banner.version.as_deref(), banner.before.as_deref()), (Some("SSH-2.0-dropbear"), Some("Welcome")));
+        // Not a whole line yet.
+        assert_eq!(greeting(b"SSH-2.0-Open").version, None);
+    }
+
+    /// What the server sends first is kept until its version line, and no more.
+    #[tokio::test]
+    async fn the_greeting_is_kept_until_the_version_line() {
+        let (stream, mut peer) = tokio::io::duplex(64);
+        let (mut stream, guard) = abortable(stream, None);
+        peer.write_all(b"hi\r\nSSH-2.0-x\r\nmore").await.unwrap();
+        let mut buf = [0; 32];
+        let _ = stream.read(&mut buf).await.unwrap();
+        peer.write_all(b"after").await.unwrap();
+        let _ = stream.read(&mut buf).await.unwrap();
+        assert_eq!(guard.greeting(), Greeting { version: Some("SSH-2.0-x".into()), before: Some("hi".into()) });
+        let shared = guard.0.as_ref().unwrap();
+        assert!(shared.greeted.load(Ordering::Relaxed));
+        assert!(!shared.greeting.lock().unwrap().ends_with(b"after"));
+    }
 
     /// A read waiting for data fails once the guard goes, and so does what follows.
     #[tokio::test]

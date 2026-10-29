@@ -34,7 +34,7 @@ pub fn hold(reason: &str) -> Option<Hold> {
         )
     };
     if result != kIOReturnSuccess {
-        eprintln!("can't keep the system awake: IOKit error {result:#x}");
+        log::warn!("can't keep the system awake: IOKit error {result:#x}");
         return None;
     }
     Some(Box::new(Assertion(id)))
@@ -62,7 +62,7 @@ pub fn watch_power(changed: PowerChanged) {
     match (source, CFRunLoop::main()) {
         // SAFETY: a source and a mode for the main run loop, which keeps the source.
         (Some(source), Some(main)) => unsafe { main.add_source(Some(&source), kCFRunLoopDefaultMode) },
-        _ => eprintln!("can't watch the power source"),
+        _ => log::warn!("can't watch the power source"),
     }
 }
 

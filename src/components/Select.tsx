@@ -19,6 +19,8 @@ interface Props<T> {
   disabled?: boolean;
   /** Shown when no option has the value: what choosing one does ("Add a jump host…"). */
   placeholder?: string;
+  /** As wide as its widest option, rather than changing width with the option chosen (in a bar). */
+  widest?: boolean;
   /** Names it when no `<label>` is around it. */
   "aria-label"?: string;
   "aria-describedby"?: string;
@@ -44,6 +46,7 @@ export function Select<T extends string | number>({
   onChange,
   disabled,
   placeholder,
+  widest,
   "aria-label": ariaLabel,
   "aria-describedby": describedBy,
 }: Props<T>) {
@@ -99,6 +102,13 @@ export function Select<T extends string | number>({
   };
 
   const option = chosen >= 0 ? options[chosen] : null;
+  const current = option ? (
+    <span className="select-value" lang={option.lang}>
+      {option.label}
+    </span>
+  ) : (
+    <span className="select-value select-placeholder">{placeholder}</span>
+  );
   return (
     <>
       <button
@@ -125,12 +135,18 @@ export function Select<T extends string | number>({
         onKeyDown={onKeyDown}
         onBlur={() => setOpen(false)}
       >
-        {option ? (
-          <span className="select-value" lang={option.lang}>
-            {option.label}
+        {widest ? (
+          // Every option takes the same place, unseen but the chosen one's, and so its room.
+          <span className="select-widest">
+            {current}
+            {options.map((other, i) => (
+              <span key={i} lang={other.lang} aria-hidden="true">
+                {other.label}
+              </span>
+            ))}
           </span>
         ) : (
-          <span className="select-value select-placeholder">{placeholder}</span>
+          current
         )}
         <ChevronIcon direction="down" inline={false} />
       </button>

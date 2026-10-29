@@ -56,6 +56,8 @@ const LOOK: Duration = millis(100);
 pub struct Liveness(Option<Arc<Inner>>);
 
 struct Inner {
+    /// The connection's number, for the debug log.
+    conn: u32,
     link: Link,
     /// Weak, so that a check doesn't keep a connection that closes meanwhile.
     handle: Weak<SshHandle>,
@@ -63,9 +65,10 @@ struct Inner {
 }
 
 impl Liveness {
-    /// Checks over `link`, the transport of `handle`'s connection, unless `enabled` is false.
-    pub fn new(link: Link, handle: &Arc<SshHandle>, enabled: bool) -> Self {
-        Self(enabled.then(|| Arc::new(Inner { link, handle: Arc::downgrade(handle), checking: AtomicBool::new(false) })))
+    /// Checks over `link`, the transport of `handle`'s connection `conn`, unless `enabled` is
+    /// false.
+    pub fn new(conn: u32, link: Link, handle: &Arc<SshHandle>, enabled: bool) -> Self {
+        Self(enabled.then(|| Arc::new(Inner { conn, link, handle: Arc::downgrade(handle), checking: AtomicBool::new(false) })))
     }
 
     /// Something the server answers was just sent: checks the connection unless the answer
@@ -99,6 +102,7 @@ impl Inner {
             return;
         }
         let Some(handle) = self.handle.upgrade() else { return };
+        log::debug!(conn = self.conn; "nothing from the server for {:?}: asking it for a reply", wait.before);
         let sent = self.link.sent();
         // On a task of its own: it waits for the connection task, which may be stuck. The
         // answer is noticed as something read, as anything else is.
@@ -108,7 +112,10 @@ impl Inner {
         let gone = self.unanswered(heard, sent, wait.answer).await;
         ping.abort();
         if gone {
+            log::warn!(conn = self.conn; "the server didn't answer in {:?}: the connection is taken for lost", wait.answer);
             self.link.end(io::ErrorKind::TimedOut);
+        } else {
+            log::debug!(conn = self.conn; "the server answered");
         }
     }
 
@@ -207,7 +214,7 @@ mod tests {
         const ANSWER: Duration = Duration::from_millis(300);
         let (stream, mut peer) = tokio::io::duplex(64);
         let (stream, guard) = super::super::abortable::abortable(stream, None);
-        let inner = Inner { link: guard.keep(), handle: Weak::new(), checking: AtomicBool::new(false) };
+        let inner = Inner { conn: 0, link: guard.keep(), handle: Weak::new(), checking: AtomicBool::new(false) };
         let unanswered = || inner.unanswered(inner.link.heard(), inner.link.sent(), ANSWER);
         let (mut reader, mut writer) = tokio::io::split(stream);
 

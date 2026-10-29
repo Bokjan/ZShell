@@ -119,6 +119,7 @@ async fn run_with(options: SerialOptions, mut io: TermIo, on_threads: bool) {
     let opened = tauri::async_runtime::spawn_blocking(move || open(&opening)).await.unwrap_or_else(|e| Err(e.into()));
     let outcome = match opened {
         Ok(port) => {
+            log::debug!("{} open: {}", options.device, options.summary());
             // Before reading starts, so that what the device already sent comes after.
             let opened = t!("terminal.serialOpened", device = &options.device, settings = options.summary());
             io.notice(Tone::Dim, &opened);

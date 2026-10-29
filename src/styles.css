@@ -35,4 +35,5 @@
 @import "./styles/lock-screens.css";
 @import "./styles/reduced-motion.css";
 @import "./styles/status-bar.css";
+@import "./styles/debug-log.css";
 @import "./styles/forced-colors.css";

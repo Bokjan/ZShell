@@ -63,9 +63,29 @@
       "checkForUpdates": "アップデートを確認…",
       "releaseNotes": "リリースノート",
       "reportIssue": "問題を報告",
+      "debugLog": "デバッグログ",
       "about": "ZShellのバージョン情報",
       "quit": "終了"
     }
+  },
+  "debugLog": {
+    "title": "デバッグログ",
+    "source": "記録",
+    "backend": "バックエンド",
+    "frontend": "フロントエンド",
+    "level": "表示する最低レベル",
+    "levels": {
+      "error": "エラー",
+      "warn": "警告",
+      "info": "情報",
+      "debug": "デバッグ"
+    },
+    "filter": "絞り込み",
+    "count": "{total}件中{shown}件",
+    "copyShown": "表示中の記録をすべてコピー",
+    "copied_other": "{count}件の記録をコピーしました",
+    "clear": "消去",
+    "cleared": "記録を消去しました"
   },
   "updates": {
     "available": "ZShell {version}が利用可能です。",

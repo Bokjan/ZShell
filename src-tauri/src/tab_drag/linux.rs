@@ -71,7 +71,7 @@ pub fn start(app: &AppHandle, source: &str, id: String) -> bool {
         cancelled: Cell::new(false),
         handlers: RefCell::new(Vec::new()),
     });
-    for window in app.webview_windows().into_values() {
+    for window in crate::window::app_windows(app) {
         connect_window(app, &drag, &window);
     }
 

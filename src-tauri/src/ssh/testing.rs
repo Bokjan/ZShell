@@ -173,7 +173,7 @@ async fn connect_with<H: russh::server::Handler + Send + 'static>(
     let (disconnect_tx, disconnect) = watch::channel(None);
     // Nothing is asked: any host key is taken.
     let (queries, _) = mpsc::channel(1);
-    let handler = ClientHandler::new("localhost".into(), 22, false, queries, routes.clone(), disconnect_tx).with_any_host_key();
+    let handler = ClientHandler::new(0, "localhost".into(), 22, false, queries, routes.clone(), disconnect_tx).with_any_host_key();
     let config = Arc::new(super::client_config(keepalive));
     let mut handle = client::connect_stream(config, client_side, handler).await.unwrap();
     assert!(handle.authenticate_none("alice").await.unwrap().success());

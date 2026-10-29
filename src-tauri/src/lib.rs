@@ -14,6 +14,7 @@ mod crash;
 mod crypto;
 #[cfg(target_os = "linux")]
 mod dbus;
+mod debug_log;
 #[cfg(target_os = "linux")]
 mod desktop;
 mod encoding;
@@ -110,6 +111,9 @@ fn clean_up_logs(app: tauri::AppHandle) {
 /// since nothing shows it or would ever close it. Its sessions close, its transfers are
 /// cancelled and its edits stop being watched.
 fn page_gone(app: &tauri::AppHandle, webview: &str) {
+    if webview == window::DEBUG_LOG {
+        debug_log::unwatch();
+    }
     app.state::<SessionManager>().remove_webview(webview);
     app.state::<Transfers>().cancel_webview(webview);
     // Managed in `setup`, which a page may not have reached.
@@ -143,6 +147,8 @@ pub(crate) fn scratch_dir(app: &tauri::AppHandle) -> tauri::Result<std::path::Pa
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // First, so that nothing logged is lost.
+    debug_log::start();
     #[cfg(target_os = "linux")]
     instance::keep_activation_token();
     // Before AppKit reads it.
@@ -172,7 +178,7 @@ pub fn run() {
                 // locks (some network ones) is used as it is. The lock is tried whether or
                 // not the folder could be made private.
                 if let Err(e) = persist::secure_dir(&config_dir) {
-                    eprintln!("can't make {} private: {e}", config_dir.display());
+                    log::warn!("can't make {} private: {e}", config_dir.display());
                 }
                 match instance::claim(&config_dir) {
                     Ok(instance::Claim::Ours(lock)) => {
@@ -188,15 +194,19 @@ pub fn run() {
                         instance::hand_over(&config_dir, pid);
                         return Ok(());
                     }
-                    Err(e) => eprintln!("can't lock {}, so another instance would go unnoticed: {e}", config_dir.display()),
+                    Err(e) => log::warn!("can't lock {}, so another instance would go unnoticed: {e}", config_dir.display()),
                 }
             }
             crash::record_panics(config_dir.join("crash.log"));
+            debug_log::deliver(app.handle().clone());
+            let (version, os, arch) = (env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH);
+            log::info!("ZShell {version} on {os} {arch}, settings in {}", config_dir.display());
             let set_aside = SetAside::default();
             let settings = SettingsStore::load(config_dir.join("settings.json"), &set_aside);
             let keep_awake = Arc::new(KeepAwake::for_platform(settings.get().power.keep_awake));
             // First, so that backend text is in the chosen language from the start.
             settings::apply(&settings.get(), &keep_awake);
+            log::info!("languages: {:?}", i18n::locales());
             keep_awake::watch_power(keep_awake.clone());
             app.manage(keep_awake);
             app.manage(settings);
@@ -266,6 +276,10 @@ pub fn run() {
         .manage(Transfers::default())
         .invoke_handler(tauri::generate_handler![
             commands::locale_get,
+            commands::debug_log::debug_log_open,
+            commands::debug_log::debug_log_snapshot,
+            commands::debug_log::debug_log_clear,
+            commands::debug_log::debug_log_write,
             commands::menu::app_menu_set,
             commands::menu::app_menu_set_label,
             commands::update::update_status,

@@ -39,6 +39,16 @@ impl Error {
         self.code
     }
 
+    /// The message in English with its code, whatever the language: for the debug log.
+    pub fn logged(&self) -> String {
+        let args: Vec<(&str, &dyn fmt::Display)> = self.params.iter().map(|(k, v)| (*k, v as &dyn fmt::Display)).collect();
+        let text = i18n::english(&format!("errors.{}", self.code), &args);
+        match &self.detail {
+            Some(detail) => format!("{text}: {detail} [{}]", self.code),
+            None => format!("{text} [{}]", self.code),
+        }
+    }
+
     fn message(&self) -> String {
         let args: Vec<(&str, &dyn fmt::Display)> = self.params.iter().map(|(k, v)| (*k, v as &dyn fmt::Display)).collect();
         let text = i18n::translate(&format!("errors.{}", self.code), &args);
@@ -112,8 +122,19 @@ impl TS for Error {
     }
 }
 
+/// `e` in English with its code, for the debug log (see [`Error::logged`]).
+pub fn logged(e: &anyhow::Error) -> String {
+    Error::of(e).logged()
+}
+
 impl From<anyhow::Error> for Error {
     fn from(e: anyhow::Error) -> Self {
+        Self::of(&e)
+    }
+}
+
+impl Error {
+    fn of(e: &anyhow::Error) -> Self {
         match e.downcast_ref::<Error>() {
             Some(outer) => {
                 let causes: Vec<String> = e.chain().skip(1).map(ToString::to_string).collect();

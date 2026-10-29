@@ -186,6 +186,7 @@ impl AppLock {
         }
         state.locked = true;
         drop(state);
+        log::info!("the app locked ({trigger:?})");
         if trigger != Trigger::Manual {
             (self.notify)();
         }
@@ -232,10 +233,14 @@ impl AppLock {
         self.vault.app_lock().ok_or_else(|| Error::new("vault.locked"))?;
         if self.is_locked() {
             match self.system.method() {
-                Err(error) if gone(&error) && anyway => {}
-                Err(error) if gone(&error) => return Err(Error::new("appLock.gone").detail(error)),
-                _ => self.system.authenticate(window)?,
+                Err(error) if gone(&error) && anyway => log::warn!("the way to unlock went away ({error}): unlocked without it"),
+                Err(error) if gone(&error) => {
+                    log::warn!("the way to unlock went away: {error}");
+                    return Err(Error::new("appLock.gone").detail(error));
+                }
+                _ => self.system.authenticate(window).inspect_err(|e| log::debug!("the app stays locked: {}", e.logged()))?,
             }
+            log::info!("the app unlocked");
         }
         self.unlocked();
         Ok(self.status())

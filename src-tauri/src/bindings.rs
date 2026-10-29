@@ -374,6 +374,8 @@ mod tests {
                 format!("{} as const", js(fonts::rules::KINDS)),
             ),
             ("No table, glyph or lookup in a font's ligature rules.", "LIGATURE_NONE", js(fonts::rules::NONE)),
+            ("The most records of the backend the debug log keeps.", "DEBUG_LOG_BACKEND_LINES", js(debug_log::BACKEND_LINES)),
+            ("The most records of the pages the debug log keeps.", "DEBUG_LOG_FRONTEND_LINES", js(debug_log::FRONTEND_LINES)),
             (
                 "How many of a forwarding rule's channels its traffic reports list.",
                 "FORWARD_CHANNELS_LISTED",
@@ -396,6 +398,8 @@ mod tests {
         let visitor = &mut collect;
         visitor.visit::<error::Error>();
         visitor.visit::<launch::SessionSpec>();
+        visitor.visit::<debug_log::FrontendRecord>();
+        visitor.visit::<debug_log::LogSource>();
         visitor.visit::<session::SessionSnapshot>();
         visitor.visit::<model::Folder>();
         visitor.visit::<model::Item>();

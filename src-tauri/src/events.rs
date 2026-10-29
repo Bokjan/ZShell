@@ -130,6 +130,8 @@ events! {
     /// The mouse's back or forward button was pressed over the web view (macOS, Linux).
     #[cfg_attr(windows, allow(dead_code))]
     MouseNavigation(crate::window::MouseNavigation) = "mouse-navigation";
+    /// Records the debug log window hasn't been sent yet, oldest first (see `debug_log`).
+    DebugLogAdded(Vec<crate::debug_log::LogEntry>) = "debug-log-added";
     /// The state of the maximize button as the system sees it (Windows).
     #[cfg_attr(not(windows), allow(dead_code))]
     MaximizeButton(crate::window::MaximizeButtonState) = "window-maximize-button";

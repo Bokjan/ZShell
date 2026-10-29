@@ -141,6 +141,13 @@ impl TermIo {
     /// Reports how a remote session ended, in the terminal and as its `Closed` event. What
     /// the session held is released first: the tab may reconnect as soon as it hears.
     pub fn finish(&self, outcome: Outcome) {
+        match &outcome {
+            Outcome::Exited(status) => log::info!("session ended: the remote side closed it (exit status {status:?})"),
+            Outcome::Signaled(signal) => log::info!("session ended: the remote shell was ended by {signal}"),
+            Outcome::ProcessEnded { code, signal } => log::info!("session ended: the process exited (code {code:?}, signal {signal:?})"),
+            Outcome::Lost(e) => log::warn!("session lost: {}", e.logged()),
+            Outcome::Failed(e) => log::warn!("session failed: {}", e.logged()),
+        }
         self.lifetime.close();
         self.sink.flush_text();
         self.sink.reset_modes();

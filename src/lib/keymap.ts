@@ -76,6 +76,7 @@ const KEYMAP = {
   checkForUpdates: {},
   releaseNotes: {},
   reportIssue: {},
+  debugLog: {},
   about: {},
   // Outside macOS, whose app menu has the system's own Quit (⌘Q).
   quit: {},
@@ -110,6 +111,7 @@ export type MenuAction = Extract<
   | "checkForUpdates"
   | "releaseNotes"
   | "reportIssue"
+  | "debugLog"
   | "about"
   | "quit"
 >;
@@ -153,14 +155,14 @@ export function appMenu(mac = isMac): { section: MenuSection; items: MenuEntry[]
       { section: "file", items: file },
       { section: "edit", items: ["find"] },
       { section: "view", items: view },
-      { section: "help", items: ["releaseNotes", "reportIssue"] },
+      { section: "help", items: ["releaseNotes", "reportIssue", "separator", "debugLog"] },
     ];
   }
   return [
     { section: "file", items: file },
     { section: "edit", items: ["copy", "paste", "separator", "find"] },
     { section: "view", items: view },
-    { section: "help", items: ["releaseNotes", "reportIssue", "separator", "checkForUpdates", "about"] },
+    { section: "help", items: ["releaseNotes", "reportIssue", "separator", "debugLog", "separator", "checkForUpdates", "about"] },
     { section: "app", items: ["lock", "settings", "separator", "quit"] },
   ];
 }

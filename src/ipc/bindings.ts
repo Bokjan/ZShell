@@ -253,6 +253,46 @@ lastSent: number | null, lastReceived: number | null, };
 export type CursorStyle = "block" | "bar" | "underline";
 
 /**
+ * A record of the debug log.
+ */
+export type DebugLogEntry = { 
+/**
+ * Increases with each record, of either side.
+ */
+seq: number, source: DebugLogSource, 
+/**
+ * When, in milliseconds since the Unix epoch.
+ */
+time: number, level: DebugLogLevel, 
+/**
+ * The backend's module (`ssh::auth`, `russh::client::kex`), or the page's window (`main`).
+ */
+target: string, 
+/**
+ * The connection the record is about, as the status bar numbers them.
+ */
+connection: number | null, message: string, };
+
+/**
+ * How much a record matters, as `log`'s levels; `trace` is never kept.
+ */
+export type DebugLogLevel = "error" | "warn" | "info" | "debug";
+
+/**
+ * A page's record, sent with `debug_log_write`; the page is its target.
+ */
+export type DebugLogRecord = { level: DebugLogLevel, 
+/**
+ * When, in milliseconds since the Unix epoch, by the page's clock.
+ */
+time: number, message: string, };
+
+/**
+ * Which side a record comes from: the window shows each in its own tab.
+ */
+export type DebugLogSource = "backend" | "frontend";
+
+/**
  * A remote item being dragged.
  */
 export type DragItem = { path: string, isDir: boolean, 
@@ -1198,6 +1238,7 @@ export type Events = {
   "app-locked": null;
   "busy-query": number;
   "config-changed": Change;
+  "debug-log-added": Array<DebugLogEntry>;
   "menu-action": string;
   "mouse-navigation": MouseNavigation;
   "offers-withdrawn": Array<number>;
@@ -1229,6 +1270,10 @@ export type Commands = {
   config_directory: { args: Record<string, never>; result: string };
   config_set_aside: { args: Record<string, never>; result: SetAsideFile[] };
   credential_store_available: { args: Record<string, never>; result: boolean };
+  debug_log_clear: { args: { source: DebugLogSource }; result: void };
+  debug_log_open: { args: Record<string, never>; result: void };
+  debug_log_snapshot: { args: Record<string, never>; result: DebugLogEntry[] };
+  debug_log_write: { args: { records: DebugLogRecord[] }; result: void };
   downloads_directory: { args: Record<string, never>; result: string };
   folder_delete: { args: { id: string }; result: void };
   folder_save: { args: { folder: Folder }; result: Folder };
@@ -1386,6 +1431,12 @@ export const LIGATURE_SUBTABLES = { classRules: 5, coverageRules: 6, glyphRules:
 
 /** No table, glyph or lookup in a font's ligature rules. */
 export const LIGATURE_NONE = 4294967295;
+
+/** The most records of the backend the debug log keeps. */
+export const DEBUG_LOG_BACKEND_LINES = 10000;
+
+/** The most records of the pages the debug log keeps. */
+export const DEBUG_LOG_FRONTEND_LINES = 2000;
 
 /** How many of a forwarding rule's channels its traffic reports list. */
 export const FORWARD_CHANNELS_LISTED = 20;

@@ -181,6 +181,11 @@ pub fn translate(key: &str, args: &[(&str, &dyn Display)]) -> String {
     interpolate(template, args)
 }
 
+/// Looks up `key` in English, whatever the locale: for the debug log, which is in English.
+pub fn english(key: &str, args: &[(&str, &dyn Display)]) -> String {
+    CATALOGS[FALLBACK].get(key).map_or_else(|| key.to_owned(), |template| interpolate(template, args))
+}
+
 fn interpolate(template: &str, args: &[(&str, &dyn Display)]) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;

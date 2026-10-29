@@ -7408,6 +7408,7 @@ dependencies = [
  "hmac",
  "keyring",
  "libc",
+ "log",
  "memchr",
  "notify",
  "objc2",

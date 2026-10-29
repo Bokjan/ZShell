@@ -63,9 +63,30 @@
       "checkForUpdates": "Check for Updates…",
       "releaseNotes": "Release Notes",
       "reportIssue": "Report an Issue",
+      "debugLog": "Debug Log",
       "about": "About ZShell",
       "quit": "Exit"
     }
+  },
+  "debugLog": {
+    "title": "Debug Log",
+    "source": "Records",
+    "backend": "Backend",
+    "frontend": "Frontend",
+    "level": "Lowest level shown",
+    "levels": {
+      "error": "Error",
+      "warn": "Warning",
+      "info": "Info",
+      "debug": "Debug"
+    },
+    "filter": "Filter",
+    "count": "{shown} of {total}",
+    "copyShown": "Copy All Shown",
+    "copied_one": "{count} record copied",
+    "copied_other": "{count} records copied",
+    "clear": "Clear",
+    "cleared": "Records cleared"
   },
   "updates": {
     "available": "ZShell {version} is available.",

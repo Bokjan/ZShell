@@ -41,13 +41,13 @@ pub fn hold(reason: &str) -> Option<Hold> {
     // SAFETY: the context and its string are valid for the call, which copies the reason.
     let request = unsafe { PowerCreateRequest(&context) };
     if request == INVALID_HANDLE_VALUE {
-        eprintln!("can't keep the system awake: {}", std::io::Error::last_os_error());
+        log::warn!("can't keep the system awake: {}", std::io::Error::last_os_error());
         return None;
     }
     let request = Request(request);
     // SAFETY: the request just made.
     if unsafe { PowerSetRequest(request.0, PowerRequestSystemRequired) } == 0 {
-        eprintln!("can't keep the system awake: {}", std::io::Error::last_os_error());
+        log::warn!("can't keep the system awake: {}", std::io::Error::last_os_error());
         return None;
     }
     Some(Box::new(request))

@@ -52,7 +52,7 @@ impl Connection {
         disconnect: watch::Receiver<Option<EndReason>>,
     ) -> Arc<Self> {
         let handle = Arc::new(handle);
-        let liveness = Liveness::new(link.clone(), &handle, profile.ssh.remote.keepalive().is_some());
+        let liveness = Liveness::new(info.id, link.clone(), &handle, profile.ssh.remote.keepalive().is_some());
         Arc::new(Self { handle, info, profile, _jumps: jumps, routes, disconnect, shells: Arc::default(), link, liveness })
     }
 

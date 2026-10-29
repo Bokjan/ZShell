@@ -12,6 +12,8 @@ use super::host_key::{HostKeyMessage, HostKeyQuery, HostKeyStatus};
 use super::known_hosts::{self, CertificateCheck, Check, Invalid};
 
 pub struct ClientHandler {
+    /// The connection's number, for the debug log: this runs on russh's connection task.
+    conn: u32,
     host: String,
     port: u16,
     /// Whether we asked for agent forwarding; agent channels are refused otherwise.
@@ -49,6 +51,7 @@ impl EndReason {
 
 impl ClientHandler {
     pub fn new(
+        conn: u32,
         host: String,
         port: u16,
         forward_agent: bool,
@@ -57,6 +60,7 @@ impl ClientHandler {
         disconnect: watch::Sender<Option<EndReason>>,
     ) -> Self {
         Self {
+            conn,
             host,
             port,
             forward_agent,
@@ -119,16 +123,29 @@ impl client::Handler for ClientHandler {
             return Ok(true);
         }
         let key = server_key.public_key();
+        let conn = self.conn;
+        log::debug!(conn; "server host key: {} {}", key.algorithm(), key.fingerprint(russh::keys::HashAlg::Sha256));
         // As OpenSSH: a certificate that isn't trusted, or not valid, is checked as the key in
         // it, unless it is revoked or its signature is bad.
         if let PublicKeyOrCertificate::Certificate(certificate) = server_key {
+            log::debug!(
+                conn;
+                "a certificate, key ID \"{}\", signed by {}",
+                certificate.key_id(),
+                certificate.signature_key().fingerprint(russh::keys::HashAlg::Sha256)
+            );
             let (host, port, certificate) = (self.host.clone(), self.port, certificate.clone());
             let checked = tokio::task::spawn_blocking(move || known_hosts::check_certificate(&host, port, &certificate))
                 .await
                 .map_err(std::io::Error::other)?;
             match checked {
-                Ok(CertificateCheck::Trusted) => return Ok(true),
-                Ok(CertificateCheck::Untrusted) => {}
+                Ok(CertificateCheck::Trusted) => {
+                    log::debug!(conn; "the certificate's authority is trusted for this host");
+                    return Ok(true);
+                }
+                Ok(CertificateCheck::Untrusted) => {
+                    log::debug!(conn; "the certificate's authority isn't trusted for this host: checking the key")
+                }
                 Ok(CertificateCheck::Revoked { path, authority: false, .. }) => {
                     return Ok(self.ask(key, HostKeyStatus::Revoked { path }).await)
                 }
@@ -139,6 +156,7 @@ impl client::Handler for ClientHandler {
                     return Ok(self.ask(key, HostKeyStatus::BadCertificateSignature).await)
                 }
                 Ok(CertificateCheck::Invalid(why)) => {
+                    log::warn!(conn; "the certificate is set aside: {why:?}");
                     let warning = invalid_certificate(&why, &self.host);
                     let _ = self.queries.send(HostKeyMessage::Warning(warning)).await;
                 }
@@ -151,7 +169,10 @@ impl client::Handler for ClientHandler {
         let checked =
             tokio::task::spawn_blocking(move || known_hosts::check(&host, port, &checked)).await.map_err(std::io::Error::other)?;
         let status = match checked {
-            Ok(Check::Known) => return Ok(true),
+            Ok(Check::Known) => {
+                log::debug!(conn; "host key found in known_hosts");
+                return Ok(true);
+            }
             Ok(Check::Unknown) => HostKeyStatus::Unknown { others: Vec::new() },
             Ok(Check::OtherTypesKnown(others)) => HostKeyStatus::Unknown { others },
             Ok(Check::Changed { path, line }) => HostKeyStatus::Changed { path, line },
@@ -173,6 +194,7 @@ impl client::Handler for ClientHandler {
         reply: ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
+        log::debug!(conn = self.conn; "the server opens channel {} for {connected_address}:{connected_port} (remote forwarding)", channel.id());
         self.routes.route(connected_address, connected_port, Incoming { channel, reply });
         Ok(())
     }
@@ -186,10 +208,13 @@ impl client::Handler for ClientHandler {
         reply: ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
+        let conn = self.conn;
         if !self.forward_agent {
+            log::warn!(conn; "the server opens an agent channel, but agent forwarding is off: refused");
             reply.reject(ChannelOpenFailure::AdministrativelyProhibited).await;
             return Ok(());
         }
+        log::debug!(conn; "the server opens agent channel {}", channel.id());
         tauri::async_runtime::spawn(async move {
             match super::auth::agent_stream().await {
                 Ok(mut agent) => {
@@ -197,7 +222,10 @@ impl client::Handler for ClientHandler {
                     let mut stream = channel.into_stream();
                     let _ = tokio::io::copy_bidirectional(&mut stream, &mut agent).await;
                 }
-                Err(_) => reply.reject(ChannelOpenFailure::ConnectFailed).await,
+                Err(e) => {
+                    log::warn!(conn; "no local agent for the forwarded agent channel: {e:#}");
+                    reply.reject(ChannelOpenFailure::ConnectFailed).await;
+                }
             }
         });
         Ok(())
@@ -260,6 +288,12 @@ impl client::Handler for ClientHandler {
     }
 
     async fn disconnected(&mut self, reason: DisconnectReason<Self::Error>) -> Result<(), Self::Error> {
+        match &reason {
+            DisconnectReason::ReceivedDisconnect(info) => {
+                log::info!(conn = self.conn; "the server ended the connection: {:?} \"{}\"", info.reason_code, info.message);
+            }
+            DisconnectReason::Error(e) => log::info!(conn = self.conn; "the connection ended: {e}"),
+        }
         self.disconnect.send_replace(Some(EndReason::of(&reason)));
         match reason {
             DisconnectReason::ReceivedDisconnect(_) => Ok(()),

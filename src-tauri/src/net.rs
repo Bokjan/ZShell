@@ -3,7 +3,7 @@
 
 use std::future::Future;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -70,12 +70,22 @@ pub fn local_port(stream: &TcpStream) -> Option<u16> {
 /// Looking the name up has the same limit.
 pub async fn tcp(host: &str, port: u16) -> Result<TcpStream> {
     let target = host_port(host, port);
+    let started = Instant::now();
     let addresses: Vec<SocketAddr> = tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::lookup_host((host, port)))
         .await
-        .map_err(|_| Error::new("net.connectTimeout").param("target", &target))?
+        .map_err(|_| {
+            log::debug!("looking up {host} gave no answer in {CONNECT_TIMEOUT:?}");
+            Error::new("net.connectTimeout").param("target", &target)
+        })?
+        .inspect_err(|e| log::debug!("can't look up {host}: {e}"))
         .context(Error::new("net.connectFailed").param("target", &target))?
         .collect();
+    log::debug!("{host} is at {addresses:?} (looked up in {} ms)", started.elapsed().as_millis());
+    let started = Instant::now();
     let stream = connect_any(&addresses, CONNECT_TIMEOUT, &target, TcpStream::connect).await?;
+    let peer = stream.peer_addr().map_or_else(|_| target.clone(), |peer| peer.to_string());
+    let local = local_port(&stream).map_or_else(|| "?".to_owned(), |port| port.to_string());
+    log::debug!("TCP connection to {peer} from local port {local} in {} ms", started.elapsed().as_millis());
     stream.set_nodelay(true)?;
     Ok(stream)
 }
@@ -91,8 +101,14 @@ where
     for &address in addresses {
         match tokio::time::timeout(timeout, connect(address)).await {
             Ok(Ok(stream)) => return Ok(stream),
-            Ok(Err(e)) => last = Some(anyhow::Error::new(e).context(Error::new("net.connectFailed").param("target", target))),
-            Err(_) => last = Some(Error::new("net.connectTimeout").param("target", target).into()),
+            Ok(Err(e)) => {
+                log::debug!("can't connect to {address}: {e}");
+                last = Some(anyhow::Error::new(e).context(Error::new("net.connectFailed").param("target", target)));
+            }
+            Err(_) => {
+                log::debug!("{address} gave no answer in {timeout:?}");
+                last = Some(Error::new("net.connectTimeout").param("target", target).into());
+            }
         }
     }
     Err(last.unwrap_or_else(|| Error::new("net.connectFailed").param("target", target).into()))
@@ -102,7 +118,9 @@ where
 /// noticed after three unanswered probes (like SSH's keepalives). Best effort.
 pub fn set_keepalive(stream: &TcpStream, interval: Duration) {
     let keepalive = socket2::TcpKeepalive::new().with_time(interval).with_interval(interval).with_retries(3);
-    let _ = socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive);
+    if let Err(e) = socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive) {
+        log::warn!("can't turn on TCP keepalives: {e}");
+    }
 }
 
 #[cfg(test)]

@@ -29,13 +29,16 @@ pub async fn spawn(proxy: &Proxy, host: &str, port: u16, user: &str, sink: Sessi
     let line = expand(&proxy.command, host, port, user)?;
     let mut command = build(&line).await;
     command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    log::debug!("running proxy command \"{}\": {line}", proxy.name);
     let mut child = command.spawn().with_context(|| Error::new("proxy.commandFailed").param("command", &line))?;
+    log::debug!("proxy command started, process {}", child.id().unwrap_or_default());
     let (stdin, stdout) = (child.stdin.take().expect("piped"), child.stdout.take().expect("piped"));
     let mut stderr = child.stderr.take().expect("piped");
     tauri::async_runtime::spawn(async move {
         let mut buffer = vec![0; 4096];
         while let Ok(n @ 1..) = stderr.read(&mut buffer).await {
             let text = String::from_utf8_lossy(&buffer[..n]);
+            log::debug!("proxy command: {}", text.trim_end());
             sink.print(&format!("\x1b[2m{text}\x1b[0m"));
         }
     });

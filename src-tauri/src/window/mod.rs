@@ -11,6 +11,10 @@
 //! only the frontend reads. Kept rather than sent, so that a page still loading gets them, and
 //! a window closing once its last tab is gone never takes one with it ([`close_empty`]).
 //!
+//! The debug log window (`debug-log`, at most one) is not one of these "app windows": it has no
+//! tabs, takes none, is never what the menu acts on (but the items it handles itself while it
+//! has the focus, see `menu::chosen`) and closes with the last app window.
+//!
 //! What each platform does to its windows is in its own file (`macos.rs`, `win.rs`,
 //! `linux.rs`), which this one reaches as `platform`. Each provides the same functions, doing
 //! nothing itself where the platform has nothing to do, so that one missing a function doesn't
@@ -57,6 +61,10 @@ pub use win::{keep_behind, need_pointer};
 
 const MAIN: &str = "main";
 const LABEL_PREFIX: &str = "window-";
+/// The debug log window's label.
+pub const DEBUG_LOG: &str = "debug-log";
+/// The debug log window's size when it opens, in CSS pixels.
+const DEBUG_LOG_SIZE: (f64, f64) = (960.0, 600.0);
 
 /// How far a new window is from the one it came from, down and to the right.
 const CASCADE: f64 = 28.0;
@@ -92,6 +100,16 @@ pub enum WindowContent {
     },
 }
 
+/// Whether window `label` is one of those with tabs, rather than the debug log.
+fn is_app_window(label: &str) -> bool {
+    label == MAIN || label.starts_with(LABEL_PREFIX)
+}
+
+/// The windows with tabs (see [`is_app_window`]).
+pub fn app_windows(app: &AppHandle) -> Vec<WebviewWindow> {
+    app.webview_windows().into_values().filter(|window| is_app_window(window.label())).collect()
+}
+
 /// Where a window is in the order they opened: `main` first.
 pub(crate) fn order(label: &str) -> u32 {
     label.strip_prefix(LABEL_PREFIX).and_then(|n| n.parse().ok()).unwrap_or(0)
@@ -102,12 +120,17 @@ pub(crate) fn order(label: &str) -> u32 {
 /// rather than only recorded: a new window gets the focus as it is created, before its
 /// events are delivered, so its first `Focused` event never comes.
 pub fn current(app: &AppHandle) -> Option<WebviewWindow> {
-    let windows = app.webview_windows();
-    if let Some(window) = windows.values().find(|w| w.is_focused().unwrap_or(false)) {
+    let windows = app_windows(app);
+    if let Some(window) = windows.iter().find(|w| w.is_focused().unwrap_or(false)) {
         return Some(window.clone());
     }
     let label = app.state::<Windows>().focused.lock().unwrap().clone();
-    windows.get(&label).or_else(|| windows.values().min_by_key(|w| order(w.label()))).cloned()
+    windows.iter().find(|w| w.label() == label).or_else(|| windows.iter().min_by_key(|w| order(w.label()))).cloned()
+}
+
+/// The debug log window, if it is open and has the focus.
+pub fn focused_debug_log(app: &AppHandle) -> Option<WebviewWindow> {
+    app.get_webview_window(DEBUG_LOG).filter(|window| window.is_focused().unwrap_or(false))
 }
 
 /// Tells every window that windows opened, closed or changed their titles (`windows-changed`).
@@ -117,12 +140,15 @@ fn changed(app: &AppHandle) {
 
 /// Records the window that has the focus now.
 pub fn focused(window: &tauri::Window) {
-    *window.state::<Windows>().focused.lock().unwrap() = window.label().to_owned();
+    if is_app_window(window.label()) {
+        *window.state::<Windows>().focused.lock().unwrap() = window.label().to_owned();
+    }
 }
 
 /// After a window is gone: what was kept about it goes, and the other windows hear
 /// (`window-closed` with its label, besides `windows-changed`).
 pub fn destroyed(window: &tauri::Window) {
+    log::debug!("window {} closed", window.label());
     let windows = window.state::<Windows>();
     windows.inbox.lock().unwrap().forget(window.label());
     // Its sessions closed with it.
@@ -133,6 +159,13 @@ pub fn destroyed(window: &tauri::Window) {
     events::emit(window, events::WindowClosed(window.label().to_owned()));
     platform::forget(window);
     changed(window.app_handle());
+    // The app ends with its last window with tabs, which the debug log would keep open.
+    let app = window.app_handle();
+    if is_app_window(window.label()) && app_windows(app).iter().all(|other| other.label() == window.label()) {
+        if let Some(debug_log) = app.get_webview_window(DEBUG_LOG) {
+            let _ = debug_log.destroy();
+        }
+    }
 }
 
 /// Window `label`'s page loads again (see `page_gone`): the tabs its page had taken went with
@@ -162,6 +195,9 @@ type Place = (tauri::Position, tauri::LogicalSize<f64>);
 fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<WebviewWindow> {
     let mut config = app.config().app.windows.iter().find(|w| w.label == MAIN).cloned().unwrap_or_default();
     config.label = label.to_owned();
+    if label == DEBUG_LOG {
+        (config.width, config.height) = DEBUG_LOG_SIZE;
+    }
     // WebView2 would otherwise offer values typed into earlier forms, and doesn't always honor
     // `autocomplete="off"`. A no-op on the other platforms, whose web views have no such list.
     let builder = platform::title_bar(WebviewWindowBuilder::from_config(app, &config)?.general_autofill_enabled(false));
@@ -171,7 +207,8 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
     // first shown too.
     let hidden = place.is_some() || platform::PREPARED_HIDDEN;
     let builder = if hidden { builder.visible(false) } else { builder };
-    let window = builder.build()?;
+    let window = builder.build().inspect_err(|e| log::error!("can't create window {label}: {e}"))?;
+    log::debug!("window {label} created");
     platform::prepare(&window)?;
     if let Some((position, size)) = place {
         window.set_position(position)?;
@@ -242,7 +279,7 @@ pub fn take(window: WebviewWindow, windows: &Windows) -> Vec<WindowContent> {
 /// Closes this window, which has no tabs left, unless it is the last one or has been given a
 /// tab it hasn't taken yet; returns whether it closes. From then on it takes no tabs.
 pub fn close_empty(app: AppHandle, window: WebviewWindow, windows: &Windows) -> tauri::Result<bool> {
-    let last = app.webview_windows().len() < 2;
+    let last = app_windows(&app).len() < 2;
     if !windows.inbox.lock().unwrap().close_empty(window.label(), last) {
         return Ok(false);
     }
@@ -279,7 +316,7 @@ pub struct WindowInfo {
 
 /// The other windows, in the order they opened.
 pub fn list(app: AppHandle, window: WebviewWindow) -> Vec<WindowInfo> {
-    let mut others: Vec<WebviewWindow> = app.webview_windows().into_values().filter(|w| w.label() != window.label()).collect();
+    let mut others: Vec<WebviewWindow> = app_windows(&app).into_iter().filter(|w| w.label() != window.label()).collect();
     others.sort_by_key(|w| order(w.label()));
     others.into_iter().map(|w| WindowInfo { title: w.title().unwrap_or_default(), label: w.label().to_owned() }).collect()
 }
@@ -291,6 +328,18 @@ pub fn set_title(app: AppHandle, window: WebviewWindow, title: String) -> tauri:
         window.set_title(&title)?;
         changed(&app);
     }
+    Ok(())
+}
+
+/// Opens the debug log window, or brings it forward if it is open. Async: creating a window
+/// from a synchronous command deadlocks on Windows.
+pub async fn open_debug_log(app: AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(DEBUG_LOG) {
+        window.unminimize()?;
+        window.show()?;
+        return window.set_focus();
+    }
+    build(&app, DEBUG_LOG, None)?;
     Ok(())
 }
 
@@ -338,7 +387,7 @@ pub fn pane_stayed(app: AppHandle, target: String, pane: u32) {
 /// are busy. A window that doesn't answer in time (its page still loading) counts all the
 /// sessions it shows.
 pub async fn busy_count(app: AppHandle, windows: &Windows, sessions: &SessionManager) -> tauri::Result<u32> {
-    let labels: HashSet<String> = app.webview_windows().into_keys().collect();
+    let labels: HashSet<String> = app_windows(&app).iter().map(|window| window.label().to_owned()).collect();
     let (id, answered) = windows.busy.lock().unwrap().ask(labels.clone());
     for label in labels {
         events::emit_to(&app, label, events::BusyQuery(id));

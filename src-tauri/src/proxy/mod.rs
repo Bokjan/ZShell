@@ -66,6 +66,7 @@ async fn connect_with(
             true => Some(Credentials { username: proxy.username.clone(), password: password(proxy, &mut saved, io).await? }),
             false => None,
         };
+        log::debug!("connecting to {:?} proxy \"{}\" at {}", proxy.kind, proxy.name, host_port(&proxy.host, proxy.port));
         let mut stream =
             crate::net::tcp(&proxy.host, proxy.port).await.context(Error::new("proxy.unreachable").param("proxy", &proxy.name))?;
         if let Some(interval) = keepalive {
@@ -82,9 +83,11 @@ async fn connect_with(
         let handshake =
             tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake).await.unwrap_or_else(|_| Err(errors.error("proxy.timeout").into()));
         let Err(e) = handshake else {
+            log::debug!("the proxy is connected to {}", errors.target);
             let local_port = crate::net::local_port(&stream);
             return Ok((Box::new(stream), local_port));
         };
+        log::debug!("the proxy didn't connect: {}", crate::error::logged(&e));
         let rejected = e.downcast_ref::<Error>().is_some_and(|e| e.code() == "proxy.authFailed");
         if typed {
             attempts += 1;

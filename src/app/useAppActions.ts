@@ -4,6 +4,7 @@ import type { SectionId } from "../components/settings/common";
 import { useAppLock } from "../hooks/appLock";
 import { ISSUES_URL, RELEASES_URL } from "../hooks/appMenu";
 import { useShortcuts } from "../hooks/shortcuts";
+import { debugLog } from "../ipc/debugLog";
 import { directory } from "../lib/directory";
 import { matches, PANE_SIDES, TAB_ACTIONS, type Action, type MenuAction } from "../lib/keymap";
 import { neighbor, type Direction } from "../lib/layout";
@@ -123,6 +124,7 @@ export function useAppActions(options: Options): (action: MenuAction) => boolean
     },
     releaseNotes: { always: true, run: () => void openUrl(RELEASES_URL).catch(console.error) },
     reportIssue: { always: true, run: () => void openUrl(ISSUES_URL).catch(console.error) },
+    debugLog: { always: true, run: debugLog.open },
 
     newLocalTerminal: { enabled: () => options.localAllowed, run: options.openLocalTab },
     searchSessions: { run: options.searchSessions },

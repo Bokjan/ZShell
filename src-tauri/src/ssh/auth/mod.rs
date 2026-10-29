@@ -63,6 +63,22 @@ enum Outcome {
     Rejected,
 }
 
+impl Outcome {
+    /// How the server answered, for the debug log.
+    fn logged(&self) -> String {
+        match self {
+            Outcome::Success => "accepted".to_owned(),
+            Outcome::Partial(methods) => format!("accepted, but the server requires more: {}", method_names(methods)),
+            Outcome::Rejected => "rejected".to_owned(),
+        }
+    }
+}
+
+/// `key`'s type and fingerprint, for the debug log.
+fn key_name(key: &PublicKey) -> String {
+    format!("{} {}", key.algorithm(), key.fingerprint(HashAlg::Sha256))
+}
+
 impl From<AuthResult> for Outcome {
     fn from(result: AuthResult) -> Self {
         match result {
@@ -134,13 +150,15 @@ impl<H: Handler> Auth<'_, H> {
     /// OpenSSH's order.
     async fn run(mut self) -> Result<()> {
         let user = self.user().to_owned();
-        let result = self.session.authenticate_none(user).await;
+        let result = self.session.authenticate_none(user.clone()).await;
         let Some(methods) = (match self.answer(result).await? {
             AuthResult::Success => None,
             AuthResult::Failure { remaining_methods, .. } => Some(remaining_methods),
         }) else {
+            log::info!("authenticated as {user} without credentials (method none)");
             return Ok(());
         };
+        log::debug!("the server allows: {}", method_names(&methods));
         let mut outcome = self.configured(&methods).await?;
         for _ in 0..MAX_ROUNDS {
             let Outcome::Partial(required) = outcome else { break };
@@ -150,6 +168,7 @@ impl<H: Handler> Auth<'_, H> {
             }
         }
         ensure!(outcome == Outcome::Success, Error::new("auth.failed"));
+        log::info!("authenticated as {user}");
         Ok(())
     }
 
@@ -157,6 +176,7 @@ impl<H: Handler> Auth<'_, H> {
     async fn configured(&mut self, methods: &MethodSet) -> Result<Outcome> {
         let offered = |kinds: &[MethodKind]| kinds.iter().any(|kind| methods.contains(kind));
         let not_offered = || Error::new("auth.notOffered").param("methods", method_names(methods));
+        log::debug!("the session authenticates by {:?}", self.profile.ssh.auth);
         let outcome = match &self.profile.ssh.auth {
             AuthMethod::Auto => {
                 let outcome = self.automatic(methods).await?;
@@ -260,7 +280,9 @@ impl<H: Handler> Auth<'_, H> {
         let user = self.user().to_owned();
         if let Some(password) = self.take_saved_password().await {
             let result = self.session.authenticate_password(&user, password).await;
-            match self.answer(result).await?.into() {
+            let outcome: Outcome = self.answer(result).await?.into();
+            log::debug!("password (saved): {}", outcome.logged());
+            match outcome {
                 Outcome::Rejected => self.io.print(&format!("{}\n", t!("terminal.savedPasswordRejected"))),
                 outcome => return Ok(outcome),
             }
@@ -269,7 +291,9 @@ impl<H: Handler> Auth<'_, H> {
             self.io.print(&password_prompt(&user, &self.profile.ssh.remote.host));
             let password = self.io.read_line(false).await.context(Error::new("auth.cancelled"))?;
             let result = self.session.authenticate_password(&user, password).await;
-            match self.answer(result).await?.into() {
+            let outcome: Outcome = self.answer(result).await?.into();
+            log::debug!("password (typed): {}", outcome.logged());
+            match outcome {
                 Outcome::Rejected => self.io.print(PERMISSION_DENIED),
                 outcome => return Ok(outcome),
             }
@@ -284,12 +308,22 @@ impl<H: Handler> Auth<'_, H> {
             let mut response = self.answer(result).await?;
             loop {
                 match response {
-                    KeyboardInteractiveAuthResponse::Success => return Ok(Outcome::Success),
-                    KeyboardInteractiveAuthResponse::Failure { partial_success: true, remaining_methods } => {
-                        return Ok(Outcome::Partial(remaining_methods))
+                    KeyboardInteractiveAuthResponse::Success => {
+                        log::debug!("keyboard-interactive: {}", Outcome::Success.logged());
+                        return Ok(Outcome::Success);
                     }
-                    KeyboardInteractiveAuthResponse::Failure { .. } => break,
+                    KeyboardInteractiveAuthResponse::Failure { partial_success: true, remaining_methods } => {
+                        let outcome = Outcome::Partial(remaining_methods);
+                        log::debug!("keyboard-interactive: {}", outcome.logged());
+                        return Ok(outcome);
+                    }
+                    KeyboardInteractiveAuthResponse::Failure { .. } => {
+                        log::debug!("keyboard-interactive: {}", Outcome::Rejected.logged());
+                        break;
+                    }
                     KeyboardInteractiveAuthResponse::InfoRequest { name, instructions, prompts } => {
+                        let hidden = prompts.iter().filter(|prompt| !prompt.echo).count();
+                        log::debug!("keyboard-interactive: the server asks {} questions ({hidden} hidden)", prompts.len());
                         // The server's text, without what would act on the terminal, as OpenSSH.
                         for text in [name, instructions] {
                             if !text.is_empty() {
@@ -303,6 +337,7 @@ impl<H: Handler> Auth<'_, H> {
                             // a wrong answer may count against the account.
                             if prompts.len() == 1 && asks_for_password(&prompt.prompt, prompt.echo, &user) {
                                 if let Some(password) = self.take_saved_password().await {
+                                    log::debug!("keyboard-interactive: answered with the saved password");
                                     answers.push(password);
                                     continue;
                                 }
@@ -344,18 +379,31 @@ impl<H: Handler> Auth<'_, H> {
         }
         let hash_alg = self.rsa_hash(key.public_key()).await?;
         let user = self.user().to_owned();
+        let name = key_name(key.public_key());
         let result = self.session.authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg)).await;
-        Ok(self.answer(result).await?.into())
+        let outcome: Outcome = self.answer(result).await?.into();
+        log::debug!("key {name}: {}", outcome.logged());
+        Ok(outcome)
     }
 
     /// Tries one key file: unreadable files and rejected keys are `Rejected`. An encrypted
     /// key's passphrase is only asked for once the server accepts its public key.
     async fn try_key_file(&mut self, path: &Path) -> Result<Outcome> {
-        let Ok(text) = read_key_file(path).await else { return Ok(Outcome::Rejected) };
+        log::debug!("trying key file {}", path.display());
+        let text = match read_key_file(path).await {
+            Ok(text) => text,
+            Err(e) => {
+                log::debug!("can't read {}: {e}", path.display());
+                return Ok(Outcome::Rejected);
+            }
+        };
         match decode_secret_key(&text, None) {
             Ok(key) => self.sign_in_with(key).await,
             Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(path, &text, false).await,
-            Err(_) => Ok(Outcome::Rejected),
+            Err(e) => {
+                log::debug!("{} is not a key: {e}", path.display());
+                Ok(Outcome::Rejected)
+            }
         }
     }
 
@@ -380,19 +428,24 @@ impl<H: Handler> Auth<'_, H> {
         }
         let hash_alg = self.rsa_hash(&public).await?;
         let user = self.user().to_owned();
+        let name = key_name(&public);
         let mut signer = PassphraseSigner { path, key: &encrypted, io: self.io, cancelled: false, decrypt_failed: false };
         let result = self.session.authenticate_publickey_with(user, public, hash_alg, &mut signer).await.map_err(SignError::lost);
         // What happened to the passphrase first: a server may hang up on the invalid
         // signature sent without it.
         ensure!(!signer.cancelled, Error::new("auth.cancelled"));
         ensure!(!(chosen && signer.decrypt_failed), decrypt_failed());
-        Ok(self.answer(result).await?.into())
+        let wrong = if signer.decrypt_failed { ", the passphrase was wrong" } else { "" };
+        let outcome: Outcome = self.answer(result).await?.into();
+        log::debug!("encrypted key {name}: {}{wrong}", outcome.logged());
+        Ok(outcome)
     }
 
     /// The agent's keys, in its order, skipping those offered before.
     async fn agent(&mut self) -> Result<Outcome> {
         let mut agent = connect_agent().await.context(Error::new("auth.agentConnectFailed"))?;
         let identities = agent.request_identities().await.context(Error::new("auth.agentListFailed"))?;
+        log::debug!("the agent has {} keys", identities.len());
         ensure!(!identities.is_empty(), Error::new("auth.agentEmpty"));
 
         let result = self.session.best_supported_rsa_hash().await;
@@ -407,11 +460,13 @@ impl<H: Handler> Auth<'_, H> {
                 continue;
             }
             let hash_alg = if key.algorithm().is_rsa() { rsa_hash } else { None };
+            let name = key_name(&key);
             let result =
                 self.session.authenticate_publickey_with(&user, key, hash_alg, &mut AgentSigner(&mut agent)).await.map_err(SignError::lost);
-            match self.answer(result).await?.into() {
-                Outcome::Rejected => {}
-                outcome => return Ok(outcome),
+            let outcome: Outcome = self.answer(result).await?.into();
+            log::debug!("agent key {name}: {}", outcome.logged());
+            if outcome != Outcome::Rejected {
+                return Ok(outcome);
             }
         }
         Ok(Outcome::Rejected)

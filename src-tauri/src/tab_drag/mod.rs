@@ -324,7 +324,7 @@ fn window_at_cursor(app: &AppHandle, _cursor: Point) -> Option<WebviewWindow> {
 
     let mtm = MainThreadMarker::new()?;
     let number = NSWindow::windowNumberAtPoint_belowWindowWithWindowNumber(NSEvent::mouseLocation(), 0, mtm);
-    app.webview_windows().into_values().find(|window| {
+    crate::window::app_windows(app).into_iter().find(|window| {
         // SAFETY: on macOS `ns_window` is the window's NSWindow, alive while the window is.
         window.ns_window().is_ok_and(|ns_window| unsafe { &*(ns_window as *const NSWindow) }.windowNumber() == number)
     })
@@ -344,14 +344,14 @@ fn window_at_cursor(app: &AppHandle, _cursor: Point) -> Option<WebviewWindow> {
         }
         GetAncestor(WindowFromPoint(point), GA_ROOT)
     };
-    app.webview_windows().into_values().find(|window| window.hwnd().is_ok_and(|hwnd| hwnd.0 as isize == root as isize))
+    crate::window::app_windows(app).into_iter().find(|window| window.hwnd().is_ok_and(|hwnd| hwnd.0 as isize == root as isize))
 }
 
 /// Without the system's order of windows: the focused window, then the others in the order
 /// they opened, whichever the cursor is over.
 #[cfg(not(any(target_os = "macos", windows)))]
 fn window_at_cursor(app: &AppHandle, cursor: Point) -> Option<WebviewWindow> {
-    let mut windows: Vec<WebviewWindow> = app.webview_windows().into_values().collect();
+    let mut windows: Vec<WebviewWindow> = crate::window::app_windows(app);
     windows.sort_by_key(|window| (!window.is_focused().unwrap_or(false), crate::window::order(window.label())));
     windows.into_iter().find(|window| {
         let (Some(Point { x, y }), Ok(size), Ok(scale)) = (page_point(window, cursor), window.inner_size(), window.scale_factor()) else {

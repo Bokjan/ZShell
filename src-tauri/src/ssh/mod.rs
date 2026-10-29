@@ -22,13 +22,14 @@ use russh::{Channel, ChannelMsg, ChannelStream, ChannelWriteHalf, Disconnect, Si
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 
+use crate::debug_log;
 use crate::error::Error;
 use crate::model::host_port;
 use crate::model::Proxy;
 use crate::model::SshProfile;
 use crate::net::Route;
 use crate::session::{Outcome, SessionEvent, SessionId, SessionInput, TermIo, Tone};
-use crate::traffic::{ChannelInfo, ConnectionInfo};
+use crate::traffic::{next_connection_id, ChannelInfo, ConnectionInfo};
 use crate::vault::SavedPasswords;
 pub use auth::{default_key_path, key_file_exists};
 pub use connection::{Connection, Shells, SshHandle};
@@ -56,23 +57,30 @@ pub async fn run(
     connected: impl FnOnce(Arc<Connection>, &TermIo) + Send,
     exit: impl ShellExit,
 ) {
-    let outcome = match start(&profile, &route, id, &mut io, connected).await {
-        Ok((channel, connection)) => shells(channel, &connection, id, &mut io, exit).await,
-        Err(e) => Outcome::Failed(e.into()),
-    };
-    io.finish(outcome);
+    let conn = next_connection_id();
+    debug_log::about(conn, async {
+        let outcome = match start(&profile, &route, conn, id, &mut io, connected).await {
+            Ok((channel, connection)) => shells(channel, &connection, id, &mut io, exit).await,
+            Err(e) => Outcome::Failed(e.into()),
+        };
+        io.finish(outcome);
+    })
+    .await;
 }
 
 /// Session backend for a duplicated tab: a new shell on `connection`, which is already
 /// registered for this session (see `crate::connections`). No prompts, no auto-started
 /// forwards: like a second OpenSSH session through a ControlMaster.
 pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: TermIo, exit: impl ShellExit) {
-    let outcome = match open_shell(&connection, id, &mut io).await {
-        Ok(channel) => shells(channel, &connection, id, &mut io, exit).await,
-        Err(e) => Outcome::Failed(e.into()),
-    };
-    drop(connection);
-    io.finish(outcome);
+    debug_log::about(connection.info().id, async {
+        let outcome = match open_shell(&connection, id, &mut io).await {
+            Ok(channel) => shells(channel, &connection, id, &mut io, exit).await,
+            Err(e) => Outcome::Failed(e.into()),
+        };
+        drop(connection);
+        io.finish(outcome);
+    })
+    .await;
 }
 
 /// Bridges the shell in `channel`, and those the session starts after it on the connection
@@ -143,24 +151,33 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
         let (next_host, next_port) =
             jumps.get(index + 1).map_or((host, port), |next| (next.ssh.remote.host.as_str(), next.ssh.remote.port));
         let proxy = route.proxy.as_ref().filter(|_| index == 0);
-        // The agent is only forwarded to the target, where the shell runs.
-        let options = HopOptions::jump_host();
-        let ended = options.disconnect.subscribe();
-        // The target's checks find a jump host gone, as nothing comes through it any more.
-        let (mut session, _, port) = connect(hop, options, transport.take(), proxy, &route.passwords, io).await?;
+        let via = transport.take();
+        let conn = next_connection_id();
+        let (session, channel, port) = debug_log::about(conn, async {
+            log::debug!("jump host {} of {}: \"{}\"", index + 1, jumps.len(), hop.name);
+            // The agent is only forwarded to the target, where the shell runs.
+            let options = HopOptions::jump_host();
+            let ended = options.disconnect.subscribe();
+            // The target's checks find a jump host gone, as nothing comes through it any more.
+            let (mut session, _, port) = connect(hop, conn, options, via, proxy, &route.passwords, io).await?;
+            auth::authenticate(&mut session, hop, &route.passwords, io, ended).await?;
+            let target = host_port(next_host, next_port);
+            let failed = || Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target);
+            log::debug!("opening a tunnel to {target}");
+            // Given as long as a handshake: a target that drops packets would otherwise leave the
+            // tab connecting until the jump host's kernel gives up (two minutes on Linux).
+            let opening = session.channel_open_direct_tcpip(next_host.to_owned(), next_port.into(), "127.0.0.1", 0);
+            let channel = match tokio::time::timeout(HANDSHAKE_TIMEOUT, opening).await {
+                Ok(opened) => opened.context(failed())?,
+                Err(elapsed) => return Err(anyhow!(elapsed).context(failed())),
+            };
+            log::debug!("tunnel to {target} open (channel {})", channel.id());
+            anyhow::Ok((session, channel, port))
+        })
+        .await?;
         if index == 0 {
             local_port = port;
         }
-        auth::authenticate(&mut session, hop, &route.passwords, io, ended).await?;
-        let target = host_port(next_host, next_port);
-        let failed = || Error::new("ssh.jumpFailed").param("jump", &hop.name).param("target", &target);
-        // Given as long as a handshake: a target that drops packets would otherwise leave the
-        // tab connecting until the jump host's kernel gives up (two minutes on Linux).
-        let opening = session.channel_open_direct_tcpip(next_host.to_owned(), next_port.into(), "127.0.0.1", 0);
-        let channel = match tokio::time::timeout(HANDSHAKE_TIMEOUT, opening).await {
-            Ok(opened) => opened.context(failed())?,
-            Err(elapsed) => return Err(anyhow!(elapsed).context(failed())),
-        };
         chain.0.push(Arc::new(session));
         transport = Some((channel.into_stream(), hop.name.clone()));
     }
@@ -172,6 +189,7 @@ pub async fn tunnel(route: &Route, host: &str, port: u16, io: &mut TermIo) -> Re
 async fn start(
     profile: &SshProfile,
     route: &Route,
+    conn: u32,
     id: SessionId,
     io: &mut TermIo,
     connected: impl FnOnce(Arc<Connection>, &TermIo),
@@ -185,11 +203,11 @@ async fn start(
     let (disconnect_tx, disconnect) = watch::channel(None);
     let proxy = route.proxy.as_ref();
     let options = HopOptions { forward_agent: profile.ssh.forward_agent, routes: routes.clone(), disconnect: disconnect_tx };
-    let (mut session, link, local_port) = connect(profile, options, transport, proxy, &route.passwords, io).await?;
+    let (mut session, link, local_port) = connect(profile, conn, options, transport, proxy, &route.passwords, io).await?;
     // No time limit, unlike connecting: the user may be answering prompts, and the server
     // has its own (`LoginGraceTime`).
     auth::authenticate(&mut session, profile, &route.passwords, io, disconnect.clone()).await?;
-    let info = ConnectionInfo::next(local_port.or(tunnel_port));
+    let info = ConnectionInfo { id: conn, local_port: local_port.or(tunnel_port) };
     let connection = Connection::new(session, link, info, profile.clone(), chain, routes, disconnect);
     connected(connection.clone(), io);
     let channel = open_shell(&connection, id, io).await?;
@@ -203,6 +221,16 @@ async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> 
     let profile = connection.profile();
     let channel = connection.handle().channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
     io.sink().traffic().on_channel(ChannelInfo { connection: connection.info(), channel: channel.id().into() });
+    let names: Vec<&str> = profile.ssh.env.iter().map(|var| var.name.as_str()).collect();
+    log::debug!(
+        conn = connection.info().id;
+        "shell channel {}: TERM {}, {}x{}, agent forwarding {}, environment {names:?}",
+        channel.id(),
+        profile.ssh.remote.term_type,
+        io.size.0,
+        io.size.1,
+        profile.ssh.forward_agent,
+    );
     // These requests wait for no answer: they fail only when the connection is gone. A server
     // that won't start the shell closes the channel, which ends the session as usual.
     let failed = || Error::new("net.connectionLost");
@@ -479,6 +507,7 @@ impl HopOptions {
 /// port of its TCP connection on this computer (none through a jump host or a proxy command).
 async fn connect(
     hop: &SshProfile,
+    conn: u32,
     options: HopOptions,
     via: Option<(ChannelStream<Msg>, String)>,
     proxy: Option<&Proxy>,
@@ -487,21 +516,29 @@ async fn connect(
 ) -> Result<(SshHandle, abortable::Link, Option<u16>)> {
     let remote = &hop.ssh.remote;
     let (user, host, port) = (&remote.username, &remote.host, remote.port);
+    let target = host_port(host, port);
     let Some((stream, jump)) = via else {
         let connecting = match proxy {
-            Some(proxy) => t!("terminal.connectingViaProxy", user = user, host = host, port = port, proxy = proxy.name),
-            None => t!("terminal.connecting", user = user, host = host, port = port),
+            Some(proxy) => {
+                log::debug!("connecting to {user}@{target} through proxy \"{}\"", proxy.name);
+                t!("terminal.connectingViaProxy", user = user, host = host, port = port, proxy = proxy.name)
+            }
+            None => {
+                log::debug!("connecting to {user}@{target}");
+                t!("terminal.connecting", user = user, host = host, port = port)
+            }
         };
         io.notice(Tone::Dim, &connecting);
         // SSH keepalives notice a dead connection once authenticated (russh sends none
         // before); TCP ones cover the time until then, as OpenSSH's `TCPKeepAlive` does.
         let (stream, local_port) = crate::net::connect(host, port, user, proxy, passwords, remote.keepalive(), io).await?;
-        let (session, link) = handshake(hop, options, stream, io).await?;
+        let (session, link) = handshake(hop, conn, options, stream, io).await?;
         return Ok((session, link, local_port));
     };
+    log::debug!("connecting to {user}@{target} through jump host \"{jump}\"");
     let connecting = t!("terminal.connectingVia", user = user, host = host, port = port, jump = jump);
     io.notice(Tone::Dim, &connecting);
-    let (session, link) = handshake(hop, options, stream, io).await?;
+    let (session, link) = handshake(hop, conn, options, stream, io).await?;
     Ok((session, link, None))
 }
 
@@ -544,10 +581,11 @@ fn stall_limit(keepalive: Option<Duration>) -> Option<Duration> {
 /// connection, which russh would otherwise keep (see [`abortable`]).
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
-async fn handshake<S>(hop: &SshProfile, options: HopOptions, stream: S, io: &mut TermIo) -> Result<(SshHandle, abortable::Link)>
+async fn handshake<S>(hop: &SshProfile, conn: u32, options: HopOptions, stream: S, io: &mut TermIo) -> Result<(SshHandle, abortable::Link)>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let started = std::time::Instant::now();
     let remote = &hop.ssh.remote;
     let preferred = russh::Preferred::default();
     // Reads the known_hosts files, in the blocking pool.
@@ -561,7 +599,7 @@ where
     });
     let (queries_tx, mut queries) = mpsc::channel(1);
     let HopOptions { forward_agent, routes, disconnect } = options;
-    let handler = ClientHandler::new(remote.host.clone(), remote.port, forward_agent, queries_tx, routes, disconnect);
+    let handler = ClientHandler::new(conn, remote.host.clone(), remote.port, forward_agent, queries_tx, routes, disconnect);
 
     // Drive the handshake while answering host key questions from the handler.
     let (stream, abort) = abortable::abortable(stream, stall_limit(remote.keepalive()));
@@ -583,6 +621,11 @@ where
                         HostKeyMessage::Query(_) => {}
                     }
                 }
+                log_greeting(&abort.greeting(), result.is_ok());
+                match &result {
+                    Ok(_) => log::debug!("SSH handshake done in {} ms", started.elapsed().as_millis()),
+                    Err(e) => log::debug!("SSH handshake failed after {} ms: {e}", started.elapsed().as_millis()),
+                }
                 let session = result.map_err(|e| match (e, failure) {
                     (_, Some(failure)) => anyhow!(failure),
                     (russh::Error::UnknownKey, None) => anyhow!(Error::new("ssh.hostKeyRejected")),
@@ -600,9 +643,25 @@ where
                 }
             },
             () = &mut deadline => {
+                log_greeting(&abort.greeting(), false);
                 return Err(Error::new("ssh.handshakeTimeout").param("target", host_port(&remote.host, remote.port)).into());
             }
         }
+    }
+}
+
+/// Logs what the server sent before the key exchange: its version line, and what came before
+/// it, which on a failed connection is often why (a gateway or a firewall answering in HTTP, a
+/// port that isn't SSH's).
+fn log_greeting(greeting: &abortable::Greeting, succeeded: bool) {
+    match &greeting.version {
+        Some(version) => log::debug!("server version: {version}"),
+        None if !succeeded => log::warn!("the server sent no SSH version line"),
+        None => {}
+    }
+    if let Some(before) = &greeting.before {
+        let level = if succeeded { log::Level::Debug } else { log::Level::Warn };
+        log::log!(level, "the server sent this before its version line: \"{before}\"");
     }
 }
 

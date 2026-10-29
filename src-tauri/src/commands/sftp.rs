@@ -135,6 +135,7 @@ pub async fn sftp_upload(
     let mut server = None;
     let result = async {
         let connection = connection(webview.label(), &sessions, &connections, id)?;
+        log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: uploading {local_paths:?} to {remote_dir}");
         server = Some(transfer::Server::of(&connection.ssh().profile().ssh.remote));
         let sftp = connection.transfer_sftp().await?;
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
@@ -166,6 +167,8 @@ pub async fn sftp_download(
     let mut left = transfer::Left::default();
     let result = async {
         let connection = connection(webview.label(), &sessions, &connections, id)?;
+        let into = local_dir.as_ref().map_or_else(|| "the download folder".to_owned(), |dir| dir.display().to_string());
+        log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: downloading {remote_paths:?} to {into}");
         let sftp = connection.transfer_sftp().await?;
         let local_dir = match local_dir {
             Some(dir) => dir,
@@ -198,6 +201,7 @@ pub async fn sftp_download_as(
     let mut left = transfer::Left::default();
     let result = async {
         let connection = connection(webview.label(), &sessions, &connections, id)?;
+        log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: downloading {remote_path} to {}", local_path.display());
         let sftp = connection.transfer_sftp().await?;
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         Ok(transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter, &mut left).await?)

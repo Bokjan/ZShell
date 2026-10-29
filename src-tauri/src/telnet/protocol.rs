@@ -206,6 +206,13 @@ impl Telnet {
     }
 
     fn negotiate(&mut self, verb: u8, option: u8, out: &mut Vec<u8>) {
+        let name = match verb {
+            WILL => "WILL",
+            WONT => "WONT",
+            DO => "DO",
+            _ => "DONT",
+        };
+        log::debug!("the server sends {name} {option}");
         let opt = &mut self.options[option as usize];
         match verb {
             WILL => match opt.him {

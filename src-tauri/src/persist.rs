@@ -110,6 +110,8 @@ impl SetAside {
         let moved = path.with_file_name(format!("{name}.bad-{}", chrono::Local::now().format("%Y%m%d-%H%M%S")));
         let moved_to = move_it.then(|| fs::rename(path, &moved).ok().map(|()| moved)).flatten();
         let was_moved = moved_to.is_some();
+        let aside = moved_to.as_ref().map_or_else(|| "left where it is".to_owned(), |moved| format!("moved to {}", moved.display()));
+        log::warn!("can't read {} ({aside}): {error:#}", path.display());
         self.0.lock().unwrap().push(SetAsideFile { path: path.to_owned(), moved_to, error: format!("{error:#}") });
         was_moved
     }
