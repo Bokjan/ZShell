@@ -74,7 +74,9 @@ describe("Disposables", () => {
     const held = new Disposables();
     const target = new EventTarget();
     const heard = vi.fn();
-    held.listen(target, "ping", heard, true);
+    // An object rather than `true`, which Node 22.15's `EventTarget` doesn't match on removal
+    // (later versions and browsers do). Removed without the capture, the listener still hears.
+    held.listen(target, "ping", heard, { capture: true });
     target.dispatchEvent(new Event("ping"));
     held.dispose();
     target.dispatchEvent(new Event("ping"));
