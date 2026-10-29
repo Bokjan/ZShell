@@ -46,6 +46,10 @@ updates:
       # they are bumped by hand along with it.
       - dependency-name: windows-core
       - dependency-name: windows-future
+      # zbus 6 drops the blocking API, and keyring and the Tauri plugins still use zbus 5; we move
+      # once they do (see docs/TODO.md).
+      - dependency-name: zbus
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

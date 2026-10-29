@@ -15,6 +15,7 @@
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
+| 等待上游 | Linux：zbus 停在 5 | keyring、tauri-plugin-opener、tauri-plugin-notification 升到 zbus 6 后跟着升 |
 | 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 给 russh-sftp 报 issue；上游还没有 |
 | 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
@@ -83,6 +84,13 @@
 - **原因**：windows-rs 2026-09-03 发布 0.100.0 时，`windows-core`、`windows-future`、`windows-implement` 等小 crate 上了 crates.io，`windows` 本体还没发，最新仍是 0.62.2。按 [microsoft/windows-rs#4867](https://github.com/microsoft/windows-rs/issues/4867)，`windows` 和 `windows-sys` 改用从 SDK 头文件生成的新元数据，可能晚些才发布。新元数据下很多 Win32 API 的签名、类型和 feature 名都会变。
 - **处理**：`.github/dependabot.yml` 已经忽略 `windows-core` 和 `windows-future`，两个 PR 已关闭。`windows` 0.100 发布后，Dependabot 会提它的升级。那时手动把三个 crate 一起升到同一版本，按新 API 改用到它们的代码（`sftp/drag/win.rs` 的拖放、`applock/win.rs` 的 Windows Hello、`pty/shell.rs` 的 `WindowsIntegrityPolicy`），交给 Windows 上的 CI 编译。`windows-sys` 0.61 版本号独立，不受影响。
 - **登记**：2026-10-15。
+
+### Linux：zbus 停在 5
+
+- **现象**：Dependabot 提了把 `zbus` 从 5.19.0 升到 6.1.0 的 PR（#23，2026-10-29），Linux 上编译失败，已关闭。
+- **原因**：zbus 6 删掉了整个 blocking API（`zbus::blocking`），而 `dbus.rs`、`desktop.rs` 和 `applock/`、`color_pick/`、`keep_awake/`、`screen_reader/` 的 `linux.rs` 都用它；`Value` 也改名为 `Variant`，`Value::Value` 的模式匹配要改成 `Variant::Variant`。完整的变更见 zbus 的「Upgrading to zbus 6.0」。另外，zbus 本来就由 keyring（经 `zbus-secret-service-keyring-store`、`secret-service`）、tauri-plugin-opener 和 tauri-plugin-notification（经 `notify-rust`）带进依赖树，我们用同一个版本，不多编译一份；现在它们都还在 zbus 5，单独升会让树里同时有 5 和 6。
+- **处理**：`dependabot.yml` 忽略 `zbus` 的 major 更新。升级这几个依赖后，在 `src-tauri/` 里跑 `cargo tree -i zbus --target x86_64-unknown-linux-gnu`：只要其中一个已经改用 zbus 6，我们也跟着升，不要停在 5。届时删掉这条 ignore，按升级指南把上面几个文件改成异步 API（或在自己的线程里 `block_on`），交给 Linux 上的 CI 编译；`Cargo.toml` 里 zbus 上方说明它已在依赖树里的注释一并核对。
+- **登记**：2026-10-29。
 
 ### SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级
 
