@@ -86,7 +86,7 @@ gtk = "0.18"
 fontconfig = "0.11"
 # The settings portal, polkit, logind and Mutter for the appearance and the app lock (already
 # in the tree through keyring and tauri-plugin-opener).
-zbus = "5"
+zbus = "6"
 
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-single-instance = "2"
