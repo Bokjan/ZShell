@@ -10,7 +10,7 @@
 |---|---|---|
 | 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥；上游还没有 issue |
 | 等待上游 | SSH：一个通道窗口用完，整条连接的发送都停下 | 给 russh 报 issue；上游还没有 |
-| 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 给 russh 报 issue 或提 PR；上游还没有 |
+| 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 维护者拒绝过同样做法的 PR（russh#730）；考虑用 `[patch]` 维护分支 |
 | 等待上游 | CI：pnpm/action-setup 停在 v6.0.10 | pnpm/action-setup#291 修复后合入 Dependabot 的 PR |
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
@@ -20,7 +20,7 @@
 | 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
-| 等待上游 | macOS：开着输入法时，按 Shift 打的第一个字丢失（已用补丁绕过） | xterm.js#6200 合入并发布 |
+| 等待上游 | macOS：开着输入法时，按 Shift 打的第一个字丢失（已用补丁绕过） | xterm.js 7.0.0 发布（#6200 已合入） |
 | 等待上游 | 前端：切换标签页后第一帧终端空白（已绕过） | xterm.js 的下一个正式版发布，我们的 xterm.js#6240 合入 |
 | 暂缓 | SFTP：文件夹里的符号链接查完才显示列表 | 做法已想好，排期时再做 |
 | 暂缓 | 保险库：每次修改整份重写 | 保险库到 MiB 级或出现高频写入时再看 |
@@ -40,9 +40,19 @@
 ### SSH：一个通道没读，整条连接的接收都停下（已绕过）
 
 - **现象**：终端输出积压到暂停读取（`session::Flow`）时，同一连接上的 SFTP、端口转发和复制出来的标签页一起停住，直到终端赶上。这是 ARCHITECTURE.md「背压」里写的代价。
-- **原因**：russh 0.65.0 收到 `CHANNEL_DATA` 时（`client/encrypted.rs` 约 590 行），只要窗口降到一半以下，就立即发 `WINDOW_ADJUST`（`session.rs` 的 `adjust_window_size`），不管应用读没读走；随后用 `chan.send(...).await` 把数据放进按条数计的有界队列，队列满了，整个连接任务就停在这里。SSH 本有按通道的窗口，却没有用来做背压，所以我们只能停读整条连接。`Handler::adjust_window` 帮不上忙：它只能改下次的目标大小，而 0.65 调整时用的是 `config.window_size`，返回值没有生效；russh 也没有手动发窗口调整的公开 API。
+- **原因**：russh 0.65.0 收到 `CHANNEL_DATA` 时（`client/encrypted.rs` 约 590 行），只要窗口降到一半以下，就立即发 `WINDOW_ADJUST`（`session.rs` 的 `adjust_window_size`），不管应用读没读走；随后用 `chan.send(...).await` 把数据放进按条数计的有界队列，队列满了，整个连接任务就停在这里。SSH 本有按通道的窗口，却没有用来做背压，所以我们只能停读整条连接。`Handler::adjust_window` 帮不上忙：它只能改下次的目标大小，而 0.65 调整时用的是 `config.window_size`，返回值没有生效（就是下面的 #770）；即使生效，它也是整个会话一个值，调小会拖慢所有通道。russh 也没有手动发窗口调整的公开 API。
 - **绕过**：`ssh::KeepReading`（Windows、Linux 拖出文件时照常读）；SFTP 打开通道的超时只计 russh 等服务器的时间（`ssh::Connection::waited_for_server`）。后者仍有漏洞：经跳板机的连接，跳板机自己的标签页积压输出时，内层连接看起来在等服务器，计时照算，可能误报 `sftp.openTimeout`；需要跳板机上的标签页积压 30 秒以上，暂不处理。
-- **处理**：像 OpenSSH 那样，按应用读走的量调整窗口：通道读端被消费时通知会话任务再发 `WINDOW_ADJUST`，通道队列改为按字节计、上限即窗口（超出窗口的数据丢弃或关通道），连接任务不再因某个通道没读而阻塞。改动在 russh 的收数据路径，先给上游报 issue 问维护者的意见，再决定提 PR 还是用 `[patch]` 维护分支（Apache-2.0，可以修改后分发）。russh 支持后，`bridge` 暂停时只需不读，删掉 `KeepReading`，`waited_for_server` 不必再排除本地卡顿，ARCHITECTURE.md 的「背压」一条随之改写。与上一条（发送方向）同在 russh 的连接主循环，可以一起提。
+- **上游**：
+  - [Eugeny/russh#770](https://github.com/Eugeny/russh/issues/770)（2026-09-05，别人提的，没有回复）报的是 `adjust_window` 在客户端不生效，附了复现和一行的修法（客户端也读 `target_window_size`，与服务端一致），顺带问维护者是否考虑按通道设窗口。
+  - [Eugeny/russh#730](https://github.com/Eugeny/russh/pull/730)（PR，2026-06-26）的做法就是我们设想的：`try_send` 进通道队列，满了就在会话里积压，有积压的通道不发 `WINDOW_ADJUST`，应用读走时经 `drain_notify` 唤醒会话清积压、补窗口；同时修了 #770。维护者 2026-07-02 关闭，没有合入，认为是用法不对：拿到 `Channel` 就要一直用 `Channel::wait()` 读走。2026-09-30 有人追问能否像 OpenSSH 那样按通道流控，没有回应。所以再报 issue 多半也是这个答复。
+- **#730 与 OpenSSH（`channels.c`）的对比**：
+  - 相同：收到数据时只扣窗口，不立即补；一个通道卡住不挡其他通道、keepalive 和密钥重交换；通道读端已关时当作已消费，照常补窗口。
+  - 「已消费」：OpenSSH 是写出到 fd 的字节（`channel_handle_wfd` 累加 `local_consumed`）；#730 是放进 mpsc 就算，mpsc 满了才开始积压、停补窗口。
+  - 每个通道的缓冲上限：OpenSSH 不超过窗口（2 MiB），都在 `c->output` 里；#730 是窗口加 mpsc 的 100 条（`channel_buffer_size`，每条最多 32 KiB），约 5 MiB，积压队列本身不设上限。
+  - 何时补、补多少：OpenSSH 在窗口低于一半或已消费超过 3 个最大包时，补已消费的字节数；#730 在低于一半时一次补满，有积压时等清空再补。
+  - 对端超窗：OpenSSH 先收下并记下超出量，超过窗口的 10% 就断开（`peer ignored channel window`）；#730 照样交给应用、打一条 warn，对不守流控的对端没有上限。
+  - #730 里 `Handler::data()` 仍是 `await` 的，handler 处理慢照样堵住整条连接；ZShell 的客户端 handler 没有实现它，不受影响。
+- **处理**：上游不打算改，所以用 `[patch]` 维护 russh 分支（Apache-2.0，可以修改后分发），以 #730 为起点。它基于 6 月的 main，客户端和服务端一共改了约 900 行，合到 0.65.0 上多半有冲突。在它的基础上照 OpenSSH 改两处：「已消费」按应用 `recv` 走的字节计（`ChannelReadHalf::recv` 里已经有 `drain_notify`，在那里累加），让每个通道的缓冲不超过窗口；对端超窗超过 10% 时关通道或断开。代价是 russh 每次发版都要把分支重新 rebase 一遍。也可以先在 #730 或 #770 下附上 OpenSSH 的做法再争取一次，但希望不大。分支用上后，`bridge` 暂停时只需不读，删掉 `KeepReading`，`waited_for_server` 不必再排除本地卡顿，ARCHITECTURE.md 的「背压」一条随之改写。与上一条（发送方向）同在 russh 的连接主循环，分支里可以一起改。
 - **登记**：2026-10-27（评审 3.16.0 的改动时查明）。
 
 ### SSH：重交换时不比对主机密钥
@@ -129,9 +139,9 @@
 
 - **现象**：终端里用中文输入法打 `？`、`！`、`：` 等要按 Shift 的标点，第一次按下没有反应，再按一次才出来。日文输入法下的 `#`、`"` 也一样。
 - **原因**：WebKit 开着输入法时，输入法提交的字符先以 `input` 事件到达，字符自己的 keydown 在后面。xterm.js 6.0.0 的 `_keyDown` 对任何 keydown 都置 `_keyDownSeen`，`_inputEvent` 见它为真就认为这个字会由 keydown 处理，丢掉 `input`；按住的 Shift 的 keydown 已经把它置上了。随后字符的 keydown（keyCode 229）走 `CompositionHelper._handleAnyTextareaChanges`，比对输入框前后的内容，但字符已经在里面，差值为空，也没补回来。字符的 keyup 把标志清掉，所以只丢第一次。
-- **上游**：[xtermjs/xterm.js#5374](https://github.com/xtermjs/xterm.js/issues/5374)（未关闭），修复是 [xtermjs/xterm.js#6200](https://github.com/xtermjs/xterm.js/pull/6200)（2026-10-02 提出，未合入）：只按修饰键的 keydown 不置 `_keyDownSeen`。PR 说明快速连打时第二个字丢失的情况（#5887）不在修复范围内。
+- **上游**：[xtermjs/xterm.js#5374](https://github.com/xtermjs/xterm.js/issues/5374)（未关闭），修复是 [xtermjs/xterm.js#6200](https://github.com/xtermjs/xterm.js/pull/6200)（2026-10-02 提出，2026-10-28 合入 master，里程碑 7.0.0，尚未发布）：只按修饰键的 keydown 不置 `_keyDownSeen`。PR 说明快速连打时第二个字丢失的情况（#5887）不在修复范围内。
 - **绕过**：在同一个 `patches/@xterm__xterm@6.0.0.patch` 里照 #6200 改：`_keyDown` 里的 `this._keyDownSeen=!0` 改成 `this._keyDownSeen=!Tc(e)`，`Tc` 是压缩后的 `wasModifierKeyOnlyEvent`（`_keyUp` 里也用它）。
-- **处理**：升级 xterm.js 时看 #6200 或别的修复是否已经发布：已发布就从补丁里去掉这一处，否则在新版本上重做。在 macOS 上用拼音输入法在终端里按一次 Shift+/，应该立刻出现 `？`。
+- **处理**：升级到包含 #6200 的版本（预计 7.0.0）时从补丁里去掉这一处；升级的版本还不包含它，就在新版本上重做。在 macOS 上用拼音输入法在终端里按一次 Shift+/，应该立刻出现 `？`。
 - **登记**：2026-10-21。
 
 ### 前端：切换标签页后第一帧终端空白（已绕过，等 xterm.js 修复后去掉）
