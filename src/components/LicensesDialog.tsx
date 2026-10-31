@@ -103,7 +103,6 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
               <input
                 value={query}
                 placeholder={t("licenses.search")}
-                autoFocus
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onSearchKey}
                 role="combobox"
@@ -187,7 +186,8 @@ export function LicensesDialog({ onClose }: { onClose(): void }) {
         )}
         <footer>
           <span className="grow" />
-          <button type="button" className="primary" onClick={onClose}>
+          {/* Rather than the search, which few need: the notices are there to read. */}
+          <button type="button" className="primary" onClick={onClose} autoFocus>
             {t("common.close")}
           </button>
         </footer>
