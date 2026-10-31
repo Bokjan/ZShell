@@ -81,31 +81,35 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
                       : ""}
               </p>
               {!updates.checking && updates.result?.kind === "failed" && <ErrorText>{updates.result.message}</ErrorText>}
-              <div className="about-links">
-                {updates.newer && externalLink(t("updates.download"), updates.newer.url)}
-                {updates.available && (
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => {
-                      setUpdates({ skipped: updates.available!.version });
-                      // The button goes.
-                      checkNowRef.current?.focus();
-                    }}
-                  >
-                    {t("updates.skip")}
-                  </button>
-                )}
+              {updates.newer && (
+                <div className="about-links">
+                  {externalLink(t("updates.download"), updates.newer.url)}
+                  {updates.available && (
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => {
+                        setUpdates({ skipped: updates.available!.version });
+                        // The button goes.
+                        checkNowRef.current?.focus();
+                      }}
+                    >
+                      {t("updates.skip")}
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className="about-check">
+                <label className="checkbox">
+                  <input type="checkbox" checked={settings.updates.check} onChange={(e) => setUpdates({ check: e.target.checked })} />
+                  {t("updates.automatic")}
+                  <HelpTip text={t("updates.automaticHint")} />
+                </label>
                 {/* Always there, so that the focus stays on it whatever the check finds. */}
                 <button ref={checkNowRef} type="button" className="link" aria-disabled={updates.checking} onClick={checkForUpdates}>
                   {t("updates.checkNow")}
                 </button>
               </div>
-              <label className="checkbox">
-                <input type="checkbox" checked={settings.updates.check} onChange={(e) => setUpdates({ check: e.target.checked })} />
-                {t("updates.automatic")}
-                <HelpTip text={t("updates.automaticHint")} />
-              </label>
             </div>
           )}
         </div>

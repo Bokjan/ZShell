@@ -60,7 +60,15 @@
 .about-update .about-links {
   margin-top: 0;
 }
-.about-links button.link[aria-disabled="true"] {
+/* Automatic checks and Check Now on one line, which wraps between them if it must. */
+.about-check {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 16px;
+}
+.about-update button.link[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
 }
