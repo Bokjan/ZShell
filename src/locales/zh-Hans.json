@@ -89,6 +89,7 @@
   "updates": {
     "available": "ZShell {version} 已发布。",
     "found": "ZShell {version} 已发布。请前往“关于 ZShell”查看。",
+    "button": "关于 ZShell。新版本 {version} 已发布。",
     "checking": "正在检查更新…",
     "upToDate": "ZShell 已是最新版本。",
     "download": "下载",

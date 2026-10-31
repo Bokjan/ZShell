@@ -91,6 +91,7 @@
   "updates": {
     "available": "ZShell {version} est disponible.",
     "found": "ZShell {version} est disponible. Voir « À propos de ZShell ».",
+    "button": "À propos de ZShell. La version {version} est disponible.",
     "checking": "Recherche de mises à jour…",
     "upToDate": "ZShell est à jour.",
     "download": "Télécharger",

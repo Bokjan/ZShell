@@ -89,6 +89,7 @@
   "updates": {
     "available": "ZShell {version}が利用可能です。",
     "found": "ZShell {version}が利用可能です。「ZShellのバージョン情報」を参照してください。",
+    "button": "ZShellのバージョン情報。バージョン{version}が利用可能です。",
     "checking": "アップデートを確認しています…",
     "upToDate": "ZShellは最新です。",
     "download": "ダウンロード",

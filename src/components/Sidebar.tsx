@@ -275,7 +275,7 @@ export function Sidebar(props: Props) {
     ? t("sidebar.show", { shortcut: shortcutLabel("sidebar") })
     : t("sidebar.hide", { shortcut: shortcutLabel("sidebar") });
   const updateButton = update && (
-    <IconButton className="icon-button update-button" label={t("updates.available", { version: update.version })} onClick={onAbout}>
+    <IconButton className="icon-button update-button" label={t("updates.button", { version: update.version })} onClick={onAbout}>
       <UpdateIcon />
       <DotIcon size={6} />
     </IconButton>

@@ -90,6 +90,7 @@
   "updates": {
     "available": "ZShell {version} is available.",
     "found": "ZShell {version} is available. See About ZShell.",
+    "button": "About ZShell. Version {version} is available.",
     "checking": "Checking for updates…",
     "upToDate": "ZShell is up to date.",
     "download": "Download",
