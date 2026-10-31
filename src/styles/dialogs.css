@@ -245,6 +245,10 @@ input::-ms-reveal {
 .help-tip:focus-visible {
   color: var(--text);
 }
+/* After a checkbox's text, whose gap is already between them: as close as in running text. */
+.dialog label.checkbox .help-tip {
+  margin-left: -2px;
+}
 .dialog .hint.warning {
   color: var(--warn);
 }
