@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -30,8 +30,7 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
   const updates = useUpdates();
   const setUpdates = (patch: Partial<typeof settings.updates>) =>
     update((settings) => ({ ...settings, updates: { ...settings.updates, ...patch } }));
-  // A version was skipped here (see Check Now).
-  const [skipped, setSkipped] = useState(false);
+  const checkNowRef = useRef<HTMLButtonElement>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [licensesOpen, setLicensesOpen] = useState(false);
   const dialog = useDialog(onClose, { dismissable: true });
@@ -70,39 +69,37 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
           </div>
           {updates.supported && (
             <div className="about-update">
-              {/* A skipped version is left out, as everywhere else. */}
+              {/* A skipped version too, which can still be downloaded here: else a check that finds
+                  it again would say nothing. */}
               <p role="status">
                 {updates.checking
                   ? t("updates.checking")
-                  : updates.available
-                    ? t("updates.available", { version: updates.available.version })
+                  : updates.newer
+                    ? t("updates.available", { version: updates.newer.version })
                     : updates.result?.kind === "upToDate"
                       ? t("updates.upToDate")
                       : ""}
               </p>
               {!updates.checking && updates.result?.kind === "failed" && <ErrorText>{updates.result.message}</ErrorText>}
               <div className="about-links">
-                {updates.available ? (
-                  <>
-                    {externalLink(t("updates.download"), updates.available.url)}
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => {
-                        setUpdates({ skipped: updates.available!.version });
-                        setSkipped(true);
-                      }}
-                    >
-                      {t("updates.skip")}
-                    </button>
-                  </>
-                ) : (
-                  // Not while a newer version is offered: there is nothing more to check for. In
-                  // its place once it is skipped, which leaves the focus here.
-                  <button type="button" className="link" aria-disabled={updates.checking} autoFocus={skipped} onClick={checkForUpdates}>
-                    {t("updates.checkNow")}
+                {updates.newer && externalLink(t("updates.download"), updates.newer.url)}
+                {updates.available && (
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => {
+                      setUpdates({ skipped: updates.available!.version });
+                      // The button goes.
+                      checkNowRef.current?.focus();
+                    }}
+                  >
+                    {t("updates.skip")}
                   </button>
                 )}
+                {/* Always there, so that the focus stays on it whatever the check finds. */}
+                <button ref={checkNowRef} type="button" className="link" aria-disabled={updates.checking} onClick={checkForUpdates}>
+                  {t("updates.checkNow")}
+                </button>
               </div>
               <label className="checkbox">
                 <input type="checkbox" checked={settings.updates.check} onChange={(e) => setUpdates({ check: e.target.checked })} />
