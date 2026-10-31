@@ -2,6 +2,18 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.17.0] - 2026-10-31
+
+### Features
+
+- Help > Debug Log opens a window with the records the app keeps in memory while it runs, to see what happened with a connection that fails or behaves oddly: from the backend (SSH connections and their jump hosts, the server's greeting, host keys, authentication attempts, channels, forwarding, SFTP, proxies, Telnet, serial ports, local shells, settings, the vault, the app lock and updates) or from the pages (their errors, warnings and failed commands). It shows them in the terminal's font and colors, with a lowest level, a filter, a count and a button that clears them; a context menu copies the selection or every record shown. Records stay in English and are never written to disk; they never carry what is typed or shown in a terminal, passwords, passphrases, keys or the arguments of commands.
+- About ZShell is a dialog of its own, the same on macOS, Windows and Linux: the version, the copyright, links to the license, the privacy policy and the third-party licenses, and checking for a newer version. On macOS it replaces the system's About panel, which followed the system's language rather than the app's. Settings no longer has an About section: checking for updates moved to About ZShell, and the data folder to Security. A newer version is shown by a button with a dot before the settings button, which opens About ZShell, rather than by marks on the app menu and the settings.
+
+### Bug Fixes
+
+- The third-party licenses dialog opens with Close focused rather than the search field.
+- A help tip after a checkbox's text sits as close to it as in running text, rather than twice as far.
+
 ## [3.16.1] - 2026-10-27
 
 ### Bug Fixes
