@@ -39,7 +39,7 @@ export function followUpdates() {
   void listening.then(() => statuses.track(updates.status())).catch(console.error);
 }
 
-/** Checks now, as the user asked; the result is shown in Settings › About. */
+/** Checks now, as the user asked; the result is shown in About. */
 export function checkForUpdates() {
   const { checking, supported } = updateState.get();
   if (checking || !supported) return;

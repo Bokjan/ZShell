@@ -5,7 +5,7 @@ import { useSettings } from "./settings";
 
 /**
  * The state of the update check, and `available`: the newer release unless the user skipped
- * it, which the app marks (the menu button, Settings › About).
+ * it, which the app shows (the session list's button, About).
  */
 export function useUpdates() {
   useEffect(followUpdates, []);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { appLock, errorCode, errorMessage, type AppLockSettings } from "../../ipc/api";
+import { appLock, configDirectory, errorCode, errorMessage, type AppLockSettings } from "../../ipc/api";
 import { useAppLock } from "../../hooks/appLock";
 import { ErrorText } from "../ErrorMessage";
 import { ProtectionDialog } from "../ProtectionDialog";
@@ -9,7 +9,7 @@ import { Select } from "../Select";
 import { useVault } from "../../hooks/vault";
 import { attempt } from "../../lib/attempt";
 import { useLocale } from "../../hooks/locale";
-import { Section, Setting } from "./common";
+import { FolderField, Section, Setting } from "./common";
 import { Field } from "../Field";
 
 /** The idle times offered, in minutes (as the backend accepts, `applock/mod.rs`); 0 never locks. */
@@ -17,8 +17,8 @@ const IDLE_MINUTES = [0, 1, 5, 15, 30, 60];
 
 /**
  * How the sessions and passwords are protected (see `vault/`), changed in its own dialog,
- * and the app lock (see `applock/mod.rs`). Neither is in `settings.json`, so "Restore
- * defaults" changes neither.
+ * the app lock (see `applock/mod.rs`), and the folder they are saved in. None is in
+ * `settings.json`, so "Restore defaults" changes none.
  */
 export function SecuritySection() {
   const { t } = useTranslation();
@@ -41,6 +41,7 @@ export function SecuritySection() {
         <p className="hint">{t("settings.securityHint")}</p>
       </Setting>
       <AppLockSetting />
+      <DataFolderSetting />
       {changing && (
         <ProtectionDialog
           status={status}
@@ -52,6 +53,22 @@ export function SecuritySection() {
         />
       )}
     </Section>
+  );
+}
+
+/** Where the sessions, the settings and the rest are saved. */
+function DataFolderSetting() {
+  const { t } = useTranslation();
+  const [directory, setDirectory] = useState("");
+  useEffect(() => {
+    configDirectory().then(setDirectory).catch(console.error);
+  }, []);
+
+  return (
+    <Setting>
+      <FolderField label={t("settings.dataFolder")} path={directory} />
+      <p className="hint">{t("settings.dataFolderHint")}</p>
+    </Setting>
   );
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, ty
 import { createPortal } from "react-dom";
 
 import { continuesTypeAhead, typeAhead, type TypeAhead } from "../lib/listNavigation";
-import { CheckIcon, ChevronIcon, DotIcon } from "./icons";
+import { CheckIcon, ChevronIcon } from "./icons";
 
 /** An item that runs something when chosen. */
 export interface ActionItem {
@@ -13,8 +13,6 @@ export interface ActionItem {
   danger?: boolean;
   /** For a choice among several: shows a check mark when true, room for one when false. */
   checked?: boolean;
-  /** Marks the item with a dot (something new there), which this text names for screen readers. */
-  badge?: string;
   onSelect(): void;
 }
 
@@ -22,7 +20,6 @@ export interface ActionItem {
 export interface SubmenuItem {
   label: string;
   disabled?: boolean;
-  badge?: string;
   submenu: MenuItem[];
 }
 
@@ -316,12 +313,6 @@ function MenuPanel({ items, at, focus, highlightFirst, id, labelledBy, onChoose,
                 </span>
               )}
               <span className="context-menu-label">{item.label}</span>
-              {item.badge && (
-                <span className="context-menu-badge">
-                  <DotIcon />
-                  <span className="visually-hidden">{item.badge}</span>
-                </span>
-              )}
               {!isSubmenu(item) && item.shortcut && <kbd aria-hidden="true">{item.shortcut}</kbd>}
               {isSubmenu(item) && (
                 <span className="context-menu-arrow">

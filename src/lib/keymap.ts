@@ -120,8 +120,8 @@ export type MenuEntry = MenuAction | "separator";
 
 /**
  * The app menu, on macOS (`mac`) and elsewhere. On macOS each section is a menu of the menu
- * bar, to which menu.rs adds the system's own items (About, Services, Hide and Quit in the app
- * menu; Undo to Select All in Edit; the Window menu). Elsewhere the menu of the app's icon in
+ * bar, to which menu.rs adds the system's own items (Services, Hide and Quit in the app menu;
+ * Undo to Select All in Edit; the Window menu). Elsewhere the menu of the app's icon in
  * the title bar has the sections as submenus, and the "app" section's items after them.
  */
 export function appMenu(mac = isMac): { section: MenuSection; items: MenuEntry[] }[] {
@@ -151,7 +151,7 @@ export function appMenu(mac = isMac): { section: MenuSection; items: MenuEntry[]
   ];
   if (mac) {
     return [
-      { section: "app", items: ["checkForUpdates", "separator", "settings", "separator", "lock"] },
+      { section: "app", items: ["about", "separator", "checkForUpdates", "separator", "settings", "separator", "lock"] },
       { section: "file", items: file },
       { section: "edit", items: ["find"] },
       { section: "view", items: view },

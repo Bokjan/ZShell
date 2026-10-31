@@ -67,7 +67,7 @@ Requirements: Rust (stable), Node.js and pnpm; on Linux, also the system librari
 ```bash
 pnpm install
 pnpm tauri dev            # run in development mode
-pnpm licenses:generate    # third-party license notices shown in Settings › About (needs cargo-about)
+pnpm licenses:generate    # third-party license notices shown in About ZShell (needs cargo-about)
 pnpm tauri build          # build release bundles
 ```
 

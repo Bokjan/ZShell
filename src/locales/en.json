@@ -30,7 +30,6 @@
   },
   "appMenu": {
     "button": "{name} menu ({shortcut})",
-    "buttonUpdate": "{name} menu ({shortcut}). Version {version} is available.",
     "buttonNoShortcut": "{name} menu",
     "file": "File",
     "edit": "Edit",
@@ -90,7 +89,7 @@
   },
   "updates": {
     "available": "ZShell {version} is available.",
-    "found": "ZShell {version} is available. See Settings › About.",
+    "found": "ZShell {version} is available. See About ZShell.",
     "checking": "Checking for updates…",
     "upToDate": "ZShell is up to date.",
     "download": "Download",
@@ -98,6 +97,13 @@
     "checkNow": "Check Now",
     "automatic": "Check for updates automatically",
     "automaticHint": "Once a day, ZShell asks GitHub for the number of its latest version. Nothing about you or your sessions is sent. New versions are downloaded from their page in your browser."
+  },
+  "about": {
+    "version": "Version {version}",
+    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
+    "license": "License",
+    "privacyPolicy": "Privacy Policy",
+    "thirdPartyLicenses": "Third-Party Licenses"
   },
   "sidebar": {
     "listLabel": "Sessions",
@@ -107,10 +113,8 @@
     "openHint": "Double-click to connect",
     "edit": "Edit…",
     "settings": "Settings ({shortcut})",
-    "settingsUpdate": "Settings ({shortcut}). ZShell {version} is available.",
     "hide": "Hide the session list ({shortcut})",
     "show": "Show the session list ({shortcut})",
-    "showUpdate": "Show the session list ({shortcut}). ZShell {version} is available.",
     "resize": "Resize the session list",
     "resizeHint": "Drag to resize, double-click to reset",
     "newFolder": "New folder",
@@ -892,14 +896,8 @@
       "lock": "Lock ZShell",
       "appMenu": "Open the app menu"
     },
-    "about": "About",
-    "aboutVersion": "Version {version}",
-    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "dataFolder": "Data folder",
-    "dataFolderHint": "Sessions, folders, proxies, quick commands and settings are saved here. How sessions and passwords are protected is chosen under Security.",
-    "license": "License",
-    "privacyPolicy": "Privacy Policy",
-    "thirdPartyLicenses": "Third-Party Licenses",
+    "dataFolderHint": "Sessions, folders, proxies, quick commands and settings are saved here.",
     "search": "Search settings",
     "noMatches": "No matching settings",
     "reset": "Restore defaults",

@@ -35,7 +35,7 @@ import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { useLocale } from "../hooks/locale";
-import { ChevronIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon, SidebarIcon } from "./icons";
+import { ChevronIcon, DotIcon, ImportExportIcon, PlusIcon, ProtocolIcon, SettingsIcon, SidebarIcon, UpdateIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ErrorBanner } from "./ErrorMessage";
@@ -63,6 +63,8 @@ export interface SidebarHandlers {
   onNew(folder: string | undefined): void;
   onImportSshConfig(): void;
   onSettings(): void;
+  /** Opens About, where the newer version is. */
+  onAbout(): void;
   /** Hides or shows the session list (see `useSidebar`). */
   onToggleHidden(): void;
 }
@@ -82,8 +84,8 @@ interface Props {
   appMenu: AppMenuButton;
   appMenuOpen: boolean;
   /**
-   * A newer version, which marks the app menu's button, and on macOS the settings button,
-   * where the check is (while the list is hidden, the button that shows it).
+   * A newer version, for which a button that opens About comes before the settings button
+   * (while the list is hidden, after the button that shows it).
    */
   update: Release | null;
   /**
@@ -110,7 +112,7 @@ export function Sidebar(props: Props) {
   // Taken apart here: React Compiler treats an object holding a ref as a ref, and reading any of
   // it while rendering would keep the whole component from being compiled.
   const { ref: appMenuRef, toggle: toggleAppMenu } = appMenu;
-  const { onOpen, onOpenAll, onQuickConnect, onEdit, onDelete, onNew, onImportSshConfig, onSettings, onToggleHidden } = handlers;
+  const { onOpen, onOpenAll, onQuickConnect, onEdit, onDelete, onNew, onImportSshConfig, onSettings, onAbout, onToggleHidden } = handlers;
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
   const { settings } = useSettings();
@@ -265,19 +267,19 @@ export function Sidebar(props: Props) {
     if (typeof path === "string") setImporting(path);
   };
 
-  // macOS has no shortcut for it, and marks a newer version on the settings button.
+  // macOS has no shortcut for it.
   const menuButtonLabel = isMac
     ? t("appMenu.buttonNoShortcut", { name: t("app.name") })
-    : update
-      ? t("appMenu.buttonUpdate", { name: t("app.name"), shortcut: shortcutLabel("appMenu"), version: update.version })
-      : t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") });
-  // On macOS, the newer version's mark comes here from the settings button while the list is hidden.
-  const markToggle = isMac && hidden && !!update;
-  const toggleLabel = !hidden
-    ? t("sidebar.hide", { shortcut: shortcutLabel("sidebar") })
-    : markToggle
-      ? t("sidebar.showUpdate", { shortcut: shortcutLabel("sidebar"), version: update.version })
-      : t("sidebar.show", { shortcut: shortcutLabel("sidebar") });
+    : t("appMenu.button", { name: t("app.name"), shortcut: shortcutLabel("appMenu") });
+  const toggleLabel = hidden
+    ? t("sidebar.show", { shortcut: shortcutLabel("sidebar") })
+    : t("sidebar.hide", { shortcut: shortcutLabel("sidebar") });
+  const updateButton = update && (
+    <IconButton className="icon-button update-button" label={t("updates.available", { version: update.version })} onClick={onAbout}>
+      <UpdateIcon />
+      <DotIcon size={6} />
+    </IconButton>
+  );
 
   // From the app menu.
   useShortcuts((e) => {
@@ -495,21 +497,20 @@ export function Sidebar(props: Props) {
       >
         <img src={appIcon} alt="" />
         {showsName && <span className="sidebar-brand-name">{t("app.name")}</span>}
-        {/* On macOS, the settings button has the mark. */}
-        {update && !isMac ? <DotIcon /> : <ChevronIcon />}
+        <ChevronIcon />
       </button>
       {/* Keeps the focus where it was too, as the panel switch does. */}
       <IconButton
         ref={toggleRef}
-        className={`icon-button sidebar-toggle${markToggle ? " marked" : ""}`}
+        className="icon-button sidebar-toggle"
         label={toggleLabel}
         aria-expanded={!hidden}
         onMouseDown={(e) => e.preventDefault()}
         onClick={onToggleHidden}
       >
         <SidebarIcon />
-        {markToggle && <DotIcon size={6} />}
       </IconButton>
+      {hidden && updateButton}
     </>
   );
 
@@ -562,17 +563,9 @@ export function Sidebar(props: Props) {
         <header className="sidebar-titlebar" {...DRAG_REGION}>
           {titleBarStart}
           <span className="sidebar-actions">
-            <IconButton
-              className={`icon-button${isMac && update ? " marked" : ""}`}
-              label={
-                isMac && update
-                  ? t("sidebar.settingsUpdate", { shortcut: shortcutLabel("settings"), version: update.version })
-                  : t("sidebar.settings", { shortcut: shortcutLabel("settings") })
-              }
-              onClick={onSettings}
-            >
+            {updateButton}
+            <IconButton className="icon-button" label={t("sidebar.settings", { shortcut: shortcutLabel("settings") })} onClick={onSettings}>
               <SettingsIcon />
-              {isMac && update && <DotIcon size={6} />}
             </IconButton>
             <IconButton className="icon-button" label={t("sidebar.importExport")} onClick={importMenu}>
               <ImportExportIcon />

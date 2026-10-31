@@ -51,6 +51,7 @@ interface Options {
   /** Closes the focused pane or tab, or the window once it has no tabs. */
   closeFocused(): void;
   openSettings(section?: SectionId): void;
+  openAbout(): void;
   openPalette(): void;
   toggleCompose(): void;
 }
@@ -110,15 +111,15 @@ export function useAppActions(options: Options): (action: MenuAction) => boolean
   });
 
   const table: Partial<Record<Action, Entry>> = {
-    // Settings open over a dialog too, and the app locks over one.
+    // Settings and About open over a dialog too, and the app locks over one.
     lock: { always: true, run: () => !lock() && options.openSettings("security") },
     settings: { always: true, run: () => options.openSettings() },
-    about: { always: true, run: () => options.openSettings("about") },
+    about: { always: true, run: options.openAbout },
     checkForUpdates: {
       always: true,
       run: () => {
         // The result shows there.
-        options.openSettings("about");
+        options.openAbout();
         checkForUpdates();
       },
     },

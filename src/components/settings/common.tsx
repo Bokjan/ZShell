@@ -41,7 +41,6 @@ export const SECTIONS = [
   "zmodem",
   "logs",
   "shortcuts",
-  "about",
 ] as const;
 export type SectionId = (typeof SECTIONS)[number];
 

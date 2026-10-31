@@ -11,10 +11,10 @@ interface Updates {
 
 /**
  * Announces a newer version found while the app runs (not one known at the start, marked
- * already) in the window in use, unless settings are open (`settingsOpen`), whose About
- * section tells of the checks made there.
+ * already) in the window in use, unless About is open (`aboutOpen`), which tells of the checks
+ * made there.
  */
-export function useUpdateAnnouncement(updates: Updates, settingsOpen: boolean) {
+export function useUpdateAnnouncement(updates: Updates, aboutOpen: boolean) {
   const { t } = useTranslation();
   const announced = useRef<string | null | undefined>(undefined);
   useEffect(() => {
@@ -22,8 +22,8 @@ export function useUpdateAnnouncement(updates: Updates, settingsOpen: boolean) {
     const version = updates.available?.version ?? null;
     const known = announced.current;
     announced.current = version;
-    if (known !== undefined && version && version !== known && document.hasFocus() && !settingsOpen) {
+    if (known !== undefined && version && version !== known && document.hasFocus() && !aboutOpen) {
       announce(t("updates.found", { version }));
     }
-  }, [updates.loaded, updates.available?.version, settingsOpen, t]);
+  }, [updates.loaded, updates.available?.version, aboutOpen, t]);
 }

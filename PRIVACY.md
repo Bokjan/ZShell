@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-10-26
+Last updated: 2026-10-31
 
 ZShell is an SSH, Telnet and serial terminal that runs entirely on your computer. It does not collect, transmit or share any personal data: there is no telemetry, analytics, crash reporting, advertising or user account, and the developer receives nothing from your use of the app. The only connection ZShell makes on its own is the update check described below, which you can turn off.
 
@@ -8,7 +8,7 @@ ZShell is an SSH, Telnet and serial terminal that runs entirely on your computer
 
 ZShell connects only where you tell it to: the SSH and Telnet hosts you open, the jump hosts and proxies they go through, and the destinations of your port forwarding rules, which also listen on the local ports you choose. A proxy command you set up runs on your computer when its session connects. Serial sessions open only the device you choose. Links you click in the terminal open in your default browser.
 
-Unless you turn it off under Settings › About, ZShell asks GitHub (`api.github.com`) for the version number of its latest release once a day, and when you choose Check for Updates. The request carries only your IP address, as any connection does, and `ZShell` as its user agent, and goes through the system's proxy if one is set. A newer version is only shown; you download it yourself if you choose to. The Microsoft Store version never checks, since the Store updates it.
+Unless you turn it off in About ZShell, ZShell asks GitHub (`api.github.com`) for the version number of its latest release once a day, and when you choose Check for Updates. The request carries only your IP address, as any connection does, and `ZShell` as its user agent, and goes through the system's proxy if one is set. A newer version is only shown; you download it yourself if you choose to. The Microsoft Store version never checks, since the Store updates it.
 
 ## Data stored on your computer
 

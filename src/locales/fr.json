@@ -30,7 +30,6 @@
   },
   "appMenu": {
     "button": "Menu {name} ({shortcut})",
-    "buttonUpdate": "Menu {name} ({shortcut}). La version {version} est disponible.",
     "buttonNoShortcut": "Menu {name}",
     "file": "Fichier",
     "edit": "Édition",
@@ -91,7 +90,7 @@
   },
   "updates": {
     "available": "ZShell {version} est disponible.",
-    "found": "ZShell {version} est disponible. Voir Paramètres › À propos.",
+    "found": "ZShell {version} est disponible. Voir « À propos de ZShell ».",
     "checking": "Recherche de mises à jour…",
     "upToDate": "ZShell est à jour.",
     "download": "Télécharger",
@@ -99,6 +98,13 @@
     "checkNow": "Rechercher maintenant",
     "automatic": "Rechercher automatiquement les mises à jour",
     "automaticHint": "Une fois par jour, ZShell demande à GitHub le numéro de sa dernière version. Aucune information sur vous ou vos sessions n’est envoyée. Les nouvelles versions se téléchargent depuis leur page, dans votre navigateur."
+  },
+  "about": {
+    "version": "Version {version}",
+    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
+    "license": "Licence",
+    "privacyPolicy": "Politique de confidentialité",
+    "thirdPartyLicenses": "Licences tierces"
   },
   "sidebar": {
     "listLabel": "Sessions",
@@ -108,10 +114,8 @@
     "openHint": "Double-cliquez pour vous connecter",
     "edit": "Modifier…",
     "settings": "Paramètres ({shortcut})",
-    "settingsUpdate": "Paramètres ({shortcut}). ZShell {version} est disponible.",
     "hide": "Masquer la liste des sessions ({shortcut})",
     "show": "Afficher la liste des sessions ({shortcut})",
-    "showUpdate": "Afficher la liste des sessions ({shortcut}). ZShell {version} est disponible.",
     "resize": "Redimensionner la liste des sessions",
     "resizeHint": "Faites glisser pour redimensionner, double-cliquez pour rétablir la taille",
     "newFolder": "Nouveau dossier",
@@ -931,14 +935,8 @@
       "lock": "Verrouiller ZShell",
       "appMenu": "Ouvrir le menu de l’application"
     },
-    "about": "À propos",
-    "aboutVersion": "Version {version}",
-    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "dataFolder": "Dossier des données",
-    "dataFolderHint": "Les sessions, dossiers, proxys, commandes rapides et paramètres sont enregistrés ici. La façon dont les sessions et les mots de passe sont protégés se choisit dans la section Sécurité.",
-    "license": "Licence",
-    "privacyPolicy": "Politique de confidentialité",
-    "thirdPartyLicenses": "Licences tierces",
+    "dataFolderHint": "Les sessions, dossiers, proxys, commandes rapides et paramètres sont enregistrés ici.",
     "search": "Rechercher dans les paramètres",
     "noMatches": "Aucun paramètre correspondant",
     "reset": "Restaurer les valeurs par défaut",

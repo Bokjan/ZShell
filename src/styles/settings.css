@@ -183,33 +183,6 @@
   color: var(--text-muted);
   font-size: calc(12px * var(--text-scale));
 }
-.about-app {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.about-app span {
-  color: var(--text-muted);
-  font-size: calc(12px * var(--text-scale));
-}
-.settings-dialog .about-links {
-  display: flex;
-  gap: 16px;
-}
-.settings-dialog .about-links button.link {
-  margin-top: 0;
-}
-.about-update p {
-  margin: 0;
-}
-.about-update-buttons {
-  flex-wrap: wrap;
-  margin: 6px 0 10px;
-}
-.settings-nav-list .dot-icon {
-  margin-left: 6px;
-  vertical-align: 1px;
-}
 /* After the text of a link that opens in the browser. */
 .external-link-icon {
   margin-left: 4px;

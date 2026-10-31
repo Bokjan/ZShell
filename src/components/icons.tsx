@@ -164,6 +164,16 @@ export function ImportExportIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** An arrow up in a circle: a newer version of the app, shown in About. */
+export function UpdateIcon({ size = 14 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 11V5M5.5 7.5L8 5l2.5 2.5" />
+    </Svg>
+  );
+}
+
 /** An arrow out of a box, after links that open in the browser, so that it doesn't come as a surprise. */
 export function ExternalLinkIcon({ size = 11 }: { size?: number }) {
   return (
@@ -255,7 +265,7 @@ export function ChevronIcon({
   );
 }
 
-/** A dot marking something new: a newer version of the app, where to find it. */
+/** A dot marking something new: a newer version of the app, on the button that shows it. */
 export function DotIcon({ size = 8 }: { size?: number }) {
   return (
     <Svg size={size} className="dot-icon">

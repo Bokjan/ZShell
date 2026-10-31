@@ -46,14 +46,6 @@
   width: 10px;
   margin-right: -16px;
 }
-.context-menu-badge {
-  display: flex;
-  margin-left: -16px;
-  color: var(--accent);
-}
-.context-menu-item.highlighted .context-menu-badge {
-  color: inherit;
-}
 .context-menu-arrow {
   display: flex;
   margin-right: -4px;

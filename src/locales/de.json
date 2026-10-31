@@ -30,7 +30,6 @@
   },
   "appMenu": {
     "button": "{name}-Menü ({shortcut})",
-    "buttonUpdate": "{name}-Menü ({shortcut}). Version {version} ist verfügbar.",
     "buttonNoShortcut": "{name}-Menü",
     "file": "Datei",
     "edit": "Bearbeiten",
@@ -90,7 +89,7 @@
   },
   "updates": {
     "available": "ZShell {version} ist verfügbar.",
-    "found": "ZShell {version} ist verfügbar. Siehe Einstellungen › Info.",
+    "found": "ZShell {version} ist verfügbar. Siehe „Über ZShell“.",
     "checking": "Nach Updates wird gesucht…",
     "upToDate": "ZShell ist auf dem neuesten Stand.",
     "download": "Herunterladen",
@@ -98,6 +97,13 @@
     "checkNow": "Jetzt suchen",
     "automatic": "Automatisch nach Updates suchen",
     "automaticHint": "Einmal am Tag fragt ZShell bei GitHub die Nummer der neuesten Version ab. Dabei wird nichts über Sie oder Ihre Sitzungen gesendet. Neue Versionen laden Sie in Ihrem Browser von ihrer Seite herunter."
+  },
+  "about": {
+    "version": "Version {version}",
+    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
+    "license": "Lizenz",
+    "privacyPolicy": "Datenschutzerklärung",
+    "thirdPartyLicenses": "Lizenzen von Drittanbietern"
   },
   "sidebar": {
     "listLabel": "Sitzungen",
@@ -107,10 +113,8 @@
     "openHint": "Doppelklicken, um zu verbinden",
     "edit": "Bearbeiten…",
     "settings": "Einstellungen ({shortcut})",
-    "settingsUpdate": "Einstellungen ({shortcut}). ZShell {version} ist verfügbar.",
     "hide": "Sitzungsliste ausblenden ({shortcut})",
     "show": "Sitzungsliste einblenden ({shortcut})",
-    "showUpdate": "Sitzungsliste einblenden ({shortcut}). ZShell {version} ist verfügbar.",
     "resize": "Größe der Sitzungsliste ändern",
     "resizeHint": "Ziehen, um die Größe zu ändern; doppelklicken, um sie zurückzusetzen",
     "newFolder": "Neuer Ordner",
@@ -892,14 +896,8 @@
       "lock": "ZShell sperren",
       "appMenu": "App-Menü öffnen"
     },
-    "about": "Info",
-    "aboutVersion": "Version {version}",
-    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "dataFolder": "Datenordner",
-    "dataFolderHint": "Sitzungen, Ordner, Proxys, Schnellbefehle und Einstellungen werden hier gespeichert. Wie Sitzungen und Passwörter geschützt werden, legen Sie unter „Sicherheit“ fest.",
-    "license": "Lizenz",
-    "privacyPolicy": "Datenschutzerklärung",
-    "thirdPartyLicenses": "Lizenzen von Drittanbietern",
+    "dataFolderHint": "Sitzungen, Ordner, Proxys, Schnellbefehle und Einstellungen werden hier gespeichert.",
     "search": "Einstellungen durchsuchen",
     "noMatches": "Keine passenden Einstellungen",
     "reset": "Standardwerte wiederherstellen",

@@ -7,7 +7,6 @@ import { menuLabel } from "../hooks/appMenu";
 import { appMenu, matches, type MenuAction, type MenuEntry } from "../lib/keymap";
 import { isMac } from "../lib/platform";
 import { runAction, useShortcuts } from "../hooks/shortcuts";
-import type { Release } from "../ipc/bindings";
 import { useLocale } from "../hooks/locale";
 import { useStableHandlers } from "../hooks/stableHandlers";
 
@@ -16,16 +15,15 @@ const CORNER = 4;
 
 /**
  * The button's ref and what it does: one object that stays the same (see `useStableHandlers`).
- * Whether the menu is open and the newer version come beside it, as values that change.
+ * Whether the menu is open comes beside it, as a value that changes.
  */
 /**
  * The app menu outside macOS (see `appMenu` in keymap.ts): opened by the app's icon and name in
  * the title bar (`button`), or by its shortcut, below the button or, while the button is out
  * of sight, in the window's corner. macOS shows the button too, the same menu, in full screen,
  * where the menu bar is out of sight; the menu has no shortcut there. Its items run their actions as their keys would
- * (`runAction`); `enabled` says which apply now, in this window. A newer version (`update`)
- * is marked on the way to "Check for Updates…"; the Microsoft Store package, which can't
- * check, has no such item.
+ * (`runAction`); `enabled` says which apply now, in this window. The Microsoft Store package,
+ * which can't check for a newer version, has no "Check for Updates…".
  */
 export function useAppMenu({
   enabled,
@@ -36,7 +34,7 @@ export function useAppMenu({
   enabled(action: MenuAction): boolean;
   fullScreen: boolean;
   sidebarHidden: boolean;
-  updates: { supported: boolean; available: Release | null };
+  updates: { supported: boolean };
 }) {
   const { t } = useTranslation();
   const { shortcutLabel } = useLocale();
@@ -59,7 +57,6 @@ export function useAppMenu({
       : action === "sidebar" && sidebarHidden
         ? t("appMenu.showSidebar")
         : menuLabel(t, action);
-  const badge = updates.available ? t("updates.available", { version: updates.available.version }) : undefined;
   const entries = (items: MenuEntry[]): MenuItem[] =>
     items
       .filter((action) => action !== "checkForUpdates" || updates.supported)
@@ -70,7 +67,6 @@ export function useAppMenu({
               label: label(action),
               shortcut: shortcutLabel(action),
               disabled: !enabled(action),
-              badge: action === "checkForUpdates" ? badge : undefined,
               onSelect: () => void runAction(action),
             },
       );
@@ -78,9 +74,7 @@ export function useAppMenu({
   // The sections as submenus, then the app's own items.
   const items = (): MenuItem[] =>
     appMenu(false).flatMap(({ section, items }): MenuItem[] =>
-      section === "app"
-        ? ["separator", ...entries(items)]
-        : [{ label: t(`appMenu.${section}`), badge: section === "help" ? badge : undefined, submenu: entries(items) }],
+      section === "app" ? ["separator", ...entries(items)] : [{ label: t(`appMenu.${section}`), submenu: entries(items) }],
     );
 
   const toggle = (fromKeyboard: boolean) => {

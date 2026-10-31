@@ -30,7 +30,6 @@
   },
   "appMenu": {
     "button": "{name}メニュー（{shortcut}）",
-    "buttonUpdate": "{name}メニュー（{shortcut}）。バージョン{version}が利用可能です。",
     "buttonNoShortcut": "{name}メニュー",
     "file": "ファイル",
     "edit": "編集",
@@ -89,7 +88,7 @@
   },
   "updates": {
     "available": "ZShell {version}が利用可能です。",
-    "found": "ZShell {version}が利用可能です。「設定」>「バージョン情報」を参照してください。",
+    "found": "ZShell {version}が利用可能です。「ZShellのバージョン情報」を参照してください。",
     "checking": "アップデートを確認しています…",
     "upToDate": "ZShellは最新です。",
     "download": "ダウンロード",
@@ -97,6 +96,13 @@
     "checkNow": "今すぐ確認",
     "automatic": "アップデートを自動的に確認",
     "automaticHint": "ZShellは1日に1回、GitHubに最新バージョンの番号を問い合わせます。ユーザーやセッションに関する情報は一切送信されません。新しいバージョンは、ブラウザーでそのページからダウンロードします。"
+  },
+  "about": {
+    "version": "バージョン{version}",
+    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
+    "license": "ライセンス",
+    "privacyPolicy": "プライバシーポリシー",
+    "thirdPartyLicenses": "サードパーティのライセンス"
   },
   "sidebar": {
     "listLabel": "セッション",
@@ -106,10 +112,8 @@
     "openHint": "ダブルクリックで接続します",
     "edit": "編集…",
     "settings": "設定（{shortcut}）",
-    "settingsUpdate": "設定（{shortcut}）。ZShell {version}が利用可能です。",
     "hide": "セッション一覧を非表示（{shortcut}）",
     "show": "セッション一覧を表示（{shortcut}）",
-    "showUpdate": "セッション一覧を表示（{shortcut}）。ZShell {version}が利用可能です。",
     "resize": "セッション一覧のサイズを変更",
     "resizeHint": "ドラッグでサイズを変更、ダブルクリックで元に戻します",
     "newFolder": "新規フォルダー",
@@ -853,14 +857,8 @@
       "lock": "ZShellをロック",
       "appMenu": "アプリのメニューを開く"
     },
-    "about": "バージョン情報",
-    "aboutVersion": "バージョン{version}",
-    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "dataFolder": "データフォルダー",
-    "dataFolderHint": "セッション、フォルダー、プロキシ、クイックコマンド、設定はここに保存されます。セッションとパスワードの保護方法は「セキュリティ」で選択します。",
-    "license": "ライセンス",
-    "privacyPolicy": "プライバシーポリシー",
-    "thirdPartyLicenses": "サードパーティのライセンス",
+    "dataFolderHint": "セッション、フォルダー、プロキシ、クイックコマンド、設定はここに保存されます。",
     "search": "設定を検索",
     "noMatches": "一致する設定はありません",
     "reset": "デフォルトに戻す",

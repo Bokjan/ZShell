@@ -89,9 +89,7 @@ pub fn build<R: tauri::Runtime>(
     labels: &HashMap<String, String>,
     full_screen: bool,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{
-        AboutMetadata, IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
-    };
+    use tauri::menu::{IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID};
 
     let separator = || PredefinedMenuItem::separator(app).map(MenuItemKind::Predefined);
     let page = |kind: SectionKind| -> tauri::Result<Vec<MenuItemKind<R>>> {
@@ -128,14 +126,10 @@ pub fn build<R: tauri::Runtime>(
     }
 
     let info = app.package_info();
-    let about = AboutMetadata { name: Some(info.name.clone()), version: Some(info.version.to_string()), ..Default::default() };
     let predefined = |item: tauri::Result<PredefinedMenuItem<R>>| item.map(MenuItemKind::Predefined);
 
-    let mut app_menu = after(
-        vec![predefined(PredefinedMenuItem::about(app, Some(&t!("menu.about", name = info.name)), Some(about)))?],
-        separator,
-        page(SectionKind::App)?,
-    )?;
+    // The page's About comes first: AppKit's About panel would follow the system's language.
+    let mut app_menu = page(SectionKind::App)?;
     app_menu.extend([
         separator()?,
         predefined(PredefinedMenuItem::services(app, Some(&t!("menu.services"))))?,

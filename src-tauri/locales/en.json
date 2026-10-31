@@ -53,7 +53,6 @@
     "window": "Window",
     "help": "Help",
     "quit": "Quit {name}",
-    "about": "About {name}",
     "services": "Services",
     "hide": "Hide {name}",
     "hideOthers": "Hide Others",

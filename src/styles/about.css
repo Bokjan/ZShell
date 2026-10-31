@@ -1,0 +1,66 @@
+/* About ZShell (see `AboutDialog`): the app in the middle at the top, checking for a newer
+   version below. */
+
+.about-dialog {
+  position: relative;
+  width: calc(340px * var(--text-scale));
+}
+.about-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  padding: 4px;
+}
+.about-app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+.about-app img {
+  width: 64px;
+  height: 64px;
+  margin: 6px 0 4px;
+}
+.about-app h2 {
+  margin: 0;
+  font-size: calc(17px * var(--text-scale));
+}
+.about-app p,
+.about-app .hint {
+  margin: 0;
+}
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  margin-top: 6px;
+}
+/* In the middle too, like the app above. */
+.about-update {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.about-update p {
+  margin: 0;
+}
+/* Kept for screen readers, which announce what comes into it; without the gap after it. */
+.about-update p:empty {
+  margin-bottom: -8px;
+}
+.about-update .about-links {
+  margin-top: 0;
+}
+.about-links button.link[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}

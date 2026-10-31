@@ -62,23 +62,19 @@
 .app-menu-button .inline-icon {
   margin-left: -2px;
 }
-/* A newer version of the app: on the way to Settings › About, where it is shown. */
-.dot-icon {
-  flex-shrink: 0;
+/* A newer version of the app: the button that opens About, where it is shown. */
+.update-button {
+  position: relative;
   color: var(--accent);
 }
-.app-menu-button .dot-icon {
-  margin-left: 1px;
-}
-.sidebar-actions .icon-button.marked,
-.sidebar-toggle.marked {
-  position: relative;
-}
-.sidebar-actions .icon-button.marked .dot-icon,
-.sidebar-toggle.marked .dot-icon {
+.update-button .dot-icon {
   position: absolute;
   top: 0;
   right: 2px;
+}
+/* After the button that shows the list, while it is hidden. */
+.sidebar-toggle + .update-button {
+  margin-left: 2px;
 }
 .sidebar-actions {
   display: flex;
@@ -88,7 +84,8 @@
 }
 /* SVG icons sit beside text glyphs: give them the same box. */
 .sidebar-actions .icon-button,
-.sidebar-toggle {
+.sidebar-toggle,
+.update-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;

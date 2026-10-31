@@ -6,6 +6,7 @@ import { useAppActions } from "./app/useAppActions";
 import { useAppMenu } from "./app/useAppMenu";
 import { useImportDialog } from "./app/useImportDialog";
 import { useSettingsDialog } from "./app/useSettingsDialog";
+import { useAboutDialog } from "./app/useAboutDialog";
 import { useProfileEditor } from "./app/useProfileEditor";
 import { useSessionOpening } from "./app/useSessionOpening";
 import { useUpdateAnnouncement } from "./app/useUpdateAnnouncement";
@@ -65,6 +66,7 @@ function App() {
   const activate = (key: number | null) => dispatch({ type: "activate", key });
   const { shellName, localAllowed, username, setAsideDialog } = useStartupInfo();
   const settingsDialog = useSettingsDialog(localAllowed);
+  const aboutDialog = useAboutDialog();
   const importer = useImportDialog();
   // What closes panes and moves them between windows, made further down, hears the registry
   // through `sessions.on`.
@@ -172,13 +174,14 @@ function App() {
     importSshConfig: importer.open,
     closeFocused,
     openSettings: settingsDialog.open,
+    openAbout: aboutDialog.open,
     openPalette: quick.openPalette,
     toggleCompose: composer.toggle,
   });
   const updates = useUpdates();
   const appMenu = useAppMenu({ enabled: menuEnabled, fullScreen: fullScreen.on, sidebarHidden: sidebar.hidden, updates });
 
-  useUpdateAnnouncement(updates, settingsDialog.isOpen);
+  useUpdateAnnouncement(updates, aboutDialog.isOpen);
 
   const terminalMenu = useTerminalMenu({
     tabs,
@@ -204,6 +207,7 @@ function App() {
     },
     onImportSshConfig: importer.open,
     onSettings: () => settingsDialog.open(),
+    onAbout: aboutDialog.open,
     onToggleHidden: sidebar.toggle,
   });
 
@@ -341,6 +345,7 @@ function App() {
       {quick.palette}
       {importer.dialog}
       {settingsDialog.dialog}
+      {aboutDialog.dialog}
       {close.dialogs}
       {appMenu.menu}
       <SaveErrorNotices />

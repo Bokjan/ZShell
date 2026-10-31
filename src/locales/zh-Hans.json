@@ -30,7 +30,6 @@
   },
   "appMenu": {
     "button": "{name} 菜单（{shortcut}）",
-    "buttonUpdate": "{name} 菜单（{shortcut}）。新版本 {version} 已发布。",
     "buttonNoShortcut": "{name} 菜单",
     "file": "文件",
     "edit": "编辑",
@@ -89,7 +88,7 @@
   },
   "updates": {
     "available": "ZShell {version} 已发布。",
-    "found": "ZShell {version} 已发布。请前往“设置 › 关于”查看。",
+    "found": "ZShell {version} 已发布。请前往“关于 ZShell”查看。",
     "checking": "正在检查更新…",
     "upToDate": "ZShell 已是最新版本。",
     "download": "下载",
@@ -97,6 +96,13 @@
     "checkNow": "立即检查",
     "automatic": "自动检查更新",
     "automaticHint": "ZShell 每天向 GitHub 查询一次最新版本的版本号，不会发送任何关于你或你的会话的信息。新版本需在浏览器中从其发布页面下载。"
+  },
+  "about": {
+    "version": "版本 {version}",
+    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
+    "license": "许可协议",
+    "privacyPolicy": "隐私政策",
+    "thirdPartyLicenses": "第三方许可证"
   },
   "sidebar": {
     "listLabel": "会话",
@@ -106,10 +112,8 @@
     "openHint": "双击连接",
     "edit": "编辑…",
     "settings": "设置（{shortcut}）",
-    "settingsUpdate": "设置（{shortcut}）。ZShell {version} 已发布。",
     "hide": "隐藏会话列表（{shortcut}）",
     "show": "显示会话列表（{shortcut}）",
-    "showUpdate": "显示会话列表（{shortcut}）。ZShell {version} 已发布。",
     "resize": "调整会话列表的宽度",
     "resizeHint": "拖动以调整宽度，双击恢复默认",
     "newFolder": "新建文件夹",
@@ -853,14 +857,8 @@
       "lock": "锁定 ZShell",
       "appMenu": "打开应用菜单"
     },
-    "about": "关于",
-    "aboutVersion": "版本 {version}",
-    "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "dataFolder": "数据文件夹",
-    "dataFolderHint": "会话、文件夹、代理、快速命令和设置都保存在这里。会话和密码的保护方式在“安全”中选择。",
-    "license": "许可协议",
-    "privacyPolicy": "隐私政策",
-    "thirdPartyLicenses": "第三方许可证",
+    "dataFolderHint": "会话、文件夹、代理、快速命令和设置都保存在这里。",
     "search": "搜索设置",
     "noMatches": "没有匹配的设置",
     "reset": "恢复默认设置",
