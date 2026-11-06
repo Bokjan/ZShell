@@ -11,7 +11,6 @@
 | 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥；上游还没有 issue |
 | 等待上游 | SSH：一个通道窗口用完，整条连接的发送都停下 | 给 russh 报 issue；上游还没有 |
 | 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 维护者拒绝过同样做法的 PR（russh#730）；考虑用 `[patch]` 维护分支 |
-| 等待上游 | CI：pnpm/action-setup 停在 v6.0.10 | pnpm/action-setup#291 修复后合入 Dependabot 的 PR |
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
@@ -63,13 +62,6 @@
 - **处理**：russh 在重交换时也调用 `check_server_key`（或把主机密钥交给 `kex_done`）之后，在 `ssh/handler.rs` 里记下初次接受的密钥，重交换时要求同一把，不再询问用户。之前那段比对代码因为永远走不到，已经删掉（v2.11.1）。
 - **上游 issue 的素材**：重交换时 `KexProgress::Done` 带着 `server_host_key`，只是没有交给 handler；OpenSSH 每次密钥交换都验证主机密钥，并要求和初次的一致。
 - **登记**：2026-10-12（代码审查 L10）。
-
-### CI：pnpm/action-setup 停在 v6.0.10
-
-- **现象**：Dependabot 把 `pnpm/action-setup` 升到 v6.1.0（#3，2026-10-15 合入）后，Windows runner 上 PowerShell 步骤里的每条 `pnpm` 命令都不输出任何东西、立即以 0 退出：CI 的 Windows 与 Windows ARM64 job 里 `pnpm build`、`pnpm test` 没有运行却显示通过（cargo 的步骤不受影响），直到 v3.4.0 的 release workflow 在 Windows x64 上找不到安装包才暴露。
-- **上游**：[pnpm/action-setup#291](https://github.com/pnpm/action-setup/issues/291)（2026-10-12 提出，未修复）是同一处：v6.1.0 在 Windows 上先装 pnpm 11 再 `self-update` 到 12，留下的 `pnpm.cmd` shim 指向不存在的路径。那里的步骤会报错失败，我们这里却静默成功，原因没有深究。
-- **处理**：三个 workflow 都固定在 v6.0.10，Dependabot 跳过 6.1.0；CI 的 `Check that pnpm runs` 在 `pnpm --version` 没有输出时失败，所以 Dependabot 提出更新的版本时，CI 能看出它是否修好。修好后合入 Dependabot 的 PR，删掉 `dependabot.yml` 里的 ignore 和这一条。
-- **登记**：2026-10-16。
 
 ### Windows：打字后弹出的文件对话框没有指针（已绕过，等 WebView2 修复后去掉）
 
