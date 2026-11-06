@@ -17,7 +17,8 @@
 .dialog-backdrop[hidden] {
   display: none;
 }
-/* Focused only by script, when its dialog has no control to focus; not a control itself. */
+/* Focused only by script, when its dialog has no control to focus or takes the focus itself
+   (`focusItself`); not a control itself. */
 .dialog-backdrop:focus {
   outline: none;
 }

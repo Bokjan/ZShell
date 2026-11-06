@@ -16,6 +16,12 @@ interface Props {
   alert?: boolean;
   /** Added to the backdrop's, e.g. to place the command palette near the top. */
   className?: string;
+  /**
+   * Takes the focus itself when it opens rather than giving it to its first control, for a
+   * dialog to read (About ZShell), where that control (its Close button) is no more wanted
+   * than the others and its focus ring would only draw the eye. Tab then goes to the first.
+   */
+  focusItself?: boolean;
   children: ReactNode;
 }
 
@@ -25,14 +31,15 @@ interface Props {
  * end of the body, so that styles of whatever opened it don't apply and later dialogs are
  * drawn above earlier ones.
  *
- * For screen readers it is the modal dialog, named by its title. It takes the focus when it
- * opens (unless a control in it already has it, `autoFocus`), Tab stays within it (see
+ * For screen readers it is the modal dialog, named by its title. It gives the focus to its
+ * first control when it opens (unless a control in it already has it, `autoFocus`, or it
+ * takes it itself, `focusItself`), Tab stays within it (see
  * `useDialog`), and the focus goes back to where it was once it closes.
  *
  * Closing a tab (⌘W, the File menu's Close; Ctrl+Shift+W elsewhere) closes the top dialog
  * instead, as its Cancel button does.
  */
-export function Modal({ dialog, label, alert, className, children }: Props) {
+export function Modal({ dialog, label, alert, className, focusItself, children }: Props) {
   const id = useId();
   // Before the dialog's controls take the focus.
   const [opener] = useState(() => document.activeElement);
@@ -64,7 +71,8 @@ export function Modal({ dialog, label, alert, className, children }: Props) {
 
   useEffect(() => {
     const element = dialog.element.current;
-    if (element && !dialog.hidden && !element.contains(document.activeElement)) (focusables(element)[0] ?? element).focus();
+    if (element && !dialog.hidden && !element.contains(document.activeElement))
+      ((focusItself ? null : focusables(element)[0]) ?? element).focus();
     return () => {
       // After whoever closed it has moved the focus, if they did (to the terminal, say).
       requestAnimationFrame(() => {
@@ -72,7 +80,7 @@ export function Modal({ dialog, label, alert, className, children }: Props) {
         if (lost && opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
       });
     };
-  }, [dialog, opener]);
+  }, [dialog, opener, focusItself]);
 
   // Taken apart: React Compiler treats an object holding a ref as a ref (see `useLatest`).
   const { element, hidden } = dialog;

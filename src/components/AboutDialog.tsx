@@ -66,7 +66,7 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
 
   return (
     <>
-      <Modal dialog={dialog} label={t("appMenu.items.about")}>
+      <Modal dialog={dialog} label={t("appMenu.items.about")} focusItself>
         <div className="dialog about-dialog">
           <IconButton className="icon-button about-close" label={t("common.close")} onClick={onClose}>
             <CloseIcon />
