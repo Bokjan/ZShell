@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { useDialog } from "../hooks/dialogs";
 import { useSettings } from "../hooks/settings";
 import { useUpdates } from "../hooks/updates";
 import { windows, type WebviewInfo } from "../ipc/windows";
+import { announce } from "../lib/announce";
 import { checkForUpdates } from "../lib/updates";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { ErrorText } from "./ErrorMessage";
@@ -50,6 +52,18 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
     </button>
   );
 
+  // Copied into a bug report with a click: the web view's bugs depend on its version.
+  const copyable = (text: string) => (
+    <button
+      type="button"
+      className="about-copy"
+      title={t("about.clickToCopy")}
+      onClick={() => void writeText(text).then(() => announce(t("announce.copied")), console.error)}
+    >
+      {text}
+    </button>
+  );
+
   return (
     <>
       <Modal dialog={dialog} label={t("appMenu.items.about")}>
@@ -60,11 +74,10 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
           <div className="about-app">
             <img src={appIcon} alt="" />
             <h2>{t("app.name")}</h2>
-            {version && <p>{t("about.version", { version })}</p>}
-            {/* Selectable, to be copied into a bug report: the web view's bugs depend on its version. */}
+            {version && <p>{copyable(t("about.version", { version }))}</p>}
             {webview && (
-              <p className="hint about-webview">
-                {t("about.webview", { name: webview.name, version: webview.version })}
+              <p className="hint">
+                {copyable(t("about.webview", { name: webview.name, version: webview.version }))}
                 {webview.installed && (
                   <>
                     <br />

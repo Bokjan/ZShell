@@ -106,6 +106,7 @@
     "license": "Licence",
     "privacyPolicy": "Politique de confidentialité",
     "thirdPartyLicenses": "Licences tierces",
+    "clickToCopy": "Cliquer pour copier",
     "webview": "{name} {version}",
     "webviewInstalled": "La version {version} est installée et sera utilisée au prochain redémarrage de ZShell."
   },

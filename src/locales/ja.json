@@ -104,6 +104,7 @@
     "license": "ライセンス",
     "privacyPolicy": "プライバシーポリシー",
     "thirdPartyLicenses": "サードパーティのライセンス",
+    "clickToCopy": "クリックしてコピー",
     "webview": "{name} {version}",
     "webviewInstalled": "{version}がインストールされています。ZShellを再起動すると使用されます。"
   },

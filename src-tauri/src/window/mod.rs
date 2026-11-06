@@ -334,14 +334,15 @@ pub async fn webview(window: WebviewWindow) -> tauri::Result<Option<WebviewInfo>
     info.await.map_err(|_| tauri::Error::FailedToReceiveMessage)
 }
 
-/// Records the web view in the debug log, once the main window has one.
+/// Records the web view in the debug log, once the main window has one. Without one, the
+/// platform has already said why.
 fn log_webview(window: &WebviewWindow) {
     let logged = platform::webview(window, |info| match info {
         Some(WebviewInfo { name, version, installed: None }) => log::info!("web view: {name} {version}"),
         Some(WebviewInfo { name, version, installed: Some(installed) }) => {
             log::info!("web view: {name} {version}, {installed} installed")
         }
-        None => log::warn!("can't tell the web view's version"),
+        None => {}
     });
     if let Err(e) = logged {
         log::warn!("can't tell the web view's version: {e}");

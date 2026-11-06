@@ -32,10 +32,11 @@
 .about-app .hint {
   margin: 0;
 }
-/* Copied into bug reports. */
-.about-webview {
-  user-select: text;
-  -webkit-user-select: text;
+/* A version, copied with a click: text with the pointer and a tooltip as its only signs. */
+.about-copy {
+  padding: 0;
+  border: none;
+  background: none;
 }
 .about-links {
   display: flex;

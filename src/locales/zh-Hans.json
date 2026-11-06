@@ -104,6 +104,7 @@
     "license": "许可协议",
     "privacyPolicy": "隐私政策",
     "thirdPartyLicenses": "第三方许可证",
+    "clickToCopy": "点击即复制",
     "webview": "{name} {version}",
     "webviewInstalled": "已安装 {version}，重新启动 ZShell 后生效。"
   },
