@@ -12,7 +12,7 @@
 | 等待上游 | SSH：一个通道窗口用完，整条连接的发送都停下 | 给 russh 报 issue；上游还没有 |
 | 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 维护者拒绝过同样做法的 PR（russh#730）；考虑用 `[patch]` 维护分支 |
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
-| 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | Tauri 的 Linux 后端迁到 GTK4 |
+| 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | tao、wry、webkit2gtk 升到 gtk 0.19，或 Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
 | 等待上游 | Linux：zbus 停在 5 | keyring、tauri-plugin-opener、tauri-plugin-notification 升到 zbus 6 后跟着升 |
 | 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 我们的 AspectUnk/russh-sftp#106 合入并发布 |
@@ -32,14 +32,14 @@
 ### SSH：一个通道窗口用完，整条连接的发送都停下
 
 - **现象**：某个通道（多半是端口转发的一条连接）的对端窗口用完，而服务器迟迟不调整窗口（比如服务器那头连向转发目标的一段卡住了）时，同一连接上的终端输入、新开的转发、SFTP 都发不出去；服务器照常回应 keepalive，连接也不会被判定断开。
-- **原因**：russh 0.65.0 客户端主循环（`client/mod.rs` 约 1429 行）只要任何一个通道有待发数据（`has_any_pending_data()`），就不再从 `Handle` 的队列（`receiver`、`inbound_channel_receiver`）取消息，而我们发起的通道的数据、开通道请求都走这条队列。keepalive 由主循环自己发，不受影响；`ssh/liveness.rs` 的检查发的请求却走这条队列，发不出去，这时检查不下结论，不会把连接当成断线。
+- **原因**：russh 0.65.1 客户端主循环（`client/mod.rs` 约 1429 行）只要任何一个通道有待发数据（`has_any_pending_data()`），就不再从 `Handle` 的队列（`receiver`、`inbound_channel_receiver`）取消息，而我们发起的通道的数据、开通道请求都走这条队列。keepalive 由主循环自己发，不受影响；`ssh/liveness.rs` 的检查发的请求却走这条队列，发不出去，这时检查不下结论，不会把连接当成断线。
 - **处理**：给 russh 报 issue，提议只暂停窗口用完的那个通道。上游不修时再看能否在转发里给每条连接限速或设超时。
 - **登记**：2026-10-23（排查睡眠唤醒后连接假死时发现，那次的原因不是这个）。
 
 ### SSH：一个通道没读，整条连接的接收都停下（已绕过）
 
 - **现象**：终端输出积压到暂停读取（`session::Flow`）时，同一连接上的 SFTP、端口转发和复制出来的标签页一起停住，直到终端赶上。这是 ARCHITECTURE.md「背压」里写的代价。
-- **原因**：russh 0.65.0 收到 `CHANNEL_DATA` 时（`client/encrypted.rs` 约 590 行），只要窗口降到一半以下，就立即发 `WINDOW_ADJUST`（`session.rs` 的 `adjust_window_size`），不管应用读没读走；随后用 `chan.send(...).await` 把数据放进按条数计的有界队列，队列满了，整个连接任务就停在这里。SSH 本有按通道的窗口，却没有用来做背压，所以我们只能停读整条连接。`Handler::adjust_window` 帮不上忙：它只能改下次的目标大小，而 0.65 调整时用的是 `config.window_size`，返回值没有生效（就是下面的 #770）；即使生效，它也是整个会话一个值，调小会拖慢所有通道。russh 也没有手动发窗口调整的公开 API。
+- **原因**：russh 0.65.1 收到 `CHANNEL_DATA` 时（`client/encrypted.rs` 约 600 行），只要窗口降到一半以下，就立即发 `WINDOW_ADJUST`（`session.rs` 的 `adjust_window_size`），不管应用读没读走；随后用 `chan.send(...).await` 把数据放进按条数计的有界队列，队列满了，整个连接任务就停在这里。SSH 本有按通道的窗口，却没有用来做背压，所以我们只能停读整条连接。`Handler::adjust_window` 帮不上忙：它只能改下次的目标大小，而 0.65 调整时用的是 `config.window_size`，返回值没有生效（就是下面的 #770）；即使生效，它也是整个会话一个值，调小会拖慢所有通道。russh 也没有手动发窗口调整的公开 API。
 - **绕过**：`ssh::KeepReading`（Windows、Linux 拖出文件时照常读）；SFTP 打开通道的超时只计 russh 等服务器的时间（`ssh::Connection::waited_for_server`）。后者仍有漏洞：经跳板机的连接，跳板机自己的标签页积压输出时，内层连接看起来在等服务器，计时照算，可能误报 `sftp.openTimeout`；需要跳板机上的标签页积压 30 秒以上，暂不处理。
 - **上游**：
   - [Eugeny/russh#770](https://github.com/Eugeny/russh/issues/770)（2026-09-05，别人提的，没有回复）报的是 `adjust_window` 在客户端不生效，附了复现和一行的修法（客户端也读 `target_window_size`，与服务端一致），顺带问维护者是否考虑按通道设窗口。
@@ -51,13 +51,13 @@
   - 何时补、补多少：OpenSSH 在窗口低于一半或已消费超过 3 个最大包时，补已消费的字节数；#730 在低于一半时一次补满，有积压时等清空再补。
   - 对端超窗：OpenSSH 先收下并记下超出量，超过窗口的 10% 就断开（`peer ignored channel window`）；#730 照样交给应用、打一条 warn，对不守流控的对端没有上限。
   - #730 里 `Handler::data()` 仍是 `await` 的，handler 处理慢照样堵住整条连接；ZShell 的客户端 handler 没有实现它，不受影响。
-- **处理**：上游不打算改，所以用 `[patch]` 维护 russh 分支（Apache-2.0，可以修改后分发），以 #730 为起点。它基于 6 月的 main，客户端和服务端一共改了约 900 行，合到 0.65.0 上多半有冲突。在它的基础上照 OpenSSH 改两处：「已消费」按应用 `recv` 走的字节计（`ChannelReadHalf::recv` 里已经有 `drain_notify`，在那里累加），让每个通道的缓冲不超过窗口；对端超窗超过 10% 时关通道或断开。代价是 russh 每次发版都要把分支重新 rebase 一遍。也可以先在 #730 或 #770 下附上 OpenSSH 的做法再争取一次，但希望不大。分支用上后，`bridge` 暂停时只需不读，删掉 `KeepReading`，`waited_for_server` 不必再排除本地卡顿，ARCHITECTURE.md 的「背压」一条随之改写。与上一条（发送方向）同在 russh 的连接主循环，分支里可以一起改。
+- **处理**：上游不打算改，所以用 `[patch]` 维护 russh 分支（Apache-2.0，可以修改后分发），以 #730 为起点。它基于 6 月的 main，客户端和服务端一共改了约 900 行，合到 0.65.1 上多半有冲突。在它的基础上照 OpenSSH 改两处：「已消费」按应用 `recv` 走的字节计（`ChannelReadHalf::recv` 里已经有 `drain_notify`，在那里累加），让每个通道的缓冲不超过窗口；对端超窗超过 10% 时关通道或断开。代价是 russh 每次发版都要把分支重新 rebase 一遍。也可以先在 #730 或 #770 下附上 OpenSSH 的做法再争取一次，但希望不大。分支用上后，`bridge` 暂停时只需不读，删掉 `KeepReading`，`waited_for_server` 不必再排除本地卡顿，ARCHITECTURE.md 的「背压」一条随之改写。与上一条（发送方向）同在 russh 的连接主循环，分支里可以一起改。
 - **登记**：2026-10-27（评审 3.16.0 的改动时查明）。
 
 ### SSH：重交换时不比对主机密钥
 
 - **现象**：会话中途的密钥重交换不检查服务器的主机密钥。已经握有会话密钥的一方（实际上就是服务器本身）可以在重交换时换一把主机密钥而不被发现；网络上的中间人做不到。
-- **原因**：russh 0.65.0 只在初次密钥交换（`encrypted.is_some()` 的 else 分支，`client/mod.rs` 约 2062–2079 行）调用 `Handler::check_server_key`，重交换那一支（约 2041 行起）不调用。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
+- **原因**：russh 0.65.1 只在初次密钥交换（`encrypted.is_some()` 的 else 分支，`client/mod.rs` 约 2060–2083 行）调用 `Handler::check_server_key`，重交换那一支（约 2036 行起）不调用。0.65.1 修复的 GHSA-9264-jvgf-6w2f 只是把初次交换里的 `kex_done` 挪到主机密钥验证之后，重交换照旧。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
 - **上游修复**：还没有，上游也没有相关 issue。
 - **处理**：russh 在重交换时也调用 `check_server_key`（或把主机密钥交给 `kex_done`）之后，在 `ssh/handler.rs` 里记下初次接受的密钥，重交换时要求同一把，不再询问用户。之前那段比对代码因为永远走不到，已经删掉（v2.11.1）。
 - **上游 issue 的素材**：重交换时 `KexProgress::Done` 带着 `server_host_key`，只是没有交给 handler；OpenSSH 每次密钥交换都验证主机密钥，并要求和初次的一致。
@@ -75,9 +75,9 @@
 ### Linux：依赖里的 glib 0.18 有一条中等级别的安全公告
 
 - **现象**：Dependabot 报 `src-tauri/Cargo.lock` 里的 `glib` 0.18.5 不安全（[警告 #1](https://github.com/Bokjan/ZShell/security/dependabot/1)），要求 0.20.0 以上。问题出在 `glib::VariantStrIter` 的 `Iterator` / `DoubleEndedIterator` 实现，只有调用 `Variant::array_iter_str` 才会碰到。
-- **原因**：glib 是 Tauri 在 Linux 上用的 GTK3 绑定（`gtk` 0.18、`webkit2gtk` 2.0，经 tao、wry、muda 引入）的底层，固定在 0.18。gtk-rs 的 GTK3 绑定已经停在 0.18 并归档，不会有兼容 glib 0.20 的版本；0.18 到 0.20 也是不兼容升级，`cargo update` 升不上去。
+- **原因**：glib 是 Tauri 在 Linux 上用的 GTK3 绑定（`gtk` 0.18、`webkit2gtk` 2.0，经 tao、wry、muda 引入）的底层，固定在 0.18。0.18 到更新的 glib 是不兼容升级，`cargo update` 升不上去。gtk-rs 后来又发了 GTK3 绑定 `gtk` 0.19（2026-09-08，用 glib 0.22），但 2026-11-06 核对时 tao 0.37.2、wry 0.57.1、webkit2gtk 2.0.2 和 tauri 2.12.5 都还要求 `gtk` 0.18，ZShell 的 `sftp/drag/linux.rs` 要用和它们同一个 gtk，也只能停在 0.18。
 - **影响**：macOS 和 Windows 的包不编译这些 crate。2026-10-16 在 Linux 已发布之后（3.3.0 的依赖树）重新核对：Linux 目标下依赖 glib 的 22 个 crate（tauri 2.12.3、wry 0.57.0、tao 0.37.1、muda 0.20.0、webkit2gtk 2.0.2 等）和 ZShell 自己都没有调用 `array_iter_str`。该警告已在 GitHub 上以“代码未用到”关闭。
-- **处理**：Tauri 把 Linux 后端迁到 GTK4 后，glib 会跟着升到 0.20 以上。在那之前，每次升级 Tauri 或 GTK 相关依赖后重新检查：`cargo tree -i glib@0.18.5 --target x86_64-unknown-linux-gnu` 列出的 crate 源码里有没有 `array_iter_str`。
+- **处理**：tao、wry 和 webkit2gtk 升到 `gtk` 0.19（或 Tauri 把 Linux 后端迁到 GTK4）后，glib 会跟着升到 0.20 以上，ZShell 的 `gtk` 一起升。在那之前，每次升级 Tauri 或 GTK 相关依赖后重新检查：`cargo tree -i glib@0.18.5 --target x86_64-unknown-linux-gnu` 列出的 crate 源码里有没有 `array_iter_str`。
 - **登记**：2026-10-11。
 
 ### Windows：windows-rs 0.100 只发了一部分
@@ -195,7 +195,7 @@
 ### SFTP：远距离服务器上单个文件的速度受 2 MiB 窗口限制
 
 - **现状**：一个文件在途的数据最多约 2 MiB，速度上限约为 2 MiB ÷ RTT：10 ms 时约 200 MiB/s，100 ms 约 20 MiB/s，250 ms 约 8 MiB/s，与 OpenSSH 的 `sftp` 相同。下载受 russh 默认的通道窗口（2 MiB）和每个文件 8 个读请求（`sftp/channels.rs` 的 `SFTP_CONCURRENT_READS`）限制；上传受服务器给的窗口限制（OpenSSH 是 2 MiB），客户端改不了。
-- **为什么不改**：russh 0.65.0 的窗口按连接设置（`client::Config::window_size`，开每个通道都用它，没有按通道指定的接口）。整体调大会让 shell 在 Ctrl+C 后多出几倍的积压输出（2026-10-17 性能评审 P0-3）。
+- **为什么不改**：russh 0.65.1 的窗口按连接设置（`client::Config::window_size`，开每个通道都用它，没有按通道指定的接口）。整体调大会让 shell 在 Ctrl+C 后多出几倍的积压输出（2026-10-17 性能评审 P0-3）。
 - **可选做法**：
   - 给 russh 提 PR，开通道时可以指定窗口，只调大传输通道（8–16 MiB），同时把传输通道的并发读提到 32 左右。只对下载有效。
   - 传输另开一条 SSH 连接（WinSCP、FileZilla 的做法），在那条连接上调大窗口。代价是要再认证一次，要输验证码的服务器会再问一次；跳板机与代理也要重走。
