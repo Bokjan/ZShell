@@ -5,7 +5,7 @@ import { call } from "./call";
 import type { Dropped, Rect, TaskProgress, WindowContent as Content } from "./bindings";
 import { transferSessions, type TabTransfer } from "../lib/tabs";
 
-export type { Change, DropTarget, WindowInfo } from "./bindings";
+export type { Change, DropTarget, WebviewInfo, WindowInfo } from "./bindings";
 
 /**
  * What a window is to show (see `WindowContent` in the backend): a tab moved out of another
@@ -28,6 +28,8 @@ const allowsNotifications = () => {
 export const windows = {
   /** Where this window's maximize button is (Windows, which snaps windows to it), or none. */
   setMaximizeButton: (rect: Rect | null) => void call("window_set_maximize_button", { rect }).catch(console.error),
+  /** The web view the pages run in and the version this process runs, or null if the system won't say. */
+  webview: () => call("window_webview"),
   /** The window buttons the page draws, in order (Windows and Linux). */
   buttons: () => call("window_buttons"),
   /** Where files can be dragged out of the window, or nowhere (see `window_set_drag_area`). */

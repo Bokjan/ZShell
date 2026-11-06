@@ -225,7 +225,8 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
 /// Creates the main window.
 pub fn create_main(app: &App) -> tauri::Result<()> {
     platform::starting();
-    build(app.handle(), MAIN, None).map(drop)
+    log_webview(&build(app.handle(), MAIN, None)?);
+    Ok(())
 }
 
 fn size(window: &WebviewWindow) -> tauri::Result<tauri::LogicalSize<f64>> {
@@ -312,6 +313,39 @@ pub struct MouseNavigation {
 pub struct WindowInfo {
     pub label: String,
     pub title: String,
+}
+
+/// The web view the pages run in, for About ZShell and the debug log: which one, and the
+/// version this process runs, on which its bugs depend, rather than the one installed.
+#[derive(Serialize, TS)]
+pub struct WebviewInfo {
+    /// The product's name, which isn't translated.
+    pub name: String,
+    pub version: String,
+    /// A newer version installed while the app ran, which it runs once restarted (WebView2,
+    /// which updates by itself).
+    pub installed: Option<String>,
+}
+
+/// See [`WebviewInfo`]; none if the platform won't say.
+pub async fn webview(window: WebviewWindow) -> tauri::Result<Option<WebviewInfo>> {
+    let (done, info) = oneshot::channel();
+    platform::webview(&window, move |info| drop(done.send(info)))?;
+    info.await.map_err(|_| tauri::Error::FailedToReceiveMessage)
+}
+
+/// Records the web view in the debug log, once the main window has one.
+fn log_webview(window: &WebviewWindow) {
+    let logged = platform::webview(window, |info| match info {
+        Some(WebviewInfo { name, version, installed: None }) => log::info!("web view: {name} {version}"),
+        Some(WebviewInfo { name, version, installed: Some(installed) }) => {
+            log::info!("web view: {name} {version}, {installed} installed")
+        }
+        None => log::warn!("can't tell the web view's version"),
+    });
+    if let Err(e) = logged {
+        log::warn!("can't tell the web view's version: {e}");
+    }
 }
 
 /// The other windows, in the order they opened.

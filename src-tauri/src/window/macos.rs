@@ -34,7 +34,7 @@ use objc2_app_kit::{NSApplication, NSEvent, NSView, NSWindowDidEnterFullScreenNo
 use objc2_foundation::{NSNotification, NSNotificationCenter};
 use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
 
-use super::{DoubleClick, MouseNavigation, Rect, WindowButton};
+use super::{DoubleClick, MouseNavigation, Rect, WebviewInfo, WindowButton};
 use crate::events;
 use crate::model::Appearance;
 
@@ -275,6 +275,26 @@ pub(super) fn created(window: &WebviewWindow) -> tauri::Result<()> {
         install_once(view);
         WINDOWS.with_borrow_mut(|windows| windows.insert(view as *const NSView as usize, window_));
     })
+}
+
+/// The WebKit the process loaded: the build number of the framework `WKWebView` comes from
+/// (such as 20622.1.22.118.4), which tells its bugs apart better than Safari's version. Not
+/// `tauri::webview_version`, which looks the framework up by its identifier and unloads it.
+pub(super) fn webview(_window: &WebviewWindow, done: impl FnOnce(Option<WebviewInfo>) + Send + 'static) -> tauri::Result<()> {
+    use objc2_foundation::{NSBundle, NSString};
+
+    let version = || {
+        // SAFETY: a class that exists, as `AnyClass::get` found it.
+        let bundle = unsafe { NSBundle::bundleForClass(AnyClass::get(c"WKWebView")?) };
+        let version = bundle.infoDictionary()?.objectForKey(&NSString::from_str("CFBundleVersion"))?;
+        Some(version.downcast::<NSString>().ok()?.to_string())
+    };
+    let version = version();
+    if version.is_none() {
+        log::warn!("can't tell WebKit's version");
+    }
+    done(version.map(|version| WebviewInfo { name: "WebKit".to_owned(), version, installed: None }));
+    Ok(())
 }
 
 /// Nothing to set up before the first window.

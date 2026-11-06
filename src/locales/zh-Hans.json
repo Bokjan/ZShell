@@ -103,7 +103,9 @@
     "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "license": "许可协议",
     "privacyPolicy": "隐私政策",
-    "thirdPartyLicenses": "第三方许可证"
+    "thirdPartyLicenses": "第三方许可证",
+    "webview": "{name} {version}",
+    "webviewInstalled": "已安装 {version}，重新启动 ZShell 后生效。"
   },
   "sidebar": {
     "listLabel": "会话",

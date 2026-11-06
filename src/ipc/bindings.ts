@@ -1200,6 +1200,21 @@ remember: boolean, locked: VaultLock | null, store: StoreKind,
 created: boolean, };
 
 /**
+ * The web view the pages run in, for About ZShell and the debug log: which one, and the
+ * version this process runs, on which its bugs depend, rather than the one installed.
+ */
+export type WebviewInfo = { 
+/**
+ * The product's name, which isn't translated.
+ */
+name: string, version: string, 
+/**
+ * A newer version installed while the app ran, which it runs once restarted (WebView2,
+ * which updates by itself).
+ */
+installed: string | null, };
+
+/**
  * A window button the frontend draws.
  */
 export type WindowButton = "minimize" | "maximize" | "close";
@@ -1386,6 +1401,7 @@ export type Commands = {
   window_system_menu: { args: Record<string, never>; result: void };
   window_take: { args: Record<string, never>; result: WindowContent[] };
   window_title_double_click: { args: Record<string, never>; result: void };
+  window_webview: { args: Record<string, never>; result: WebviewInfo | null };
   zmodem_cancel: { args: { id: number }; result: void };
   zmodem_save_to: { args: { id: number; dir?: string | null }; result: void };
   zmodem_send_files: { args: { id: number; paths: string[] }; result: void };

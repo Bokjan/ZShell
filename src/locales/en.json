@@ -104,7 +104,9 @@
     "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "license": "License",
     "privacyPolicy": "Privacy Policy",
-    "thirdPartyLicenses": "Third-Party Licenses"
+    "thirdPartyLicenses": "Third-Party Licenses",
+    "webview": "{name} {version}",
+    "webviewInstalled": "Version {version} is installed and is used once ZShell restarts."
   },
   "sidebar": {
     "listLabel": "Sessions",

@@ -387,6 +387,7 @@ pub fn run() {
             commands::window::window_take,
             commands::window::window_close_empty,
             commands::window::window_list,
+            commands::window::window_webview,
             commands::window::window_set_title,
             commands::window::window_send_tab,
             commands::window::window_pane_stayed,

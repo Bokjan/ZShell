@@ -435,6 +435,7 @@ mod tests {
         visitor.visit::<sftp::drag::DragResult>();
         visitor.visit::<sftp::drag::DragEvent>();
         visitor.visit::<window::WindowInfo>();
+        visitor.visit::<window::WebviewInfo>();
         visitor.visit::<window::WindowContent>();
         visitor.visit::<window::WindowButton>();
         visitor.visit::<window::progress::TaskProgress>();

@@ -20,7 +20,7 @@ use gtk::glib::Propagation;
 use gtk::prelude::*;
 use tauri::{AppHandle, Manager, Theme, WebviewWindow, WebviewWindowBuilder, Wry};
 
-use super::{DoubleClick, MouseNavigation, Rect, WindowButton};
+use super::{DoubleClick, MouseNavigation, Rect, WebviewInfo, WindowButton};
 use crate::events;
 use crate::model::Appearance;
 
@@ -202,6 +202,14 @@ pub(super) fn prepare(window: &WebviewWindow) -> tauri::Result<()> {
     window.run_on_main_thread(move || {
         let _ = replace_title_bar(&window_);
     })
+}
+
+/// The WebKitGTK the process loaded: `webkit_get_major_version` and the others are the library's,
+/// not those of the headers it was built with. A distribution's own patches don't show.
+pub(super) fn webview(_window: &WebviewWindow, done: impl FnOnce(Option<WebviewInfo>) + Send + 'static) -> tauri::Result<()> {
+    let version = tauri::webview_version().inspect_err(|e| log::warn!("can't tell WebKitGTK's version: {e}"));
+    done(version.ok().map(|version| WebviewInfo { name: "WebKitGTK".to_owned(), version, installed: None }));
+    Ok(())
 }
 
 pub(super) fn created(_window: &WebviewWindow) -> tauri::Result<()> {

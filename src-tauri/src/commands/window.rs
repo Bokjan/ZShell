@@ -10,7 +10,7 @@ use crate::keep_awake::KeepAwake;
 use crate::session::{SessionId, SessionManager};
 use crate::tab_drag::Dropped;
 use crate::window::progress::TaskProgress;
-use crate::window::{self, Rect, WindowButton, WindowContent, WindowInfo, Windows};
+use crate::window::{self, Rect, WebviewInfo, WindowButton, WindowContent, WindowInfo, Windows};
 
 /// See [`window::open`].
 #[tauri::command]
@@ -42,6 +42,12 @@ pub fn window_close_empty(app: AppHandle, window: WebviewWindow, windows: State<
 #[tauri::command]
 pub fn window_list(app: AppHandle, window: WebviewWindow) -> Vec<WindowInfo> {
     window::list(app, window)
+}
+
+/// See [`window::webview`].
+#[tauri::command]
+pub async fn window_webview(window: WebviewWindow) -> Result<Option<WebviewInfo>> {
+    Ok(window::webview(window).await?)
 }
 
 /// See [`window::set_title`].

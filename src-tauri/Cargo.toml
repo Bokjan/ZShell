@@ -138,6 +138,7 @@ webview2-com = "0.39"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = [
     "NSArray",
+    "NSBundle",
     "NSDictionary",
     "NSDistributedNotificationCenter",
     "NSError",

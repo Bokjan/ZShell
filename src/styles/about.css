@@ -32,6 +32,11 @@
 .about-app .hint {
   margin: 0;
 }
+/* Copied into bug reports. */
+.about-webview {
+  user-select: text;
+  -webkit-user-select: text;
+}
 .about-links {
   display: flex;
   flex-wrap: wrap;

@@ -20,8 +20,8 @@ use std::sync::{Mutex, Once, OnceLock};
 
 use tauri::window::Color;
 use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
-use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-use windows_core::Interface;
+use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Settings3, ICoreWebView2_2};
+use windows_core::{Interface, PWSTR};
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT};
@@ -43,7 +43,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_TOPMOST,
 };
 
-use super::{DoubleClick, Rect, WindowButton};
+use super::{DoubleClick, Rect, WebviewInfo, WindowButton};
 use crate::model::Appearance;
 
 /// For reporting the button's state to the frontend from the window procedure.
@@ -473,6 +473,27 @@ fn disable_browser_keys(window: &WebviewWindow) -> tauri::Result<()> {
         };
         // Fails only on a WebView2 runtime from before 2021, which then keeps its shortcuts.
         let _ = disable();
+    })
+}
+
+/// The WebView2 runtime the window's web view runs on: its environment's version, rather than
+/// `tauri::webview_version` (`GetAvailableCoreWebView2BrowserVersionString`), the newest one
+/// installed. The evergreen runtime updates by itself, and the app keeps the version it started
+/// with until all its web views close.
+pub(super) fn webview(window: &WebviewWindow, done: impl FnOnce(Option<WebviewInfo>) + Send + 'static) -> tauri::Result<()> {
+    window.with_webview(move |webview| {
+        // SAFETY: COM calls on the main thread, where the web view runs this.
+        let running = || unsafe {
+            let environment = webview.controller().CoreWebView2()?.cast::<ICoreWebView2_2>()?.Environment()?;
+            let mut version = PWSTR::null();
+            environment.BrowserVersionString(&mut version)?;
+            Ok::<_, windows_core::Error>(webview2_com::take_pwstr(version))
+        };
+        let info = running().inspect_err(|e| log::warn!("can't tell WebView2's version: {e}")).ok().map(|version| {
+            let installed = tauri::webview_version().ok().filter(|installed| *installed != version);
+            WebviewInfo { name: "Microsoft Edge WebView2".to_owned(), version, installed }
+        });
+        done(info);
     })
 }
 

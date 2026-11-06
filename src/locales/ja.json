@@ -103,7 +103,9 @@
     "copyright": "Copyright © 2026 Boyin Chen. All rights reserved.",
     "license": "ライセンス",
     "privacyPolicy": "プライバシーポリシー",
-    "thirdPartyLicenses": "サードパーティのライセンス"
+    "thirdPartyLicenses": "サードパーティのライセンス",
+    "webview": "{name} {version}",
+    "webviewInstalled": "{version}がインストールされています。ZShellを再起動すると使用されます。"
   },
   "sidebar": {
     "listLabel": "セッション",

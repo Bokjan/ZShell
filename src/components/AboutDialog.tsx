@@ -6,6 +6,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useDialog } from "../hooks/dialogs";
 import { useSettings } from "../hooks/settings";
 import { useUpdates } from "../hooks/updates";
+import { windows, type WebviewInfo } from "../ipc/windows";
 import { checkForUpdates } from "../lib/updates";
 import appIcon from "../../src-tauri/icons/source/icon.svg";
 import { ErrorText } from "./ErrorMessage";
@@ -32,11 +33,13 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
     update((settings) => ({ ...settings, updates: { ...settings.updates, ...patch } }));
   const checkNowRef = useRef<HTMLButtonElement>(null);
   const [version, setVersion] = useState<string | null>(null);
+  const [webview, setWebview] = useState<WebviewInfo | null>(null);
   const [licensesOpen, setLicensesOpen] = useState(false);
   const dialog = useDialog(onClose, { dismissable: true });
 
   useEffect(() => {
     getVersion().then(setVersion).catch(console.error);
+    windows.webview().then(setWebview).catch(console.error);
   }, []);
 
   const externalLink = (label: string, url: string) => (
@@ -58,6 +61,18 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
             <img src={appIcon} alt="" />
             <h2>{t("app.name")}</h2>
             {version && <p>{t("about.version", { version })}</p>}
+            {/* Selectable, to be copied into a bug report: the web view's bugs depend on its version. */}
+            {webview && (
+              <p className="hint about-webview">
+                {t("about.webview", { name: webview.name, version: webview.version })}
+                {webview.installed && (
+                  <>
+                    <br />
+                    {t("about.webviewInstalled", { version: webview.installed })}
+                  </>
+                )}
+              </p>
+            )}
             <p className="hint">{t("about.copyright")}</p>
             <div className="about-links">
               {externalLink(t("about.license"), LICENSE_URL)}
