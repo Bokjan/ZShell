@@ -77,7 +77,9 @@
 .debug-log-count {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  /* Across only: the trim below leaves a box as tall as the figures, and what reaches past them
+     (a CJK character, the slash) must still show. `hidden` would clip up and down as well. */
+  overflow-x: clip;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   text-align: right;
