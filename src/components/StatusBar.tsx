@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Profile } from "../ipc/api";
@@ -53,10 +53,16 @@ function StatusItems({ pane, profile, sessions }: Props) {
           />
         )
       )}
-      {screen && (
+      {screen ? (
         <>
           <Item className="status-size" text={t("statusBar.size", screen)} label={t("statusBar.sizeLabel", screen)} />
           <Item className="status-cursor" text={t("statusBar.cursor", screen)} label={t("statusBar.cursorLabel", screen)} />
+        </>
+      ) : (
+        // Empty until the terminal is shown, keeping their width so that the items before them don't move.
+        <>
+          <span className="status-size" />
+          <span className="status-cursor" />
         </>
       )}
     </footer>
@@ -123,7 +129,8 @@ function useScreen(sessions: SessionRegistry, key: number) {
   const [state, setState] = useState<{ from: TerminalScreen; shown: { cols: number; rows: number; row: number; column: number } } | null>(
     null,
   );
-  useEffect(() => {
+  // Before the bar is painted, so that switching tabs never shows it without the new terminal's numbers.
+  useLayoutEffect(() => {
     if (!screen) return;
     let frame = 0;
     const read = () => {
