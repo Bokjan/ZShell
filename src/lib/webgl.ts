@@ -89,7 +89,7 @@ export function drawWithWebgl(term: Terminal): () => void {
   let losses = 0;
   // The addon's context, while it is there to release.
   let gl: WebGL2RenderingContext | undefined;
-  // Waits for the new canvas's first layout, to draw it then.
+  // Draws the canvas each time it changes size, which empties it.
   let sized: ResizeObserver | undefined;
   // Drawing with the DOM renderer to leave the context to terminals used more recently.
   let evicted = false;
@@ -147,18 +147,16 @@ export function drawWithWebgl(term: Terminal): () => void {
         // draws it on the next animation frame, which a shown tab's frame doesn't wait for: its
         // terminal is still paused until the IntersectionObserver reports it on screen, a frame
         // late. At fractional pixel ratios the addon's ResizeObserver also fits the canvas to the
-        // device pixels on the first layout, which clears it again. Observing the canvas after
-        // the addon does, this is called right after that, and the frame is painted after it:
-        // drawing then, past the pause, keeps the frame from showing an empty terminal.
-        // (On xterm.js master the addon draws right away after fitting the canvas, but not
-        // while paused, and a new renderer still waits for the pause to end.)
+        // device pixels on the first layout, which clears it again. Each later change of the
+        // terminal's size clears it too, and the same wait would show every frame of dragging the
+        // window's edge empty. Observing the canvas after the addon does, this is called right
+        // after that, and the frame is painted after it: drawing then, past the pause, keeps the
+        // frame from showing an empty terminal. (On xterm.js master the addon draws right away
+        // after fitting the canvas, but not while paused, and a new renderer still waits for the
+        // pause to end.)
         const canvas = added[added.length - 1];
         if (canvas) {
-          sized = new ResizeObserver(() => {
-            sized?.disconnect();
-            sized = undefined;
-            (term as unknown as Internals)._core?._renderService?._renderRows?.(0, term.rows - 1);
-          });
+          sized = new ResizeObserver(() => (term as unknown as Internals)._core?._renderService?._renderRows?.(0, term.rows - 1));
           sized.observe(canvas);
         }
       } catch (e) {

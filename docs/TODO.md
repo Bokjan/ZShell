@@ -151,7 +151,7 @@
   - `@xterm/xterm` 下一个正式版的发布。它若只带第 1 条的修复，绕过要保留。
   - #6239 和 #6240：再次评审的意见（要改时，从 fork `Bokjan/xterm.js` 的 `paused-blank-render` 分支继续，分支基于 10 月中的 master，没有 rebase），是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
   - 维护者如果选了别的修法，要看它能不能让显示的那一帧就有内容。例如只在 IntersectionObserver 恢复渲染时同步补画是不够的：回调本来就晚一帧，补画时那一帧已经空白地画出去了。
-- **绕过**：`webgl.ts` 加载插件后，给新的 WebGL 画布再挂一个 ResizeObserver。它创建在插件的之后，同一轮回调里排在插件后面，也就是画布刚被重设之后、这一帧绘制之前；第一次回调时断开，并调用私有的 `_core._renderService._renderRows` 同步画整屏，这个函数不看暂停。可选链访问，xterm.js 内部改名时什么都不做，空白帧又会出现，不会报错。图集重建时重新加载插件也走这里。
+- **绕过**：`webgl.ts` 加载插件后，给新的 WebGL 画布再挂一个 ResizeObserver。它创建在插件的之后，同一轮回调里排在插件后面，也就是画布刚被重设之后、这一帧绘制之前；每次回调都调用私有的 `_core._renderService._renderRows` 同步画整屏，这个函数不看暂停。不只第一次：终端每次改变大小，`WebglRenderer.handleResize` 都会设 `canvas.width` 清空画布，重画同样等下一帧，拖动窗口边缘时每一帧都是空白（2026-11-09 用 WKWebView 量，120 帧里 119 帧空白，绕过后 0 帧；数法是挂上画布 `width` / `height` 的 setter 与 WebGL 的绘制调用，一帧结束时重设之后还没有绘制就算空白）。可选链访问，xterm.js 内部改名时什么都不做，空白帧又会出现，不会报错。图集重建时重新加载插件也走这里。
 - **验证**：在临时目录里搭测试页（用仓库里打过补丁的 xterm.js 和 `webgl.ts`，照应用的 `.tab-page` CSS 放两个终端，切换时先改 class，再释放旧终端的 WebGL、加载新终端的），在独立配置目录的 Chrome 里用 `--force-device-scale-factor` 设缩放，用 CDP 录屏，按两个终端的文字颜色把每帧分成「A」「B」「空白」。Chrome 要加 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`，否则窗口被遮住后 rAF 停止。每种情形切换 6 次，空白帧数：
 
   | 缩放 / 隐藏方式 | 修改前 | 修改后 |
@@ -165,7 +165,7 @@
 - **每次升级 xterm.js 时**：先确认 `RenderService` 里还有 `_renderRows`，而且仍然不看暂停、直接绘制。改名或改了行为时绕过会静默失效（可选链什么都不做），要按新版本找到对应的同步绘制入口，改写调用。然后按上面的方法录屏，四种情形都应为 0。
 - **移除**（上游两条都修好、ZShell 已升到包含两处修复的版本之后）：
   1. 删掉 `src/lib/webgl.ts` 里绕过的代码：`Internals` 接口，`drawWithWebgl` 里的 `sized` 变量，`load()` 里给新画布挂 ResizeObserver 的那段（连同上面的注释），以及 `release()` 里断开 `sized` 的两行。
-  2. 去掉绕过后录屏：四种情形都应为 0。任一情形出现空白帧，说明上游没修全，恢复绕过，到上游的 issue 里说明。
+  2. 去掉绕过后录屏：四种情形都应为 0，拖动窗口边缘时也不应有空白帧。任一情形出现空白帧，说明上游没修全，恢复绕过，到上游的 issue 里说明。
   3. 删掉这一条，提交信息里写明上游修复的版本和 PR。
 - **登记**：2026-10-17。
 
