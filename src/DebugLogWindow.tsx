@@ -13,6 +13,7 @@ import { RadioGroup } from "./components/RadioGroup";
 import { Select } from "./components/Select";
 import { NewOutputButton } from "./components/terminal/NewOutputButton";
 import { followReadBack } from "./components/terminal/readBackView";
+import { followSize } from "./components/terminal/size";
 import { WindowControls } from "./components/WindowControls";
 import { useLatest } from "./hooks/latest";
 import { useLocale } from "./hooks/locale";
@@ -147,20 +148,15 @@ export function DebugLogWindow() {
     term.open(container);
     fit.fit();
     term.write(HIDE_CURSOR);
-    let frame = 0;
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => fit.fit());
-    });
-    observer.observe(container);
+    // Always in sight, and never shows another window's screen.
+    const size = followSize(term, fit, container, { arriving: () => false, visible: () => true, unfitted: () => {} });
     const following = followReadBack(term, container, () => {});
     setReadBack(following.readBack);
     termRef.current = term;
     fitRef.current = fit;
     setTerminal(term);
     return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
+      size.dispose();
       following.dispose();
       setReadBack(null);
       termRef.current = null;
