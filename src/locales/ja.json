@@ -80,7 +80,7 @@
       "debug": "デバッグ"
     },
     "filter": "絞り込み",
-    "count": "{total}件中{shown}件",
+    "count": "{shown} / {total}件",
     "copyShown": "表示中の記録をすべてコピー",
     "copied_other": "{count}件の記録をコピーしました",
     "clear": "消去",
