@@ -53,18 +53,17 @@ function StatusItems({ pane, profile, sessions }: Props) {
           />
         )
       )}
-      {screen ? (
-        <>
-          <Item className="status-size" text={t("statusBar.size", screen)} label={t("statusBar.sizeLabel", screen)} />
-          <Item className="status-cursor" text={t("statusBar.cursor", screen)} label={t("statusBar.cursorLabel", screen)} />
-        </>
-      ) : (
-        // Empty until the terminal is shown, keeping their width so that the items before them don't move.
-        <>
-          <span className="status-size" />
-          <span className="status-cursor" />
-        </>
-      )}
+      {/* Empty until the terminal is shown, keeping their width so that the items before them don't move. */}
+      <Item
+        className="status-size"
+        text={screen ? t("statusBar.size", screen) : ""}
+        label={screen ? t("statusBar.sizeLabel", screen) : ""}
+      />
+      <Item
+        className="status-cursor"
+        text={screen ? t("statusBar.cursor", screen) : ""}
+        label={screen ? t("statusBar.cursorLabel", screen) : ""}
+      />
     </footer>
   );
 }
