@@ -65,6 +65,9 @@ const LABEL_PREFIX: &str = "window-";
 pub const DEBUG_LOG: &str = "debug-log";
 /// The debug log window's size when it opens, in CSS pixels.
 const DEBUG_LOG_SIZE: (f64, f64) = (960.0, 600.0);
+/// The debug log window's narrowest width, in CSS pixels: wide enough for its bar with the
+/// record count whole, in every language at the largest text size. Other windows' is narrower.
+const DEBUG_LOG_MIN_WIDTH: f64 = 720.0;
 
 /// How far a new window is from the one it came from, down and to the right.
 const CASCADE: f64 = 28.0;
@@ -197,6 +200,7 @@ fn build(app: &AppHandle, label: &str, place: Option<Place>) -> tauri::Result<We
     config.label = label.to_owned();
     if label == DEBUG_LOG {
         (config.width, config.height) = DEBUG_LOG_SIZE;
+        config.min_width = Some(DEBUG_LOG_MIN_WIDTH);
     }
     // WebView2 would otherwise offer values typed into earlier forms, and doesn't always honor
     // `autocomplete="off"`. A no-op on the other platforms, whose web views have no such list.

@@ -59,9 +59,13 @@
 .debug-log-bar .select:hover {
   border-color: var(--text-muted);
 }
+/* Its basis is its minimum, so that it gives up all the room it has taken before the count, the
+   only other item that can shrink, loses any: with a larger basis both would shrink together,
+   and the count would be cut by a fraction of a pixel as soon as the field narrows. */
 .debug-log-filter {
-  flex: 0 1 240px;
+  flex: 1 1 48px;
   min-width: 48px;
+  max-width: 240px;
   padding: 0 8px;
   border: 1px solid var(--input-border);
   border-radius: 4px;
@@ -73,16 +77,18 @@
 .debug-log-filter:focus {
   border-color: var(--accent);
 }
-/* Takes the room left, which moves the window like the rest of the bar. */
+/* At the end of the bar. The window's minimum width leaves it room in every language and text
+   size (`DEBUG_LOG_MIN_WIDTH`); the ellipsis is for a font wider than those allow for, where a
+   number cut off without one would read as another number. */
 .debug-log-count {
-  flex: 1;
   min-width: 0;
+  margin-left: auto;
   /* Across only: the trim below leaves a box as tall as the figures, and what reaches past them
      (a CJK character, the slash) must still show. `hidden` would clip up and down as well. */
   overflow-x: clip;
+  text-overflow: ellipsis;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  text-align: right;
   white-space: nowrap;
   /* Centered by the figures rather than the font's line, whose room above the text is larger
      than below it (Segoe UI): beside the button, the line's middle sits low. */
