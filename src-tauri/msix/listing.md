@@ -14,6 +14,7 @@ One connection per tab: the terminal, the SFTP file panel and port forwarding sh
 
 SSH
 • Password, private key, SSH agent (the Windows OpenSSH agent and Pageant) and keyboard-interactive authentication, or all of them in OpenSSH's order.
+• Servers that require several methods in turn, such as a key and then a verification code.
 • Host keys checked against ~/.ssh/known_hosts, shared with OpenSSH, and asked in the terminal as ssh does, including host certificates from a trusted certificate authority (@cert-authority).
 • Jump hosts, SOCKS5 and HTTP proxies or proxy commands, keepalives and automatic reconnection.
 • Hosts imported from ~/.ssh/config.
@@ -33,6 +34,7 @@ Sessions, tabs and terminals
 • Nested folders, search and quick connect, export and import.
 • Per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login, environment variables and notes.
 • Local terminals (PowerShell), split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, the programming ligatures of fonts such as Fira Code and Cascadia Code, copy on select, right-click paste and session logs.
+• A status bar with the connection, its traffic and the terminal's size.
 • Quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 
 Security
