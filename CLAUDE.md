@@ -1,6 +1,6 @@
 # ZShell
 
-A cross-platform (macOS / Windows / Linux) SSH, Telnet and serial terminal for personal use, meant as an alternative to Xshell. Tauri 2 with a Rust + tokio backend (`src-tauri/`, russh for SSH and SFTP) and a React + TypeScript + xterm.js frontend (`src/`).
+A cross-platform (macOS / Windows / Linux) SSH, Telnet and serial terminal for personal use, meant as an alternative to Xshell. Tauri 2 with a Rust + tokio backend (`src-tauri/`, russh for SSH and SFTP) and a React + TypeScript + xterm.js frontend (`src/`). The product homepage (`site/`) is a separate Vite build.
 
 ## Documentation
 
@@ -9,7 +9,7 @@ The docs are in Chinese and are the source of truth for plans and design:
 - `docs/ROADMAP.md`: current state, milestones and the design notes for unimplemented features. Read the relevant milestone before starting a feature.
 - `docs/ARCHITECTURE.md`: overall structure and cross-module design decisions.
 - `docs/I18N.md`: language policy and how user-visible text is handled.
-- `docs/DEVELOPMENT.md`: commands, end-to-end testing, CI and releases.
+- `docs/DEVELOPMENT.md`: commands, end-to-end testing, CI, releases and dependency licenses.
 - `docs/TODO.md`: small known issues set aside for later, such as bugs waiting on an upstream release. Remove an item once it is done.
 
 When a feature lands: mark its milestone ✅ in ROADMAP.md, move cross-module design into ARCHITECTURE.md, and keep module-level details (edge cases, library pitfalls) in code comments rather than the docs.
@@ -23,23 +23,45 @@ When a feature lands: mark its milestone ✅ in ROADMAP.md, move cross-module de
 
 ## Commands
 
+Run these before committing; CI runs the same build, formatting check, clippy and tests on macOS, Windows (x64 and ARM64) and Linux (formatting on macOS only):
+
 ```bash
 pnpm build                                  # tsc + vite build
 pnpm test                                   # frontend unit tests (vitest, *.test.ts next to the module)
 pnpm format && (cd src-tauri && cargo fmt)  # Prettier and rustfmt, 140 columns
 cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
-pnpm tauri dev                              # run the app
 ```
+
+Others:
+
+```bash
+pnpm tauri dev                              # run the app
+pnpm site:dev                               # preview the homepage (site/); pnpm site:build builds it into dist-site/
+pnpm licenses:generate                      # third-party notices; fails on a license not accepted in src-tauri/about.toml
+```
+
+Platform-only code (ConPTY, the OpenSSH agent pipe, Pageant and DirectWrite on Windows, AppKit and CoreText on macOS, GTK and fontconfig on Linux) cannot be compiled elsewhere, so CI is the only check for it there.
 
 Cargo never removes stale artifacts, so `src-tauri/target` keeps growing as dependencies, features and the toolchain change. Run `cargo clean` in `src-tauri/` when it gets large, after a batch of dependency updates for example; Windows locks the files of a running `zshell.exe`, so first stop the debug instances you started (never the maintainer's).
 
-Run the first four before committing; CI runs the same build, formatting check, clippy and tests on macOS, Windows (x64 and ARM64) and Linux (formatting on macOS only). Platform-only code (ConPTY, the OpenSSH agent pipe, Pageant and DirectWrite on Windows, AppKit and CoreText on macOS, GTK and fontconfig on Linux) cannot be compiled elsewhere, so CI is the only check for it there.
+## Frontend
 
-Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/ipc/bindings.ts` (never mirror them by hand in `api.ts`), and so are the few constants both sides need (`constants()` in `bindings.rs`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale. The names of the commands (from `lib.rs`) and of the events, with their payloads (declared in `events.rs`, the only way the backend sends one), are generated there too: the frontend calls commands only through `call` in `src/ipc/call.ts` and listens through `listenHere` / `useWindowEvent`, which check them.
+- **Layers.** Besides the components, `src/lib/` is logic without React that reaches the backend only through `src/ipc/` (`layers.test.ts` checks), `src/ipc/` is the only place that calls commands or listens to the backend's events, and `src/hooks/` holds the React stores, providers and hooks shared by components (`src/app/` those of `App`).
+- **IPC.** Types exchanged with the frontend derive `ts_rs::TS` and are generated into `src/ipc/bindings.ts` (never mirror them by hand in `api.ts`), and so are the few constants both sides need (`constants()` in `bindings.rs`); after changing them or the error codes, run `UPDATE_BINDINGS=1 cargo test bindings` in `src-tauri/`, since `cargo test` fails while the file is stale. The names of the commands (from `lib.rs`) and of the events, with their payloads (declared in `events.rs`, the only way the backend sends one), are generated there too: the frontend calls commands only through `call` in `src/ipc/call.ts` and listens through `listenHere` / `useWindowEvent`, which check them.
+- **React Compiler** memoizes every component and hook, and every one must compile (`compiler.test.ts`; see "渲染与 memo" in `docs/ARCHITECTURE.md`). Never read or write a ref while rendering: latest values come from `useLatest` (named `…Ref`) or `useEffectEvent`, and DOM measurements go into state. Never read state from outside React while rendering: text that depends on the language comes from `useLocale` (`locale.test.ts` checks). Write `try … finally` and other syntax Compiler can't compile yet through `lib/attempt` or plainly. Components that must not render again as the tabs change get their callbacks as one `useStableHandlers` object; `useStableProps` warns in development when that breaks.
+- **Styles** use the CSS theme variables; no hard-coded colors.
+- **Controls.** Icons are the SVG components in `src/components/icons.tsx`, never text glyphs or emoji (×, ▾, ⟳, 📁), which look and sit differently in each platform's fonts; `icons.test.ts` fails on either. Likewise drop-downs, number, color and password fields and multi-line fields are `Select` / `ComboBox`, `SpinInput`, `ColorField`, `PasswordInput` and `AutoTextarea`, never `<select>`, `<datalist>`, `type="number"` or `type="color"`, and forms check their fields themselves rather than with `required` or `pattern` (`controls.test.ts` checks). See "不用原生控件" in `docs/ARCHITECTURE.md`.
+- **Accessibility** (see "无障碍" in `docs/ARCHITECTURE.md`): new UI uses the right ARIA roles and names, works from the keyboard, and is announced through `announce()` when it changes out of sight. Never remove a focus style (`outline: none`) without showing the focus another way; dialogs go through `useDialog` / `Modal`, which handle their semantics and focus.
+- **Shortcuts.** App shortcuts are intercepted in the capture phase so the terminal never sees them. On Windows, shortcuts that would clash with the shell use Ctrl+Shift (Ctrl+F, Ctrl+E and so on belong to the shell).
+
+## Backend
+
+- A Rust file past about 800 lines with types that stand on their own becomes a directory module with a file per part, `mod.rs` keeping the module docs and the `pub use`s (`session/`, `config/`); tests that push a file past that length move to a `tests.rs` beside it (`config/`, `vault/`, `zmodem/`).
+- SSH prompts (host keys, passwords, passphrases, keyboard-interactive) are asked inline in the terminal, as OpenSSH does, not in dialogs. Follow OpenSSH's behavior where there is one.
 
 ## Testing
 
-The frontend has three layers besides the components: `src/lib/` is logic without React that reaches the backend only through `src/ipc/` (`layers.test.ts` checks), `src/ipc/` is the only place that calls commands or listens to the backend's events, and `src/hooks/` holds the React stores, providers and hooks shared by components (`src/app/` those of `App`). Exported functions in `src/lib/` and `src/ipc/` that use no React, DOM or backend commands get unit tests in a `*.test.ts` next to the module; components have none and are checked end to end. Vitest has no DOM environment.
+Exported functions in `src/lib/` and `src/ipc/` that use no React, DOM or backend commands get unit tests in a `*.test.ts` next to the module; components have none and are checked end to end. Vitest has no DOM environment.
 
 Never touch the maintainer's real configuration (`vault.json`, `settings.json`, `~/.ssh`) during tests. For anything that needs a live SSH server, run the debug app with an isolated `HOME` and a temporary `sshd`, as described in the end-to-end testing section of `docs/DEVELOPMENT.md`. Kill only the processes you started; the maintainer may have their own instance open.
 
@@ -48,17 +70,21 @@ Never touch the maintainer's real configuration (`vault.json`, `settings.json`, 
 - Conventional Commits subjects, with an optional scope: `feat(sftp): …`, `fix(macos): …`, `docs: …`, `ci: …`, `chore: …`, `refactor: …`. Only `feat`, `fix`, `perf` and `refactor` (and breaking changes) reach `CHANGELOG.md`, refactors under "Internal" after the user-facing changes, so pick the type accordingly.
 - Do not hard-wrap the body: each paragraph or bullet stays on one line.
 - Commit with the repository's local git identity (check `git config user.email`).
+- The maintainer edits the tree at the same time: stage the files you changed by name, never `git add -A` or `git commit -a`, and check `git status` right before committing. Anything there you didn't touch is theirs.
+- When several agreed changes touch the same files, commit each one as soon as it is done and checked rather than splitting the diff at the end. Ask before pushing.
 - A change made for a GitHub issue references it in the commit body (`Closes #12`). When the version's changelog section is edited, credit the issue's author at the end of the entry (`(thanks @name, #12)`) and add them to `THANKS.md`.
 
-## Conventions
+## Versions and releases
 
-- The app version lives only in `src-tauri/Cargo.toml` and follows semantic versioning. A milestone or new feature is a minor version, fixes and small improvements are patch versions, and configuration files stay backward compatible unless the maintainer agrees to break them in a major version. Versions are not bumped per commit: when planning a change to code in `src/` or `src-tauri/`, propose a version plan (which version, and which changes it covers) and agree on it with the maintainer before starting work. Versions are set with `scripts/release.sh prepare` / `tag` and every version is tagged, but a release is only built with `scripts/release.sh publish` (see "发布" in `docs/DEVELOPMENT.md`). Ask before pushing a version tag, and before publishing.
-- A Rust file past about 800 lines with types that stand on their own becomes a directory module with a file per part, `mod.rs` keeping the module docs and the `pub use`s (`session/`, `config/`); tests that push a file past that length move to a `tests.rs` beside it (`config/`, `vault/`, `zmodem/`).
-- Styles use the CSS theme variables; no hard-coded colors.
-- Icons are the SVG components in `src/components/icons.tsx`, never text glyphs or emoji (×, ▾, ⟳, 📁), which look and sit differently in each platform's fonts; `icons.test.ts` fails on either. Likewise drop-downs, number, color and password fields and multi-line fields are `Select` / `ComboBox`, `SpinInput`, `ColorField`, `PasswordInput` and `AutoTextarea`, never `<select>`, `<datalist>`, `type="number"` or `type="color"`, and forms check their fields themselves rather than with `required` or `pattern` (`controls.test.ts` checks). See "不用原生控件" in `docs/ARCHITECTURE.md`.
-- React Compiler memoizes every component and hook, and every one must compile (`compiler.test.ts`; see "渲染与 memo" in `docs/ARCHITECTURE.md`). Never read or write a ref while rendering: latest values come from `useLatest` (named `…Ref`) or `useEffectEvent`, and DOM measurements go into state. Never read state from outside React while rendering: text that depends on the language comes from `useLocale` (`locale.test.ts` checks). Write `try … finally` and other syntax Compiler can't compile yet through `lib/attempt` or plainly. Components that must not render again as the tabs change get their callbacks as one `useStableHandlers` object; `useStableProps` warns in development when that breaks.
-- Accessibility (see "无障碍" in `docs/ARCHITECTURE.md`): new UI uses the right ARIA roles and names, works from the keyboard, and is announced through `announce()` when it changes out of sight. Never remove a focus style (`outline: none`) without showing the focus another way; dialogs go through `useDialog` / `Modal`, which handle their semantics and focus.
+- The app version lives only in `src-tauri/Cargo.toml` and follows semantic versioning. A milestone or new feature is a minor version, fixes and small improvements are patch versions, and configuration files stay backward compatible unless the maintainer agrees to break them in a major version.
+- Versions are not bumped per commit: when planning a change to code in `src/` or `src-tauri/`, propose a version plan (which version, and which changes it covers) and agree on it with the maintainer before starting work.
+- Versions are set with `scripts/release.sh prepare` / `tag` and every version is tagged, but a release is only built with `scripts/release.sh publish` (see "发布" in `docs/DEVELOPMENT.md`). Ask before pushing a version tag, and before publishing.
+- When a release's changelog is final, write the Microsoft Store "What's new in this version" text in the reply without being asked: plain English under 1500 characters, covering the user-facing entries since the version last submitted to the Store (ask which one that is when unsure).
+
+## Licensing and public texts
+
 - ZShell is free and source-available but not open source, so every dependency must allow closed-source distribution with only a notice. Check the license of a new dependency (and of the transitive ones it brings) before adding it: the accepted licenses are listed in `src-tauri/about.toml`, and `pnpm licenses:generate` fails on any other, for crates and npm packages alike. Never add GPL, LGPL or AGPL code; MPL-2.0 is fine only unmodified. See "依赖的许可证" in `docs/DEVELOPMENT.md`.
-- `PRIVACY.md` (the Microsoft Store privacy policy) states exactly what the app stores and what it connects to. When a change affects either, update it and its "Last updated" date.
-- App shortcuts are intercepted in the capture phase so the terminal never sees them. On Windows, shortcuts that would clash with the shell use Ctrl+Shift (Ctrl+F, Ctrl+E and so on belong to the shell).
-- SSH prompts (host keys, passwords, passphrases, keyboard-interactive) are asked inline in the terminal, as OpenSSH does, not in dialogs. Follow OpenSSH's behavior where there is one.
+- Legal wording (`LICENSE.md`, the contribution terms in `CONTRIBUTING.md`, the README's License section) is the maintainer's to approve: show the full change and commit it only once they agree.
+- `PRIVACY.md` (the Microsoft Store privacy policy) states exactly what the app stores and what it connects to. When a change affects either, update it and its "Last updated" date in the same change; it needs no separate approval.
+- The Store listing (`src-tauri/msix/listing.md`) is kept in step with the README's features.
+- The homepage (`site/`) is deployed to GitHub Pages by `.github/workflows/pages.yml` on every push to main that changes it; pull requests only build it.
