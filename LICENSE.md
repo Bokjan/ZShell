@@ -22,7 +22,7 @@ By posting anything in ZShell's issues, including ideas, text and code snippets,
 
 ## Third-party software
 
-ZShell includes third-party software under its own licenses, which are listed in Settings › About › Third-Party Licenses. Those licenses, not this one, apply to that software.
+ZShell includes third-party software under its own licenses, which are listed under Third-Party Licenses in About ZShell. Those licenses, not this one, apply to that software.
 
 ## No warranty
 

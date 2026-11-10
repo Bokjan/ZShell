@@ -8,7 +8,7 @@ ZShell is maintained by one person, and it is source-available rather than open 
 
 ## Before you open an issue
 
-- Make sure you have the latest version: Settings › About shows yours and can check for a newer one, and every version is on the [releases page](https://github.com/Bokjan/ZShell/releases).
+- Make sure you have the latest version: About ZShell shows yours and can check for a newer one, and every version is on the [releases page](https://github.com/Bokjan/ZShell/releases).
 - Search the existing issues, open and closed. If yours is already there, add what you know to it, or a reaction to show it matters to you too.
 - If you have found a security problem, please don't describe it in a public issue. Open one that only says you have found one, and the maintainer will arrange a private way to send the details.
 
@@ -16,7 +16,7 @@ ZShell is maintained by one person, and it is source-available rather than open 
 
 A good report lets the maintainer see the problem for themselves. Please include:
 
-- the ZShell version (Settings › About), and how you installed it: the Microsoft Store, the Windows installer or standalone executable, the macOS disk image, or the Linux deb or rpm package;
+- the ZShell version (About ZShell), and how you installed it: the Microsoft Store, the Windows installer or standalone executable, the macOS disk image, or the Linux deb or rpm package;
 - your operating system and its version;
 - the kind of session: SSH, Telnet, serial or a local terminal, and for SSH how you log in (password, key, agent) and whether a jump host or proxy is involved;
 - what you did, what you expected, and what happened instead, with any error message, screenshot or terminal output;
