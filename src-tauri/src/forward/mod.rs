@@ -549,20 +549,68 @@ impl Opener {
     }
 }
 
-/// Copies data both ways until both sides are done. Errors here are ordinary disconnects
-/// (resets, aborted transfers) and are not reported. Each write to the channel is a packet
-/// of its own: buffers larger than the default 8 KiB send fewer when there is much to copy.
+/// Copies data both ways until the server closes the channel, or both sides have sent all
+/// they had. Errors here are ordinary disconnects (resets, aborted transfers) and are not
+/// reported. Each write to the channel is a packet of its own: a buffer larger than the
+/// default 8 KiB sends fewer when there is much to copy.
+///
+/// Not `copy_bidirectional`, which waits for both ways: a write waiting for window when the
+/// server closes the channel (its write to the target failed, say) would never end, as russh
+/// doesn't wake it, and the connection would be carried until the SSH connection ends.
 ///
 /// What `stream` sends is checked for (see [`Checking`]): a client waiting for an answer on a
 /// connection gone dead would otherwise wait until keepalives give up. What goes through the
 /// channel counts on the rule's `traffic`.
 async fn bridge(stream: TcpStream, channel: Channel<Msg>, liveness: Liveness, traffic: Arc<RuleTraffic>) {
+    use tokio::io::AsyncWriteExt;
+
     const BUFFER: usize = 64 << 10;
     let _ = stream.set_nodelay(true);
-    let mut stream = Checking { inner: stream, liveness };
     let _carrying = traffic.carrying(channel.id().into());
-    let mut channel = Counted::new(channel.into_stream(), traffic.meter.clone());
-    let _ = tokio::io::copy_bidirectional_with_sizes(&mut stream, &mut channel, BUFFER, BUFFER).await;
+    let (mut from_server, to_server) = channel.split();
+    let to_server = Arc::new(to_server);
+    // However this ends: the task is aborted when the rule stops.
+    let _close = crate::ssh::CloseOnDrop::new(to_server.clone());
+    let (from_client, mut to_client) = stream.into_split();
+    let (client_done, server_done) = (AtomicBool::new(false), AtomicBool::new(false));
+    let sending = async {
+        let mut from_client = tokio::io::BufReader::with_capacity(BUFFER, Checking { inner: from_client, liveness });
+        let mut to_server_writer = Counted::new(to_server.make_writer(), traffic.meter.clone());
+        tokio::io::copy_buf(&mut from_client, &mut to_server_writer).await?;
+        to_server.eof().await.map_err(std::io::Error::other)?;
+        client_done.store(true, Ordering::Relaxed);
+        std::io::Result::Ok(())
+    };
+    let receiving = async {
+        while let Some(message) = from_server.wait().await {
+            match message {
+                russh::ChannelMsg::Data { data } => {
+                    traffic.meter.received(data.len());
+                    if to_client.write_all(&data).await.is_err() {
+                        return;
+                    }
+                }
+                russh::ChannelMsg::Eof => {
+                    let _ = to_client.shutdown().await;
+                    server_done.store(true, Ordering::Relaxed);
+                    if client_done.load(Ordering::Relaxed) {
+                        return;
+                    }
+                }
+                russh::ChannelMsg::Close => return,
+                _ => {}
+            }
+        }
+    };
+    tokio::pin!(sending, receiving);
+    tokio::select! {
+        () = &mut receiving => {}
+        sent = &mut sending => {
+            if sent.is_ok() && !server_done.load(Ordering::Relaxed) {
+                receiving.await;
+            }
+        }
+    }
 }
 
 /// A rule's end of a connection it carries, which checks the SSH connection whenever it reads

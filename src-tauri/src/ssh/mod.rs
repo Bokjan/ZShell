@@ -439,7 +439,14 @@ fn received(
 /// closed (the task aborted) or the terminal went away. The split halves of a channel don't
 /// close it when dropped, and on a connection shared with other tabs the shell would stay
 /// open on the server, counting against its `MaxSessions`.
-struct CloseOnDrop(Option<Arc<ChannelWriteHalf<Msg>>>);
+pub(crate) struct CloseOnDrop(Option<Arc<ChannelWriteHalf<Msg>>>);
+
+impl CloseOnDrop {
+    /// Closes the channel `writer` writes to once dropped, however its task ends.
+    pub(crate) fn new(writer: Arc<ChannelWriteHalf<Msg>>) -> Self {
+        Self(Some(writer))
+    }
+}
 
 impl Drop for CloseOnDrop {
     fn drop(&mut self) {

@@ -197,6 +197,97 @@ async fn a_remote_rule_takes_connections_from_the_start() {
     assert_eq!(&arrived.await.expect("nothing arrived"), b"hello");
 }
 
+/// A server whose connection to the target stops reading: it gives a `direct-tcpip` channel
+/// no more window than the first, then closes the channel once nothing has come for a while,
+/// as sshd does when its write to the target fails.
+struct StopsReadingThenCloses;
+
+impl russh::server::Handler for StopsReadingThenCloses {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+        Ok(russh::server::Auth::Accept)
+    }
+
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        mut channel: Channel<russh::server::Msg>,
+        _host: &str,
+        _port: u32,
+        _originator: &str,
+        _originator_port: u32,
+        reply: russh::server::ChannelOpenHandle,
+        _session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        tokio::spawn(async move {
+            while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(300), channel.wait()).await {}
+            let _ = channel.close().await;
+            // Kept, unread.
+            let _ = channel.wait().await;
+        });
+        Ok(())
+    }
+
+    fn adjust_window(&mut self, _channel: russh::ChannelId, _current: u32) -> u32 {
+        // With a target of 1, no window left is ever below half of it.
+        1
+    }
+}
+
+/// A connection whose channel the server closes while what the client sends waits for
+/// window ends, rather than waiting for window that never comes until the SSH connection
+/// ends.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_connection_ends_when_the_server_closes_its_channel_out_of_window() {
+    use tokio::io::AsyncWriteExt;
+
+    let connection = connect(StopsReadingThenCloses, "").await;
+    let opener =
+        Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone(), traffic: Arc::new(RuleTraffic::new()) };
+    let channel = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+    let (ours, _) = listener.accept().await.unwrap();
+    let bridged = tokio::spawn(bridge(ours, channel, opener.liveness.clone(), opener.traffic.clone()));
+    // An upload the server stops taking.
+    tokio::spawn(async move {
+        let chunk = vec![b'x'; 64 << 10];
+        while client.write_all(&chunk).await.is_ok() {}
+    });
+    assert!(tokio::time::timeout(Duration::from_secs(10), bridged).await.is_ok(), "the connection is still carried");
+}
+
+/// A client that sends all it has and shuts its side (a request, then waiting for the
+/// answer) gets all of the answer, and the connection then ends.
+#[tokio::test]
+async fn a_client_done_sending_still_gets_the_answer() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let connection = connect(crate::ssh::testing::Echoing, "").await;
+    let opener =
+        Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone(), traffic: Arc::new(RuleTraffic::new()) };
+    let channel = opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+    let (ours, _) = listener.accept().await.unwrap();
+    let bridged = tokio::spawn(bridge(ours, channel, opener.liveness.clone(), opener.traffic.clone()));
+    let (mut from_bridge, mut to_bridge) = client.into_split();
+    // Read as it comes: the server echoes, and waits for its echo to be read.
+    let answer = tokio::spawn(async move {
+        let mut answer = Vec::new();
+        from_bridge.read_to_end(&mut answer).await.map(|_| answer)
+    });
+    // Not much more: the server in this process, a russh one, stops reading altogether while
+    // its echo waits for window (see "SSH：一个通道没读" in docs/TODO.md).
+    let request = vec![b'x'; 64 << 10];
+    to_bridge.write_all(&request).await.unwrap();
+    to_bridge.shutdown().await.unwrap();
+    let answer = tokio::time::timeout(Duration::from_secs(10), answer).await.expect("the answer never ends").unwrap().unwrap();
+    assert_eq!(answer.len(), request.len());
+    assert!(tokio::time::timeout(Duration::from_secs(5), bridged).await.is_ok(), "the connection is still carried");
+}
+
 /// A server that answers no request for a `direct-tcpip` channel by itself, as one waiting
 /// to connect to a target that drops packets: each request's channel and reply go to the
 /// test.
