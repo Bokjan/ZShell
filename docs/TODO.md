@@ -24,6 +24,8 @@
 | 暂缓 | 保险库：每次修改整份重写 | 保险库到 MiB 级或出现高频写入时再看 |
 | 暂缓 | 串口：Windows 上改用重叠 I/O | 有 Windows 真实串口或虚拟串口对可以实测时 |
 | 暂缓 | SFTP：远距离服务器上单个文件的速度受 2 MiB 窗口限制 | russh 能按通道设窗口时，或有人嫌远距离传输慢时 |
+| 暂缓 | 保险库：解锁期间内存里的密码是明文 `String` | 改动保险库内存结构时一起做 |
+| 暂缓 | SFTP：macOS 上只差 Unicode 规范化的同名文件下载时互相覆盖 | 有人遇到时；做法已想好 |
 | 未查明 | macOS：退出全屏后窗口不见了（偶现） | 再遇到时按条目里的步骤记录 |
 
 ## 等待上游
@@ -196,6 +198,22 @@
   - 传输另开一条 SSH 连接（WinSCP、FileZilla 的做法），在那条连接上调大窗口。代价是要再认证一次，要输验证码的服务器会再问一次；跳板机与代理也要重走。
 - **何时再看**：russh 支持按通道设窗口时，或者有人在远距离服务器上嫌传输慢时。
 - **登记**：2026-10-25（性能与架构评审）。
+
+### 保险库：解锁期间内存里的密码是明文 `String`
+
+- **现状**：保险库解锁后，保存的密码以 `vault::Passwords`（`BTreeMap<String, String>`）的形式放在 `Arc<Data>` 里，一直留到锁定或退出，锁定时也只是丢弃，不清零。`Zeroizing` 只用在密钥和序列化后的明文上。认证与代理的路径上也有短命的副本：终端里输入的口令（`TermIo::read_line` 的缓冲区，扩容时旧缓冲区留在已释放的内存里）、keyboard-interactive 的回答、代理的 `Credentials`、HTTP 代理的 Basic 认证串与请求，以及 SOCKS5 的认证缓冲区。
+- **为什么不改**：属于纵深防御，不是能被利用的缺陷：读得到进程内存的人也读得到键盘输入。单清短命副本收益很小，因为同一个密码在 `Passwords` 里一直在；输入还经过 webview 和 IPC，那些缓冲区清不了。交给 `authenticate_password` 的密码由 russh 自己清零（`auth.rs` 里 `Method` 的 `Drop`），keyboard-interactive 的回答 russh 收的是 `Vec<String>`，不清零。
+- **做法**：`Passwords` 的值改为可清零的类型（如 `Zeroizing<String>` 或 `secrecy::SecretString`），锁定时清掉；再给 `read_line` 的缓冲区、`proxy::Credentials`、HTTP 与 SOCKS5 的认证缓冲区加上清零。
+- **何时再看**：改动保险库的内存结构时一起做。
+- **登记**：2026-11-17（整体评审 L6）。
+
+### SFTP：macOS 上只差 Unicode 规范化的同名文件下载时互相覆盖
+
+- **现状**：下载文件夹时，`sftp/transfer/download.rs` 的 `Taken` 只按大小写判断两个文件是否落到同一个本地名字。APFS 与 HFS+ 还不区分 Unicode 规范化，远端（多为 Linux）可以同时有 NFC 的 `café` 和 NFD 的 `café`，下载到 macOS 是同一个文件：后一个经临时文件改名替换掉前一个，两个都报告为已下载，`clashes` 不会给第二个改名。
+- **为什么不改**：要远端同一个文件夹里同时有一个名字的两种规范化形式才会发生，很罕见。
+- **做法**：macOS 上 `Taken` 的键再做一次 NFD 规范化（引入 `unicode-normalization`，MIT/Apache-2.0），或者像 `ignores_case` 探测大小写那样，在目标文件夹探测一次是否规范化不敏感。
+- **何时再看**：有人遇到时。
+- **登记**：2026-11-17（整体评审 L11）。
 
 ## 未查明
 
