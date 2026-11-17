@@ -92,15 +92,19 @@ async fn bridge(
     let mut telnet = Telnet::new(term_type, io.size);
     let mut echo = LocalEcho::default();
     let mut outgoing = telnet.start();
+    // How much of `outgoing` answers the server's negotiation (see `reading`).
+    let mut replies = outgoing.len();
     io.event(SessionEvent::Connected);
     let mut buffer = vec![0; READ_BUFFER];
     let flow = io.sink().flow();
     loop {
         // Not read while the terminal is behind: TCP holds the server back meanwhile. Nor
-        // while what we send waits: the server's negotiation needs answers, and one that
-        // doesn't read them would otherwise have them pile up here.
+        // while our answers to the server's negotiation wait to be sent: a server that doesn't
+        // read them would otherwise have them pile up here. What the user types or pastes
+        // doesn't stop it: a server echoing a long paste stops reading it until its echo is
+        // read, and both would wait for ever.
         let paused = flow.is_paused();
-        let reading = !paused && outgoing.len() < OUTGOING_LIMIT;
+        let reading = !paused && replies < OUTGOING_LIMIT;
         tokio::select! {
             () = flow.ready(), if paused => {}
             read = reader.read(&mut buffer), if reading => match read {
@@ -124,6 +128,7 @@ async fn bridge(
                         }
                     }
                     let received = telnet.receive(&buffer[..n]);
+                    replies += received.reply.len();
                     outgoing.extend(received.reply);
                     if !received.data.is_empty() {
                         login.output(&received.data);
@@ -140,7 +145,10 @@ async fn bridge(
                 Err(e) => return lost(Some(e.to_string())),
             },
             permit = tx.reserve(), if !outgoing.is_empty() => match permit {
-                Ok(permit) => permit.send(std::mem::take(&mut outgoing)),
+                Ok(permit) => {
+                    permit.send(std::mem::take(&mut outgoing));
+                    replies = 0;
+                }
                 // The writer failed.
                 Err(_) => return lost(None),
             },
@@ -559,6 +567,39 @@ mod tests {
         let flood = [255, 251, 5].repeat(1 << 20);
         let sent = tokio::time::timeout(Duration::from_secs(2), server.write_all(&flood)).await;
         assert!(sent.is_err(), "all of the negotiation was read");
+        session.abort();
+    }
+
+    /// Pastes sent faster than a server echoing them reads them: what is typed waiting to be
+    /// sent doesn't stop the echo being read, which the server waits for before reading more.
+    #[tokio::test]
+    async fn reads_the_echo_of_pastes_waiting_to_be_sent() {
+        let (client, server) = tokio::io::duplex(1024);
+        let (mut io, input, _output, _events) = TermIo::detached((80, 24));
+        let session = tokio::spawn(async move {
+            let outcome = bridge(Box::new(client), JumpChain::default(), "xterm", AutoLogin::new("", || None), &mut io).await;
+            io.finish(outcome);
+        });
+        const PASTE: usize = 100 << 10;
+        let echoing = tokio::spawn(async move {
+            let (mut reader, mut writer) = tokio::io::split(server);
+            let (mut buffer, mut received) = ([0; 4096], 0);
+            while received < 3 * PASTE {
+                let n = reader.read(&mut buffer).await.unwrap();
+                assert_ne!(n, 0);
+                // Slower than the pastes come, as a router's console is; each echoed as
+                // received, ours to the negotiation too.
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                writer.write_all(&buffer[..n]).await.unwrap();
+                received += buffer[..n].iter().filter(|&&b| b == b'x').count();
+            }
+        });
+        // Each while the one before is still being written.
+        for _ in 0..3 {
+            input.send(SessionInput::Data(vec![b'x'; PASTE])).unwrap();
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        tokio::time::timeout(Duration::from_secs(10), echoing).await.expect("the pastes and their echo wait on each other").unwrap();
         session.abort();
     }
 
