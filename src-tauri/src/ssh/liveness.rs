@@ -15,8 +15,8 @@
 //!
 //! Otherwise the connection is left alone: russh may be held up on this side (a terminal behind
 //! on its output, see `super::bridge`), when it neither reads nor sends; or it may hold back the
-//! request, as it holds back all we send while a channel is out of window (the server is quiet
-//! then, but may well be there). Only one check runs at a time.
+//! request, as it holds back all we send while keys are exchanged again. Only one check runs at
+//! a time.
 //!
 //! Like keepalives, checks are off for a session with keepalives turned off.
 

@@ -303,6 +303,125 @@ async fn waiting_for_the_server_leaves_out_holdups_on_this_side() {
     drop(channel);
 }
 
+/// A server that adjusts a channel's window once at most, then never again (russh adjusts on
+/// its own when data comes in, with the target the handler returns after the first time):
+/// as one whose own connection to a forwarding target is stuck. It reads every `direct-tcpip`
+/// channel and sends back what comes through the later ones; the first, it closes once
+/// nothing has come for a while if `close_first`.
+struct Stingy {
+    opened: usize,
+    close_first: bool,
+}
+
+impl russh::server::Handler for Stingy {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+        Ok(russh::server::Auth::Accept)
+    }
+
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        mut channel: Channel<russh::server::Msg>,
+        _host: &str,
+        _port: u32,
+        _originator: &str,
+        _originator_port: u32,
+        reply: russh::server::ChannelOpenHandle,
+        _session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        self.opened += 1;
+        if self.opened > 1 {
+            tokio::spawn(async move {
+                let (mut reader, mut writer) = tokio::io::split(channel.into_stream());
+                let _ = tokio::io::copy(&mut reader, &mut writer).await;
+            });
+            return Ok(());
+        }
+        let close = self.close_first;
+        tokio::spawn(async move {
+            loop {
+                match tokio::time::timeout(Duration::from_millis(500), channel.wait()).await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => break,
+                    Err(_) if close => {
+                        let _ = channel.close().await;
+                        break;
+                    }
+                    Err(_) => {}
+                }
+            }
+            // Kept open, unread, if closed above; else until the client lets go.
+            let _ = channel.wait().await;
+        });
+        Ok(())
+    }
+
+    fn adjust_window(&mut self, _channel: russh::ChannelId, _current: u32) -> u32 {
+        // With a target of 1, no window left is ever below half of it.
+        1
+    }
+}
+
+/// A channel the server gives no more window to (or then closes) holds up only itself: the
+/// connection still opens channels and sends on them. Before russh 0.65 the window was
+/// miscounted after an adjust, and the data russh kept back for the peer's window stopped the
+/// whole connection (Eugeny/russh#789).
+async fn one_channel_out_of_window(close_first: bool) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let connection = testing::connect(Stingy { opened: 0, close_first }, "").await;
+    let channel = connection.handle().channel_open_direct_tcpip("target", 80, "127.0.0.1", 50000).await.unwrap();
+    let written = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let writer = tokio::spawn({
+        let written = written.clone();
+        async move {
+            let mut stream = channel.into_stream();
+            let chunk = vec![b'x'; 32 * 1024];
+            while stream.write_all(&chunk).await.is_ok() {
+                written.fetch_add(chunk.len(), std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    });
+    // Until the writer is out of window.
+    let mut last = 0;
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let now = written.load(std::sync::atomic::Ordering::Relaxed);
+        if now == last && now > 0 {
+            break;
+        }
+        assert!(now < 64 << 20, "the server keeps adjusting the window");
+        last = now;
+    }
+    if close_first {
+        tokio::time::sleep(Duration::from_millis(800)).await;
+    }
+
+    let other = tokio::time::timeout(Duration::from_secs(5), async {
+        let channel = connection.handle().channel_open_direct_tcpip("target", 81, "127.0.0.1", 50001).await.unwrap();
+        let mut stream = channel.into_stream();
+        stream.write_all(b"ping").await.unwrap();
+        let mut echo = [0; 4];
+        stream.read_exact(&mut echo).await.unwrap();
+        echo
+    })
+    .await;
+    assert_eq!(other.expect("the connection sends nothing more"), *b"ping");
+    writer.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_channel_out_of_window_holds_up_only_itself() {
+    one_channel_out_of_window(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_channel_closed_while_out_of_window_holds_up_only_itself() {
+    one_channel_out_of_window(true).await;
+}
+
 /// A shell the server reports as killed by a signal is told apart from one that exited.
 #[tokio::test]
 async fn a_shell_ended_by_a_signal_is_reported_as_such() {
