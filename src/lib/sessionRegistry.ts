@@ -251,7 +251,10 @@ export function createSessionRegistry(
             if (!tab || (seen && tab.key === state.activeKey)) return;
             const name = pane().title;
             if (tab.key !== state.activeKey) store.dispatch({ type: "attention", key, kind: "notice" });
-            if (seen) announce(t("announce.notice", { name, text: [title, body].filter(Boolean).join(": ") }));
+            if (seen)
+              announce(
+                title && body ? t("announce.noticeTitled", { name, title, body }) : t("announce.notice", { name, text: title || body }),
+              );
             else if (locked) windows.notify(t("appLock.notice"), "");
             else windows.notify(title || name, body);
           },

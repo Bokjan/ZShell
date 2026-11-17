@@ -312,6 +312,7 @@
     "closed": "shell 已退出，{name} 已关闭。",
     "bell": "{name} 响铃",
     "notice": "来自 {name} 的通知：{text}",
+    "noticeTitled": "来自 {name} 的通知：{title}。{body}",
     "progressFailed": "{name}：程序报告了错误。",
     "transferDone": "{name}：传输已完成。",
     "transferFailed": "{name}：传输失败。{error}",

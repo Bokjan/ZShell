@@ -324,6 +324,7 @@
     "closed": "{name} closed after its shell exited.",
     "bell": "Bell in {name}",
     "notice": "Notification from {name}: {text}",
+    "noticeTitled": "Notification from {name}: {title}. {body}",
     "progressFailed": "{name}: a program reported an error.",
     "transferDone": "{name}: transfer finished.",
     "transferFailed": "{name}: transfer failed. {error}",

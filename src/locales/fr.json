@@ -336,6 +336,7 @@
     "closed": "La session {name} a été fermée, car son shell s’est terminé.",
     "bell": "Cloche dans {name}",
     "notice": "Notification de {name} : {text}",
+    "noticeTitled": "Notification de {name} : {title}. {body}",
     "progressFailed": "{name} : un programme a signalé une erreur.",
     "transferDone": "{name} : transfert terminé.",
     "transferFailed": "{name} : échec du transfert. {error}",

@@ -324,6 +324,7 @@
     "closed": "{name} wurde geschlossen, weil die Shell beendet wurde.",
     "bell": "Glocke in {name}",
     "notice": "Mitteilung von {name}: {text}",
+    "noticeTitled": "Mitteilung von {name}: {title}. {body}",
     "progressFailed": "{name}: Ein Programm hat einen Fehler gemeldet.",
     "transferDone": "{name}: Übertragung abgeschlossen.",
     "transferFailed": "{name}: Übertragung fehlgeschlagen. {error}",

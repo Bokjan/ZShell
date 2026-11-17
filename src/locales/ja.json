@@ -312,6 +312,7 @@
     "closed": "シェルが終了したため、{name}を閉じました。",
     "bell": "{name}でベルが鳴りました",
     "notice": "{name}からの通知：{text}",
+    "noticeTitled": "{name}からの通知：{title}。{body}",
     "progressFailed": "{name}：プログラムがエラーを報告しました。",
     "transferDone": "{name}：転送が完了しました。",
     "transferFailed": "{name}：転送に失敗しました。{error}",
