@@ -10,6 +10,7 @@
 |---|---|---|
 | 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥（russh#812） |
 | 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 维护者拒绝过同样做法的 PR（russh#730）；考虑用 `[patch]` 维护分支 |
+| 等待上游 | SSH：对端关闭通道后，等窗口的写入一直挂着（已绕过） | 我们的 russh#826 合入并发版 |
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | 稳定版 157 已带上修复；等新运行时普及后验证并删掉绕过 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | tao、wry、webkit2gtk 升到 gtk 0.19，或 Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
@@ -47,6 +48,15 @@
   - #730 里 `Handler::data()` 仍是 `await` 的，handler 处理慢照样堵住整条连接；ZShell 的客户端 handler 没有实现它，不受影响。
 - **处理**：上游不打算改，所以用 `[patch]` 维护 russh 分支（Apache-2.0，可以修改后分发），以 #730 为起点。它基于 6 月的 main，客户端和服务端一共改了约 900 行，合到 0.65.1 上多半有冲突。在它的基础上照 OpenSSH 改两处：「已消费」按应用 `recv` 走的字节计（`ChannelReadHalf::recv` 里已经有 `drain_notify`，在那里累加），让每个通道的缓冲不超过窗口；对端超窗超过 10% 时关通道或断开。代价是 russh 每次发版都要把分支重新 rebase 一遍。也可以先在 #730 或 #770 下附上 OpenSSH 的做法再争取一次，但希望不大。分支用上后，`bridge` 暂停时只需不读，删掉 `KeepReading`，`waited_for_server` 不必再排除本地卡顿，ARCHITECTURE.md 的「背压」一条随之改写。
 - **登记**：2026-10-27（评审 3.16.0 的改动时查明）。
+
+### SSH：对端关闭通道后，等窗口的写入一直挂着（已绕过）
+
+- **现象**：往通道写数据时窗口用完，这时对端关闭通道（例如经端口转发上传大文件，远端服务中途回错并断开），这次写入永远不返回，SSH 连接断开后也不返回。用 `copy_bidirectional` 转发的连接因此一直不结束：规则的连接计数降不下来，转发期间退出的 shell 一直等它。
+- **原因**：russh 0.65.1（main 上的 0.65.2 相同）的写入在窗口为 0 时等通道窗口的 `Notify`：`ChannelTx::poll_writable`（`make_writer`、`into_stream` 和 `data()` 都走这里）和 `ChannelWriteHalf::reserve_writable_chunk`（`data_bytes()`）。能唤醒它的只有 `WINDOW_ADJUST` 和通道打开确认。对端不会给已关闭的通道补窗口，`CHANNEL_CLOSE` 的处理只转发 `ChannelMsg::Close`、把通道从表里删掉，会话结束时也没有人唤醒它。另外，窗口还有余量时，关闭之后的写入返回 Ok，数据被会话丢掉（`Encrypted::data_with_writer` 找不到通道，只打一条 debug 日志）。
+- **绕过**：`forward/mod.rs` 的 `bridge` 不用 `copy_bidirectional`，收到 `ChannelMsg::Close` 就结束（提交 1fab582）。`ssh/tests.rs` 的 `a_channel_closed_while_out_of_window_holds_up_only_itself` 最后要 `writer.abort()`，也是因为写入一直挂着。没有绕过的路径有 SFTP（russh-sftp 跑在 `into_stream()` 上）、agent 转发（`ssh/handler.rs` 的 `copy_bidirectional`）和跳板机隧道（`ssh/mod.rs` 的 `into_stream()`）。它们要对端在传输中途关闭通道、本地还有超过剩余窗口的数据要发才会遇到，都很少见，没有实测。
+- **上游**：之前没有人报过。同在关闭路径上的 [Eugeny/russh#789](https://github.com/Eugeny/russh/issues/789)（窗口重复计数，#790 已修）和 [Eugeny/russh#806](https://github.com/Eugeny/russh/issues/806)（对端关闭仍有待发数据的通道后，整个会话发不出东西；开着，没有 PR）是别的问题。我们提了 [Eugeny/russh#826](https://github.com/Eugeny/russh/pull/826)（2026-11-17，fork `Bokjan/russh` 的 `fix/wake-writers-on-channel-close` 分支）：`WindowSizeRef` 加一个关闭标记，对端的 `CHANNEL_CLOSE` 到达时和会话被丢弃时标上并唤醒等待的写入，之后的写入一律失败（`AsyncWrite` 返回 `BrokenPipe`，`data_bytes()` 返回 `Error::SendError`）。russh 自己的 `tests/test_window_adjust.rs` 原本也要 `abort()` 上传任务，PR 把它改成等任务自己结束。维护者拒绝过范围更大的按通道流控 PR（#730），所以这个 PR 只修 bug，写明不涉及流控。
+- **处理**：包含 #826 的版本发布后升级 russh，把 `ssh/tests.rs` 里的 `writer.abort()` 改成断言写入返回错误，删掉 `bridge` 注释里「russh 不唤醒」那句。`bridge` 本身不用改回 `copy_bidirectional`：服务器关闭通道就结束连接，本来就该这样。评审要求修改时，在本地 clone 的同一分支上改，推到 fork。
+- **登记**：2026-11-17。
 
 ### SSH：重交换时不比对主机密钥
 
