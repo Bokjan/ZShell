@@ -142,6 +142,32 @@ async fn large_files_waiting_leave_room_for_a_small_one() {
     assert_eq!(large_done_by_small.load(Ordering::SeqCst), 0);
 }
 
+/// Files going to one name are copied in their order, the last one ending up there, even when
+/// an earlier one waits for a slot that a later one doesn't need.
+#[tokio::test]
+async fn files_going_to_one_name_are_copied_in_their_order() {
+    // A large one held up behind another large one, then a small one of the same name.
+    let sizes = [SMALL_FILE + 1, SMALL_FILE + 1, 1];
+    let turns = Turns::new(["other", "x", "x"]);
+    let order = Mutex::new(Vec::new());
+    let copy = |i| {
+        let order = &order;
+        async move {
+            if sizes[i] > SMALL_FILE {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            order.lock().unwrap().push(i);
+            Ok(())
+        }
+    };
+    let mut reporter = Reporter::with_sink(|_| {}, Default::default());
+    let run = Run::new(&mut reporter);
+    copy_files_in_turns(&sizes, &turns, &run, copy).await.unwrap();
+    let order = order.into_inner().unwrap();
+    let place = |i| order.iter().position(|&j| j == i).unwrap();
+    assert!(place(1) < place(2), "{order:?}");
+}
+
 #[tokio::test]
 async fn a_transfer_waiting_for_its_turn_is_cancelled_at_once() {
     let slots = Arc::new(TransferSlots::default());
@@ -168,7 +194,7 @@ async fn upload_all(
     left: &mut Left<String>,
 ) -> anyhow::Result<()> {
     let server = Server::of(&crate::model::Remote::new("localhost".into(), 22, "alice".into()));
-    let mut job = upload::Upload::new(local_paths.to_vec(), remote_dir.to_owned(), server);
+    let mut job = upload::Upload::new(local_paths.to_vec(), remote_dir.to_owned(), server, encoding_rs::UTF_8);
     upload::upload(sftp, &mut job, reporter, left, false).await
 }
 
@@ -278,7 +304,7 @@ mod resuming {
         let (connection, stall, sftp) = connect(remote, counts).await;
         counts.stall_after(LARGE as u64 / 2, &stall);
         let server = Server::of(&connection.profile().ssh.remote);
-        let mut job = Job::upload(vec![local.join("large.bin"), local.join("small.txt")], "/".into(), server);
+        let mut job = Job::upload(vec![local.join("large.bin"), local.join("small.txt")], "/".into(), server, encoding_rs::UTF_8);
         let mut left = job.nothing_left();
         let (mut reporter, _) = reporting();
         let failed = job.run(&sftp, &mut reporter, &mut left, false).await.unwrap_err();
@@ -322,7 +348,7 @@ mod resuming {
         let (connection, stall, sftp) = connect(&remote, &counts).await;
         counts.stall_after(LARGE as u64, &stall);
         let server = Server::of(&connection.profile().ssh.remote);
-        let mut job = Job::upload(vec![local.join("large.bin")], "/".into(), server);
+        let mut job = Job::upload(vec![local.join("large.bin")], "/".into(), server, encoding_rs::UTF_8);
         let mut left = job.nothing_left();
         let (mut reporter, _) = reporting();
         let failed = job.run(&sftp, &mut reporter, &mut left, false).await.unwrap_err();
@@ -457,7 +483,7 @@ mod resuming {
         let counts = Counts::default();
         let (connection, _stall, sftp) = connect(&remote, &counts).await;
         let server = Server::of(&connection.profile().ssh.remote);
-        let mut job = Job::upload(vec![local.join("a.txt"), local.join("b.txt")], "/".into(), server);
+        let mut job = Job::upload(vec![local.join("a.txt"), local.join("b.txt")], "/".into(), server, encoding_rs::UTF_8);
         let mut left = job.nothing_left();
         let (mut reporter, _) = reporting();
         job.run(&sftp, &mut reporter, &mut left, false).await.unwrap();
@@ -697,10 +723,13 @@ mod unix {
 
     #[test]
     fn files_going_to_one_remote_name_take_turns() {
-        let files: Vec<(PathBuf, String, u64)> =
-            [("/a/x", "/r/x"), ("/b/x", "/r/x"), ("/c/X", "/r/X"), ("/a/y", "/r/y")].map(|(l, r)| (l.into(), r.into(), 0)).into();
-        let turns = same_name_turns(&files);
-        assert_eq!(turns.keys().collect::<Vec<_>>(), ["/r/x"]);
+        let turns = same_name_turns(["/r/x", "/r/x", "/r/X", "/r/y"], encoding_rs::UTF_8);
+        assert_eq!((0..4).map(|i| turns.shared(i)).collect::<Vec<_>>(), [true, true, true, false]);
+        // Both are `?.txt` on a GBK server.
+        let turns = same_name_turns(["/r/😀.txt", "/r/😃.txt", "/r/中.txt"], encoding_rs::GBK);
+        assert_eq!((0..3).map(|i| turns.shared(i)).collect::<Vec<_>>(), [true, true, false]);
+        let turns = same_name_turns(["/r/😀.txt", "/r/😃.txt"], encoding_rs::UTF_8);
+        assert!(!turns.shared(0) && !turns.shared(1));
     }
 
     #[test]

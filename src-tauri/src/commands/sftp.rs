@@ -201,7 +201,9 @@ pub async fn sftp_upload(
 ) -> Result<transfer::Ended> {
     let connection = connection(webview.label(), &sessions, &connections, id)?;
     log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: uploading {local_paths:?} to {remote_dir}");
-    let job = transfer::Job::upload(local_paths, remote_dir, transfer::Server::of(&connection.ssh().profile().ssh.remote));
+    let profile = connection.ssh().profile();
+    let encoding = crate::encoding::for_profile(&profile.encoding);
+    let job = transfer::Job::upload(local_paths, remote_dir, transfer::Server::of(&profile.ssh.remote), encoding);
     Ok(run_transfer(webview.label(), &sessions, &connections, &transfers, id, &transfer_id, job, None, on_progress).await)
 }
 

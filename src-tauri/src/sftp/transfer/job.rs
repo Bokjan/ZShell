@@ -19,8 +19,9 @@ pub enum Job {
 
 impl Job {
     /// Uploads `local_paths` into `remote_dir` on `server`, replacing files there.
-    pub fn upload(local_paths: Vec<PathBuf>, remote_dir: String, server: Server) -> Self {
-        Self::Upload(Upload::new(local_paths, remote_dir, server))
+    /// Uploads `local_paths` into `remote_dir` on `server`, whose names are in `encoding`.
+    pub fn upload(local_paths: Vec<PathBuf>, remote_dir: String, server: Server, encoding: &'static encoding_rs::Encoding) -> Self {
+        Self::Upload(Upload::new(local_paths, remote_dir, server, encoding))
     }
 
     /// Downloads `remote_paths` into `folder`, each under a name of its own.

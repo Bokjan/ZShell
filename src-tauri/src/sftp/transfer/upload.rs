@@ -2,7 +2,7 @@
 //! the files copied (see [`copy_files`]). A failed upload can be gone on with (see
 //! [`super::resume`]): [`Upload`] keeps what it takes.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -16,7 +16,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::left::{self, Left, Server, Stamp};
 use super::resume::{resumable, upload_from, Copied};
-use super::{copy, copy_files, is_cancelled, uploaded_mode, with_file_context, Plan, Reporter, Run, CONCURRENT_DIRS, CREATE_BATCH};
+use super::{
+    copy, copy_files_in_turns, is_cancelled, uploaded_mode, with_file_context, Plan, Reporter, Run, Turns, CONCURRENT_DIRS, CREATE_BATCH,
+};
 use crate::error::Error;
 use crate::sftp::batch::{each, each_in_order, levels, Order};
 use crate::sftp::replace::{RemotePartial, RemoteTarget};
@@ -35,11 +37,13 @@ pub struct Upload {
     /// The files it created that couldn't be looked up once copied (the connection lost
     /// meanwhile), to be when it goes on, so that they can be deleted too.
     unstamped: Vec<String>,
+    /// The session's, which the names are written in on the server.
+    encoding: &'static encoding_rs::Encoding,
 }
 
 impl Upload {
-    pub fn new(local_paths: Vec<PathBuf>, remote_dir: String, server: Server) -> Self {
-        Self { local_paths, remote_dir, server, plan: None, created: HashSet::new(), unstamped: Vec::new() }
+    pub fn new(local_paths: Vec<PathBuf>, remote_dir: String, server: Server, encoding: &'static encoding_rs::Encoding) -> Self {
+        Self { local_paths, remote_dir, server, plan: None, created: HashSet::new(), unstamped: Vec::new(), encoding }
     }
 
     /// Removes what the files cut short left, through `sftp` (on the server it went to), as it
@@ -92,28 +96,23 @@ pub(super) async fn upload(
     left.add_dirs(created.iter().cloned());
     job.created.extend(created);
     made?;
-    let turns = same_name_turns(&plan.files);
     // The files it created, and how many it replaced.
     let files = Mutex::new((Vec::new(), 0));
     let to_copy = plan.to_copy();
+    let turns = same_name_turns(to_copy.iter().map(|&i| plan.files[i].1.as_str()), job.encoding);
     let copied = Mutex::new(std::mem::take(&mut plan.copied));
     let run = Run::new(reporter);
     let sizes: Vec<u64> = to_copy.iter().map(|&i| plan.files[i].2).collect();
     let (created, plan) = (&job.created, &*plan);
-    let result = copy_files(&sizes, &run, |n| {
+    let result = copy_files_in_turns(&sizes, &turns, &run, |n| {
         let i = to_copy[n];
         let ((local, remote, size), mode) = (&plan.files[i], plan.file_modes[i]);
-        let (run, turn, files, copied, size) = (&run, turns.get(&remote.to_lowercase()), &files, &copied, *size);
+        let (run, shared, files, copied, size) = (&run, turns.shared(n), &files, &copied, *size);
         // In a folder this upload created, nothing is there to replace, unless another file of
-        // the same name went there first.
-        let new = turn.is_none() && remote.rsplit_once('/').is_some_and(|(dir, _)| created.contains(dir));
+        // the same name went there first (before this one: see `Turns`).
+        let new = !shared && remote.rsplit_once('/').is_some_and(|(dir, _)| created.contains(dir));
         let failed = move |e| with_file_context(e, Error::new("transfer.uploadFailed").param("path", local.display()));
         async move {
-            // After the file of the same name before it, which this one replaces.
-            let _turn = match turn {
-                Some(turn) => Some(turn.lock().await),
-                None => None,
-            };
             run.start_file(file_name(remote));
             let mut src = tokio::fs::File::open(local).await.context(Error::new("transfer.openFailed").param("path", local.display()))?;
             let aside = resumable(size);
@@ -177,7 +176,7 @@ pub(super) async fn upload(
             // then looked for, as going through all of them for each replaced file adds up.
             if !replaces {
                 files.0.push(remote.clone());
-            } else if turn.is_none() || !files.0.contains(remote) {
+            } else if !shared || !files.0.contains(remote) {
                 files.1 += 1;
             }
             drop(files);
@@ -236,16 +235,12 @@ async fn go_on(sftp: &SftpSession, plan: &mut Plan<PathBuf, String, RemotePartia
     Ok(())
 }
 
-/// The remote paths that more than one file of an upload goes to (the same name dropped from
-/// different folders, or differing only in case, which a server may ignore), each with a lock
-/// that has them copied one at a time, in order: copied at once, they would be written over
-/// each other through two handles, and the file would be neither.
-pub(super) fn same_name_turns(files: &[(PathBuf, String, u64)]) -> HashMap<String, tokio::sync::Mutex<()>> {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for (_, remote, _) in files {
-        *counts.entry(remote.to_lowercase()).or_default() += 1;
-    }
-    counts.into_iter().filter(|(_, count)| *count > 1).map(|(remote, _)| (remote, tokio::sync::Mutex::new(()))).collect()
+/// The turns of files uploaded to the `remotes` paths (see [`Turns`]): those that go to the
+/// same file on the server, the same name dropped from different folders, or differing only in
+/// case (which a server may ignore), or only in characters that the session's `encoding`
+/// can't write, which all become `?` (`😀.txt` and `😃.txt` in GBK).
+pub(super) fn same_name_turns<'a>(remotes: impl IntoIterator<Item = &'a str>, encoding: &'static encoding_rs::Encoding) -> Turns {
+    Turns::new(remotes.into_iter().map(|remote| crate::encoding::encode(encoding, &remote.to_lowercase())))
 }
 
 /// Creates an upload's folders, parents first and those of one depth at once, with the

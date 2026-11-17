@@ -420,10 +420,21 @@ async fn copy_files<F>(sizes: &[u64], run: &Run<'_>, copy_file: impl Fn(usize) -
 where
     F: Future<Output = Result<()>>,
 {
+    copy_files_in_turns(sizes, &Turns::default(), run, copy_file).await
+}
+
+/// [`copy_files`], those that share a turn (see [`Turns`]) one after another in their order.
+async fn copy_files_in_turns<F>(sizes: &[u64], turns: &Turns, run: &Run<'_>, copy_file: impl Fn(usize) -> F) -> Result<()>
+where
+    F: Future<Output = Result<()>>,
+{
     let (slots, copy_file) = (&*run.slots, &copy_file);
     // By index: closures given references make futures the compiler can't prove `Send`.
     let mut copies = stream::iter(0..sizes.len())
         .map(|i| async move {
+            // Before taking slots: one waiting for its turn holds none, which the file before it
+            // may need.
+            let _turn = unless_cancelled(&run.cancelled, async { Ok(turns.wait(i).await) }).await?;
             let large = sizes[i] > SMALL_FILE;
             let _slots = unless_cancelled(&run.cancelled, async {
                 let turn = if large { Some(slots.large.acquire().await.expect("never closed")) } else { None };
@@ -446,6 +457,57 @@ where
         }
     }
     first.map_or(Ok(()), Err)
+}
+
+/// Files of a transfer that go to the same place (the same name dropped from different
+/// folders, say), copied one at a time in their order: at once, they would be written over
+/// each other through two handles, and the file would be neither; out of order, an earlier one
+/// would end up there.
+#[derive(Default)]
+pub(super) struct Turns {
+    /// Each file's group and place in it, for those that share a place.
+    of: HashMap<usize, (usize, usize)>,
+    /// How many of each group's files are done.
+    done: Vec<tokio::sync::watch::Sender<usize>>,
+}
+
+/// A file's turn, until it is done.
+pub(super) struct Turn<'a>(&'a tokio::sync::watch::Sender<usize>);
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        self.0.send_modify(|done| *done += 1);
+    }
+}
+
+impl Turns {
+    /// The turns of files going to `places`, in order: those whose place comes more than once.
+    pub(super) fn new<K: std::hash::Hash + Eq>(places: impl IntoIterator<Item = K>) -> Self {
+        let mut groups: HashMap<K, Vec<usize>> = HashMap::new();
+        for (i, place) in places.into_iter().enumerate() {
+            groups.entry(place).or_default().push(i);
+        }
+        let mut turns = Self::default();
+        for files in groups.into_values().filter(|files| files.len() > 1) {
+            let group = turns.done.len();
+            turns.done.push(tokio::sync::watch::Sender::new(0));
+            turns.of.extend(files.into_iter().enumerate().map(|(place, file)| (file, (group, place))));
+        }
+        turns
+    }
+
+    /// Whether file `i` shares its place with another.
+    pub(super) fn shared(&self, i: usize) -> bool {
+        self.of.contains_key(&i)
+    }
+
+    /// Waits for the files before `i` that share its place to be done, if any.
+    async fn wait(&self, i: usize) -> Option<Turn<'_>> {
+        let &(group, place) = self.of.get(&i)?;
+        let done = &self.done[group];
+        let _ = done.subscribe().wait_for(|done| *done >= place).await;
+        Some(Turn(done))
+    }
 }
 
 async fn copy<R, W>(src: &mut R, dst: &mut W, run: &Run<'_>) -> Result<()>
