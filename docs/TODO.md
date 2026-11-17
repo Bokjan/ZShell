@@ -8,13 +8,13 @@
 
 | 分类 | 事项 | 等什么 / 下一步 |
 |---|---|---|
-| 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥；上游还没有 issue |
+| 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥（russh#812） |
 | 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 维护者拒绝过同样做法的 PR（russh#730）；考虑用 `[patch]` 维护分支 |
 | 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | tao、wry、webkit2gtk 升到 gtk 0.19，或 Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
-| 等待上游 | Linux：zbus 停在 5 | 可以升了：notify-rust 已改用 zbus 6；keyring、tauri-plugin-opener 也升上去后，树里只剩一份 |
-| 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 我们的 AspectUnk/russh-sftp#106 合入并发布 |
+| 等待上游 | Linux：zbus 停在 5 | tauri-plugin-notification、tauri-plugin-opener 和 keyring（经 secret-service）都升到 zbus 6 |
+| 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 我们的 AspectUnk/russh-sftp#106 已合入，等发版 |
 | 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
@@ -50,9 +50,9 @@
 
 - **现象**：会话中途的密钥重交换不检查服务器的主机密钥。已经握有会话密钥的一方（实际上就是服务器本身）可以在重交换时换一把主机密钥而不被发现；网络上的中间人做不到。
 - **原因**：russh 0.65.1 只在初次密钥交换（`encrypted.is_some()` 的 else 分支，`client/mod.rs` 约 2060–2083 行）调用 `Handler::check_server_key`，重交换那一支（约 2036 行起）不调用。0.65.1 修复的 GHSA-9264-jvgf-6w2f 只是把初次交换里的 `kex_done` 挪到主机密钥验证之后，重交换照旧。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
-- **上游修复**：还没有，上游也没有相关 issue。
+- **上游**：[Eugeny/russh#812](https://github.com/Eugeny/russh/issues/812)（2026-11-03，别人提的，2026-11-17 时没有回复）请求在每次重交换时把主机密钥或主机证书交给应用决定，问维护者倾向新加一个回调还是扩展 `check_server_key`。还没有修复。
 - **处理**：russh 在重交换时也调用 `check_server_key`（或把主机密钥交给 `kex_done`）之后，在 `ssh/handler.rs` 里记下初次接受的密钥，重交换时要求同一把，不再询问用户。之前那段比对代码因为永远走不到，已经删掉（v2.11.1）。
-- **上游 issue 的素材**：重交换时 `KexProgress::Done` 带着 `server_host_key`，只是没有交给 handler；OpenSSH 每次密钥交换都验证主机密钥，并要求和初次的一致。
+- **可以补充给 #812 的**：重交换时 `KexProgress::Done` 带着 `server_host_key` 和 `server_host_certificate`，只是没有交给 handler。OpenSSH 每次密钥交换都验证主机密钥（`sshconnect2.c` 的 `verify_host_key_callback`）：和上次验证过的那把相同就直接通过（`sshconnect.c` 的 `previous_host_key`），不同就照初次那样重新查 known_hosts，并不要求和初次的一致。ZShell 打算更严一些，是因为会话中途不便在终端里询问。
 - **登记**：2026-10-12（代码审查 L10）。
 
 ### Windows：打字后弹出的文件对话框没有指针（已绕过，等 WebView2 修复后去掉）
@@ -82,17 +82,17 @@
 ### Linux：zbus 停在 5
 
 - **现象**：Dependabot 提了把 `zbus` 从 5.19.0 升到 6.1.0 的 PR（#23，2026-10-29），Linux 上编译失败，已关闭。
-- **原因**：zbus 6 删掉了整个 blocking API（`zbus::blocking`），而 `dbus.rs`、`desktop.rs` 和 `applock/`、`color_pick/`、`keep_awake/`、`screen_reader/` 的 `linux.rs` 都用它；`Value` 也改名为 `Variant`，`Value::Value` 的模式匹配要改成 `Variant::Variant`。完整的变更见 zbus 的「Upgrading to zbus 6.0」。另外，zbus 本来就由 keyring（经 `zbus-secret-service-keyring-store`、`secret-service`）、tauri-plugin-opener 和 tauri-plugin-notification（经 `notify-rust`）带进依赖树，我们用同一个版本，不多编译一份。
-- **进展**：2026-11-12 核对，`notify-rust` 4.19.0（2026-11-08）已改用 zbus 6。tauri-plugin-notification 2.8 要求 `notify-rust ^4.18`，下次 `cargo update` 就会升上去（lock 里现在是 4.18.2），树里从此 5 和 6 各一份；keyring（经 `secret-service` 5.2.0、`zbus-secret-service-keyring-store` 1.0.1）和 tauri-plugin-opener 2.7.3 还在 zbus 5。所以我们停在 5 还是升到 6 都不多编译，升 6 是跟着方向走：等 keyring 和 tauri-plugin-opener 也升上去，树里就只剩 6。
-- **处理**：`dependabot.yml` 忽略 `zbus` 的 major 更新。前提已经满足，排期时就做：删掉这条 ignore，按升级指南把上面几个文件改成异步 API（或在自己的线程里 `block_on`），交给 Linux 上的 CI 编译；`Cargo.toml` 里 zbus 上方说明它经哪些依赖已在树里的注释改成当时的情况（`cargo tree -i zbus@<版本> --target x86_64-unknown-linux-gnu`）。升完删掉这一条。
+- **原因**：zbus 6 删掉了整个 blocking API（`zbus::blocking`），而 `dbus.rs`、`desktop.rs` 和 `applock/`、`color_pick/`、`keep_awake/`、`screen_reader/` 的 `linux.rs` 都用它；`Value` 也改名为 `Variant`，`Value::Value` 的模式匹配要改成 `Variant::Variant`。完整的变更见 zbus 的「Upgrading to zbus 6.0」。另外，zbus 本来就由 keyring（经 `zbus-secret-service-keyring-store`、`secret-service`）、tauri-plugin-opener 和 tauri-plugin-notification（自己直接依赖，也经 `notify-rust`）带进依赖树，我们用同一个版本，不多编译一份。
+- **进展**：2026-11-17 核对，`notify-rust` 4.19.0（2026-11-08）已改用 zbus 6。tauri-plugin-notification 2.8 要求 `notify-rust ^4.18`，下次 `cargo update` 就会升上去（lock 里现在是 4.18.2），树里从此 5 和 6 各一份。还在 zbus 5 的：tauri-plugin-notification 2.8.1 自己的 `zbus ^5`，tauri-plugin-opener 2.7.3 的 `zbus ^5.9`，keyring 经 `secret-service` 5.2.0（`zbus ^5`）。plugins-workspace 里 Renovate 的 zbus 6 PR（#3722）因改动太多被关掉，只有单独给 single-instance 升 zbus 6 的 #3759 还开着。所以我们升到 6 不能让树里只剩一份，只是从「5 多、6 少」换成「6 多、5 少」。
+- **处理**：`dependabot.yml` 忽略 `zbus` 的 major 更新。等上面三处都升到 zbus 6（至少 notification 和 opener 两个 Tauri 插件），再删掉这条 ignore，按升级指南把上面几个文件改成异步 API（或在自己的线程里 `block_on`），交给 Linux 上的 CI 编译；`Cargo.toml` 里 zbus 上方说明它经哪些依赖已在树里的注释改成当时的情况（`cargo tree -i zbus@<版本> --target x86_64-unknown-linux-gnu`）。升完删掉这一条。
 - **登记**：2026-10-29。
 
 ### SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级
 
 - **现象**：列一个条目很多的文件夹时，除了等服务器，还要多花 CPU。2026-10-30 在 M5 Pro 上用进程内的客户端和服务端（release 构建，十万个条目，每批一百个）测：约 660 ms，修复后约 27 ms。文件面板、下载和删除文件夹都经 `SftpSession::read_dir`。远程服务器上这点开销被逐批往返的等待盖住，局域网或本机的服务器上才明显。
 - **原因**：russh-sftp 3.0.1 的 `read_dir`（`client/session.rs` 约 187–196 行）每收到服务器的一批条目（OpenSSH 每批约一百个），就把这一批接在已收到的全部条目前面，`collect` 成一个新的 `Vec`。已收到的条目每批都整体搬一次，总量与条目数的平方成正比。顺带，各批的先后也颠倒了（面板自己排序，不受影响）。
-- **上游**：之前没有相关的 issue 或 PR。我们提了 [AspectUnk/russh-sftp#106](https://github.com/AspectUnk/russh-sftp/pull/106)（2026-10-30）：每批 `extend` 到同一个 `Vec` 末尾，附了检查顺序的测试（在 master 上失败）。首次贡献，上游 CI 要等维护者批准才会跑。
-- **处理**：#106 合入并发布后升级 russh-sftp，删掉这一条。上游不修、又有人遇到时，可以用 `RawSftpSession` 的 `opendir` / `readdir` / `close` 在 `sftp/` 里自己读。
+- **上游**：之前没有相关的 issue 或 PR。我们提了 [AspectUnk/russh-sftp#106](https://github.com/AspectUnk/russh-sftp/pull/106)（2026-10-30）：每批 `extend` 到同一个 `Vec` 末尾，附了检查顺序的测试（在 master 上失败）。2026-11-16 合入，2026-11-17 时 crates.io 上最新仍是 3.0.1。
+- **处理**：包含 #106 的版本发布后升级 russh-sftp，删掉这一条。上游不修、又有人遇到时，可以用 `RawSftpSession` 的 `opendir` / `readdir` / `close` 在 `sftp/` 里自己读。
 - **登记**：2026-10-25（性能与架构评审 P2-12）。
 
 ### 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数
