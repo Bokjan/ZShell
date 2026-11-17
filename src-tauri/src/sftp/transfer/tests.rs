@@ -312,6 +312,38 @@ mod resuming {
         assert_eq!(left.files.len(), 2);
     }
 
+    /// Lost as the last writes were to be acknowledged, as the file closes: gone on with too,
+    /// rather than written again from the start beside what is left of it.
+    #[tokio::test]
+    async fn an_upload_lost_as_it_closes_goes_on() {
+        let (root, local, remote) = folders("resume-closing");
+        let counts = Counts::default();
+        std::fs::write(local.join("large.bin"), bytes(LARGE, 1)).unwrap();
+        let (connection, stall, sftp) = connect(&remote, &counts).await;
+        counts.stall_after(LARGE as u64, &stall);
+        let server = Server::of(&connection.profile().ssh.remote);
+        let mut job = Job::upload(vec![local.join("large.bin")], "/".into(), server);
+        let mut left = job.nothing_left();
+        let (mut reporter, _) = reporting();
+        let failed = job.run(&sftp, &mut reporter, &mut left, false).await.unwrap_err();
+        let lost = ended_by_loss(&connection, &failed).await;
+        let before = counts.written();
+
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        let (mut reporter, _) = reporting();
+        let resumed = job.run(&sftp, &mut reporter, &mut left, false).await;
+        let again = counts.written() - before;
+        let arrived = std::fs::read(remote.join("large.bin")).is_ok_and(|data| data == bytes(LARGE, 1));
+        let names = names(&remote);
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert!(lost, "{failed:#}");
+        resumed.unwrap();
+        assert!(arrived);
+        assert_eq!(names, ["large.bin"]);
+        assert!(again < LARGE as u64, "wrote {again} bytes again");
+    }
+
     #[tokio::test]
     async fn a_file_changed_since_is_copied_again_from_the_start() {
         let (root, local, remote) = folders("resume-changed");

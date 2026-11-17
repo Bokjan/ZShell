@@ -148,7 +148,17 @@ pub(super) async fn upload(
                 copy(&mut src, &mut dst.file, run).await
             };
             let result = match written.await {
-                Ok(()) => dst.finish(sftp).await,
+                // The last writes (`TRANSFER_WRITES_IN_FLIGHT`) are only acknowledged as it
+                // closes: a file cut short then is gone on with too.
+                Ok(()) => match dst.finish_or_suspend(sftp, aside).await {
+                    Ok(()) => Ok(()),
+                    Err((e, partial)) => {
+                        if let Some(partial) = partial {
+                            copied.lock().unwrap()[i] = Copied::Partly(partial);
+                        }
+                        Err(e)
+                    }
+                },
                 Err(e) if aside && !is_cancelled(&e) => {
                     if let Some(partial) = dst.suspend(sftp).await {
                         copied.lock().unwrap()[i] = Copied::Partly(partial);

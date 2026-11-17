@@ -146,14 +146,24 @@ impl RemoteTarget {
     /// A file replacing another is synced to the server's disk first (where the server can),
     /// so that a crash of the server right after can't leave it in place incomplete; a new one
     /// isn't, as `sftp put` doesn't, which would take a round trip and a wait on every file.
-    pub async fn finish(mut self, sftp: &SftpSession) -> Result<()> {
+    pub async fn finish(self, sftp: &SftpSession) -> Result<()> {
+        self.finish_or_suspend(sftp, false).await.map_err(|(e, _)| e)
+    }
+
+    /// [`finish`](Self::finish), but if `keep`, a file that couldn't be closed or put in place
+    /// (the connection lost as the last writes were acknowledged) keeps its temporary file to
+    /// go on with later, given with the error (see [`suspend`](Self::suspend)).
+    pub async fn finish_or_suspend(mut self, sftp: &SftpSession, keep: bool) -> Result<(), (anyhow::Error, Option<RemotePartial>)> {
         let written = match self.temporary {
             Some(_) if self.existed => self.file.flush().await,
             _ => Ok(()),
         };
         if let Err(e) = written.and(self.file.shutdown().await) {
+            if keep {
+                return Err((e.into(), self.suspend(sftp).await));
+            }
             self.remove_incomplete(sftp).await;
-            return Err(e.into());
+            return Err((e.into(), None));
         }
         let Some(temporary) = &self.temporary else { return Ok(()) };
         if let Some(permissions) = self.permissions {
@@ -171,21 +181,28 @@ impl RemoteTarget {
             if self.existed && sftp.rename(temporary, &self.path).await.is_ok() {
                 return Ok(());
             }
+            let error = anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", &self.path));
+            if keep {
+                return Err((error, self.suspend(sftp).await));
+            }
             let _ = sftp.remove_file(temporary).await;
-            return Err(anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", &self.path)));
+            return Err((error, None));
         }
         if let Err(e) = sftp.rename(temporary, &self.path).await {
             let error = anyhow::Error::from(e);
             // The original back where it was, if the connection still allows.
-            return Err(match sftp.rename(&original, &self.path).await {
-                Ok(()) => error.context(Error::new("transfer.replaceFailed").param("path", &self.path).param("temporary", temporary)),
-                Err(_) => error.context(
-                    Error::new("transfer.replaceInterrupted")
-                        .param("path", &self.path)
-                        .param("temporary", temporary)
-                        .param("original", &original),
-                ),
-            });
+            return Err((
+                match sftp.rename(&original, &self.path).await {
+                    Ok(()) => error.context(Error::new("transfer.replaceFailed").param("path", &self.path).param("temporary", temporary)),
+                    Err(_) => error.context(
+                        Error::new("transfer.replaceInterrupted")
+                            .param("path", &self.path)
+                            .param("temporary", temporary)
+                            .param("original", &original),
+                    ),
+                },
+                None,
+            ));
         }
         // The upload is done; a copy of the old contents left behind (the connection lost
         // just now) is a hidden file beside it.
