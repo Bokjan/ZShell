@@ -6,6 +6,7 @@ import { attemptSync } from "../../lib/attempt";
 import { Disposables, type Disposable } from "../../lib/disposables";
 import { clipboardKeyOf } from "../../lib/keymap";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../../lib/menuKey";
+import { pastable } from "../../lib/paste";
 import type { PasteTarget } from "../../lib/sessionRegistry";
 
 const ignore = () => {};
@@ -49,7 +50,8 @@ export interface Clipboard extends Disposable {
 /**
  * The terminal's clipboard: pasting (from the keys, ⌘V and the browser, and the right button
  * in "paste" mode), copying (from the keys, and on select), and the context menu's keys and
- * click. All pastes go through `term.paste()`.
+ * click. All pastes go through `term.paste()`, without the control characters a paste may
+ * not carry (see `pastable`).
  */
 export function attachClipboard(term: Terminal, container: HTMLElement, deps: ClipboardDeps): Clipboard {
   const held = new Disposables();
@@ -60,12 +62,14 @@ export function attachClipboard(term: Terminal, container: HTMLElement, deps: Cl
     const others = deps.pasteTargets();
     pasting = true;
     attemptSync(
-      () => term.paste(text),
+      () => term.paste(pastable(text)),
       () => (pasting = false),
     );
     for (const other of others) other.paste(text);
   };
-  const paste = (text: string) => {
+  const paste = (pasted: string) => {
+    // As it goes in, which is what the confirmation shows.
+    const text = pastable(pasted);
     // Nowhere to go; a line break in it would otherwise read as Enter, which reconnects.
     if (!text || deps.closed()) return;
     // With bracketed paste the shell inserts the lines without running them: asked unless

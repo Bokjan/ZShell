@@ -12,6 +12,7 @@ import { conptyBuild, type ProfileAppearance } from "../ipc/api";
 import { afterDialogs, isDialogOpen } from "../hooks/dialogs";
 import { chosenAction, matches } from "../lib/keymap";
 import type { PaneSession } from "../lib/paneSession";
+import { pastable } from "../lib/paste";
 import { isMac } from "../lib/platform";
 import type { PasteTarget, SessionRegistry } from "../lib/sessionRegistry";
 import { useMediaQuery, useSettings } from "../hooks/settings";
@@ -199,7 +200,7 @@ export function TerminalView({
       paste: {
         bracketed: () => term.modes.bracketedPasteMode,
         paste: (text) => {
-          if (text && !session.isClosed) term.paste(text);
+          if (text && !session.isClosed) term.paste(pastable(text));
         },
       },
       session: () => {

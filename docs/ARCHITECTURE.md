@@ -290,7 +290,7 @@
 ### 剪贴板与终端输入
 
 - 读写剪贴板用 clipboard-manager 插件，因为菜单里的粘贴触发不了 paste 事件，WKWebView 的 `readText` 又会弹出系统确认。
-- 所有粘贴走 `term.paste()`；多行内容在远端没开 bracketed paste 时先确认。
+- 所有粘贴走 `term.paste()`，先去掉 Tab、换行、回车以外的控制字符（`lib/paste.ts`）：ESC 能提前结束 bracketed paste，让后面的内容当作键入执行；多行内容在远端没开 bracketed paste 时先确认。
 - 远端开启鼠标模式时右键交给程序，Shift+右键总是打开菜单。
 - **链接**：网址与 OSC 8 链接 ⌘ / Ctrl+点击用系统浏览器打开，只认 http 与 https。
 
