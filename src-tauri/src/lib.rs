@@ -341,6 +341,7 @@ pub fn run() {
             commands::ssh_files::known_hosts_remove,
             commands::ssh_files::ssh_config_scan,
             commands::ssh_files::ssh_config_import,
+            commands::session::session_page,
             commands::session::session_open,
             commands::session::local_shell_name,
             commands::session::local_shells,

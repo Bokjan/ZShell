@@ -43,20 +43,29 @@ fn log_event(result: Result<PathBuf>) -> SessionEvent {
     }
 }
 
-/// Starts a session; returns its id. `channel` carries the terminal's output and the
-/// session's events: each message is a type byte (0 output, 1 event as JSON) and its content.
+/// Which page of its window the calling page is, which it names when it opens or takes a
+/// session (see [`SessionManager::page_of`]): asked once, as it loads.
+#[tauri::command]
+pub fn session_page(webview: Webview, sessions: State<'_, SessionManager>) -> u64 {
+    sessions.page(webview.label()).generation()
+}
+
+/// Starts a session for page `page` (see [`session_page`]); returns its id. `channel` carries
+/// the terminal's output and the session's events: each message is a type byte (0 output, 1
+/// event as JSON) and its content.
 #[tauri::command]
 pub async fn session_open(
     app: AppHandle,
     webview: Webview,
     sessions: State<'_, SessionManager>,
+    page: u64,
     spec: SessionSpec,
     cols: u16,
     rows: u16,
     log: Option<LogOpen>,
     channel: Channel,
 ) -> Result<SessionId> {
-    let page = sessions.page(webview.label());
+    let page = sessions.page_of(webview.label(), page);
     // Off the async workers: a local terminal looks for its program (see `launch`).
     let label = webview.label().to_owned();
     let Launch { log_info, auto_log, encoding, backend } = blocking(app.clone(), move |app| {
@@ -164,18 +173,20 @@ pub fn session_ack(webview: Webview, sessions: State<'_, SessionManager>, id: Se
     sessions.ack(webview.label(), id, bytes)
 }
 
-/// Moves a session offered to this window to a tab here (see [`SessionManager::adopt`]): its
+/// Moves a session offered to this window to a tab on page `page` (see [`session_page`] and
+/// [`SessionManager::adopt`]): its
 /// output and events come on `channel` from now on. The tab that showed it hands over its screen
 /// ([`session_handover`]) once it hears that the session moved, with `move_id`.
 #[tauri::command]
 pub fn session_adopt(
     webview: Webview,
     sessions: State<'_, SessionManager>,
+    page: u64,
     id: SessionId,
     channel: Channel,
     move_id: String,
 ) -> Result<()> {
-    sessions.adopt(id, &sessions.page(webview.label()), channel, move_id)
+    sessions.adopt(id, &sessions.page_of(webview.label(), page), channel, move_id)
 }
 
 /// Passes the screen of a session that moved away from this window to the window showing it

@@ -1405,14 +1405,15 @@ export type Commands = {
   screen_reader_running: { args: Record<string, never>; result: boolean };
   serial_ports: { args: Record<string, never>; result: SerialPortInfo[] };
   session_ack: { args: { id: number; bytes: number }; result: void };
-  session_adopt: { args: { id: number; channel: Channel<ArrayBuffer>; moveId: string }; result: void };
+  session_adopt: { args: { page: number; id: number; channel: Channel<ArrayBuffer>; moveId: string }; result: void };
   session_break: { args: { id: number }; result: void };
   session_close: { args: { id: number }; result: void };
   session_foreground: { args: { id: number }; result: string | null };
   session_handover: { args: { snapshot: SessionSnapshot }; result: void };
   session_log_start: { args: { id: number }; result: string };
   session_log_stop: { args: { id: number }; result: void };
-  session_open: { args: { spec: SessionSpec; cols: number; rows: number; log?: LogOpen | null; channel: Channel<ArrayBuffer> }; result: number };
+  session_open: { args: { page: number; spec: SessionSpec; cols: number; rows: number; log?: LogOpen | null; channel: Channel<ArrayBuffer> }; result: number };
+  session_page: { args: Record<string, never>; result: number };
   session_resize: { args: { id: number; cols: number; rows: number }; result: void };
   session_snapshot: { args: { id: number; moveId: string }; result: SessionSnapshot | null };
   session_write: { args: { id: number; data: string }; result: void };

@@ -69,10 +69,24 @@ pub struct Page {
     generation: u64,
 }
 
+impl Page {
+    /// Which of its webview's pages it is: counted up each time the webview loads a page.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+}
+
 impl SessionManager {
     /// The page `webview` shows now.
     pub fn page(&self, webview: &str) -> Page {
         let generation = self.pages.lock().unwrap().get(webview).copied().unwrap_or(0);
+        Page { webview: webview.to_owned(), generation }
+    }
+
+    /// The page of `webview` numbered `generation` (see [`Page::generation`]), as a request
+    /// from it names it: one sent before the page reloaded is the old page's, though it
+    /// arrives after, and what it opens or takes is refused rather than given to the new one.
+    pub fn page_of(&self, webview: &str, generation: u64) -> Page {
         Page { webview: webview.to_owned(), generation }
     }
 
@@ -443,6 +457,19 @@ mod tests {
         assert_eq!(refused.unwrap_err().code(), "session.pageGone");
         assert_eq!(sessions.len(), 0);
         let _ = hold(&sessions, "main");
+        assert_eq!(sessions.len(), 1);
+
+        // Named by a request the old page sent before it reloaded, which arrives after.
+        let named = sessions.page_of("main", old.generation());
+        let refused = sessions.spawn(
+            &named,
+            Channel::new(|_| Ok(())),
+            (80, 24),
+            LogSlot::new(Default::default()),
+            encoding_rs::UTF_8,
+            |_, _| async {},
+        );
+        assert_eq!(refused.unwrap_err().code(), "session.pageGone");
         assert_eq!(sessions.len(), 1);
     }
 

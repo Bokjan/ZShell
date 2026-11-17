@@ -265,9 +265,21 @@ export async function openSession(
   if (shareFrom !== undefined) spec = { kind: "shared", source: shareFrom };
   else if (target.kind === "profile") spec = { ...target, carry };
   else spec = target;
-  const id = await call("session_open", { spec, ...size, log, channel: sessionChannel(onOutput, onEvent) });
+  const id = await call("session_open", { page: await page(), spec, ...size, log, channel: sessionChannel(onOutput, onEvent) });
   return sessionHandle(id);
 }
+
+/**
+ * Which page of its window this is, which the backend counts up each time the window loads a
+ * page: a session opened or taken just as the page reloads is then refused rather than given
+ * to the new page, which would never know of it. Asked once, as the page loads.
+ */
+let thisPage: Promise<number> | undefined;
+const page = () =>
+  (thisPage ??= call("session_page").catch((e: unknown) => {
+    thisPage = undefined;
+    throw e;
+  }));
 
 /**
  * A session's output and events share one channel, which keeps them in order: each message is
@@ -306,7 +318,7 @@ export async function adoptSession(
 ): Promise<{ session: Session; snapshot: Promise<SessionSnapshot | null> }> {
   // A screen handed over late for an earlier move of the session isn't this one's.
   const moveId = crypto.randomUUID();
-  await call("session_adopt", { id, moveId, channel: sessionChannel(onOutput, onEvent) });
+  await call("session_adopt", { page: await page(), id, moveId, channel: sessionChannel(onOutput, onEvent) });
   const snapshot = call("session_snapshot", { id, moveId }).catch(() => null);
   return { session: sessionHandle(id), snapshot };
 }
