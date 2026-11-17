@@ -166,7 +166,13 @@ impl Zmodem {
             sink.remote(before);
         }
         sink.flush_text();
-        tauri::async_runtime::spawn(run(self.clone(), direction, link, sink.clone()));
+        // Until a file received in part is removed, which quitting waits for.
+        let cleaning = crate::cleanup::hold();
+        let transfer = run(self.clone(), direction, link, sink.clone());
+        tauri::async_runtime::spawn(async move {
+            transfer.await;
+            drop(cleaning);
+        });
         Vec::new()
     }
 

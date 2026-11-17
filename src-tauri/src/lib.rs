@@ -6,6 +6,7 @@ mod i18n;
 mod applock;
 mod backup;
 mod bindings;
+mod cleanup;
 mod color_pick;
 mod commands;
 mod config;
@@ -117,10 +118,12 @@ fn page_gone(app: &tauri::AppHandle, webview: &str) {
     }
     app.state::<SessionManager>().remove_webview(webview);
     let paused = app.state::<Transfers>().cancel_webview(webview);
+    let cleaning = cleanup::hold();
     tauri::async_runtime::spawn(async move {
         for job in paused {
             job.discard(None).await;
         }
+        drop(cleaning);
     });
     // Managed in `setup`, which a page may not have reached.
     if let Some(edits) = app.try_state::<Edits>() {
@@ -434,15 +437,24 @@ pub fn run() {
 /// shells that don't exit when their terminal closes have been killed, and a little more.
 const LOGS_CLOSE_TIMEOUT: std::time::Duration = pty::RELEASED_WITHIN.saturating_add(std::time::Duration::from_millis(300));
 
-/// The app is about to end: the sessions close as if their pages were gone, and their logs
-/// are written to the end, which would otherwise lose what they buffer (up to a second of
-/// output) with the process.
+/// How long quitting waits, in all, for the transfers it cancels to remove what they left
+/// incomplete (see `cleanup`): on this computer that takes moments; on a server that doesn't
+/// answer, it is given up on.
+const CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The app is about to end: the sessions close as if their pages were gone, their logs are
+/// written to the end, which would otherwise lose what they buffer (up to a second of output)
+/// with the process, and the transfers cancelled remove the files they left incomplete.
 fn quitting(app: &tauri::AppHandle) {
+    let deadline = std::time::Instant::now() + CLEANUP_TIMEOUT.max(LOGS_CLOSE_TIMEOUT);
     for label in app.webview_windows().into_keys() {
         page_gone(app, &label);
     }
     // Managed in `setup`, which may not have got that far.
     if let Some(logs) = app.try_state::<Logs>() {
         logs.wait_all_closed(LOGS_CLOSE_TIMEOUT);
+    }
+    if !cleanup::wait(deadline.saturating_duration_since(std::time::Instant::now())) {
+        log::warn!("quitting before the transfers cancelled have removed what they left");
     }
 }

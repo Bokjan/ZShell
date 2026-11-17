@@ -133,6 +133,8 @@ async fn run_transfer(
     going_on: Option<bool>,
     on_progress: Channel<transfer::Progress>,
 ) -> transfer::Ended {
+    // Until it has removed what it leaves incomplete, which quitting waits for.
+    let _cleaning = crate::cleanup::hold();
     let cancelled = transfers.start(webview, transfer_id);
     let token = cancelled.clone();
     let mut left = going_on.and_then(|_| transfers.take_left(webview, transfer_id)).unwrap_or_else(|| job.nothing_left());
@@ -299,6 +301,7 @@ pub async fn sftp_edit_open(
     on_progress: Channel<transfer::Progress>,
     on_event: Channel<EditEvent>,
 ) -> Result<PathBuf> {
+    let cleaning = crate::cleanup::hold();
     let cancelled = transfers.start(webview.label(), &edit_id);
     let result = async {
         let sftp = connection(webview.label(), &sessions, &connections, id)?.sftp().await?;
@@ -320,6 +323,7 @@ pub async fn sftp_edit_open(
         Err(Error::new("transfer.cancelled"))
     });
     transfers.finish(webview.label(), &edit_id);
+    drop(cleaning);
     let local = result?;
     if let Err(e) = open_editor(&app, &settings, local.clone()).await {
         edits.stop(webview.label(), &edit_id);
