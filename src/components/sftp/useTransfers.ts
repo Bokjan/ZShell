@@ -99,12 +99,24 @@ export function useTransfers({
       ...(errorCode(e) === "transfer.cancelled" ? { status: "cancelled" } : { status: "error", error: errorMessage(e) }),
     });
   /**
+   * The running transfers the user cancelled, until they end: one may fail otherwise first (its
+   * connection lost), and is cancelled all the same.
+   */
+  const cancelling = useRef(new Set<string>());
+  const cancelRunning = (id: string) => {
+    cancelling.current.add(id);
+    void sftp.cancel(id, sessionRef.current.sessionId);
+  };
+  /**
    * Transfer `id` ended through `session`: done, or failed, when it may go on after the tab
    * reconnects (its connection was lost) or when retried.
    */
   const settle = (id: string, end: TransferEnd, session: SessionId) => {
     const left = { results: end.paths, created: end.created, folders: end.folders, replaced: end.replaced };
+    // Cancelled as it failed otherwise (its connection lost, say): the backend has discarded it.
+    const cancelled = cancelling.current.delete(id);
     if (!end.error) update(id, { status: "done", ...left });
+    else if (cancelled) update(id, { status: "cancelled", ...left });
     else if (end.resume === "lost") update(id, { status: "waiting", error: errorMessage(end.error), lostOn: session, ...left });
     else failed(id, end.error, { ...left, retry: end.resume === "retry" });
   };
@@ -134,7 +146,10 @@ export function useTransfers({
         settle(id, await work(id, session), session);
       },
       {
-        onError: (e) => failed(id, e),
+        onError: (e) => {
+          cancelling.current.delete(id);
+          failed(id, e);
+        },
       },
     );
   };
@@ -157,7 +172,10 @@ export function useTransfers({
         settle(id, end, sessionId);
       },
       {
-        onError: (e) => failed(id, e),
+        onError: (e) => {
+          cancelling.current.delete(id);
+          failed(id, e);
+        },
         cleanup: () => resuming.current.delete(id),
       },
     );
@@ -180,7 +198,7 @@ export function useTransfers({
   /** Cancels a running transfer, or gives up on going on with one cut short by a lost connection. */
   const cancel = (id: string) => {
     const transfer = transfersRef.current.find((t) => t.id === id);
-    if (transfer?.status === "running") return void sftp.cancel(id);
+    if (transfer?.status === "running") return cancelRunning(id);
     if (transfer?.status !== "waiting") return;
     void sftp.discard(id, sessionRef.current.sessionId);
     update(id, { status: "cancelled", lostOn: undefined });
@@ -370,7 +388,7 @@ export function useTransfers({
     () => () => {
       for (const transfer of transfersRef.current) {
         if (transfer.status === "editing") void sftp.editStop(transfer.id);
-        else if (transfer.status === "running") void sftp.cancel(transfer.id);
+        else if (transfer.status === "running") cancelRunning(transfer.id);
       }
       const ended = transfersRef.current.filter((t) => finished(t) || t.status === "waiting").map((t) => t.id);
       if (ended.length > 0) void sftp.forget(ended, sessionRef.current.sessionId);

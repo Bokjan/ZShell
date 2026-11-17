@@ -1444,7 +1444,7 @@ export type Commands = {
   tab_drag_end: { args: { id: string; dropped: boolean; outside: boolean }; result: DropTarget | null };
   tab_drag_move: { args: { id: string; outside: boolean }; result: DropTarget };
   terminal_ligature_rules: { args: { families: string[] }; result: LigatureRules | null };
-  transfer_cancel: { args: { transferId: string }; result: void };
+  transfer_cancel: { args: { id?: number | null; transferId: string }; result: void };
   transfer_delete: { args: { id?: number | null; transferId: string }; result: TransferDeletion };
   transfer_discard: { args: { id?: number | null; transferId: string }; result: void };
   transfer_forget: { args: { id?: number | null; transferIds: string[] }; result: void };

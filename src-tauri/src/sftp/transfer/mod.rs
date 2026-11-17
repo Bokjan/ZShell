@@ -72,10 +72,17 @@ impl Transfers {
         self.running.lock().unwrap().remove(&(webview.to_owned(), id.to_owned()));
     }
 
-    pub fn cancel(&self, webview: &str, id: &str) {
-        if let Some(cancelled) = self.running.lock().unwrap().get(&(webview.to_owned(), id.to_owned())) {
+    /// Cancels a transfer: one running, or one that failed and was kept to go on with, as it
+    /// may have failed (its connection lost) just before the user cancelled it. Returns the
+    /// latter, to discard.
+    pub fn cancel(&self, webview: &str, id: &str) -> Option<Job> {
+        let key = (webview.to_owned(), id.to_owned());
+        // Held while the job is taken: `pause` checks the cancellation under it.
+        let running = self.running.lock().unwrap();
+        if let Some(cancelled) = running.get(&key) {
             cancelled.cancel();
         }
+        self.paused.lock().unwrap().remove(&key)
     }
 
     /// Cancels the transfers of `webview`, whose page is gone, and forgets what its ended ones
@@ -94,9 +101,16 @@ impl Transfers {
         theirs.into_iter().filter_map(|key| paused.remove(&key)).collect()
     }
 
-    /// Keeps a failed transfer's `job`, to go on with.
-    pub fn pause(&self, webview: &str, id: &str, job: Job) {
+    /// Keeps a failed transfer's `job`, to go on with, unless it was `cancelled` meanwhile (the
+    /// failure, a lost connection say, coming first); returns it then, to discard.
+    pub fn pause(&self, webview: &str, id: &str, job: Job, cancelled: &CancellationToken) -> Option<Job> {
+        // `cancel` takes the token, then the job, under this lock: it can't come in between.
+        let _running = self.running.lock().unwrap();
+        if cancelled.is_cancelled() {
+            return Some(job);
+        }
         self.paused.lock().unwrap().insert((webview.to_owned(), id.to_owned()), job);
+        None
     }
 
     /// Takes a failed transfer's job to go on with it; none if it can't be gone on with (it

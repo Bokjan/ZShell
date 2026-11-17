@@ -134,6 +134,7 @@ async fn run_transfer(
     on_progress: Channel<transfer::Progress>,
 ) -> transfer::Ended {
     let cancelled = transfers.start(webview, transfer_id);
+    let token = cancelled.clone();
     let mut left = going_on.and_then(|_| transfers.take_left(webview, transfer_id)).unwrap_or_else(|| job.nothing_left());
     let (mut ssh, mut sftp) = (None, None);
     let result = async {
@@ -149,19 +150,34 @@ async fn run_transfer(
         let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
         job.run(&opened, &mut reporter, &mut left, going_on == Some(true)).await
     };
-    let result: anyhow::Result<()> = result.await;
+    let mut result: anyhow::Result<()> = result.await;
     let paths = job.paths(&mut left, result.is_ok());
-    let resume = match &result {
+    // Cancelled as it failed otherwise (its connection lost, say): cancelled all the same.
+    let cancelled_too = |result: &mut anyhow::Result<()>| {
+        if result.as_ref().is_err_and(|e| !transfer::is_cancelled(e)) {
+            *result = Err(Error::new("transfer.cancelled").into());
+        }
+    };
+    if token.is_cancelled() {
+        cancelled_too(&mut result);
+    }
+    let mut resume = match &result {
         Err(e) if !transfer::is_cancelled(e) => Some(match &ssh {
             Some(ssh) if transfer::ended_by_loss(ssh, e).await => transfer::Resume::Lost,
             _ => transfer::Resume::Retry,
         }),
         _ => None,
     };
-    match resume {
-        Some(_) => transfers.pause(webview, transfer_id, job),
-        None if result.is_err() => job.discard(sftp.as_deref()).await,
-        None => {}
+    let discarded = match resume {
+        Some(_) => transfers.pause(webview, transfer_id, job, &token),
+        None if result.is_err() => Some(job),
+        None => None,
+    };
+    if let Some(job) = discarded {
+        if resume.take().is_some() {
+            cancelled_too(&mut result);
+        }
+        job.discard(sftp.as_deref()).await;
     }
     transfers.end(webview, transfer_id, left, result.map_err(Error::from), paths, resume)
 }
@@ -375,9 +391,20 @@ pub async fn sftp_drag_out(
     drag::drag_out(&window, sftp, connection.transfer_slots(), transfer_id, items, pressed, on_event).await
 }
 
+/// Cancels a running transfer. One that has failed meanwhile, and was kept to go on with, is
+/// discarded instead (see [`discard`]), through session `id`'s connection.
 #[tauri::command]
-pub fn transfer_cancel(webview: Webview, transfers: State<'_, transfer::Transfers>, transfer_id: String) {
-    transfers.cancel(webview.label(), &transfer_id);
+pub async fn transfer_cancel(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    transfers: State<'_, transfer::Transfers>,
+    id: Option<SessionId>,
+    transfer_id: String,
+) -> Result<()> {
+    let jobs = transfers.cancel(webview.label(), &transfer_id);
+    discard(webview.label(), &sessions, &connections, id, jobs.into_iter().collect()).await;
+    Ok(())
 }
 
 /// Permanently deletes what an ended transfer created (see `transfer::left`): on the server

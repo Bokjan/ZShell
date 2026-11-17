@@ -19,6 +19,34 @@ fn a_transfer_is_cancelled_only_by_its_page_or_with_it() {
 }
 
 #[test]
+fn a_transfer_cancelled_as_it_fails_is_not_gone_on_with() {
+    let transfers = Transfers::default();
+    let job = || Job::download(Vec::new(), PathBuf::from("downloads"));
+    let paused = |id: &str| transfers.paused.lock().unwrap().contains_key(&("main".to_owned(), id.to_owned()));
+
+    // Cancelled before it is kept: given back to discard.
+    let cancelled = transfers.start("main", "t1");
+    transfers.cancel("main", "t1");
+    assert!(transfers.pause("main", "t1", job(), &cancelled).is_some());
+    assert!(!paused("t1"));
+
+    // Cancelled once kept, still running or ended: taken back to discard.
+    let cancelled = transfers.start("main", "t2");
+    assert!(transfers.pause("main", "t2", job(), &cancelled).is_none());
+    assert!(transfers.cancel("main", "t2").is_some());
+    assert!(!paused("t2"));
+    let cancelled = transfers.start("main", "t3");
+    assert!(transfers.pause("main", "t3", job(), &cancelled).is_none());
+    transfers.finish("main", "t3");
+    assert!(transfers.cancel("main", "t3").is_some() && !paused("t3"));
+
+    // Not cancelled: kept to go on with.
+    let cancelled = transfers.start("main", "t4");
+    assert!(transfers.pause("main", "t4", job(), &cancelled).is_none());
+    assert!(transfers.take_paused("main", "t4").is_some());
+}
+
+#[test]
 fn what_a_transfer_left_is_its_pages_until_forgotten() {
     let transfers = Transfers::default();
     let stamp = Stamp { size: 1, modified: None };

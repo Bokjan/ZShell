@@ -406,7 +406,11 @@ export const sftp = {
     call("sftp_download_as", { id, transferId, remotePath, localPath, onProgress: progressChannel(onProgress) }),
   /** The folder downloads go to without asking. */
   downloadsDirectory: () => call("downloads_directory"),
-  cancel: (transferId: string) => call("transfer_cancel", { transferId }),
+  /**
+   * Cancels a running transfer; one that has failed meanwhile, and could have been gone on
+   * with, is discarded instead (see `discard`), through session `id`.
+   */
+  cancel: (transferId: string, id: SessionId | null) => call("transfer_cancel", { transferId, id }),
   /**
    * Permanently deletes what an ended transfer created, through session `id` for an upload;
    * resolves to how many files were deleted, and how many were kept as they changed since.
