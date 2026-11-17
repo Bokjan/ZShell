@@ -567,6 +567,23 @@ mod tests {
         }
     }
 
+    /// A serial port on another computer's share would be opened (signing in there) as soon
+    /// as the session connects; a port of this computer's, named as COM ports past 9 are, is
+    /// kept.
+    #[test]
+    fn refuses_serial_devices_on_network_paths() {
+        let serial = |device: &str| {
+            let options = crate::model::SerialOptions { device: device.into(), ..Default::default() };
+            Profile::new("port".into(), Connection::Serial(options)).normalize_imported()
+        };
+        for device in [r"\\attacker.example\share\x", "//attacker.example/x", r"\\?\UNC\host\x", r"\\.\UNC\host\x"] {
+            assert_eq!(serial(device).unwrap_err().code(), "profile.networkSerialDevice", "{device}");
+        }
+        for device in ["COM3", r"\\.\COM10", "/dev/ttyUSB0"] {
+            assert!(serial(device).is_ok(), "{device}");
+        }
+    }
+
     fn proxy(id: &str, name: &str, kind: ProxyKind, command: &str) -> Proxy {
         Proxy {
             id: id.into(),

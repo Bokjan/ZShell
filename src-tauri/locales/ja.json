@@ -144,6 +144,7 @@
       "invalidProxy": "このセッションのプロキシはもう存在しません。別のプロキシを選択してください",
       "forwardsNeedSsh": "ポートフォワーディングを使用できるのはSSHセッションのみです",
       "networkKeyPath": "インポートしたセッションでは、ネットワークパス上の秘密鍵（{path}）は使用できません",
+      "networkSerialDevice": "インポートしたセッションでは、ネットワークパス上のシリアルデバイス（{path}）は使用できません",
       "missingProgram": "実行するプログラムを選択してください",
       "missingDistro": "WSLディストリビューションを選択してください",
       "invalidArgs": "引数にNULL文字は使用できません",
@@ -222,6 +223,7 @@
       "invalidProxy": "ファイル内のプロキシ{name}は無効です",
       "fileChanged": "{path}は開いた後に変更されたため、インポートされる内容が表示された内容と異なる可能性があります。もう一度開いて確認してください。",
       "includeTooDeep": "{path}のIncludeの入れ子が深すぎます。ファイルが自分自身を読み込んでいる可能性があります",
+      "networkInclude": "インポートする設定のIncludeでは、ネットワークパス上のファイル（{path}内の{include}）は指定できません",
       "wrongPassphrase": "パスフレーズがエクスポート時のものと異なるか、エクスポート後にファイルが変更されています",
       "passphraseRequired": "ファイルは暗号化されています。エクスポート時のパスフレーズを入力してください",
       "unsupportedEncryption": "{path}は、このバージョンのZShellでは読み込めない方式で暗号化されています"

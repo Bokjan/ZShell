@@ -144,6 +144,7 @@
       "invalidProxy": "此会话的代理已不存在；请选择其他代理",
       "forwardsNeedSsh": "只有 SSH 会话可以转发端口",
       "networkKeyPath": "导入的会话不能使用网络路径上的私钥（{path}）",
+      "networkSerialDevice": "导入的会话不能使用网络路径上的串口设备（{path}）",
       "missingProgram": "请选择要运行的程序",
       "missingDistro": "请选择 WSL 发行版",
       "invalidArgs": "参数不能包含空字符",
@@ -222,6 +223,7 @@
       "invalidProxy": "文件中的代理 {name} 无效",
       "fileChanged": "{path} 在打开后已被更改，因此要导入的内容可能与显示的不同。请重新打开以检查。",
       "includeTooDeep": "{path} 中的 Include 行嵌套过深；可能有文件包含了自身",
+      "networkInclude": "导入的配置中的 Include 行不能指向网络路径上的文件（{path} 中的 {include}）",
       "wrongPassphrase": "口令与导出文件时使用的不同，或文件在导出后被更改过",
       "passphraseRequired": "文件已加密。请输入导出时使用的口令",
       "unsupportedEncryption": "此版本的 ZShell 无法读取 {path} 所用的加密方式"

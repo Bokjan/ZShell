@@ -174,7 +174,7 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
 /// The parsed config, and whether it has `Match` blocks (which are not imported).
 fn parse(path: &Path) -> Result<(SshConfig, bool)> {
     let mut text = String::new();
-    let has_match = preprocess(path, &user_dir(), 0, &mut text)?;
+    let has_match = preprocess_with(path, &user_dir(), 0, false, &mut text)?;
     let config = SshConfig::default()
         .parse(&mut text.as_bytes(), ParseRule::ALLOW_UNKNOWN_FIELDS | ParseRule::ALLOW_UNSUPPORTED_FIELDS)
         .map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
@@ -196,6 +196,14 @@ const SKIPPED_MATCH: &str = "Host *.zshell-skipped-match.invalid";
 /// the stack). Relative `Include`s are in `dir`: `~/.ssh` for the user's config, `/etc/ssh`
 /// for the system's.
 fn preprocess(path: &Path, dir: &Path, depth: usize, out: &mut String) -> Result<bool> {
+    preprocess_with(path, dir, depth, true, out)
+}
+
+/// [`preprocess`], following `Include`s to network paths only if `network`: reading a file on
+/// another computer's share signs in there as the user (Windows sends the account's NTLM
+/// response), which a config chosen to import, perhaps someone else's, must not do as soon as
+/// it is shown.
+fn preprocess_with(path: &Path, dir: &Path, depth: usize, network: bool, out: &mut String) -> Result<bool> {
     let read_failed = |e: std::io::Error| Error::new("import.readFailed").param("path", path.display()).detail(e);
     let text = std::fs::read_to_string(path).map_err(read_failed)?;
     let mut has_match = false;
@@ -214,8 +222,11 @@ fn preprocess(path: &Path, dir: &Path, depth: usize, out: &mut String) -> Result
             }
             let start = out.len();
             for pattern in arguments(line) {
+                if !network && crate::model::is_network_path(pattern) {
+                    return Err(Error::new("import.networkInclude").param("path", path.display()).param("include", pattern));
+                }
                 for included in include_paths(pattern, dir) {
-                    has_match |= preprocess(&included, dir, depth + 1, out)?;
+                    has_match |= preprocess_with(&included, dir, depth + 1, network, out)?;
                 }
             }
             let starts_blocks = out[start..].lines().any(|line| keyword(line).eq_ignore_ascii_case("host"));

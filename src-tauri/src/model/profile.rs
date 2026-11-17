@@ -369,7 +369,7 @@ pub fn is_plain_host(host: &str) -> bool {
 
 /// Whether a path names a file on another computer (`\\server\share`, `//server/share`) or
 /// a Windows device (`\\?\`, `\\.\`), where a file from elsewhere must not lead.
-fn is_network_path(path: &str) -> bool {
+pub(crate) fn is_network_path(path: &str) -> bool {
     let path = path.trim_start();
     path.starts_with("\\\\") || path.starts_with("//") || path.starts_with("\\/") || path.starts_with("/\\")
 }
@@ -481,6 +481,15 @@ impl Profile {
         // Starting it runs what someone else may have written: the user confirms it first.
         if let Connection::Local(local) = &mut self.connection {
             local.imported = true;
+        }
+        // Opening a port on another computer's share would sign in there as the user, as a
+        // key would (below). A port of its own name (`\\.\COM10`, which COM ports past 9 need)
+        // is one of this computer's.
+        if let Connection::Serial(serial) = &self.connection {
+            let port = serial.device.strip_prefix(r"\\.\").is_some_and(|name| !name.is_empty() && !name.contains(['\\', '/']));
+            if is_network_path(&serial.device) && !port {
+                return Err(Error::new("profile.networkSerialDevice").param("path", &serial.device));
+            }
         }
         if let Connection::Ssh(ssh) = &mut self.connection {
             // Reading a key from another computer's share would sign in there as the user

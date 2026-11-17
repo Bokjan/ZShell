@@ -144,6 +144,7 @@
       "invalidProxy": "Der Proxy dieser Sitzung existiert nicht mehr; wählen Sie einen anderen",
       "forwardsNeedSsh": "Nur SSH-Sitzungen können Ports weiterleiten",
       "networkKeyPath": "Eine importierte Sitzung kann keinen privaten Schlüssel auf einem Netzwerkpfad verwenden ({path})",
+      "networkSerialDevice": "Eine importierte Sitzung kann kein serielles Gerät auf einem Netzwerkpfad verwenden ({path})",
       "missingProgram": "Wählen Sie ein Programm aus",
       "missingDistro": "Wählen Sie eine WSL-Distribution aus",
       "invalidArgs": "Die Argumente dürfen keine Nullzeichen enthalten",
@@ -222,6 +223,7 @@
       "invalidProxy": "Der Proxy {name} in der Datei ist ungültig",
       "fileChanged": "{path} wurde nach dem Öffnen geändert, daher entspricht der Import eventuell nicht dem, was angezeigt wurde. Öffnen Sie die Datei erneut, um sie zu prüfen.",
       "includeTooDeep": "Die Include-Zeilen in {path} sind zu tief verschachtelt; eventuell bindet sich eine Datei selbst ein",
+      "networkInclude": "Die Include-Zeilen einer importierten Konfiguration können keine Datei auf einem Netzwerkpfad angeben ({include}, in {path})",
       "wrongPassphrase": "Die Passphrase ist nicht die, mit der die Datei exportiert wurde, oder die Datei wurde nach dem Export verändert",
       "passphraseRequired": "Die Datei ist verschlüsselt. Geben Sie die Passphrase ein, mit der sie exportiert wurde",
       "unsupportedEncryption": "{path} ist auf eine Weise verschlüsselt, die diese Version von ZShell nicht lesen kann"

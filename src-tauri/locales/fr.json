@@ -144,6 +144,7 @@
       "invalidProxy": "Le proxy de cette session n’existe plus ; choisissez-en un autre",
       "forwardsNeedSsh": "Seules les sessions SSH peuvent rediriger des ports",
       "networkKeyPath": "Une session importée ne peut pas utiliser une clé privée sur un chemin réseau ({path})",
+      "networkSerialDevice": "Une session importée ne peut pas utiliser un périphérique série sur un chemin réseau ({path})",
       "missingProgram": "Choisissez un programme à exécuter",
       "missingDistro": "Choisissez une distribution WSL",
       "invalidArgs": "Les arguments ne peuvent pas contenir de caractères nuls",
@@ -222,6 +223,7 @@
       "invalidProxy": "Le proxy {name} du fichier n’est pas valide",
       "fileChanged": "{path} a changé après son ouverture : ce qui serait importé pourrait différer de ce qui a été affiché. Ouvrez-le de nouveau pour le vérifier.",
       "includeTooDeep": "Les lignes Include de {path} sont imbriquées trop profondément ; un fichier s’inclut peut-être lui-même",
+      "networkInclude": "Les lignes Include d’une configuration importée ne peuvent pas désigner un fichier sur un chemin réseau ({include}, dans {path})",
       "wrongPassphrase": "Ce n’est pas la phrase secrète utilisée lors de l’exportation du fichier, ou le fichier a été modifié après son exportation",
       "passphraseRequired": "Le fichier est chiffré. Saisissez la phrase secrète utilisée lors de son exportation",
       "unsupportedEncryption": "{path} est chiffré d’une manière que cette version de ZShell ne sait pas lire"
