@@ -8,7 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import "@xterm/xterm/css/xterm.css";
 
-import { conptyBuild, type ProfileAppearance } from "../ipc/api";
+import { conptyBuild, type ProfileAppearance, type SessionId } from "../ipc/api";
 import { afterDialogs, isDialogOpen } from "../hooks/dialogs";
 import { chosenAction, matches } from "../lib/keymap";
 import type { PaneSession } from "../lib/paneSession";
@@ -112,8 +112,8 @@ export function TerminalView({
   const [searchKey, setSearchKey] = useState(0);
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const [linkHint, setLinkHint] = useState<LinkHint | null>(null);
-  // Multi-line text waiting for the user to confirm the paste.
-  const [pendingPaste, setPendingPaste] = useState<string | null>(null);
+  // Multi-line text waiting for the user to confirm the paste, and the session it was for.
+  const [pendingPaste, setPendingPaste] = useState<{ text: string; session: SessionId | null } | null>(null);
   // The size shown while the terminal is resized; `count` starts its fade-out over at each change.
   const [sizeShown] = useState(() => createStore<SizeShown>({ size: null }));
   // Counts the visual bells, each a new flash.
@@ -218,7 +218,7 @@ export function TerminalView({
         closed: () => session.isClosed,
         pasteTargets: () => pasteTargetsRef.current(),
         settings: () => settingsRef.current.terminal,
-        confirm: setPendingPaste,
+        confirm: (text) => setPendingPaste({ text, session: session.id }),
         openMenu: setMenu,
         link: links.current,
       }),
@@ -464,10 +464,13 @@ export function TerminalView({
     ];
   };
 
-  const confirmPaste = (text: string, dontAskAgain: boolean) => {
+  const confirmPaste = ({ text, session }: { text: string; session: SessionId | null }, dontAskAgain: boolean) => {
     setPendingPaste(null);
     if (dontAskAgain) update((settings) => ({ ...settings, terminal: { ...settings.terminal, confirmMultilinePaste: false } }));
-    pasteAllRef.current(text);
+    // Not into another session than the one it was for: one connected again meanwhile may be
+    // asking for a password or to trust a host key, which the lines would answer.
+    const current = sessionRef.current;
+    if (current && !current.isClosed && current.id === session) pasteAllRef.current(text);
     focus();
   };
 
@@ -504,14 +507,14 @@ export function TerminalView({
       {pendingPaste !== null && (
         <ConfirmDialog
           title={t("paste.title")}
-          message={t("paste.message", { count: lineCount(pendingPaste) })}
+          message={t("paste.message", { count: lineCount(pendingPaste.text) })}
           confirmLabel={t("paste.confirm")}
           checkboxLabel={t("common.dontAskAgain")}
           onConfirm={(dontAskAgain) => confirmPaste(pendingPaste, dontAskAgain)}
           onCancel={cancelPaste}
         >
           <pre className="paste-preview">
-            {pendingPaste.length > PASTE_PREVIEW ? `${pendingPaste.slice(0, PASTE_PREVIEW)}…` : pendingPaste}
+            {pendingPaste.text.length > PASTE_PREVIEW ? `${pendingPaste.text.slice(0, PASTE_PREVIEW)}…` : pendingPaste.text}
           </pre>
         </ConfirmDialog>
       )}
