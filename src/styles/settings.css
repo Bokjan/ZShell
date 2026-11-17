@@ -93,6 +93,10 @@
 .settings-dialog section[data-section="shortcuts"] {
   gap: 6px;
 }
+/* Apart from the list it changes. */
+.settings-dialog section[data-section="shortcuts"] .hint {
+  margin-bottom: 8px;
+}
 .shortcut {
   display: flex;
   align-items: baseline;

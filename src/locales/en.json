@@ -823,6 +823,8 @@
     "confirmMultilinePasteHint": "Not asked when the shell supports bracketed paste, which inserts the lines without running them.",
     "optionAsMeta": "Use Option as Meta key",
     "optionAsMetaHint": "Option+B, Option+F and similar shortcuts reach the shell, but Option no longer types special characters.",
+    "leaveKeysToShell": "Leave {keys} to programs in the terminal",
+    "leaveKeysToShellHint": "Shells and editors such as Vim read these keys too. Tabs are then switched with {nextTab}; pasting and splitting keep their other keys.",
     "clipboardWrite": "Let programs copy to the clipboard",
     "clipboardWriteTip": "Programs in the terminal, such as tmux or Neovim on a server, can put text on this computer's clipboard (OSC 52). They can never read what is on it.",
     "clipboardLimit": "Largest copy (KB)",

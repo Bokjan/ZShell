@@ -787,6 +787,8 @@
     "confirmMultilinePasteHint": "シェルがブラケットペーストに対応している場合は確認しません。その場合、貼り付けた行は実行されずに挿入されます。",
     "optionAsMeta": "OptionキーをMetaキーとして使用",
     "optionAsMetaHint": "Option+B、Option+Fなどのショートカットがシェルに届くようになりますが、Optionキーで特殊文字を入力できなくなります。",
+    "leaveKeysToShell": "{keys}をターミナル内のプログラムに渡す",
+    "leaveKeysToShellHint": "シェルやVimなどのエディタもこれらのキーを使います。タブの切り替えは{nextTab}で行い、貼り付けと分割はほかのキーで引き続き使えます。",
     "clipboardWrite": "プログラムによるクリップボードへのコピーを許可",
     "clipboardWriteTip": "ターミナル内のプログラム（サーバー上の tmux や Neovim など）が、このコンピューターのクリップボードにテキストを入れられます（OSC 52）。クリップボードの内容を読み取ることはできません。",
     "clipboardLimit": "1 回のコピーの上限（KB）",

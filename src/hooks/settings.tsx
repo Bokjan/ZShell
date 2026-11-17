@@ -5,6 +5,7 @@ import { followLanguageSetting } from "../i18n/index";
 import { appSettings, DEFAULT_SETTINGS } from "../ipc/api";
 import type { Appearance, Settings, TextSize } from "../ipc/bindings";
 import { windows } from "../ipc/windows";
+import { leaveKeysToShell } from "../lib/keymap";
 import { isWindows } from "../lib/platform";
 import { settingsStore } from "../lib/settings";
 import { setSystemFont, systemFontFamilies } from "../lib/terminalSchemes";
@@ -133,6 +134,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     applyTheme(theme);
     applyWindowTheme(appearance, theme);
   }, [loaded, appearance, theme]);
+
+  // The keys shortcuts take, in this window's page (see `leaveKeysToShell`).
+  const leaveToShell = settings?.terminal.leaveKeysToShell ?? false;
+  useEffect(() => leaveKeysToShell(leaveToShell), [leaveToShell]);
 
   // Changed here or in another window; the page started in the stored one.
   const language = settings?.language;

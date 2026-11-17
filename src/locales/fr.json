@@ -859,6 +859,8 @@
     "confirmMultilinePasteHint": "Aucune confirmation n’est demandée quand le shell prend en charge le collage encadré (bracketed paste), qui insère les lignes sans les exécuter.",
     "optionAsMeta": "Utiliser Option comme touche Méta",
     "optionAsMetaHint": "Option+B, Option+F et les raccourcis similaires parviennent au shell, mais Option ne permet plus de taper des caractères spéciaux.",
+    "leaveKeysToShell": "Laisser {keys} aux programmes du terminal",
+    "leaveKeysToShellHint": "Les shells et les éditeurs comme Vim utilisent aussi ces touches. On passe alors d’un onglet à l’autre avec {nextTab} ; coller et diviser gardent leurs autres raccourcis.",
     "clipboardWrite": "Autoriser les programmes à copier dans le presse-papiers",
     "clipboardWriteTip": "Les programmes du terminal, comme tmux ou Neovim sur un serveur, peuvent placer du texte dans le presse-papiers de cet ordinateur (OSC 52). Ils ne peuvent jamais en lire le contenu.",
     "clipboardLimit": "Copie maximale (Ko)",

@@ -1126,6 +1126,12 @@ confirmMultilinePaste: boolean,
  */
 optionAsMeta: boolean, 
 /**
+ * Outside macOS: the app's keys that shells and editors read too (Alt+1–9 for the tabs,
+ * Ctrl+V for pasting, Alt+Shift+= and Alt+Shift+- for splitting) go to the terminal; the
+ * actions keep their other keys.
+ */
+leaveKeysToShell: boolean, 
+/**
  * Programs in the terminal can copy text to the clipboard (OSC 52); they can never read it.
  */
 clipboardWrite: boolean, 
@@ -1510,7 +1516,7 @@ export const DEFAULT_GROUP = "default";
 export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;
 
 /** The settings before any change, which "Restore Defaults" goes back to. */
-export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timeFormat: "[%Y-%m-%d %H:%M:%S]", timestamps: false }, power: { keepAwake: "off" }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", localShell: null, notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timeFormat: "[%Y-%m-%d %H:%M:%S]", timestamps: false }, power: { keepAwake: "off" }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, leaveKeysToShell: false, ligatures: "off", localShell: null, notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
 
 /** The parts of the default time format of logs and of our own messages in the terminal. */
 export const DEFAULT_TIME_FORMAT_PARTS: TimePart[] = [{ text: "[", type: "text" }, { type: "year" }, { text: "-", type: "text" }, { type: "month" }, { text: "-", type: "text" }, { type: "day" }, { text: " ", type: "text" }, { type: "hour" }, { text: ":", type: "text" }, { type: "minute" }, { text: ":", type: "text" }, { type: "second" }, { text: "]", type: "text" }];

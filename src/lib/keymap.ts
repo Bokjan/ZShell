@@ -185,6 +185,8 @@ export function setNativeMenu() {
 interface Chord {
   /** The letter or punctuation the key types, matched as `isKey` says; null for one matched by `code`. */
   char: string | null;
+  /** Read by shells and editors too, it goes to the terminal if the settings say so (see `leaveKeysToShell`). */
+  shell: boolean;
   code: string;
   ctrl: boolean;
   alt: boolean;
@@ -206,6 +208,21 @@ const NAMED_KEYS: Record<string, string> = {
 /** Keys of the numeric keypad that count as the main keyboard's, where they are matched by `code`. */
 const KEYPAD: Record<string, string> = { NumpadAdd: "Equal", NumpadSubtract: "Minus", NumpadEnter: "Enter" };
 
+/**
+ * Keys of the table outside macOS that shells and editors read too: Alt+1–9 (readline's digit
+ * arguments, irssi's and WeeChat's windows), Ctrl+V (readline's quoted insert, Vim's block
+ * selection), and Alt+Shift+= and Alt+Shift+- (readline's `M-=` and `M-_`). Their actions have
+ * other keys, but for the tabs, which are then gone to with Ctrl+Tab.
+ */
+const SHELL_KEYS = new Set([...Array.from({ length: 9 }, (_, i) => `Alt+${i + 1}`), "Ctrl+V", "Alt+Shift+=", "Alt+Shift+-"]);
+
+let keysLeftToShell = false;
+
+/** Whether the keys that shells read too (see `SHELL_KEYS`) go to the terminal, as the settings say. */
+export function leaveKeysToShell(leave: boolean) {
+  keysLeftToShell = leave;
+}
+
 function parse(keys: string): Chord {
   const parts = keys.split("+");
   const key = parts.pop()!;
@@ -219,14 +236,16 @@ function parse(keys: string): Chord {
   const shift = has("Shift");
   // Letters, and punctuation without Shift, by the character they type (see `KEYMAP`).
   const char = letter ? key.toLowerCase() : punctuation && !shift ? key : null;
-  return { char, code, ctrl: has("Ctrl"), alt: has("Alt"), shift, meta: has("Cmd") };
+  return { char, shell: SHELL_KEYS.has(keys), code, ctrl: has("Ctrl"), alt: has("Alt"), shift, meta: has("Cmd") };
 }
 
-function chordsOf(action: Action, mac: boolean): Chord[] {
+/** The keys of `action` on a platform (macOS when `mac`), but those that shells read if `leftToShell`. */
+function chordsOf(action: Action, mac: boolean, leftToShell = false): Chord[] {
   const keys: string | string[] | undefined = (KEYMAP[action] as { mac?: string | string[]; other?: string | string[] })[
     mac ? "mac" : "other"
   ];
-  return (keys === undefined ? [] : Array.isArray(keys) ? keys : [keys]).map(parse);
+  const chords = (keys === undefined ? [] : Array.isArray(keys) ? keys : [keys]).map(parse);
+  return leftToShell ? chords.filter((chord) => !chord.shell) : chords;
 }
 
 const CHORDS = new Map((Object.keys(KEYMAP) as Action[]).map((action) => [action, chordsOf(action, isMac)]));
@@ -260,7 +279,7 @@ export function matches(e: KeyboardEvent, action: Action): boolean {
   const choice = chosen.get(e);
   if (choice) return choice === action;
   if (isMac && (SYSTEM_MENU.has(action) || (nativeMenu && APP_MENU.has(action)))) return false;
-  return CHORDS.get(action)!.some((chord) => sameChord(e, chord));
+  return CHORDS.get(action)!.some((chord) => !(keysLeftToShell && chord.shell) && sameChord(e, chord));
 }
 
 /**
@@ -348,9 +367,15 @@ function format(chord: Chord, mac: boolean): string {
   return mac || !modifiers ? `${modifiers}${key}` : `${modifiers}+${key}`;
 }
 
-/** Every key of `action` on a platform (macOS when `mac`), as written there. */
-export function labelsOn(action: Action, mac: boolean): string[] {
-  return chordsOf(action, mac).map((chord) => format(chord, mac));
+/** Every key of `action` on a platform (macOS when `mac`), as written there; but those that shells read if `leftToShell`. */
+export function labelsOn(action: Action, mac: boolean, leftToShell = false): string[] {
+  return chordsOf(action, mac, leftToShell).map((chord) => format(chord, mac));
+}
+
+/** The keys that the settings can leave to the shell (see `SHELL_KEYS`) outside macOS, as written there: "Alt+1 – Alt+9", "Ctrl+V"… */
+export function shellKeyLabels(): string[] {
+  const label = (keys: string) => format(parse(keys), false);
+  return [`${label("Alt+1")} – ${label("Alt+9")}`, label("Ctrl+V"), label("Alt+Shift+="), label("Alt+Shift+-")];
 }
 
 /** The first macOS keys of `action` as written in the table ("Cmd+Shift+E"), for a native menu item. */
@@ -397,12 +422,14 @@ export interface ShortcutRow {
 }
 
 /**
- * The list of shortcuts in the settings, for a platform (macOS when `mac`); actions without
- * keys there (closing the window outside macOS, plain Ctrl+C on macOS) are left out.
+ * The list of shortcuts in the settings, for a platform (macOS when `mac`), without the keys
+ * that shells read if they are left to the terminal (`leftToShell`); actions without keys
+ * there (closing the window outside macOS, plain Ctrl+C on macOS) are left out.
  */
-export function shortcutRows(mac = isMac): ShortcutRow[] {
-  const all = (action: Action) => labelsOn(action, mac).join(", ");
-  const tabs = labelsOn("tab1", mac)[0] && `${labelsOn("tab1", mac)[0]} – ${labelsOn("tab8", mac)[0]}`;
+export function shortcutRows(mac = isMac, leftToShell = false): ShortcutRow[] {
+  const labels = (action: Action) => labelsOn(action, mac, leftToShell);
+  const all = (action: Action) => labels(action).join(", ");
+  const tabs = labels("tab1")[0] && `${labels("tab1")[0]} – ${labels("tab8")[0]}`;
   // One set of modifiers for the four arrows: "⌥⌘ ← ↑ → ↓", "Ctrl+Alt+← ↑ → ↓".
   const arrows = (["focusLeft", "focusUp", "focusRight", "focusDown"] as const).map((action) => parts(chordsOf(action, mac)[0], mac));
   const focus = `${arrows[0].modifiers}${mac ? " " : "+"}${arrows.map((arrow) => arrow.key).join(" ")}`;

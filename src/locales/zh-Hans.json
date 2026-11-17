@@ -787,6 +787,8 @@
     "confirmMultilinePasteHint": "如果 shell 支持括号粘贴（bracketed paste，插入多行而不运行），则不会询问。",
     "optionAsMeta": "将 Option 键用作 Meta 键",
     "optionAsMetaHint": "Option+B、Option+F 等快捷键会传给 shell，但 Option 键将无法再输入特殊字符。",
+    "leaveKeysToShell": "把 {keys} 留给终端里的程序",
+    "leaveKeysToShellHint": "shell 和 Vim 等编辑器也使用这些键。之后用 {nextTab} 切换标签页，粘贴和拆分仍可用其他快捷键。",
     "clipboardWrite": "允许程序写入剪贴板",
     "clipboardWriteTip": "终端里的程序（例如服务器上的 tmux、Neovim）可以把文本放进这台电脑的剪贴板（OSC 52），但永远读不到剪贴板里的内容。",
     "clipboardLimit": "单次写入上限（KB）",

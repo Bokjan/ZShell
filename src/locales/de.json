@@ -823,6 +823,8 @@
     "confirmMultilinePasteHint": "Keine Nachfrage, wenn die Shell Bracketed Paste unterstützt, das die Zeilen einfügt, ohne sie auszuführen.",
     "optionAsMeta": "Wahltaste als Meta-Taste verwenden",
     "optionAsMetaHint": "Wahltaste+B, Wahltaste+F und ähnliche Kurzbefehle erreichen die Shell, aber mit der Wahltaste lassen sich keine Sonderzeichen mehr eingeben.",
+    "leaveKeysToShell": "{keys} den Programmen im Terminal überlassen",
+    "leaveKeysToShellHint": "Shells und Editoren wie Vim nutzen diese Tasten ebenfalls. Zwischen Tabs wechseln Sie dann mit {nextTab}; Einfügen und Teilen behalten ihre anderen Tasten.",
     "clipboardWrite": "Programmen das Kopieren in die Zwischenablage erlauben",
     "clipboardWriteTip": "Programme im Terminal, etwa tmux oder Neovim auf einem Server, können Text in die Zwischenablage dieses Computers legen (OSC 52). Lesen können sie die Zwischenablage nie.",
     "clipboardLimit": "Größte Kopie (KB)",

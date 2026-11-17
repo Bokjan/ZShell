@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { currentCjk } from "../i18n/index";
 import { compareNames, formatAgo, formatList, formatSize, formatTime, widestSizes } from "../lib/format";
-import { shortcutLabel, shortcutRows, type Action } from "../lib/keymap";
+import { shellKeyLabels, shortcutLabel, shortcutRows, type Action } from "../lib/keymap";
 
 /**
  * The helpers whose text depends on the interface language, for rendering. They read state the
@@ -21,7 +21,9 @@ export function useLocale() {
   return useMemo(
     () => ({
       shortcutLabel: (action: Action) => shortcutLabel(action),
-      shortcutRows: () => shortcutRows(),
+      /** The list of shortcuts, without the keys left to the shell if `leftToShell` (see `leaveKeysToShell`). */
+      shortcutRows: (leftToShell = false) => shortcutRows(undefined, leftToShell),
+      shellKeyLabels: () => shellKeyLabels(),
       formatSize: (bytes: number) => formatSize(bytes),
       widestSizes: (bytes: number) => widestSizes(bytes),
       formatTime: (seconds: number | null) => formatTime(seconds),

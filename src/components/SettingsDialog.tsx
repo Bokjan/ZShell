@@ -60,7 +60,7 @@ let lastPlace: Place | null = null;
 
 export function SettingsDialog({ localAllowed, request, onClose }: Props) {
   const { t } = useTranslation();
-  const { shortcutRows } = useLocale();
+  const { shortcutRows, shellKeyLabels, shortcutLabel, formatList } = useLocale();
   const { settings, update } = useSettings();
   const terminal = settings.terminal;
   const setTerminal = (patch: Partial<TerminalSettings>, delay?: number) =>
@@ -430,7 +430,20 @@ export function SettingsDialog({ localAllowed, request, onClose }: Props) {
             <LogSection settings={settings.logs} localAllowed={localAllowed} onChange={setLogs} />
 
             <Section id="shortcuts">
-              {shortcutRows().map(
+              {!isMac && (
+                <Setting>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={terminal.leaveKeysToShell}
+                      onChange={(e) => setTerminal({ leaveKeysToShell: e.target.checked })}
+                    />
+                    {t("settings.leaveKeysToShell", { keys: formatList(shellKeyLabels()) })}
+                  </label>
+                  <p className="hint">{t("settings.leaveKeysToShellHint", { nextTab: shortcutLabel("nextTab") })}</p>
+                </Setting>
+              )}
+              {shortcutRows(terminal.leaveKeysToShell).map(
                 (shortcut) =>
                   (localAllowed || !shortcut.local) && (
                     <div key={shortcut.id} className="shortcut">

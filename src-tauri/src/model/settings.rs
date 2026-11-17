@@ -111,6 +111,10 @@ pub struct TerminalSettings {
     pub confirm_multiline_paste: bool,
     /// macOS: the Option key sends Meta (Esc-prefixed) sequences instead of special characters.
     pub option_as_meta: bool,
+    /// Outside macOS: the app's keys that shells and editors read too (Alt+1–9 for the tabs,
+    /// Ctrl+V for pasting, Alt+Shift+= and Alt+Shift+- for splitting) go to the terminal; the
+    /// actions keep their other keys.
+    pub leave_keys_to_shell: bool,
     /// Programs in the terminal can copy text to the clipboard (OSC 52); they can never read it.
     pub clipboard_write: bool,
     /// The most text they copy at once, in KiB; more is ignored.
@@ -365,6 +369,7 @@ impl Default for TerminalSettings {
             right_click: RightClick::Menu,
             confirm_multiline_paste: true,
             option_as_meta: false,
+            leave_keys_to_shell: false,
             clipboard_write: true,
             clipboard_limit: 1024,
             notifications: true,

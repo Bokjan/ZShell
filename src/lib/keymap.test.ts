@@ -6,8 +6,10 @@ import {
   appMenu,
   chosenAction,
   labelsOn,
+  leaveKeysToShell,
   matches,
   PANE_SIDES,
+  shellKeyLabels,
   shortcutRows,
   TAB_ACTIONS,
   toAppMenu,
@@ -96,6 +98,33 @@ describe("keymap", () => {
     expect(keys(false)).toMatchObject({ goToTab: "Alt+1 – Alt+8", focusPane: "Ctrl+Alt+← ↑ → ↓", copySelection: "Ctrl+C" });
     expect(keys(true)).not.toHaveProperty("copySelection");
     expect(keys(false)).not.toHaveProperty("closeWindow");
+  });
+
+  it("leaves the keys that shells read to the terminal, if the settings say so", () => {
+    leaveKeysToShell(true);
+    try {
+      expect(matches(key("Digit1", { alt: true }), "tab1")).toBe(false);
+      expect(matches(key("Digit9", { alt: true }), "lastTab")).toBe(false);
+      expect(matches(key("KeyV", { ctrl: true }), "paste")).toBe(false);
+      expect(actionOf(key("Minus", { alt: true, shift: true }), ["splitRight", "splitDown"])).toBe(null);
+      expect(actionOf(key("Equal", { alt: true, shift: true }), ["splitRight", "splitDown"])).toBe(null);
+      // Their other keys, and the others' keys, stay.
+      expect(matches(key("KeyV", { ctrl: true, shift: true }), "paste")).toBe(true);
+      expect(matches(key("KeyS", { ctrl: true, shift: true }), "splitRight")).toBe(true);
+      expect(matches(key("Tab", { ctrl: true }), "nextTab")).toBe(true);
+      expect(matches(key("ArrowLeft", { ctrl: true, alt: true }), "focusLeft")).toBe(true);
+    } finally {
+      leaveKeysToShell(false);
+    }
+    expect(matches(key("KeyV", { ctrl: true }), "paste")).toBe(true);
+
+    const keys = Object.fromEntries(shortcutRows(false, true).map((row) => [row.id, row.keys]));
+    expect(keys).toMatchObject({ paste: "Ctrl+Shift+V, Shift+Insert", splitRight: "Ctrl+Shift+S", splitDown: "Ctrl+Shift+D" });
+    expect(keys).not.toHaveProperty("goToTab");
+    expect(keys).not.toHaveProperty("lastTab");
+    // macOS has none of them.
+    expect(shortcutRows(true, true)).toEqual(shortcutRows(true));
+    expect(shellKeyLabels()).toEqual(["Alt+1 – Alt+9", "Ctrl+V", "Alt+Shift+=", "Alt+Shift+-"]);
   });
 
   it("takes an action chosen from a menu for its keys, and only its", () => {
