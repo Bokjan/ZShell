@@ -23,7 +23,7 @@ mod left;
 mod resume;
 mod upload;
 
-pub use download::download_to;
+pub use download::{download_to, download_to_edit};
 pub use job::Job;
 pub use left::{delete_local, delete_remote, Deletion, Ended, Kept, Left, Server};
 pub use resume::{ended_by_loss, Resume};

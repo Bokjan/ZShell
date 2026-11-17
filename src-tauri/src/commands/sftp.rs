@@ -305,7 +305,7 @@ pub async fn sftp_edit_open(
         let local = edits.local_path(&edit_id, &remote_path)?;
         let remote_stamp = edit::remote_stamp(&sftp, &remote_path).await;
         let mut reporter = transfer::Reporter::new(on_progress, cancelled.clone());
-        transfer::download_to(&sftp, &[(remote_path.clone(), local.clone())], &mut reporter, &mut transfer::Left::default()).await?;
+        transfer::download_to_edit(&sftp, &remote_path, &local, &mut reporter).await?;
         edits.start(webview.label(), &edit_id, remote_path, local.clone(), remote_stamp, on_event);
         Result::Ok(local)
     };

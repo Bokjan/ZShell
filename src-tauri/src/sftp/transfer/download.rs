@@ -38,6 +38,8 @@ pub struct Download {
     planned: Option<Planned>,
     /// Whether its large files are written so that it can be gone on with.
     resumable: bool,
+    /// Whether files keep the execute bits of the remote ones, as `sftp get` gives them.
+    executable: bool,
 }
 
 /// What a download copies (see [`plan`]).
@@ -54,14 +56,14 @@ impl Download {
     /// Into `folder`; top-level items get a unique name instead of overwriting existing files,
     /// so everything this creates is its own.
     pub fn into(remote_paths: Vec<String>, folder: PathBuf) -> Self {
-        Self { remote_paths, folder: Some(folder), items: None, planned: None, resumable: true }
+        Self { remote_paths, folder: Some(folder), items: None, planned: None, resumable: true, executable: true }
     }
 
     /// Each remote file or folder to the local path given, replacing files there. Without
     /// `resumable`, a large file cut short isn't kept to go on with.
     pub fn to(items: Vec<(String, PathBuf)>, resumable: bool) -> Self {
         let remote_paths = items.iter().map(|(remote, _)| remote.clone()).collect();
-        Self { remote_paths, folder: None, items: Some(items), planned: None, resumable }
+        Self { remote_paths, folder: None, items: Some(items), planned: None, resumable, executable: true }
     }
 
     /// The local items to show once it ends: into a folder, those of the items that are there
@@ -128,7 +130,12 @@ pub(super) async fn download(
                 job.items = Some(claim_all(&job.remote_paths, &attributes, folder).await?);
             }
             let items = job.items.as_deref().expect("a download is given a folder or a path for each item");
-            let planned = plan(sftp, items, attributes, reporter).await?;
+            let mut planned = plan(sftp, items, attributes, reporter).await?;
+            if !job.executable {
+                for mode in planned.plan.file_modes.iter_mut().flatten() {
+                    *mode &= !0o111;
+                }
+            }
             job.planned.insert(planned)
         }
     };
@@ -193,6 +200,14 @@ async fn claim(remote: &str, metadata: &FileAttributes, local_dir: &Path) -> Res
 /// been there. For a download that isn't kept to go on with (a file to edit, or dragged out).
 pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, left: &mut Left<PathBuf>) -> Result<()> {
     download(sftp, &mut Download::to(items.to_vec(), false), reporter, left, false).await
+}
+
+/// Downloads the remote file `remote` to `local` to open it in an editor, as [`download_to`]
+/// does but never executable: the system's default application for an executable file
+/// without an extension (Terminal on macOS) runs it rather than opening it.
+pub async fn download_to_edit(sftp: &SftpSession, remote: &str, local: &Path, reporter: &mut Reporter) -> Result<()> {
+    let mut job = Download { executable: false, ..Download::to(vec![(remote.to_owned(), local.to_owned())], false) };
+    download(sftp, &mut job, reporter, &mut Left::default(), false).await
 }
 
 /// Lists the remote `items` (with their `attributes`) into a plan: their files, and the

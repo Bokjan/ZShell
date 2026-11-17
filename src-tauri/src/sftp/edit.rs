@@ -378,7 +378,7 @@ const RUN_WHEN_OPENED: &[&str] = &[
     "wsh",
     "xbap",
 ];
-/// The downloaded copy is never executable, so scripts open in an editor; these don't need to be.
+/// The downloaded copy is never executable (see `download_to_edit`), so scripts open in an editor; these don't need to be.
 #[cfg(target_os = "linux")]
 const RUN_WHEN_OPENED: &[&str] = &["desktop", "flatpakref", "jar"];
 

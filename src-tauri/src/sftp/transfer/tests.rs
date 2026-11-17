@@ -573,6 +573,28 @@ mod unix {
         assert_eq!(downloaded, Some((0o700, 0o600, 0o600)));
     }
 
+    /// A file downloaded to edit is never executable, which opening it would run (an
+    /// executable file without an extension opens in Terminal on macOS). Skipped without
+    /// `sftp-server`.
+    #[tokio::test]
+    async fn a_copy_to_edit_is_not_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(sftp) = crate::sftp::replace::tests::local_sftp_server().await else { return };
+        let root = std::env::temp_dir().join(format!("zshell-edit-mode-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("edit")).unwrap();
+        let (remote, local) = (root.join("cleanup"), root.join("edit/cleanup"));
+        std::fs::write(&remote, "rm -rf ~/tmp").unwrap();
+        std::fs::set_permissions(&remote, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut reporter = Reporter::with_sink(|_| {}, Default::default());
+        let result = download::download_to_edit(&sftp, remote.to_str().unwrap(), &local, &mut reporter).await;
+        let mode = result.is_ok().then(|| std::fs::metadata(&local).unwrap().permissions().mode() & 0o111);
+        std::fs::remove_dir_all(&root).unwrap();
+
+        result.unwrap();
+        assert_eq!(mode, Some(0));
+    }
+
     /// A failed download takes back only the names of the items that did not arrive: an
     /// empty file that did stays, and one copied at the same time as the failure stays if it
     /// arrived. Skipped without `sftp-server`.
