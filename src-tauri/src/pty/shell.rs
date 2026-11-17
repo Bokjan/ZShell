@@ -69,10 +69,18 @@ pub fn default_shell() -> Shell {
 /// files, in `PATH` too, where a network drive may not answer.
 pub fn local_shell(local: &LocalOptions) -> Result<Shell> {
     let home = std::env::home_dir();
+    // WSL takes its start folder as an argument.
+    let dir = match local.shell {
+        LocalShell::Wsl { .. } => None,
+        _ => start_dir(&local.start_dir, home.as_deref()),
+    };
     let mut shell = match &local.shell {
         LocalShell::Default => default_shell(),
         LocalShell::Program { path, args } => {
-            let program = find_program(path).ok_or_else(|| Error::new("local.programNotFound").param("path", path))?;
+            let home = home.as_deref().unwrap_or(Path::new(""));
+            let paths = env_path(&local.env).or_else(|| std::env::var_os("PATH"));
+            let program = find_program(path, dir.as_deref().unwrap_or(home), home, paths.as_deref())
+                .ok_or_else(|| Error::new("local.programNotFound").param("path", path))?;
             let mut command = CommandBuilder::new(&program);
             command.args(args);
             configure(&mut command);
@@ -95,42 +103,57 @@ pub fn local_shell(local: &LocalOptions) -> Result<Shell> {
     for EnvVar { name, value } in &local.env {
         shell.command.env(name, value);
     }
-    // WSL takes its start folder as an argument.
-    if !matches!(local.shell, LocalShell::Wsl { .. }) {
-        if let Some(dir) = start_dir(&local.start_dir, home.as_deref()) {
-            if !dir.is_dir() {
-                return Err(Error::new("local.startDirNotFound").param("path", dir.display()));
-            }
-            shell.command.cwd(dir);
+    if let Some(dir) = dir {
+        if !dir.is_dir() {
+            return Err(Error::new("local.startDirNotFound").param("path", dir.display()));
         }
+        shell.command.cwd(dir);
     }
     Ok(shell)
+}
+
+/// `path` with `~` for `home` (`~`, `~/…`, and `~\…` on Windows); not someone else's (`~bob`).
+fn expand_home(path: &str, home: &Path) -> PathBuf {
+    match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\").filter(|_| cfg!(windows))) {
+        Some(rest) => home.join(rest),
+        None if path == "~" => home.to_owned(),
+        None => PathBuf::from(path),
+    }
 }
 
 /// The folder a local terminal starts in: `dir` with `~` for `home`, and relative to it;
 /// `None` for the home folder (`dir` empty), where the terminal starts anyway.
 fn start_dir(dir: &str, home: Option<&Path>) -> Option<PathBuf> {
     let home = home.unwrap_or(Path::new(""));
-    match dir {
-        "" => None,
-        "~" => Some(home.to_owned()),
-        _ => match dir.strip_prefix("~/").or_else(|| dir.strip_prefix("~\\").filter(|_| cfg!(windows))) {
-            Some(rest) => Some(home.join(rest)),
-            None => Some(home.join(dir)),
-        },
-    }
+    (!dir.is_empty()).then(|| home.join(expand_home(dir, home)))
 }
 
-/// The program at `path`, or of that name in `PATH` (on Windows also with `.exe`), if it is
-/// there.
-fn find_program(path: &str) -> Option<PathBuf> {
-    let program = Path::new(path);
+/// The `PATH` a local session's variables `env` set, if they do (the last one, as it wins).
+fn env_path(env: &[EnvVar]) -> Option<std::ffi::OsString> {
+    let is_path = |name: &str| if cfg!(windows) { name.eq_ignore_ascii_case("PATH") } else { name == "PATH" };
+    env.iter().rev().find(|var| is_path(&var.name)).map(|var| var.value.clone().into())
+}
+
+/// Where the program `path` is, if it is there: `~` for `home`; a relative path in the folder
+/// the terminal starts in (`dir`); a bare name in the folders of `paths` (the `PATH` it runs
+/// with), on Windows also with `.exe`. Always from `dir`, never relative, so that what is
+/// started is what was found: given a relative path, `CommandBuilder` would look for it itself,
+/// by rules of its own on each system (on Windows, from ZShell's own current folder).
+fn find_program(path: &str, dir: &Path, home: &Path, paths: Option<&OsStr>) -> Option<PathBuf> {
+    let program = expand_home(path, home);
     if program.components().count() > 1 || program.is_absolute() {
-        return std::fs::symlink_metadata(program).is_ok_and(|meta| !meta.is_dir()).then(|| program.to_owned());
+        return Some(dir.join(program)).filter(|program| is_file(program));
     }
-    let paths = std::env::var_os("PATH")?;
+    // From `dir` too: `PATH` may have relative folders.
+    let in_path = |file: &str| std::env::split_paths(paths?).map(|folder| dir.join(folder).join(file)).find(|candidate| is_file(candidate));
     let exe = cfg!(windows) && program.extension().is_none();
-    find_in_path(&paths, path).or_else(|| exe.then(|| find_in_path(&paths, &format!("{path}.exe"))).flatten())
+    in_path(path).or_else(|| exe.then(|| in_path(&format!("{path}.exe"))).flatten())
+}
+
+/// Whether `path` is there and not a folder: the entry itself, as Windows' app execution
+/// aliases can't be followed (see `find_in_path`).
+fn is_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir())
 }
 
 /// A WSL distribution, in `dir` (its home folder if empty), with ZShell's terminal variables
@@ -243,10 +266,9 @@ pub(super) fn display_name(program: &str) -> String {
 /// The first `file` in the directories of a PATH-style list. App execution aliases (e.g.
 /// `pwsh.exe` installed from the Microsoft Store) are reparse points that cannot be
 /// followed, so the entry itself is checked.
+#[cfg(any(windows, test))]
 fn find_in_path(path: &OsStr, file: &str) -> Option<PathBuf> {
-    std::env::split_paths(path)
-        .map(|dir| dir.join(file))
-        .find(|candidate| std::fs::symlink_metadata(candidate).is_ok_and(|meta| !meta.is_dir()))
+    std::env::split_paths(path).map(|dir| dir.join(file)).find(|candidate| is_file(candidate))
 }
 
 /// A BCP 47 language tag (`en-US`, `zh-Hans-CN`) as a POSIX UTF-8 locale (`en_US.UTF-8`,
@@ -329,10 +351,51 @@ mod tests {
     }
 
     #[test]
+    fn programs_are_found_where_the_terminal_starts() {
+        let root = std::env::temp_dir().join(format!("zshell-programs-{}", std::process::id()));
+        let (home, start, bin) = (root.join("home"), root.join("start"), root.join("bin"));
+        for dir in [home.join("tools"), start.join("scripts"), bin.clone()] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        for file in [home.join("tools").join("fish"), start.join("scripts").join("run"), bin.join("tool")] {
+            std::fs::write(file, "").unwrap();
+        }
+        let path = std::env::join_paths([&bin]).unwrap();
+        let find = |program: &str, paths: Option<&OsStr>| find_program(program, &start, &home, paths);
+
+        // A relative path from the start folder, not ZShell's own current folder.
+        assert_eq!(find("scripts/run", None), Some(start.join("scripts").join("run")));
+        assert_eq!(
+            find(&Path::new(".").join("scripts").join("run").display().to_string(), None),
+            Some(start.join(".").join("scripts").join("run"))
+        );
+        assert_eq!(find("run", None), None);
+        // `~` for the home folder, as in the start folder.
+        assert_eq!(find("~/tools/fish", None), Some(home.join("tools").join("fish")));
+        assert_eq!(find("~", None), None);
+        // A bare name in the `PATH` given, made full when that has relative folders.
+        assert_eq!(find("tool", Some(&path)), Some(bin.join("tool")));
+        assert_eq!(find("tool", None), None);
+        assert_eq!(find("run", Some(OsStr::new("scripts"))), Some(start.join("scripts").join("run")));
+        assert_eq!(find(&bin.join("tool").display().to_string(), None), Some(bin.join("tool")));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_sessions_own_path_is_looked_in() {
+        let var = |name: &str, value: &str| EnvVar { name: name.into(), value: value.into() };
+        assert_eq!(env_path(&[]), None);
+        assert_eq!(env_path(&[var("PATH", "/a"), var("EDITOR", "vi"), var("PATH", "/b")]), Some("/b".into()));
+        assert_eq!(env_path(&[var("Path", "/c")]), cfg!(windows).then(|| "/c".into()));
+    }
+
+    #[test]
     fn programs_missing_are_not_found() {
         let missing = std::env::temp_dir().join("zshell-missing").join("shell");
-        assert_eq!(find_program(&missing.display().to_string()), None);
-        assert_eq!(find_program("zshell-no-such-shell"), None);
+        let here = std::env::temp_dir();
+        assert_eq!(find_program(&missing.display().to_string(), &here, &here, None), None);
+        let path = std::env::var_os("PATH");
+        assert_eq!(find_program("zshell-no-such-shell", &here, &here, path.as_deref()), None);
         let local = LocalOptions::new(LocalShell::Program { path: missing.display().to_string(), args: Vec::new() });
         assert_eq!(local_shell(&local).err().map(|e| e.code().to_owned()).as_deref(), Some("local.programNotFound"));
         let local = LocalOptions { start_dir: missing.display().to_string(), ..LocalOptions::new(LocalShell::Default) };
