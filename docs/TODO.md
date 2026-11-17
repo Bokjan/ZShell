@@ -10,7 +10,7 @@
 |---|---|---|
 | 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥（russh#812） |
 | 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 维护者拒绝过同样做法的 PR（russh#730）；考虑用 `[patch]` 维护分支 |
-| 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | WebView2 稳定版带上 Chromium #1716435 |
+| 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | 稳定版 157 已带上修复；等新运行时普及后验证并删掉绕过 |
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | tao、wry、webkit2gtk 升到 gtk 0.19，或 Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
 | 等待上游 | Linux：zbus 停在 5 | tauri-plugin-notification、tauri-plugin-opener 和 keyring（经 secret-service）都升到 zbus 6 |
@@ -20,7 +20,7 @@
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
 | 等待上游 | macOS：开着输入法时，按 Shift 打的第一个字丢失（已用补丁绕过） | xterm.js 7.0.0 发布（#6200 已合入） |
 | 等待上游 | 前端：切换标签页后第一帧终端空白（已绕过） | xterm.js 的下一个正式版发布，我们的 xterm.js#6240 合入 |
-| 暂缓 | SFTP：文件夹里的符号链接查完才显示列表 | 做法已想好，排期时再做 |
+| 暂缓 | SFTP：文件夹里的符号链接查完才显示列表 | 先把并发提到 64 实测；不够再做，做法已想好 |
 | 暂缓 | 保险库：每次修改整份重写 | 保险库到 MiB 级或出现高频写入时再看 |
 | 暂缓 | 串口：Windows 上改用重叠 I/O | 有 Windows 真实串口或虚拟串口对可以实测时 |
 | 暂缓 | SFTP：远距离服务器上单个文件的速度受 2 MiB 窗口限制 | russh 能按通道设窗口时，或有人嫌远距离传输慢时 |
@@ -50,16 +50,16 @@
 
 - **现象**：会话中途的密钥重交换不检查服务器的主机密钥。已经握有会话密钥的一方（实际上就是服务器本身）可以在重交换时换一把主机密钥而不被发现；网络上的中间人做不到。
 - **原因**：russh 0.65.1 只在初次密钥交换（`encrypted.is_some()` 的 else 分支，`client/mod.rs` 约 2060–2083 行）调用 `Handler::check_server_key`，重交换那一支（约 2036 行起）不调用。0.65.1 修复的 GHSA-9264-jvgf-6w2f 只是把初次交换里的 `kex_done` 挪到主机密钥验证之后，重交换照旧。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
-- **上游**：[Eugeny/russh#812](https://github.com/Eugeny/russh/issues/812)（2026-11-03，别人提的，2026-11-17 时没有回复）请求在每次重交换时把主机密钥或主机证书交给应用决定，问维护者倾向新加一个回调还是扩展 `check_server_key`。还没有修复。
+- **上游**：[Eugeny/russh#812](https://github.com/Eugeny/russh/issues/812)（2026-11-03，别人提的，2026-11-17 时没有回复）请求在每次重交换时把主机密钥或主机证书交给应用决定，问维护者倾向新加一个回调还是扩展 `check_server_key`。我们 2026-11-17 在下面附了 OpenSSH 的做法，并表示倾向新加一个带默认实现的回调（再调一次 `check_server_key` 会让会询问用户的 handler 在会话中途又问一次）。还没有修复。
 - **处理**：russh 在重交换时也调用 `check_server_key`（或把主机密钥交给 `kex_done`）之后，在 `ssh/handler.rs` 里记下初次接受的密钥，重交换时要求同一把，不再询问用户。之前那段比对代码因为永远走不到，已经删掉（v2.11.1）。
-- **可以补充给 #812 的**：重交换时 `KexProgress::Done` 带着 `server_host_key` 和 `server_host_certificate`，只是没有交给 handler。OpenSSH 每次密钥交换都验证主机密钥（`sshconnect2.c` 的 `verify_host_key_callback`）：和上次验证过的那把相同就直接通过（`sshconnect.c` 的 `previous_host_key`），不同就照初次那样重新查 known_hosts，并不要求和初次的一致。ZShell 打算更严一些，是因为会话中途不便在终端里询问。
+- **补充给 #812 的**：重交换时 `KexProgress::Done` 带着 `server_host_key` 和 `server_host_certificate`，只是没有交给 handler。OpenSSH 每次密钥交换都验证主机密钥（`sshconnect2.c` 的 `verify_host_key_callback`）：和上次验证过的那把相同就直接通过（`sshconnect.c` 的 `previous_host_key`），不同就照初次那样重新查 known_hosts，并不要求和初次的一致。ZShell 打算更严一些，是因为会话中途不便在终端里询问。
 - **登记**：2026-10-12（代码审查 L10）。
 
 ### Windows：打字后弹出的文件对话框没有指针（已绕过，等 WebView2 修复后去掉）
 
 - **现象**：系统开着「鼠标 → 指针选项 → 打字时隐藏指针」（默认开）时，在终端输入 `rz` 回车，弹出的文件选择框里看不到指针，只要指针不回到网页上就一直看不到。凡是打字后紧接着弹出的原生对话框都会这样。
 - **原因**：Chromium 的「打字时隐藏指针」（`features::kHideCursorWhileTyping`，`ui/wm/core/cursor_manager.cc`）在 Windows 上通过 `DesktopWindowTreeHostWin::OnCursorVisibilityChangedNative` 调用 `::ShowCursor(FALSE)`，把共享输入队列的指针显示计数降到 0 以下；只有指针在网页上移动时它才会把计数加回来。文件对话框和 WebView2 的窗口共用这个计数，所以对话框里也看不到指针。
-- **上游修复**：Chromium 提交「Restore mouse cursor for native dialogs on Windows」（Cr-Commit-Position `refs/heads/main@{#1716435}`，2026-10-11，bug 567626032）不再调用 `::ShowCursor()`，并在模态对话框弹出时（`HandleCancelMode`）恢复指针。还要等它进入 WebView2 运行时的稳定版。
+- **上游修复**：Chromium 提交「Restore mouse cursor for native dialogs on Windows」（Cr-Commit-Position `refs/heads/main@{#1716435}`，2026-10-11，bug 567626032）不再调用 `::ShowCursor()`，并在模态对话框弹出时（`HandleCancelMode`）恢复指针。它在 M157 里（M156 的分支点是 1706539，M157 是 1717349），Edge 稳定版 157.0.4341.60 于 2026-11-15 发布，WebView2 运行时跟着 Edge 的版本走（2026-11-17 维护者的 Windows 上已是 157.0.4341.46）。
 - **绕过**（v3.0.2）：前端的文件对话框都通过 `src/ipc/fileDialog.ts` 打开（`fileDialog.test.ts` 检查有没有直接用插件的），它在对话框前后调用 `window_file_dialog`。后端 `src-tauri/src/window/win.rs` 的 `need_pointer` 在主线程把计数加到 0 以上，最后一个需要指针的窗口关掉后再减回同样的次数。取色窗口（`src-tauri/src/color_pick/win.rs`）也调用它：用键盘打开吸管时，同样可能刚打过字。
 - **处理**：等 WebView2 稳定版运行时用上包含 #1716435 的 Chromium 版本，并在 Windows 上确认：关掉绕过后，打开「打字时隐藏指针」，输入 `rz`，对话框里有指针。确认之后删掉 `fileDialog.ts`、`fileDialog.test.ts`、`window_file_dialog`、`win::file_dialog` 和 `win::need_pointer`（连同取色窗口里对它的调用），各组件改回直接用 `@tauri-apps/plugin-dialog`。WebView2 运行时随系统自动更新，但旧版 Windows 10 上可能停在较老的版本，可以等新版普及一段时间再删。
 - **登记**：2026-10-13。
@@ -169,6 +169,8 @@
 - **现象**：`sftp::list` 先读目录，再对每个符号链接 `metadata` 一次（16 路并发，`SYMLINK_LOOKUPS`），全部查完才返回。`/usr/lib`、`node_modules` 这类有成百上千个链接的文件夹，面板要等到查完才出现：1000 个链接、往返 100 ms 时约多等 6 秒。
 - **为什么不直接「先显示再补」**：链接是否指向文件夹决定它排在「文件夹在前」的哪一组，也决定双击是进入还是打开、路径补全里有没有它（`lib/pathCompletion.ts`），修改权限时改的也是目标的权限（`targetPermissions`）。先显示的话，补上之前行会跳位置，双击可能走错。
 - **要做时**：列表先返回，链接标成「目标未知」（排在文件夹之后、文件之前，双击时先查一次再决定）；目标按批推给前端（事件或分页命令），面板合并时保持滚动位置和选中项。切换文件夹时丢掉上一个文件夹还没查完的结果。
+- **代价**（2026-11-17 评估）：约 14–16 个文件、400–600 行。难点依次是：链接查明后换组，行在用户眼前移动，要锚定视口；每次操作后的 `reload` 会让已查明的链接重新变回「未知」，要把已知结果带过去；离开文件夹时要在后端真正取消查询，不然占着同一个 SFTP 会话；对「未知」链接的操作都要先查一次：拖出（`DragItem.is_dir` 决定占位是文件还是文件夹，而且要在按下后的时限内）、「下载到」选哪种对话框、改权限的初始值、打开、往它上面放文件；路径补全在查明之前会漏掉指向文件夹的链接。还要一个新的 `stat` 命令。
+- **更便宜的做法**：先把 `SYMLINK_LOOKUPS` 提到 64（OpenSSH 的 `sftp` 默认同时发 64 个请求），上面的例子约 1.6 秒，界面不用动，要在真实服务器上量过。还嫌慢就加时限（比如 1.5 秒），超时后剩下的链接标成「未知」一次返回，不分批推送：「未知」状态和先查再操作仍要做，但不用合并、锚定视口和取消，工作量约一半。
 - **登记**：2026-10-19（评审 R1）。
 
 ### 保险库：每次修改整份重写
