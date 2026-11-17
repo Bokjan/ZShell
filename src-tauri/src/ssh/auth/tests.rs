@@ -108,6 +108,19 @@ async fn sign_in_with_key(
     saved: Option<&str>,
     typed: &str,
 ) -> (Result<()>, String) {
+    sign_in_with_files(server, offered, auth, key_file, None, saved, typed).await
+}
+
+/// [`sign_in_with_key`], with `public` as the `.pub` file beside the key file, if given.
+async fn sign_in_with_files(
+    server: Server,
+    offered: &[MethodKind],
+    auth: AuthMethod,
+    key_file: &str,
+    public: Option<&str>,
+    saved: Option<&str>,
+    typed: &str,
+) -> (Result<()>, String) {
     let mut server = server;
     let key = PrivateKey::from_openssh(KEY).unwrap();
     let defaults = server::Config::default();
@@ -140,6 +153,10 @@ async fn sign_in_with_key(
         NEXT_FILE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::write(&key_path, key_file).unwrap();
+    let public_path = std::path::PathBuf::from(format!("{}.pub", key_path.display()));
+    if let Some(public) = public {
+        std::fs::write(&public_path, public).unwrap();
+    }
     let mut profile = SshProfile::quick("t".into(), Remote::new("example.com".into(), 22, "alice".into()));
     profile.ssh.auth = match auth {
         AuthMethod::PublicKey { .. } => AuthMethod::PublicKey { key_path: key_path.display().to_string() },
@@ -162,6 +179,7 @@ async fn sign_in_with_key(
     // A prompt nothing answers would wait for ever.
     let result = tokio::time::timeout(Duration::from_secs(10), auth.run()).await.expect("authentication waits for input");
     let _ = std::fs::remove_file(&key_path);
+    let _ = std::fs::remove_file(&public_path);
     let shown = String::from_utf8_lossy(&output.try_iter().flatten().collect::<Vec<_>>()).into_owned();
     (result, shown)
 }
@@ -204,6 +222,79 @@ async fn chosen_encrypted_key_asks_once_accepted() {
 
     let (result, _) = sign_in_with_key(accepting(), &offered, key_file(), "not a key", None, "").await;
     assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyReadFailed");
+}
+
+/// An empty passphrase skips the key, as in OpenSSH, rather than being asked for again as a
+/// wrong one.
+#[tokio::test]
+async fn an_empty_passphrase_skips_the_key() {
+    let accepting = || Server { steps: vec![MethodKind::PublicKey], passed: 0, prompt: "", secret: "", ..Default::default() };
+    let offered = [MethodKind::PublicKey, MethodKind::Password];
+    let (result, shown) = sign_in_with_key(accepting(), &offered, key_file(), ENCRYPTED_KEY, None, "\r").await;
+    assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyDecryptFailed");
+    assert_eq!(shown.matches("passphrase").count(), 1, "{shown:?}");
+    assert!(!shown.contains(&t!("terminal.incorrectPassphrase")), "{shown:?}");
+}
+
+/// `KEY` as an encrypted PKCS#8 file, with the passphrase `testpass`.
+fn encrypted_pkcs8_key() -> String {
+    let mut pem = Vec::new();
+    russh::keys::encode_pkcs8_pem_encrypted(&PrivateKey::from_openssh(KEY).unwrap(), b"testpass", 16, &mut pem).unwrap();
+    String::from_utf8(pem).unwrap()
+}
+
+/// A key whose format encrypts its public key too (PKCS#8, legacy PEM) is offered from the
+/// `.pub` file beside it, asking for the passphrase only once the server accepts it, as
+/// OpenSSH does; without one, the passphrase comes first.
+#[tokio::test]
+async fn encrypted_pkcs8_key_is_offered_from_its_public_key_file() {
+    let key = encrypted_pkcs8_key();
+    let public = PrivateKey::from_openssh(KEY).unwrap().public_key().to_openssh().unwrap();
+    let refusing = || Server { steps: vec![MethodKind::Password], passed: 0, prompt: "", secret: "", ..Default::default() };
+    let accepting = || Server { steps: vec![MethodKind::PublicKey], passed: 0, prompt: "", secret: "", ..Default::default() };
+    let offered = [MethodKind::PublicKey, MethodKind::Password];
+
+    let (result, shown) = sign_in_with_files(refusing(), &offered, key_file(), &key, Some(&public), None, "").await;
+    assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyRejected");
+    assert!(!shown.contains("passphrase"), "{shown:?}");
+
+    let (result, shown) = sign_in_with_files(accepting(), &offered, key_file(), &key, Some(&public), None, "testpass\r").await;
+    result.unwrap();
+    assert!(shown.contains("passphrase"), "{shown:?}");
+
+    let (result, shown) = sign_in_with_files(accepting(), &offered, key_file(), &key, None, None, "testpass\r").await;
+    result.unwrap();
+    assert!(shown.contains("passphrase"), "{shown:?}");
+
+    // A `.pub` file of another key: this one can't sign for it.
+    let other = PrivateKey::from_openssh(ENCRYPTED_KEY).unwrap().public_key().to_openssh().unwrap();
+    let (result, _) = sign_in_with_files(accepting(), &offered, key_file(), &key, Some(&other), None, "testpass\r").await;
+    assert_eq!(Error::from(result.unwrap_err()).code(), "auth.keyDecryptFailed");
+}
+
+/// What tells an encrypted key from something that isn't a key, and a PuTTY key's public key.
+#[test]
+fn tells_encrypted_keys_and_reads_putty_public_keys() {
+    let error = decode_secret_key(&encrypted_pkcs8_key(), None).unwrap_err();
+    assert!(needs_passphrase(&encrypted_pkcs8_key(), &error));
+    let error = decode_secret_key("not a key", None).unwrap_err();
+    assert!(!needs_passphrase("not a key", &error));
+
+    let public = PrivateKey::from_openssh(KEY).unwrap().public_key().clone();
+    let encoded = data_encoding::BASE64.encode(&public.to_bytes().unwrap());
+    let lines: Vec<&str> = encoded.as_bytes().chunks(64).map(|line| std::str::from_utf8(line).unwrap()).collect();
+    let putty = |encryption: &str| {
+        format!(
+            "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: {encryption}\nComment: test\nPublic-Lines: {}\n{}\nPrivate-Lines: 1\nAAAA\n",
+            lines.len(),
+            lines.join("\n")
+        )
+    };
+    assert_eq!(putty_public_key(&putty("aes256-cbc")).unwrap().key_data(), public.key_data());
+    let encrypted = putty("aes256-cbc");
+    let error = decode_secret_key(&encrypted, None).unwrap_err();
+    assert!(needs_passphrase(&encrypted, &error), "{error}");
+    assert!(putty_public_key(KEY).is_none());
 }
 
 /// `AuthenticationMethods publickey,keyboard-interactive` with a one-time code (Duo,

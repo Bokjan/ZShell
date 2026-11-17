@@ -198,7 +198,7 @@ impl<H: Handler> Auth<'_, H> {
                 let text = read_key_file(&path).await.context(read_failed())?;
                 let outcome = match decode_secret_key(&text, None) {
                     Ok(key) => self.sign_in_with(key).await?,
-                    Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(&path, &text, true).await?,
+                    Err(e) if needs_passphrase(&text, &e) => self.try_encrypted_key(&path, &text, true).await?,
                     Err(e) => return Err(e).context(read_failed()),
                 };
                 ensure!(outcome != Outcome::Rejected, Error::new("auth.keyRejected").param("path", path.display()));
@@ -399,7 +399,7 @@ impl<H: Handler> Auth<'_, H> {
         };
         match decode_secret_key(&text, None) {
             Ok(key) => self.sign_in_with(key).await,
-            Err(russh::keys::Error::KeyIsEncrypted) => self.try_encrypted_key(path, &text, false).await,
+            Err(e) if needs_passphrase(&text, &e) => self.try_encrypted_key(path, &text, false).await,
             Err(e) => {
                 log::debug!("{} is not a key: {e}", path.display());
                 Ok(Outcome::Rejected)
@@ -412,8 +412,14 @@ impl<H: Handler> Auth<'_, H> {
     /// `auth.keyDecryptFailed`.
     async fn try_encrypted_key(&mut self, path: &Path, text: &str, chosen: bool) -> Result<Outcome> {
         let decrypt_failed = || Error::new("auth.keyDecryptFailed").param("path", path.display());
-        // The OpenSSH format keeps the public key readable; legacy PEM keys need the passphrase first.
-        let Ok(encrypted) = PrivateKey::from_openssh(text) else {
+        // The OpenSSH and PuTTY formats keep the public key readable; for the others, it is in
+        // the `.pub` file beside the key if there is one, as OpenSSH reads it. Without it, the
+        // passphrase comes first, as in OpenSSH.
+        let locked = match PrivateKey::from_openssh(text) {
+            Ok(key) => Some((key.public_key().clone(), Locked::OpenSsh(Box::new(key)))),
+            Err(_) => public_key_of(path, text).await.map(|public| (public, Locked::Text(text))),
+        };
+        let Some((public, locked)) = locked else {
             return match load_key(path, text, self.io).await {
                 Ok(key) => self.sign_in_with(key).await,
                 Err(e) if !chosen && e.downcast_ref::<Error>().is_some_and(|e| e.code() == "auth.keyDecryptFailed") => {
@@ -422,15 +428,14 @@ impl<H: Handler> Auth<'_, H> {
                 Err(e) => Err(e),
             };
         };
-        let public = encrypted.public_key().clone();
         if !self.first_try(&public) {
             return Ok(Outcome::Rejected);
         }
         let hash_alg = self.rsa_hash(&public).await?;
         let user = self.user().to_owned();
         let name = key_name(&public);
-        let mut signer = PassphraseSigner { path, key: &encrypted, io: self.io, cancelled: false, decrypt_failed: false };
-        let result = self.session.authenticate_publickey_with(user, public, hash_alg, &mut signer).await.map_err(SignError::lost);
+        let mut signer = PassphraseSigner { path, locked: &locked, public: &public, io: self.io, cancelled: false, decrypt_failed: false };
+        let result = self.session.authenticate_publickey_with(user, public.clone(), hash_alg, &mut signer).await.map_err(SignError::lost);
         // What happened to the passphrase first: a server may hang up on the invalid
         // signature sent without it.
         ensure!(!signer.cancelled, Error::new("auth.cancelled"));
@@ -519,6 +524,62 @@ async fn read_key_file(path: &Path) -> std::io::Result<String> {
     tokio::task::spawn_blocking(read).await.unwrap_or_else(|e| Err(Error::other(e)))
 }
 
+/// Whether a key file that can't be read without a passphrase needs one, rather than not
+/// being a key. russh says so of the OpenSSH format and legacy PEM keys; an encrypted PKCS#8
+/// key (`BEGIN ENCRYPTED PRIVATE KEY`) or PuTTY key fails to read instead.
+fn needs_passphrase(text: &str, error: &russh::keys::Error) -> bool {
+    let header = |name: &str| text.lines().find_map(|line| line.strip_prefix(name)).map(str::trim);
+    matches!(error, russh::keys::Error::KeyIsEncrypted)
+        || text.lines().any(|line| line.trim() == "-----BEGIN ENCRYPTED PRIVATE KEY-----")
+        || (text.trim_start().starts_with("PuTTY-User-Key-File-") && header("Encryption:").is_some_and(|encryption| encryption != "none"))
+}
+
+/// The public key of an encrypted key file whose format keeps it encrypted too, to offer it
+/// before asking for the passphrase: a PuTTY key's public lines, or the `.pub` file beside it
+/// (OpenSSH's `ssh-keygen` writes one), which must be the same key's for signing to work.
+async fn public_key_of(path: &Path, text: &str) -> Option<PublicKey> {
+    if let Some(public) = putty_public_key(text) {
+        return Some(public);
+    }
+    let mut public_path = path.as_os_str().to_owned();
+    public_path.push(".pub");
+    let public = read_key_file(Path::new(&public_path)).await.ok()?;
+    PublicKey::from_openssh(public.trim()).ok()
+}
+
+/// The public key a PuTTY key file shows in the clear (`Public-Lines: n`, then n lines of
+/// base64), whether or not its private key is encrypted.
+fn putty_public_key(text: &str) -> Option<PublicKey> {
+    if !text.trim_start().starts_with("PuTTY-User-Key-File-") {
+        return None;
+    }
+    let mut lines = text.lines();
+    let count: usize = lines.by_ref().find_map(|line| line.strip_prefix("Public-Lines:"))?.trim().parse().ok()?;
+    let encoded: String = lines.take(count).map(str::trim).collect();
+    PublicKey::from_bytes(&data_encoding::BASE64.decode(encoded.as_bytes()).ok()?).ok()
+}
+
+/// An encrypted key, as far as it can be read without its passphrase.
+enum Locked<'a> {
+    /// The OpenSSH format, whose public key is readable.
+    OpenSsh(Box<PrivateKey>),
+    /// Another format (PuTTY, PEM), as the file has it.
+    Text(&'a str),
+}
+
+impl Locked<'_> {
+    async fn decrypt(&self, passphrase: String) -> Option<PrivateKey> {
+        match self {
+            Locked::OpenSsh(key) => {
+                // bcrypt, as in `decrypt_key`.
+                let key = PrivateKey::clone(key);
+                tokio::task::spawn_blocking(move || key.decrypt(passphrase).ok()).await.ok().flatten()
+            }
+            Locked::Text(text) => decrypt_key(text, passphrase).await,
+        }
+    }
+}
+
 /// Decrypts a key with `passphrase` in the blocking pool: the OpenSSH format's key
 /// derivation (bcrypt) takes a good part of a second.
 async fn decrypt_key(text: &str, passphrase: String) -> Option<PrivateKey> {
@@ -529,12 +590,16 @@ async fn decrypt_key(text: &str, passphrase: String) -> Option<PrivateKey> {
 async fn load_key(path: &Path, text: &str, io: &mut TermIo) -> Result<PrivateKey> {
     match decode_secret_key(text, None) {
         Ok(key) => return Ok(key),
-        Err(russh::keys::Error::KeyIsEncrypted) => {}
+        Err(e) if needs_passphrase(text, &e) => {}
         Err(e) => return Err(e).context(Error::new("auth.keyReadFailed").param("path", path.display())),
     }
     for _ in 0..MAX_ATTEMPTS {
         io.print(&passphrase_prompt(path));
         let passphrase = io.read_line(false).await.context(Error::new("auth.cancelled"))?;
+        // As in OpenSSH, no passphrase skips the key.
+        if passphrase.is_empty() {
+            break;
+        }
         match decrypt_key(text, passphrase).await {
             Some(key) => return Ok(key),
             None => io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
@@ -547,10 +612,12 @@ async fn load_key(path: &Path, text: &str, io: &mut TermIo) -> Result<PrivateKey
 /// which is only after the server has accepted the public key.
 struct PassphraseSigner<'a> {
     path: &'a Path,
-    key: &'a PrivateKey,
+    locked: &'a Locked<'a>,
+    /// The key offered.
+    public: &'a PublicKey,
     io: &'a mut TermIo,
     cancelled: bool,
-    /// Every passphrase typed was wrong.
+    /// Every passphrase typed was wrong, or none was.
     decrypt_failed: bool,
 }
 
@@ -581,7 +648,7 @@ impl Signer for PassphraseSigner<'_> {
         };
         // Failing here would leave russh waiting for a signature forever. An invalid one
         // instead makes the server reject this key, and authentication moves on.
-        let blob = signature.unwrap_or_else(|| invalid_signature(self.key.algorithm()));
+        let blob = signature.unwrap_or_else(|| invalid_signature(self.public.algorithm()));
         blob.encode(&mut data).map_err(|_| SignError)?;
         Ok(data)
     }
@@ -595,11 +662,18 @@ impl PassphraseSigner<'_> {
                 self.cancelled = true;
                 return None;
             };
-            // bcrypt, as in `decrypt_key`.
-            let key = self.key.clone();
-            match tokio::task::spawn_blocking(move || key.decrypt(passphrase)).await {
-                Ok(Ok(key)) => return Some(key),
-                _ => self.io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
+            // As in OpenSSH, no passphrase skips the key.
+            if passphrase.is_empty() {
+                break;
+            }
+            match self.locked.decrypt(passphrase).await {
+                Some(key) if key.public_key().key_data() == self.public.key_data() => return Some(key),
+                // The `.pub` file beside it is another key's, which this one can't sign for.
+                Some(_) => {
+                    log::debug!("{} is not the key of the .pub file beside it", self.path.display());
+                    break;
+                }
+                None => self.io.print(&format!("{}\n", t!("terminal.incorrectPassphrase"))),
             }
         }
         self.decrypt_failed = true;
