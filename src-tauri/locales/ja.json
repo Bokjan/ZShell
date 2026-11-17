@@ -143,7 +143,11 @@
       "jumpHostNotSsh": "このセッションは{names}の踏み台ホストなので、SSHセッションのままにする必要があります",
       "invalidProxy": "このセッションのプロキシはもう存在しません。別のプロキシを選択してください",
       "forwardsNeedSsh": "ポートフォワーディングを使用できるのはSSHセッションのみです",
-      "networkKeyPath": "インポートしたセッションでは、ネットワークパス上の秘密鍵（{path}）は使用できません"
+      "networkKeyPath": "インポートしたセッションでは、ネットワークパス上の秘密鍵（{path}）は使用できません",
+      "missingProgram": "実行するプログラムを選択してください",
+      "missingDistro": "WSLディストリビューションを選択してください",
+      "invalidArgs": "引数にNULL文字は使用できません",
+      "invalidStartDir": "開始フォルダーに制御文字は使用できません"
     },
     "ssh": {
       "handshakeFailed": "SSHハンドシェイクに失敗しました",
@@ -294,6 +298,13 @@
       "failed": "画面から色を取得できませんでした",
       "unavailable": "画面から色を取得するにはデスクトップのスクリーンショットポータル（xdg-desktop-portal）が必要ですが、利用できません",
       "unsupported": "画面から色を取得するにはmacOS 10.15以降が必要です"
+    },
+    "local": {
+      "notConfirmed": "このセッションはファイルからインポートされました。開く前に実行される内容を確認してください",
+      "programNotFound": "プログラム{path}が見つかりません",
+      "startDirNotFound": "開始フォルダー{path}が存在しません",
+      "wslUnavailable": "このコンピューターではWSLを利用できないため、{name}を開けません",
+      "blocked": "このシステムはMicrosoft Storeのアプリのみを実行するため（Sモード）、ローカルターミナルを開けません"
     }
   },
   "zmodem": {
@@ -303,5 +314,8 @@
     "received": "{name}（{size}）を受信しました：{path}",
     "sent": "{name}（{size}）を送信しました",
     "skipped": "{name}をスキップしました：受信側が拒否しました。受信側にすでに存在する場合は、rz -yで上書き、rz -Eで両方を保持できます。"
+  },
+  "local": {
+    "defaultName": "ローカルシェル"
   }
 }

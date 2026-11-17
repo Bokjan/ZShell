@@ -12,7 +12,7 @@ const view = (): PaneView =>
 
 function setUp() {
   const store = createTabStore();
-  store.dispatch({ type: "open", pane: { target: { kind: "local" }, protocol: "local", title: "zsh" } });
+  store.dispatch({ type: "open", pane: { target: { kind: "local", shell: { kind: "default" } }, protocol: "local", title: "zsh" } });
   const key = store.get().tabs[0].panes[0].key;
   const sessions = createSessionRegistry(store, {
     profiles: () => [],

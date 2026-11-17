@@ -24,8 +24,8 @@ pub use forward::{host_port, ForwardKind, ForwardRule, ALL_ADDRESSES};
 #[cfg(test)]
 pub use profile::default_term_type;
 pub use profile::{
-    is_plain_host, local_username, AuthMethod, Connection, EnvVar, FlowControl, Folder, Item, Parity, Profile, Protocol, Remote,
-    SerialOptions, SshOptions, SshProfile,
+    is_plain_host, local_username, AuthMethod, Connection, EnvVar, FlowControl, Folder, Item, LocalOptions, LocalShell, Parity, Profile,
+    Protocol, Remote, SerialOptions, SshOptions, SshProfile,
 };
 #[cfg(windows)]
 pub(crate) use proxy::split_program;

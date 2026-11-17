@@ -160,7 +160,13 @@
     "newSessionHere": "新規セッション…",
     "newFolderHere": "新規フォルダー",
     "rename": "名前を変更",
-    "deleteFolder": "フォルダーを削除"
+    "deleteFolder": "フォルダーを削除",
+    "open": "開く",
+    "openSplitRight": "右のペインで開く",
+    "openSplitDown": "下のペインで開く",
+    "openNewWindow": "新しいウィンドウで開く",
+    "openHintLocal": "ダブルクリックで開きます",
+    "localUnavailable": "Sモードではローカルターミナルを開けません"
   },
   "tabs": {
     "listLabel": "タブ",
@@ -216,7 +222,10 @@
     "startLog": "ログの記録を開始",
     "stopLog": "ログの記録を停止",
     "showLog": "ログファイルを表示",
-    "logging": "{path}にログを記録中"
+    "logging": "{path}にログを記録中",
+    "newLocalMenu": "ほかのローカルターミナルを開く",
+    "findingShells": "シェルを検索しています…",
+    "noShells": "シェルが見つかりません"
   },
   "compose": {
     "toggle": "入力バー：複数のターミナルにコマンドを送信（{shortcut}）",
@@ -373,7 +382,8 @@
     "protocols": {
       "ssh": "SSH",
       "telnet": "Telnet",
-      "serial": "シリアル"
+      "serial": "シリアル",
+      "local": "ローカル"
     },
     "optional": "省略可",
     "host": "ホスト",
@@ -489,7 +499,27 @@
     "sameAsSettings": "設定と同じ",
     "customBackground": "カスタム背景色",
     "customBackgroundHint": "本番サーバーを赤にするなど。セッションのタブにもこの色が表示されます。",
-    "invalidFontSize": "フォントサイズは{min}～{max}の整数で指定してください"
+    "invalidFontSize": "フォントサイズは{min}～{max}の整数で指定してください",
+    "namePlaceholderLocal": "省略時はプログラム名",
+    "shell": "シェル",
+    "defaultShell": "既定のシェル",
+    "defaultShellHint": "ログインシェルです。",
+    "defaultShellHintWindows": "PowerShell 7がインストールされていればそれを、なければWindows PowerShellを使います。",
+    "otherProgram": "その他のプログラム",
+    "program": "プログラム",
+    "chooseProgramButton": "選択…",
+    "chooseProgram": "プログラムを選択",
+    "args": "引数",
+    "argsHint": "スペースで区切ります。スペースを含む引数はダブルクォーテーションで囲みます。",
+    "distro": "WSLディストリビューション",
+    "startDir": "開始フォルダー",
+    "startDirHint": "空欄にするとホームフォルダーで開始します。~はホームフォルダーを表します。",
+    "startDirHintWsl": "ディストリビューション内のフォルダー（~/srcなど）またはWindows上のフォルダーです。空欄にするとディストリビューションのホームフォルダーで開始します。",
+    "chooseStartDirButton": "選択…",
+    "chooseStartDir": "開始フォルダーを選択",
+    "envHintLocal": "プログラムに設定され、ZShellが設定する同じ名前の変数を置き換えます。WSLにはWSLENV経由で渡されます。",
+    "missingProgram": "実行するプログラムを選択してください",
+    "missingDistro": "WSLディストリビューションを選択してください"
   },
   "sftp": {
     "listLabel": "リモートファイル",
@@ -895,7 +925,11 @@
       "idleNever": "しない",
       "idleMinutes_other": "{count}分",
       "onSystemLock": "コンピューターのスリープ、画面のロック、ユーザーの切り替え時にロック"
-    }
+    },
+    "localShell": "既定のローカルターミナル",
+    "localShellHint": "+とそのショートカットで開くものです。+の横の矢印からほかのものを開けます。",
+    "localShellSession": "セッション「{name}」",
+    "refreshShells": "インストールされているシェルを再検索"
   },
   "knownHosts": {
     "title": "既知のホスト",
@@ -1010,7 +1044,13 @@
     "passphrase": "パスフレーズ",
     "encrypted": "このファイルは暗号化されており、保存されたパスワードが含まれています。開くには、エクスポート時のパスフレーズを入力してください。パスワードはセッションと一緒にインポートされます。",
     "open": "開く",
-    "opening": "開いています…"
+    "opening": "開いています…",
+    "localProgram": "このコンピューターでプログラムを実行します：{command}",
+    "localWsl": "このコンピューターでWSLディストリビューション{name}を開きます",
+    "localDefault": "このコンピューターで既定のシェルを開きます",
+    "startDir": "{path}で開始します",
+    "loginCommandsLocal": "起動後にコマンドを入力します：{commands}",
+    "localConfirm": "初めて開く前に、実行される内容を確認します"
   },
   "proxy": {
     "titleNew": "新規プロキシ",
@@ -1152,5 +1192,13 @@
     "tab": "Tab",
     "enter": "Enter",
     "insert": "Insert"
+  },
+  "local": {
+    "cmd": "コマンド プロンプト"
+  },
+  "localConfirm": {
+    "title": "インポートしたセッションを開きますか？",
+    "message": "「{name}」はファイルからインポートされました。開くと、このコンピューターで以下のプログラムが実行され、ログイン後のコマンドが入力されます。ファイルの入手元を信頼できる場合にのみ開いてください。",
+    "open": "開く"
   }
 }

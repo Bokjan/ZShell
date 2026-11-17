@@ -166,7 +166,13 @@
     "newSessionHere": "New Session…",
     "newFolderHere": "New Folder",
     "rename": "Rename",
-    "deleteFolder": "Delete Folder"
+    "deleteFolder": "Delete Folder",
+    "open": "Open",
+    "openSplitRight": "Open in Pane to the Right",
+    "openSplitDown": "Open in Pane Below",
+    "openNewWindow": "Open in New Window",
+    "openHintLocal": "Double-click to open",
+    "localUnavailable": "Local terminals can't be opened in S mode"
   },
   "tabs": {
     "listLabel": "Tabs",
@@ -223,7 +229,10 @@
     "startLog": "Start Logging",
     "stopLog": "Stop Logging",
     "showLog": "Show Log File",
-    "logging": "Logging to {path}"
+    "logging": "Logging to {path}",
+    "newLocalMenu": "Open another local terminal",
+    "findingShells": "Finding shells…",
+    "noShells": "No shells found"
   },
   "compose": {
     "toggle": "Compose bar: send a command to several terminals ({shortcut})",
@@ -388,7 +397,8 @@
     "protocols": {
       "ssh": "SSH",
       "telnet": "Telnet",
-      "serial": "Serial"
+      "serial": "Serial",
+      "local": "Local"
     },
     "optional": "Optional",
     "host": "Host",
@@ -504,7 +514,27 @@
     "sameAsSettings": "Same as settings",
     "customBackground": "Custom background color",
     "customBackgroundHint": "For example red for production servers. The session's tabs show the color too.",
-    "invalidFontSize": "The font size must be an integer between {min} and {max}"
+    "invalidFontSize": "The font size must be an integer between {min} and {max}",
+    "namePlaceholderLocal": "Defaults to the program's name",
+    "shell": "Shell",
+    "defaultShell": "Default shell",
+    "defaultShellHint": "Your login shell.",
+    "defaultShellHintWindows": "PowerShell 7 if it is installed, otherwise Windows PowerShell.",
+    "otherProgram": "Another program",
+    "program": "Program",
+    "chooseProgramButton": "Choose…",
+    "chooseProgram": "Choose a program",
+    "args": "Arguments",
+    "argsHint": "Separated by spaces. Put an argument with spaces in double quotes.",
+    "distro": "WSL distribution",
+    "startDir": "Start folder",
+    "startDirHint": "Leave it empty to start in your home folder; ~ stands for it.",
+    "startDirHintWsl": "A folder in the distribution, such as ~/src, or on Windows. Leave it empty to start in the distribution's home folder.",
+    "chooseStartDirButton": "Choose…",
+    "chooseStartDir": "Choose the start folder",
+    "envHintLocal": "Set for the program, in place of ZShell's own variables of the same name. WSL gets them through WSLENV.",
+    "missingProgram": "Choose a program to run",
+    "missingDistro": "Choose a WSL distribution"
   },
   "sftp": {
     "listLabel": "Remote files",
@@ -935,7 +965,11 @@
       "idleMinutes_one": "{count} minute",
       "idleMinutes_other": "{count} minutes",
       "onSystemLock": "Lock when the computer sleeps, locks its screen or switches user"
-    }
+    },
+    "localShell": "Default local terminal",
+    "localShellHint": "What + and its shortcut open. The arrow beside + opens the others.",
+    "localShellSession": "Session “{name}”",
+    "refreshShells": "Find the installed shells again"
   },
   "knownHosts": {
     "title": "Known Hosts",
@@ -1065,7 +1099,13 @@
     "passphrase": "Passphrase",
     "encrypted": "The file is encrypted, with the saved passwords in it. Enter the passphrase it was exported with to open it; the passwords are imported with the sessions.",
     "open": "Open",
-    "opening": "Opening…"
+    "opening": "Opening…",
+    "localProgram": "Runs a program on this computer: {command}",
+    "localWsl": "Opens the WSL distribution {name} on this computer",
+    "localDefault": "Opens your default shell on this computer",
+    "startDir": "Starts in {path}",
+    "loginCommandsLocal": "Types commands once it starts: {commands}",
+    "localConfirm": "You confirm what it runs before it first opens"
   },
   "proxy": {
     "titleNew": "New Proxy",
@@ -1210,5 +1250,13 @@
     "tab": "Tab",
     "enter": "Enter",
     "insert": "Insert"
+  },
+  "local": {
+    "cmd": "Command Prompt"
+  },
+  "localConfirm": {
+    "title": "Open an Imported Session?",
+    "message": "“{name}” was imported from a file. Opening it runs the program below on this computer and types its commands after login into it. Open it only if you trust where the file came from.",
+    "open": "Open"
   }
 }

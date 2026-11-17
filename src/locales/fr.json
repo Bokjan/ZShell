@@ -172,7 +172,13 @@
     "newSessionHere": "Nouvelle session…",
     "newFolderHere": "Nouveau dossier",
     "rename": "Renommer",
-    "deleteFolder": "Supprimer le dossier"
+    "deleteFolder": "Supprimer le dossier",
+    "open": "Ouvrir",
+    "openSplitRight": "Ouvrir dans un volet à droite",
+    "openSplitDown": "Ouvrir dans un volet en bas",
+    "openNewWindow": "Ouvrir dans une nouvelle fenêtre",
+    "openHintLocal": "Double-cliquez pour ouvrir",
+    "localUnavailable": "Les terminaux locaux ne peuvent pas être ouverts en mode S"
   },
   "tabs": {
     "listLabel": "Onglets",
@@ -230,7 +236,10 @@
     "startLog": "Démarrer le journal",
     "stopLog": "Arrêter le journal",
     "showLog": "Afficher le fichier journal",
-    "logging": "Journal enregistré dans {path}"
+    "logging": "Journal enregistré dans {path}",
+    "newLocalMenu": "Ouvrir un autre terminal local",
+    "findingShells": "Recherche des shells…",
+    "noShells": "Aucun shell trouvé"
   },
   "compose": {
     "toggle": "Barre de saisie : envoyer une commande à plusieurs terminaux ({shortcut})",
@@ -403,7 +412,8 @@
     "protocols": {
       "ssh": "SSH",
       "telnet": "Telnet",
-      "serial": "Série"
+      "serial": "Série",
+      "local": "Local"
     },
     "optional": "Facultatif",
     "host": "Hôte",
@@ -519,7 +529,27 @@
     "sameAsSettings": "Identique aux paramètres",
     "customBackground": "Couleur d’arrière-plan personnalisée",
     "customBackgroundHint": "Par exemple du rouge pour les serveurs de production. Les onglets de la session affichent aussi cette couleur.",
-    "invalidFontSize": "La taille de police doit être un entier compris entre {min} et {max}"
+    "invalidFontSize": "La taille de police doit être un entier compris entre {min} et {max}",
+    "namePlaceholderLocal": "Par défaut, le nom du programme",
+    "shell": "Shell",
+    "defaultShell": "Shell par défaut",
+    "defaultShellHint": "Votre shell de connexion.",
+    "defaultShellHintWindows": "PowerShell 7 s’il est installé, sinon Windows PowerShell.",
+    "otherProgram": "Autre programme",
+    "program": "Programme",
+    "chooseProgramButton": "Choisir…",
+    "chooseProgram": "Choisir un programme",
+    "args": "Arguments",
+    "argsHint": "Séparés par des espaces. Mettez entre guillemets droits un argument qui contient des espaces.",
+    "distro": "Distribution WSL",
+    "startDir": "Dossier de départ",
+    "startDirHint": "Laissez-le vide pour démarrer dans votre dossier personnel ; ~ le désigne.",
+    "startDirHintWsl": "Un dossier de la distribution, comme ~/src, ou de Windows. Laissez-le vide pour démarrer dans le dossier personnel de la distribution.",
+    "chooseStartDirButton": "Choisir…",
+    "chooseStartDir": "Choisir le dossier de départ",
+    "envHintLocal": "Définies pour le programme, à la place des variables de ZShell qui portent le même nom. WSL les reçoit par WSLENV.",
+    "missingProgram": "Choisissez un programme à exécuter",
+    "missingDistro": "Choisissez une distribution WSL"
   },
   "sftp": {
     "listLabel": "Fichiers distants",
@@ -975,7 +1005,11 @@
       "idleMinutes_many": "{count} minutes",
       "idleMinutes_other": "{count} minutes",
       "onSystemLock": "Verrouiller quand l’ordinateur se met en veille, verrouille son écran ou change d’utilisateur"
-    }
+    },
+    "localShell": "Terminal local par défaut",
+    "localShellHint": "Ce qu’ouvrent + et son raccourci. La flèche à côté de + ouvre les autres.",
+    "localShellSession": "Session « {name} »",
+    "refreshShells": "Rechercher à nouveau les shells installés"
   },
   "knownHosts": {
     "title": "Hôtes connus",
@@ -1120,7 +1154,13 @@
     "passphrase": "Phrase secrète",
     "encrypted": "Le fichier est chiffré et contient les mots de passe enregistrés. Pour l’ouvrir, saisissez la phrase secrète utilisée lors de son exportation ; les mots de passe sont importés avec les sessions.",
     "open": "Ouvrir",
-    "opening": "Ouverture…"
+    "opening": "Ouverture…",
+    "localProgram": "Exécute un programme sur cet ordinateur : {command}",
+    "localWsl": "Ouvre la distribution WSL {name} sur cet ordinateur",
+    "localDefault": "Ouvre votre shell par défaut sur cet ordinateur",
+    "startDir": "Démarre dans {path}",
+    "loginCommandsLocal": "Saisit des commandes dès le démarrage : {commands}",
+    "localConfirm": "Vous confirmez ce qu’elle exécute avant de l’ouvrir pour la première fois"
   },
   "proxy": {
     "titleNew": "Nouveau proxy",
@@ -1268,5 +1308,13 @@
     "tab": "Tab",
     "enter": "Entrée",
     "insert": "Inser"
+  },
+  "local": {
+    "cmd": "Invite de commandes"
+  },
+  "localConfirm": {
+    "title": "Ouvrir une session importée ?",
+    "message": "« {name} » a été importée d’un fichier. L’ouvrir exécute le programme ci-dessous sur cet ordinateur et y saisit ses commandes après la connexion. Ne l’ouvrez que si vous faites confiance à la provenance du fichier.",
+    "open": "Ouvrir"
   }
 }

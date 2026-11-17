@@ -317,12 +317,17 @@ export function DisclosureIcon({ open, size = 10 }: { open: boolean; size?: numb
 /**
  * A session's protocol, in the session list: a terminal for SSH, and for the consoles of
  * network devices the port they are reached on, an Ethernet jack for Telnet and a serial
- * port's connector for serial.
+ * port's connector for serial; a laptop for a local terminal.
  */
-export function ProtocolIcon({ protocol, size = 14 }: { protocol: "ssh" | "telnet" | "serial"; size?: number }) {
+export function ProtocolIcon({ protocol, size = 14 }: { protocol: "ssh" | "telnet" | "serial" | "local"; size?: number }) {
   return (
     <Svg size={size} strokeWidth={1.3} className="protocol-icon">
-      {protocol === "ssh" ? (
+      {protocol === "local" ? (
+        <>
+          <rect x="2.5" y="3" width="11" height="7.5" rx="1" />
+          <path d="M1 13h14M5 5.6l1.6 1.4L5 8.4" />
+        </>
+      ) : protocol === "ssh" ? (
         <>
           <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
           <path d="M4.5 6l2.2 2-2.2 2M8.5 10.5h3" />

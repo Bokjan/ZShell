@@ -57,18 +57,18 @@ pub async fn session_open(
     channel: Channel,
 ) -> Result<SessionId> {
     let page = sessions.page(webview.label());
-    let local_shell = match spec {
-        SessionSpec::Local => Some(tauri::async_runtime::spawn_blocking(pty::default_shell).await?),
-        _ => None,
-    };
-    let sources = Sources {
-        profiles: &app.state::<ProfileStore>(),
-        connections: &app.state::<Connections>(),
-        sessions: &sessions,
-        settings: &app.state::<SettingsStore>(),
-        local_shell,
-    };
-    let Launch { log_info, auto_log, encoding, backend } = launch::launch(spec, webview.label(), sources)?;
+    // Off the async workers: a local terminal looks for its program (see `launch`).
+    let label = webview.label().to_owned();
+    let Launch { log_info, auto_log, encoding, backend } = blocking(app.clone(), move |app| {
+        let sources = Sources {
+            profiles: &app.state::<ProfileStore>(),
+            connections: &app.state::<Connections>(),
+            sessions: &app.state::<SessionManager>(),
+            settings: &app.state::<SettingsStore>(),
+        };
+        launch::launch(spec, &label, sources)
+    })
+    .await?;
     let slot = LogSlot::new(log_info);
     let opened = open_log(&app, &slot, log, auto_log).await?;
     let id = sessions.spawn(&page, channel, (cols, rows), slot, encoding, |id, io| backend.start(id, io))?;
@@ -104,6 +104,25 @@ pub fn session_log_stop(webview: Webview, sessions: State<'_, SessionManager>, l
 pub async fn local_shell_name() -> Option<String> {
     tauri::async_runtime::spawn_blocking(|| pty::local_shells_allowed().then(|| pty::default_shell().name())).await.ok().flatten()
 }
+
+/// The shells found here (see `pty::discover`), found again if `refresh` (or not found yet), for
+/// the local terminal menu and the settings; none when the system doesn't allow local terminals.
+/// Off the main thread: it reads the registry and looks for programs in `PATH`.
+#[tauri::command]
+pub async fn local_shells(found: State<'_, FoundShells>, refresh: bool) -> Result<Option<Vec<pty::FoundShell>>> {
+    if !refresh {
+        if let Some(shells) = found.0.lock().unwrap().clone() {
+            return Ok(Some(shells));
+        }
+    }
+    let shells = tauri::async_runtime::spawn_blocking(|| pty::local_shells_allowed().then(pty::discover)).await?;
+    *found.0.lock().unwrap() = shells.clone();
+    Ok(shells)
+}
+
+/// The shells last found (see [`local_shells`]): kept in memory, never saved.
+#[derive(Default)]
+pub struct FoundShells(std::sync::Mutex<Option<Vec<pty::FoundShell>>>);
 
 /// The Windows build local terminals run in (see `pty::conpty_build`); `null` elsewhere.
 #[tauri::command]

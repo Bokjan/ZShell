@@ -11,6 +11,7 @@ import {
   type Connection,
   type EnvVar,
   type FlowControl,
+  type LocalShell,
   type Parity,
   type Profile,
   type ProfileAppearance,
@@ -18,10 +19,15 @@ import {
   type Remote,
 } from "../ipc/api";
 import { parsePort, wholeNumber } from "./format";
+import { formatArgs, parseArgs } from "./localShells";
 
-/** Values to start a new profile with: from a quick connection, or the folder it goes in. */
+/**
+ * Values to start a new profile with: from a quick connection or a local terminal (its shell),
+ * or the folder it goes in.
+ */
 export interface ProfileDefaults {
   protocol?: Protocol;
+  shell?: LocalShell;
   host?: string;
   port?: number;
   username?: string;
@@ -30,6 +36,10 @@ export interface ProfileDefaults {
 
 export const PAGES = ["general", "connection", "terminal", "appearance"] as const;
 export type Page = (typeof PAGES)[number];
+
+/** The pages a session of `protocol` has: a local terminal has no connection to set up. */
+export const pagesOf = (protocol: Protocol): readonly Page[] =>
+  protocol === "local" ? PAGES.filter((page) => page !== "connection") : PAGES;
 
 /**
  * The session dialog's fields, as typed. Those of every protocol are kept while another is
@@ -67,6 +77,12 @@ export interface ProfileForm {
   parity: Parity;
   stopBits: number;
   flowControl: FlowControl;
+  /** What a local terminal runs, with the program and its arguments (one line) or the distribution. */
+  localShell: LocalShell["kind"];
+  program: string;
+  args: string;
+  distro: string;
+  startDir: string;
   notes: string;
 }
 
@@ -93,9 +109,11 @@ export function parseEnv(text: string): EnvVar[] | { invalid: string } {
 /** The form for `profile`, or for a new one (null) with `defaults`. */
 export function fromProfile(profile: Profile | null, defaults: ProfileDefaults = {}): ProfileForm {
   const current = profile?.connection;
-  const remote = current && current.protocol !== "serial" ? current : undefined;
+  const remote = current?.protocol === "ssh" || current?.protocol === "telnet" ? current : undefined;
   const ssh = current?.protocol === "ssh" ? current : undefined;
   const serial = current?.protocol === "serial" ? current : DEFAULT_SERIAL;
+  const local = current?.protocol === "local" ? current : undefined;
+  const shell = local?.shell ?? defaults.shell;
   const own = profile?.appearance;
   return {
     name: profile?.name ?? "",
@@ -113,7 +131,7 @@ export function fromProfile(profile: Profile | null, defaults: ProfileDefaults =
     forwardAgent: ssh?.forwardAgent ?? false,
     encoding: profile?.encoding ?? "utf-8",
     termType: remote?.termType ?? DEFAULT_TERM_TYPE,
-    env: envText(ssh?.env ?? []),
+    env: envText(ssh?.env ?? local?.env ?? []),
     loginCommands: (profile?.loginCommands ?? []).join("\n"),
     autoLog: profile?.autoLog ?? false,
     commandGroup: profile?.commandGroup ?? DEFAULT_GROUP,
@@ -128,9 +146,30 @@ export function fromProfile(profile: Profile | null, defaults: ProfileDefaults =
     parity: serial.parity,
     stopBits: serial.stopBits,
     flowControl: serial.flowControl,
+    localShell: shell?.kind ?? "default",
+    program: shell?.kind === "program" ? shell.path : "",
+    args: shell?.kind === "program" ? formatArgs(shell.args) : "",
+    distro: shell?.kind === "wsl" ? shell.distro : "",
+    startDir: local?.startDir ?? "",
     notes: profile?.notes ?? "",
   };
 }
+
+/** What the form's local terminal runs. */
+export function shellOf(form: ProfileForm): LocalShell {
+  if (form.localShell === "program") return { kind: "program", path: form.program.trim(), args: parseArgs(form.args) };
+  if (form.localShell === "wsl") return { kind: "wsl", distro: form.distro.trim() };
+  return { kind: "default" };
+}
+
+/** The form running `shell` (a local terminal's program, chosen from those found). */
+export const withShell = (form: ProfileForm, shell: LocalShell): ProfileForm => ({
+  ...form,
+  localShell: shell.kind,
+  program: shell.kind === "program" ? shell.path : form.program,
+  args: shell.kind === "program" ? formatArgs(shell.args) : form.args,
+  distro: shell.kind === "wsl" ? shell.distro : form.distro,
+});
 
 /** Whether the form differs from what it started as (a question before throwing it away). */
 export const isChanged = (form: ProfileForm, initial: ProfileForm) => JSON.stringify(form) !== JSON.stringify(initial);
@@ -158,7 +197,12 @@ export function validate(form: ProfileForm, t: TFunction): Problem | null {
   const { protocol } = form;
   const ssh = protocol === "ssh";
   const problem = (page: Page, field: Field, message: string): Problem => ({ page, field, message });
-  if (protocol === "serial") {
+  if (protocol === "local") {
+    if (form.localShell === "program" && !form.program.trim()) return problem("general", "program", t("profile.missingProgram"));
+    if (form.localShell === "wsl" && !form.distro.trim()) return problem("general", "distro", t("profile.missingDistro"));
+    const env = parseEnv(form.env);
+    if (!Array.isArray(env)) return problem("terminal", "env", t("profile.invalidEnvLine", { line: env.invalid }));
+  } else if (protocol === "serial") {
     if (!form.device.trim()) return problem("general", "device", t("profile.missingDevice"));
     const baud = wholeNumber(form.baudRate);
     // The backend takes a 32-bit number.
@@ -198,7 +242,12 @@ export function toProfile(form: ProfileForm, base: Profile | null, folder: strin
     termType: form.termType,
   };
   let connection: Connection;
-  if (protocol === "serial") {
+  if (protocol === "local") {
+    const env = parseEnv(form.env);
+    // Whether it waits to be confirmed is the backend's to keep.
+    const imported = base?.connection.protocol === "local" && base.connection.imported;
+    connection = { protocol, shell: shellOf(form), startDir: form.startDir.trim(), env: Array.isArray(env) ? env : [], imported };
+  } else if (protocol === "serial") {
     const { device, dataBits, parity, stopBits, flowControl } = form;
     connection = { protocol, device, baudRate: wholeNumber(form.baudRate), dataBits, parity, stopBits, flowControl };
   } else if (protocol === "telnet") {
@@ -208,7 +257,7 @@ export function toProfile(form: ProfileForm, base: Profile | null, folder: strin
     const auth: AuthMethod = form.authType === "publicKey" ? { type: "publicKey", keyPath: form.keyPath.trim() } : { type: form.authType };
     // Forwarding rules are edited in the forwards panel; the backend keeps the saved ones.
     const forwards = base ? profileForwards(base) : [];
-    connection = { protocol, ...remote, auth, forwardAgent: form.forwardAgent, env: Array.isArray(env) ? env : [], forwards };
+    connection = { protocol: "ssh", ...remote, auth, forwardAgent: form.forwardAgent, env: Array.isArray(env) ? env : [], forwards };
   }
   return {
     id: base?.id ?? "",
@@ -229,6 +278,7 @@ export function toProfile(form: ProfileForm, base: Profile | null, folder: strin
 /** The new protocol, with the port following it unless it was changed from a usual one. */
 export function withProtocol(form: ProfileForm, protocol: Protocol, defaultPorts: Record<"ssh" | "telnet", number>): ProfileForm {
   const usual = Object.values(defaultPorts).map(String);
-  const port = protocol !== "serial" && usual.includes(form.port) ? String(defaultPorts[protocol]) : form.port;
+  const network = protocol === "ssh" || protocol === "telnet";
+  const port = network && usual.includes(form.port) ? String(defaultPorts[protocol]) : form.port;
   return { ...form, protocol, port };
 }

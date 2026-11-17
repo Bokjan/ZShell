@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_PORTS, type Profile } from "../ipc/api";
 import { parsePort } from "./format";
-import { fromProfile, isChanged, toProfile, validate, withProtocol } from "./profileForm";
+import { fromProfile, isChanged, pagesOf, toProfile, validate, withProtocol, withShell } from "./profileForm";
 
 const t = ((key: string) => key) as unknown as TFunction;
 
@@ -83,6 +83,50 @@ describe("the session form", () => {
     const form = fromProfile(null);
     expect(withProtocol(form, "telnet", DEFAULT_PORTS).port).toBe("23");
     expect(withProtocol({ ...form, port: "2222" }, "telnet", DEFAULT_PORTS).port).toBe("2222");
+  });
+});
+
+describe("a local session's form", () => {
+  const local: Profile = {
+    ...saved,
+    connection: {
+      protocol: "local",
+      shell: { kind: "program", path: "C:\\Program Files\\Git\\bin\\bash.exe", args: ["--login", "-i"] },
+      startDir: "~/src",
+      env: [{ name: "EDITOR", value: "vim" }],
+      imported: true,
+    },
+  };
+
+  it("gives back the session it was made from, still to be confirmed", () => {
+    const form = fromProfile(local);
+    expect(form.args).toBe("--login -i");
+    expect(validate(form, t)).toBeNull();
+    expect(toProfile(form, local, undefined, "g1")).toEqual(local);
+  });
+
+  it("runs what is chosen, and needs a program or a distribution", () => {
+    const form = fromProfile(null, { protocol: "local", shell: { kind: "wsl", distro: "Ubuntu" } });
+    expect([form.localShell, form.distro]).toEqual(["wsl", "Ubuntu"]);
+    expect(validate({ ...form, distro: " " }, t)).toMatchObject({ page: "general", field: "distro" });
+    const zsh = withShell(form, { kind: "program", path: "/bin/zsh", args: ["-l"] });
+    expect(toProfile(zsh, null, undefined, "default").connection).toEqual({
+      protocol: "local",
+      shell: { kind: "program", path: "/bin/zsh", args: ["-l"] },
+      startDir: "",
+      env: [],
+      imported: false,
+    });
+    expect(validate({ ...zsh, program: "" }, t)).toMatchObject({ page: "general", field: "program" });
+    expect(validate({ ...zsh, env: "EDITOR" }, t)).toMatchObject({ page: "terminal", field: "env" });
+    expect(toProfile(withShell(zsh, { kind: "default" }), null, undefined, "default").connection).toMatchObject({
+      shell: { kind: "default" },
+    });
+  });
+
+  it("has no connection page", () => {
+    expect(pagesOf("local")).toEqual(["general", "terminal", "appearance"]);
+    expect(pagesOf("ssh")).toContain("connection");
   });
 });
 

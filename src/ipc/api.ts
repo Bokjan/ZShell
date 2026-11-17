@@ -14,6 +14,7 @@ import type {
   ForwardRule,
   NativeMenuSection,
   KnownHost,
+  LocalShell,
   LogOpen,
   Profile,
   ProtectionChange,
@@ -50,13 +51,13 @@ export type SessionId = number;
 
 /**
  * What a terminal tab runs: a saved session, a quick SSH or Telnet connection without one
- * (SSH: automatic authentication, an empty username is the local user's), or the default
- * shell here.
+ * (SSH: automatic authentication, an empty username is the local user's), or a shell here
+ * without a saved session (the default one, or one of those found).
  */
 export type SessionTarget =
   | { kind: "profile"; profileId: string }
   | { kind: "quick"; protocol: "ssh" | "telnet"; username: string; host: string; port: number }
-  | { kind: "local" };
+  | { kind: "local"; shell: LocalShell };
 
 function isCommandError(e: unknown): e is CommandError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
@@ -108,6 +109,8 @@ export const deleteProfile = (id: string) => call("profile_delete", { id });
 
 /** Copies a profile (with its saved password) as `name`, right after it. */
 export const duplicateProfile = (id: string, name: string) => call("profile_duplicate", { id, name });
+/** Lets an imported local session run, the user having seen what it runs; resolves to it. */
+export const confirmLocalProfile = (id: string) => call("profile_confirm_local", { id });
 
 export const quickCommands = {
   get: () => call("quick_commands_get"),
@@ -346,6 +349,12 @@ export const zmodem = {
 /** Short name of the default local shell, e.g. "zsh" or "pwsh"; null when the system doesn't
  *  allow local terminals (Windows in S mode). */
 export const localShellName = () => call("local_shell_name");
+
+/**
+ * The shells found here, found again if `refresh` (the backend keeps them meanwhile); null when
+ * the system doesn't allow local terminals.
+ */
+export const localShells = (refresh: boolean) => call("local_shells", { refresh });
 
 let conpty: Promise<number | null> | undefined;
 

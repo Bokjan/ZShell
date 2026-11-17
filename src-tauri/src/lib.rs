@@ -280,6 +280,7 @@ pub fn run() {
         .manage(tab_drag::TabDrag::default())
         .manage(Connections::default())
         .manage(Transfers::default())
+        .manage(commands::session::FoundShells::default())
         .invoke_handler(tauri::generate_handler![
             commands::locale_get,
             commands::debug_log::debug_log_open,
@@ -306,6 +307,7 @@ pub fn run() {
             commands::profiles::profile_forward_delete,
             commands::profiles::profile_delete,
             commands::profiles::profile_duplicate,
+            commands::profiles::profile_confirm_local,
             commands::profiles::proxies_list,
             commands::profiles::proxy_save,
             commands::profiles::proxy_delete,
@@ -341,6 +343,7 @@ pub fn run() {
             commands::ssh_files::ssh_config_import,
             commands::session::session_open,
             commands::session::local_shell_name,
+            commands::session::local_shells,
             commands::session::local_terminal_conpty,
             commands::session::session_log_start,
             commands::session::session_log_stop,

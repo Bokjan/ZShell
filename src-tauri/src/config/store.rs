@@ -220,14 +220,21 @@ impl ProfileStore {
                     if let Connection::Ssh(ssh) = &mut profile.connection {
                         ssh.forwards = forwards;
                     }
+                    // Only confirming clears it (`confirm_local`), and nothing sets it here.
+                    let imported = matches!(&existing.connection, Connection::Local(local) if local.imported);
+                    if let Connection::Local(local) = &mut profile.connection {
+                        local.imported = imported;
+                    }
                     profile.folder = existing.folder.take();
                     *existing = profile.clone();
                 }
                 None if !profile.id.is_empty() => return Err(Error::new("profile.notFound")),
                 None => {
                     profile.id = uuid::Uuid::new_v4().to_string();
-                    if let Connection::Ssh(ssh) = &mut profile.connection {
-                        ssh.forwards.clear();
+                    match &mut profile.connection {
+                        Connection::Ssh(ssh) => ssh.forwards.clear(),
+                        Connection::Local(local) => local.imported = false,
+                        Connection::Telnet(_) | Connection::Serial(_) => {}
                     }
                     if !folder_exists {
                         profile.folder = None;
@@ -239,6 +246,18 @@ impl ProfileStore {
                 passwords.set(Account::Profile(&profile.id), Some(password).filter(|p| !p.is_empty()));
             }
             Ok(profile)
+        })
+    }
+
+    /// Records that the user has seen what imported local session `id` runs and wants it to
+    /// run (see `LocalOptions::imported`); returns it.
+    pub fn confirm_local(&self, id: &str) -> Result<Profile> {
+        self.update(|state, _| {
+            let profile = state.profiles.iter_mut().find(|p| p.id == id).ok_or_else(|| Error::new("profile.notFound"))?;
+            if let Connection::Local(local) = &mut profile.connection {
+                local.imported = false;
+            }
+            Ok(profile.clone())
         })
     }
 

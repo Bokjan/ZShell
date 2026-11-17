@@ -71,6 +71,11 @@ export type ErrorCode =
   | "knownHosts.noHome"
   | "knownHosts.readFailed"
   | "knownHosts.writeFailed"
+  | "local.blocked"
+  | "local.notConfirmed"
+  | "local.programNotFound"
+  | "local.startDirNotFound"
+  | "local.wslUnavailable"
   | "log.createFailed"
   | "log.timeFormatControl"
   | "log.timeFormatTooLong"
@@ -80,18 +85,22 @@ export type ErrorCode =
   | "net.connectTimeout"
   | "net.connectionLost"
   | "profile.forwardsNeedSsh"
+  | "profile.invalidArgs"
   | "profile.invalidEncoding"
   | "profile.invalidEnvName"
   | "profile.invalidHost"
   | "profile.invalidJumpHost"
   | "profile.invalidProxy"
   | "profile.invalidSerialSettings"
+  | "profile.invalidStartDir"
   | "profile.invalidTermType"
   | "profile.invalidUser"
   | "profile.jumpHostNotSsh"
   | "profile.missingDevice"
+  | "profile.missingDistro"
   | "profile.missingFields"
   | "profile.missingHost"
+  | "profile.missingProgram"
   | "profile.networkKeyPath"
   | "profile.notFound"
   | "profile.usedAsJumpHost"
@@ -232,7 +241,7 @@ export type CommandGroup = { id: string, name: string, commands: Array<QuickComm
 /**
  * What a session connects to, with the settings of its protocol.
  */
-export type Connection = { "protocol": "ssh" } & SshOptions | { "protocol": "telnet" } & Remote | { "protocol": "serial" } & SerialOptions;
+export type Connection = { "protocol": "ssh" } & SshOptions | { "protocol": "telnet" } & Remote | { "protocol": "serial" } & SerialOptions | { "protocol": "local" } & LocalOptions;
 
 /**
  * An SSH connection, as the frontend names it next to a count: a number given in the order
@@ -428,6 +437,21 @@ connection: ConnectionInfo,
 channels: Array<number>, channelCount: number, };
 
 /**
+ * What kind of shell it is. Each system finds only its own kinds.
+ */
+export type FoundKind = "powerShell" | "windowsPowerShell" | "cmd" | "gitBash" | "wsl" | "unix";
+
+/**
+ * A shell found here.
+ */
+export type FoundShell = { kind: FoundKind, 
+/**
+ * What it is called: the program's name, or the WSL distribution's; the frontend names
+ * cmd in the user's language.
+ */
+name: string, shell: LocalShell, };
+
+/**
  * A host found in the config, as it would be imported.
  */
 export type ImportCandidate = { alias: string, host: string, port: number, username: string, auth: AuthMethod, 
@@ -539,6 +563,37 @@ path: string,
  * In the server's order: the file panel sorts them as the user chose.
  */
 entries: Array<FileEntry>, };
+
+/**
+ * A local terminal to open by default: a shell found here, or a saved local session.
+ */
+export type LocalLaunch = { "kind": "shell", shell: LocalShell, } | { "kind": "session", profileId: string, };
+
+/**
+ * A local terminal's settings. Its output is always UTF-8: the session's `encoding` is not used.
+ */
+export type LocalOptions = { shell: LocalShell, 
+/**
+ * The folder it starts in; `~` stands for the home folder, which empty means. For WSL, a
+ * folder in the distribution or on Windows, as `wsl.exe --cd` takes it.
+ */
+startDir: string, 
+/**
+ * Set for the program besides ZShell's own terminal variables, which they can replace.
+ */
+env: Array<EnvVar>, 
+/**
+ * Imported from a file, and not yet confirmed by the user: it doesn't start until they
+ * have seen what it runs (`local.notConfirmed`, `ProfileStore::confirm_local`). Set by
+ * importing; `ProfileStore::save` keeps it.
+ */
+imported: boolean, };
+
+/**
+ * What a local terminal runs. By what it is rather than only by a path, so that a session
+ * exported to another computer still finds it there.
+ */
+export type LocalShell = { "kind": "default" } | { "kind": "wsl", distro: string, } | { "kind": "program", path: string, args: Array<string>, };
 
 /**
  * The languages in effect, for the frontend.
@@ -707,7 +762,7 @@ export type Protection = "none" | "system" | "password";
  */
 export type ProtectionChange = { "protection": "none" } | { "protection": "system" } | { "protection": "password", password: string | null, remember: boolean, };
 
-export type Protocol = "ssh" | "telnet" | "serial";
+export type Protocol = "ssh" | "telnet" | "serial" | "local";
 
 export type Proxy = { 
 /**
@@ -910,7 +965,7 @@ cols: number, rows: number, };
 /**
  * What a new session runs.
  */
-export type SessionSpec = { "kind": "profile", profileId: string, carry: Array<string>, } | { "kind": "quick", protocol: Protocol, username: string, host: string, port: number, } | { "kind": "shared", source: number, } | { "kind": "local" };
+export type SessionSpec = { "kind": "profile", profileId: string, carry: Array<string>, } | { "kind": "quick", protocol: Protocol, username: string, host: string, port: number, } | { "kind": "shared", source: number, } | { "kind": "local", shell: LocalShell, };
 
 /**
  * What a sessions file holds, as it would be imported, and a digest of the file: importing
@@ -1092,7 +1147,13 @@ bellSound: boolean,
 /**
  * A bell flashes its terminal (a visual bell).
  */
-bellFlash: boolean, };
+bellFlash: boolean, 
+/**
+ * What "+" and the new local terminal shortcut open; `None` for the default shell (see
+ * `pty::default_shell`). The frontend opens it: a session it names that is gone, or is no
+ * longer a local terminal, falls back to the default shell.
+ */
+localShell: LocalLaunch | null, };
 
 /**
  * The size of the interface's text (not the terminal's, which has its own font size).
@@ -1318,6 +1379,7 @@ export type Commands = {
   known_hosts_path: { args: Record<string, never>; result: string | null };
   known_hosts_remove: { args: { line: number; text: string }; result: void };
   local_shell_name: { args: Record<string, never>; result: string | null };
+  local_shells: { args: { refresh: boolean }; result: FoundShell[] | null };
   local_terminal_conpty: { args: Record<string, never>; result: number | null };
   local_username: { args: Record<string, never>; result: string };
   locale_get: { args: Record<string, never>; result: Locales };
@@ -1326,6 +1388,7 @@ export type Commands = {
   logs_directory: { args: { create: boolean }; result: string };
   logs_summary: { args: Record<string, never>; result: LogSummary };
   logs_time_format: { args: { format: string }; result: TimePart[] };
+  profile_confirm_local: { args: { id: string }; result: Profile };
   profile_delete: { args: { id: string }; result: void };
   profile_duplicate: { args: { id: string; name: string }; result: Profile };
   profile_forward_delete: { args: { profileId: string; ruleId: string }; result: Profile };
@@ -1438,7 +1501,7 @@ export const DEFAULT_GROUP = "default";
 export const LANGUAGES = ["en", "zh-Hans", "ja", "de", "fr"] as const;
 
 /** The settings before any change, which "Restore Defaults" goes back to. */
-export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timeFormat: "[%Y-%m-%d %H:%M:%S]", timestamps: false }, power: { keepAwake: "off" }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
+export const DEFAULT_SETTINGS: Settings = { appFont: "", appearance: "system", files: { downloadDirectory: "", editor: "" }, language: "system", logs: { autoLocal: false, directory: "", fileName: "{session}_{date}_{time}.log", format: "text", keepDays: 0, timeFormat: "[%Y-%m-%d %H:%M:%S]", timestamps: false }, power: { keepAwake: "off" }, sidebar: { showRecent: true }, statusBar: { show: true }, tabs: { confirmClose: true, followRemoteTitle: true, markOutput: true }, terminal: { bellAlert: true, bellFlash: false, bellSound: true, clipboardLimit: 1024, clipboardWrite: true, colorScheme: "auto", confirmMultilinePaste: true, copyOnSelect: false, cursorBlink: true, cursorStyle: "block", fontFamily: "", fontSize: 13, ligatures: "off", localShell: null, notifications: true, optionAsMeta: false, rightClick: "menu", screenReaderMode: "auto", scrollback: 5000 }, textSize: "normal", updates: { check: true, skipped: null }, zmodem: { receive: "ask" } };
 
 /** The parts of the default time format of logs and of our own messages in the terminal. */
 export const DEFAULT_TIME_FORMAT_PARTS: TimePart[] = [{ text: "[", type: "text" }, { type: "year" }, { text: "-", type: "text" }, { type: "month" }, { text: "-", type: "text" }, { type: "day" }, { text: " ", type: "text" }, { type: "hour" }, { text: ":", type: "text" }, { type: "minute" }, { text: ":", type: "text" }, { type: "second" }, { text: "]", type: "text" }];

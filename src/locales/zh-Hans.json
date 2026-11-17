@@ -160,7 +160,13 @@
     "newSessionHere": "新建会话…",
     "newFolderHere": "新建文件夹",
     "rename": "重命名",
-    "deleteFolder": "删除文件夹"
+    "deleteFolder": "删除文件夹",
+    "open": "打开",
+    "openSplitRight": "在右侧窗格中打开",
+    "openSplitDown": "在下方窗格中打开",
+    "openNewWindow": "在新窗口中打开",
+    "openHintLocal": "双击打开",
+    "localUnavailable": "S 模式下无法打开本地终端"
   },
   "tabs": {
     "listLabel": "标签页",
@@ -216,7 +222,10 @@
     "startLog": "开始记录日志",
     "stopLog": "停止记录日志",
     "showLog": "显示日志文件",
-    "logging": "正在将日志记录到 {path}"
+    "logging": "正在将日志记录到 {path}",
+    "newLocalMenu": "打开其他本地终端",
+    "findingShells": "正在查找 shell…",
+    "noShells": "没有找到 shell"
   },
   "compose": {
     "toggle": "撰写栏：向多个终端发送命令（{shortcut}）",
@@ -373,7 +382,8 @@
     "protocols": {
       "ssh": "SSH",
       "telnet": "Telnet",
-      "serial": "串口"
+      "serial": "串口",
+      "local": "本地"
     },
     "optional": "可选",
     "host": "主机",
@@ -489,7 +499,27 @@
     "sameAsSettings": "与设置相同",
     "customBackground": "自定义背景色",
     "customBackgroundHint": "例如为生产服务器设为红色。会话的标签页也会显示此颜色。",
-    "invalidFontSize": "字号必须是 {min} 到 {max} 之间的整数"
+    "invalidFontSize": "字号必须是 {min} 到 {max} 之间的整数",
+    "namePlaceholderLocal": "默认为程序名称",
+    "shell": "Shell",
+    "defaultShell": "默认 shell",
+    "defaultShellHint": "你的登录 shell。",
+    "defaultShellHintWindows": "已安装 PowerShell 7 时用它，否则用 Windows PowerShell。",
+    "otherProgram": "其他程序",
+    "program": "程序",
+    "chooseProgramButton": "选择…",
+    "chooseProgram": "选择程序",
+    "args": "参数",
+    "argsHint": "以空格分隔。含空格的参数用双引号括起来。",
+    "distro": "WSL 发行版",
+    "startDir": "起始文件夹",
+    "startDirHint": "留空则从主文件夹开始；~ 代表主文件夹。",
+    "startDirHintWsl": "发行版中的文件夹（如 ~/src），或 Windows 上的文件夹。留空则从发行版的主文件夹开始。",
+    "chooseStartDirButton": "选择…",
+    "chooseStartDir": "选择起始文件夹",
+    "envHintLocal": "为程序设置，与 ZShell 自己设置的变量同名时取代它们。WSL 经 WSLENV 获得这些变量。",
+    "missingProgram": "请选择要运行的程序",
+    "missingDistro": "请选择 WSL 发行版"
   },
   "sftp": {
     "listLabel": "远程文件",
@@ -895,7 +925,11 @@
       "idleNever": "永不",
       "idleMinutes_other": "{count} 分钟",
       "onSystemLock": "电脑睡眠、锁定屏幕或切换用户时锁定"
-    }
+    },
+    "localShell": "默认本地终端",
+    "localShellHint": "“+”及其快捷键打开的内容。“+”旁的箭头可以打开其他的。",
+    "localShellSession": "会话“{name}”",
+    "refreshShells": "重新查找已安装的 shell"
   },
   "knownHosts": {
     "title": "已知主机",
@@ -1010,7 +1044,13 @@
     "passphrase": "口令",
     "encrypted": "文件已加密，其中包含已保存的密码。请输入导出时使用的口令来打开它；密码会随会话一起导入。",
     "open": "打开",
-    "opening": "正在打开…"
+    "opening": "正在打开…",
+    "localProgram": "在这台电脑上运行程序：{command}",
+    "localWsl": "在这台电脑上打开 WSL 发行版 {name}",
+    "localDefault": "在这台电脑上打开你的默认 shell",
+    "startDir": "从 {path} 开始",
+    "loginCommandsLocal": "启动后键入命令：{commands}",
+    "localConfirm": "第一次打开前由你确认它运行的内容"
   },
   "proxy": {
     "titleNew": "新建代理",
@@ -1152,5 +1192,13 @@
     "tab": "Tab",
     "enter": "Enter",
     "insert": "Insert"
+  },
+  "local": {
+    "cmd": "命令提示符"
+  },
+  "localConfirm": {
+    "title": "打开导入的会话？",
+    "message": "“{name}”是从文件导入的。打开它会在这台电脑上运行下面的程序，并向其中键入登录后执行的命令。只有在你信任文件来源时才打开它。",
+    "open": "打开"
   }
 }

@@ -15,6 +15,7 @@ import {
 } from "../ipc/api";
 import { useConfirmButton } from "../hooks/confirm";
 import { useDialog } from "../hooks/dialogs";
+import { useLocalAllowed, useLocalShells } from "../hooks/localShells";
 import { directory } from "../lib/directory";
 import { useDirectory, useQuickCommands } from "../hooks/stores";
 import { open as openDialog } from "../ipc/fileDialog";
@@ -25,10 +26,11 @@ import { useHomeDirectory } from "../hooks/paths";
 import {
   fromProfile,
   isChanged,
-  PAGES,
+  pagesOf,
   toProfile,
   validate,
   withProtocol,
+  withShell,
   type Page,
   type ProfileDefaults,
   type ProfileForm,
@@ -83,6 +85,9 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
   const home = useHomeDirectory();
   // The serial ports found here, listed once the serial protocol is chosen.
   const [ports, setPorts] = useState<SerialPortInfo[] | null>(null);
+  // The shells found here, for a local terminal.
+  const shells = useLocalShells();
+  const localAllowed = useLocalAllowed();
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const { ref: deleteRef, armed: deleteArmed, setArmed: setDeleteArmed, onBlur: onDeleteBlur } = useConfirmButton();
@@ -137,6 +142,18 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
     if (typeof picked === "string") set({ keyPath: home ? contractHome(picked, home) : picked });
   };
 
+  // A local terminal's program, and the folder it starts in (kept as `~/…` in the home folder).
+  const chooseProgram = async () => {
+    const picked = await openDialog({ title: t("profile.chooseProgram"), defaultPath: form.program.trim() || undefined }).catch(() => null);
+    if (typeof picked === "string") set({ program: picked });
+  };
+  const chooseStartDir = async () => {
+    let start: string | undefined = form.startDir.trim() || "~";
+    if (startsWithHome(start)) start = home ? expandHome(start, home) : undefined;
+    const picked = await openDialog({ title: t("profile.chooseStartDir"), directory: true, defaultPath: start }).catch(() => null);
+    if (typeof picked === "string") set({ startDir: home ? contractHome(picked, home) : picked });
+  };
+
   const changed = isChanged(form, started) || password !== "" || clearPassword;
   // Esc and closing the tab: the Cancel button closes without asking.
   const dialog = useDialog(() => (changed ? setDiscarding(true) : onClose()), { persistent: saving.busy });
@@ -188,7 +205,7 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
     );
   };
 
-  const pages: Record<Page, ReactNode> = {
+  const content: Record<Page, ReactNode> = {
     general: (
       <GeneralPage
         form={form}
@@ -202,6 +219,11 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
         keyMissing={missingKey !== null && missingKey === keyPath}
         ports={ports}
         refreshPorts={refreshPorts}
+        localAllowed={localAllowed}
+        shells={shells}
+        chooseShell={(shell) => setForm((current) => withShell(current, shell))}
+        chooseProgram={() => void chooseProgram()}
+        chooseStartDir={() => void chooseStartDir()}
       />
     ),
     connection: (
@@ -218,12 +240,16 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
     appearance: <AppearancePage form={form} set={set} />,
   };
 
+  // A local terminal has no connection page.
+  const pages = pagesOf(protocol);
+  const shownPage = pages.includes(page) ? page : "general";
+
   // The page tabs are one stop for Tab; the arrow keys (and Home / End) switch pages.
   const onTabKeyDown = (e: KeyboardEvent) => {
-    const next = rovingTarget(e.key, PAGES.indexOf(page), PAGES.length, true);
+    const next = rovingTarget(e.key, pages.indexOf(shownPage), pages.length, true);
     if (next === null) return;
     e.preventDefault();
-    setPage(PAGES[next]);
+    setPage(pages[next]);
     tabsRef.current?.querySelectorAll<HTMLElement>("[role=tab]")[next]?.focus();
   };
 
@@ -233,16 +259,16 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
         <form className="dialog profile-dialog" onSubmit={submit} ref={formRef}>
           <h2>{profile ? t("profile.titleEdit") : t("profile.titleNew")}</h2>
           <div className="segmented profile-pages" role="tablist" ref={tabsRef} onKeyDown={onTabKeyDown}>
-            {PAGES.map((p) => (
+            {pages.map((p) => (
               <button
                 key={p}
                 type="button"
                 role="tab"
                 id={`${pageId}-tab-${p}`}
                 aria-controls={`${pageId}-${p}`}
-                aria-selected={page === p}
-                tabIndex={page === p ? 0 : -1}
-                className={page === p ? "on" : undefined}
+                aria-selected={shownPage === p}
+                tabIndex={shownPage === p ? 0 : -1}
+                className={shownPage === p ? "on" : undefined}
                 onClick={() => setPage(p)}
               >
                 {t(`profile.pages.${p}`)}
@@ -253,16 +279,16 @@ export function ProfileDialog({ profile, defaults, onClose, onSaved, onDelete }:
           {/* All pages share one grid cell, so the dialog keeps the height of the tallest. */}
           <div className="profile-body">
             <div className="profile-stack">
-              {PAGES.map((p) => (
+              {pages.map((p) => (
                 <div
                   key={p}
                   id={`${pageId}-${p}`}
-                  className={`profile-page${p === page ? "" : " hidden"}`}
+                  className={`profile-page${p === shownPage ? "" : " hidden"}`}
                   role="tabpanel"
                   aria-labelledby={`${pageId}-tab-${p}`}
-                  aria-hidden={p !== page}
+                  aria-hidden={p !== shownPage}
                 >
-                  {pages[p]}
+                  {content[p]}
                 </div>
               ))}
             </div>

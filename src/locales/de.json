@@ -166,7 +166,13 @@
     "newSessionHere": "Neue Sitzung…",
     "newFolderHere": "Neuer Ordner",
     "rename": "Umbenennen",
-    "deleteFolder": "Ordner löschen"
+    "deleteFolder": "Ordner löschen",
+    "open": "Öffnen",
+    "openSplitRight": "In neuem Bereich rechts öffnen",
+    "openSplitDown": "In neuem Bereich unten öffnen",
+    "openNewWindow": "In neuem Fenster öffnen",
+    "openHintLocal": "Doppelklicken, um zu öffnen",
+    "localUnavailable": "Im S Modus können keine lokalen Terminals geöffnet werden"
   },
   "tabs": {
     "listLabel": "Tabs",
@@ -223,7 +229,10 @@
     "startLog": "Protokollierung starten",
     "stopLog": "Protokollierung beenden",
     "showLog": "Protokolldatei anzeigen",
-    "logging": "Protokolliert in {path}"
+    "logging": "Protokolliert in {path}",
+    "newLocalMenu": "Anderes lokales Terminal öffnen",
+    "findingShells": "Shells werden gesucht…",
+    "noShells": "Keine Shells gefunden"
   },
   "compose": {
     "toggle": "Eingabeleiste: einen Befehl an mehrere Terminals senden ({shortcut})",
@@ -388,7 +397,8 @@
     "protocols": {
       "ssh": "SSH",
       "telnet": "Telnet",
-      "serial": "Seriell"
+      "serial": "Seriell",
+      "local": "Lokal"
     },
     "optional": "Optional",
     "host": "Host",
@@ -504,7 +514,27 @@
     "sameAsSettings": "Wie in den Einstellungen",
     "customBackground": "Eigene Hintergrundfarbe",
     "customBackgroundHint": "Zum Beispiel Rot für Produktionsserver. Die Tabs der Sitzung zeigen die Farbe ebenfalls.",
-    "invalidFontSize": "Die Schriftgröße muss eine ganze Zahl zwischen {min} und {max} sein"
+    "invalidFontSize": "Die Schriftgröße muss eine ganze Zahl zwischen {min} und {max} sein",
+    "namePlaceholderLocal": "Standardmäßig der Programmname",
+    "shell": "Shell",
+    "defaultShell": "Standard-Shell",
+    "defaultShellHint": "Ihre Anmelde-Shell.",
+    "defaultShellHintWindows": "PowerShell 7, sofern installiert, sonst Windows PowerShell.",
+    "otherProgram": "Anderes Programm",
+    "program": "Programm",
+    "chooseProgramButton": "Auswählen…",
+    "chooseProgram": "Programm auswählen",
+    "args": "Argumente",
+    "argsHint": "Durch Leerzeichen getrennt. Setzen Sie ein Argument mit Leerzeichen in doppelte Anführungszeichen.",
+    "distro": "WSL-Distribution",
+    "startDir": "Startordner",
+    "startDirHint": "Leer lassen, um im Benutzerordner zu starten; ~ steht für ihn.",
+    "startDirHintWsl": "Ein Ordner in der Distribution, etwa ~/src, oder unter Windows. Leer lassen, um im Benutzerordner der Distribution zu starten.",
+    "chooseStartDirButton": "Auswählen…",
+    "chooseStartDir": "Startordner auswählen",
+    "envHintLocal": "Werden für das Programm gesetzt und ersetzen gleichnamige Variablen von ZShell. WSL erhält sie über WSLENV.",
+    "missingProgram": "Wählen Sie ein Programm aus",
+    "missingDistro": "Wählen Sie eine WSL-Distribution aus"
   },
   "sftp": {
     "listLabel": "Remote-Dateien",
@@ -935,7 +965,11 @@
       "idleMinutes_one": "{count} Minute",
       "idleMinutes_other": "{count} Minuten",
       "onSystemLock": "Sperren, wenn der Computer in den Ruhezustand wechselt, den Bildschirm sperrt oder den Benutzer wechselt"
-    }
+    },
+    "localShell": "Standardmäßiges lokales Terminal",
+    "localShellHint": "Was + und seine Tastenkombination öffnen. Der Pfeil neben + öffnet die anderen.",
+    "localShellSession": "Sitzung „{name}“",
+    "refreshShells": "Installierte Shells erneut suchen"
   },
   "knownHosts": {
     "title": "Bekannte Hosts",
@@ -1065,7 +1099,13 @@
     "passphrase": "Passphrase",
     "encrypted": "Die Datei ist verschlüsselt und enthält die gespeicherten Passwörter. Geben Sie zum Öffnen die Passphrase ein, mit der sie exportiert wurde; die Passwörter werden mit den Sitzungen importiert.",
     "open": "Öffnen",
-    "opening": "Wird geöffnet…"
+    "opening": "Wird geöffnet…",
+    "localProgram": "Führt ein Programm auf diesem Computer aus: {command}",
+    "localWsl": "Öffnet die WSL-Distribution {name} auf diesem Computer",
+    "localDefault": "Öffnet Ihre Standard-Shell auf diesem Computer",
+    "startDir": "Startet in {path}",
+    "loginCommandsLocal": "Gibt nach dem Start Befehle ein: {commands}",
+    "localConfirm": "Vor dem ersten Öffnen bestätigen Sie, was sie ausführt"
   },
   "proxy": {
     "titleNew": "Neuer Proxy",
@@ -1210,5 +1250,13 @@
     "tab": "Tab",
     "enter": "Eingabe",
     "insert": "Einfg"
+  },
+  "local": {
+    "cmd": "Eingabeaufforderung"
+  },
+  "localConfirm": {
+    "title": "Importierte Sitzung öffnen?",
+    "message": "„{name}“ wurde aus einer Datei importiert. Beim Öffnen wird das folgende Programm auf diesem Computer ausgeführt, und seine Befehle nach der Anmeldung werden darin eingegeben. Öffnen Sie die Sitzung nur, wenn Sie der Herkunft der Datei vertrauen.",
+    "open": "Öffnen"
   }
 }

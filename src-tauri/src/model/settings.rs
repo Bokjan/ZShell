@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::time_format::{TimeFormat, DEFAULT_TIME_FORMAT};
+use super::LocalShell;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
@@ -134,6 +135,18 @@ pub struct TerminalSettings {
     pub bell_sound: bool,
     /// A bell flashes its terminal (a visual bell).
     pub bell_flash: bool,
+    /// What "+" and the new local terminal shortcut open; `None` for the default shell (see
+    /// `pty::default_shell`). The frontend opens it: a session it names that is gone, or is no
+    /// longer a local terminal, falls back to the default shell.
+    pub local_shell: Option<LocalLaunch>,
+}
+
+/// A local terminal to open by default: a shell found here, or a saved local session.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum LocalLaunch {
+    Shell { shell: LocalShell },
+    Session { profile_id: String },
 }
 
 /// When terminals are read for screen readers.
@@ -360,6 +373,7 @@ impl Default for TerminalSettings {
             bell_alert: true,
             bell_sound: true,
             bell_flash: false,
+            local_shell: None,
         }
     }
 }
@@ -383,6 +397,9 @@ impl Settings {
         terminal.clipboard_limit = terminal.clipboard_limit.clamp(1, CLIPBOARD_LIMIT_MAX);
         if terminal.color_scheme.trim().is_empty() {
             terminal.color_scheme = "auto".to_owned();
+        }
+        if matches!(terminal.local_shell, Some(LocalLaunch::Shell { shell: LocalShell::Default })) {
+            terminal.local_shell = None;
         }
         if terminal.screen_reader.take() == Some(true) {
             terminal.screen_reader_mode = ScreenReaderMode::On;
@@ -474,6 +491,18 @@ mod tests {
             assert_eq!(read.terminal.screen_reader_mode, mode);
             assert_eq!(read.terminal.screen_reader, None);
         }
+    }
+
+    #[test]
+    fn the_default_local_shell_is_a_shell_or_a_session() {
+        let local = |json: &str| serde_json::from_str::<Settings>(json).unwrap().normalize().terminal.local_shell;
+        assert_eq!(local("{}"), None);
+        let wsl = LocalLaunch::Shell { shell: LocalShell::Wsl { distro: "Ubuntu".into() } };
+        assert_eq!(local(r#"{"terminal":{"localShell":{"kind":"shell","shell":{"kind":"wsl","distro":"Ubuntu"}}}}"#), Some(wsl));
+        let session = LocalLaunch::Session { profile_id: "p".into() };
+        assert_eq!(local(r#"{"terminal":{"localShell":{"kind":"session","profileId":"p"}}}"#), Some(session));
+        // The default shell is no setting at all.
+        assert_eq!(local(r#"{"terminal":{"localShell":{"kind":"shell","shell":{"kind":"default"}}}}"#), None);
     }
 
     #[test]

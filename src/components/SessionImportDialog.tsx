@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorCode, errorMessage, sessionsFile, type SessionsScan } from "../ipc/api";
+import { errorCode, errorMessage, sessionsFile, type LocalOptions, type SessionsScan } from "../ipc/api";
 import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
 import { forwardMapping } from "../lib/format";
+import { formatArgs } from "../lib/localShells";
 import { address } from "../lib/sessions";
 import { attempt } from "../lib/attempt";
 import { CandidateList } from "./CandidateList";
@@ -151,12 +152,18 @@ export function SessionImportDialog({ path, onClose }: Props) {
                   {c.connection.protocol === "ssh" && c.connection.forwardAgent && (
                     <span className="warning">{t("sessionImport.forwardAgent")}</span>
                   )}
+                  {c.connection.protocol === "local" && <LocalRuns local={c.connection} />}
                   {c.loginCommands.length > 0 && (
-                    <span className="warning">{t("sessionImport.loginCommands", { commands: c.loginCommands.join("; ") })}</span>
+                    <span className="warning">
+                      {t(c.connection.protocol === "local" ? "sessionImport.loginCommandsLocal" : "sessionImport.loginCommands", {
+                        commands: c.loginCommands.join("; "),
+                      })}
+                    </span>
                   )}
-                  {c.connection.protocol === "ssh" && c.connection.env.length > 0 && (
+                  {(c.connection.protocol === "ssh" || c.connection.protocol === "local") && c.connection.env.length > 0 && (
                     <span>{t("sessionImport.env", { names: formatList(c.connection.env.map((v) => v.name)) })}</span>
                   )}
+                  {c.connection.protocol === "local" && <span>{t("sessionImport.localConfirm")}</span>}
                 </>
               )}
             />
@@ -198,5 +205,26 @@ export function SessionImportDialog({ path, onClose }: Props) {
         </footer>
       </form>
     </Modal>
+  );
+}
+
+/**
+ * What an imported local session runs on this computer: the program with its arguments, a WSL
+ * distribution or the default shell, and the folder it starts in.
+ */
+function LocalRuns({ local }: { local: LocalOptions }) {
+  const { t } = useTranslation();
+  const { shell } = local;
+  return (
+    <>
+      <span className="warning">
+        {shell.kind === "program"
+          ? t("sessionImport.localProgram", { command: [shell.path, formatArgs(shell.args)].filter(Boolean).join(" ") })
+          : shell.kind === "wsl"
+            ? t("sessionImport.localWsl", { name: shell.distro })
+            : t("sessionImport.localDefault")}
+      </span>
+      {local.startDir && <span>{t("sessionImport.startDir", { path: local.startDir })}</span>}
+    </>
   );
 }

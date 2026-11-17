@@ -3,6 +3,9 @@
 //! [`Backend`], with how its log is named and the remote side's character encoding. The
 //! session itself is then started by `SessionManager::spawn`, which knows nothing of the
 //! backends.
+//!
+//! Resolving blocks for a local terminal, which looks for its program and folder (in `PATH`
+//! too, where a network drive may not answer): `session_open` does it off the async workers.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -15,7 +18,7 @@ use crate::connections::{Connections, LiveConnection};
 use crate::encoding;
 use crate::error::{Error, Result};
 use crate::logging::LogInfo;
-use crate::model::{self, Connection, Profile, Protocol, Remote, SerialOptions, SshOptions, SshProfile};
+use crate::model::{self, Connection, LocalOptions, LocalShell, Profile, Protocol, Remote, SerialOptions, SshOptions, SshProfile};
 use crate::net::Route;
 use crate::pty;
 use crate::serial;
@@ -38,20 +41,18 @@ pub enum SessionSpec {
     /// connecting or authenticating again. Fails with `session.notConnected` if that session
     /// has no connection (any more), and `session.notFound` if it is another window's.
     Shared { source: SessionId },
-    /// The user's default shell in a local pseudo terminal.
-    Local,
+    /// A shell in a local pseudo terminal, in the home folder, without a saved session: the
+    /// default one, or one of those found here (`pty::discover`).
+    Local { shell: LocalShell },
 }
 
 /// What resolving a spec reads: the saved sessions, the live connections, the sessions (whose
-/// log a shared one is named after) and the settings. `local_shell`: the default shell, found
-/// beforehand off the async workers for a local terminal (Windows looks for it in each folder
-/// of PATH, where a network drive may not answer); found here if not.
+/// log a shared one is named after) and the settings.
 pub struct Sources<'a> {
     pub profiles: &'a ProfileStore,
     pub connections: &'a Connections,
     pub sessions: &'a SessionManager,
     pub settings: &'a SettingsStore,
-    pub local_shell: Option<pty::Shell>,
 }
 
 /// A session about to start: how its log is named and whether it starts logged, the remote
@@ -81,7 +82,11 @@ pub fn launch(spec: SessionSpec, webview: &str, sources: Sources) -> Result<Laun
                 }
                 Connection::Telnet(remote) => Backend::Telnet { route: store.route(&remote)?, remote, password_of: Some(id) },
                 Connection::Serial(serial) => Backend::Serial(serial),
+                // Imported, it runs what the file says: not before the user has seen it.
+                Connection::Local(local) if local.imported => return Err(Error::new("local.notConfirmed")),
+                Connection::Local(local) => Backend::Local(local_shell(&local)?),
             };
+            let encoding = if matches!(backend, Backend::Local(_)) { utf8 } else { encoding };
             Ok(Launch { log_info, auto_log, encoding, backend })
         }
         SessionSpec::Quick { protocol, username, host, port } => {
@@ -94,6 +99,8 @@ pub fn launch(spec: SessionSpec, webview: &str, sources: Sources) -> Result<Laun
             match protocol {
                 Protocol::Ssh if username.is_empty() => return Err(Error::new("profile.missingFields")),
                 Protocol::Serial => return Err(Error::new("profile.missingDevice")),
+                // Nothing to connect to: local terminals have a spec of their own.
+                Protocol::Local => return Err(Error::new("profile.missingHost")),
                 _ if host.is_empty() || port == 0 => return Err(Error::new("profile.missingHost")),
                 _ if !model::is_plain_host(&host) => return Err(Error::new("profile.invalidHost")),
                 _ => {}
@@ -119,8 +126,8 @@ pub fn launch(spec: SessionSpec, webview: &str, sources: Sources) -> Result<Laun
             let encoding = encoding::for_profile(&connection.ssh().profile().encoding);
             Ok(Launch { log_info, auto_log, encoding, backend: Backend::Shared { connection, connections } })
         }
-        SessionSpec::Local => {
-            let shell = sources.local_shell.unwrap_or_else(pty::default_shell);
+        SessionSpec::Local { shell } => {
+            let shell = local_shell(&LocalOptions::new(shell))?;
             let log_info = LogInfo { session: shell.name(), host: "localhost".to_owned(), user: model::local_username(), profile: None };
             let auto_log = sources.settings.get().logs.auto_local;
             Ok(Launch { log_info, auto_log, encoding: utf8, backend: Backend::Local(shell) })
@@ -128,10 +135,19 @@ pub fn launch(spec: SessionSpec, webview: &str, sources: Sources) -> Result<Laun
     }
 }
 
+/// What a local terminal runs, where the system allows local terminals (not Windows in S mode).
+fn local_shell(local: &LocalOptions) -> Result<pty::Shell> {
+    if !pty::local_shells_allowed() {
+        return Err(Error::new("local.blocked"));
+    }
+    pty::local_shell(local)
+}
+
 /// How a session's log names it: by the profile, its address and user.
 fn log_info(profile: &Profile) -> LogInfo {
     let (host, user) = match &profile.connection {
         Connection::Serial(serial) => (serial.device.clone(), String::new()),
+        Connection::Local(_) => ("localhost".to_owned(), model::local_username()),
         Connection::Ssh(SshOptions { remote, .. }) | Connection::Telnet(remote) => (remote.host.clone(), remote.username.clone()),
     };
     LogInfo { session: profile.name.clone(), host, user, profile: None }
@@ -254,13 +270,8 @@ mod tests {
         }
 
         fn launch(&self, spec: SessionSpec) -> Result<Launch> {
-            let sources = Sources {
-                profiles: &self.profiles,
-                connections: &self.connections,
-                sessions: &self.sessions,
-                settings: &self.settings,
-                local_shell: None,
-            };
+            let sources =
+                Sources { profiles: &self.profiles, connections: &self.connections, sessions: &self.sessions, settings: &self.settings };
             launch(spec, "main", sources)
         }
     }
@@ -313,6 +324,44 @@ mod tests {
         assert!(launch.auto_log);
         assert_eq!(launch.encoding, encoding_rs::GBK);
         assert!(matches!(launch.backend, Backend::Telnet { password_of: Some(ref id), .. } if *id == telnet.id));
+    }
+
+    #[test]
+    fn a_local_session_runs_once_confirmed_and_only_where_its_program_is() {
+        let setup = Setup::new("local");
+        let missing = std::env::temp_dir().join("zshell-launch-missing").join("shell").display().to_string();
+        let program = |path: &str| LocalShell::Program { path: path.to_owned(), args: Vec::new() };
+        let saved = |local: LocalOptions| {
+            let profile = Profile { auto_log: true, ..Profile::new("here".into(), Connection::Local(local)) };
+            let profile = setup.profiles.save(profile, None).unwrap();
+            SessionSpec::Profile { profile_id: profile.id, carry: Vec::new() }
+        };
+        assert_eq!(code(setup.launch(saved(LocalOptions::new(program(&missing))))), "local.programNotFound");
+        // Imported: not looked for before it is confirmed.
+        let mut imported = Profile::new("there".into(), Connection::Local(LocalOptions::new(program(&missing))));
+        imported.normalize_imported().unwrap();
+        imported.id = "imported".into();
+        let order = vec![model::Item::Profile { id: imported.id.clone() }];
+        setup.profiles.add_all(|_| Ok(crate::config::Additions { profiles: vec![imported], order, ..Default::default() })).unwrap();
+        let imported = || SessionSpec::Profile { profile_id: "imported".into(), carry: Vec::new() };
+        assert_eq!(code(setup.launch(imported())), "local.notConfirmed");
+        setup.profiles.confirm_local("imported").unwrap();
+        assert_eq!(code(setup.launch(imported())), "local.programNotFound");
+        let gone = LocalOptions { start_dir: missing.clone(), ..LocalOptions::new(LocalShell::Default) };
+        assert_eq!(code(setup.launch(saved(gone))), "local.startDirNotFound");
+        #[cfg(not(windows))]
+        assert_eq!(code(setup.launch(saved(LocalOptions::new(LocalShell::Wsl { distro: "Ubuntu".into() })))), "local.wslUnavailable");
+
+        let launch = setup.launch(saved(LocalOptions::new(LocalShell::Default))).unwrap();
+        assert_eq!((launch.log_info.session.as_str(), launch.log_info.host.as_str()), ("here", "localhost"));
+        assert!(launch.auto_log && launch.log_info.profile.is_some());
+        assert_eq!(launch.encoding, encoding_rs::UTF_8);
+        assert!(matches!(launch.backend, Backend::Local(_)));
+
+        let launch = setup.launch(SessionSpec::Local { shell: LocalShell::Default }).unwrap();
+        assert!(!launch.auto_log && launch.log_info.profile.is_none());
+        assert_eq!(code(setup.launch(SessionSpec::Local { shell: program(&missing) })), "local.programNotFound");
+        assert_eq!(code(setup.launch(quick(Protocol::Local, "", "host", 22))), "profile.missingHost");
     }
 
     #[test]

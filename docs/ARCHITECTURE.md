@@ -53,7 +53,7 @@
 | `sftp/` | 浏览与文件操作、传输、本地编辑、拖出、替换写入、文件名转码 |
 | `forward/` | 转发规则的运行，`-L` / `-R` / `-D`，SOCKS |
 | `traffic.rs` | 各通道收发的计数与节流上报，连接编号 |
-| `pty/` | 本地终端，默认 shell 与环境变量 |
+| `pty/` | 本地终端：发现 shell，各种 shell 的启动参数与环境变量，伪终端 |
 | `telnet/` | Telnet 会话、自动登录、协议与选项协商 |
 | `serial/` | 串口会话与设备列表 |
 | `net.rs` / `proxy/` | 出站连接（直连或经代理）、`Route`；SOCKS5、HTTP CONNECT、ProxyCommand |
@@ -161,7 +161,13 @@
 ### 本地终端
 
 - 作为 `SessionManager` 的另一种后端，沿用 SSH 会话的命令。`session_foreground` 报告前台程序，用于关闭前确认。
-- 默认用登录 shell（Windows 优先 PowerShell 7），macOS 补全从 Finder 启动时缺失的 PATH（`pty/shell.rs`）。
+- **运行什么**（`model::LocalShell`）：默认 shell（登录 shell；Windows 优先 PowerShell 7；macOS 补全从 Finder 启动时缺失的 PATH，`pty/shell.rs`）、WSL 发行版（按名称），或程序（路径或 `PATH` 里的名字，加参数）。按符号而不只按路径保存，导出到另一台机器也能用；发现的 cmd、Git Bash 等也落成程序。
+- **发现**（`pty/discover.rs`）：Windows 上是 PowerShell 7、Windows PowerShell、cmd、Git Bash（注册表里 Git for Windows 的 `InstallPath`）与 WSL 发行版（注册表 `Lxss`，不运行 `wsl.exe -l`：它慢，输出还是 UTF-16；只列已装好的，默认发行版在前，去掉 Docker Desktop 自用的）；macOS 与 Linux 上是 `/etc/shells` 里存在的程序，指向同一文件的只留一个，macOS 上带 `-l`（同 Terminal.app）。结果只在后端内存里，各窗口共用（`local_shells`），设置里可以重新查找；cmd 的名字由前端按语言翻译。
+- **启动**（`pty::local_shell`）：要查文件和 `PATH`（可能是网络驱动器），所以 `session_open` 整个解析放在 blocking 线程池里。先设 ZShell 的终端变量，再设用户的环境变量，同名时用户的优先。起始文件夹展开 `~`，相对路径相对主目录，没设时是主目录；程序或文件夹不存在时报 `local.programNotFound` / `local.startDirNotFound`，不悄悄换个地方启动。WSL 用 `wsl.exe -d <发行版> --cd <文件夹，没设时 ~>`，终端变量和用户的变量要追加到 `WSLENV` 才传得进去，其他系统上报 `local.wslUnavailable`。程序是 Git for Windows 的 bash（`bin\bash.exe` 或 `usr\bin\bash.exe`，旁边有 `git-bash.exe` 或 `cmd\git.exe`）时设 `CHERE_INVOKING=1`（否则它的 profile 会切到主目录）和按安装环境的 `MSYSTEM`。输出总是 UTF-8。
+- **保存的本地会话**：`Connection::Local`，与其他会话共用外观、登录后命令、备注、自动日志与快速命令组；没有连接页，编辑器里也不显示编码与终端类型。前端判断是不是本地终端看窗格的 `protocol === "local"`，不看 `target.kind`：没保存的是 `{ kind: "local", shell }`，保存的是 `kind: "profile"`。本地终端不自动重连、不阻止睡眠，退出时报告了状态码才关闭窗格；复制标签与分屏照会话的起始文件夹开新 shell。退回 3.18.0 之前的版本时，旧版本读不懂 `protocol: "local"`，把整个保险库当作损坏、保持锁定而不改文件（加串口时也是这样），导入含本地会话的导出文件也会失败；不为此升保险库的格式版本。
+- **导入的本地会话先确认**：打开它就会在本机运行文件里写的程序，并键入登录后命令。导入时 `LocalOptions.imported` 置为真（`Profile::normalize_imported`），launch 遇到它直接返回 `local.notConfirmed`，不碰程序路径；前端（`app/useLocalConfirmation.tsx`）弹框列出程序、参数、起始文件夹、环境变量与登录后命令，确认后 `profile_confirm_local` 清掉标记，再打开本窗口里等着它的窗格。所以不论从哪里打开（会话列表、「+」、新窗口）都会先问。编辑器保存时后端保留已存的标记（同转发规则），只有确认才清；复制会话也保留它。
+- **默认本地终端**：设置 `terminal.localShell` 是一个发现的 shell 或一个已存的本地会话，「+」与新建本地终端的快捷键打开它（前端 `lib/localShells.ts` 的 `defaultLocal`）；没设、会话已删除或不再是本地会话时用默认 shell。「+」旁的箭头打开菜单，列出发现的 shell 与已存的本地会话。
+- **S 模式**：Windows 的 S 模式只运行 Store 应用，本地终端整体隐藏（`local_shells` 返回 null），已存的本地会话在列表里显示为不可用，打开时 launch 报 `local.blocked`。
 - Windows 上把系统的构建号告诉 xterm.js（`windowsPty`）：ConPTY 在终端改变大小时自己重画，21376 之前还自己重排换行，xterm.js 这时不再重排（`pty::conpty_build`）。
 
 ### 配置与设置
@@ -171,7 +177,7 @@
 - **读不出的文件**：`settings.json` 与 `logs.json` 读不出时保留原文件、从空开始并告诉用户，应用照常启动（`persist.rs`）；`vault.json` 读不出时停在解锁界面。
 - **设置**：修改即时生效并保存，后端校验。界面文字大小经 `--text-scale` 缩放；主题经 `<html data-theme>` 选择，原生窗口同步跟随。
 - **会话与文件夹**：混排，显示顺序单独保存为 `order`，旧版本仍能打开（`config/mod.rs`）。删除文件夹时内容移到上一级。指向不存在的代理的会话报错而不是直连。
-- **导出 / 导入**：与 `vault.json` 同样的信封格式，带密码时整个文件用口令加密。已存在的按名称或地址匹配，不重复导入；导入前列出会执行的代理命令与会监听的转发；文件可能是别人的，导入内容经过与保存时相同的校验（`backup.rs`）。
+- **导出 / 导入**：与 `vault.json` 同样的信封格式，带密码时整个文件用口令加密。已存在的按名称或地址匹配，不重复导入；导入前列出会执行的代理命令、会监听的转发与本地会话运行的程序；文件可能是别人的，导入内容经过与保存时相同的校验（`backup.rs`），导入的本地会话第一次打开前要用户确认（见「本地终端」）。
 - **会话日志**：后端在 `SessionSink` 里直接写，不经前端，所以不回显的密码不进日志；日志慢时丢弃并记下缺了多少，不拖住会话（`logging/`）。
 - **时间格式**：`logs.timeFormat` 是 strftime 的子集，只有数字格式符（`%Y %y %m %d %H %M %S %3f %%`），各语言写出来一样；不允许控制字符，最长 64 个字符。只有后端解析和检查（`model/time_format.rs`），读设置时不能用的格式退回默认值；前端经 `logs_time_format` 拿到解析好的片段，自己只按片段写出时间，不解析格式（`lib/timeFormat.ts`，拿到之前用生成的 `DEFAULT_TIME_FORMAT_PARTS`）。日志按行写的时间是这一行开始显示时的时间，被整行改写（进度行）后重新计。
 - **其他**：ssh_config 导入是一次性复制，同样经过保存时的校验（`import/`）；转发的监听地址 `*` 表示所有地址（本地 IPv4 与 IPv6 各监听一个，远程请求发空地址），与 OpenSSH 一致；私钥路径的 `~` 由后端展开，主目录下的存成 `~/…`；单会话的外观覆盖只由前端解释；登录后命令由前端在提示符出现后逐条发送。

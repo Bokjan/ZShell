@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-10-31
+Last updated: 2026-11-17
 
 ZShell is an SSH, Telnet and serial terminal that runs entirely on your computer. It does not collect, transmit or share any personal data: there is no telemetry, analytics, crash reporting, advertising or user account, and the developer receives nothing from your use of the app. The only connection ZShell makes on its own is the update check described below, which you can turn off.
 
@@ -14,7 +14,7 @@ Unless you turn it off in About ZShell, ZShell asks GitHub (`api.github.com`) fo
 
 Everything ZShell saves stays on your computer, in its configuration folder unless said otherwise: `~/Library/Application Support/ZShell` on macOS, `%APPDATA%\ZShell` on Windows, and `~/.config/ZShell` on Linux. On macOS and Linux only your user account can read it.
 
-- **Sessions, folders, proxies, quick commands, saved passwords and the app lock's settings** are kept in `vault.json`. Sessions include host names, user names, serial settings, paths to private keys, port forwarding rules and your notes; saved passwords are those for SSH, Telnet logins and proxies, and passphrases for private keys are never saved. Under Settings › Security you choose how the file is protected: encrypted with AES-256-GCM, with the key kept in the system's credential store or protected by a master password, which is never saved (unless you ask ZShell to remember it, which keeps the key in the credential store); or not encrypted, passwords included. The first start uses the credential store if there is one. Resetting your sessions on the unlock screen keeps the previous file beside the new one, renamed with the date, along with its key.
+- **Sessions, folders, proxies, quick commands, saved passwords and the app lock's settings** are kept in `vault.json`. Sessions include host names, user names, serial settings, paths to private keys, port forwarding rules and your notes, and for local terminals the program they run with its arguments, the folder they start in and their environment variables; saved passwords are those for SSH, Telnet logins and proxies, and passphrases for private keys are never saved. Under Settings › Security you choose how the file is protected: encrypted with AES-256-GCM, with the key kept in the system's credential store or protected by a master password, which is never saved (unless you ask ZShell to remember it, which keeps the key in the credential store); or not encrypted, passwords included. The first start uses the credential store if there is one. Resetting your sessions on the unlock screen keeps the previous file beside the new one, renamed with the date, along with its key.
 - **Settings**, the session log index and the update check's state (the time of the last check and the latest version found, in `update.json`) are not encrypted. A settings or index file that can't be read is kept under a name ending in `.bad-` and the date, and ZShell tells you about it.
 - **The app lock** unlocks with the system's own authentication: Touch ID or your login password on macOS, Windows Hello on Windows, and the desktop's authentication dialog through polkit on Linux. ZShell only learns whether it succeeded. To lock when the computer is idle, locks or sleeps, it asks the system how long it has been idle and listens for it locking and sleeping.
 - **Host keys** you accept are added to `~/.ssh/known_hosts`, as OpenSSH does (with the host name hashed if `HashKnownHosts` is on in your `ssh_config`); removing them in the settings keeps the previous file as `known_hosts.old`. ZShell also reads the other host key files OpenSSH reads, `~/.ssh/config` and the system's `ssh_config` when you import from it or add a host key, and the private keys you choose.
@@ -23,6 +23,8 @@ Everything ZShell saves stays on your computer, in its configuration folder unle
 - **Temporary files** are created in the system's temporary folder (on Linux, `~/.cache/org.boyin.zshell`) while you edit a remote file in a local editor or drag files out of the file panel.
 - **Crash log**: if ZShell stops because of an internal error, a line saying when, which version on which operating system and processor architecture, which of its threads, where in its code and the error's message is added to `crash.log`. It stays on your computer and is never sent; you can delete it at any time.
 - **Interface state**, such as panel widths and recently opened sessions, is kept with the web view's cache in its storage (see below).
+
+To list the shells you can open in a local terminal, ZShell looks for them on your computer: in `/etc/shells` on macOS and Linux, and on Windows in `PATH` and where Git for Windows and WSL record themselves in the registry. What it finds is kept only while it runs.
 
 The clipboard is read only when you paste, and written only when you copy.
 

@@ -13,8 +13,8 @@ import type { SessionStatus } from "./paneSession";
 
 export type SidePanel = "files" | "forwards";
 
-/** What a pane runs: a remote session's protocol, or a local terminal. */
-export type TabProtocol = Protocol | "local";
+/** What a pane runs: a remote session's protocol, or a local terminal (saved or not). */
+export type TabProtocol = Protocol;
 
 /** One terminal in a tab, with a session of its own. */
 export interface Pane {
@@ -159,7 +159,7 @@ export function targetProtocol(target: SessionTarget, profiles: Profile[]): TabP
  */
 export function targetTermType(target: SessionTarget, profiles: Profile[]): string | null {
   const connection = targetProfile(target, profiles)?.connection;
-  if (!connection) return DEFAULT_TERM_TYPE;
+  if (!connection || connection.protocol === "local") return DEFAULT_TERM_TYPE;
   return connection.protocol === "serial" ? null : connection.termType;
 }
 
@@ -197,7 +197,7 @@ export function paneWork(pane: Pane): PaneWork | null {
  */
 export function closesOnExit(pane: Pane, status: number | null, signal: string | null, typed: boolean): boolean {
   if (!typed || signal !== null || paneWork(pane)) return false;
-  return pane.target.kind !== "local" || status !== null;
+  return pane.protocol !== "local" || status !== null;
 }
 
 /**
@@ -206,7 +206,7 @@ export function closesOnExit(pane: Pane, status: number | null, signal: string |
  * Local terminals have no connection to lose.
  */
 export function keepsAwake(pane: Pane): boolean {
-  return pane.target.kind !== "local" && (pane.status !== "closed" || pane.retryAt !== null);
+  return pane.protocol !== "local" && (pane.status !== "closed" || pane.retryAt !== null);
 }
 
 export const paneTitle = (pane: Pane, followRemoteTitle: boolean) => (followRemoteTitle && pane.remoteTitle) || pane.title;

@@ -351,6 +351,47 @@ fn keeps_forwarding_rules_of_ssh_sessions() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// An imported local session stays to be confirmed however it is saved; only confirming it
+/// lets it run. A new one, or a copy of a confirmed one, needs no confirmation.
+#[test]
+fn local_sessions_stay_imported_until_confirmed() {
+    let (store, dir) = store("local");
+    let local = |imported: bool| {
+        let options = LocalOptions { imported, ..LocalOptions::new(LocalShell::Wsl { distro: " Ubuntu ".into() }) };
+        Profile::new(String::new(), Connection::Local(options))
+    };
+    let is_imported = |profile: &Profile| matches!(&profile.connection, Connection::Local(local) if local.imported);
+    // Named after what it runs; UTF-8 whatever the editor sent.
+    let saved = store.save(Profile { encoding: "gbk".into(), ..local(true) }, None).unwrap();
+    assert!(!is_imported(&saved));
+    assert_eq!((saved.name.as_str(), saved.encoding.as_str()), ("Ubuntu", "utf-8"));
+
+    let mut imported = local(false);
+    imported.normalize_imported().unwrap();
+    assert!(is_imported(&imported));
+    imported.id = "imported".into();
+    let order = vec![Item::Profile { id: imported.id.clone() }];
+    store.add_all(|_| Ok(crate::config::Additions { profiles: vec![imported.clone()], order, ..Default::default() })).unwrap();
+    let edited = store.save(Profile { id: "imported".into(), name: "edited".into(), ..local(false) }, None).unwrap();
+    assert!(is_imported(&edited));
+    assert!(is_imported(&store.duplicate("imported", "copy").unwrap()));
+    assert!(!is_imported(&store.confirm_local("imported").unwrap()));
+    assert!(!is_imported(&store.get("imported").unwrap()));
+    assert_eq!(store.confirm_local("gone").unwrap_err().code(), "profile.notFound");
+
+    let missing =
+        Profile::new(String::new(), Connection::Local(LocalOptions::new(LocalShell::Program { path: " ".into(), args: Vec::new() })));
+    assert_eq!(store.save(missing, None).unwrap_err().code(), "profile.missingProgram");
+    let start = LocalOptions {
+        start_dir: "a
+b"
+        .into(),
+        ..LocalOptions::new(LocalShell::Default)
+    };
+    assert_eq!(store.save(Profile::new("x".into(), Connection::Local(start)), None).unwrap_err().code(), "profile.invalidStartDir");
+    fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn keeps_proxies_and_routes_through_them() {
     let (store, dir) = store("proxies");

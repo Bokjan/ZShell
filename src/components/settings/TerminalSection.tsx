@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { FONT_SIZE_MAX, FONT_SIZE_MIN, SCROLLBACK_MAX } from "../../ipc/api";
+import { FONT_SIZE_MAX, FONT_SIZE_MIN, SCROLLBACK_MAX, type LocalLaunch } from "../../ipc/api";
 import {
   TYPING_SAVE_DELAY,
   useSettings,
@@ -10,8 +10,13 @@ import {
   type TerminalSettings,
 } from "../../hooks/settings";
 import { useLocale } from "../../hooks/locale";
+import { loadLocalShells, useLocalAllowed, useLocalShells } from "../../hooks/localShells";
+import { useDirectory } from "../../hooks/stores";
+import { foundName, localOptions, sameShell, shellTitle } from "../../lib/localShells";
 import { TERMINAL_SCHEMES, defaultFontStack, resolveScheme, systemFontFamilies } from "../../lib/terminalSchemes";
 import { HelpTip } from "../HelpTip";
+import { IconButton } from "../IconButton";
+import { RefreshIcon } from "../icons";
 import { RadioGroup } from "../RadioGroup";
 import { SchemePreview, schemeLabel } from "../SchemePreview";
 import { Select } from "../Select";
@@ -24,8 +29,8 @@ const LIGATURE_MODES: Ligatures[] = ["off", "rules", "full"];
 
 /**
  * The terminals: color scheme, font, ligatures, cursor, scrollback, screen readers, the bell,
- * programs' notifications, and where the times of our own messages are set
- * (`onShowTimeFormat`, with the logs').
+ * programs' notifications, where the times of our own messages are set (`onShowTimeFormat`,
+ * with the logs'), and the local terminal "+" opens.
  */
 export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void }) {
   const { t } = useTranslation();
@@ -165,6 +170,55 @@ export function TerminalSection({ onShowTimeFormat }: { onShowTimeFormat(): void
           </button>
         </Field>
       </Setting>
+      <DefaultLocalShell value={terminal.localShell} onChange={(localShell) => set({ localShell })} />
     </Section>
+  );
+}
+
+/**
+ * The local terminal "+" opens: the default shell, one of the shells found here (found again
+ * with the button beside), or a saved local session. Not where the system blocks local terminals.
+ */
+function DefaultLocalShell({ value, onChange }: { value: LocalLaunch | null; onChange(value: LocalLaunch | null): void }) {
+  const { t } = useTranslation();
+  const allowed = useLocalAllowed();
+  const shells = useLocalShells() ?? [];
+  const sessions = useDirectory().profiles.filter((profile) => localOptions(profile));
+  if (!allowed) return null;
+  // A session gone, or no longer local, opens the default shell, as it shows.
+  const shellIndex = value?.kind === "shell" ? shells.findIndex((found) => sameShell(found.shell, value.shell)) : -1;
+  const chosen =
+    value?.kind === "shell"
+      ? shellIndex >= 0
+        ? `shell:${shellIndex}`
+        : "set"
+      : value && sessions.some((p) => p.id === value.profileId)
+        ? `session:${value.profileId}`
+        : "default";
+  const options = [
+    { value: "default", label: t("profile.defaultShell") },
+    // One set that isn't found here (any more): as it was set.
+    ...(chosen === "set" && value?.kind === "shell"
+      ? [{ value: "set", label: shellTitle(value.shell, shells, t("profile.defaultShell"), t) }]
+      : []),
+    ...shells.map((found, i) => ({ value: `shell:${i}`, label: foundName(found, t) })),
+    ...sessions.map((profile) => ({ value: `session:${profile.id}`, label: t("settings.localShellSession", { name: profile.name }) })),
+  ];
+  const choose = (option: string) => {
+    if (option === "default") onChange(null);
+    else if (option.startsWith("shell:")) onChange({ kind: "shell", shell: shells[Number(option.slice(6))].shell });
+    else if (option.startsWith("session:")) onChange({ kind: "session", profileId: option.slice(8) });
+  };
+  return (
+    <Setting>
+      <Field title={t("settings.localShell")} hint={t("settings.localShellHint")}>
+        <div className="input-with-button">
+          <Select value={chosen} onChange={choose} options={options} />
+          <IconButton type="button" className="icon-button" label={t("settings.refreshShells")} onClick={() => void loadLocalShells(true)}>
+            <RefreshIcon />
+          </IconButton>
+        </div>
+      </Field>
+    </Setting>
   );
 }

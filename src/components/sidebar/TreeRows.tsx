@@ -4,6 +4,7 @@ import type { TFunction } from "i18next";
 import type { Folder, Profile, TreeItem } from "../../ipc/api";
 import { isComposing } from "../../lib/platform";
 import { address, notesPreview } from "../../lib/sessions";
+import { useLocalAllowed } from "../../hooks/localShells";
 import { useStableProps } from "../../hooks/stableProps";
 import { DisclosureIcon, ProtocolIcon } from "../icons";
 
@@ -50,6 +51,10 @@ export function SessionRow(props: {
 }) {
   useStableProps("SessionRow", props, ["actions"]);
   const { id, rowKey: key, profile, depth, meta, searching, current, selected, extra, actions, t } = props;
+  // Saved local terminals where the system blocks them (Windows in S mode) are listed, but can't open.
+  const local = profile.connection.protocol === "local";
+  const allowed = useLocalAllowed();
+  const unavailable = local && !allowed;
   return (
     <div
       id={id}
@@ -63,13 +68,18 @@ export function SessionRow(props: {
       })}
       data-key={key.startsWith("p:") ? key : undefined}
       data-recent={key.startsWith("recent:") || undefined}
-      className={`tree-row session${selected ? " selected" : ""}${extra}`}
+      className={`tree-row session${selected ? " selected" : ""}${unavailable ? " unavailable" : ""}${extra}`}
       style={{ paddingLeft: 8 + depth * INDENT }}
       onMouseDown={(e) => actions.press(e, key, key.startsWith("p:") ? { kind: "profile", id: profile.id } : null)}
       onClick={() => actions.select(`p:${profile.id}`)}
       onDoubleClick={() => actions.open(key, profile)}
       onContextMenu={(e) => actions.profileMenu(e, profile)}
-      title={[profile.name, address(profile.connection), profile.notes && `\n${notesPreview(profile.notes)}\n`, t("sidebar.openHint")]
+      title={[
+        profile.name,
+        address(profile.connection),
+        profile.notes && `\n${notesPreview(profile.notes)}\n`,
+        unavailable ? t("sidebar.localUnavailable") : t(local ? "sidebar.openHintLocal" : "sidebar.openHint"),
+      ]
         .filter(Boolean)
         .join("\n")}
     >
@@ -77,7 +87,7 @@ export function SessionRow(props: {
         <ProtocolIcon protocol={profile.connection.protocol} />
       </span>
       <span className="tree-name">{profile.name}</span>
-      <span className="tree-meta">{meta ?? address(profile.connection)}</span>
+      <span className="tree-meta">{unavailable ? t("sidebar.localUnavailable") : (meta ?? address(profile.connection))}</span>
     </div>
   );
 }

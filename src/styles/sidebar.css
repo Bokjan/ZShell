@@ -188,6 +188,11 @@
   font-size: calc(11px * var(--text-scale));
   color: var(--text-muted);
 }
+/* A saved local terminal where the system blocks them (Windows in S mode). */
+.tree-row.unavailable .tree-name,
+.tree-row.unavailable .tree-icon {
+  color: var(--text-muted);
+}
 .tree-row.folder .tree-name {
   flex: 1;
   font-weight: 500;

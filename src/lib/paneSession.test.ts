@@ -159,6 +159,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     arrived: vi.fn(),
     stayed: vi.fn(),
     movedAway: vi.fn(),
+    unconfirmed: vi.fn(),
     output: vi.fn(),
     bell: vi.fn(),
     progress: vi.fn(),
@@ -168,6 +169,7 @@ function setup(config: Partial<SessionConfig> = {}, shareFrom?: number, arrival?
     port,
     {
       target: () => ({ kind: "quick", protocol: "ssh", username: "", host: "example", port: 22 }),
+      local: () => false,
       logOpen: () => ({ mode: "auto" }),
       loginCommands: () => [],
       autoReconnect: () => true,
@@ -236,6 +238,19 @@ describe("connecting", () => {
     expect(pane.input("x")).toBe(false);
     expect(opened).toHaveLength(1);
     pane.input("\r");
+    expect(opened).toHaveLength(2);
+    expect(events.unconfirmed).not.toHaveBeenCalled();
+  });
+
+  it("asks to confirm an imported local session that didn't open for want of it", async () => {
+    const { pane, opened, events, screen } = setup({ target: () => ({ kind: "profile", profileId: "p" }), local: () => true });
+    pane.connect();
+    opened[0].reject({ code: "local.notConfirmed", message: "Imported" });
+    await settle();
+    expect(events.unconfirmed).toHaveBeenCalledTimes(1);
+    expect(screen()).toContain("Imported");
+    // Confirmed: it opens again.
+    pane.reconnect();
     expect(opened).toHaveLength(2);
   });
 
@@ -365,7 +380,7 @@ describe("automatic reconnection", () => {
   });
 
   it("never retries a local terminal", async () => {
-    const { pane, opened, events, screen } = setup({ target: () => ({ kind: "local" }) });
+    const { pane, opened, events, screen } = setup({ target: () => ({ kind: "local", shell: { kind: "default" } }), local: () => true });
     pane.connect();
     opened[0].event({ type: "connected" });
     opened[0].event({ type: "closed", reason: "exited", error: null, status: 0, signal: null });

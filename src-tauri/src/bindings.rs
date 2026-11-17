@@ -426,6 +426,7 @@ mod tests {
         visitor.visit::<logging::TimePart>();
         visitor.visit::<session::SessionEvent>();
         visitor.visit::<serial::PortInfo>();
+        visitor.visit::<pty::FoundShell>();
         visitor.visit::<sftp::Listing>();
         visitor.visit::<sftp::transfer::Progress>();
         visitor.visit::<sftp::transfer::Ended>();

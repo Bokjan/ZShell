@@ -1,4 +1,5 @@
-import { DEFAULT_PORTS, type Folder, type Profile, type SerialOptions, type TreeItem } from "../ipc/api";
+import { DEFAULT_PORTS, type Folder, type LocalOptions, type Profile, type SerialOptions, type TreeItem } from "../ipc/api";
+import { shellCommand } from "./localShells";
 import { storedJson, storeJson } from "./storage";
 
 /** A visible line of the session tree. */
@@ -10,7 +11,9 @@ export const rowKey = (row: Row) => (row.kind === "folder" ? `f:${row.folder.id}
 
 /** What `address` needs: the connection of a session (or an import candidate), or a quick connection. */
 export type Addressable =
-  { protocol: "ssh" | "telnet"; username: string; host: string; port: number } | ({ protocol: "serial" } & SerialOptions);
+  | { protocol: "ssh" | "telnet"; username: string; host: string; port: number }
+  | ({ protocol: "serial" } & SerialOptions)
+  | ({ protocol: "local" } & LocalOptions);
 
 /** The usual short form of serial settings, `115200 8N1`. */
 export const serialSummary = (s: SerialOptions) =>
@@ -18,10 +21,12 @@ export const serialSummary = (s: SerialOptions) =>
 
 /**
  * Where a session connects, as shown in the session list: SSH as `user@host` (with the port
- * if it isn't 22), Telnet as `telnet://[user@]host[:port]`, serial as `COM3 · 115200 8N1`.
+ * if it isn't 22), Telnet as `telnet://[user@]host[:port]`, serial as `COM3 · 115200 8N1`, a
+ * local terminal by what it runs (see `shellCommand`).
  */
 export const address = (c: Addressable) => {
   if (c.protocol === "serial") return `${c.device} · ${serialSummary(c)}`;
+  if (c.protocol === "local") return shellCommand(c.shell);
   const host = c.host.includes(":") ? `[${c.host}]` : c.host;
   const where = `${c.username ? `${c.username}@` : ""}${host}${c.port !== DEFAULT_PORTS[c.protocol] ? `:${c.port}` : ""}`;
   return c.protocol === "telnet" ? `telnet://${where}` : where;
@@ -149,7 +154,7 @@ export function search(query: string, tree: SessionTree): Profile[] {
   };
   const target = (p: Profile) => {
     const c = p.connection;
-    return `${p.name} ${address(c)} ${c.protocol === "serial" ? "" : `${c.username} ${c.host}`}`;
+    return `${p.name} ${address(c)} ${c.protocol === "serial" || c.protocol === "local" ? "" : `${c.username} ${c.host}`}`;
   };
   const byTarget = ordered.filter((p) => matches(target(p)));
   const found = new Set(byTarget);

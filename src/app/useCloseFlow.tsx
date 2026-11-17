@@ -50,7 +50,7 @@ async function busyReason(pane: Pane): Promise<Busy | null> {
   if (work) return work;
   if (pane.waiting !== null) return { kind: "forwards", count: pane.waiting };
   if (pane.status !== "connected" || pane.sessionId == null) return null;
-  if (pane.target.kind !== "local") {
+  if (pane.protocol !== "local") {
     const count = await forwards.connections([pane.sessionId]).catch(() => 0);
     return count > 0 ? { kind: "forwards", count } : { kind: "connected" };
   }

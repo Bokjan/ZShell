@@ -50,6 +50,11 @@ export interface RegistryEvents {
   stayed(key: number, from: Arrival["from"]): void;
   /** Close pane `key` (or its tab, if it is the only pane) as the user would, asking if needed. */
   close(key: number): void;
+  /**
+   * Pane `key` didn't open imported local session `profileId`, which waits for the user to
+   * confirm what it runs (see `SessionEvents.unconfirmed`).
+   */
+  unconfirmed(key: number, profileId: string): void;
 }
 
 export interface SessionRegistry {
@@ -123,7 +128,12 @@ export function createSessionRegistry(
   const changed = () => {
     for (const listener of listeners) listener();
   };
-  const handlers: { [E in keyof RegistryEvents]: Set<RegistryEvents[E]> } = { movedAway: new Set(), stayed: new Set(), close: new Set() };
+  const handlers: { [E in keyof RegistryEvents]: Set<RegistryEvents[E]> } = {
+    movedAway: new Set(),
+    stayed: new Set(),
+    close: new Set(),
+    unconfirmed: new Set(),
+  };
   const emit = <E extends keyof RegistryEvents>(event: E, ...args: Parameters<RegistryEvents[E]>) => {
     for (const handler of handlers[event]) (handler as (...args: Parameters<RegistryEvents[E]>) => void)(...args);
   };
@@ -143,7 +153,7 @@ export function createSessionRegistry(
       // says so in its terminal.
       const announceStatus = (status: "connected" | "closed") => {
         const current = pane();
-        if (current.target.kind === "local" || current.status === status) return;
+        if (current.protocol === "local" || current.status === status) return;
         if (activeTabOf(store.get())?.focused === key) return;
         announce(t(status === "connected" ? "announce.connected" : "announce.disconnected", { name: current.title }));
       };
@@ -152,6 +162,7 @@ export function createSessionRegistry(
         view.port,
         {
           target: () => pane().target,
+          local: () => targetProtocol(pane().target, profiles()) === "local",
           logOpen: () => logOpen(pane()),
           loginCommands: () => profile()?.loginCommands ?? [],
           autoReconnect: () => profile()?.autoReconnect ?? true,
@@ -248,6 +259,10 @@ export function createSessionRegistry(
           movedAway: () => emit("movedAway", key),
           stayed: () => {
             if (found.pane.arrival) emit("stayed", key, found.pane.arrival.from);
+          },
+          unconfirmed: () => {
+            const { target } = pane();
+            if (target.kind === "profile") emit("unconfirmed", key, target.profileId);
           },
         },
         found.pane.shareFrom,

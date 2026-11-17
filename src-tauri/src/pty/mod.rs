@@ -13,6 +13,9 @@
 //! the shell exits (the shell's session loses its terminal), Linux doesn't: a program that
 //! ignores the hangup (`nohup`) would keep the reader waiting as long as it runs.
 
+mod discover;
+#[cfg(windows)]
+mod registry;
 mod shell;
 #[cfg(unix)]
 mod unix;
@@ -26,7 +29,8 @@ use tokio::sync::oneshot;
 
 use crate::error::Error;
 use crate::session::{Flow, Outcome, SessionEvent, TermIo};
-pub use shell::{default_shell, local_shells_allowed, Shell};
+pub use discover::{discover, FoundShell};
+pub use shell::{default_shell, local_shell, local_shells_allowed, Shell};
 
 /// The Windows build whose ConPTY local terminals run in: xterm.js redraws a resized terminal
 /// the way it does (`windowsPty`), and before build 21376 leaves the rewrapping of lines to
@@ -131,7 +135,7 @@ mod tests {
         let mut command = CommandBuilder::new("/bin/sh");
         command.args(["-c", script]);
         shell::configure(&mut command);
-        Shell { command, program: "/bin/sh".to_owned() }
+        Shell::new(command, "/bin/sh".to_owned())
     }
 
     /// An interactive shell, which runs commands in their own process groups (job control).
@@ -139,7 +143,7 @@ mod tests {
         let mut command = CommandBuilder::new("/bin/sh");
         command.arg("-i");
         shell::configure(&mut command);
-        Shell { command, program: "/bin/sh".to_owned() }
+        Shell::new(command, "/bin/sh".to_owned())
     }
 
     fn text(output: &Receiver<Vec<u8>>) -> String {
@@ -244,7 +248,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn spawn_failure_is_reported() {
         let (io, _input, _output, events) = TermIo::detached((80, 24));
-        let shell = Shell { command: CommandBuilder::new("/nonexistent/shell"), program: "/nonexistent/shell".to_owned() };
+        let shell = Shell::new(CommandBuilder::new("/nonexistent/shell"), "/nonexistent/shell".to_owned());
         run(shell, io).await;
         let events: Vec<String> = events.try_iter().collect();
         assert_eq!(events.len(), 1, "{events:?}");

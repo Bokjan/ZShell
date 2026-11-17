@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Profile } from "../ipc/api";
-import { closesOnExit, keepsAwake, paneWork, targetProfile } from "./panes";
+import { closesOnExit, keepsAwake, paneWork, targetProfile, type Pane } from "./panes";
 import { INITIAL_TABS, reduceTabs } from "./tabs";
 
 const pane = reduceTabs(INITIAL_TABS, { type: "open", pane: { target: { kind: "profile", profileId: "a" }, protocol: "ssh", title: "a" } })
@@ -26,7 +26,9 @@ describe("paneWork", () => {
 });
 
 describe("closesOnExit", () => {
-  const local = { ...pane, target: { kind: "local" as const } };
+  const local: Pane = { ...pane, target: { kind: "local", shell: { kind: "default" } }, protocol: "local" };
+  // A saved local session.
+  const saved: Pane = { ...pane, target: { kind: "profile", profileId: "here" }, protocol: "local" };
 
   it("closes a pane whose shell the user exited, whatever the status", () => {
     expect(closesOnExit(pane, 0, null, true)).toBe(true);
@@ -47,6 +49,8 @@ describe("closesOnExit", () => {
     expect(closesOnExit(pane, null, "SIGKILL", true)).toBe(false);
     // A local shell reports a signal without a status.
     expect(closesOnExit(local, null, null, true)).toBe(false);
+    expect(closesOnExit(saved, null, null, true)).toBe(false);
+    expect(closesOnExit(saved, 0, null, true)).toBe(true);
   });
 
   it("keeps it while closing would end work of the file panel", () => {
@@ -64,7 +68,10 @@ describe("keepsAwake", () => {
   });
 
   it("never for a local terminal", () => {
-    expect(keepsAwake({ ...pane, target: { kind: "local" }, protocol: "local", status: "connected" })).toBe(false);
+    expect(keepsAwake({ ...pane, target: { kind: "local", shell: { kind: "default" } }, protocol: "local", status: "connected" })).toBe(
+      false,
+    );
+    expect(keepsAwake({ ...pane, target: { kind: "profile", profileId: "here" }, protocol: "local", status: "connected" })).toBe(false);
   });
 });
 
@@ -73,7 +80,7 @@ describe("targetProfile", () => {
     const profiles = [{ id: "a" } as Profile];
     expect(targetProfile({ kind: "profile", profileId: "a" }, profiles)).toBe(profiles[0]);
     expect(targetProfile({ kind: "profile", profileId: "gone" }, profiles)).toBeUndefined();
-    expect(targetProfile({ kind: "local" }, profiles)).toBeUndefined();
+    expect(targetProfile({ kind: "local", shell: { kind: "default" } }, profiles)).toBeUndefined();
     // A new list (the directory replaced it) is looked up anew.
     const changed = [{ id: "b" } as Profile, { id: "b", name: "second" } as Profile];
     expect(targetProfile({ kind: "profile", profileId: "b" }, changed)).toBe(changed[0]);

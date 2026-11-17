@@ -82,11 +82,18 @@ export interface SessionEvents {
   stayed(): void;
   /** The session moved to another window, which this terminal's screen has been handed to. */
   movedAway(): void;
+  /**
+   * The saved local session didn't start because it was imported and the user hasn't confirmed
+   * what it runs yet (`local.notConfirmed`).
+   */
+  unconfirmed(): void;
 }
 
 /** Read again for each connection: a saved session may have been changed in between. */
 export interface SessionConfig {
   target(): SessionTarget;
+  /** Whether it runs here (a local terminal, saved or not): there is no connection to lose. */
+  local(): boolean;
   /** How the new session starts its log. */
   logOpen(): LogOpen;
   /**
@@ -708,7 +715,7 @@ export class PaneSession {
   /** The session has ended: the pane closes, or offers to connect again, or retries. */
   private onClosed(followed: Followed, event: Extract<SessionEvent, { type: "closed" }>) {
     const { t } = this.config;
-    const { handle, target, source } = followed;
+    const { handle, source } = followed;
     followed.ended = true;
     const cut = this.cut;
     this.cut = false;
@@ -731,7 +738,7 @@ export class PaneSession {
     // Ending the forwarded connections by hand is not closing the pane.
     if (event.reason === "exited" && !cut && this.events.exited(event.status, event.signal, this.typed)) return;
     this.events.status("closed");
-    if (target.kind === "local") {
+    if (this.config.local()) {
       this.writeNotice(t(event.reason === "failed" ? "terminal.retryHint" : "terminal.restartHint"));
       return;
     }
@@ -767,6 +774,7 @@ export class PaneSession {
     this.port.write("\r\n");
     this.writeNotice(errorMessage(e), "error");
     this.writeNotice(t("terminal.retryHint"));
+    if (errorCode(e) === "local.notConfirmed") this.events.unconfirmed();
   }
 
   /**

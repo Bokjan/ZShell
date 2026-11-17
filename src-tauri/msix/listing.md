@@ -33,7 +33,8 @@ Port forwarding
 Sessions, tabs and terminals
 • Nested folders, search and quick connect, export and import.
 • Per-session character encodings (GBK, Big5, Shift_JIS…), colors, fonts, commands run after login, environment variables and notes.
-• Local terminals (PowerShell), split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, the programming ligatures of fonts such as Fira Code and Cascadia Code, copy on select, right-click paste and session logs.
+• Local terminals with the shells found on the computer: PowerShell, Command Prompt, Git Bash and WSL distributions, each saved as a session if you like, with its program, arguments, start folder, environment variables, colors and commands.
+• Split panes, tabs in the title bar, several windows that tabs move between with their sessions, a full screen showing only the terminals, search, color schemes, the programming ligatures of fonts such as Fira Code and Cascadia Code, copy on select, right-click paste and session logs.
 • A status bar with the connection, its traffic and the terminal's size.
 • Quick command buttons and a command palette, and a compose bar that sends to several terminals or syncs what you type.
 
@@ -68,7 +69,7 @@ ZShell runs entirely on your computer: no account, no telemetry, nothing collect
 8. Local, remote and dynamic SOCKS port forwarding with live status
 9. Session folders, search, quick connect, export and import
 10. Per-session character encodings, colors, fonts, login commands and environment variables
-11. Local PowerShell terminals, split panes and several windows
+11. Local terminals with PowerShell, Command Prompt, Git Bash or WSL, saved as sessions if you like; split panes and several windows
 12. Programming ligatures, as fonts such as Cascadia Code and Fira Code draw them
 13. Quick commands, a command palette and a compose bar that sends to several terminals
 14. Session logs

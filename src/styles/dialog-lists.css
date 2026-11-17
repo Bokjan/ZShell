@@ -21,6 +21,24 @@
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
+/* What an imported local session runs, to confirm before it first opens. */
+.local-review {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.local-review dt {
+  color: var(--text-muted);
+}
+.local-review dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
 .set-aside-list .hint {
   display: block;
   margin: 2px 0 0;

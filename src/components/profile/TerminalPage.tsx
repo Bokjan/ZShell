@@ -20,34 +20,42 @@ interface Props {
   shownGroup: string;
 }
 
-/** The session dialog's page of what its shell gets: encoding, terminal type, commands, logging. */
+/**
+ * The session dialog's page of what its shell gets: encoding, terminal type, commands,
+ * environment, logging. A local terminal's output is always UTF-8, with ZShell's terminal type.
+ */
 export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
   const { t } = useTranslation();
   const { protocol } = form;
+  const local = protocol === "local";
   return (
     <>
-      <div className="row">
-        <Field className="grow" title={t("profile.encoding")}>
-          <Select
-            value={form.encoding}
-            onChange={(encoding) => set({ encoding })}
-            options={ENCODINGS.map((value) => ({ value, label: t(`profile.encodings.${value}`) }))}
-          />
-        </Field>
-        {protocol !== "serial" && (
-          <Field className="grow" title={t("profile.termType")}>
-            <ComboBox
-              value={form.termType}
-              onChange={(termType) => set({ termType })}
-              suggestions={TERM_TYPES}
-              placeholder={DEFAULT_TERM_TYPE}
-              autoCapitalize="off"
-              autoCorrect="off"
-            />
-          </Field>
-        )}
-      </div>
-      <p className="hint">{t("profile.encodingHint")}</p>
+      {!local && (
+        <>
+          <div className="row">
+            <Field className="grow" title={t("profile.encoding")}>
+              <Select
+                value={form.encoding}
+                onChange={(encoding) => set({ encoding })}
+                options={ENCODINGS.map((value) => ({ value, label: t(`profile.encodings.${value}`) }))}
+              />
+            </Field>
+            {protocol !== "serial" && (
+              <Field className="grow" title={t("profile.termType")}>
+                <ComboBox
+                  value={form.termType}
+                  onChange={(termType) => set({ termType })}
+                  suggestions={TERM_TYPES}
+                  placeholder={DEFAULT_TERM_TYPE}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                />
+              </Field>
+            )}
+          </div>
+          <p className="hint">{t("profile.encodingHint")}</p>
+        </>
+      )}
       <Field title={t("profile.loginCommands")} hint={t("profile.loginCommandsHint")}>
         <AutoTextarea
           className="command-text"
@@ -59,9 +67,9 @@ export function TerminalPage({ form, set, commandGroups, shownGroup }: Props) {
           autoCorrect="off"
         />
       </Field>
-      {protocol === "ssh" && (
+      {(protocol === "ssh" || local) && (
         <>
-          <Field title={t("profile.env")} hint={t("profile.envHint")}>
+          <Field title={t("profile.env")} hint={t(local ? "profile.envHintLocal" : "profile.envHint")}>
             <AutoTextarea
               name="env"
               className="command-text"

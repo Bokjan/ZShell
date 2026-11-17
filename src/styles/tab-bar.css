@@ -208,6 +208,26 @@
   background: var(--bg-active);
   color: var(--text);
 }
+/* The arrow of the split "+", which opens the menu of local terminals: narrow, right beside it. */
+.tab-new-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+}
+.tab-new-menu:hover,
+.tab-new-menu[aria-expanded="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}
 /* The tab strip shrinks (and scrolls) before this does. */
 .tab-bar-drag {
   flex: 1 0 40px;

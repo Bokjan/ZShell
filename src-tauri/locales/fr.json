@@ -143,7 +143,11 @@
       "jumpHostNotSsh": "Cette session est un hôte de rebond pour {names} : elle doit donc rester une session SSH",
       "invalidProxy": "Le proxy de cette session n’existe plus ; choisissez-en un autre",
       "forwardsNeedSsh": "Seules les sessions SSH peuvent rediriger des ports",
-      "networkKeyPath": "Une session importée ne peut pas utiliser une clé privée sur un chemin réseau ({path})"
+      "networkKeyPath": "Une session importée ne peut pas utiliser une clé privée sur un chemin réseau ({path})",
+      "missingProgram": "Choisissez un programme à exécuter",
+      "missingDistro": "Choisissez une distribution WSL",
+      "invalidArgs": "Les arguments ne peuvent pas contenir de caractères nuls",
+      "invalidStartDir": "Le dossier de départ ne peut pas contenir de caractères de contrôle"
     },
     "ssh": {
       "handshakeFailed": "Échec de la négociation SSH",
@@ -294,6 +298,13 @@
       "failed": "Impossible de prélever une couleur à l’écran",
       "unavailable": "Prélever une couleur à l’écran nécessite le portail de capture d’écran du bureau (xdg-desktop-portal), qui n’est pas disponible",
       "unsupported": "Prélever une couleur à l’écran nécessite macOS 10.15 ou une version ultérieure"
+    },
+    "local": {
+      "notConfirmed": "Cette session a été importée d’un fichier. Vérifiez ce qu’elle exécute avant de l’ouvrir",
+      "programNotFound": "Impossible de trouver le programme {path}",
+      "startDirNotFound": "Le dossier de départ {path} n’existe pas",
+      "wslUnavailable": "WSL n’est pas disponible sur cet ordinateur, {name} ne peut donc pas être ouvert",
+      "blocked": "Ce système n’exécute que les applications du Microsoft Store (mode S), les terminaux locaux ne peuvent donc pas être ouverts"
     }
   },
   "zmodem": {
@@ -303,5 +314,8 @@
     "received": "{name} reçu ({size}) : {path}",
     "sent": "{name} envoyé ({size})",
     "skipped": "{name} ignoré : le destinataire l’a refusé. S’il existe déjà de son côté, rz -y l’écrase et rz -E conserve les deux."
+  },
+  "local": {
+    "defaultName": "Shell local"
   }
 }

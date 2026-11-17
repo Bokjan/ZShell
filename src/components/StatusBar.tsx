@@ -84,7 +84,7 @@ function Connection({ pane, profile }: { pane: Pane; profile: Profile | undefine
   const seconds = useCountdown(pane.status === "closed" ? pane.retryAt : null);
   const { target } = pane;
   let where: string;
-  if (target.kind === "local") where = t("statusBar.local");
+  if (pane.protocol === "local") where = t("statusBar.local");
   else if (target.kind === "quick") where = address(target);
   else if (!profile) where = pane.title;
   else if (profile.connection.protocol === "serial") where = profile.connection.device;

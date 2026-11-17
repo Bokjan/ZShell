@@ -111,6 +111,13 @@ pub async fn tree_move(app: AppHandle, window: WebviewWindow, item: Item, parent
     notified(&window, Change::Profiles, result)
 }
 
+/// Lets imported local session `id` run from now on, the user having seen what it runs.
+#[tauri::command]
+pub async fn profile_confirm_local(app: AppHandle, window: WebviewWindow, id: String) -> Result<Profile> {
+    let result = blocking(app, move |app| app.state::<ProfileStore>().confirm_local(&id)).await;
+    notified(&window, Change::Profiles, result)
+}
+
 /// Copies a session, with its saved password, as `name` right after it.
 #[tauri::command]
 pub async fn profile_duplicate(app: AppHandle, window: WebviewWindow, id: String, name: String) -> Result<Profile> {

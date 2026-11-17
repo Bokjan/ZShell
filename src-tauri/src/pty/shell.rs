@@ -1,12 +1,13 @@
-//! The default local shell and the environment it starts with.
+//! The local shells, what each runs (the default one, a program, a WSL distribution) and the
+//! environment it starts with.
 
-#[cfg(any(windows, target_os = "macos", test))]
 use std::ffi::OsStr;
-use std::path::Path;
-#[cfg(any(windows, test))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
+
+use crate::error::{Error, Result};
+use crate::model::{EnvVar, LocalOptions, LocalShell};
 
 /// Variables set by other terminal emulators, inherited when ZShell itself was started from
 /// one; they would mislead shell startup files. Also the activation token the desktop started
@@ -26,12 +27,19 @@ pub struct Shell {
     pub command: CommandBuilder,
     /// The program, for error messages.
     pub program: String,
+    /// What it is called, e.g. "zsh", "pwsh" or a WSL distribution's name.
+    name: String,
 }
 
 impl Shell {
+    /// Runs `program` with `command`, named after it.
+    pub fn new(command: CommandBuilder, program: String) -> Self {
+        Self { name: display_name(&program), command, program }
+    }
+
     /// Short name for display, e.g. "zsh" or "pwsh".
     pub fn name(&self) -> String {
-        display_name(&self.program)
+        self.name.clone()
     }
 }
 
@@ -52,7 +60,141 @@ pub fn local_shells_allowed() -> bool {
 pub fn default_shell() -> Shell {
     let (mut command, program) = default_command();
     configure(&mut command);
-    Shell { command, program }
+    Shell::new(command, program)
+}
+
+/// What a local terminal runs (`local`), with ZShell's terminal environment and the user's
+/// variables over it, in its start folder. Fails, rather than starting somewhere else, when
+/// the program or the folder isn't there, or for WSL on another system. Blocks: it looks for
+/// files, in `PATH` too, where a network drive may not answer.
+pub fn local_shell(local: &LocalOptions) -> Result<Shell> {
+    let home = std::env::home_dir();
+    let mut shell = match &local.shell {
+        LocalShell::Default => default_shell(),
+        LocalShell::Program { path, args } => {
+            let program = find_program(path).ok_or_else(|| Error::new("local.programNotFound").param("path", path))?;
+            let mut command = CommandBuilder::new(&program);
+            command.args(args);
+            configure(&mut command);
+            #[cfg(windows)]
+            if let Some(msystem) = git_msystem(&program, |path| path.exists()) {
+                // Git Bash's profile goes to the home folder unless asked to stay where it starts.
+                command.env("CHERE_INVOKING", "1");
+                command.env("MSYSTEM", msystem);
+            }
+            Shell::new(command, program.display().to_string())
+        }
+        LocalShell::Wsl { distro } => {
+            #[cfg(windows)]
+            let shell = wsl(distro, &local.start_dir, &local.env);
+            #[cfg(not(windows))]
+            let shell = Err(Error::new("local.wslUnavailable").param("name", distro));
+            shell?
+        }
+    };
+    for EnvVar { name, value } in &local.env {
+        shell.command.env(name, value);
+    }
+    // WSL takes its start folder as an argument.
+    if !matches!(local.shell, LocalShell::Wsl { .. }) {
+        if let Some(dir) = start_dir(&local.start_dir, home.as_deref()) {
+            if !dir.is_dir() {
+                return Err(Error::new("local.startDirNotFound").param("path", dir.display()));
+            }
+            shell.command.cwd(dir);
+        }
+    }
+    Ok(shell)
+}
+
+/// The folder a local terminal starts in: `dir` with `~` for `home`, and relative to it;
+/// `None` for the home folder (`dir` empty), where the terminal starts anyway.
+fn start_dir(dir: &str, home: Option<&Path>) -> Option<PathBuf> {
+    let home = home.unwrap_or(Path::new(""));
+    match dir {
+        "" => None,
+        "~" => Some(home.to_owned()),
+        _ => match dir.strip_prefix("~/").or_else(|| dir.strip_prefix("~\\").filter(|_| cfg!(windows))) {
+            Some(rest) => Some(home.join(rest)),
+            None => Some(home.join(dir)),
+        },
+    }
+}
+
+/// The program at `path`, or of that name in `PATH` (on Windows also with `.exe`), if it is
+/// there.
+fn find_program(path: &str) -> Option<PathBuf> {
+    let program = Path::new(path);
+    if program.components().count() > 1 || program.is_absolute() {
+        return std::fs::symlink_metadata(program).is_ok_and(|meta| !meta.is_dir()).then(|| program.to_owned());
+    }
+    let paths = std::env::var_os("PATH")?;
+    let exe = cfg!(windows) && program.extension().is_none();
+    find_in_path(&paths, path).or_else(|| exe.then(|| find_in_path(&paths, &format!("{path}.exe"))).flatten())
+}
+
+/// A WSL distribution, in `dir` (its home folder if empty), with ZShell's terminal variables
+/// and the user's `env` passed through `WSLENV`.
+#[cfg(windows)]
+fn wsl(distro: &str, dir: &str, env: &[EnvVar]) -> Result<Shell> {
+    let program = system32().join("wsl.exe");
+    if !program.is_file() {
+        return Err(Error::new("local.wslUnavailable").param("name", distro));
+    }
+    let mut command = CommandBuilder::new(&program);
+    command.args(["-d", distro, "--cd", if dir.is_empty() { "~" } else { dir }]);
+    configure(&mut command);
+    let names: Vec<&str> = TERMINAL_VARS.iter().copied().chain(env.iter().map(|var| var.name.as_str())).collect();
+    let existing = command.get_env("WSLENV").and_then(OsStr::to_str).map(str::to_owned);
+    command.env("WSLENV", wslenv(existing.as_deref(), &names));
+    Ok(Shell { name: distro.to_owned(), program: program.display().to_string(), command })
+}
+
+/// The variables ZShell sets for the program in the terminal (see `configure`), which WSL
+/// passes on only through `WSLENV`.
+#[cfg(any(windows, test))]
+const TERMINAL_VARS: &[&str] = &["TERM_PROGRAM", "TERM_PROGRAM_VERSION", "COLORTERM"];
+
+/// `WSLENV` with `names` added: the variables Windows passes to a WSL distribution, separated
+/// by `:`, each with flags after a `/` (`existing` keeps its own).
+#[cfg(any(windows, test))]
+fn wslenv(existing: Option<&str>, names: &[&str]) -> String {
+    let mut list: Vec<&str> = existing.unwrap_or_default().split(':').filter(|entry| !entry.is_empty()).collect();
+    for &name in names {
+        let listed = list.iter().any(|entry| entry.split('/').next().is_some_and(|listed| listed.eq_ignore_ascii_case(name)));
+        if !listed {
+            list.push(name);
+        }
+    }
+    list.join(":")
+}
+
+/// The `MSYSTEM` to run Git for Windows' bash with if `program` is it (`bin\bash.exe` or
+/// `usr\bin\bash.exe` in a folder with `git-bash.exe` or `cmd\git.exe`), by the environment
+/// it installed (`exists` tells which of its files are there), as `git-bash.exe` sets it.
+#[cfg(any(windows, test))]
+fn git_msystem(program: &Path, exists: impl Fn(&Path) -> bool) -> Option<&'static str> {
+    let is = |path: Option<&Path>, name: &str| path.and_then(Path::file_name).is_some_and(|file| file.eq_ignore_ascii_case(name));
+    if !is(Some(program), "bash.exe") {
+        return None;
+    }
+    let bin = program.parent().filter(|bin| is(Some(bin), "bin"))?;
+    let root = bin.parent().filter(|usr| is(Some(usr), "usr")).and_then(Path::parent).or(bin.parent())?;
+    if !exists(&root.join("git-bash.exe")) && !exists(&root.join("cmd").join("git.exe")) {
+        return None;
+    }
+    Some(super::discover::git_msystem(|dir| exists(&root.join(dir))))
+}
+
+#[cfg(windows)]
+pub(super) fn system32() -> PathBuf {
+    PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into())).join("System32")
+}
+
+/// PowerShell 7, if installed: `pwsh.exe` in `PATH`.
+#[cfg(windows)]
+pub(super) fn find_pwsh() -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|path| find_in_path(&path, "pwsh.exe"))
 }
 
 /// The user's login shell (`$SHELL`, else the password database), started as a login shell
@@ -68,10 +210,7 @@ fn default_command() -> (CommandBuilder, String) {
 /// PowerShell 7 if installed, else Windows PowerShell, which ships with Windows.
 #[cfg(windows)]
 fn default_command() -> (CommandBuilder, String) {
-    let program = std::env::var_os("PATH").and_then(|path| find_in_path(&path, "pwsh.exe")).unwrap_or_else(|| {
-        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
-        Path::new(&root).join(r"System32\WindowsPowerShell\v1.0\powershell.exe")
-    });
+    let program = find_pwsh().unwrap_or_else(|| system32().join(r"WindowsPowerShell\v1.0\powershell.exe"));
     let mut command = CommandBuilder::new(&program);
     command.arg("-NoLogo");
     (command, program.to_string_lossy().into_owned())
@@ -104,7 +243,6 @@ pub(super) fn display_name(program: &str) -> String {
 /// The first `file` in the directories of a PATH-style list. App execution aliases (e.g.
 /// `pwsh.exe` installed from the Microsoft Store) are reparse points that cannot be
 /// followed, so the entry itself is checked.
-#[cfg(any(windows, test))]
 fn find_in_path(path: &OsStr, file: &str) -> Option<PathBuf> {
     std::env::split_paths(path)
         .map(|dir| dir.join(file))
@@ -149,6 +287,56 @@ mod tests {
         assert_eq!(display_name("/bin/zsh"), "zsh");
         assert_eq!(display_name("/opt/homebrew/bin/fish"), "fish");
         assert_eq!(display_name("pwsh.exe"), "pwsh");
+    }
+
+    #[test]
+    fn start_folders_are_relative_to_home() {
+        let home = Path::new("/home/me");
+        assert_eq!(start_dir("", Some(home)), None);
+        assert_eq!(start_dir("~", Some(home)), Some(home.to_owned()));
+        assert_eq!(start_dir("~/src", Some(home)), Some(home.join("src")));
+        assert_eq!(start_dir("src", Some(home)), Some(home.join("src")));
+        let root = std::env::temp_dir();
+        assert_eq!(start_dir(&root.display().to_string(), Some(home)), Some(root));
+        // Someone else's home folder isn't expanded.
+        assert_eq!(start_dir("~bob", Some(home)), Some(home.join("~bob")));
+    }
+
+    #[test]
+    fn passes_terminal_variables_to_wsl() {
+        assert_eq!(wslenv(None, TERMINAL_VARS), "TERM_PROGRAM:TERM_PROGRAM_VERSION:COLORTERM");
+        // What is there stays, with its flags; nothing is listed twice.
+        assert_eq!(wslenv(Some("USERPROFILE/p:colorterm"), &["COLORTERM", "EDITOR"]), "USERPROFILE/p:colorterm:EDITOR");
+        assert_eq!(wslenv(Some(":A::"), &["B"]), "A:B");
+    }
+
+    #[test]
+    fn tells_git_bash_by_its_installation() {
+        let root = Path::new("C:").join("Program Files").join("Git");
+        let has = |files: &'static [&'static str]| {
+            let root = root.clone();
+            move |path: &Path| files.iter().any(|file| root.join(file) == path)
+        };
+        let bash = root.join("bin").join("bash.exe");
+        let usr_bash = root.join("usr").join("bin").join("bash.exe");
+        assert_eq!(git_msystem(&bash, has(&["git-bash.exe", "mingw64"])), Some("MINGW64"));
+        assert_eq!(git_msystem(&usr_bash, has(&["cmd/git.exe", "clangarm64"])), Some("CLANGARM64"));
+        assert_eq!(git_msystem(&root.join("bin").join("BASH.EXE"), has(&["git-bash.exe"])), Some("MINGW64"));
+        // Another bash, or a bash elsewhere.
+        assert_eq!(git_msystem(&bash, has(&[])), None);
+        assert_eq!(git_msystem(&root.join("bin").join("zsh.exe"), has(&["git-bash.exe"])), None);
+        assert_eq!(git_msystem(&root.join("bash.exe"), has(&["git-bash.exe"])), None);
+    }
+
+    #[test]
+    fn programs_missing_are_not_found() {
+        let missing = std::env::temp_dir().join("zshell-missing").join("shell");
+        assert_eq!(find_program(&missing.display().to_string()), None);
+        assert_eq!(find_program("zshell-no-such-shell"), None);
+        let local = LocalOptions::new(LocalShell::Program { path: missing.display().to_string(), args: Vec::new() });
+        assert_eq!(local_shell(&local).err().map(|e| e.code().to_owned()).as_deref(), Some("local.programNotFound"));
+        let local = LocalOptions { start_dir: missing.display().to_string(), ..LocalOptions::new(LocalShell::Default) };
+        assert_eq!(local_shell(&local).err().map(|e| e.code().to_owned()).as_deref(), Some("local.startDirNotFound"));
     }
 
     #[test]

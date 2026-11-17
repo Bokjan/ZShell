@@ -76,7 +76,7 @@
 | **M49 快捷键随键盘布局** ✅ | 字母与标点快捷键按键帽上的字符匹配（AZERTY、Dvorak、日文键盘等），非拉丁布局退回美式位置；macOS 菜单栏不再自动改写快捷键。Windows / Linux 的拆分窗格改为 Ctrl+Shift+S / Ctrl+Shift+D（Tabby 的键），原来的 Alt+Shift+= / - 照样可用（3.16.0） |
 | **M50 调试日志** ✅ | 「帮助」菜单打开调试日志窗口，分后端与前端，可按级别过滤、搜索、复制与清空；后端装上 logger，russh 的日志与原来丢掉的 `eprintln!` 都收进来，连接过程按 OpenSSH `-v` 的粒度补日志（3.17.0） |
 | **M51 传输续传与重试** ✅ | 断线导致失败的上传、下载在重连后从断开处继续；其他原因失败的可以手动重试，已完成的文件不再传（3.18.0） |
-| **M52 本地 shell 选择** | 本地终端可选 shell：自动发现 WSL 发行版、Git Bash、cmd、PowerShell、`/etc/shells` 里的 shell；"+" 旁的下拉菜单；本地终端可以存成会话（程序、参数、起始文件夹、环境变量，以及外观、登录后命令等通用项） |
+| **M52 本地 shell 选择** ✅ | 本地终端可选 shell：自动发现 WSL 发行版、Git Bash、cmd、PowerShell、`/etc/shells` 里的 shell；"+" 旁的下拉菜单；本地终端可以存成会话（程序、参数、起始文件夹、环境变量，以及外观、登录后命令等通用项），可设为 "+" 打开的默认项；导入的本地会话第一次打开前确认（3.18.0） |
 
 ### M43 kitty 键盘协议的设计要点
 
@@ -108,34 +108,11 @@ yazi 的预览、`timg` / `chafa`、Neovim 的图片插件、matplotlib 的终�
 
 插件与它带的 `xterm-wasm-parts` 都是 MIT，加入后照常跑 `pnpm licenses:generate`。不涉及存储与网络连接，`PRIVACY.md` 不变。
 
-### M52 本地 shell 选择的设计要点
-
-现在本地终端每个平台只有一种 shell（`pty/shell.rs`：Unix 用登录 shell，Windows 先找 `pwsh.exe` 再退回 Windows PowerShell），不能选，不能存成会话，外观、登录后命令这些会话设置也用不上。Windows 上很多人主要用 WSL，从 Windows Terminal 换过来时最先缺的就是它。
-
-- **自动发现**（后端，纯函数解析，单元测试）：
-  - Windows：PowerShell 7（现有的查找）、Windows PowerShell、cmd、Git Bash（注册表 `HKLM\SOFTWARE\GitForWindows` 的 `InstallPath`，运行 `bin\bash.exe --login -i`）、WSL 发行版（注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` 下各项的 `DistributionName`，不必启动 `wsl.exe -l`，它输出 UTF-16 而且慢）。
-  - macOS / Linux：`/etc/shells` 里存在的程序，去重（`/bin/zsh` 与 `/usr/bin/zsh` 指向同一个时只留一个）；默认仍是登录 shell。
-  - 发现的结果不保存，每次打开菜单时用缓存，设置里可以刷新。
-- **会话模型**：`Connection` 加一个 `Local(LocalOptions)`，复用 `Profile` 的通用项（外观、登录后命令、备注、自动日志、快速命令组）。`LocalOptions` 的 shell 用符号表示而不是只存路径，导出到另一台机器也能用：`Default`、`Wsl { distro }`、`Program { path, args }`（cmd、Git Bash 等发现的也落成 `Program`）；另有起始文件夹、环境变量（与 SSH 的 `env` 同一类型）。编码固定 UTF-8，编辑器里不显示。旧的 `vault.json` 照常读取。退回旧版本时：`Data.profiles` 是普通的 `Vec<Profile>`，旧版本读到不认识的 `protocol: "local"` 会把整个保险库当作损坏（`LockReason::Damaged`，`vault.parseFailed`），保持锁定、不改文件（`vault/tests.rs` 的 `damaged_and_newer_vaults_stay_locked_and_untouched`），导入含本地会话的导出文件也会失败。M13 加串口时也是这样，不丢数据，接受这个代价，不升保险库的格式版本。
-- **启动**：
-  - WSL：`wsl.exe -d <发行版>`，起始文件夹用 `--cd`；`TERM_PROGRAM` 等变量要经 `WSLENV` 才进得去。
-  - Git Bash：`--login -i`，设 `CHERE_INVOKING=1` 让它留在起始文件夹，`MSYSTEM` 按安装的类型。
-  - 现在从没设过工作目录（`command.cwd`），起始文件夹要接上；没设时仍是主目录。
-- **界面**：
-  - "+" 改成分体按钮：点主体打开默认 shell，旁边的箭头（`icons.tsx` 里的图标）打开菜单，列出发现的 shell 与已存的本地会话；菜单用现有的菜单组件，键盘可达。⌘T / Ctrl+Shift+T 打开默认 shell。
-  - 设置 › 终端加「默认本地 shell」，可选发现的 shell 或已存的本地会话；没设时与现在相同。
-  - 新建会话的类型里加「本地」，程序可从发现的列表里选，也可选任意可执行文件（文件对话框经 `src/ipc/fileDialog.ts`）。
-  - 复制标签、分屏打开同一个会话的新 shell，起始文件夹照会话设置（跟随当前文件夹另做）。
-- **导入的本地会话要先确认**：本地会话会在本机运行程序、往本机 shell 里输入登录后命令，导入别人的文件就等于运行别人给的命令。导入时把本地会话单独列出；或者导入的本地会话第一次打开前确认一次，确认后才记为可信。
-- **S 模式**：本地终端整体隐藏（现状），已存的本地会话在列表里显示为不可用，新建会话里没有「本地」类型。
-- **测试**：发现的解析（注册表值、`/etc/shells` 内容）与启动参数的拼装写成纯函数单元测试；Windows 上实测 WSL（含起始文件夹与 `WSLENV`）、Git Bash、cmd，macOS 与 Linux 实测 zsh、bash、fish；导出到另一个平台再导入，打开时程序不存在应报出清楚的错误。
-
-会话里会保存本地程序的路径、参数和环境变量，在 `PRIVACY.md` 写明保存的内容里补上这一项。
-
 ## 暂不排期（P2）
 
 有实际需要时再排期：
 
+- 本地终端复制标签、分屏时跟随 shell 当前的文件夹（OSC 7 报告的，Windows 上 PowerShell 要在 prompt 里自己发），现在照会话的起始文件夹或主目录开新 shell。
 - 自定义快捷键：快捷键已集中在 `lib/keymap.ts` 的一张表里（见 [ARCHITECTURE.md](ARCHITECTURE.md)「快捷键与菜单」），自定义只是在表上叠加用户的覆盖项。`settings.json` 只保存改动过的动作（`"shortcuts": { "find": ["Ctrl+Shift+F"] }`），旧配置照常读取，"恢复默认"即删除覆盖项；设置里 Keyboard Shortcuts 一节的每行可以录制新按键，显示与其他动作的冲突，在 macOS 以外的平台上占用 shell 需要的键（不带 Shift 的 Ctrl+字母）时提示终端将收不到它；成组的动作（⌘1–⌘8、方向键切换窗格）只允许改修饰键；菜单的文字与按键由 M28 的统一定义得出，改快捷键后 Windows 的菜单与 macOS 的原生菜单都要随之重建。
 - Microsoft Store 自动提交：现在每个版本在 Partner Center 手动上传（见 [DEVELOPMENT.md](DEVELOPMENT.md)「发布」）。可以用 Store 提交 API（`msstore` CLI）在 release workflow 里提交，需要把 Entra ID 应用的凭据配成 secret。
 - 关键字高亮（如 `ERROR` 标红）：需在 xterm.js 的渲染层用 decoration 实现，不能往输出流里插入颜色序列（会破坏全屏程序）。

@@ -8,6 +8,7 @@ import { useImportDialog } from "./app/useImportDialog";
 import { useSettingsDialog } from "./app/useSettingsDialog";
 import { useAboutDialog } from "./app/useAboutDialog";
 import { useProfileEditor } from "./app/useProfileEditor";
+import { useLocalConfirmation } from "./app/useLocalConfirmation";
 import { useSessionOpening } from "./app/useSessionOpening";
 import { useUpdateAnnouncement } from "./app/useUpdateAnnouncement";
 import { useCloseFlow } from "./app/useCloseFlow";
@@ -130,6 +131,7 @@ function App() {
   );
   const paneDrag = usePaneDrag(store, paneActions, windowing, tabRest);
 
+  const localConfirmation = useLocalConfirmation(store, sessions);
   const opening = useSessionOpening(store, sessions, { paneActions, windowing, shellName, username, focusTerminal: focusActiveTerminal });
   const editor = useProfileEditor(store, { username, remove: (profile) => deletion.remove(profile, true) });
 
@@ -214,6 +216,8 @@ function App() {
   const tabBarHandlers = useStableHandlers<TabBarHandlers>({
     onSelect: activate,
     onNew: opening.openLocal,
+    onOpenShell: opening.openShell,
+    onOpenProfile: (profile) => opening.openProfile(profile, "newTab"),
     onClose: (keys) => void requestClose({ kind: "tabs", keys }),
     onSplit: (key, direction) => withFocused(key, (pane) => splitPane(pane.key, direction)),
     canSplit: (key, direction) => {
@@ -288,7 +292,7 @@ function App() {
           flashing={tabsWith(flashing)}
           addressOf={(tab) => {
             const pane = focusedPane(tab);
-            if (pane.target.kind === "local") return undefined;
+            if (pane.protocol === "local") return undefined;
             const profile = profileOf(pane);
             return pane.target.kind === "quick" ? address(pane.target) : profile && address(profile.connection);
           }}
@@ -342,6 +346,7 @@ function App() {
       {editor.dialog}
       {deletion.dialog}
       {opening.dialog}
+      {localConfirmation.dialog}
       {quick.palette}
       {importer.dialog}
       {settingsDialog.dialog}

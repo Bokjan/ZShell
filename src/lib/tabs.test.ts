@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { PaneSpec, TabsAction, TabsState } from "./tabs";
 import { activeTabOf, createTabStore, INITIAL_TABS, leavesSomething, reduceTabs, togglesPanel, transferSessions } from "./tabs";
 
-const local: PaneSpec = { target: { kind: "local" }, protocol: "local", title: "zsh" };
+const local: PaneSpec = { target: { kind: "local", shell: { kind: "default" } }, protocol: "local", title: "zsh" };
 const ssh = (profileId: string): PaneSpec => ({ target: { kind: "profile", profileId }, protocol: "ssh", title: profileId });
 
 const run = (...actions: TabsAction[]) => actions.reduce(reduceTabs, INITIAL_TABS);

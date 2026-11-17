@@ -217,25 +217,33 @@ export function Sidebar(props: Props) {
     }, fail);
   };
 
-  const profileMenu = (profile: Profile): MenuItem[] => [
-    { label: t("sidebar.connect"), onSelect: () => onOpen(profile, "connect") },
-    { label: t("sidebar.connectSplitRight"), onSelect: () => onOpen(profile, "splitRight") },
-    { label: t("sidebar.connectSplitDown"), onSelect: () => onOpen(profile, "splitDown") },
-    { label: t("sidebar.connectNewWindow"), onSelect: () => onOpen(profile, "newWindow") },
-    "separator",
-    { label: t("sidebar.edit"), onSelect: () => onEdit(profile) },
-    { label: t("sidebar.duplicate"), onSelect: () => duplicate(profile) },
-    {
-      label: t("sidebar.copyAddress"),
-      onSelect: () => void writeText(address(profile.connection)).then(() => announce(t("announce.copied")), fail),
-    },
-    "separator",
-    {
-      label: t("sidebar.deleteLogs"),
-      onSelect: () => logs.count(profile.id).then((count) => setDeletingLogs({ profile, count }), fail),
-    },
-    { label: t("sidebar.delete"), danger: true, onSelect: () => void onDelete(profile).catch(fail) },
-  ];
+  // A local terminal opens rather than connects, and has no address.
+  const profileMenu = (profile: Profile): MenuItem[] => {
+    const local = profile.connection.protocol === "local";
+    return [
+      { label: t(local ? "sidebar.open" : "sidebar.connect"), onSelect: () => onOpen(profile, "connect") },
+      { label: t(local ? "sidebar.openSplitRight" : "sidebar.connectSplitRight"), onSelect: () => onOpen(profile, "splitRight") },
+      { label: t(local ? "sidebar.openSplitDown" : "sidebar.connectSplitDown"), onSelect: () => onOpen(profile, "splitDown") },
+      { label: t(local ? "sidebar.openNewWindow" : "sidebar.connectNewWindow"), onSelect: () => onOpen(profile, "newWindow") },
+      "separator",
+      { label: t("sidebar.edit"), onSelect: () => onEdit(profile) },
+      { label: t("sidebar.duplicate"), onSelect: () => duplicate(profile) },
+      ...(local
+        ? []
+        : [
+            {
+              label: t("sidebar.copyAddress"),
+              onSelect: () => void writeText(address(profile.connection)).then(() => announce(t("announce.copied")), fail),
+            },
+          ]),
+      "separator",
+      {
+        label: t("sidebar.deleteLogs"),
+        onSelect: () => logs.count(profile.id).then((count) => setDeletingLogs({ profile, count }), fail),
+      },
+      { label: t("sidebar.delete"), danger: true, onSelect: () => void onDelete(profile).catch(fail) },
+    ];
+  };
 
   const folderMenu = (folder: Folder, count: number): MenuItem[] => [
     { label: t("sidebar.openAll"), disabled: count === 0, onSelect: () => onOpenAll(folder) },

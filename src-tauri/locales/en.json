@@ -143,7 +143,11 @@
       "jumpHostNotSsh": "This session is a jump host for {names}, so it must stay an SSH session",
       "invalidProxy": "The proxy of this session no longer exists; choose another one",
       "forwardsNeedSsh": "Only SSH sessions can forward ports",
-      "networkKeyPath": "An imported session cannot use a private key on a network path ({path})"
+      "networkKeyPath": "An imported session cannot use a private key on a network path ({path})",
+      "missingProgram": "Choose a program to run",
+      "missingDistro": "Choose a WSL distribution",
+      "invalidArgs": "The arguments cannot contain null characters",
+      "invalidStartDir": "The start folder cannot contain control characters"
     },
     "ssh": {
       "handshakeFailed": "SSH handshake failed",
@@ -294,6 +298,13 @@
       "failed": "Could not pick a color from the screen",
       "unavailable": "Picking a color from the screen needs the desktop's screenshot portal (xdg-desktop-portal), which is not available",
       "unsupported": "Picking a color from the screen needs macOS 10.15 or later"
+    },
+    "local": {
+      "notConfirmed": "This session was imported from a file. Review what it runs before opening it",
+      "programNotFound": "Cannot find the program {path}",
+      "startDirNotFound": "The start folder {path} does not exist",
+      "wslUnavailable": "WSL is not available on this computer, so {name} cannot be opened",
+      "blocked": "This system runs only apps from the Microsoft Store (S mode), so local terminals cannot be opened"
     }
   },
   "zmodem": {
@@ -303,5 +314,8 @@
     "received": "Received {name} ({size}): {path}",
     "sent": "Sent {name} ({size})",
     "skipped": "Skipped {name}: the receiver declined it. If it already exists there, rz -y overwrites it and rz -E keeps both."
+  },
+  "local": {
+    "defaultName": "Local shell"
   }
 }

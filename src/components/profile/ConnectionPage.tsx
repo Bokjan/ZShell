@@ -11,7 +11,8 @@ import { Field } from "../Field";
 const NEW_PROXY = "\u0000new";
 
 /** The proxy of an SSH or Telnet session. */
-const proxyOf = (profile: Profile) => (profile.connection.protocol === "serial" ? undefined : profile.connection.proxy);
+const proxyOf = ({ connection }: Profile) =>
+  connection.protocol === "ssh" || connection.protocol === "telnet" ? connection.proxy : undefined;
 
 interface Props {
   form: ProfileForm;

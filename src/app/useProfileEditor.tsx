@@ -29,12 +29,17 @@ export function useProfileEditor(store: TabStore, options: Options) {
 
   const saveAsSession = (key: number) => {
     const pane = findPane(store.get().tabs, key)?.pane;
+    if (pane?.target.kind === "local") {
+      setEditing({ profile: null, defaults: { protocol: "local", shell: pane.target.shell }, paneKey: key });
+      return;
+    }
     if (pane?.target.kind !== "quick") return;
     const { protocol, host, port } = pane.target;
     setEditing({ profile: null, defaults: { protocol, host, port, username: loginName(pane.target, options.username) }, paneKey: key });
   };
 
-  // A quick connection saved as a session becomes that session's pane; the connection stays.
+  // A quick connection or local terminal saved as a session becomes that session's pane; the
+  // connection (or shell) stays.
   const onSaved = (profile: Profile) => {
     const key = editing?.paneKey;
     if (key === undefined) return;

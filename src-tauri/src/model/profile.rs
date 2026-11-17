@@ -60,6 +60,8 @@ pub enum Connection {
     Ssh(SshOptions),
     Telnet(Remote),
     Serial(SerialOptions),
+    /// A shell or other program on this computer, in a pseudo terminal.
+    Local(LocalOptions),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -68,6 +70,43 @@ pub enum Protocol {
     Ssh,
     Telnet,
     Serial,
+    Local,
+}
+
+/// A local terminal's settings. Its output is always UTF-8: the session's `encoding` is not used.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalOptions {
+    pub shell: LocalShell,
+    /// The folder it starts in; `~` stands for the home folder, which empty means. For WSL, a
+    /// folder in the distribution or on Windows, as `wsl.exe --cd` takes it.
+    #[serde(default)]
+    pub start_dir: String,
+    /// Set for the program besides ZShell's own terminal variables, which they can replace.
+    #[serde(default)]
+    pub env: Vec<EnvVar>,
+    /// Imported from a file, and not yet confirmed by the user: it doesn't start until they
+    /// have seen what it runs (`local.notConfirmed`, `ProfileStore::confirm_local`). Set by
+    /// importing; `ProfileStore::save` keeps it.
+    #[serde(default)]
+    pub imported: bool,
+}
+
+/// What a local terminal runs. By what it is rather than only by a path, so that a session
+/// exported to another computer still finds it there.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum LocalShell {
+    /// The user's login shell (Unix), PowerShell (Windows): see `pty::default_shell`.
+    Default,
+    /// A WSL distribution, by name (Windows).
+    Wsl { distro: String },
+    /// A program, by path or by a name looked up in `PATH`, with its arguments.
+    Program {
+        path: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
 }
 
 /// What SSH and Telnet sessions have in common: where they connect, through what, and the
@@ -198,6 +237,7 @@ impl Connection {
             Connection::Ssh(_) => Protocol::Ssh,
             Connection::Telnet(_) => Protocol::Telnet,
             Connection::Serial(_) => Protocol::Serial,
+            Connection::Local(_) => Protocol::Local,
         }
     }
 
@@ -206,7 +246,7 @@ impl Connection {
         match self {
             Connection::Ssh(ssh) => Some(&ssh.remote),
             Connection::Telnet(remote) => Some(remote),
-            Connection::Serial(_) => None,
+            Connection::Serial(_) | Connection::Local(_) => None,
         }
     }
 
@@ -214,7 +254,7 @@ impl Connection {
         match self {
             Connection::Ssh(ssh) => Some(&mut ssh.remote),
             Connection::Telnet(remote) => Some(remote),
-            Connection::Serial(_) => None,
+            Connection::Serial(_) | Connection::Local(_) => None,
         }
     }
 }
@@ -391,7 +431,8 @@ impl Profile {
     }
 
     /// Whether `other` connects to the same place: the same user, host and port (and
-    /// protocol), or the same serial device.
+    /// protocol), or the same serial device. Never for local terminals, which only their
+    /// names tell apart.
     pub fn same_target(&self, other: &Profile) -> bool {
         match (&self.connection, &other.connection) {
             (Connection::Serial(a), Connection::Serial(b)) => a.device == b.device,
@@ -418,12 +459,14 @@ impl Profile {
             }
             Connection::Ssh(ssh) => ssh.remote.normalize(true)?,
             Connection::Telnet(remote) => remote.normalize(false)?,
+            Connection::Local(local) => local.normalize()?,
         }
         if self.name.is_empty() {
             self.name = match &self.connection {
                 Connection::Ssh(ssh) => format!("{}@{}", ssh.remote.username, ssh.remote.host),
                 Connection::Telnet(remote) => remote.host.clone(),
                 Connection::Serial(serial) => serial.device.trim_start_matches("/dev/").to_owned(),
+                Connection::Local(local) => local.shell.name().unwrap_or_else(|| t!("local.defaultName")),
             };
         }
         Ok(())
@@ -435,6 +478,10 @@ impl Profile {
     pub fn normalize_imported(&mut self) -> Result<()> {
         self.normalize_target()?;
         self.normalize_session_options()?;
+        // Starting it runs what someone else may have written: the user confirms it first.
+        if let Connection::Local(local) = &mut self.connection {
+            local.imported = true;
+        }
         if let Connection::Ssh(ssh) = &mut self.connection {
             // Reading a key from another computer's share would sign in there as the user
             // (Windows sends the account's NTLM response), before the session even connects:
@@ -467,13 +514,14 @@ impl Profile {
                 return Err(Error::new("profile.invalidTermType"));
             }
         }
-        if let Connection::Ssh(ssh) = &mut self.connection {
-            for var in &mut ssh.env {
-                var.name = var.name.trim().to_owned();
-                if var.name.is_empty() || var.name.contains(['=', '\0']) || var.name.chars().any(char::is_whitespace) {
-                    return Err(Error::new("profile.invalidEnvName").param("name", &var.name));
-                }
+        match &mut self.connection {
+            Connection::Ssh(ssh) => normalize_env(&mut ssh.env)?,
+            Connection::Local(local) => {
+                normalize_env(&mut local.env)?;
+                // Not shown in the editor: its output is UTF-8.
+                self.encoding = default_encoding();
             }
+            Connection::Telnet(_) | Connection::Serial(_) => {}
         }
         self.login_commands = std::mem::take(&mut self.login_commands)
             .into_iter()
@@ -482,6 +530,71 @@ impl Profile {
             .collect();
         self.appearance = std::mem::take(&mut self.appearance).normalize();
         self.notes = self.notes.take().map(|notes| notes.trim_end().to_owned()).filter(|notes| !notes.trim().is_empty());
+        Ok(())
+    }
+}
+
+/// Checks and tidies the names of environment variables.
+fn normalize_env(env: &mut [EnvVar]) -> Result<()> {
+    for var in env {
+        var.name = var.name.trim().to_owned();
+        if var.name.is_empty() || var.name.contains(['=', '\0']) || var.name.chars().any(char::is_whitespace) {
+            return Err(Error::new("profile.invalidEnvName").param("name", &var.name));
+        }
+    }
+    Ok(())
+}
+
+impl LocalShell {
+    /// What it is called, for a session named after it: the program's or the distribution's
+    /// name. `None` for the default shell, which is only found as it starts.
+    pub fn name(&self) -> Option<String> {
+        match self {
+            LocalShell::Default => None,
+            LocalShell::Wsl { distro } => Some(distro.clone()),
+            // By either separator, whichever system the session was saved on.
+            LocalShell::Program { path, .. } => Some(program_name(path.rsplit(['/', '\\']).next().unwrap_or(path))),
+        }
+    }
+}
+
+/// A program's file name without its extension (`pwsh.exe` is `pwsh`).
+fn program_name(file: &str) -> String {
+    match file.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem.to_owned(),
+        _ => file.to_owned(),
+    }
+}
+
+impl LocalOptions {
+    pub fn new(shell: LocalShell) -> Self {
+        Self { shell, start_dir: String::new(), env: Vec::new(), imported: false }
+    }
+
+    fn normalize(&mut self) -> Result<()> {
+        let printable = |text: &str| !text.chars().any(char::is_control);
+        match &mut self.shell {
+            LocalShell::Default => {}
+            LocalShell::Wsl { distro } => {
+                *distro = distro.trim().to_owned();
+                if distro.is_empty() || !printable(distro) {
+                    return Err(Error::new("profile.missingDistro"));
+                }
+            }
+            LocalShell::Program { path, args } => {
+                *path = path.trim().to_owned();
+                if path.is_empty() || !printable(path) {
+                    return Err(Error::new("profile.missingProgram"));
+                }
+                if args.iter().any(|arg| arg.contains('\0')) {
+                    return Err(Error::new("profile.invalidArgs"));
+                }
+            }
+        }
+        self.start_dir = self.start_dir.trim().to_owned();
+        if !printable(&self.start_dir) {
+            return Err(Error::new("profile.invalidStartDir"));
+        }
         Ok(())
     }
 }

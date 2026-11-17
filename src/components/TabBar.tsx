@@ -17,7 +17,7 @@ import { focusedPane, isLogging, mergeProgress, tabId, tabPanelId, tabTitle, typ
 import type { Direction } from "../lib/layout";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { isComposing, isMac } from "../lib/platform";
-import type { Point } from "../ipc/bindings";
+import type { LocalShell, Point, Profile } from "../ipc/bindings";
 import { REST_MS, type TabRest } from "../lib/tabRest";
 import { slideTabs, tabEdgeAt, tabIndexAt } from "../lib/tabStrip";
 import { togglesPanel } from "../lib/tabs";
@@ -31,7 +31,8 @@ import { useStableHandlers } from "../hooks/stableHandlers";
 import { useStableProps } from "../hooks/stableProps";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { IconButton } from "./IconButton";
-import { BellIcon, CloseIcon, ComposeIcon, PlusIcon, ProgressIcon, QuickIcon } from "./icons";
+import { BellIcon, CloseIcon, ComposeIcon, ProgressIcon, QuickIcon } from "./icons";
+import { NewLocalButton } from "./NewLocalButton";
 import { useTabDrag } from "./useTabDrag";
 import { WindowControls } from "./WindowControls";
 
@@ -40,8 +41,12 @@ const SLIDE_MS = 160;
 
 export interface TabBarHandlers {
   onSelect(key: number): void;
-  /** Opens a local terminal tab ("+"), when `canOpenLocal`. */
+  /** Opens a tab with the default local terminal ("+"), when `canOpenLocal`. */
   onNew(): void;
+  /** Opens a tab with a shell found here, from the menu beside "+". */
+  onOpenShell(shell: LocalShell): void;
+  /** Opens a tab with a saved local session, from the menu beside "+". */
+  onOpenProfile(profile: Profile): void;
   /** Closes these tabs, asking first if needed. */
   onClose(keys: number[]): void;
   /** Moves the tab to `index` in the tab order. */
@@ -86,7 +91,7 @@ interface Props {
    * the tab bar renders again each time, but the tabs whose title didn't change don't.
    */
   handlers: TabBarHandlers;
-  /** Whether the system allows local terminals, which "+" opens. */
+  /** Whether the system allows local terminals, which "+" and its menu open. */
   canOpenLocal: boolean;
   /** The other windows, which a tab can move to. */
   windows: WindowInfo[];
@@ -132,6 +137,8 @@ export function TabBar({
   const {
     onSelect,
     onNew,
+    onOpenShell,
+    onOpenProfile,
     onClose,
     onMove,
     canMoveToWindow,
@@ -272,7 +279,7 @@ export function TabBar({
     if (pane.protocol === "serial" || pane.protocol === "telnet") {
       items.push({ label: t("tabs.sendBreak"), disabled: pane.status !== "connected", onSelect: () => onBreak(key) });
     }
-    if (pane.target.kind === "quick") items.push({ label: t("tabs.saveAsSession"), onSelect: () => onSaveAsSession(key) });
+    if (pane.target.kind !== "profile") items.push({ label: t("tabs.saveAsSession"), onSelect: () => onSaveAsSession(key) });
     items.push("separator");
     if (isLogging(pane)) items.push({ label: t("tabs.stopLog"), onSelect: () => onLog(key, false) });
     else items.push({ label: t("tabs.startLog"), disabled: pane.status !== "connected", onSelect: () => onLog(key, true) });
@@ -414,14 +421,12 @@ export function TabBar({
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
       {canOpenLocal && (
-        <IconButton
-          className="tab-new"
+        <NewLocalButton
           label={t("tabs.newLocalTerminal", { shortcut: shortcutLabel("newLocalTerminal") })}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={onNew}
-        >
-          <PlusIcon />
-        </IconButton>
+          onNew={onNew}
+          onOpenShell={onOpenShell}
+          onOpenProfile={onOpenProfile}
+        />
       )}
       {/* Grows, and keeps some room to move the window however many tabs there are. */}
       <span className="tab-bar-drag" {...DRAG_REGION} />

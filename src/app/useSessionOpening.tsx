@@ -3,8 +3,11 @@ import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { OpenMode } from "../components/Sidebar";
-import type { Folder, Profile, SessionTarget } from "../ipc/api";
+import type { Folder, LocalShell, Profile, SessionTarget } from "../ipc/api";
+import { currentSettings } from "../lib/settings";
+import { useLocalShells } from "../hooks/localShells";
 import { directory } from "../lib/directory";
+import { defaultLocal, shellTitle } from "../lib/localShells";
 import { address, loginName, sessionsIn, type QuickTarget } from "../lib/sessions";
 import type { SessionRegistry } from "../lib/sessionRegistry";
 import type { Direction } from "../lib/layout";
@@ -25,7 +28,7 @@ interface Windowing {
 interface Options {
   paneActions: PaneActions;
   windowing: Windowing;
-  /** The local shell's name ("zsh"), which titles local terminals, once known. */
+  /** The default local shell's name ("zsh"), which titles its terminals, once known. */
   shellName: string | null;
   /** The local user's name, for quick SSH connections without one. */
   username: string;
@@ -35,14 +38,15 @@ interface Options {
 
 /**
  * Opening sessions: saved ones from the session list (all of a folder's, asking first when
- * they are several), quick connections and local terminals. `dialog` is what to render for
- * the question.
+ * they are several), quick connections and local terminals (the default one, as the settings
+ * say, or a shell found here). `dialog` is what to render for the question.
  */
 export function useSessionOpening(store: TabStore, sessions: SessionRegistry, options: Options) {
   const { t } = useTranslation();
   const { paneActions, windowing } = options;
   // A folder's sessions waiting for confirmation to open them all.
   const [openingAll, setOpeningAll] = useState<{ folder: Folder; profiles: Profile[] } | null>(null);
+  const found = useLocalShells();
 
   /**
    * "connect" connects again in the focused pane of the active tab when that is the session's
@@ -77,7 +81,16 @@ export function useSessionOpening(store: TabStore, sessions: SessionRegistry, op
   const quickConnect = (target: QuickTarget) =>
     paneActions.openTab({ kind: "quick", ...target }, address({ ...target, username: loginName(target, options.username) }));
 
-  const openLocal = () => paneActions.openTab({ kind: "local" }, options.shellName ?? t("tabs.localTitle"));
+  /** A tab with `shell`, without a saved session. */
+  const openShell = (shell: LocalShell) =>
+    paneActions.openTab({ kind: "local", shell }, shellTitle(shell, found ?? [], options.shellName ?? t("tabs.localTitle"), t));
+
+  /** A tab with the default local terminal ("+"): the shell or saved session the settings name. */
+  const openLocal = () => {
+    const local = defaultLocal(currentSettings().terminal.localShell, directory.get().profiles);
+    if ("profile" in local) openProfile(local.profile, "newTab");
+    else openShell(local.shell);
+  };
 
   const dialog = openingAll && (
     <ConfirmDialog
@@ -92,5 +105,5 @@ export function useSessionOpening(store: TabStore, sessions: SessionRegistry, op
     />
   );
 
-  return { openProfile, openAll, quickConnect, openLocal, dialog };
+  return { openProfile, openAll, quickConnect, openLocal, openShell, dialog };
 }

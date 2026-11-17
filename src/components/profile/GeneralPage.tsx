@@ -1,10 +1,11 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Profile, Protocol, SerialPortInfo } from "../../ipc/api";
+import type { FoundShell, LocalShell, Profile, Protocol, SerialPortInfo } from "../../ipc/api";
+import { foundName, sameShell } from "../../lib/localShells";
 import { expandHome, startsWithHome } from "../../lib/paths";
 import { isMac, isWindows } from "../../lib/platform";
-import type { ProfileForm } from "../../lib/profileForm";
+import { shellOf, type ProfileForm } from "../../lib/profileForm";
 import { AutoTextarea } from "../AutoTextarea";
 import { ComboBox } from "../ComboBox";
 import { HelpTip } from "../HelpTip";
@@ -14,7 +15,7 @@ import { PasswordField } from "../PasswordField";
 import { Select } from "../Select";
 import { Field } from "../Field";
 
-const PROTOCOLS: Protocol[] = ["ssh", "telnet", "serial"];
+const PROTOCOLS: Protocol[] = ["ssh", "telnet", "serial", "local"];
 /** Suggestions for the baud rate; any value can be typed. */
 const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600].map((rate) => ({ value: String(rate) }));
 const PARITIES = ["none", "odd", "even"] as const;
@@ -24,7 +25,11 @@ const NAME_PLACEHOLDERS = {
   ssh: "profile.namePlaceholder",
   telnet: "profile.namePlaceholderTelnet",
   serial: "profile.namePlaceholderSerial",
+  local: "profile.namePlaceholderLocal",
 } as const;
+
+/** The choice of a local terminal's program that is none of those found: another program. */
+const OTHER_PROGRAM = "program";
 
 interface Props {
   form: ProfileForm;
@@ -43,6 +48,13 @@ interface Props {
   /** The serial ports found here; null until listed. */
   ports: SerialPortInfo[] | null;
   refreshPorts(): void;
+  /** Whether "local" can be chosen: not where the system blocks local terminals, unless it is already. */
+  localAllowed: boolean;
+  /** The shells found here, to run in a local terminal; null until known. */
+  shells: FoundShell[] | null;
+  chooseShell(shell: LocalShell): void;
+  chooseProgram(): void;
+  chooseStartDir(): void;
 }
 
 /** The session dialog's first page: the name, the protocol, and where and how it connects. */
@@ -58,6 +70,11 @@ export function GeneralPage({
   keyMissing,
   ports,
   refreshPorts,
+  localAllowed,
+  shells,
+  chooseShell,
+  chooseProgram,
+  chooseStartDir,
 }: Props) {
   const { t } = useTranslation();
   const keyMissingId = useId();
@@ -239,6 +256,90 @@ export function GeneralPage({
     </>
   );
 
+  // The program chosen: the default shell, one of those found, or another one (a WSL
+  // distribution not found here, from another computer, stays one).
+  const shell = shellOf(form);
+  const foundIndex = (shells ?? []).findIndex((found) => sameShell(found.shell, shell));
+  const choice = form.localShell === "default" ? "default" : foundIndex >= 0 ? `found:${foundIndex}` : form.localShell;
+  const distros = (shells ?? []).flatMap((found) => (found.shell.kind === "wsl" ? [{ value: found.shell.distro }] : []));
+
+  const localFields = (
+    <>
+      <Field
+        title={t("profile.shell")}
+        hint={choice === "default" ? t(isWindows ? "profile.defaultShellHintWindows" : "profile.defaultShellHint") : undefined}
+      >
+        <Select
+          value={choice}
+          onChange={(value) => {
+            if (value === "default") chooseShell({ kind: "default" });
+            else if (value === OTHER_PROGRAM) set({ localShell: "program", program: "", args: "" });
+            else if (value.startsWith("found:") && shells) chooseShell(shells[Number(value.slice(6))].shell);
+          }}
+          options={[
+            { value: "default", label: t("profile.defaultShell") },
+            ...(shells ?? []).map((found, i) => ({ value: `found:${i}`, label: foundName(found, t) })),
+            ...(choice === "wsl" ? [{ value: "wsl", label: t("profile.distro") }] : []),
+            { value: OTHER_PROGRAM, label: t("profile.otherProgram") },
+          ]}
+        />
+      </Field>
+      {form.localShell === "program" && (
+        <>
+          <Field title={t("profile.program")}>
+            <div className="input-with-button">
+              <input
+                name="program"
+                value={form.program}
+                onChange={(e) => set({ program: e.target.value })}
+                placeholder={isWindows ? "C:\\Program Files\\Git\\bin\\bash.exe" : "/bin/zsh"}
+                autoFocus={choice === OTHER_PROGRAM && !form.program}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+              <button type="button" className="secondary" onClick={chooseProgram}>
+                {t("profile.chooseProgramButton")}
+              </button>
+            </div>
+          </Field>
+          <Field title={t("profile.args")} hint={t("profile.argsHint")}>
+            <input name="args" value={form.args} onChange={(e) => set({ args: e.target.value })} autoCapitalize="off" autoCorrect="off" />
+          </Field>
+        </>
+      )}
+      {form.localShell === "wsl" && (
+        <Field title={t("profile.distro")}>
+          <ComboBox
+            name="distro"
+            value={form.distro}
+            onChange={(distro) => set({ distro })}
+            suggestions={distros}
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
+        </Field>
+      )}
+      <Field title={t("profile.startDir")} hint={t(form.localShell === "wsl" ? "profile.startDirHintWsl" : "profile.startDirHint")}>
+        <div className="input-with-button">
+          <input
+            name="startDir"
+            value={form.startDir}
+            onChange={(e) => set({ startDir: e.target.value })}
+            placeholder="~"
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
+          <button type="button" className="secondary" onClick={chooseStartDir}>
+            {t("profile.chooseStartDirButton")}
+          </button>
+        </div>
+      </Field>
+    </>
+  );
+
+  const protocols = PROTOCOLS.filter((value) => value !== "local" || localAllowed || protocol === "local");
+  const fields = { ssh: sshFields, telnet: telnetFields, serial: serialFields, local: localFields };
+
   return (
     <>
       <div className="row">
@@ -249,11 +350,11 @@ export function GeneralPage({
           <Select
             value={protocol}
             onChange={changeProtocol}
-            options={PROTOCOLS.map((value) => ({ value, label: t(`profile.protocols.${value}`) }))}
+            options={protocols.map((value) => ({ value, label: t(`profile.protocols.${value}`) }))}
           />
         </Field>
       </div>
-      {protocol === "ssh" ? sshFields : protocol === "telnet" ? telnetFields : serialFields}
+      {fields[protocol]}
       <Field title={t("profile.notes")} hint={t("profile.notesHint")}>
         <AutoTextarea
           rows={3}
