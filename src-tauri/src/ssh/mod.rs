@@ -85,9 +85,9 @@ pub async fn run_shared(connection: Arc<Connection>, id: SessionId, mut io: Term
 
 /// Bridges the shell in `channel`, and those the session starts after it on the connection
 /// when one exits (see [`ShellExit`]), until the session ends.
-async fn shells(mut channel: Channel<Msg>, connection: &Connection, id: SessionId, io: &mut TermIo, mut exit: impl ShellExit) -> Outcome {
+async fn shells(mut channel: Closing, connection: &Connection, id: SessionId, io: &mut TermIo, mut exit: impl ShellExit) -> Outcome {
     loop {
-        let outcome = bridge(channel, io, connection.disconnect_reason(), connection.liveness()).await;
+        let outcome = bridge(channel.take(), io, connection.disconnect_reason(), connection.liveness()).await;
         if !matches!(outcome, Outcome::Exited(_) | Outcome::Signaled(_)) {
             return outcome;
         }
@@ -193,7 +193,7 @@ async fn start(
     id: SessionId,
     io: &mut TermIo,
     connected: impl FnOnce(Arc<Connection>, &TermIo),
-) -> Result<(Channel<Msg>, Arc<Connection>)> {
+) -> Result<(Closing, Arc<Connection>)> {
     let remote = &profile.ssh.remote;
     let (transport, chain, tunnel_port) = match tunnel(route, &remote.host, remote.port, io).await? {
         Some(Tunnel { stream, via, jumps, local_port }) => (Some((stream, via)), jumps, local_port),
@@ -217,9 +217,12 @@ async fn start(
 /// Starts an interactive shell in a new channel on an authenticated connection, with the
 /// profile's terminal type, environment and agent forwarding. Like OpenSSH, rejected
 /// environment variables are not reported (the server's `AcceptEnv` decides).
-async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> Result<Channel<Msg>> {
+async fn open_shell(connection: &Connection, id: SessionId, io: &mut TermIo) -> Result<Closing> {
     let profile = connection.profile();
-    let channel = connection.handle().channel_open_session().await.context(Error::new("ssh.channelFailed"))?;
+    // Until the shell is bridged, closed if the session ends first (its tab closed).
+    let handle = connection.handle().clone();
+    let opened = open_closing(async move { handle.channel_open_session().await }).await;
+    let channel = opened.ok_or_else(|| Error::new("net.connectionLost"))?.context(Error::new("ssh.channelFailed"))?;
     io.sink().traffic().on_channel(ChannelInfo { connection: connection.info(), channel: channel.id().into() });
     let names: Vec<&str> = profile.ssh.env.iter().map(|var| var.name.as_str()).collect();
     log::debug!(
@@ -446,6 +449,54 @@ impl CloseOnDrop {
     pub(crate) fn new(writer: Arc<ChannelWriteHalf<Msg>>) -> Self {
         Self(Some(writer))
     }
+}
+
+/// A channel that is closed when dropped, unless taken for use ([`Closing::take`]): russh
+/// doesn't close a dropped `Channel`, and one dropped on its way to being used (the task
+/// aborted as its tab closed or its rule stopped) would stay open on the server.
+pub(crate) struct Closing(Option<Channel<Msg>>);
+
+impl Closing {
+    pub(crate) fn new(channel: Channel<Msg>) -> Self {
+        Self(Some(channel))
+    }
+
+    pub(crate) fn take(mut self) -> Channel<Msg> {
+        self.0.take().expect("taken once")
+    }
+}
+
+impl std::ops::Deref for Closing {
+    type Target = Channel<Msg>;
+
+    fn deref(&self) -> &Channel<Msg> {
+        self.0.as_ref().expect("not taken yet")
+    }
+}
+
+impl Drop for Closing {
+    fn drop(&mut self) {
+        if let Some(channel) = self.0.take() {
+            tauri::async_runtime::spawn(async move {
+                let _ = channel.close().await;
+            });
+        }
+    }
+}
+
+/// Opens a channel with `open` in a task of its own: one the server opens after the caller
+/// stopped waiting (it gave up, or was aborted) is then closed, where russh would keep it open
+/// for a request nobody waits for. `None` if the task ended without an answer (the runtime
+/// shutting down).
+pub(crate) async fn open_closing(
+    open: impl Future<Output = Result<Channel<Msg>, russh::Error>> + Send + 'static,
+) -> Option<Result<Closing, russh::Error>> {
+    let (sender, opened) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        // A channel nobody waits for any more goes with the error: closed.
+        let _ = sender.send(open.await.map(Closing::new));
+    });
+    opened.await.ok()
 }
 
 impl Drop for CloseOnDrop {

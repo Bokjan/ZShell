@@ -1,3 +1,5 @@
+use russh::Channel;
+
 use super::testing::{free_port, local_rule, until, Tab};
 use super::*;
 use crate::ssh::testing::{connect, Anyone};
@@ -328,6 +330,31 @@ async fn gives_up_on_a_channel_the_server_does_not_open_in_time() {
     assert_eq!(error.downcast_ref::<Error>().map(Error::code), Some("forward.channelTimeout"), "{error:#}");
 
     let (mut channel, reply) = requested.recv().await.unwrap();
+    reply.accept().await;
+    let closed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match channel.wait().await {
+                Some(russh::ChannelMsg::Close) | None => break,
+                Some(_) => {}
+            }
+        }
+    });
+    assert!(closed.await.is_ok(), "the channel is still open");
+}
+
+/// A connection whose rule stops while its channel is being opened: the channel is closed
+/// once the server opens it, rather than kept open with the server's connection to the target.
+#[tokio::test]
+async fn a_channel_opened_after_its_rule_stopped_is_closed() {
+    let (requests, mut requested) = tokio::sync::mpsc::unbounded_channel();
+    let connection = connect(Unanswering(requests), "").await;
+    let opener =
+        Opener { handle: connection.handle().clone(), liveness: connection.liveness().clone(), traffic: Arc::new(RuleTraffic::new()) };
+    // As the rule's task is aborted.
+    let opening = tokio::spawn(async move { opener.open("db".into(), 5432, SocketAddr::from(([127, 0, 0, 1], 50000))).await.map(drop) });
+    let (mut channel, reply) = requested.recv().await.unwrap();
+    opening.abort();
+    let _ = opening.await;
     reply.accept().await;
     let closed = tokio::time::timeout(Duration::from_secs(5), async {
         loop {

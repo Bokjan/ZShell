@@ -35,8 +35,6 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use anyhow::Context as _;
-use russh::client::Msg;
-use russh::Channel;
 use tauri::async_runtime::JoinHandle;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
@@ -47,7 +45,7 @@ use tokio::time::Instant;
 use crate::error::Error;
 use crate::model::{host_port, ForwardKind, ForwardRule};
 use crate::session::{ForwardState, ForwardTraffic, SessionEvent, SessionId, SessionSink, Tone};
-use crate::ssh::{Liveness, RemoteRoutes, SshHandle};
+use crate::ssh::{open_closing, Closing, Liveness, RemoteRoutes, SshHandle};
 use crate::traffic::{ConnectionInfo, Counted, Reporter};
 pub use draining::{Draining, InFlight};
 use traffic::RuleTraffic;
@@ -527,24 +525,22 @@ impl Opener {
     /// A channel to `host:port` for the connection from `peer`, within [`OPEN_TIMEOUT`]. The
     /// server answers the request, which tells that the connection is still alive. Fails with
     /// `forward.channelFailed` (with russh's error underneath) or `forward.channelTimeout`.
-    async fn open(&self, host: String, port: u16, peer: SocketAddr) -> anyhow::Result<Channel<Msg>> {
+    ///
+    /// A channel the server opens after this stopped waiting (it timed out, or the rule
+    /// stopped) is closed: the server would keep its connection to the target with it.
+    async fn open(&self, host: String, port: u16, peer: SocketAddr) -> anyhow::Result<Closing> {
         self.liveness.expect_reply();
         let target = host_port(&host, port);
+        let failed = || Error::new("forward.channelFailed").param("target", &target);
         let handle = self.handle.clone();
-        let mut opening =
-            Box::pin(async move { handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into()).await });
-        match tokio::time::timeout(OPEN_TIMEOUT, &mut opening).await {
-            Ok(opened) => opened.context(Error::new("forward.channelFailed").param("target", target)),
-            Err(_) => {
-                // The server may open it yet, and would keep its connection to the target with
-                // the channel: closed then. Waiting ends with the SSH connection at the latest.
-                tokio::spawn(async move {
-                    if let Ok(channel) = opening.await {
-                        let _ = channel.close().await;
-                    }
-                });
-                Err(Error::new("forward.channelTimeout").param("target", target).into())
-            }
+        let opening =
+            open_closing(
+                async move { handle.channel_open_direct_tcpip(host, port.into(), peer.ip().to_string(), peer.port().into()).await },
+            );
+        match tokio::time::timeout(OPEN_TIMEOUT, opening).await {
+            Ok(Some(opened)) => opened.context(failed()),
+            Ok(None) => Err(failed().into()),
+            Err(_) => Err(Error::new("forward.channelTimeout").param("target", &target).into()),
         }
     }
 }
@@ -561,9 +557,10 @@ impl Opener {
 /// What `stream` sends is checked for (see [`Checking`]): a client waiting for an answer on a
 /// connection gone dead would otherwise wait until keepalives give up. What goes through the
 /// channel counts on the rule's `traffic`.
-async fn bridge(stream: TcpStream, channel: Channel<Msg>, liveness: Liveness, traffic: Arc<RuleTraffic>) {
+async fn bridge(stream: TcpStream, channel: Closing, liveness: Liveness, traffic: Arc<RuleTraffic>) {
     use tokio::io::AsyncWriteExt;
 
+    let channel = channel.take();
     const BUFFER: usize = 64 << 10;
     let _ = stream.set_nodelay(true);
     let _carrying = traffic.carrying(channel.id().into());

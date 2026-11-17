@@ -135,7 +135,7 @@ async fn connect(incoming: Incoming, host: String, port: u16, liveness: Liveness
     match crate::net::tcp(&host, port).await {
         Ok(stream) => {
             incoming.reply.accept().await;
-            bridge(stream, incoming.channel, liveness, traffic).await;
+            bridge(stream, crate::ssh::Closing::new(incoming.channel), liveness, traffic).await;
             Ok(())
         }
         Err(e) => {

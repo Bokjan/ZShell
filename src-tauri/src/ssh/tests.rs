@@ -422,6 +422,23 @@ async fn a_channel_closed_while_out_of_window_holds_up_only_itself() {
     one_channel_out_of_window(true).await;
 }
 
+/// A channel whose opening nobody waits for any more (the session's task aborted as its tab
+/// closed) is closed once the server opens it, rather than kept open on the server, counting
+/// against its `MaxSessions`.
+#[tokio::test]
+async fn a_channel_opened_after_its_caller_gave_up_is_closed() {
+    let (server, closed) = testing::Unanswering::new(Some(Duration::from_millis(300)));
+    let connection = testing::connect(server, "").await;
+    let handle = connection.handle().clone();
+    let given_up = tokio::time::timeout(Duration::from_millis(50), open_closing(async move { handle.channel_open_session().await })).await;
+    assert!(given_up.is_err(), "opened at once");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while closed.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+        assert!(tokio::time::Instant::now() < deadline, "the channel stays open");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 /// A shell the server reports as killed by a signal is told apart from one that exited.
 #[tokio::test]
 async fn a_shell_ended_by_a_signal_is_reported_as_such() {
