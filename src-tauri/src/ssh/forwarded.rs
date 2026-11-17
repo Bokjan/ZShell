@@ -40,6 +40,18 @@ impl RemoteRoutes {
         self.0.lock().unwrap().insert((address, port), route);
     }
 
+    /// [`insert`](Self::insert), unless `address:port` has a route already: `route` is then
+    /// given back.
+    pub fn insert_new(&self, address: String, port: u32, route: Route) -> Result<(), Route> {
+        match self.0.lock().unwrap().entry((address, port)) {
+            std::collections::hash_map::Entry::Occupied(_) => Err(route),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(route);
+                Ok(())
+            }
+        }
+    }
+
     pub fn remove(&self, address: &str, port: u32) {
         self.0.lock().unwrap().remove(&(address.to_owned(), port));
     }

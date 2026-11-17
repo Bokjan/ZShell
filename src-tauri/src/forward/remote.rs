@@ -29,9 +29,12 @@ struct Listening {
 }
 
 impl Listening {
-    fn new(ctx: &Ctx, address: String, port: u32, route: mpsc::Sender<Incoming>) -> Self {
+    /// The listener on `port`, routed to `route`, unless routed before asking for it.
+    fn new(ctx: &Ctx, address: String, port: u32, route: Option<mpsc::Sender<Incoming>>) -> Self {
         let routes = ctx.shared.routes.clone();
-        routes.insert(address.clone(), port, route);
+        if let Some(route) = route {
+            routes.insert(address.clone(), port, route);
+        }
         Self { handle: ctx.handle(), routes, address, port, cancelled: false }
     }
 
@@ -64,6 +67,23 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
     let requested = host_port(&rule.bind_host, rule.bind_port);
     // Every address is the empty one in the protocol (RFC 4254 7.1), as OpenSSH sends `*`.
     let address = if rule.bind_host == ALL_ADDRESSES { String::new() } else { rule.bind_host.clone() };
+    // A port asked for is routed before asking: the server listens before it replies, and
+    // connections it accepts meanwhile (clients retrying as the rule restarts) would otherwise
+    // find no route and be refused. One the server picks is only known from its reply.
+    // Not over another rule's route, which a server refusing this one leaves as it is.
+    let (sender, mut incoming) = mpsc::channel(ROUTE_QUEUE);
+    let (route, routed_early) = match rule.bind_port {
+        0 => (Some(sender), false),
+        port => match ctx.shared.routes.insert_new(address.clone(), port.into(), sender) {
+            Ok(()) => (None, true),
+            Err(sender) => (Some(sender), false),
+        },
+    };
+    let unroute = || {
+        if routed_early {
+            ctx.shared.routes.remove(&address, rule.bind_port.into());
+        }
+    };
     let request = handle.tcpip_forward(address.clone(), rule.bind_port.into());
     tokio::pin!(request);
     // The server only reports the port when it picked one.
@@ -75,6 +95,7 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
             // be listening already: wait for the reply and cancel the listener, so that it
             // doesn't stay without a route (refusing connections, and restarts of the rule
             // with "address in use").
+            unroute();
             if let Ok(Ok(allocated)) = tokio::time::timeout(CANCEL_TIMEOUT, request).await {
                 let cancel = handle.cancel_tcpip_forward(address.clone(), port(allocated));
                 let _ = tokio::time::timeout(CANCEL_TIMEOUT, cancel).await;
@@ -82,10 +103,12 @@ pub async fn run(rule: &ForwardRule, ctx: &Ctx, stopping: &mut Stopping) -> Resu
             return Ok(InFlight::default());
         }
     };
-    let port = port(reply.context(Error::new("forward.remoteRefused").param("address", &requested))?);
-
-    let (sender, mut incoming) = mpsc::channel(ROUTE_QUEUE);
-    let listening = Listening::new(ctx, address, port, sender);
+    let reply = reply.context(Error::new("forward.remoteRefused").param("address", &requested));
+    if reply.is_err() {
+        unroute();
+    }
+    let port = port(reply?);
+    let listening = Listening::new(ctx, address, port, route);
     let mut tracker = Tracker::new(ctx, host_port(&rule.bind_host, port));
     loop {
         let report = tracker.report_due();

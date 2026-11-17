@@ -147,6 +147,56 @@ async fn a_failed_rule_is_not_running() {
     assert!(forwards.running().is_empty());
 }
 
+/// A server that listens at once when asked to (`tcpip-forward`), and sends a connection
+/// through the listener right after its reply, as a client already retrying the port would:
+/// what arrives at the other end goes to the test.
+struct ListensAtOnce(tokio::sync::mpsc::UnboundedSender<Result<(), russh::Error>>);
+
+impl russh::server::Handler for ListensAtOnce {
+    type Error = russh::Error;
+
+    async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+        Ok(russh::server::Auth::Accept)
+    }
+
+    async fn tcpip_forward(&mut self, address: &str, port: &mut u32, session: &mut russh::server::Session) -> Result<bool, Self::Error> {
+        let (handle, address, port, results) = (session.handle(), address.to_owned(), *port, self.0.clone());
+        tokio::spawn(async move {
+            let opened = handle.channel_open_forwarded_tcpip(address, port, "127.0.0.1", 50000).await;
+            let sent = match opened {
+                Ok(channel) => channel.data(&b"hello"[..]).await,
+                Err(e) => Err(e),
+            };
+            let _ = results.send(sent);
+        });
+        Ok(true)
+    }
+}
+
+/// A connection the server sends right after it starts listening for a remote rule (`-R`)
+/// reaches the rule's target, rather than being refused for want of a route.
+#[tokio::test]
+async fn a_remote_rule_takes_connections_from_the_start() {
+    use tokio::io::AsyncReadExt;
+
+    let (results, mut result) = tokio::sync::mpsc::unbounded_channel();
+    let connection = connect(ListensAtOnce(results), "web").await;
+    let forwards = Forwards::new(&connection, Arc::new(Hub::default()));
+    let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let rule =
+        ForwardRule { kind: ForwardKind::Remote, bind_port: 2022, target_port: target.local_addr().unwrap().port(), ..local_rule("r1", 0) };
+    forwards.start(rule, false);
+    let arrived = tokio::time::timeout(Duration::from_secs(5), async {
+        let (mut stream, _) = target.accept().await.unwrap();
+        let mut received = [0; 5];
+        stream.read_exact(&mut received).await.unwrap();
+        received
+    });
+    let opened = tokio::time::timeout(Duration::from_secs(5), result.recv()).await.unwrap().unwrap();
+    assert!(opened.is_ok(), "{opened:?}");
+    assert_eq!(&arrived.await.expect("nothing arrived"), b"hello");
+}
+
 /// A server that answers no request for a `direct-tcpip` channel by itself, as one waiting
 /// to connect to a target that drops packets: each request's channel and reply go to the
 /// test.
