@@ -230,7 +230,7 @@ export function createSessionRegistry(
               store.dispatch({ type: "attention", key, kind: "bell" });
               announce(t("announce.bell", { name: pane().title }));
             }
-            if (!document.hasFocus()) windows.requestAttention();
+            if (!windows.focused()) windows.requestAttention();
           },
           // A tab in the background whose program fails tells screen readers; the tab shows it.
           progress: (progress) => {
@@ -247,7 +247,7 @@ export function createSessionRegistry(
             const state = store.get();
             const tab = state.tabs.find((tab) => tab.panes.some((p) => p.key === key));
             const locked = isAppLocked();
-            const seen = document.hasFocus() && !locked;
+            const seen = windows.focused() && !locked;
             if (!tab || (seen && tab.key === state.activeKey)) return;
             const name = pane().title;
             if (tab.key !== state.activeKey) store.dispatch({ type: "attention", key, kind: "notice" });

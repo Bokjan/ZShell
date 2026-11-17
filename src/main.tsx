@@ -7,10 +7,12 @@ import { AppLockGate } from "./components/AppLockGate";
 import { VaultGate } from "./components/VaultGate";
 import { setupI18n } from "./i18n/index";
 import { recordPageErrors } from "./ipc/debugLog";
+import { trackFocus } from "./ipc/windows";
 import { applyTheme, SettingsProvider } from "./hooks/settings";
 import { suppressWebViewMenu } from "./hooks/titleBar";
 
 recordPageErrors();
+trackFocus();
 
 // Until the stored settings load, follow the system appearance to avoid a flash of the
 // wrong theme.

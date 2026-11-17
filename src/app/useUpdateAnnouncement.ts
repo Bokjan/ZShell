@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { windows } from "../ipc/windows";
 import { announce } from "../lib/announce";
 
 /** What the update check found (see `useUpdates`). */
@@ -22,7 +23,7 @@ export function useUpdateAnnouncement(updates: Updates, aboutOpen: boolean) {
     const version = updates.available?.version ?? null;
     const known = announced.current;
     announced.current = version;
-    if (known !== undefined && version && version !== known && document.hasFocus() && !aboutOpen) {
+    if (known !== undefined && version && version !== known && windows.focused() && !aboutOpen) {
       announce(t("updates.found", { version }));
     }
   }, [updates.loaded, updates.available?.version, aboutOpen, t]);

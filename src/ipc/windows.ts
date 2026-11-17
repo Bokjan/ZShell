@@ -25,7 +25,36 @@ const allowsNotifications = () => {
   });
 };
 
+/**
+ * Whether this window has the focus, as the system says: `document.hasFocus()` can't tell,
+ * as WKWebView says the page has it while the app is in the background. Taken to be focused
+ * until the system answers, as a window opening is.
+ */
+let focused = true;
+let trackingFocus = false;
+
+/** Starts following this window's focus (see `windows.focused`), once. */
+export function trackFocus() {
+  if (trackingFocus) return;
+  trackingFocus = true;
+  const window = getCurrentWindow();
+  let changed = false;
+  window
+    .onFocusChanged(({ payload }) => {
+      changed = true;
+      focused = payload;
+    })
+    .catch(console.error);
+  // Unless the focus changed meanwhile, which says it last.
+  window.isFocused().then((now) => changed || (focused = now), console.error);
+}
+
 export const windows = {
+  /** Whether this window has the focus (the app is in front, and this is its window). */
+  focused: () => {
+    trackFocus();
+    return focused;
+  },
   /** Where this window's maximize button is (Windows, which snaps windows to it), or none. */
   setMaximizeButton: (rect: Rect | null) => void call("window_set_maximize_button", { rect }).catch(console.error),
   /** The web view the pages run in and the version this process runs, or null if the system won't say. */
