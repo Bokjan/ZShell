@@ -241,6 +241,38 @@ fn repairs_folder_cycles() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The first folder of each cycle (in the list) goes to the top level and the others stay
+/// where they are, as checking each in turn did; folders nested tens of thousands deep (an
+/// import made to be slow) are repaired at once.
+#[test]
+fn repairs_cycles_and_deep_nesting_at_once() {
+    let (_, dir) = store("deep");
+    let folder = |id: String, parent: Option<String>| Folder { name: id.clone(), id, parent };
+    let mut folders = vec![
+        folder("a".into(), Some("c".into())),
+        folder("b".into(), Some("a".into())),
+        folder("c".into(), Some("b".into())),
+        folder("d".into(), Some("a".into())),
+        folder("e".into(), Some("gone".into())),
+    ];
+    const DEEP: usize = 50_000;
+    folders.extend((0..DEEP).map(|i| folder(format!("n{i}"), i.checked_sub(1).map(|p| format!("n{p}")))));
+    write_vault(&dir, serde_json::json!({ "folders": folders }));
+    let started = std::time::Instant::now();
+    let store = load(&dir);
+    let took = started.elapsed();
+    let folders = store.folders();
+    let parent = |id: &str| folders.iter().find(|f| f.id == id).unwrap().parent.clone();
+    fs::remove_dir_all(&dir).unwrap();
+    assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
+    assert_eq!(parent("a"), None);
+    assert_eq!(parent("b").as_deref(), Some("a"));
+    assert_eq!(parent("c").as_deref(), Some("b"));
+    assert_eq!(parent("d").as_deref(), Some("a"));
+    assert_eq!(parent("e"), None);
+    assert_eq!(parent(&format!("n{}", DEEP - 1)), Some(format!("n{}", DEEP - 2)));
+}
+
 /// Names are shown in terminals ("Connecting to …"): one from an import file can't carry
 /// control sequences there.
 #[test]

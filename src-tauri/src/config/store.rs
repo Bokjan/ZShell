@@ -63,12 +63,13 @@ impl State {
 
     /// Whether `folder` is `ancestor` or inside it.
     fn is_within(&self, folder: &str, ancestor: &str) -> bool {
-        let mut current = Some(folder.to_owned());
+        let parents: HashMap<&str, Option<&str>> = self.folders.iter().rev().map(|f| (f.id.as_str(), f.parent.as_deref())).collect();
+        let mut current = Some(folder);
         // Bounded, in case of a cycle in a hand-edited file.
         for _ in 0..=self.folders.len() {
             match current {
                 Some(id) if id == ancestor => return true,
-                Some(id) => current = self.folders.iter().find(|f| f.id == id).and_then(|f| f.parent.clone()),
+                Some(id) => current = parents.get(id).copied().flatten(),
                 None => return false,
             }
         }
@@ -92,15 +93,56 @@ impl State {
                 remote.jump_hosts.retain(|jump| *jump != id && ssh.contains(jump) && seen.insert(jump.clone()));
             }
         }
-        for i in 0..self.folders.len() {
-            let parent = self.folders[i].parent.clone();
-            let broken = match &parent {
-                Some(p) => !ids.contains(p) || self.is_within(p, &self.folders[i].id),
-                None => false,
-            };
-            if broken {
-                self.folders[i].parent = None;
+        for folder in &mut self.folders {
+            if folder.parent.as_ref().is_some_and(|p| !ids.contains(p)) {
+                folder.parent = None;
             }
+        }
+        self.break_folder_cycles();
+    }
+
+    /// Makes the first folder of each cycle of parents (in the list) a top-level one, as
+    /// checking each folder in turn for being inside itself would: each folder is walked up
+    /// from once, so that a file made with folders nested thousands deep takes no longer than
+    /// reading it.
+    fn break_folder_cycles(&mut self) {
+        let mut index: HashMap<&str, usize> = HashMap::with_capacity(self.folders.len());
+        for (i, folder) in self.folders.iter().enumerate() {
+            index.entry(folder.id.as_str()).or_insert(i);
+        }
+        let parents: Vec<Option<usize>> = self.folders.iter().map(|f| f.parent.as_deref().and_then(|p| index.get(p).copied())).collect();
+        #[derive(Clone, Copy, PartialEq)]
+        enum Walk {
+            Unseen,
+            OnPath,
+            Done,
+        }
+        let mut walk = vec![Walk::Unseen; parents.len()];
+        let mut cut = Vec::new();
+        for start in 0..parents.len() {
+            let mut path = Vec::new();
+            let mut at = Some(start);
+            while let Some(i) = at {
+                match walk[i] {
+                    Walk::Done => break,
+                    Walk::OnPath => {
+                        let from = path.iter().position(|&j| j == i).expect("on this path");
+                        cut.push(*path[from..].iter().min().expect("not empty"));
+                        break;
+                    }
+                    Walk::Unseen => {
+                        walk[i] = Walk::OnPath;
+                        path.push(i);
+                        at = parents[i];
+                    }
+                }
+            }
+            for i in path {
+                walk[i] = Walk::Done;
+            }
+        }
+        for i in cut {
+            self.folders[i].parent = None;
         }
     }
 

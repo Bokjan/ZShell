@@ -128,41 +128,77 @@ pub fn export(path: &Path, contents: Contents, passwords: Option<(&str, Password
 /// one). Blocks while the key is derived.
 pub fn scan(path: &Path, passphrase: Option<&str>, existing: &[Profile], proxies: &[Proxy]) -> Result<Scan> {
     let (file, digest) = read(path, passphrase, None)?;
+    let index = Index::of(&file);
     let names: HashMap<&str, &str> = file.profiles.iter().map(|p| (p.id.as_str(), p.name.as_str())).collect();
-    let candidates = file
-        .profiles
-        .iter()
-        .map(|p| {
-            let proxy = p.proxy().and_then(|id| file.proxies.iter().find(|proxy| proxy.id == id));
-            let here = proxy.and_then(|proxy| existing_proxy(proxy, proxies));
-            Candidate {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                connection: p.connection.clone(),
-                folder: folder_path(&file.folders, p.folder.as_deref()),
-                jump_hosts: p.jump_hosts().iter().filter_map(|j| names.get(j.as_str()).map(|n| n.to_string())).collect(),
-                proxy: here.or(proxy).map(|proxy| proxy.name.clone()),
-                existing_proxy: here.is_some(),
-                proxy_command: proxy.filter(|proxy| here.is_none() && proxy.kind == ProxyKind::Command).map(|proxy| proxy.command.clone()),
-                existing: duplicate_of(p, existing).map(|e| e.name.clone()),
-                auto_forwards: p.forwards().iter().filter(|f| f.auto_start).filter_map(|f| f.clone().normalize().ok()).collect(),
-                login_commands: p.login_commands.iter().filter(|c| !c.trim().is_empty()).cloned().collect(),
-                brings: to_import(&file, [p.id.clone()], existing).0.into_iter().filter(|id| *id != p.id).collect(),
-            }
-        })
-        .collect();
+    // What each session lists (its folders, the sessions it brings) grows with the square of a
+    // file made to nest deeply, which is refused rather than listed.
+    let too_large = || Error::new("import.tooLarge").param("path", path.display());
+    let mut budget = MAX_LISTED;
+    let mut candidates = Vec::with_capacity(file.profiles.len());
+    for p in &file.profiles {
+        let folder = folder_path(&index.folders, p.folder.as_deref());
+        budget = budget.checked_sub(folder.len()).ok_or_else(too_large)?;
+        let (brought, _, looked_at) = to_import(&index.profiles, [p.id.clone()], existing, budget).ok_or_else(too_large)?;
+        budget -= looked_at;
+        let proxy = p.proxy().and_then(|id| index.proxies.get(id).copied());
+        let here = proxy.and_then(|proxy| existing_proxy(proxy, proxies));
+        candidates.push(Candidate {
+            id: p.id.clone(),
+            name: p.name.clone(),
+            connection: p.connection.clone(),
+            folder,
+            jump_hosts: p.jump_hosts().iter().filter_map(|j| names.get(j.as_str()).map(|n| n.to_string())).collect(),
+            proxy: here.or(proxy).map(|proxy| proxy.name.clone()),
+            existing_proxy: here.is_some(),
+            proxy_command: proxy.filter(|proxy| here.is_none() && proxy.kind == ProxyKind::Command).map(|proxy| proxy.command.clone()),
+            existing: duplicate_of(p, existing).map(|e| e.name.clone()),
+            auto_forwards: p.forwards().iter().filter(|f| f.auto_start).filter_map(|f| f.clone().normalize().ok()).collect(),
+            login_commands: p.login_commands.iter().filter(|c| !c.trim().is_empty()).cloned().collect(),
+            brings: brought.into_iter().filter(|id| *id != p.id).collect(),
+        });
+    }
     Ok(Scan { candidates, digest })
 }
 
-/// The sessions in `file` (ids) that importing `selected` adds, in the order found: those and
-/// the jump hosts they go through, and theirs, except those that exist here (`existing`),
-/// which are used instead: file id → the existing one's id.
+/// How many folder names and sessions a scan looks at in all, for the sessions to list: a
+/// file of thousands of sessions, each in a few folders and through a few jump hosts, takes a
+/// few tens of thousands.
+const MAX_LISTED: usize = 1 << 18;
+
+/// A file's folders, sessions and proxies by id (the first of each id, as a search would find).
+struct Index<'a> {
+    folders: HashMap<&'a str, &'a Folder>,
+    profiles: HashMap<&'a str, &'a Profile>,
+    proxies: HashMap<&'a str, &'a Proxy>,
+}
+
+impl<'a> Index<'a> {
+    fn of(file: &'a SessionsFile) -> Self {
+        fn by_id<T>(items: &[T], id: impl Fn(&T) -> &str) -> HashMap<&str, &T> {
+            let mut map = HashMap::with_capacity(items.len());
+            for item in items {
+                map.entry(id(item)).or_insert(item);
+            }
+            map
+        }
+        Self {
+            folders: by_id(&file.folders, |f: &Folder| &f.id),
+            profiles: by_id(&file.profiles, |p: &Profile| &p.id),
+            proxies: by_id(&file.proxies, |p: &Proxy| &p.id),
+        }
+    }
+}
+
+/// The sessions of a file (`by_id`) that importing `selected` adds, in the order found: those
+/// and the jump hosts they go through, and theirs, except those that exist here (`existing`),
+/// which are used instead: file id → the existing one's id. Then how many sessions it looked
+/// at; `None` once that is more than `limit`.
 fn to_import(
-    file: &SessionsFile,
+    by_id: &HashMap<&str, &Profile>,
     selected: impl IntoIterator<Item = String>,
     existing: &[Profile],
-) -> (Vec<String>, HashMap<String, String>) {
-    let by_id: HashMap<&str, &Profile> = file.profiles.iter().map(|p| (p.id.as_str(), p)).collect();
+    limit: usize,
+) -> Option<(Vec<String>, HashMap<String, String>, usize)> {
     let mut imported = Vec::new();
     let mut found: HashMap<String, String> = HashMap::new();
     // Each queued once: a file may list a session as a jump host many times over.
@@ -179,8 +215,11 @@ fn to_import(
                 imported.push(id);
             }
         }
+        if seen.len() > limit {
+            return None;
+        }
     }
-    (imported, found)
+    Some((imported, found, seen.len()))
 }
 
 /// A file to import from, read and opened (see [`open`]).
@@ -199,10 +238,11 @@ pub fn open(path: &Path, passphrase: Option<&str>, digest: &str) -> Result<Opene
 /// and proxies come along unless they already exist here, in which case the existing one is
 /// used (with its own password); folders are matched by name and merged.
 pub fn plan(Opened(file): &Opened, selected: &[String], here: &Snapshot) -> Result<Additions> {
-    let folders = here.folders;
+    let index = Index::of(file);
 
-    // File id → the id of the session it becomes (new, or an existing duplicate).
-    let (imported, mut ids) = to_import(file, selected.iter().cloned(), here.profiles);
+    // File id → the id of the session it becomes (new, or an existing duplicate). Found in a
+    // file scanned already (whose digest `open` checked), within the scan's limit.
+    let (imported, mut ids, _) = to_import(&index.profiles, selected.iter().cloned(), here.profiles, usize::MAX).expect("no limit");
     for id in &imported {
         ids.insert(id.clone(), uuid::Uuid::new_v4().to_string());
     }
@@ -215,8 +255,9 @@ pub fn plan(Opened(file): &Opened, selected: &[String], here: &Snapshot) -> Resu
     // File proxy id → the id of the proxy it becomes, for the proxies the imported use.
     let mut proxy_ids: HashMap<&str, String> = HashMap::new();
     let mut proxies = Vec::new();
+    let mut proxy_names: HashSet<String> = here.proxies.iter().map(|p| p.name.clone()).collect();
     for profile in file.profiles.iter().filter(|p| imported.contains(&p.id)) {
-        let Some(proxy) = profile.proxy().and_then(|id| file.proxies.iter().find(|proxy| proxy.id == id)) else {
+        let Some(proxy) = profile.proxy().and_then(|id| index.proxies.get(id).copied()) else {
             continue;
         };
         if proxy_ids.contains_key(proxy.id.as_str()) {
@@ -225,8 +266,8 @@ pub fn plan(Opened(file): &Opened, selected: &[String], here: &Snapshot) -> Resu
         let id = match existing_proxy(proxy, here.proxies) {
             Some(existing) => existing.id.clone(),
             None => {
-                let taken = |name: &str| here.proxies.iter().chain(&proxies).any(|p| p.name == name);
-                let name = free_name(&proxy.name, taken);
+                let name = free_name(&proxy.name, |name| proxy_names.contains(name));
+                proxy_names.insert(name.clone());
                 let file_proxy_id = proxy.id.clone();
                 let mut proxy = Proxy { id: uuid::Uuid::new_v4().to_string(), name, ..proxy.clone() };
                 proxy.normalize().map_err(|e| Error::new("import.invalidProxy").param("name", &proxy.name).detail(e))?;
@@ -239,7 +280,7 @@ pub fn plan(Opened(file): &Opened, selected: &[String], here: &Snapshot) -> Resu
         proxy_ids.insert(&proxy.id, id);
     }
 
-    let mut merger = FolderMerger { file: &file.folders, existing: folders, added: Vec::new(), origins: HashMap::new() };
+    let mut merger = FolderMerger::new(&index.folders, here.folders);
     let new_profiles = file
         .profiles
         .iter()
@@ -355,49 +396,76 @@ fn duplicate_of<'a>(profile: &Profile, existing: &'a [Profile]) -> Option<&'a Pr
         .or_else(|| existing.iter().find(|e| e.same_target(profile)))
 }
 
-/// The names of `folder` and the folders around it, outermost first.
-fn folder_path(folders: &[Folder], folder: Option<&str>) -> Vec<String> {
-    folder_chain(folders, folder).into_iter().map(|f| f.name.clone()).collect()
+/// The names of `folder` and the folders around it (`folders`, by id), outermost first.
+fn folder_path(folders: &HashMap<&str, &Folder>, folder: Option<&str>) -> Vec<String> {
+    let mut chain = folders_up(folders, folder, |_| false);
+    chain.reverse();
+    chain.into_iter().map(|f| f.name.clone()).collect()
 }
 
-/// `folder` and the folders around it, outermost first.
-fn folder_chain<'a>(folders: &'a [Folder], folder: Option<&str>) -> Vec<&'a Folder> {
+/// `folder` and the folders around it (`folders`, by id), innermost first, up to the first
+/// that is `known` (left out). A folder met again (a cycle in a hand-edited file) is the top.
+fn folders_up<'a>(folders: &HashMap<&str, &'a Folder>, folder: Option<&str>, known: impl Fn(&str) -> bool) -> Vec<&'a Folder> {
     let mut chain = Vec::new();
+    let mut met = HashSet::new();
     let mut current = folder;
     while let Some(id) = current {
-        let Some(f) = folders.iter().find(|f| f.id == id) else { break };
-        if chain.len() > folders.len() {
-            break; // A cycle in a hand-edited file.
+        if known(id) || !met.insert(id) {
+            break;
         }
+        let Some(&f) = folders.get(id) else { break };
         chain.push(f);
         current = f.parent.as_deref();
     }
-    chain.reverse();
     chain
 }
 
 /// Maps the file's folders onto existing ones with the same name in the same place, adding
 /// those that don't exist.
 struct FolderMerger<'a> {
-    file: &'a [Folder],
-    existing: &'a [Folder],
+    /// The file's folders, by id.
+    file: &'a HashMap<&'a str, &'a Folder>,
+    /// The folders here and those added, by parent and name (the first of each).
+    here: HashMap<(Option<String>, String), String>,
     added: Vec<Folder>,
     /// The id of each added folder → that of the folder in the file it was made for.
     origins: HashMap<String, String>,
+    /// The file's folders resolved so far → the folder each became.
+    resolved: HashMap<String, String>,
 }
 
-impl FolderMerger<'_> {
+impl<'a> FolderMerger<'a> {
+    fn new(file: &'a HashMap<&'a str, &'a Folder>, existing: &[Folder]) -> Self {
+        let mut here = HashMap::with_capacity(existing.len());
+        for f in existing {
+            here.entry((f.parent.clone(), f.name.clone())).or_insert_with(|| f.id.clone());
+        }
+        Self { file, here, added: Vec::new(), origins: HashMap::new(), resolved: HashMap::new() }
+    }
+
     fn resolve(&mut self, file_id: &str) -> Option<String> {
-        let mut parent: Option<String> = None;
-        for in_file in folder_chain(self.file, Some(file_id)) {
-            let name = &in_file.name;
-            let found = self.existing.iter().chain(&self.added).find(|f| f.name == *name && f.parent == parent).map(|f| f.id.clone());
-            let id = found.unwrap_or_else(|| {
-                let folder = Folder { id: uuid::Uuid::new_v4().to_string(), name: name.clone(), parent: parent.clone() };
-                self.added.push(folder.clone());
-                self.origins.insert(folder.id.clone(), in_file.id.clone());
-                folder.id
-            });
+        // Down from the innermost folder already resolved, each folder once.
+        let chain = folders_up(self.file, Some(file_id), |id| self.resolved.contains_key(id));
+        let mut parent = match chain.last() {
+            // Inside a folder resolved before, or at the top.
+            Some(top) => top.parent.as_deref().and_then(|id| self.resolved.get(id).cloned()),
+            // Resolved before, or not in the file.
+            None => return self.resolved.get(file_id).cloned(),
+        };
+        for in_file in chain.into_iter().rev() {
+            let key = (parent.clone(), in_file.name.clone());
+            let id = match self.here.get(&key) {
+                Some(id) => id.clone(),
+                None => {
+                    let folder = Folder { id: uuid::Uuid::new_v4().to_string(), name: in_file.name.clone(), parent: parent.clone() };
+                    self.here.insert(key, folder.id.clone());
+                    self.origins.insert(folder.id.clone(), in_file.id.clone());
+                    let id = folder.id.clone();
+                    self.added.push(folder);
+                    id
+                }
+            };
+            self.resolved.insert(in_file.id.clone(), id.clone());
             parent = Some(id);
         }
         parent
@@ -547,6 +615,54 @@ mod tests {
         assert_eq!(new[1].forwards()[0].bind_host, "localhost");
         assert!(!new[1].forwards()[0].id.is_empty());
         std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A file made to be slow to scan (sessions each bringing all the jump hosts after it, or
+    /// many sessions in folders nested thousands deep) is refused at once rather than listed;
+    /// folders nested as deep for a few sessions are imported at once.
+    #[test]
+    fn files_made_to_nest_deeply_are_refused_or_imported_at_once() {
+        let scanned = |contents: Contents| {
+            let path = std::env::temp_dir().join(format!("zshell-sessions-deep-{}.json", uuid::Uuid::new_v4()));
+            export(&path, contents, None).unwrap();
+            let started = std::time::Instant::now();
+            let scan = scan(&path, None, &[], &[]);
+            let planned = scan.as_ref().ok().map(|Scan { candidates, digest }| {
+                let ids: Vec<String> = candidates.iter().map(|c| c.id.clone()).collect();
+                let here = Snapshot { profiles: &[], folders: &[], proxies: &[] };
+                open(&path, None, digest).and_then(|file| plan(&file, &ids, &here)).unwrap()
+            });
+            let took = started.elapsed();
+            std::fs::remove_file(&path).unwrap();
+            assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
+            (scan.err().map(|e| e.code()), planned)
+        };
+
+        const CHAIN: usize = 5_000;
+        let id = |i: usize| format!("s{i}");
+        let chain = (0..CHAIN)
+            .map(|i| {
+                let next = (i + 1 < CHAIN).then(|| id(i + 1));
+                profile(&id(i), &id(i), &format!("{}.lan", id(i)), None, &next.iter().map(String::as_str).collect::<Vec<_>>())
+            })
+            .collect();
+        let (error, _) = scanned(Contents { folders: Vec::new(), proxies: Vec::new(), profiles: chain, order: Vec::new() });
+        assert_eq!(error, Some("import.tooLarge"));
+
+        const DEEP: usize = 20_000;
+        let fid = |i: usize| format!("f{i}");
+        let folders: Vec<Folder> = (0..DEEP).map(|i| folder(&fid(i), &fid(i), i.checked_sub(1).map(fid).as_deref())).collect();
+        let deepest = fid(DEEP - 1);
+        let many = (0..100).map(|i| profile(&id(i), &id(i), "db.lan", Some(&deepest), &[])).collect();
+        let (error, _) = scanned(Contents { folders: folders.clone(), proxies: Vec::new(), profiles: many, order: Vec::new() });
+        assert_eq!(error, Some("import.tooLarge"));
+
+        let few = (0..3).map(|i| profile(&id(i), &id(i), "db.lan", Some(&deepest), &[])).collect();
+        let (error, planned) = scanned(Contents { folders, proxies: Vec::new(), profiles: few, order: Vec::new() });
+        assert_eq!(error, None);
+        let Additions { folders, profiles, .. } = planned.unwrap();
+        assert_eq!(folders.len(), DEEP);
+        assert!(profiles.iter().all(|p| p.folder == profiles[0].folder));
     }
 
     /// A key on another computer's share would be read (signing in there) as soon as the
