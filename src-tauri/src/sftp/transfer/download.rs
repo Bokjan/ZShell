@@ -1,8 +1,10 @@
 //! Downloads: the remote files and folders are listed (each item's top-level name claimed
 //! first when they go to a folder), the folders made here, then the files copied (see
-//! [`copy_files`]).
+//! [`copy_files`]). A failed download can be gone on with (see [`super::resume`]):
+//! [`Download`] keeps what it takes, the names it claimed too.
 
 use std::collections::HashSet;
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -10,72 +12,161 @@ use anyhow::{bail, Context, Result};
 use futures_util::{StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
+use tokio::io::AsyncSeekExt;
 
 use super::left::{Left, Stamp};
+use super::resume::{download_from, resumable, Copied};
 use super::{
-    copy, copy_files, downloaded_dir_mode, downloaded_mode, unless_cancelled, with_file_context, Plan, Reporter, Run, CONCURRENT_DIRS,
+    copy, copy_files, downloaded_dir_mode, downloaded_mode, is_cancelled, unless_cancelled, with_file_context, Plan, Reporter, Run,
+    CONCURRENT_DIRS,
 };
 use crate::error::Error;
 use crate::local_name::{create_dir, create_unique, create_unique_file, local_file_name, new_file, numbered};
 use crate::sftp::batch::each_in_order;
-use crate::sftp::replace::LocalTarget;
+use crate::sftp::replace::{LocalPartial, LocalTarget};
 use crate::sftp::{file_name, is_entry, join};
 
-/// Downloads into `local_dir`; top-level items get a unique name instead of overwriting
-/// existing files, so everything this creates is its own. What it created goes into `left`,
-/// with the local paths of the top-level items that are there.
-pub async fn download(
+/// A download, and how far it has got.
+pub struct Download {
+    remote_paths: Vec<String>,
+    /// The folder the items go to, under names of their own (see [`claim`]); none when each was
+    /// given a path ([`Download::to`]).
+    folder: Option<PathBuf>,
+    /// Each item and where it goes, once its name is claimed.
+    items: Option<Vec<(String, PathBuf)>>,
+    /// Once the remote items are listed.
+    planned: Option<Planned>,
+    /// Whether its large files are written so that it can be gone on with.
+    resumable: bool,
+}
+
+/// What a download copies (see [`plan`]).
+struct Planned {
+    plan: Plan<String, PathBuf, LocalPartial>,
+    /// Where each item's files end in `plan.files`.
+    ends: Vec<usize>,
+    /// The local paths the plan has taken, and which of its files land on one taken before them.
+    taken: Arc<Mutex<Taken>>,
+    clashes: Vec<bool>,
+}
+
+impl Download {
+    /// Into `folder`; top-level items get a unique name instead of overwriting existing files,
+    /// so everything this creates is its own.
+    pub fn into(remote_paths: Vec<String>, folder: PathBuf) -> Self {
+        Self { remote_paths, folder: Some(folder), items: None, planned: None, resumable: true }
+    }
+
+    /// Each remote file or folder to the local path given, replacing files there. Without
+    /// `resumable`, a large file cut short isn't kept to go on with.
+    pub fn to(items: Vec<(String, PathBuf)>, resumable: bool) -> Self {
+        let remote_paths = items.iter().map(|(remote, _)| remote.clone()).collect();
+        Self { remote_paths, folder: None, items: Some(items), planned: None, resumable }
+    }
+
+    /// The local items to show once it ends: into a folder, those of the items that are there
+    /// (taken from what it `left`); else each item's path, once all arrived.
+    pub(super) fn paths(&self, left: &mut Left<PathBuf>, done: bool) -> Vec<PathBuf> {
+        match &self.folder {
+            Some(_) => std::mem::take(&mut left.items),
+            None if done => self.items.iter().flatten().map(|(_, local)| local.clone()).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Removes what the files cut short left, and gives back the names claimed for the items
+    /// that never arrived, as it won't be gone on with.
+    pub(super) async fn discard(mut self) {
+        let mut whole = Vec::new();
+        if let Some(Planned { plan, ends, .. }) = self.planned.take() {
+            whole = items_whole(&ends, &plan.copied.iter().map(|copied| matches!(copied, Copied::Done(_))).collect::<Vec<_>>());
+            for copied in plan.copied {
+                if let Copied::Partly(partial) = copied {
+                    partial.remove().await;
+                }
+            }
+        }
+        if let (Some(_), Some(items)) = (&self.folder, &self.items) {
+            give_back(items, &whole).await;
+        }
+    }
+}
+
+/// Gives back the names claimed for the `items` not `whole` (by index; all when it is short).
+/// Those that arrived stay, even an empty file or folder.
+async fn give_back(items: &[(String, PathBuf)], whole: &[bool]) {
+    for (i, (_, local)) in items.iter().enumerate() {
+        if whole.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        let _ = match tokio::fs::symlink_metadata(local).await {
+            Ok(metadata) if metadata.is_dir() => tokio::fs::remove_dir(local).await,
+            Ok(metadata) if metadata.len() == 0 => tokio::fs::remove_file(local).await,
+            _ => Ok(()),
+        };
+    }
+}
+
+/// Downloads, or goes on with a download; what it created goes into `left`, with the local
+/// paths of the top-level items that are there (into a folder). With `check`, a file copied
+/// whole before is copied again unless it is there as it was left (by its size).
+pub(super) async fn download(
     sftp: &SftpSession,
-    remote_paths: &[String],
-    local_dir: &Path,
+    job: &mut Download,
     reporter: &mut Reporter,
     left: &mut Left<PathBuf>,
+    check: bool,
 ) -> Result<()> {
-    let names: Vec<&str> = remote_paths.iter().map(String::as_str).collect();
-    let attributes = unless_cancelled(&reporter.cancelled, stat_all(sftp, &names)).await?;
+    let planned = match &mut job.planned {
+        Some(planned) => {
+            go_on(sftp, &mut planned.plan, reporter, check).await?;
+            planned
+        }
+        None => {
+            let attributes = unless_cancelled(&reporter.cancelled, stat_all(sftp, &job.remote_paths)).await?;
+            if let (None, Some(folder)) = (&job.items, &job.folder) {
+                job.items = Some(claim_all(&job.remote_paths, &attributes, folder).await?);
+            }
+            let items = job.items.as_deref().expect("a download is given a folder or a path for each item");
+            let planned = plan(sftp, items, attributes, reporter).await?;
+            job.planned.insert(planned)
+        }
+    };
+    let items = job.items.as_deref().unwrap_or_default();
+    let claimed = job.folder.is_some();
+    let result = copy_planned(planned, items, reporter, left, claimed, job.resumable, sftp).await;
+    if claimed {
+        left.items.clear();
+        for (_, local) in items {
+            if tokio::fs::symlink_metadata(local).await.is_ok() {
+                left.items.push(local.clone());
+            }
+        }
+    }
+    result
+}
+
+/// Takes a free local name for each remote item, in order: which of two names that clash
+/// locally gets `name (1)` stays the same from one download to the next. If one can't be
+/// taken, gives back those taken.
+async fn claim_all(remote_paths: &[String], attributes: &[FileAttributes], folder: &Path) -> Result<Vec<(String, PathBuf)>> {
     let mut items = Vec::with_capacity(remote_paths.len());
-    let mut result = Ok(());
-    // One at a time, in order: which of two names that clash locally gets `name (1)` stays
-    // the same from one download to the next.
-    for (remote, attributes) in remote_paths.iter().zip(&attributes) {
-        match claim(remote, attributes, local_dir).await {
+    for (remote, attributes) in remote_paths.iter().zip(attributes) {
+        match claim(remote, attributes, folder).await {
             Ok(local) => items.push((remote.clone(), local)),
             Err(e) => {
-                result = Err(e);
-                break;
+                give_back(&items, &[]).await;
+                return Err(e);
             }
         }
     }
-    let mut whole = Vec::new();
-    if result.is_ok() {
-        result = download_counting(sftp, &items, attributes, reporter, &mut whole, left, true).await;
-    }
-    if let Err(e) = result {
-        // Give back the names of the items that never arrived. Those that did stay, even an
-        // empty file or folder.
-        let missing = items.iter().enumerate().filter(|(i, _)| !whole.get(*i).copied().unwrap_or(false));
-        for (_, (_, local)) in missing {
-            let _ = match tokio::fs::symlink_metadata(local).await {
-                Ok(metadata) if metadata.is_dir() => tokio::fs::remove_dir(local).await,
-                Ok(metadata) if metadata.len() == 0 => tokio::fs::remove_file(local).await,
-                _ => Ok(()),
-            };
-        }
-        for (_, local) in items {
-            if tokio::fs::symlink_metadata(&local).await.is_ok() {
-                left.items.push(local);
-            }
-        }
-        return Err(e);
-    }
-    left.items = items.into_iter().map(|(_, local)| local).collect();
-    Ok(())
+    Ok(items)
 }
 
 /// The attributes of each remote item, in order, asked at once: one after another, choosing
 /// 500 files to download waited a minute on a server 100 ms away before the first byte.
-async fn stat_all(sftp: &SftpSession, remote_paths: &[&str]) -> Result<Vec<FileAttributes>> {
-    each_in_order(remote_paths, CONCURRENT_DIRS, |&remote| async move {
+async fn stat_all(sftp: &SftpSession, remote_paths: &[String]) -> Result<Vec<FileAttributes>> {
+    each_in_order(remote_paths, CONCURRENT_DIRS, |remote| async move {
         sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))
     })
     .try_collect()
@@ -99,32 +190,24 @@ async fn claim(remote: &str, metadata: &FileAttributes, local_dir: &Path) -> Res
 
 /// Downloads each remote file or directory to the given local path, replacing files there.
 /// The files it created and those it replaced go into `left`; not the folders, which may have
-/// been there.
+/// been there. For a download that isn't kept to go on with (a file to edit, or dragged out).
 pub async fn download_to(sftp: &SftpSession, items: &[(String, PathBuf)], reporter: &mut Reporter, left: &mut Left<PathBuf>) -> Result<()> {
-    let names: Vec<&str> = items.iter().map(|(remote, _)| remote.as_str()).collect();
-    let attributes = unless_cancelled(&reporter.cancelled, stat_all(sftp, &names)).await?;
-    download_counting(sftp, items, attributes, reporter, &mut Vec::new(), left, false).await
+    download(sftp, &mut Download::to(items.to_vec(), false), reporter, left, false).await
 }
 
-/// [`download_to`], given the items' `attributes`, keeping in `whole` which of the items have
-/// arrived whole: those copied at the same time as one that failed may have. With `claimed`,
-/// the items' paths were free before (see [`claim`]): all that arrives under them is new,
-/// folders too.
-async fn download_counting(
+/// Lists the remote `items` (with their `attributes`) into a plan: their files, and the
+/// folders to make.
+async fn plan(
     sftp: &SftpSession,
     items: &[(String, PathBuf)],
     attributes: Vec<FileAttributes>,
     reporter: &mut Reporter,
-    whole: &mut Vec<bool>,
-    left: &mut Left<PathBuf>,
-    claimed: bool,
-) -> Result<()> {
+) -> Result<Planned> {
     let mut plan = Plan::new();
     // The items of one download go to one folder, or one disk at least.
     let first = items.first().map(|(_, local)| local.clone());
     let ignores_case = tokio::task::spawn_blocking(move || first.is_some_and(|local| ignores_case(&local))).await?;
     let mut taken = Taken::new(ignores_case);
-    // Where each item's files end in `plan.files`.
     let mut ends = Vec::with_capacity(items.len());
     for ((remote, local), metadata) in items.iter().zip(attributes) {
         if metadata.file_type().is_dir() {
@@ -132,12 +215,61 @@ async fn download_counting(
         } else {
             let size = metadata.size.unwrap_or(0);
             reporter.progress.total += size;
-            plan.add_file(remote.clone(), local.clone(), size, downloaded_mode(&metadata));
+            plan.add_file(remote.clone(), local.clone(), size, downloaded_mode(&metadata), Stamp::remote(&metadata));
         }
         ends.push(plan.files.len());
     }
     reporter.progress.files_total += plan.files.len();
+    let clashes = clashing(&plan.files, &mut taken);
+    Ok(Planned { plan, ends, taken: Arc::new(Mutex::new(taken)), clashes })
+}
 
+/// Readies a download's `plan` to go on with it: a file cut short whose remote file changed
+/// since is copied again from the start, and so is one copied whole (if `check`) that isn't
+/// there as it was left. Starts the progress where the download got.
+async fn go_on(sftp: &SftpSession, plan: &mut Plan<String, PathBuf, LocalPartial>, reporter: &mut Reporter, check: bool) -> Result<()> {
+    for i in 0..plan.files.len() {
+        if !matches!(plan.copied[i], Copied::Partly(_)) {
+            continue;
+        }
+        let remote = &plan.files[i].0;
+        let attributes = sftp.metadata(remote).await.context(Error::new("transfer.readFailed").param("path", remote))?;
+        let stamp = Stamp::remote(&attributes);
+        if stamp != plan.sources[i] {
+            if let Copied::Partly(partial) = std::mem::replace(&mut plan.copied[i], Copied::No) {
+                partial.remove().await;
+            }
+            (plan.files[i].2, plan.sources[i]) = (attributes.size.unwrap_or(0), stamp);
+        }
+    }
+    if check {
+        for i in 0..plan.files.len() {
+            let Copied::Done(local) = &plan.copied[i] else { continue };
+            let size = tokio::fs::symlink_metadata(local).await.ok().filter(|metadata| metadata.is_file()).map(|metadata| metadata.len());
+            if size != Some(plan.files[i].2) {
+                plan.copied[i] = Copied::No;
+            }
+        }
+    }
+    reporter.check_cancelled()?;
+    reporter.progress = plan.progress();
+    Ok(())
+}
+
+/// Makes the folders of `planned` and copies its files still to copy, keeping how far each
+/// got. With `claimed`, the items' paths were free before (see [`claim`]): all that arrives
+/// under them is new, folders too. With `resumable`, a large file cut short is kept to go on
+/// with.
+async fn copy_planned(
+    planned: &mut Planned,
+    items: &[(String, PathBuf)],
+    reporter: &mut Reporter,
+    left: &mut Left<PathBuf>,
+    claimed: bool,
+    resumable_files: bool,
+    sftp: &SftpSession,
+) -> Result<()> {
+    let Planned { plan, taken, clashes, .. } = planned;
     // The folders the items go into (for files given a path of their own), then the remote
     // folders' copies.
     let parents = items.iter().filter_map(|(_, local)| local.parent()).map(|dir| (dir, None));
@@ -152,72 +284,118 @@ async fn download_counting(
         let _ = mode;
         builder.create(dir).await.context(Error::new("transfer.createDirFailed").param("path", dir.display()))?;
     }
-    let clashes = clashing(&plan.files, &mut taken);
-    let taken = Arc::new(Mutex::new(taken));
     /// Where a file arrived, whether it replaced one there, and how it was left.
-    #[derive(Clone)]
     struct Arrived {
         local: PathBuf,
         replaces: bool,
         stamp: Option<Stamp>,
     }
-    let arrived: Mutex<Vec<Option<Arrived>>> = Mutex::new(vec![None; plan.files.len()]);
+    let arrived: Mutex<Vec<Arrived>> = Mutex::new(Vec::new());
+    let to_copy = plan.to_copy();
+    let copied = Mutex::new(std::mem::take(&mut plan.copied));
     let run = Run::new(reporter);
-    let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
-    let result = copy_files(&sizes, &run, |i| {
-        let ((remote, local, _), mode) = (&plan.files[i], plan.file_modes[i]);
-        let (clashes, taken, arrived, run) = (clashes[i], &taken, &arrived, &run);
+    let sizes: Vec<u64> = to_copy.iter().map(|&i| plan.files[i].2).collect();
+    let (plan, taken, clashes) = (&*plan, &*taken, &*clashes);
+    let result = copy_files(&sizes, &run, |n| {
+        let i = to_copy[n];
+        let ((remote, local, size), mode) = (&plan.files[i], plan.file_modes[i]);
+        let (clashes, arrived, copied, run, size) = (clashes[i], &arrived, &copied, &run, *size);
+        let failed = move |e| with_file_context(e, Error::new("transfer.downloadFailed").param("path", remote));
         async move {
             run.start_file(file_name(remote));
             let mut src = sftp.open(remote).await.context(Error::new("transfer.openFailed").param("path", remote))?;
-            // A file that would land where another of this download (or a folder) did, or
-            // where a folder is, gets a free name instead. Looked at off the async threads:
-            // the download folder may be on a network drive.
-            let at_folder = || async { tokio::fs::metadata(local).await.is_ok_and(|metadata| metadata.is_dir()) };
-            let local = if clashes || at_folder().await {
-                let (taken, path) = (taken.clone(), local.clone());
-                let free = tokio::task::spawn_blocking(move || taken.lock().unwrap().create_free_file(&path, mode)).await?;
-                free.context(Error::new("transfer.createFailed").param("path", local.display()))?.0
-            } else {
-                local.clone()
+            let aside = resumable_files && resumable(size);
+            let partial = match std::mem::replace(&mut copied.lock().unwrap()[i], Copied::No) {
+                Copied::Partly(partial) => Some(partial),
+                _ => None,
             };
-            let mut dst = LocalTarget::create(&local, mode).await?;
+            // Where it went before, once it was given a name of its own.
+            let named = partial.as_ref().map(|partial| partial.path.clone());
+            let resumed = match partial {
+                Some(partial) => {
+                    let kept = partial.clone();
+                    match LocalTarget::resume(partial, |written| download_from(written, size)).await {
+                        Ok(resumed) => resumed,
+                        Err(e) => {
+                            copied.lock().unwrap()[i] = Copied::Partly(kept);
+                            return Err(failed(e));
+                        }
+                    }
+                }
+                None => None,
+            };
+            let (local, mut dst, from) = match (resumed, named) {
+                (Some((dst, from)), Some(named)) => (named, dst, from),
+                (None, Some(named)) => {
+                    let dst = LocalTarget::create(&named, mode, aside).await?;
+                    (named, dst, 0)
+                }
+                (_, None) => {
+                    // A file that would land where another of this download (or a folder) did,
+                    // or where a folder is, gets a free name instead. Looked at off the async
+                    // threads: the download folder may be on a network drive.
+                    let at_folder = || async { tokio::fs::metadata(local).await.is_ok_and(|metadata| metadata.is_dir()) };
+                    let local = if clashes || at_folder().await {
+                        let (taken, path) = (taken.clone(), local.clone());
+                        let free = tokio::task::spawn_blocking(move || taken.lock().unwrap().create_free_file(&path, mode)).await?;
+                        free.context(Error::new("transfer.createFailed").param("path", local.display()))?.0
+                    } else {
+                        local.clone()
+                    };
+                    let dst = LocalTarget::create(&local, mode, aside).await?;
+                    (local, dst, 0)
+                }
+            };
             let replaces = dst.replaces();
-            let result = copy(&mut src, &mut dst.file, run).await;
+            let written = async {
+                if from > 0 {
+                    src.seek(SeekFrom::Start(from)).await.context(Error::new("transfer.readFailed").param("path", remote))?;
+                    run.advance(from);
+                }
+                copy(&mut src, &mut dst.file, run).await
+            };
+            let result = written.await;
             // Closed without waiting for the server's answer: all of it has been read.
             drop(src);
             let result = match result {
                 Ok(()) => dst.finish().await,
+                Err(e) if aside && !is_cancelled(&e) => {
+                    if let Some(partial) = dst.suspend().await {
+                        copied.lock().unwrap()[i] = Copied::Partly(partial);
+                    }
+                    Err(e)
+                }
                 Err(e) => {
                     dst.abandon().await;
                     Err(e)
                 }
             };
-            result.map_err(|e| with_file_context(e, Error::new("transfer.downloadFailed").param("path", remote)))?;
+            result.map_err(failed)?;
             let stamp = tokio::fs::symlink_metadata(&local).await.ok().and_then(|metadata| Stamp::local(&metadata));
-            arrived.lock().unwrap()[i] = Some(Arrived { local, replaces, stamp });
+            copied.lock().unwrap()[i] = Copied::Done(local.clone());
+            arrived.lock().unwrap().push(Arrived { local, replaces, stamp });
             run.finish_file();
             Ok(())
         }
     })
     .await;
     run.end();
-    let arrived = arrived.into_inner().unwrap();
-    *whole = items_whole(&ends, &arrived.iter().map(Option::is_some).collect::<Vec<_>>());
-    for Arrived { local, replaces, stamp } in arrived.into_iter().flatten() {
+    planned.plan.copied = copied.into_inner().unwrap();
+    let mut files = Vec::new();
+    for Arrived { local, replaces, stamp } in arrived.into_inner().unwrap() {
         match (replaces && !claimed, stamp) {
             (true, _) => left.replaced += 1,
-            (false, Some(stamp)) => left.files.push((local, stamp)),
+            (false, Some(stamp)) => files.push((local, stamp)),
             // Not found as it was just written: not deleted.
             (false, None) => {}
         }
     }
+    left.add_files(files);
     if claimed {
-        left.dirs = plan.dirs;
+        left.dirs.clone_from(&planned.plan.dirs);
     }
     result
 }
-
 /// Which items arrived whole, from where each item's files end (`ends`) and which files
 /// `arrived`: all of an item's (none for an empty folder).
 pub(super) fn items_whole(ends: &[usize], arrived: &[bool]) -> Vec<bool> {
@@ -292,7 +470,7 @@ pub(super) async fn scan_remote_dir(
     root: String,
     local_root: PathBuf,
     root_mode: Option<u32>,
-    plan: &mut Plan<String, PathBuf>,
+    plan: &mut Plan<String, PathBuf, LocalPartial>,
     taken: &mut Taken,
     reporter: &mut Reporter,
 ) -> Result<()> {
@@ -349,7 +527,7 @@ pub(super) async fn scan_remote_dir(
                 } else if metadata.file_type().is_file() {
                     let size = metadata.size.unwrap_or(0);
                     reporter.progress.total += size;
-                    plan.add_file(child, local_child, size, downloaded_mode(&metadata));
+                    plan.add_file(child, local_child, size, downloaded_mode(&metadata), Stamp::remote(&metadata));
                 }
             }
         }

@@ -191,7 +191,9 @@
       "deleteFailed": "无法删除 {path}",
       "deleteElsewhere": "这些文件是上传到 {server} 的，这个标签页现在连接的已不是它",
       "replaceFailed": "已上传 {path}，但无法将其替换到位；新内容在 {temporary} 中",
-      "replaceInterrupted": "已上传 {path}，但无法将其替换到位；新内容在 {temporary} 中，旧内容在 {original} 中"
+      "replaceInterrupted": "已上传 {path}，但无法将其替换到位；新内容在 {temporary} 中，旧内容在 {original} 中",
+      "notResumable": "这个传输已经无法继续",
+      "resumeElsewhere": "这次上传的目标是 {server}，这个标签页现在连接的已不是它"
     },
     "forward": {
       "missingTarget": "本地转发和远程转发需要目标主机和端口",

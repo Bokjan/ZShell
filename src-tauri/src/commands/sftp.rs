@@ -116,9 +116,60 @@ pub async fn sftp_chmod(
     sftp::chmod(&sftp, &path, mode).await.map_err(|e| Error::from(e.context(Error::new("sftp.chmodFailed").param("path", &path))))
 }
 
+/// Runs `job` through session `id`'s connection, as `webview`'s transfer `transfer_id`, or goes
+/// on with it (`going_on`: whether to check the files copied whole before, see
+/// [`transfer::Job::run`]). A transfer that fails is kept to go on with (see
+/// `transfer::resume`), unless cancelled; what it created is kept for [`transfer_delete`],
+/// whichever way it ends.
+#[allow(clippy::too_many_arguments)]
+async fn run_transfer(
+    webview: &str,
+    sessions: &SessionManager,
+    connections: &Connections,
+    transfers: &transfer::Transfers,
+    id: SessionId,
+    transfer_id: &str,
+    mut job: transfer::Job,
+    going_on: Option<bool>,
+    on_progress: Channel<transfer::Progress>,
+) -> transfer::Ended {
+    let cancelled = transfers.start(webview, transfer_id);
+    let mut left = going_on.and_then(|_| transfers.take_left(webview, transfer_id)).unwrap_or_else(|| job.nothing_left());
+    let (mut ssh, mut sftp) = (None, None);
+    let result = async {
+        let connection = connection(webview, sessions, connections, id)?;
+        ssh = Some(connection.ssh().clone());
+        // An upload is gone on with on the server it went to only: the tab may have connected
+        // elsewhere since (its session edited, then connected again).
+        if let Some(server) = job.server() {
+            server.check_same(&transfer::Server::of(&connection.ssh().profile().ssh.remote), "transfer.resumeElsewhere")?;
+        }
+        let opened = connection.transfer_sftp().await?;
+        sftp = Some(opened.clone());
+        let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
+        job.run(&opened, &mut reporter, &mut left, going_on == Some(true)).await
+    };
+    let result: anyhow::Result<()> = result.await;
+    let paths = job.paths(&mut left, result.is_ok());
+    let resume = match &result {
+        Err(e) if !transfer::is_cancelled(e) => Some(match &ssh {
+            Some(ssh) if transfer::ended_by_loss(ssh, e).await => transfer::Resume::Lost,
+            _ => transfer::Resume::Retry,
+        }),
+        _ => None,
+    };
+    match resume {
+        Some(_) => transfers.pause(webview, transfer_id, job),
+        None if result.is_err() => job.discard(sftp.as_deref()).await,
+        None => {}
+    }
+    transfers.end(webview, transfer_id, left, result.map_err(Error::from), paths, resume)
+}
+
 /// Uploads into `remote_dir`. Ends with what it created on the server, kept for
 /// [`transfer_delete`], also when it fails.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn sftp_upload(
     webview: Webview,
     sessions: State<'_, SessionManager>,
@@ -130,27 +181,17 @@ pub async fn sftp_upload(
     remote_dir: String,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<transfer::Ended> {
-    let cancelled = transfers.start(webview.label(), &transfer_id);
-    let mut left = transfer::Left::default();
-    let mut server = None;
-    let result = async {
-        let connection = connection(webview.label(), &sessions, &connections, id)?;
-        log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: uploading {local_paths:?} to {remote_dir}");
-        server = Some(transfer::Server::of(&connection.ssh().profile().ssh.remote));
-        let sftp = connection.transfer_sftp().await?;
-        let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
-        Ok(transfer::upload(&sftp, &local_paths, &remote_dir, &mut reporter, &mut left).await?)
-    };
-    let result = result.await;
-    // Without a connection, it left nothing.
-    Ok(transfers
-        .end(webview.label(), &transfer_id, left, result, Vec::new(), |left| server.map(|server| transfer::Kept::Remote(left, server))))
+    let connection = connection(webview.label(), &sessions, &connections, id)?;
+    log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: uploading {local_paths:?} to {remote_dir}");
+    let job = transfer::Job::upload(local_paths, remote_dir, transfer::Server::of(&connection.ssh().profile().ssh.remote));
+    Ok(run_transfer(webview.label(), &sessions, &connections, &transfers, id, &transfer_id, job, None, on_progress).await)
 }
 
 /// Downloads into `local_dir` (default: the download folder from the settings). Ends with the
 /// top-level items it created, and keeps all it created for [`transfer_delete`], also when it
 /// fails.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn sftp_download(
     app: AppHandle,
     webview: Webview,
@@ -163,29 +204,22 @@ pub async fn sftp_download(
     local_dir: Option<PathBuf>,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<transfer::Ended> {
-    let cancelled = transfers.start(webview.label(), &transfer_id);
-    let mut left = transfer::Left::default();
-    let result = async {
-        let connection = connection(webview.label(), &sessions, &connections, id)?;
-        let into = local_dir.as_ref().map_or_else(|| "the download folder".to_owned(), |dir| dir.display().to_string());
-        log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: downloading {remote_paths:?} to {into}");
-        let sftp = connection.transfer_sftp().await?;
-        let local_dir = match local_dir {
-            Some(dir) => dir,
-            // Made if it isn't there: a disk that may be slow to answer.
-            None => blocking(app, |app| app.state::<SettingsStore>().download_dir(app)).await?,
-        };
-        let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
-        Ok(transfer::download(&sftp, &remote_paths, &local_dir, &mut reporter, &mut left).await?)
+    let connection = connection(webview.label(), &sessions, &connections, id)?;
+    let into = local_dir.as_ref().map_or_else(|| "the download folder".to_owned(), |dir| dir.display().to_string());
+    log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: downloading {remote_paths:?} to {into}");
+    let local_dir = match local_dir {
+        Some(dir) => dir,
+        // Made if it isn't there: a disk that may be slow to answer.
+        None => blocking(app, |app| app.state::<SettingsStore>().download_dir(app)).await?,
     };
-    let result = result.await;
-    let paths = std::mem::take(&mut left.items);
-    Ok(transfers.end(webview.label(), &transfer_id, left, result, paths, |left| Some(transfer::Kept::Local(left))))
+    let job = transfer::Job::download(remote_paths, local_dir);
+    Ok(run_transfer(webview.label(), &sessions, &connections, &transfers, id, &transfer_id, job, None, on_progress).await)
 }
 
 /// Downloads one item to `local_path`, replacing what is there (the save dialog asked). Ends
 /// like [`sftp_download`].
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn sftp_download_as(
     webview: Webview,
     sessions: State<'_, SessionManager>,
@@ -197,18 +231,32 @@ pub async fn sftp_download_as(
     local_path: PathBuf,
     on_progress: Channel<transfer::Progress>,
 ) -> Result<transfer::Ended> {
-    let cancelled = transfers.start(webview.label(), &transfer_id);
-    let mut left = transfer::Left::default();
-    let result = async {
-        let connection = connection(webview.label(), &sessions, &connections, id)?;
-        log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: downloading {remote_path} to {}", local_path.display());
-        let sftp = connection.transfer_sftp().await?;
-        let mut reporter = transfer::Reporter::new(on_progress, cancelled).sharing(connection.transfer_slots());
-        Ok(transfer::download_to(&sftp, &[(remote_path, local_path.clone())], &mut reporter, &mut left).await?)
-    };
-    let result = result.await;
-    let paths = if result.is_ok() { vec![local_path] } else { Vec::new() };
-    Ok(transfers.end(webview.label(), &transfer_id, left, result, paths, |left| Some(transfer::Kept::Local(left))))
+    let connection = connection(webview.label(), &sessions, &connections, id)?;
+    log::debug!(conn = connection.ssh().info().id; "transfer {transfer_id}: downloading {remote_path} to {}", local_path.display());
+    let job = transfer::Job::download_as(remote_path, local_path);
+    Ok(run_transfer(webview.label(), &sessions, &connections, &transfers, id, &transfer_id, job, None, on_progress).await)
+}
+
+/// Goes on with a failed upload or download through session `id`'s connection (the tab's
+/// current one): the files copied whole are skipped (with `check`, only those still there as
+/// they were left), a large file cut short goes on from where it got (see `transfer::resume`).
+/// Ends like the transfer did; fails with `transfer.notResumable` if it can't be gone on with
+/// (it is going on already, or was forgotten).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn transfer_resume(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    transfers: State<'_, transfer::Transfers>,
+    id: SessionId,
+    transfer_id: String,
+    check: bool,
+    on_progress: Channel<transfer::Progress>,
+) -> Result<transfer::Ended> {
+    let job = transfers.take_paused(webview.label(), &transfer_id).ok_or_else(|| Error::new("transfer.notResumable"))?;
+    log::debug!("transfer {transfer_id}: going on with it");
+    Ok(run_transfer(webview.label(), &sessions, &connections, &transfers, id, &transfer_id, job, Some(check), on_progress).await)
 }
 
 /// The folder downloads go to without asking, for the settings.
@@ -361,7 +409,7 @@ pub async fn transfer_delete(
         transfer::Kept::Remote(mut left, server) => {
             let sftp = async {
                 let connection = connection(label, &sessions, &connections, id.ok_or_else(|| Error::new("session.notConnected"))?)?;
-                server.check_same(&transfer::Server::of(&connection.ssh().profile().ssh.remote))?;
+                server.check_same(&transfer::Server::of(&connection.ssh().profile().ssh.remote), "transfer.deleteElsewhere")?;
                 Ok(connection.sftp().await?)
             };
             let deletion = match sftp.await {
@@ -375,8 +423,51 @@ pub async fn transfer_delete(
     Ok(deletion)
 }
 
-/// Forgets what the transfers `transfer_ids` left, which the file panel no longer lists.
+/// Forgets what the transfers `transfer_ids` left, which the file panel no longer lists, and
+/// discards those that failed (see [`discard`]).
 #[tauri::command]
-pub fn transfer_forget(webview: Webview, transfers: State<'_, transfer::Transfers>, transfer_ids: Vec<String>) {
-    transfers.forget(webview.label(), &transfer_ids);
+pub async fn transfer_forget(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    transfers: State<'_, transfer::Transfers>,
+    id: Option<SessionId>,
+    transfer_ids: Vec<String>,
+) -> Result<()> {
+    let jobs = transfers.forget(webview.label(), &transfer_ids);
+    discard(webview.label(), &sessions, &connections, id, jobs).await;
+    Ok(())
+}
+
+/// Gives up on going on with a failed transfer (see [`discard`]); what it created is kept for
+/// [`transfer_delete`].
+#[tauri::command]
+pub async fn transfer_discard(
+    webview: Webview,
+    sessions: State<'_, SessionManager>,
+    connections: State<'_, Connections>,
+    transfers: State<'_, transfer::Transfers>,
+    id: Option<SessionId>,
+    transfer_id: String,
+) -> Result<()> {
+    let jobs = transfers.take_paused(webview.label(), &transfer_id);
+    discard(webview.label(), &sessions, &connections, id, jobs.into_iter().collect()).await;
+    Ok(())
+}
+
+/// Discards failed transfers that won't be gone on with: removes what their files cut short
+/// left, an upload's through session `id`'s connection while it goes to the same server (left
+/// there otherwise, a hidden file in the user's own folder), and gives back the names claimed
+/// for a download's items that never arrived.
+async fn discard(webview: &str, sessions: &SessionManager, connections: &Connections, id: Option<SessionId>, jobs: Vec<transfer::Job>) {
+    let connection = id.and_then(|id| connection(webview, sessions, connections, id).ok());
+    for job in jobs {
+        let sftp = match (job.server(), &connection) {
+            (Some(server), Some(connection)) if *server == transfer::Server::of(&connection.ssh().profile().ssh.remote) => {
+                connection.sftp().await.ok()
+            }
+            _ => None,
+        };
+        job.discard(sftp.as_deref()).await;
+    }
 }

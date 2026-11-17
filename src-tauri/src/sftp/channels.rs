@@ -44,6 +44,11 @@ const SFTP_CONCURRENT_READS: usize = 8;
 /// speed of downloads on a distant server. The browsing channel keeps 16, as a folder listed
 /// while an edited file uploads waits behind its writes.
 const SFTP_CONCURRENT_TRANSFER_WRITES: usize = 64;
+/// The most of a file that an upload's writes may have in flight at once (russh-sftp writes up
+/// to 32 KiB a request), which a server needn't have written in order: what is past where an
+/// upload cut short may go on from (see `transfer::resume`). The browsing channel's writes,
+/// which transfers use when they can't have their own, have less in flight.
+pub const TRANSFER_WRITES_IN_FLIGHT: u64 = SFTP_CONCURRENT_TRANSFER_WRITES as u64 * (32 << 10);
 
 /// An SFTP session, once opened, and whether its channel has ended since.
 type Slot = tokio::sync::Mutex<Option<(Arc<SftpSession>, Arc<AtomicBool>)>>;

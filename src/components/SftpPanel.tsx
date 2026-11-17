@@ -41,6 +41,8 @@ interface Props {
   paneKey: number;
   sessionId: SessionId | null;
   connected: boolean;
+  /** Whether the pane is connecting, or waiting to reconnect, after its connection was lost. */
+  reconnecting: boolean;
   /** Whether this panel is visible and should receive file drops. */
   active: boolean;
   /** What the connection's SFTP channels carry. */
@@ -63,7 +65,7 @@ interface Menu {
  * The file panel of a pane's SSH connection: the remote folder's entries (sorted, filtered,
  * selected as in a file manager), what can be done with them, and the transfers.
  */
-export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTransfers, onEdits, onQuestions }: Props) {
+export function SftpPanel({ paneKey, sessionId, connected, reconnecting, active, traffic, onTransfers, onEdits, onQuestions }: Props) {
   const { t } = useTranslation();
   const trafficText = useTrafficText();
   /** The tooltip of a channel's lights: `shared` when transfers go on the browsing channel. */
@@ -117,6 +119,7 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
   const transfers = useTransfers({
     sessionId,
     connected,
+    reconnecting,
     active,
     cwdRef: listing.cwdRef,
     entries,
@@ -583,7 +586,8 @@ export function SftpPanel({ paneKey, sessionId, connected, active, traffic, onTr
           />
         }
         connected={connected}
-        onCancel={(id) => void sftp.cancel(id)}
+        onCancel={transfers.cancel}
+        onRetry={transfers.retry}
         onDelete={transfers.deleteLeft}
         onDismiss={transfers.remove}
         onClearFinished={transfers.clearFinished}

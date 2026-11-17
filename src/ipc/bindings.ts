@@ -139,10 +139,12 @@ export type ErrorCode =
   | "transfer.downloadFailed"
   | "transfer.invalidName"
   | "transfer.invalidPath"
+  | "transfer.notResumable"
   | "transfer.openFailed"
   | "transfer.readFailed"
   | "transfer.replaceFailed"
   | "transfer.replaceInterrupted"
+  | "transfer.resumeElsewhere"
   | "transfer.uploadFailed"
   | "unexpected"
   | "update.failed"
@@ -1143,9 +1145,18 @@ replaced: number,
 /**
  * Why it stopped, if it didn't finish.
  */
-error: CommandError | null, };
+error: CommandError | null, 
+/**
+ * How it can be gone on with, if it failed.
+ */
+resume: TransferResume | null, };
 
 export type TransferProgress = { transferred: number, total: number, filesDone: number, filesTotal: number, current: string, };
+
+/**
+ * How a failed transfer can be gone on with.
+ */
+export type TransferResume = "lost" | "retry";
 
 /**
  * A session or a folder: as dragged in the sidebar, and in the order they are shown.
@@ -1372,7 +1383,9 @@ export type Commands = {
   terminal_ligature_rules: { args: { families: string[] }; result: LigatureRules | null };
   transfer_cancel: { args: { transferId: string }; result: void };
   transfer_delete: { args: { id?: number | null; transferId: string }; result: TransferDeletion };
-  transfer_forget: { args: { transferIds: string[] }; result: void };
+  transfer_discard: { args: { id?: number | null; transferId: string }; result: void };
+  transfer_forget: { args: { id?: number | null; transferIds: string[] }; result: void };
+  transfer_resume: { args: { id: number; transferId: string; check: boolean; onProgress: Channel<TransferProgress> }; result: TransferEnd };
   tree_move: { args: { item: TreeItem; parent?: string | null; before?: TreeItem | null }; result: void };
   tree_order: { args: Record<string, never>; result: TreeItem[] };
   update_check: { args: Record<string, never>; result: UpdateStatus };

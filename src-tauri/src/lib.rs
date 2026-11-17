@@ -109,13 +109,19 @@ fn clean_up_logs(app: tauri::AppHandle) {
 
 /// A webview's page is gone (reloaded, or its window destroyed): what it started goes with it,
 /// since nothing shows it or would ever close it. Its sessions close, its transfers are
-/// cancelled and its edits stop being watched.
+/// cancelled (those it could go on with discarded, what they left on servers kept: its
+/// connections are closing) and its edits stop being watched.
 fn page_gone(app: &tauri::AppHandle, webview: &str) {
     if webview == window::DEBUG_LOG {
         debug_log::unwatch();
     }
     app.state::<SessionManager>().remove_webview(webview);
-    app.state::<Transfers>().cancel_webview(webview);
+    let paused = app.state::<Transfers>().cancel_webview(webview);
+    tauri::async_runtime::spawn(async move {
+        for job in paused {
+            job.discard(None).await;
+        }
+    });
     // Managed in `setup`, which a page may not have reached.
     if let Some(edits) = app.try_state::<Edits>() {
         edits.stop_webview(webview);
@@ -373,6 +379,8 @@ pub fn run() {
             commands::sftp::transfer_cancel,
             commands::sftp::transfer_delete,
             commands::sftp::transfer_forget,
+            commands::sftp::transfer_resume,
+            commands::sftp::transfer_discard,
             commands::forward::forward_start,
             commands::forward::forward_stop,
             commands::forward::forward_keep_candidates,

@@ -19,6 +19,8 @@ const DOWNLOAD_TO_KEY = "zshell.downloadToDirectory";
 interface Options {
   sessionId: SessionId | null;
   connected: boolean;
+  /** Whether the pane is connecting, or waiting to reconnect, after its connection was lost. */
+  reconnecting: boolean;
   /** Whether the panel is in sight (questions about background saves are announced if not). */
   active: boolean;
   /** The folder shown, and its entries. */
@@ -38,7 +40,19 @@ interface Options {
  * The file panel's transfers: uploads, downloads, and files open in another application,
  * whose saves are uploaded through the current connection.
  */
-export function useTransfers({ sessionId, connected, active, cwdRef, entries, load, ask, fail, onTransfers, onEdits }: Options) {
+export function useTransfers({
+  sessionId,
+  connected,
+  reconnecting,
+  active,
+  cwdRef,
+  entries,
+  load,
+  ask,
+  fail,
+  onTransfers,
+  onEdits,
+}: Options) {
   const { t } = useTranslation();
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   // Apart from the transfers, so that each report renders only the transfer's row.
@@ -55,6 +69,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
       if (statuses.current.get(transfer.id) === transfer.status) continue;
       statuses.current.set(transfer.id, transfer.status);
       if (transfer.status === "done") announce(t("announce.transferDone", { name: transferLabel(t, transfer.names) }));
+      else if (transfer.status === "waiting") announce(t("announce.transferWaiting", { name: transferLabel(t, transfer.names) }));
       else if (transfer.status === "error")
         announce(t("announce.transferFailed", { name: transferLabel(t, transfer.names), error: transfer.error ?? "" }));
     }
@@ -65,15 +80,16 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
   /** Changes transfer `id` from what deleting its files has done so far. */
   const updateDeletion = (id: string, change: (deletion: Deletion) => Partial<Transfer>) =>
     setTransfers((ts) => ts.map((t) => (t.id === id ? { ...t, ...change(t.deletion ?? NO_DELETION) } : t)));
-  // What the ones no longer listed created can't be deleted from here any more.
+  // What the ones no longer listed created can't be deleted from here any more, nor can those
+  // that failed be gone on with.
   const remove = (id: string) => {
-    void sftp.forget([id]);
+    void sftp.forget([id], sessionRef.current.sessionId);
     progress.forget([id]);
     setTransfers((ts) => ts.filter((t) => t.id !== id));
   };
   const clearFinished = () => {
     const ids = transfersRef.current.filter(finished).map((t) => t.id);
-    if (ids.length > 0) void sftp.forget(ids);
+    if (ids.length > 0) void sftp.forget(ids, sessionRef.current.sessionId);
     progress.forget(ids);
     setTransfers((ts) => ts.filter((t) => !finished(t)));
   };
@@ -82,6 +98,16 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
       ...patch,
       ...(errorCode(e) === "transfer.cancelled" ? { status: "cancelled" } : { status: "error", error: errorMessage(e) }),
     });
+  /**
+   * Transfer `id` ended through `session`: done, or failed, when it may go on after the tab
+   * reconnects (its connection was lost) or when retried.
+   */
+  const settle = (id: string, end: TransferEnd, session: SessionId) => {
+    const left = { results: end.paths, created: end.created, folders: end.folders, replaced: end.replaced };
+    if (!end.error) update(id, { status: "done", ...left });
+    else if (end.resume === "lost") update(id, { status: "waiting", error: errorMessage(end.error), lostOn: session, ...left });
+    else failed(id, end.error, { ...left, retry: end.resume === "retry" });
+  };
 
   /**
    * The session to transfer through when the transfer starts: the connection may have been
@@ -93,15 +119,19 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     return sessionId;
   };
 
-  const run = async (kind: Transfer["kind"], names: string[], work: (id: string) => Promise<TransferEnd>) => {
+  /** Starts a transfer, which `work` runs through the current session. */
+  const run = async (
+    kind: Transfer["kind"],
+    names: string[],
+    work: (id: string, session: SessionId) => Promise<TransferEnd>,
+    patch: Partial<Transfer> = {},
+  ) => {
     const id = crypto.randomUUID();
-    add({ id, kind, names, status: "running" });
+    add({ id, kind, names, status: "running", ...patch });
     return attempt(
       async () => {
-        const end = await work(id);
-        const left = { results: end.paths, created: end.created, folders: end.folders, replaced: end.replaced };
-        if (end.error) failed(id, end.error, left);
-        else update(id, { status: "done", ...left });
+        const session = currentSession();
+        settle(id, await work(id, session), session);
       },
       {
         onError: (e) => failed(id, e),
@@ -109,15 +139,67 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     );
   };
 
+  /**
+   * Goes on with a failed transfer through the current session: after a lost connection, or
+   * retried (`check`). Once at a time: an effect may ask again before it shows as running.
+   */
+  const resuming = useRef(new Set<string>());
+  const resume = (id: string, check: boolean) => {
+    const { sessionId, connected } = sessionRef.current;
+    const transfer = transfersRef.current.find((t) => t.id === id);
+    if (sessionId == null || !connected || !transfer || resuming.current.has(id)) return;
+    resuming.current.add(id);
+    update(id, { status: "running", error: undefined, retry: undefined, lostOn: undefined });
+    void attempt(
+      async () => {
+        const end = await sftp.resume(sessionId, id, check, (p) => progress.set(id, p));
+        if (transfer.remoteDir && cwdRef.current === transfer.remoteDir) void load(transfer.remoteDir);
+        settle(id, end, sessionId);
+      },
+      {
+        onError: (e) => failed(id, e),
+        cleanup: () => resuming.current.delete(id),
+      },
+    );
+  };
+  const resumeRef = useLatest(resume);
+
+  // Those cut short by a lost connection go on once the tab is connected again (a new
+  // session); if it doesn't reconnect by itself, they can be retried.
+  useEffect(() => {
+    if (sessionId == null || !connected) return;
+    for (const transfer of transfers) {
+      if (transfer.status === "waiting" && transfer.lostOn !== sessionId) resumeRef.current(transfer.id, false);
+    }
+  }, [sessionId, connected, transfers]);
+  useEffect(() => {
+    if (connected || reconnecting || !transfers.some((t) => t.status === "waiting")) return;
+    setTransfers((ts) => ts.map((t) => (t.status === "waiting" ? { ...t, status: "error", retry: true } : t)));
+  }, [connected, reconnecting, transfers]);
+
+  /** Cancels a running transfer, or gives up on going on with one cut short by a lost connection. */
+  const cancel = (id: string) => {
+    const transfer = transfersRef.current.find((t) => t.id === id);
+    if (transfer?.status === "running") return void sftp.cancel(id);
+    if (transfer?.status !== "waiting") return;
+    void sftp.discard(id, sessionRef.current.sessionId);
+    update(id, { status: "cancelled", lostOn: undefined });
+  };
+
   /** Uploads into `remoteDir`, asking first about replacing what is there. */
   const upload = async (localPaths: string[], remoteDir: string) => {
     if (sessionId == null || localPaths.length === 0) return;
     const start = () =>
-      run("upload", localPaths.map(basename), async (id) => {
-        const end = await sftp.upload(currentSession(), id, localPaths, remoteDir, (p) => progress.set(id, p));
-        if (cwdRef.current === remoteDir) void load(remoteDir);
-        return end;
-      });
+      run(
+        "upload",
+        localPaths.map(basename),
+        async (id, session) => {
+          const end = await sftp.upload(session, id, localPaths, remoteDir, (p) => progress.set(id, p));
+          if (cwdRef.current === remoteDir) void load(remoteDir);
+          return end;
+        },
+        { remoteDir },
+      );
     // Null when the folder can't be listed: whether anything would be replaced is unknown.
     const names =
       remoteDir === cwdRef.current
@@ -144,9 +226,9 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     void run(
       "download",
       targets.map((e) => e.name),
-      async (id) =>
+      async (id, session) =>
         sftp.download(
-          currentSession(),
+          session,
           id,
           targets.map((e) => e.path),
           localDir,
@@ -165,7 +247,7 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
       const path = await save({ defaultPath, title: t("sftp.downloadToTitle") }).catch(() => null);
       if (!path) return;
       storeString(DOWNLOAD_TO_KEY, await dirname(path));
-      void run("download", [first.name], async (id) => sftp.downloadAs(currentSession(), id, first.path, path, (p) => progress.set(id, p)));
+      void run("download", [first.name], async (id, session) => sftp.downloadAs(session, id, first.path, path, (p) => progress.set(id, p)));
       return;
     }
     const dir = await open({ directory: true, defaultPath: last ?? undefined, title: t("sftp.downloadToFolderTitle") }).catch(() => null);
@@ -274,7 +356,8 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     }
   }, [sessionId, connected]);
 
-  const running = transfers.filter((t) => t.status === "running").length;
+  // Those waiting to go on count too: closing the pane gives up on them.
+  const running = transfers.filter((t) => t.status === "running" || t.status === "waiting").length;
   const reportTransfers = useEffectEvent(onTransfers);
   useEffect(() => reportTransfers(running), [running]);
   const editing = transfers.filter((t) => t.status === "editing").length;
@@ -289,8 +372,8 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
         if (transfer.status === "editing") void sftp.editStop(transfer.id);
         else if (transfer.status === "running") void sftp.cancel(transfer.id);
       }
-      const ended = transfersRef.current.filter(finished).map((t) => t.id);
-      if (ended.length > 0) void sftp.forget(ended);
+      const ended = transfersRef.current.filter((t) => finished(t) || t.status === "waiting").map((t) => t.id);
+      if (ended.length > 0) void sftp.forget(ended, sessionRef.current.sessionId);
     },
     [],
   );
@@ -328,6 +411,9 @@ export function useTransfers({ sessionId, connected, active, cwdRef, entries, lo
     remove,
     clearFinished,
     failed,
+    cancel,
+    /** Retries a failed transfer, copying again what is no longer as it was left. */
+    retry: (id: string) => resume(id, true),
     upload,
     download,
     downloadTo,

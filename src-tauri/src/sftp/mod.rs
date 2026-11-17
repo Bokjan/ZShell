@@ -7,6 +7,8 @@ pub mod edit;
 pub mod names;
 pub mod replace;
 pub mod shell_dir;
+#[cfg(test)]
+pub mod testing;
 pub mod transfer;
 
 use std::sync::Arc;

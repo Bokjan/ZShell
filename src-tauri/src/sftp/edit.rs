@@ -200,7 +200,7 @@ impl Edits {
         let mut local = tokio::fs::File::open(&edit.local).await.map_err(read_failed)?;
         let result: anyhow::Result<()> = async {
             // Replaced only once complete, keeping its owner and mode (see `replace`).
-            let mut target = RemoteTarget::create(sftp, remote, None).await?;
+            let mut target = RemoteTarget::create(sftp, remote, None, false).await?;
             // Streamed: the file may be large.
             let written = pump(&mut local, &mut target.file, |e| read_failed(e).into(), |_| Ok(())).await;
             match written {

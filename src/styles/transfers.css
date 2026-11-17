@@ -74,7 +74,8 @@
   background: var(--ok);
 }
 .transfers li.error .progress > div,
-.transfers li.cancelled .progress > div {
+.transfers li.cancelled .progress > div,
+.transfers li.waiting .progress > div {
   background: var(--text-muted);
 }
 .transfer-detail {

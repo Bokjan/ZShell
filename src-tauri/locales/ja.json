@@ -191,7 +191,9 @@
       "deleteFailed": "{path}を削除できません",
       "deleteElsewhere": "ファイルのアップロード先 {server} には、このタブはもう接続していません",
       "replaceFailed": "{path}をアップロードしましたが、所定の場所に配置できませんでした。新しい内容は{temporary}にあります",
-      "replaceInterrupted": "{path}をアップロードしましたが、所定の場所に配置できませんでした。新しい内容は{temporary}に、元の内容は{original}にあります"
+      "replaceInterrupted": "{path}をアップロードしましたが、所定の場所に配置できませんでした。新しい内容は{temporary}に、元の内容は{original}にあります",
+      "notResumable": "この転送はもう再開できません",
+      "resumeElsewhere": "このアップロードの送信先 {server} には、このタブはもう接続していません"
     },
     "forward": {
       "missingTarget": "ローカルフォワードとリモートフォワードには宛先のホストとポートが必要です",

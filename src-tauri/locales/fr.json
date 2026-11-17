@@ -191,7 +191,9 @@
       "deleteFailed": "Impossible de supprimer {path}",
       "deleteElsewhere": "Les fichiers ont été téléversés sur {server}, auquel cet onglet n’est plus connecté",
       "replaceFailed": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary}",
-      "replaceInterrupted": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary} et l’ancien dans {original}"
+      "replaceInterrupted": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary} et l’ancien dans {original}",
+      "notResumable": "Ce transfert ne peut plus être repris",
+      "resumeElsewhere": "Le téléversement allait vers {server}, auquel cet onglet n’est plus connecté"
     },
     "forward": {
       "missingTarget": "Les redirections locales et distantes nécessitent un hôte et un port de destination",

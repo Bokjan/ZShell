@@ -24,7 +24,7 @@ Telnet and serial consoles
 • Serial sessions reconnect when a USB adapter is plugged back in.
 
 Files
-• An SFTP panel that opens in the terminal's folder and can follow it, with drag and drop in and out, transfers with progress, and remote files edited in your own editor and uploaded on save.
+• An SFTP panel that opens in the terminal's folder and can follow it, with drag and drop in and out, transfers with progress that pick up where they stopped after a lost connection, and remote files edited in your own editor and uploaded on save.
 • rz and sz (ZMODEM) for hosts without SFTP.
 
 Port forwarding

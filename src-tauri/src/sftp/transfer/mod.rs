@@ -18,12 +18,18 @@ use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 mod download;
+mod job;
 mod left;
+mod resume;
 mod upload;
 
-pub use download::{download, download_to};
+pub use download::download_to;
+pub use job::Job;
 pub use left::{delete_local, delete_remote, Deletion, Ended, Kept, Left, Server};
-pub use upload::upload;
+pub use resume::{ended_by_loss, Resume};
+
+use left::Stamp;
+use resume::Copied;
 
 use crate::error::Error;
 
@@ -41,15 +47,18 @@ pub struct Progress {
     pub current: String,
 }
 
-/// Cancellation of running transfers, and what ended ones left (see [`left`]), by the
-/// webview that started each and the id its page chose. A transfer belongs to its page: only
-/// that page cancels it or deletes what it left, and when the page is gone (reloaded, or its
-/// window closed), with nobody left to show it, it is cancelled and what it left forgotten.
+/// Cancellation of running transfers, what ended ones left (see [`left`]), and what it takes
+/// to go on with failed ones (see [`resume`]), by the webview that started each and the id its
+/// page chose. A transfer belongs to its page: only that page cancels it, goes on with it or
+/// deletes what it left, and when the page is gone (reloaded, or its window closed), with
+/// nobody left to show it, it is cancelled and what it left forgotten.
 #[derive(Default)]
 pub struct Transfers {
     running: Mutex<HashMap<(String, String), CancellationToken>>,
     /// None while it is being deleted, until what couldn't be is put back.
     left: Mutex<HashMap<(String, String), Option<Kept>>>,
+    /// The failed transfers that can be gone on with.
+    paused: Mutex<HashMap<(String, String), Job>>,
 }
 
 impl Transfers {
@@ -70,8 +79,8 @@ impl Transfers {
     }
 
     /// Cancels the transfers of `webview`, whose page is gone, and forgets what its ended ones
-    /// left.
-    pub fn cancel_webview(&self, webview: &str) {
+    /// left. Returns the failed ones it could have gone on with, to discard.
+    pub fn cancel_webview(&self, webview: &str) -> Vec<Job> {
         self.running.lock().unwrap().retain(|(owner, _), cancelled| {
             let theirs = owner == webview;
             if theirs {
@@ -80,29 +89,51 @@ impl Transfers {
             !theirs
         });
         self.left.lock().unwrap().retain(|(owner, _), _| owner != webview);
+        let mut paused = self.paused.lock().unwrap();
+        let theirs: Vec<_> = paused.keys().filter(|(owner, _)| owner == webview).cloned().collect();
+        theirs.into_iter().filter_map(|key| paused.remove(&key)).collect()
     }
 
-    /// Ends a transfer with `result`: lets go of its cancellation, and keeps what it `left`
-    /// as `kept` makes it (none when it left nothing, without a connection). Returns how it
-    /// ended, with the local `paths` to show.
-    pub fn end<P>(
+    /// Keeps a failed transfer's `job`, to go on with.
+    pub fn pause(&self, webview: &str, id: &str, job: Job) {
+        self.paused.lock().unwrap().insert((webview.to_owned(), id.to_owned()), job);
+    }
+
+    /// Takes a failed transfer's job to go on with it; none if it can't be gone on with (it
+    /// finished, was cancelled or forgotten, or is going on already).
+    pub fn take_paused(&self, webview: &str, id: &str) -> Option<Job> {
+        self.paused.lock().unwrap().remove(&(webview.to_owned(), id.to_owned()))
+    }
+
+    /// Takes what a transfer being gone on with left so far, to add to it; none while it is
+    /// being deleted.
+    pub fn take_left(&self, webview: &str, id: &str) -> Option<Kept> {
+        let mut left = self.left.lock().unwrap();
+        let key = (webview.to_owned(), id.to_owned());
+        match left.get(&key) {
+            Some(Some(_)) => left.remove(&key).flatten(),
+            _ => None,
+        }
+    }
+
+    /// Ends a transfer with `result`: lets go of its cancellation, and keeps what it `left`.
+    /// Returns how it ended, with the local `paths` to show, and how it can be gone on with.
+    pub fn end(
         &self,
         webview: &str,
         id: &str,
-        left: Left<P>,
+        left: Kept,
         result: crate::error::Result<()>,
         paths: Vec<PathBuf>,
-        kept: impl FnOnce(Left<P>) -> Option<Kept>,
+        resume: Option<Resume>,
     ) -> Ended {
         self.finish(webview, id);
         match &result {
             Ok(()) => log::debug!("transfer {id}: done"),
             Err(e) => log::warn!("transfer {id}: {}", e.logged()),
         }
-        let ended = Ended::new(&left, result.err(), paths);
-        if let Some(kept) = kept(left) {
-            self.keep(webview, id, kept);
-        }
+        let ended = left.ended(result.err(), paths, resume);
+        self.keep(webview, id, left);
         ended
     }
 
@@ -131,12 +162,18 @@ impl Transfers {
         }
     }
 
-    /// Forgets what the transfers `ids` left, which the list no longer shows.
-    pub fn forget(&self, webview: &str, ids: &[String]) {
+    /// Forgets what the transfers `ids` left, which the list no longer shows. Returns the failed
+    /// ones it could have gone on with, to discard.
+    pub fn forget(&self, webview: &str, ids: &[String]) -> Vec<Job> {
         let mut left = self.left.lock().unwrap();
+        let mut paused = self.paused.lock().unwrap();
+        let mut jobs = Vec::new();
         for id in ids {
-            left.remove(&(webview.to_owned(), id.clone()));
+            let key = (webview.to_owned(), id.clone());
+            left.remove(&key);
+            jobs.extend(paused.remove(&key));
         }
+        jobs
     }
 }
 
@@ -218,7 +255,9 @@ impl Reporter {
     }
 }
 
-struct Plan<S, D> {
+/// What a transfer copies, and how far it has got; `T` is where a file cut short was left
+/// (see [`resume`]).
+struct Plan<S, D, T> {
     /// Directories to create, parents before children.
     dirs: Vec<D>,
     /// Each file, where it goes and its size.
@@ -227,11 +266,16 @@ struct Plan<S, D> {
     dir_modes: Vec<Option<u32>>,
     /// Those each of `files` is created with.
     file_modes: Vec<Option<u32>>,
+    /// What each of `files` was like when listed: one changed since is copied again from the
+    /// start.
+    sources: Vec<Option<Stamp>>,
+    /// How far each of `files` has been copied.
+    copied: Vec<Copied<D, T>>,
 }
 
-impl<S, D> Plan<S, D> {
+impl<S, D, T> Plan<S, D, T> {
     fn new() -> Self {
-        Self { dirs: Vec::new(), files: Vec::new(), dir_modes: Vec::new(), file_modes: Vec::new() }
+        Self { dirs: Vec::new(), files: Vec::new(), dir_modes: Vec::new(), file_modes: Vec::new(), sources: Vec::new(), copied: Vec::new() }
     }
 
     fn add_dir(&mut self, dir: D, mode: Option<u32>) {
@@ -239,9 +283,28 @@ impl<S, D> Plan<S, D> {
         self.dir_modes.push(mode);
     }
 
-    fn add_file(&mut self, from: S, to: D, size: u64, mode: Option<u32>) {
+    fn add_file(&mut self, from: S, to: D, size: u64, mode: Option<u32>, source: Option<Stamp>) {
         self.files.push((from, to, size));
         self.file_modes.push(mode);
+        self.sources.push(source);
+        self.copied.push(Copied::No);
+    }
+
+    /// The files still to copy, wholly or in part, by index.
+    fn to_copy(&self) -> Vec<usize> {
+        (0..self.files.len()).filter(|&i| !matches!(self.copied[i], Copied::Done(_))).collect()
+    }
+
+    /// Where a transfer going on with the plan starts from: the files copied whole are done.
+    fn progress(&self) -> Progress {
+        let done = || (0..self.files.len()).filter(|&i| matches!(self.copied[i], Copied::Done(_)));
+        Progress {
+            transferred: done().map(|i| self.files[i].2).sum(),
+            total: self.files.iter().map(|(_, _, size)| size).sum(),
+            files_done: done().count(),
+            files_total: self.files.len(),
+            current: String::new(),
+        }
     }
 }
 
@@ -411,11 +474,16 @@ where
 
 /// Adds which file failed, except for cancellation, which is reported as is.
 fn with_file_context(e: anyhow::Error, context: Error) -> anyhow::Error {
-    if e.downcast_ref::<Error>().is_some_and(|e| e.code() == "transfer.cancelled") {
+    if is_cancelled(&e) {
         e
     } else {
         e.context(context)
     }
+}
+
+/// Whether `e` is the transfer's cancellation.
+pub fn is_cancelled(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<Error>().is_some_and(|e| e.code() == "transfer.cancelled")
 }
 
 #[cfg(test)]

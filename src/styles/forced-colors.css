@@ -93,7 +93,8 @@
     background: Highlight;
   }
   .transfers li.error .progress > div,
-  .transfers li.cancelled .progress > div {
+  .transfers li.cancelled .progress > div,
+  .transfers li.waiting .progress > div {
     background: CanvasText;
   }
   /* The switch: an outlined track, filled with the highlight color when on. */

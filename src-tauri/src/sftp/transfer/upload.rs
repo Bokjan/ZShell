@@ -1,7 +1,9 @@
 //! Uploads: the local files and folders are listed, the folders made on the server, then
-//! the files copied (see [`copy_files`]).
+//! the files copied (see [`copy_files`]). A failed upload can be gone on with (see
+//! [`super::resume`]): [`Upload`] keeps what it takes.
 
 use std::collections::{HashMap, HashSet};
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -9,52 +11,103 @@ use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
+use tokio::io::AsyncSeekExt;
 use tokio_util::sync::CancellationToken;
 
-use super::left::{self, Left};
-use super::{copy, copy_files, uploaded_mode, with_file_context, Plan, Reporter, Run, CONCURRENT_DIRS, CREATE_BATCH};
+use super::left::{self, Left, Server, Stamp};
+use super::resume::{resumable, upload_from, Copied};
+use super::{copy, copy_files, is_cancelled, uploaded_mode, with_file_context, Plan, Reporter, Run, CONCURRENT_DIRS, CREATE_BATCH};
 use crate::error::Error;
-use crate::sftp::batch::{each, levels, Order};
-use crate::sftp::replace::RemoteTarget;
+use crate::sftp::batch::{each, each_in_order, levels, Order};
+use crate::sftp::replace::{RemotePartial, RemoteTarget};
 use crate::sftp::{file_name, join};
 
-/// Uploads into `remote_dir`, replacing files there; what it created goes into `left`.
-pub async fn upload(
-    sftp: &SftpSession,
-    local_paths: &[PathBuf],
-    remote_dir: &str,
-    reporter: &mut Reporter,
-    left: &mut Left<String>,
-) -> Result<()> {
-    let mut plan = Plan::new();
-    for local in local_paths {
-        let name = local.file_name().context(Error::new("transfer.invalidPath").param("path", local.display()))?.to_string_lossy();
-        let remote = join(remote_dir, &name);
-        let metadata = tokio::fs::metadata(local).await.context(Error::new("transfer.readFailed").param("path", local.display()))?;
-        if metadata.is_dir() {
-            scan_local_dir(local, remote, &mut plan, reporter).await?;
-        } else {
-            reporter.progress.total += metadata.len();
-            plan.add_file(local.clone(), remote, metadata.len(), uploaded_mode(&metadata));
+/// An upload into a remote folder, replacing files there, and how far it has got.
+pub struct Upload {
+    local_paths: Vec<PathBuf>,
+    remote_dir: String,
+    /// The server it goes to: it is gone on with there only.
+    pub(super) server: Server,
+    /// Once the local files are listed.
+    plan: Option<Plan<PathBuf, String, RemotePartial>>,
+    /// The folders it created, where nothing was there to replace.
+    created: HashSet<String>,
+    /// The files it created that couldn't be looked up once copied (the connection lost
+    /// meanwhile), to be when it goes on, so that they can be deleted too.
+    unstamped: Vec<String>,
+}
+
+impl Upload {
+    pub fn new(local_paths: Vec<PathBuf>, remote_dir: String, server: Server) -> Self {
+        Self { local_paths, remote_dir, server, plan: None, created: HashSet::new(), unstamped: Vec::new() }
+    }
+
+    /// Removes what the files cut short left, through `sftp` (on the server it went to), as it
+    /// won't be gone on with; left there without one.
+    pub(super) async fn discard(self, sftp: Option<&SftpSession>) {
+        let (Some(sftp), Some(plan)) = (sftp, self.plan) else { return };
+        for copied in plan.copied {
+            if let Copied::Partly(partial) = copied {
+                partial.remove(sftp).await;
+            }
         }
     }
-    reporter.progress.files_total = plan.files.len();
+}
+
+/// Uploads, or goes on with an upload; what it created goes into `left`. With `check`, a file
+/// copied whole before is copied again unless it is there as it was left (by its size).
+pub(super) async fn upload(
+    sftp: &SftpSession,
+    job: &mut Upload,
+    reporter: &mut Reporter,
+    left: &mut Left<String>,
+    check: bool,
+) -> Result<()> {
+    let plan = match &mut job.plan {
+        Some(plan) => {
+            go_on(sftp, plan, reporter, check).await?;
+            plan
+        }
+        None => {
+            let mut plan = Plan::new();
+            for local in &job.local_paths {
+                let name = local.file_name().context(Error::new("transfer.invalidPath").param("path", local.display()))?.to_string_lossy();
+                let remote = join(&job.remote_dir, &name);
+                let metadata =
+                    tokio::fs::metadata(local).await.context(Error::new("transfer.readFailed").param("path", local.display()))?;
+                if metadata.is_dir() {
+                    scan_local_dir(local, remote, &mut plan, reporter).await?;
+                } else {
+                    reporter.progress.total += metadata.len();
+                    plan.add_file(local.clone(), remote, metadata.len(), uploaded_mode(&metadata), Stamp::local(&metadata));
+                }
+            }
+            reporter.progress.files_total = plan.files.len();
+            job.plan.insert(plan)
+        }
+    };
 
     let mut created = HashSet::new();
     let made = create_remote_dirs(sftp, &plan.dirs, &plan.dir_modes, &mut created, &reporter.cancelled).await;
-    left.dirs = created.iter().cloned().collect();
+    left.add_dirs(created.iter().cloned());
+    job.created.extend(created);
     made?;
     let turns = same_name_turns(&plan.files);
     // The files it created, and how many it replaced.
     let files = Mutex::new((Vec::new(), 0));
+    let to_copy = plan.to_copy();
+    let copied = Mutex::new(std::mem::take(&mut plan.copied));
     let run = Run::new(reporter);
-    let sizes: Vec<u64> = plan.files.iter().map(|(_, _, size)| *size).collect();
-    let result = copy_files(&sizes, &run, |i| {
-        let ((local, remote, _), mode) = (&plan.files[i], plan.file_modes[i]);
-        let (run, turn, files) = (&run, turns.get(&remote.to_lowercase()), &files);
+    let sizes: Vec<u64> = to_copy.iter().map(|&i| plan.files[i].2).collect();
+    let (created, plan) = (&job.created, &*plan);
+    let result = copy_files(&sizes, &run, |n| {
+        let i = to_copy[n];
+        let ((local, remote, size), mode) = (&plan.files[i], plan.file_modes[i]);
+        let (run, turn, files, copied, size) = (&run, turns.get(&remote.to_lowercase()), &files, &copied, *size);
         // In a folder this upload created, nothing is there to replace, unless another file of
         // the same name went there first.
         let new = turn.is_none() && remote.rsplit_once('/').is_some_and(|(dir, _)| created.contains(dir));
+        let failed = move |e| with_file_context(e, Error::new("transfer.uploadFailed").param("path", local.display()));
         async move {
             // After the file of the same name before it, which this one replaces.
             let _turn = match turn {
@@ -63,19 +116,52 @@ pub async fn upload(
             };
             run.start_file(file_name(remote));
             let mut src = tokio::fs::File::open(local).await.context(Error::new("transfer.openFailed").param("path", local.display()))?;
-            let mut dst = match new {
-                true => RemoteTarget::create_new(sftp, remote, mode).await?,
-                false => RemoteTarget::create(sftp, remote, mode).await?,
+            let aside = resumable(size);
+            let partial = match std::mem::replace(&mut copied.lock().unwrap()[i], Copied::No) {
+                Copied::Partly(partial) => Some(partial),
+                _ => None,
+            };
+            let resumed = match partial {
+                Some(partial) => {
+                    let kept = partial.clone();
+                    match RemoteTarget::resume(sftp, partial, |written| upload_from(written, size)).await {
+                        Ok(resumed) => resumed,
+                        Err(e) => {
+                            copied.lock().unwrap()[i] = Copied::Partly(kept);
+                            return Err(failed(e));
+                        }
+                    }
+                }
+                None => None,
+            };
+            let (mut dst, from) = match resumed {
+                Some(resumed) => resumed,
+                None if new => (RemoteTarget::create_new(sftp, remote, mode, aside).await?, 0),
+                None => (RemoteTarget::create(sftp, remote, mode, aside).await?, 0),
             };
             let replaces = dst.replaces();
-            let result = match copy(&mut src, &mut dst.file, run).await {
+            let written = async {
+                if from > 0 {
+                    src.seek(SeekFrom::Start(from)).await.context(Error::new("transfer.readFailed").param("path", local.display()))?;
+                    run.advance(from);
+                }
+                copy(&mut src, &mut dst.file, run).await
+            };
+            let result = match written.await {
                 Ok(()) => dst.finish(sftp).await,
+                Err(e) if aside && !is_cancelled(&e) => {
+                    if let Some(partial) = dst.suspend(sftp).await {
+                        copied.lock().unwrap()[i] = Copied::Partly(partial);
+                    }
+                    Err(e)
+                }
                 Err(e) => {
                     dst.abandon(sftp).await;
                     Err(e)
                 }
             };
-            result.map_err(|e| with_file_context(e, Error::new("transfer.uploadFailed").param("path", local.display())))?;
+            result.map_err(failed)?;
+            copied.lock().unwrap()[i] = Copied::Done(remote.clone());
             let mut files = files.lock().unwrap();
             // A file of the same name that this upload put there before is its own still: only
             // then looked for, as going through all of them for each replaced file adds up.
@@ -91,9 +177,53 @@ pub async fn upload(
     })
     .await;
     run.end();
-    let (files, replaced) = files.into_inner().unwrap();
-    (left.files, left.replaced) = (left::stamp_remote(sftp, files).await, replaced);
+    let plan = job.plan.as_mut().expect("planned above");
+    plan.copied = copied.into_inner().unwrap();
+    let (mut files, replaced) = files.into_inner().unwrap();
+    files.append(&mut job.unstamped);
+    let stamped = left::stamp_remote(sftp, files.clone()).await;
+    let found: HashSet<&String> = stamped.iter().map(|(file, _)| file).collect();
+    job.unstamped = files.into_iter().filter(|file| !found.contains(file)).collect();
+    left.add_files(stamped);
+    left.replaced += replaced;
     result
+}
+
+/// Readies an upload's `plan` to go on with it: a file cut short whose local file changed
+/// since is copied again from the start, and so is one copied whole (if `check`) that isn't
+/// there as it was left. Starts the progress where the upload got.
+async fn go_on(sftp: &SftpSession, plan: &mut Plan<PathBuf, String, RemotePartial>, reporter: &mut Reporter, check: bool) -> Result<()> {
+    for i in 0..plan.files.len() {
+        if !matches!(plan.copied[i], Copied::Partly(_)) {
+            continue;
+        }
+        let local = &plan.files[i].0;
+        let metadata = tokio::fs::metadata(local).await.context(Error::new("transfer.readFailed").param("path", local.display()))?;
+        let stamp = Stamp::local(&metadata);
+        if stamp != plan.sources[i] {
+            if let Copied::Partly(partial) = std::mem::replace(&mut plan.copied[i], Copied::No) {
+                partial.remove(sftp).await;
+            }
+            (plan.files[i].2, plan.sources[i]) = (metadata.len(), stamp);
+        }
+    }
+    if check {
+        let done: Vec<usize> = (0..plan.files.len()).filter(|&i| matches!(plan.copied[i], Copied::Done(_))).collect();
+        let files = &plan.files;
+        let sizes: Vec<Option<u64>> = each_in_order(&done, left::CONCURRENT_STAMPS, |&i| async move {
+            sftp.symlink_metadata(&files[i].1).await.ok().and_then(|attributes| attributes.size)
+        })
+        .collect()
+        .await;
+        for (i, size) in done.into_iter().zip(sizes) {
+            if size != Some(plan.files[i].2) {
+                plan.copied[i] = Copied::No;
+            }
+        }
+    }
+    reporter.check_cancelled()?;
+    reporter.progress = plan.progress();
+    Ok(())
 }
 
 /// The remote paths that more than one file of an upload goes to (the same name dropped from
@@ -164,7 +294,7 @@ async fn create_remote_dir(sftp: &SftpSession, dir: &str, mode: Option<u32>) -> 
 pub(super) async fn scan_local_dir(
     root: &Path,
     remote_root: String,
-    plan: &mut Plan<PathBuf, String>,
+    plan: &mut Plan<PathBuf, String, RemotePartial>,
     reporter: &mut Reporter,
 ) -> Result<()> {
     let root_mode = tokio::fs::metadata(root).await.ok().and_then(|metadata| uploaded_mode(&metadata));
@@ -188,7 +318,7 @@ pub(super) async fn scan_local_dir(
                 pending.push((path, child, uploaded_mode(&metadata)));
             } else if metadata.is_file() {
                 reporter.progress.total += metadata.len();
-                plan.add_file(path, child, metadata.len(), uploaded_mode(&metadata));
+                plan.add_file(path, child, metadata.len(), uploaded_mode(&metadata), Stamp::local(&metadata));
             }
         }
     }

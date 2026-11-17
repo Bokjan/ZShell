@@ -403,8 +403,23 @@ export const sftp = {
    * resolves to how many files were deleted, and how many were kept as they changed since.
    */
   deleteLeft: (transferId: string, id: SessionId | null) => call("transfer_delete", { transferId, id }),
-  /** Forgets what ended transfers created, once they are no longer listed. */
-  forget: (transferIds: string[]) => call("transfer_forget", { transferIds }),
+  /**
+   * Goes on with a failed upload or download through session `id`: after a lost connection,
+   * or retried (`check`: copies again the files done before that are no longer as they were
+   * left). Resolves as the transfer did; fails if it can't be gone on with.
+   */
+  resume: (id: SessionId, transferId: string, check: boolean, onProgress: (p: TransferProgress) => void) =>
+    call("transfer_resume", { id, transferId, check, onProgress: progressChannel(onProgress) }),
+  /**
+   * Gives up on going on with a failed transfer: removes what its files cut short left (on the
+   * server through session `id`), keeping what it created for `deleteLeft`.
+   */
+  discard: (transferId: string, id: SessionId | null) => call("transfer_discard", { transferId, id }),
+  /**
+   * Forgets what ended transfers created, once they are no longer listed, and discards those
+   * that failed (see `discard`).
+   */
+  forget: (transferIds: string[], id: SessionId | null) => call("transfer_forget", { transferIds, id }),
   /**
    * Downloads a file into a temporary folder and opens it in the editor; `onChanged` is called
    * each time it is saved. `editId` also identifies the download for `cancel`.

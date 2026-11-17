@@ -3,7 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import type { TransferProgress } from "../ipc/api";
+import type { SessionId, TransferProgress } from "../ipc/api";
 import type { TransferProgresses } from "../lib/transferProgress";
 import { useLocale } from "../hooks/locale";
 import { useStableHandlers } from "../hooks/stableHandlers";
@@ -16,9 +16,18 @@ export interface Transfer {
   kind: "upload" | "download" | "edit";
   /** The names of what it copies, which name it in the current language (see `transferLabel`). */
   names: string[];
-  /** "editing" once a file opened in an editor is downloaded and watched. */
-  status: "running" | "editing" | "done" | "error" | "cancelled";
+  /**
+   * "editing" once a file opened in an editor is downloaded and watched; "waiting" when the
+   * connection was lost, until the tab reconnects and it goes on.
+   */
+  status: "running" | "editing" | "waiting" | "done" | "error" | "cancelled";
   error?: string;
+  /** Whether it failed in a way that it can be retried. */
+  retry?: boolean;
+  /** While waiting: the session whose connection was lost, which it doesn't go on through. */
+  lostOn?: SessionId;
+  /** For an upload: the remote folder it goes to, listed again once it ends. */
+  remoteDir?: string;
   /** The local items an ended download left, to show. */
   results?: string[];
   /**
@@ -58,7 +67,10 @@ interface Props {
   traffic?: ReactNode;
   /** Whether the session is connected, which deleting what an upload created needs. */
   connected: boolean;
+  /** Cancels a running transfer, or one waiting to go on. */
   onCancel(id: string): void;
+  /** Retries a failed transfer. */
+  onRetry(id: string): void;
   /** Asks, then deletes the files an ended transfer created. */
   onDelete(id: string): void;
   onDismiss(id: string): void;
@@ -79,7 +91,8 @@ const KIND_ICONS = {
 export const transferLabel = (t: TFunction, names: string[]) =>
   names.length === 1 ? names[0] : t("transfer.labelMore", { name: names[0], count: names.length - 1 });
 
-export const finished = (transfer: Transfer) => transfer.status !== "running" && transfer.status !== "editing";
+export const finished = (transfer: Transfer) =>
+  transfer.status !== "running" && transfer.status !== "editing" && transfer.status !== "waiting";
 
 export function TransferList({
   transfers,
@@ -87,6 +100,7 @@ export function TransferList({
   traffic,
   connected,
   onCancel,
+  onRetry,
   onDelete,
   onDismiss,
   onClearFinished,
@@ -95,7 +109,7 @@ export function TransferList({
 }: Props) {
   const { t } = useTranslation();
   // The same from render to render, so that a transfer renders again only when it changes.
-  const actions = useStableHandlers<TransferActions>({ onCancel, onDelete, onDismiss, onReopen, onStopEditing });
+  const actions = useStableHandlers<TransferActions>({ onCancel, onRetry, onDelete, onDismiss, onReopen, onStopEditing });
   if (transfers.length === 0) return null;
 
   return (
@@ -120,7 +134,7 @@ export function TransferList({
 }
 
 /** What a transfer's buttons do: one object for every transfer, the same from render to render. */
-type TransferActions = Pick<Props, "onCancel" | "onDelete" | "onDismiss" | "onReopen" | "onStopEditing">;
+type TransferActions = Pick<Props, "onCancel" | "onRetry" | "onDelete" | "onDismiss" | "onReopen" | "onStopEditing">;
 
 /**
  * One transfer, its own component so that React Compiler memoizes it: the list renders again
@@ -160,6 +174,7 @@ function TransferItem(props: { transfer: Transfer; progress: TransferProgresses;
       if (transfer.status === "error") return t("transfer.failedDeleted", { error: transfer.error, count });
       return t("transfer.deleted", { count });
     }
+    if (transfer.status === "waiting") return t("transfer.waiting");
     if (transfer.status === "error") return transfer.error;
     if (transfer.status === "editing") {
       const save = transfer.save;
@@ -199,9 +214,19 @@ function TransferItem(props: { transfer: Transfer; progress: TransferProgresses;
         <span className="transfer-label" title={label}>
           {label}
         </span>
-        {transfer.status === "running" && (
+        {(transfer.status === "running" || transfer.status === "waiting") && (
           <button className="link" onClick={() => actions.onCancel(id)}>
             {t("transfer.cancel")}
+          </button>
+        )}
+        {transfer.status === "error" && transfer.retry && (
+          <button
+            className="link"
+            title={connected ? undefined : t("transfer.retryNeedsConnection")}
+            disabled={!connected || transfer.deletion?.deleting}
+            onClick={() => actions.onRetry(id)}
+          >
+            {t("transfer.retry")}
           </button>
         )}
         {finished(transfer) && transfer.results?.[0] && deleted == null && (

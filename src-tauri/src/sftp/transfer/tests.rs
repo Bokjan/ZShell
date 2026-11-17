@@ -130,6 +130,253 @@ async fn a_transfer_waiting_for_its_turn_is_cancelled_at_once() {
     assert_eq!(result.unwrap_err().downcast_ref::<Error>().map(Error::code), Some("transfer.cancelled"));
 }
 
+/// Uploads `local_paths` into `remote_dir` in one go, as a transfer that isn't gone on with.
+#[cfg(unix)]
+async fn upload_all(
+    sftp: &russh_sftp::client::SftpSession,
+    local_paths: &[PathBuf],
+    remote_dir: &str,
+    reporter: &mut Reporter,
+    left: &mut Left<String>,
+) -> anyhow::Result<()> {
+    let server = Server::of(&crate::model::Remote::new("localhost".into(), 22, "alice".into()));
+    let mut job = upload::Upload::new(local_paths.to_vec(), remote_dir.to_owned(), server);
+    upload::upload(sftp, &mut job, reporter, left, false).await
+}
+
+/// Downloads `remote_paths` into `folder` in one go, giving back the names of the items that
+/// didn't arrive if it fails, as a transfer that isn't gone on with.
+#[cfg(unix)]
+async fn download_into(
+    sftp: &russh_sftp::client::SftpSession,
+    remote_paths: &[String],
+    folder: &std::path::Path,
+    reporter: &mut Reporter,
+    left: &mut Left<PathBuf>,
+) -> anyhow::Result<()> {
+    let mut job = download::Download::into(remote_paths.to_vec(), folder.to_owned());
+    let result = download::download(sftp, &mut job, reporter, left, false).await;
+    if result.is_err() {
+        job.discard().await;
+    }
+    result
+}
+
+/// Transfers going on after a lost connection, through the SFTP server in this process.
+mod resuming {
+    use std::path::Path;
+
+    use russh_sftp::client::SftpSession;
+
+    use super::*;
+    use crate::session::Viewers;
+    use crate::sftp::channels::Channels;
+    use crate::sftp::testing::{Counts, SftpServer};
+    use crate::ssh::testing::{connect_stalling, Stall};
+    use crate::ssh::Connection;
+
+    /// Large enough to be gone on with (see `resume::RESUMABLE`).
+    const LARGE: usize = 20 << 20;
+
+    /// `len` bytes that differ with `seed`.
+    fn bytes(len: usize, seed: u32) -> Vec<u8> {
+        let mut state = seed.wrapping_mul(2_654_435_761).max(1);
+        (0..len)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state as u8
+            })
+            .collect()
+    }
+
+    /// A new connection to an SFTP server serving `root`, and its transfer session.
+    async fn connect(root: &Path, counts: &Counts) -> (Arc<Connection>, Stall, Arc<SftpSession>) {
+        let (connection, stall) = connect_stalling(SftpServer::new(root, counts), Duration::from_millis(100)).await;
+        let sftp = Channels::new(connection.info(), Viewers::default()).transfer(&connection).await.unwrap();
+        (connection, stall, sftp)
+    }
+
+    /// A folder for a test, with `local` and `remote` folders in it.
+    fn folders(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!("zshell-{name}-{}", uuid::Uuid::new_v4()));
+        let (local, remote) = (root.join("local"), root.join("remote"));
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::create_dir_all(&remote).unwrap();
+        (root, local, remote)
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> =
+            std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        names
+    }
+
+    /// A reporter, and the last progress it reported.
+    fn reporting() -> (Reporter, Arc<Mutex<Progress>>) {
+        let last = Arc::new(Mutex::new(Progress::default()));
+        let reported = last.clone();
+        (Reporter::with_sink(move |progress| *reported.lock().unwrap() = progress, Default::default()), last)
+    }
+
+    /// Uploads a large file and a small one on a connection lost midway: the large one isn't
+    /// left in place incomplete, and the upload fails as lost.
+    async fn upload_cut_short(local: &Path, remote: &Path, counts: &Counts) -> (Job, Kept) {
+        std::fs::write(local.join("large.bin"), bytes(LARGE, 1)).unwrap();
+        std::fs::write(local.join("small.txt"), "small").unwrap();
+        let (connection, stall, sftp) = connect(remote, counts).await;
+        counts.stall_after(LARGE as u64 / 2, &stall);
+        let server = Server::of(&connection.profile().ssh.remote);
+        let mut job = Job::upload(vec![local.join("large.bin"), local.join("small.txt")], "/".into(), server);
+        let mut left = job.nothing_left();
+        let (mut reporter, _) = reporting();
+        let failed = job.run(&sftp, &mut reporter, &mut left, false).await.unwrap_err();
+        assert!(ended_by_loss(&connection, &failed).await, "{failed:#}");
+        assert!(!remote.join("large.bin").exists());
+        (job, left)
+    }
+
+    #[tokio::test]
+    async fn an_upload_goes_on_where_the_connection_was_lost() {
+        let (root, local, remote) = folders("resume-upload");
+        let counts = Counts::default();
+        let (mut job, mut left) = upload_cut_short(&local, &remote, &counts).await;
+        let before = counts.written();
+
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        let (mut reporter, last) = reporting();
+        job.run(&sftp, &mut reporter, &mut left, false).await.unwrap();
+        let again = counts.written() - before;
+        let arrived = std::fs::read(remote.join("large.bin")).unwrap() == bytes(LARGE, 1);
+        let (names, last) = (names(&remote), last.lock().unwrap().clone());
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert!(arrived);
+        // Nothing left beside them.
+        assert_eq!(names, ["large.bin", "small.txt"]);
+        // Went on rather than starting over, and counted each byte once.
+        assert!(again < LARGE as u64, "wrote {again} bytes again");
+        assert_eq!((last.transferred, last.files_done), (last.total, 2));
+        let Kept::Remote(left, _) = left else { unreachable!() };
+        assert_eq!(left.files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_file_changed_since_is_copied_again_from_the_start() {
+        let (root, local, remote) = folders("resume-changed");
+        let counts = Counts::default();
+        let (mut job, mut left) = upload_cut_short(&local, &remote, &counts).await;
+        std::fs::write(local.join("large.bin"), bytes(LARGE + 1, 2)).unwrap();
+        let before = counts.written();
+
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        let (mut reporter, last) = reporting();
+        job.run(&sftp, &mut reporter, &mut left, false).await.unwrap();
+        let again = counts.written() - before;
+        let arrived = std::fs::read(remote.join("large.bin")).unwrap() == bytes(LARGE + 1, 2);
+        let (names, last) = (names(&remote), last.lock().unwrap().clone());
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert!(arrived);
+        assert_eq!(names, ["large.bin", "small.txt"]);
+        assert!(again > LARGE as u64, "wrote {again} bytes again");
+        assert_eq!(last.transferred, last.total);
+    }
+
+    #[tokio::test]
+    async fn a_discarded_upload_leaves_nothing_cut_short() {
+        let (root, local, remote) = folders("resume-discard");
+        let counts = Counts::default();
+        let (job, _) = upload_cut_short(&local, &remote, &counts).await;
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        job.discard(Some(&sftp)).await;
+        let names = names(&remote);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(names.iter().all(|name| !name.starts_with('.')), "{names:?}");
+    }
+
+    #[tokio::test]
+    async fn a_download_goes_on_where_the_connection_was_lost() {
+        let (root, local, remote) = folders("resume-download");
+        std::fs::write(remote.join("large.bin"), bytes(LARGE, 3)).unwrap();
+        let counts = Counts::default();
+        let (connection, stall, sftp) = connect(&remote, &counts).await;
+        counts.stall_after(LARGE as u64 / 2, &stall);
+        let mut job = Job::download(vec!["/large.bin".into()], local.clone());
+        let mut left = job.nothing_left();
+        let (mut reporter, _) = reporting();
+        let failed = job.run(&sftp, &mut reporter, &mut left, false).await.unwrap_err();
+        assert!(ended_by_loss(&connection, &failed).await, "{failed:#}");
+        // Its name is kept, empty, and what arrived is beside it.
+        let kept = std::fs::metadata(local.join("large.bin")).map(|metadata| metadata.len()).ok();
+        let before = counts.read();
+
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        let (mut reporter, last) = reporting();
+        let resumed = job.run(&sftp, &mut reporter, &mut left, false).await;
+        let again = counts.read() - before;
+        let arrived = std::fs::read(local.join("large.bin")).ok() == Some(bytes(LARGE, 3));
+        let (names, last) = (names(&local), last.lock().unwrap().clone());
+        let paths = job.paths(&mut left, resumed.is_ok());
+        std::fs::remove_dir_all(&root).unwrap();
+
+        resumed.unwrap();
+        assert_eq!(kept, Some(0));
+        assert!(arrived);
+        assert_eq!(names, ["large.bin"]);
+        assert!(again < LARGE as u64, "read {again} bytes again");
+        assert_eq!(last.transferred, last.total);
+        assert_eq!(paths, [local.join("large.bin")]);
+    }
+
+    #[tokio::test]
+    async fn a_discarded_download_gives_back_its_names() {
+        let (root, local, remote) = folders("resume-download-discard");
+        std::fs::write(remote.join("large.bin"), bytes(LARGE, 4)).unwrap();
+        let counts = Counts::default();
+        let (_connection, stall, sftp) = connect(&remote, &counts).await;
+        counts.stall_after(LARGE as u64 / 2, &stall);
+        let mut job = Job::download(vec!["/large.bin".into()], local.clone());
+        let mut left = job.nothing_left();
+        let (mut reporter, _) = reporting();
+        assert!(job.run(&sftp, &mut reporter, &mut left, false).await.is_err());
+        job.discard(None).await;
+        let names = names(&local);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(names.is_empty(), "{names:?}");
+    }
+
+    /// Retrying copies again only the files copied whole that aren't there as they were left;
+    /// going on after a lost connection takes them as they were.
+    #[tokio::test]
+    async fn a_retry_copies_again_what_is_gone() {
+        let (root, local, remote) = folders("resume-retry");
+        std::fs::write(local.join("a.txt"), "aaa").unwrap();
+        std::fs::write(local.join("b.txt"), "bbbb").unwrap();
+        let counts = Counts::default();
+        let (connection, _stall, sftp) = connect(&remote, &counts).await;
+        let server = Server::of(&connection.profile().ssh.remote);
+        let mut job = Job::upload(vec![local.join("a.txt"), local.join("b.txt")], "/".into(), server);
+        let mut left = job.nothing_left();
+        let (mut reporter, _) = reporting();
+        job.run(&sftp, &mut reporter, &mut left, false).await.unwrap();
+        std::fs::remove_file(remote.join("b.txt")).unwrap();
+
+        let before = counts.written();
+        job.run(&sftp, &mut reporter, &mut left, false).await.unwrap();
+        let trusted = counts.written() - before;
+        job.run(&sftp, &mut reporter, &mut left, true).await.unwrap();
+        let checked = counts.written() - before;
+        let names = names(&remote);
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert_eq!((trusted, checked), (0, 4));
+        assert_eq!(names, ["a.txt", "b.txt"]);
+    }
+}
+
 #[cfg(unix)]
 mod unix {
     use std::collections::HashSet;
@@ -188,10 +435,11 @@ mod unix {
             let last = last.clone();
             Reporter::with_sink(move |progress| *last.lock().unwrap() = progress, Default::default())
         };
-        let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
+        let up = upload_all(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
         let uploaded = last.lock().unwrap().clone();
         let mut reporter = Reporter::with_sink(|_| {}, Default::default());
-        let down = download(&sftp, &[remote.join("tree").to_str().unwrap().to_owned()], &back, &mut reporter, &mut Left::default()).await;
+        let down =
+            download_into(&sftp, &[remote.join("tree").to_str().unwrap().to_owned()], &back, &mut reporter, &mut Left::default()).await;
         let same = |path: &str| std::fs::read(source.join(path)).ok() == std::fs::read(back.join("tree").join(path)).ok();
         let all_same = expected.iter().all(|path| same(path.trim_start_matches('/'))) && same("a/large.bin");
         std::fs::remove_dir_all(&root).unwrap();
@@ -235,7 +483,7 @@ mod unix {
 
         let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let mut up = Left::default();
-        upload(&sftp, std::slice::from_ref(&source), &at(&remote), &mut reporter, &mut up).await.unwrap();
+        upload_all(&sftp, std::slice::from_ref(&source), &at(&remote), &mut reporter, &mut up).await.unwrap();
         let uploaded = (paths(&up.files), up.dirs.clone(), up.replaced);
         std::fs::write(remote.join("up/edited.txt"), "edited since").unwrap();
         let deletion = delete_remote(&sftp, &mut up).await;
@@ -243,7 +491,7 @@ mod unix {
 
         let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let mut down = Left::default();
-        download(&sftp, &[at(&remote.join("up"))], &back, &mut reporter, &mut down).await.unwrap();
+        download_into(&sftp, &[at(&remote.join("up"))], &back, &mut reporter, &mut down).await.unwrap();
         let downloaded = (down.items.clone(), paths(&down.files), down.dirs.clone(), down.replaced);
         std::fs::write(back.join("up/mine"), "mine").unwrap();
         std::fs::write(back.join("up/keep"), "keep, edited since").unwrap();
@@ -280,11 +528,11 @@ mod unix {
         set(&source, 0o700);
 
         let mut reporter = Reporter::with_sink(|_| {}, Default::default());
-        let up = upload(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
+        let up = upload_all(&sftp, std::slice::from_ref(&source), remote.to_str().unwrap(), &mut reporter, &mut Left::default()).await;
         let uploaded = up.is_ok().then(|| (mode(remote.join("keys")), mode(remote.join("keys/id")), mode(remote.join("keys/run.sh"))));
         let mut reporter = Reporter::with_sink(|_| {}, Default::default());
         let paths = [remote.join("keys").to_str().unwrap().to_owned(), remote.join("keys/id").to_str().unwrap().to_owned()];
-        let down = download(&sftp, &paths, &back, &mut reporter, &mut Left::default()).await;
+        let down = download_into(&sftp, &paths, &back, &mut reporter, &mut Left::default()).await;
         let downloaded = down.is_ok().then(|| (mode(back.join("keys")), mode(back.join("keys/id")), mode(back.join("id"))));
         set(&source, 0o755);
         set(&remote.join("keys"), 0o755);
@@ -315,7 +563,7 @@ mod unix {
 
         let paths: Vec<String> = ["empty", "secret", "later"].iter().map(|n| remote.join(n).to_str().unwrap().to_owned()).collect();
         let mut reporter = Reporter::with_sink(|_| {}, Default::default());
-        let result = download(&sftp, &paths, &local, &mut reporter, &mut Left::default()).await;
+        let result = download_into(&sftp, &paths, &local, &mut reporter, &mut Left::default()).await;
         let mut left: Vec<_> = std::fs::read_dir(&local).unwrap().map(|e| e.unwrap().file_name()).collect();
         left.sort();
         std::fs::remove_dir_all(&root).unwrap();

@@ -16,6 +16,11 @@
 //! `posix-rename@openssh.com`, so the original is first renamed out of the way (to another
 //! `.<name>.zshell-<random>`), then removed once the new file is in place. A connection lost
 //! in between leaves both: the error names the files they are in.
+//!
+//! A new file is written under a temporary name too when asked to (`aside`: a large one a
+//! transfer may go on with), so that one cut short doesn't pass for complete. A failed transfer
+//! then `suspend`s it, keeping the temporary file, and `resume` writes on from where it says
+//! (see `transfer::resume`).
 
 use std::path::{Path, PathBuf};
 
@@ -24,7 +29,7 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::File;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileAttributes, OpenFlags, Status, StatusCode};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use super::{file_name, join};
 use crate::error::Error;
@@ -59,6 +64,23 @@ pub struct RemoteTarget {
     permissions: Option<u32>,
 }
 
+/// A remote file a failed transfer left written in part, under its temporary name (see
+/// [`RemoteTarget::suspend`]).
+#[derive(Clone, Debug)]
+pub struct RemotePartial {
+    pub path: String,
+    temporary: String,
+    existed: bool,
+    permissions: Option<u32>,
+}
+
+impl RemotePartial {
+    /// Removes what was written, when the transfer won't go on with it.
+    pub async fn remove(self, sftp: &SftpSession) {
+        let _ = sftp.remove_file(&self.temporary).await;
+    }
+}
+
 /// Creates (or truncates) remote `path`; a new file gets the permission bits `mode`, if given,
 /// less the server's umask.
 async fn create_file(sftp: &SftpSession, path: &str, mode: Option<u32>) -> Result<File, SftpError> {
@@ -68,16 +90,15 @@ async fn create_file(sftp: &SftpSession, path: &str, mode: Option<u32>) -> Resul
 
 impl RemoteTarget {
     /// Creates `path` (with the permission bits `mode`, if given, when there is no file), or the
-    /// temporary file that is to replace it.
-    pub async fn create(sftp: &SftpSession, path: &str, mode: Option<u32>) -> Result<Self> {
+    /// temporary file that is to replace it; when there is no file too, if `aside`.
+    pub async fn create(sftp: &SftpSession, path: &str, mode: Option<u32>, aside: bool) -> Result<Self> {
         let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path));
         let Ok(original) = sftp.symlink_metadata(path).await else {
-            let file = create_file(sftp, path, mode).await.map_err(created)?;
-            return Ok(Self { file, path: path.to_owned(), temporary: None, existed: false, permissions: None });
+            return Self::create_new(sftp, path, mode, aside).await;
         };
         let permissions = original.permissions.map(|mode| mode & 0o7777);
         if original.file_type().is_file() {
-            if let Some((file, temporary)) = create_beside(sftp, path, &original, permissions).await.map_err(created)? {
+            if let Some((file, temporary)) = create_beside(sftp, path, Some(&original), permissions).await.map_err(created)? {
                 return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed: true, permissions });
             }
         }
@@ -86,11 +107,31 @@ impl RemoteTarget {
     }
 
     /// Creates `path`, where nothing is (in a folder just created), with the permission bits
-    /// `mode` if given.
-    pub async fn create_new(sftp: &SftpSession, path: &str, mode: Option<u32>) -> Result<Self> {
+    /// `mode` if given: under a temporary name first if `aside`, where the folder lets us.
+    pub async fn create_new(sftp: &SftpSession, path: &str, mode: Option<u32>, aside: bool) -> Result<Self> {
         let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path));
+        if aside {
+            if let Some((file, temporary)) = create_beside(sftp, path, None, mode).await.map_err(created)? {
+                return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed: false, permissions: None });
+            }
+        }
         let file = create_file(sftp, path, mode).await.map_err(created)?;
         Ok(Self { file, path: path.to_owned(), temporary: None, existed: false, permissions: None })
+    }
+
+    /// Goes on writing the temporary file of `partial`, from where `from` says given how long
+    /// it is now; `None` when it says to start over, or the file is gone (removed then).
+    pub async fn resume(sftp: &SftpSession, partial: RemotePartial, from: impl FnOnce(u64) -> Option<u64>) -> Result<Option<(Self, u64)>> {
+        let RemotePartial { path, temporary, existed, permissions } = partial;
+        let Ok(mut file) = sftp.open_with_flags(&temporary, OpenFlags::WRITE).await else { return Ok(None) };
+        let length = file.metadata().await.map_err(anyhow::Error::from)?.size;
+        let Some(from) = length.and_then(from) else {
+            let _ = file.shutdown().await;
+            let _ = sftp.remove_file(&temporary).await;
+            return Ok(None);
+        };
+        file.seek(std::io::SeekFrom::Start(from)).await?;
+        Ok(Some((Self { file, path, temporary: Some(temporary), existed, permissions }, from)))
     }
 
     /// Closes the file, checking what the server says (some, like NFS or quotas, report a
@@ -100,8 +141,8 @@ impl RemoteTarget {
     /// isn't, as `sftp put` doesn't, which would take a round trip and a wait on every file.
     pub async fn finish(mut self, sftp: &SftpSession) -> Result<()> {
         let written = match self.temporary {
-            Some(_) => self.file.flush().await,
-            None => Ok(()),
+            Some(_) if self.existed => self.file.flush().await,
+            _ => Ok(()),
         };
         if let Err(e) = written.and(self.file.shutdown().await) {
             self.remove_incomplete(sftp).await;
@@ -113,8 +154,16 @@ impl RemoteTarget {
             let attributes = FileAttributes { permissions: Some(permissions), ..FileAttributes::empty() };
             let _ = sftp.set_metadata(temporary, attributes).await;
         }
+        // Nothing was there: put in place at once, unless something is there by now.
+        if !self.existed && sftp.rename(temporary, &self.path).await.is_ok() {
+            return Ok(());
+        }
         let original = join(parent(&self.path), &temporary_name(file_name(&self.path)));
         if let Err(e) = sftp.rename(&self.path, &original).await {
+            // The original went meanwhile (a transfer gone on with a while later).
+            if self.existed && sftp.rename(temporary, &self.path).await.is_ok() {
+                return Ok(());
+            }
             let _ = sftp.remove_file(temporary).await;
             return Err(anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", &self.path)));
         }
@@ -148,6 +197,19 @@ impl RemoteTarget {
         self.remove_incomplete(sftp).await;
     }
 
+    /// Leaves the file after a failed transfer, keeping its temporary file to go on with later
+    /// ([`RemoteTarget::resume`]); gives it up ([`RemoteTarget::abandon`]) if it has none.
+    pub async fn suspend(mut self, sftp: &SftpSession) -> Option<RemotePartial> {
+        let Some(temporary) = self.temporary.take() else {
+            self.abandon(sftp).await;
+            return None;
+        };
+        // Fails at once when the connection is gone, as it most often is.
+        let _ = self.file.shutdown().await;
+        let path = std::mem::take(&mut self.path);
+        Some(RemotePartial { path, temporary, existed: self.existed, permissions: self.permissions })
+    }
+
     /// Removes the temporary file, or a file that didn't exist before. An original written in
     /// place is left as far as it got: removing it would lose all of it.
     async fn remove_incomplete(&self, sftp: &SftpSession) {
@@ -168,13 +230,13 @@ fn parent(path: &str) -> &str {
     }
 }
 
-/// A new file beside `path` that can replace it without changing its owner; `None` if there
-/// can't be one: the folder doesn't let us create files, or the owner would change (see the
-/// module comment).
+/// A new file beside `path` that can replace the `original` there, if any, without changing its
+/// owner, created with the permission bits `permissions`; `None` if there can't be one: the
+/// folder doesn't let us create files, or the owner would change (see the module comment).
 async fn create_beside(
     sftp: &SftpSession,
     path: &str,
-    original: &FileAttributes,
+    original: Option<&FileAttributes>,
     permissions: Option<u32>,
 ) -> Result<Option<(File, String)>, SftpError> {
     let denied = |e: &SftpError| matches!(e, SftpError::Status(Status { status_code: StatusCode::PermissionDenied, .. }));
@@ -202,6 +264,7 @@ async fn create_beside(
             }
         }
     };
+    let Some(original) = original else { return Ok(Some((file, temporary))) };
     let ours = match file.metadata().await {
         Ok(ours) => ours,
         Err(e) => {
@@ -219,20 +282,18 @@ async fn create_beside(
     Ok(Some((file, temporary)))
 }
 
-/// A new file beside local `path`, as private as the `original` there (Unix: created with its
-/// permissions, not readable by others meanwhile if it isn't); `None` if the folder doesn't
-/// let us create files.
-async fn create_new_beside(path: &Path, original: &std::fs::Metadata) -> std::io::Result<Option<(tokio::fs::File, PathBuf)>> {
+/// A new file beside local `path`, created with the permission bits `mode` (Unix: an original's,
+/// so that the copy is never more open than it meanwhile, and the owner's write, as it is
+/// written to); `None` if the folder doesn't let us create files.
+async fn create_new_beside(path: &Path, mode: Option<u32>) -> std::io::Result<Option<(tokio::fs::File, PathBuf)>> {
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // Owner write, at least: it is written to.
-        options.mode(original.permissions().mode() & 0o777 | 0o200);
+    if let Some(mode) = mode {
+        options.mode(mode & 0o777 | 0o200);
     }
     #[cfg(not(unix))]
-    let _ = original;
+    let _ = mode;
     let open = |temporary: PathBuf| async {
         let file = options.open(&temporary).await?;
         Ok::<_, std::io::Error>((file, temporary))
@@ -257,6 +318,17 @@ async fn create_new_beside(path: &Path, original: &std::fs::Metadata) -> std::io
     }
 }
 
+/// The permission bits of a local file, where there are any (Unix).
+fn local_mode(metadata: &std::fs::Metadata) -> Option<u32> {
+    #[cfg(unix)]
+    return Some(std::os::unix::fs::PermissionsExt::mode(&metadata.permissions()));
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        None
+    }
+}
+
 /// A local file being written (see the module comment).
 pub struct LocalTarget {
     pub file: tokio::fs::File,
@@ -266,16 +338,39 @@ pub struct LocalTarget {
     permissions: Option<std::fs::Permissions>,
 }
 
+/// A local file a failed transfer left written in part, under its temporary name (see
+/// [`LocalTarget::suspend`]).
+#[derive(Clone, Debug)]
+pub struct LocalPartial {
+    pub path: PathBuf,
+    temporary: PathBuf,
+    existed: bool,
+    permissions: Option<std::fs::Permissions>,
+}
+
+impl LocalPartial {
+    /// Removes what was written, when the transfer won't go on with it.
+    pub async fn remove(self) {
+        let _ = tokio::fs::remove_file(&self.temporary).await;
+    }
+}
+
 impl LocalTarget {
     /// Creates `path` (with the permission bits `mode`, if given, when there is no file; Unix,
-    /// less the umask), or the temporary file that is to replace it.
-    pub async fn create(path: &Path, mode: Option<u32>) -> Result<Self> {
+    /// less the umask), or the temporary file that is to replace it; when there is no file
+    /// too, if `aside`.
+    pub async fn create(path: &Path, mode: Option<u32>, aside: bool) -> Result<Self> {
         let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path.display()));
         let original = tokio::fs::symlink_metadata(path).await.ok();
-        if let Some(original) = original.as_ref().filter(|m| m.is_file()) {
-            if let Some((file, temporary)) = create_new_beside(path, original).await.map_err(created)? {
-                let permissions = Some(original.permissions());
-                return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed: true, permissions });
+        let beside = match &original {
+            Some(original) if original.is_file() => Some((local_mode(original), Some(original.permissions()))),
+            None if aside => Some((mode, None)),
+            _ => None,
+        };
+        if let Some((mode, permissions)) = beside {
+            if let Some((file, temporary)) = create_new_beside(path, mode).await.map_err(created)? {
+                let existed = original.is_some();
+                return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed, permissions });
             }
         }
         let mut options = tokio::fs::OpenOptions::new();
@@ -284,10 +379,23 @@ impl LocalTarget {
         if let Some(mode) = mode {
             options.mode(mode);
         }
-        #[cfg(not(unix))]
-        let _ = mode;
         let file = options.open(path).await.map_err(created)?;
         Ok(Self { file, path: path.to_owned(), temporary: None, existed: original.is_some(), permissions: None })
+    }
+
+    /// Goes on writing the temporary file of `partial`, from where `from` says given how long
+    /// it is now; `None` when it says to start over, or the file is gone (removed then).
+    pub async fn resume(partial: LocalPartial, from: impl FnOnce(u64) -> Option<u64>) -> Result<Option<(Self, u64)>> {
+        let LocalPartial { path, temporary, existed, permissions } = partial;
+        let Ok(mut file) = tokio::fs::OpenOptions::new().write(true).open(&temporary).await else { return Ok(None) };
+        let length = file.metadata().await?.len();
+        let Some(from) = from(length) else {
+            drop(file);
+            let _ = tokio::fs::remove_file(&temporary).await;
+            return Ok(None);
+        };
+        file.seek(std::io::SeekFrom::Start(from)).await?;
+        Ok(Some((Self { file, path, temporary: Some(temporary), existed, permissions }, from)))
     }
 
     /// Whether there was a file at the path, which this one replaces.
@@ -323,6 +431,24 @@ impl LocalTarget {
         self.remove_incomplete().await;
     }
 
+    /// Leaves the file after a failed transfer, keeping its temporary file to go on with later
+    /// ([`LocalTarget::resume`]), all that was written to it on the disk; gives it up
+    /// ([`LocalTarget::abandon`]) if it has none.
+    pub async fn suspend(mut self) -> Option<LocalPartial> {
+        let Some(temporary) = self.temporary.take() else {
+            self.abandon().await;
+            return None;
+        };
+        // What tokio has yet to write: the file is written in order, and its length is then
+        // where to go on from.
+        if self.file.flush().await.is_err() {
+            drop(self.file);
+            let _ = tokio::fs::remove_file(&temporary).await;
+            return None;
+        }
+        Some(LocalPartial { path: self.path, temporary, existed: self.existed, permissions: self.permissions })
+    }
+
     async fn remove_incomplete(&self) {
         match (&self.temporary, self.existed) {
             (Some(temporary), _) => drop(tokio::fs::remove_file(temporary).await),
@@ -344,7 +470,7 @@ pub(super) mod tests {
         std::fs::write(&path, "old").unwrap();
 
         // Abandoned: the original stays, and nothing else is left.
-        let mut target = LocalTarget::create(&path, None).await.unwrap();
+        let mut target = LocalTarget::create(&path, None, false).await.unwrap();
         target.file.write_all(b"half").await.unwrap();
         target.abandon().await;
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
@@ -356,7 +482,7 @@ pub(super) mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
         }
-        let mut target = LocalTarget::create(&path, None).await.unwrap();
+        let mut target = LocalTarget::create(&path, None, false).await.unwrap();
         // Never more open than the original, even before it is complete.
         #[cfg(unix)]
         {
@@ -377,7 +503,7 @@ pub(super) mod tests {
 
         // A new file left incomplete is removed.
         let new = dir.join("b.txt");
-        let target = LocalTarget::create(&new, None).await.unwrap();
+        let target = LocalTarget::create(&new, None, false).await.unwrap();
         target.abandon().await;
         assert!(!new.exists());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -415,7 +541,7 @@ pub(super) mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
         let remote = path.to_str().unwrap();
 
-        let mut target = RemoteTarget::create(&sftp, remote, None).await.unwrap();
+        let mut target = RemoteTarget::create(&sftp, remote, None, false).await.unwrap();
         assert!(target.temporary.is_some());
         target.file.write_all(b"new").await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
@@ -425,7 +551,7 @@ pub(super) mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
 
         // Abandoned: the original stays.
-        let mut target = RemoteTarget::create(&sftp, remote, None).await.unwrap();
+        let mut target = RemoteTarget::create(&sftp, remote, None, false).await.unwrap();
         target.file.write_all(b"half").await.unwrap();
         target.abandon(&sftp).await;
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
@@ -446,7 +572,7 @@ pub(super) mod tests {
         std::fs::write(&path, "old").unwrap();
         let remote = path.to_str().unwrap();
 
-        let mut target = RemoteTarget::create(&sftp, remote, None).await.unwrap();
+        let mut target = RemoteTarget::create(&sftp, remote, None, false).await.unwrap();
         assert!(target.temporary.is_some());
         target.file.write_all(b"new").await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
@@ -455,7 +581,7 @@ pub(super) mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
 
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let mut target = RemoteTarget::create(&sftp, remote, None).await.unwrap();
+        let mut target = RemoteTarget::create(&sftp, remote, None, false).await.unwrap();
         assert!(target.temporary.is_none());
         target.file.write_all(b"in place").await.unwrap();
         target.finish(&sftp).await.unwrap();
@@ -473,7 +599,7 @@ pub(super) mod tests {
         let path = dir.join("n".repeat(250));
         std::fs::write(&path, "old").unwrap();
 
-        let mut target = LocalTarget::create(&path, None).await.unwrap();
+        let mut target = LocalTarget::create(&path, None, false).await.unwrap();
         assert!(target.temporary.is_some());
         target.file.write_all(b"new").await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
@@ -482,7 +608,7 @@ pub(super) mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
 
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let mut target = LocalTarget::create(&path, None).await.unwrap();
+        let mut target = LocalTarget::create(&path, None, false).await.unwrap();
         assert!(target.temporary.is_none());
         target.file.write_all(b"in place").await.unwrap();
         target.finish().await.unwrap();
@@ -498,7 +624,7 @@ pub(super) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("real.txt"), "old").unwrap();
         std::os::unix::fs::symlink("real.txt", dir.join("link.txt")).unwrap();
-        let mut target = LocalTarget::create(&dir.join("link.txt"), None).await.unwrap();
+        let mut target = LocalTarget::create(&dir.join("link.txt"), None, false).await.unwrap();
         target.file.write_all(b"new").await.unwrap();
         target.finish().await.unwrap();
         assert!(std::fs::symlink_metadata(dir.join("link.txt")).unwrap().file_type().is_symlink());

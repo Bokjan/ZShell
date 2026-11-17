@@ -15,6 +15,7 @@ use russh_sftp::protocol::{FileAttributes, FileType, StatusCode};
 use serde::Serialize;
 use ts_rs::TS;
 
+use super::resume::Resume;
 use super::CONCURRENT_DIRS;
 use crate::error::Error;
 use crate::model::{host_port, Remote};
@@ -22,7 +23,7 @@ use crate::sftp::batch::{each, each_in_order, levels, Order};
 
 /// How many files an upload looks up at once to stamp them, once copied: one request each, many
 /// at a time so that they add little to it.
-const CONCURRENT_STAMPS: usize = 32;
+pub(super) const CONCURRENT_STAMPS: usize = 32;
 
 /// What a file was like when a transfer left it, which it is deleted only while it still is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +67,24 @@ impl<P> Left<P> {
     }
 }
 
+impl<P: Eq + std::hash::Hash + Clone> Left<P> {
+    /// Adds the files a transfer created as it went on, in place of those of the same path it
+    /// had created before (copied again, gone since).
+    pub(super) fn add_files(&mut self, files: Vec<(P, Stamp)>) {
+        if !self.files.is_empty() {
+            let new: std::collections::HashSet<&P> = files.iter().map(|(file, _)| file).collect();
+            self.files.retain(|(file, _)| !new.contains(file));
+        }
+        self.files.extend(files);
+    }
+
+    /// Adds the folders a transfer created as it went on.
+    pub(super) fn add_dirs(&mut self, dirs: impl IntoIterator<Item = P>) {
+        let had: std::collections::HashSet<P> = self.dirs.iter().cloned().collect();
+        self.dirs.extend(dirs.into_iter().filter(|dir| !had.contains(dir)));
+    }
+}
+
 /// The server an upload went to: what it left is deleted there only, though the tab may have
 /// been connected elsewhere since (its session edited, then connected again).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,12 +97,13 @@ pub struct Server {
 }
 
 impl Server {
-    /// What an upload left is deleted only on the server it went to, through a connection
-    /// that goes there (`now`): the tab may have connected elsewhere since.
-    pub fn check_same(&self, now: &Server) -> Result<(), Error> {
+    /// What an upload left is deleted, and the upload gone on with, only on the server it went
+    /// to, through a connection that goes there (`now`): the tab may have connected elsewhere
+    /// since. Fails with `code`.
+    pub fn check_same(&self, now: &Server, code: &'static str) -> Result<(), Error> {
         match self == now {
             true => Ok(()),
-            false => Err(Error::new("transfer.deleteElsewhere").param("server", self.name())),
+            false => Err(Error::new(code).param("server", self.name())),
         }
     }
 
@@ -118,6 +138,14 @@ impl Kept {
             Kept::Remote(left, _) => left.is_empty(),
         }
     }
+
+    /// How a transfer that left this ended.
+    pub fn ended(&self, error: Option<Error>, paths: Vec<PathBuf>, resume: Option<Resume>) -> Ended {
+        match self {
+            Kept::Local(left) => Ended::new(left, error, paths, resume),
+            Kept::Remote(left, _) => Ended::new(left, error, paths, resume),
+        }
+    }
 }
 
 /// How a transfer ended, for the file panel.
@@ -135,11 +163,13 @@ pub struct Ended {
     pub replaced: usize,
     /// Why it stopped, if it didn't finish.
     pub error: Option<Error>,
+    /// How it can be gone on with, if it failed.
+    pub resume: Option<Resume>,
 }
 
 impl Ended {
-    pub fn new<P>(left: &Left<P>, error: Option<Error>, paths: Vec<PathBuf>) -> Self {
-        Self { paths, created: left.files.len(), folders: left.dirs.len(), replaced: left.replaced, error }
+    pub fn new<P>(left: &Left<P>, error: Option<Error>, paths: Vec<PathBuf>, resume: Option<Resume>) -> Self {
+        Self { paths, created: left.files.len(), folders: left.dirs.len(), replaced: left.replaced, error, resume }
     }
 }
 

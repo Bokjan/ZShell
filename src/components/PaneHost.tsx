@@ -109,6 +109,7 @@ const PaneHost = memo(function PaneHost(props: PaneHostProps) {
                     paneKey={key}
                     sessionId={pane.sessionId}
                     connected={connected}
+                    reconnecting={pane.status === "connecting" || pane.retryAt != null}
                     active={visible && shown("files")}
                     traffic={session?.sftpTraffic}
                     onTransfers={(count) => h.onTransfers(key, count)}
