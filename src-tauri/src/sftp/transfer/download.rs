@@ -324,8 +324,9 @@ async fn copy_planned(
                 Copied::Partly(partial) => Some(partial),
                 _ => None,
             };
-            // Where it went before, once it was given a name of its own.
-            let named = partial.as_ref().map(|partial| partial.path.clone());
+            // Where it went before, once it was given a name of its own, and whether that name
+            // is one it took (`name (1)`).
+            let named = partial.as_ref().map(|partial| (partial.path.clone(), partial.claimed()));
             let resumed = match partial {
                 Some(partial) => {
                     let kept = partial.clone();
@@ -340,8 +341,12 @@ async fn copy_planned(
                 None => None,
             };
             let (local, mut dst, from) = match (resumed, named) {
-                (Some((dst, from)), Some(named)) => (named, dst, from),
-                (None, Some(named)) => {
+                (Some((dst, from)), Some((named, _))) => (named, dst, from),
+                (None, Some((named, true))) => {
+                    let dst = LocalTarget::create_claimed(&named, mode, aside).await?;
+                    (named, dst, 0)
+                }
+                (None, Some((named, false))) => {
                     let dst = LocalTarget::create(&named, mode, aside).await?;
                     (named, dst, 0)
                 }
@@ -350,15 +355,16 @@ async fn copy_planned(
                     // or where a folder is, gets a free name instead. Looked at off the async
                     // threads: the download folder may be on a network drive.
                     let at_folder = || async { tokio::fs::metadata(local).await.is_ok_and(|metadata| metadata.is_dir()) };
-                    let local = if clashes || at_folder().await {
+                    if clashes || at_folder().await {
                         let (taken, path) = (taken.clone(), local.clone());
                         let free = tokio::task::spawn_blocking(move || taken.lock().unwrap().create_free_file(&path, mode)).await?;
-                        free.context(Error::new("transfer.createFailed").param("path", local.display()))?.0
+                        let (free, _) = free.context(Error::new("transfer.createFailed").param("path", local.display()))?;
+                        let dst = LocalTarget::create_claimed(&free, mode, aside).await?;
+                        (free, dst, 0)
                     } else {
-                        local.clone()
-                    };
-                    let dst = LocalTarget::create(&local, mode, aside).await?;
-                    (local, dst, 0)
+                        let dst = LocalTarget::create(local, mode, aside).await?;
+                        (local.clone(), dst, 0)
+                    }
                 }
             };
             let replaces = dst.replaces();

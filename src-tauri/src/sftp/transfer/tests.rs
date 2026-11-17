@@ -344,6 +344,24 @@ mod resuming {
         assert!(again < LARGE as u64, "wrote {again} bytes again");
     }
 
+    /// A file that lands where a folder is gets a free name (`x (1)`), taken with an empty
+    /// file: the download failing removes it, rather than leaving it empty.
+    #[tokio::test]
+    async fn a_download_given_a_free_name_leaves_nothing_when_it_fails() {
+        let (root, local, remote) = folders("claimed");
+        std::fs::write(remote.join("x"), bytes(LARGE, 3)).unwrap();
+        std::fs::create_dir(local.join("x")).unwrap();
+        let counts = Counts::default();
+        let (_connection, stall, sftp) = connect(&remote, &counts).await;
+        counts.stall_after(LARGE as u64 / 2, &stall);
+        let (mut reporter, _) = reporting();
+        let failed = download::download_to(&sftp, &[("/x".into(), local.join("x"))], &mut reporter, &mut Left::default()).await;
+        let names = names(&local);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(failed.is_err());
+        assert_eq!(names, ["x"]);
+    }
+
     #[tokio::test]
     async fn a_file_changed_since_is_copied_again_from_the_start() {
         let (root, local, remote) = folders("resume-changed");

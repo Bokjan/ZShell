@@ -360,6 +360,9 @@ pub struct LocalTarget {
     temporary: Option<PathBuf>,
     existed: bool,
     permissions: Option<std::fs::Permissions>,
+    /// `path` is an empty file the transfer made to hold the name (see
+    /// [`LocalTarget::create_claimed`]), removed with what failed to arrive.
+    claimed: bool,
 }
 
 /// A local file a failed transfer left written in part, under its temporary name (see
@@ -370,12 +373,21 @@ pub struct LocalPartial {
     temporary: PathBuf,
     existed: bool,
     permissions: Option<std::fs::Permissions>,
+    claimed: bool,
 }
 
 impl LocalPartial {
-    /// Removes what was written, when the transfer won't go on with it.
+    /// Removes what was written, when the transfer won't go on with it, and the name it held.
     pub async fn remove(self) {
         let _ = tokio::fs::remove_file(&self.temporary).await;
+        if self.claimed {
+            let _ = tokio::fs::remove_file(&self.path).await;
+        }
+    }
+
+    /// Whether the file holds a name the transfer took (see [`LocalTarget::create_claimed`]).
+    pub fn claimed(&self) -> bool {
+        self.claimed
     }
 }
 
@@ -399,7 +411,7 @@ impl LocalTarget {
         if let Some((mode, permissions)) = beside {
             if let Some((file, temporary)) = create_new_beside(path, mode).await.map_err(created)? {
                 let existed = original.is_some();
-                return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed, permissions });
+                return Ok(Self { file, path: path.to_owned(), temporary: Some(temporary), existed, permissions, claimed: false });
             }
         }
         let mut options = tokio::fs::OpenOptions::new();
@@ -409,13 +421,23 @@ impl LocalTarget {
             options.mode(mode);
         }
         let file = options.open(path).await.map_err(created)?;
-        Ok(Self { file, path: path.to_owned(), temporary: None, existed: original.is_some(), permissions: None })
+        Ok(Self { file, path: path.to_owned(), temporary: None, existed: original.is_some(), permissions: None, claimed: false })
+    }
+
+    /// [`create`](Self::create) for `path`, an empty file this transfer made to take a free
+    /// name (`name (1)`): it replaces nothing, and is removed with what fails to arrive.
+    pub async fn create_claimed(path: &Path, mode: Option<u32>, aside: bool) -> Result<Self> {
+        let target = Self::create(path, mode, aside).await;
+        if target.is_err() {
+            let _ = tokio::fs::remove_file(path).await;
+        }
+        Ok(Self { existed: false, claimed: true, ..target? })
     }
 
     /// Goes on writing the temporary file of `partial`, from where `from` says given how long
     /// it is now; `None` when it says to start over, or the file is gone (removed then).
     pub async fn resume(partial: LocalPartial, from: impl FnOnce(u64) -> Option<u64>) -> Result<Option<(Self, u64)>> {
-        let LocalPartial { path, temporary, existed, permissions } = partial;
+        let LocalPartial { path, temporary, existed, permissions, claimed } = partial;
         let Ok(mut file) = tokio::fs::OpenOptions::new().write(true).open(&temporary).await else { return Ok(None) };
         let length = file.metadata().await?.len();
         let Some(from) = from(length) else {
@@ -424,7 +446,7 @@ impl LocalTarget {
             return Ok(None);
         };
         file.seek(std::io::SeekFrom::Start(from)).await?;
-        Ok(Some((Self { file, path, temporary: Some(temporary), existed, permissions }, from)))
+        Ok(Some((Self { file, path, temporary: Some(temporary), existed, permissions, claimed }, from)))
     }
 
     /// Whether there was a file at the path, which this one replaces.
@@ -477,9 +499,12 @@ impl LocalTarget {
         if self.file.flush().await.is_err() {
             drop(self.file);
             let _ = tokio::fs::remove_file(&temporary).await;
+            if self.claimed {
+                let _ = tokio::fs::remove_file(&self.path).await;
+            }
             return None;
         }
-        Some(LocalPartial { path: self.path, temporary, existed: self.existed, permissions: self.permissions })
+        Some(LocalPartial { path: self.path, temporary, existed: self.existed, permissions: self.permissions, claimed: self.claimed })
     }
 
     async fn remove_incomplete(&self) {
@@ -487,6 +512,9 @@ impl LocalTarget {
             (Some(temporary), _) => drop(tokio::fs::remove_file(temporary).await),
             (None, false) => drop(tokio::fs::remove_file(&self.path).await),
             (None, true) => {}
+        }
+        if self.claimed && self.temporary.is_some() {
+            let _ = tokio::fs::remove_file(&self.path).await;
         }
     }
 }
