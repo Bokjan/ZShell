@@ -411,10 +411,14 @@ impl LocalTarget {
         }
         let Some(temporary) = &self.temporary else { return Ok(()) };
         // On the disk before it replaces the original: a power cut right after the rename
-        // would otherwise leave a file that was never written in place of a complete one.
-        if let Err(e) = self.file.sync_all().await {
-            self.remove_incomplete().await;
-            return Err(anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", self.path.display())));
+        // would otherwise leave a file that was never written in place of a complete one. A new
+        // file (written aside to be gone on with) isn't, as `sftp get` doesn't: it can only lose
+        // itself, and syncing each large file of a folder would hold up the download.
+        if self.existed {
+            if let Err(e) = self.file.sync_all().await {
+                self.remove_incomplete().await;
+                return Err(anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", self.path.display())));
+            }
         }
         if let Some(permissions) = self.permissions.take() {
             let _ = tokio::fs::set_permissions(temporary, permissions).await;
