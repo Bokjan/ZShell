@@ -79,7 +79,7 @@ fn leaves_out_match_blocks() {
         dir.0.join("incl*").display()
     );
     std::fs::write(&path, config).unwrap();
-    let candidates = scan(&path, &[]).unwrap();
+    let candidates = scan(&path, &[]).unwrap().candidates;
     let aliases: Vec<_> = candidates.iter().map(|c| c.alias.as_str()).collect();
     assert_eq!(aliases, ["web", "db"]);
     let (web, db) = (&candidates[0], &candidates[1]);
@@ -107,6 +107,20 @@ fn refuses_includes_on_network_paths() {
     }
 }
 
+/// A config that changed after it was shown, or a file it includes, isn't imported: what
+/// it would add (a proxy command) may not be what was shown.
+#[test]
+fn refuses_a_config_changed_since_it_was_shown() {
+    let (dir, path) = write_config("");
+    let included = dir.0.join("included");
+    std::fs::write(&included, "Host db\n    User carol\n").unwrap();
+    std::fs::write(&path, format!("Host web\n    User alice\nInclude {}\n", included.display())).unwrap();
+    let digest = scan(&path, &[]).unwrap().digest;
+    assert!(open(&path, Some(&digest)).is_ok());
+    std::fs::write(&included, "Host db\n    User carol\n    ProxyCommand nc evil 22\n").unwrap();
+    assert_eq!(open(&path, Some(&digest)).err().map(|e| e.code()), Some("import.fileChanged"));
+}
+
 /// Options after an `Include` inside a `Host` block belong to that block, even when the
 /// included file has blocks of its own.
 #[test]
@@ -115,7 +129,7 @@ fn options_after_an_include_stay_in_their_block() {
     let included = dir.0.join("db.conf");
     std::fs::write(&included, "Host db\n    User bob\n").unwrap();
     std::fs::write(&path, format!("Host web\n    Include {}\n    User alice\n", included.display())).unwrap();
-    let candidates = scan(&path, &[]).unwrap();
+    let candidates = scan(&path, &[]).unwrap().candidates;
     let users: Vec<_> = candidates.iter().map(|c| (c.alias.as_str(), c.username.as_str())).collect();
     assert!(users.contains(&("web", "alice")) && users.contains(&("db", "bob")), "{users:?}");
 }
@@ -130,7 +144,7 @@ fn includes_neither_hidden_files_nor_folders() {
     std::fs::write(included.join("web.conf"), "Host web\n    User alice\n").unwrap();
     std::fs::write(included.join(".DS_Store"), [0u8, 0xff, 0xfe, 0x80]).unwrap();
     std::fs::write(&path, format!("Include {}\n", included.join("*").display())).unwrap();
-    let candidates = scan(&path, &[]).unwrap();
+    let candidates = scan(&path, &[]).unwrap().candidates;
     assert_eq!(candidates.iter().map(|c| c.alias.as_str()).collect::<Vec<_>>(), ["web"]);
 }
 
@@ -143,14 +157,14 @@ fn stores_keys_under_the_home_folder_with_a_tilde() {
     assert_eq!(home_relative(Path::new("/keys/corp"), None), "/keys/corp");
 
     let (_dir, path) = write_config("Host corp\n    IdentityFile ~/.ssh/corp\n");
-    let candidates = scan(&path, &[]).unwrap();
+    let candidates = scan(&path, &[]).unwrap().candidates;
     assert!(matches!(&candidates[0].auth, AuthMethod::PublicKey { key_path } if key_path == "~/.ssh/corp"), "{:?}", candidates[0].auth);
 }
 
 #[test]
 fn scans_concrete_aliases_with_inherited_settings() {
     let (_dir, path) = write_config(CONFIG);
-    let candidates = scan(&path, &[]).unwrap();
+    let candidates = scan(&path, &[]).unwrap().candidates;
     let aliases: Vec<_> = candidates.iter().map(|c| c.alias.as_str()).collect();
     assert_eq!(aliases, ["bastion", "db", "web", "legacy", "old", "both", "tunneled"]);
 
@@ -186,7 +200,7 @@ fn plan_imports_jump_hosts_and_reuses_existing_profiles() {
     let plan_ids = |profiles: &[Profile]| profiles.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
 
     // Selecting "db" pulls in its jump host.
-    let (_, profiles) = plan(&path, &["db".to_owned()], &[], &[]).unwrap();
+    let (_, profiles) = plan(&open(&path, None).unwrap(), &["db".to_owned()], &[], &[]).unwrap();
     assert_eq!(plan_ids(&profiles), ["db", "bastion"]);
     assert_eq!(profiles[0].jump_hosts(), [profiles[1].id.clone()]);
     assert!(profiles.iter().all(|p| p.forwards().iter().all(|f| !f.id.is_empty())));
@@ -195,7 +209,8 @@ fn plan_imports_jump_hosts_and_reuses_existing_profiles() {
     // An existing profile for the jump host is referenced instead of duplicated.
     let ssh = SshOptions { auth: AuthMethod::Agent, ..SshOptions::new(Remote::new("bastion.example.com".into(), 2200, "alice".into())) };
     let bastion = new_profile("existing".into(), "bastion".into(), ssh);
-    let (_, profiles) = plan(&path, &["db".to_owned(), "web".to_owned()], std::slice::from_ref(&bastion), &[]).unwrap();
+    let (_, profiles) =
+        plan(&open(&path, None).unwrap(), &["db".to_owned(), "web".to_owned()], std::slice::from_ref(&bastion), &[]).unwrap();
     assert_eq!(plan_ids(&profiles), ["db", "web"]);
     assert!(profiles.iter().all(|p| p.jump_hosts() == ["existing"]));
 
@@ -203,7 +218,7 @@ fn plan_imports_jump_hosts_and_reuses_existing_profiles() {
     let mut telnet = bastion.clone();
     telnet.id = "telnet".into();
     telnet.connection = Connection::Telnet(Remote::new("bastion.example.com".into(), 23, "alice".into()));
-    let (_, profiles) = plan(&path, &["db".to_owned()], &[telnet, bastion], &[]).unwrap();
+    let (_, profiles) = plan(&open(&path, None).unwrap(), &["db".to_owned()], &[telnet, bastion], &[]).unwrap();
     assert_eq!(plan_ids(&profiles), ["db"]);
     assert_eq!(profiles[0].jump_hosts(), ["existing"]);
 }
@@ -218,7 +233,7 @@ fn plan_follows_jump_host_aliases() {
          Host app\n    ProxyJump bastion\n\
          Host db\n    ProxyJump admin@bastion:2222\n",
     );
-    let (_, profiles) = plan(&path, &["app".to_owned(), "db".to_owned()], &[], &[]).unwrap();
+    let (_, profiles) = plan(&open(&path, None).unwrap(), &["app".to_owned(), "db".to_owned()], &[], &[]).unwrap();
     let by_name = |name: &str| profiles.iter().find(|p| p.name == name).unwrap();
     let (outer, bastion) = (by_name("outer"), by_name("bastion"));
     assert_eq!(by_name("app").jump_hosts(), [outer.id.clone(), bastion.id.clone()]);
@@ -234,14 +249,14 @@ fn plan_follows_jump_host_aliases() {
 #[test]
 fn plan_shares_one_proxy_per_command() {
     let (_dir, path) = write_config(CONFIG);
-    let (proxies, profiles) = plan(&path, &["legacy".to_owned(), "tunneled".to_owned()], &[], &[]).unwrap();
+    let (proxies, profiles) = plan(&open(&path, None).unwrap(), &["legacy".to_owned(), "tunneled".to_owned()], &[], &[]).unwrap();
     assert_eq!(proxies.len(), 1);
     assert_eq!((proxies[0].kind, proxies[0].command.as_str()), (ProxyKind::Command, "nc -X 5 %h %p"));
     assert!(profiles.iter().all(|p| p.proxy() == Some(proxies[0].id.as_str())));
 
     // An existing proxy with the same command is used.
     let existing = Proxy { id: "nc".into(), name: "netcat".into(), ..proxies[0].clone() };
-    let (proxies, profiles) = plan(&path, &["tunneled".to_owned()], &[], &[existing]).unwrap();
+    let (proxies, profiles) = plan(&open(&path, None).unwrap(), &["tunneled".to_owned()], &[], &[existing]).unwrap();
     assert!(proxies.is_empty());
     assert_eq!(profiles[0].proxy(), Some("nc"));
 }
@@ -272,9 +287,9 @@ fn parses_addresses() {
 #[test]
 fn checks_sessions_as_saving_does() {
     let (_dir, path) = write_config("Host v6\n  HostName [::1]\n  User me\n\nHost bad\n  HostName a?b\n  User me\n");
-    let (_, profiles) = plan(&path, &["v6".to_owned()], &[], &[]).unwrap();
+    let (_, profiles) = plan(&open(&path, None).unwrap(), &["v6".to_owned()], &[], &[]).unwrap();
     assert_eq!(profiles[0].ssh().unwrap().remote.host, "::1");
-    let error = plan(&path, &["bad".to_owned()], &[], &[]).unwrap_err();
+    let error = plan(&open(&path, None).unwrap(), &["bad".to_owned()], &[], &[]).unwrap_err();
     assert_eq!(error.code(), "import.invalidSession");
 }
 

@@ -212,9 +212,13 @@ export const profileForwardRules = {
 export const sshConfig = {
   /** `~/.ssh/config`, whether or not it exists. */
   defaultPath: () => call("ssh_config_default_path"),
+  /** The hosts the config at `path` would import, and its `digest`, which importing them takes. */
   scan: (path: string) => call("ssh_config_scan", { path }),
-  /** Imports the hosts (and the jump hosts they need); resolves to the new profiles. */
-  import: (path: string, aliases: string[]) => call("ssh_config_import", { path, aliases }),
+  /**
+   * Imports the hosts (and the jump hosts they need) from the config scanned with `digest`;
+   * resolves to the new profiles. Fails with `import.fileChanged` if it has changed since.
+   */
+  import: (path: string, aliases: string[], digest: string) => call("ssh_config_import", { path, aliases, digest }),
 };
 
 /**

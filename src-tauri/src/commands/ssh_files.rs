@@ -57,17 +57,24 @@ pub async fn known_hosts_remove(app: AppHandle, line: usize, text: String) -> Re
 }
 
 #[tauri::command]
-pub async fn ssh_config_scan(app: AppHandle, path: PathBuf) -> Result<Vec<import::Candidate>> {
+pub async fn ssh_config_scan(app: AppHandle, path: PathBuf) -> Result<import::Scan> {
     blocking(app, move |app| import::scan(&path, &app.state::<ProfileStore>().list())).await
 }
 
-/// Imports the selected hosts (and the jump hosts and proxy commands they need); returns the
-/// new profiles.
+/// Imports the selected hosts (and the jump hosts and proxy commands they need) from the
+/// config scanned with `digest` (see [`import::open`]); returns the new profiles.
 #[tauri::command]
-pub async fn ssh_config_import(app: AppHandle, window: WebviewWindow, path: PathBuf, aliases: Vec<String>) -> Result<Vec<Profile>> {
+pub async fn ssh_config_import(
+    app: AppHandle,
+    window: WebviewWindow,
+    path: PathBuf,
+    aliases: Vec<String>,
+    digest: String,
+) -> Result<Vec<Profile>> {
     let result = blocking(app, move |app| {
+        let opened = import::open(&path, Some(&digest))?;
         app.state::<ProfileStore>().add_all(|here| {
-            let (proxies, profiles) = import::plan(&path, &aliases, here.profiles, here.proxies)?;
+            let (proxies, profiles) = import::plan(&opened, &aliases, here.profiles, here.proxies)?;
             Ok(Additions { proxies, profiles, ..Additions::default() })
         })
     })

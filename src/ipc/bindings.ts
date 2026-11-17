@@ -1010,6 +1010,12 @@ export type SidebarSettings = {
  */
 showRecent: boolean, };
 
+/**
+ * The hosts a config would import, and a digest of it with the files it includes: importing
+ * them is refused once either has changed.
+ */
+export type SshConfigScan = { candidates: Array<ImportCandidate>, digest: string, };
+
 export type SshOptions = { auth: AuthMethod, 
 /**
  * Let the remote shell use the local SSH agent (OpenSSH's `ForwardAgent`).
@@ -1439,8 +1445,8 @@ export type Commands = {
   sftp_shell_dir: { args: { id: number }; result: string | null };
   sftp_upload: { args: { id: number; transferId: string; localPaths: string[]; remoteDir: string; onProgress: Channel<TransferProgress> }; result: TransferEnd };
   ssh_config_default_path: { args: Record<string, never>; result: string | null };
-  ssh_config_import: { args: { path: string; aliases: string[] }; result: Profile[] };
-  ssh_config_scan: { args: { path: string }; result: ImportCandidate[] };
+  ssh_config_import: { args: { path: string; aliases: string[]; digest: string }; result: Profile[] };
+  ssh_config_scan: { args: { path: string }; result: SshConfigScan };
   ssh_default_key_path: { args: Record<string, never>; result: string | null };
   ssh_key_file_exists: { args: { path: string }; result: boolean };
   system_monospace_font: { args: Record<string, never>; result: string | null };

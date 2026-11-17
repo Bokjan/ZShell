@@ -24,8 +24,9 @@ export function ImportDialog({ onClose }: Props) {
   const { formatList } = useLocale();
   const [path, setPath] = useState("");
   const [candidates, setCandidates] = useState<ImportCandidate[] | null>(null);
-  // The file the candidates come from, which the path field may no longer show.
-  const [scanned, setScanned] = useState("");
+  // The file the candidates come from, which the path field may no longer show, and its
+  // digest then: a file changed since isn't imported (see `sshConfig.import`).
+  const [scanned, setScanned] = useState({ path: "", digest: "" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   // Importing, unlike reading the file, isn't left halfway by closing the dialog.
@@ -43,10 +44,10 @@ export function ImportDialog({ onClose }: Props) {
     setBusy(true);
     return attempt(
       async () => {
-        const found = await sshConfig.scan(file.trim());
+        const { candidates: found, digest } = await sshConfig.scan(file.trim());
         if (current !== loads.current) return;
         setCandidates(found);
-        setScanned(file.trim());
+        setScanned({ path: file.trim(), digest });
         // Hosts that already have a profile are not imported again.
         setSelected(new Set(found.filter((c) => !c.existing).map((c) => c.alias)));
         setError(null);
@@ -85,7 +86,7 @@ export function ImportDialog({ onClose }: Props) {
     setBusy(true);
     setImporting(true);
     try {
-      await directory.changed(sshConfig.import(scanned, [...selected]));
+      await directory.changed(sshConfig.import(scanned.path, [...selected], scanned.digest));
       onClose();
     } catch (err) {
       setError(errorMessage(err));

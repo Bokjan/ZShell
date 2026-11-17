@@ -55,22 +55,59 @@ pub fn default_path() -> Option<PathBuf> {
     std::env::home_dir().map(|home| home.join(".ssh").join("config"))
 }
 
-pub fn scan(path: &Path, existing: &[Profile]) -> Result<Vec<Candidate>> {
-    let (config, has_match) = parse(path)?;
+/// The hosts a config would import, and a digest of it with the files it includes: importing
+/// them is refused once either has changed.
+#[derive(Debug, Serialize, TS)]
+#[ts(rename = "SshConfigScan")]
+pub struct Scan {
+    pub candidates: Vec<Candidate>,
+    pub digest: String,
+}
+
+pub fn scan(path: &Path, existing: &[Profile]) -> Result<Scan> {
+    let Opened { config, has_match, digest } = open(path, None)?;
     let mut candidates: Vec<Candidate> = aliases(&config).into_iter().map(|alias| candidate(&config, alias, existing)).collect();
     // A `Match` block may apply to any host.
     if has_match {
         candidates.iter_mut().for_each(|candidate| candidate.skipped.push("Match".to_owned()));
     }
-    Ok(candidates)
+    Ok(Scan { candidates, digest })
 }
 
-/// The proxies and profiles to add for importing `selected`, with ids assigned and jump hosts
-/// and proxies resolved. Jump hosts not yet in `existing`, and proxy commands not yet in
-/// `proxies`, are added as well.
-pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[Proxy]) -> Result<(Vec<Proxy>, Vec<Profile>)> {
-    let (config, _) = parse(path)?;
-    let known: HashSet<String> = aliases(&config).into_iter().collect();
+/// A config to import from, read and parsed (see [`open`]).
+pub struct Opened {
+    config: SshConfig,
+    /// Whether it has `Match` blocks, which are not imported.
+    has_match: bool,
+    /// Of the text read, the files it includes inlined (SHA-256, in hex).
+    digest: String,
+}
+
+/// Reads and parses the config at `path`. `digest` is the one [`scan`] gave: a config that
+/// has changed since, or a file it includes, isn't imported (`import.fileChanged`), since what
+/// it would add (proxy commands, forwarding rules) isn't what was shown. Done before the
+/// sessions are changed, which wait meanwhile: an `Include` may be on a slow disk.
+pub fn open(path: &Path, digest: Option<&str>) -> Result<Opened> {
+    use sha2::Digest;
+
+    let mut text = String::new();
+    let has_match = preprocess_with(path, &user_dir(), 0, false, &mut text)?;
+    let read: String = sha2::Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    if digest.is_some_and(|digest| digest != read) {
+        return Err(Error::new("import.fileChanged").param("path", path.display()));
+    }
+    let config = SshConfig::default()
+        .parse(&mut text.as_bytes(), ParseRule::ALLOW_UNKNOWN_FIELDS | ParseRule::ALLOW_UNSUPPORTED_FIELDS)
+        .map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
+    Ok(Opened { config, has_match, digest: read })
+}
+
+/// The proxies and profiles to add for importing `selected` from the config (see [`open`]),
+/// with ids assigned and jump hosts and proxies resolved. Jump hosts not yet in `existing`,
+/// and proxy commands not yet in `proxies`, are added as well.
+pub fn plan(opened: &Opened, selected: &[String], existing: &[Profile], proxies: &[Proxy]) -> Result<(Vec<Proxy>, Vec<Profile>)> {
+    let config = &opened.config;
+    let known: HashSet<String> = aliases(config).into_iter().collect();
 
     // Profile id for every alias involved, following ProxyJump chains.
     let mut ids: HashMap<String, String> = HashMap::new();
@@ -80,12 +117,12 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
         if ids.contains_key(&alias) || !known.contains(&alias) {
             continue;
         }
-        let mut candidate = candidate(&config, alias.clone(), existing);
+        let mut candidate = candidate(config, alias.clone(), existing);
         if let Some(id) = candidate.existing_id {
             ids.insert(alias, id);
             continue;
         }
-        candidate.jump_hosts = jump_chain(&config, &candidate.jump_hosts, &known, existing, 0);
+        candidate.jump_hosts = jump_chain(config, &candidate.jump_hosts, &known, existing, 0);
         queue.extend(candidate.jump_hosts.iter().filter(|jump| known.contains(*jump)).cloned());
         ids.insert(alias, new_id());
         pending.push(candidate);
@@ -105,7 +142,7 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
             // An alias with another user or port (`admin@bastion`, `bastion:2222`) still has the
             // alias's address and key, as in `ssh`.
             let (user, host, port) = split_destination(jump);
-            let alias = known.contains(&host).then(|| self::candidate(&config, host.clone(), existing));
+            let alias = known.contains(&host).then(|| self::candidate(config, host.clone(), existing));
             let (host, port, username) = match &alias {
                 Some(alias) => (alias.host.clone(), port.unwrap_or(alias.port), user.unwrap_or_else(|| alias.username.clone())),
                 None => (host, port.unwrap_or(22), user.unwrap_or_else(local_username)),
@@ -169,16 +206,6 @@ pub fn plan(path: &Path, selected: &[String], existing: &[Profile], proxies: &[P
         profile.normalize_imported().map_err(|e| Error::new("import.invalidSession").param("name", &profile.name).detail(e))?;
     }
     Ok((new_proxies, profiles))
-}
-
-/// The parsed config, and whether it has `Match` blocks (which are not imported).
-fn parse(path: &Path) -> Result<(SshConfig, bool)> {
-    let mut text = String::new();
-    let has_match = preprocess_with(path, &user_dir(), 0, false, &mut text)?;
-    let config = SshConfig::default()
-        .parse(&mut text.as_bytes(), ParseRule::ALLOW_UNKNOWN_FIELDS | ParseRule::ALLOW_UNSUPPORTED_FIELDS)
-        .map_err(|e| Error::new("import.parseFailed").param("path", path.display()).detail(e))?;
-    Ok((config, has_match))
 }
 
 /// How deeply `Include`s may nest, as in OpenSSH, which also stops with an error (a file that

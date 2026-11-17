@@ -415,6 +415,7 @@ mod tests {
         visitor.visit::<model::Settings>();
         visitor.visit::<ssh::known_hosts::Entry>();
         visitor.visit::<import::Candidate>();
+        visitor.visit::<import::Scan>();
         visitor.visit::<backup::Candidate>();
         visitor.visit::<backup::Scan>();
         visitor.visit::<vault::VaultStatus>();
