@@ -64,6 +64,9 @@ pub struct SessionSink {
     traffic: Arc<TerminalTraffic>,
     /// Its tab is gone (see [`SessionSink::detach`]).
     detached: Arc<AtomicBool>,
+    /// The tab was told the session ended ([`SessionEvent::Closed`]): set under `channel`'s
+    /// lock, so a move falls before it or is refused (see [`SessionSink::move_to`]).
+    ended: Arc<AtomicBool>,
 }
 
 /// What a session's terminal sends and receives, as the remote side has it (before the
@@ -112,7 +115,7 @@ impl SessionSink {
     pub(super) fn new(channel: Channel, zmodem: Arc<Zmodem>, log: Arc<LogSlot>, codec: Option<Arc<Codec>>) -> Self {
         let channel = Arc::new(Mutex::new(channel));
         let traffic = Arc::new(TerminalTraffic::new(channel.clone()));
-        Self { channel, flow: Arc::default(), zmodem, log, codec, traffic, detached: Arc::default() }
+        Self { channel, flow: Arc::default(), zmodem, log, codec, traffic, detached: Arc::default(), ended: Arc::default() }
     }
 
     /// Stops sending output to the tab, which has closed: a local program that ignores the
@@ -196,14 +199,19 @@ impl SessionSink {
 
     /// Sends what follows to `channel`, another window's tab: the old channel's last message
     /// is [`SessionEvent::Moved`], after all the output it was sent. What the old tab hasn't
-    /// acknowledged no longer counts.
-    pub(super) fn move_to(&self, channel: Channel, move_id: String) {
+    /// acknowledged no longer counts. `false`, moving nothing, once the old tab was told the
+    /// session ended: the new one would never hear it.
+    pub(super) fn move_to(&self, channel: Channel, move_id: String) -> bool {
         let mut current = self.channel.lock().unwrap();
+        if self.ended.load(Ordering::Relaxed) {
+            return false;
+        }
         if let Some(message) = event_message(&SessionEvent::Moved { move_id }) {
             let _ = current.send(message);
         }
         *current = channel;
         self.flow.reset();
+        true
     }
 
     pub fn flow(&self) -> Arc<Flow> {
@@ -255,7 +263,11 @@ impl SessionSink {
 
     pub fn event(&self, event: SessionEvent) {
         if let Some(message) = event_message(&event) {
-            let _ = self.channel.lock().unwrap().send(message);
+            let channel = self.channel.lock().unwrap();
+            if matches!(event, SessionEvent::Closed { .. }) {
+                self.ended.store(true, Ordering::Relaxed);
+            }
+            let _ = channel.send(message);
         }
     }
 }

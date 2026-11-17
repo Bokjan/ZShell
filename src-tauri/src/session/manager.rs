@@ -187,7 +187,7 @@ impl SessionManager {
     /// Moves a session offered to `page`'s webview ([`offer`](Self::offer)) to a tab there,
     /// which receives its output and events on `channel` from now on (see
     /// [`SessionSink::move_to`]). Not during a ZMODEM transfer, whose file dialogs belong to the
-    /// old tab (`session.busy`). `move_id` names the move for the old tab (see
+    /// old tab (`session.busy`), nor once the session ended (`session.notFound`). `move_id` names the move for the old tab (see
     /// [`SessionEvent::Moved`](super::SessionEvent::Moved)), which hands its screen over with it.
     pub fn adopt(&self, id: SessionId, page: &Page, channel: Channel, move_id: String) -> Result<()> {
         let mut sessions = self.sessions.lock().unwrap();
@@ -198,8 +198,13 @@ impl SessionManager {
         let entry = entry.ok_or_else(|| Error::new("session.notFound"))?;
         // A transfer starting at the same time asks the new tab, or keeps the session here.
         let sink = entry.sink.clone();
-        if !entry.zmodem.unless_active(|| sink.move_to(channel, move_id.clone())) {
+        let mut moved = false;
+        if !entry.zmodem.unless_active(|| moved = sink.move_to(channel, move_id.clone())) {
             return Err(Error::new("session.busy"));
+        }
+        // It ended as the tab was dropped: the old tab, told so, stays.
+        if !moved {
+            return Err(Error::new("session.notFound"));
         }
         entry.offered_to = None;
         let from = std::mem::replace(&mut entry.webview, page.webview.clone());
@@ -559,6 +564,38 @@ mod tests {
         assert!(sessions.withdraw_offers("fifth", &HashSet::new()).is_empty());
         let page = sessions.page("fifth");
         assert_eq!(sessions.adopt(id, &page, Channel::new(|_| Ok(())), "m4".into()).unwrap_err().code(), "session.notFound");
+    }
+
+    /// A session that ended as its tab was dragged to another window stays with the old tab,
+    /// which was told it ended: the new one would never hear it, and show it connected.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_that_ended_does_not_move() {
+        let sessions = SessionManager::default();
+        let (old, old_messages) = recording();
+        let (sink_tx, sink_rx) = std::sync::mpsc::channel();
+        let page = sessions.page("main");
+        let id = sessions
+            .spawn(&page, old, (80, 24), LogSlot::new(Default::default()), encoding_rs::UTF_8, move |_, io| async move {
+                let _ = sink_tx.send(io.sink());
+                let _io = io;
+                std::future::pending::<()>().await;
+            })
+            .unwrap();
+        let sink = sink_rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+        sessions.offer("main", &[id], "other").unwrap();
+        sink.event(super::super::SessionEvent::Closed {
+            reason: super::super::CloseReason::Exited,
+            error: None,
+            status: None,
+            signal: None,
+        });
+
+        let (new, new_messages) = recording();
+        assert_eq!(sessions.adopt(id, &sessions.page("other"), new, "m1".into()).unwrap_err().code(), "session.notFound");
+        assert!(sessions.owns("main", id));
+        let old_messages = old_messages.lock().unwrap();
+        assert!(old_messages.iter().all(|message| !String::from_utf8_lossy(message).contains("moved")), "{old_messages:?}");
+        assert!(new_messages.lock().unwrap().is_empty());
     }
 
     /// The new window takes the screen its session showed in the old one, whether the old one
