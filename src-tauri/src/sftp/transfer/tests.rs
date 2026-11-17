@@ -226,6 +226,27 @@ mod resuming {
         (connection, stall, sftp)
     }
 
+    /// A file that LSTAT can't tell is there is written as if it were: beside it, and left
+    /// alone if the copy fails, rather than truncated and then removed as one the copy made.
+    #[tokio::test]
+    async fn a_file_lstat_fails_on_is_kept_if_the_copy_fails() {
+        let (root, _, remote) = folders("lstat-fails");
+        std::fs::write(remote.join("notes.txt"), "mine").unwrap();
+        let counts = Counts::default();
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        counts.fail_lstat();
+        let mut target = crate::sftp::replace::RemoteTarget::create(&sftp, "/notes.txt", None, false).await.unwrap();
+        target.file.write_all(b"half").await.unwrap();
+        let during = std::fs::read_to_string(remote.join("notes.txt")).unwrap();
+        target.abandon(&sftp).await;
+        let after = std::fs::read_to_string(remote.join("notes.txt")).ok();
+        let left = names(&remote);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(during, "mine");
+        assert_eq!(after.as_deref(), Some("mine"));
+        assert_eq!(left, ["notes.txt"]);
+    }
+
     /// A folder for a test, with `local` and `remote` folders in it.
     fn folders(name: &str) -> (PathBuf, PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("zshell-{name}-{}", uuid::Uuid::new_v4()));

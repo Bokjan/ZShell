@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use russh::server::{ChannelOpenHandle, Msg, Session};
@@ -29,6 +29,7 @@ pub struct Counts {
     read: Arc<AtomicU64>,
     written: Arc<AtomicU64>,
     stall: Arc<Mutex<Option<(u64, Stall)>>>,
+    lstat_fails: Arc<AtomicBool>,
 }
 
 impl Counts {
@@ -44,6 +45,11 @@ impl Counts {
     /// read or written `bytes` more, as one lost midway through a transfer.
     pub fn stall_after(&self, bytes: u64, stall: &Stall) {
         *self.stall.lock().unwrap() = Some((self.read() + self.written() + bytes, stall.clone()));
+    }
+
+    /// Makes LSTAT fail, saying "failure" whether or not the path is there, as some servers do.
+    pub fn fail_lstat(&self) {
+        self.lstat_fails.store(true, Ordering::Relaxed);
     }
 
     fn count(&self, counter: &AtomicU64, bytes: usize) {
@@ -208,6 +214,9 @@ impl russh_sftp::server::Handler for Fs {
     }
 
     async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
+        if self.counts.lstat_fails.load(Ordering::Relaxed) {
+            return Err(StatusCode::Failure);
+        }
         let metadata = std::fs::symlink_metadata(self.local(&path)?).map_err(code)?;
         Ok(Attrs { id, attrs: FileAttributes::from(&metadata) })
     }

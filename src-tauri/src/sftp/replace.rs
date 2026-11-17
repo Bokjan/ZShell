@@ -93,8 +93,15 @@ impl RemoteTarget {
     /// temporary file that is to replace it; when there is no file too, if `aside`.
     pub async fn create(sftp: &SftpSession, path: &str, mode: Option<u32>, aside: bool) -> Result<Self> {
         let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path));
-        let Ok(original) = sftp.symlink_metadata(path).await else {
-            return Self::create_new(sftp, path, mode, aside).await;
+        let original = match sftp.symlink_metadata(path).await {
+            Ok(original) => original,
+            Err(SftpError::Status(status)) if status.status_code == StatusCode::NoSuchFile => {
+                return Self::create_new(sftp, path, mode, aside).await;
+            }
+            // Not known to be new (a timeout, a server that says "failure" of a path that
+            // isn't there): written beside it where the folder lets us, and never taken for
+            // one this created, which a failed copy, or deleting what a transfer left, removes.
+            Err(_) => return Ok(Self { existed: true, ..Self::create_new(sftp, path, mode, true).await? }),
         };
         let permissions = original.permissions.map(|mode| mode & 0o7777);
         if original.file_type().is_file() {
@@ -361,7 +368,12 @@ impl LocalTarget {
     /// too, if `aside`.
     pub async fn create(path: &Path, mode: Option<u32>, aside: bool) -> Result<Self> {
         let created = |e| anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", path.display()));
-        let original = tokio::fs::symlink_metadata(path).await.ok();
+        // Likewise only a path that isn't there is a new file.
+        let original = match tokio::fs::symlink_metadata(path).await {
+            Ok(original) => Some(original),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(created(e)),
+        };
         let beside = match &original {
             Some(original) if original.is_file() => Some((local_mode(original), Some(original.permissions()))),
             None if aside => Some((mode, None)),
