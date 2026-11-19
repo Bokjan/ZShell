@@ -2,6 +2,50 @@
 
 Changes in each release, generated from the commit history with [git-cliff](https://git-cliff.org): what changed for users, then internal restructuring.
 
+## [3.18.0] - 2026-11-19
+
+### Features
+
+- Transfers in the file panel cut short by a lost connection go on by themselves once the tab reconnects, shown meanwhile as "Connection lost; resumes once reconnected": files copied whole are skipped, and a large file goes on from where it got, as OpenSSH's `reget` and `reput` do, with the progress picking up where it was. A file whose source changed since, or whose partial copy is gone, is copied again from the start, and an upload goes on only on the server it went to. A transfer that failed for another reason, or whose tab stopped reconnecting, has a Retry button, which skips the files already copied and doesn't ask again about replacing files. Files larger than 8 MiB are written under a temporary name and renamed once complete, also when new, so that one cut short never passes for complete; removing a transfer from the list, or closing its pane or window, deletes its partial files.
+- Local terminals can run other shells. The arrow beside "+" lists the shells found on the computer (PowerShell 7, Windows PowerShell, Command Prompt, Git Bash and the installed WSL distributions on Windows; the shells in /etc/shells on macOS and Linux) and the saved local sessions, and Settings > Terminal > Default local terminal chooses what "+" opens. Local terminals can be saved as sessions, from a tab's menu or as a new session: a shell or any program with its arguments, a start folder and environment variables, along with the colors, fonts, commands run after it starts, notes, logging and quick commands other sessions have. A program given as a relative path is found from the start folder, `~` stands for the home folder, and a bare name is looked up in the PATH the session sets. WSL distributions start in the folder given, and Git Bash stays in it. A local session imported from a file asks before it first opens, listing what it will run. Versions before this one can't open a vault with local sessions, nor import a file with them.
+- A setting under Settings > Keyboard Shortcuts leaves Alt+1–9, Ctrl+V and Alt+Shift+= / - to programs in the terminal on Windows and Linux, for readline, irssi, WeeChat or Vim; pasting and splitting keep their other keys, and tabs are switched with Ctrl+Tab.
+- About ZShell names the web view the app runs in and its version (Microsoft Edge WebView2, WebKit or WebKitGTK): the one in use, with a newer WebView2 installed meanwhile on a line of its own. Clicking the version or the web view copies it, for a bug report.
+
+### Bug Fixes
+
+- Pasted text no longer carries control characters other than tab, line feed and carriage return, as in xterm, iTerm2 and Alacritty: text a program put on the clipboard (through OSC 52, for example) could end a bracketed paste early and have the shell run the rest unconfirmed.
+- A multi-line paste confirmed after its session reconnected no longer goes into the new connection, where it could answer a password or host key prompt.
+- A remote file opened in the editor is never executable: with no editor set, opening an executable file without an extension ran it. Other downloads keep the remote permissions, as `sftp get` does. Introduced in 3.12.0.
+- On Windows, an ssh_config chosen to import no longer follows an `Include` on another computer's share as soon as it is shown, and an imported serial session's device can't be such a path; either signed in there as the user. The user's own config still follows its Includes when connecting, as OpenSSH does.
+- Importing from an ssh_config refuses a file changed since it was shown, so that a ProxyCommand added meanwhile can't be imported unseen, and an Include on a slow disk no longer holds up every window while importing.
+- A sessions file made to nest deeply (thousands of chained jump hosts or nested folders) no longer hangs the app while it is read for importing.
+- Uploading or saving an edited file when the server can't say whether the file is there (a timeout, a bare "failure") no longer truncates the file there, or removes it when the copy fails or is cancelled: the copy is written beside it and replaces it once complete.
+- A download given a name of its own (`name (1)`) no longer leaves an empty file when it fails or is cancelled, and deleting what the transfer left removes it.
+- Files of an upload going to the same name are copied in their order, so that the last one is what stays on the server; names a server's encoding writes alike (`😀.txt` and `😃.txt` on a GBK server) count as one name rather than being written over each other at once.
+- Quitting during a transfer waits up to two seconds for it to remove its temporary and partly written files, rather than leaving them in the user's folders.
+- Key files encrypted as PKCS#8 (`BEGIN ENCRYPTED PRIVATE KEY`) or by PuTTY ask for their passphrase rather than being taken for files that aren't keys. As in OpenSSH, such a key is offered from its public key (the `.pub` file beside it, or a PuTTY key's own), so the passphrase is only asked for once the server accepts it, and an empty passphrase skips the key rather than counting as a wrong one.
+- Channels whose opening is given up on (a forwarding rule stopped while its connections open, a SOCKS client that leaves early, a tab closed while its shell starts) are closed rather than left open on the server, where they kept its connections to the targets and counted against its `MaxSessions`.
+- A forwarded connection ends when the server closes its channel while an upload waits to be sent (a web server rejecting a large upload), rather than staying open until the SSH connection ends, with the rule's count up and a shell exiting meanwhile waiting for it.
+- A remote forwarding rule (-R) takes the connections that arrive as it starts listening, rather than refusing them.
+- Telnet sessions no longer hang when a paste goes to a server that echoes it, such as a router's or a switch's console.
+- A tab dragged to another window just as its session ended shows it ended there, rather than connected and ignoring what is typed.
+- A session opened just as its window reloads is refused, rather than left connected unseen until the window closes.
+- On macOS, notifications from programs (OSC 9, 777 and 99) and the bell's bounce of the Dock icon work while the app is in the background.
+- Terminals no longer flicker while the window is resized.
+- The status bar's items no longer jump when switching tabs or opening a new one.
+- Screen readers hear a notification's title and text joined with each language's punctuation rather than an English colon.
+- French text keeps colons, semicolons and « » with the word beside them when it wraps.
+- The debug log's record count is no longer clipped or cut off in a narrow window, and reads as a short counter in Japanese. Introduced in 3.17.0.
+- About ZShell opens with the focus on itself rather than on its Close button, and Check Now sits beside the automatic-checks checkbox. Introduced in 3.17.0.
+
+### Performance
+
+- The debug log no longer rewraps all its records on every frame while its window is resized.
+
+### Internal
+
+- The status bar's size and cursor items are rendered once and left empty until the terminal is shown, rather than added and removed as terminals come into view.
+
 ## [3.17.0] - 2026-10-31
 
 ### Features
