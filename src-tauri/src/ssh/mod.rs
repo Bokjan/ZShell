@@ -477,10 +477,20 @@ impl std::ops::Deref for Closing {
 impl Drop for Closing {
     fn drop(&mut self) {
         if let Some(channel) = self.0.take() {
-            tauri::async_runtime::spawn(async move {
+            spawn_here(async move {
                 let _ = channel.close().await;
             });
         }
+    }
+}
+
+/// Spawns `task` on the runtime this runs on, or on Tauri's when dropped outside one. In the
+/// app the two are the same; a test runs on a runtime of its own, whose paused clock would
+/// otherwise jump ahead while the close is still on its way on Tauri's.
+fn spawn_here(task: impl Future<Output = ()> + Send + 'static) {
+    match tokio::runtime::Handle::try_current() {
+        Ok(runtime) => drop(runtime.spawn(task)),
+        Err(_) => drop(tauri::async_runtime::spawn(task)),
     }
 }
 
@@ -502,7 +512,7 @@ pub(crate) async fn open_closing(
 impl Drop for CloseOnDrop {
     fn drop(&mut self) {
         if let Some(writer) = self.0.take() {
-            tauri::async_runtime::spawn(async move {
+            spawn_here(async move {
                 let _ = writer.close().await;
             });
         }
