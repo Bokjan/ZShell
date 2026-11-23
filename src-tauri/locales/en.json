@@ -197,6 +197,7 @@
       "deleteElsewhere": "The files were uploaded to {server}, which this tab is no longer connected to",
       "replaceFailed": "Uploaded {path} but could not put it in place; the new contents are in {temporary}",
       "replaceInterrupted": "Uploaded {path} but could not put it in place; the new contents are in {temporary} and the old ones in {original}",
+      "folderInTheWay": "Cannot write {path}: a folder of that name is there",
       "notResumable": "This transfer can no longer be resumed",
       "resumeElsewhere": "The upload was going to {server}, which this tab is no longer connected to"
     },

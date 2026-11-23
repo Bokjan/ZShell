@@ -197,6 +197,7 @@
       "deleteElsewhere": "Les fichiers ont été téléversés sur {server}, auquel cet onglet n’est plus connecté",
       "replaceFailed": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary}",
       "replaceInterrupted": "{path} a été téléversé mais n’a pas pu être mis en place ; le nouveau contenu se trouve dans {temporary} et l’ancien dans {original}",
+      "folderInTheWay": "Impossible d’écrire {path} : un dossier de ce nom s’y trouve",
       "notResumable": "Ce transfert ne peut plus être repris",
       "resumeElsewhere": "Le téléversement allait vers {server}, auquel cet onglet n’est plus connecté"
     },

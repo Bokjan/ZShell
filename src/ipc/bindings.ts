@@ -148,6 +148,7 @@ export type ErrorCode =
   | "transfer.deleteElsewhere"
   | "transfer.deleteFailed"
   | "transfer.downloadFailed"
+  | "transfer.folderInTheWay"
   | "transfer.invalidName"
   | "transfer.invalidPath"
   | "transfer.notResumable"

@@ -225,7 +225,8 @@ mod resuming {
     use super::*;
     use crate::session::Viewers;
     use crate::sftp::channels::Channels;
-    use crate::sftp::testing::{Counts, SftpServer};
+    use crate::sftp::replace::{RemoteTarget, Resumed};
+    use crate::sftp::testing::{Counts, PosixRename, SftpServer};
     use crate::ssh::testing::{connect_stalling, Stall};
     use crate::ssh::Connection;
 
@@ -261,7 +262,7 @@ mod resuming {
         let counts = Counts::default();
         let (_connection, _stall, sftp) = connect(&remote, &counts).await;
         counts.fail_lstat();
-        let mut target = crate::sftp::replace::RemoteTarget::create(&sftp, "/notes.txt", None, false).await.unwrap();
+        let mut target = RemoteTarget::create(&sftp, "/notes.txt", None, false).await.unwrap();
         target.file.write_all(b"half").await.unwrap();
         let during = std::fs::read_to_string(remote.join("notes.txt")).unwrap();
         target.abandon(&sftp).await;
@@ -273,31 +274,96 @@ mod resuming {
         assert_eq!(left, ["notes.txt"]);
     }
 
-    /// A folder for a test, with `local` and `remote` folders in it.
     /// A file written over takes the original's place in one step where the server offers
-    /// posix-rename, and through plain renames where it doesn't; nothing is left beside it.
+    /// posix-rename, and through plain renames where it doesn't or refuses; nothing is left
+    /// beside it.
     #[tokio::test]
     async fn a_file_written_over_replaces_the_original_with_or_without_posix_rename() {
-        for offered in [true, false] {
+        for (posix_rename, renames) in [(PosixRename::Renames, 0), (PosixRename::NotOffered, 2), (PosixRename::Refuses, 2)] {
             let (root, _, remote) = folders("posix-rename");
             std::fs::write(remote.join("notes.txt"), "old").unwrap();
             let counts = Counts::default();
-            if offered {
-                counts.offer_posix_rename();
-            }
+            counts.posix_rename(posix_rename);
             let (_connection, _stall, sftp) = connect(&remote, &counts).await;
-            let mut target = crate::sftp::replace::RemoteTarget::create(&sftp, "/notes.txt", None, false).await.unwrap();
+            let mut target = RemoteTarget::create(&sftp, "/notes.txt", None, false).await.unwrap();
             target.file.write_all(b"new").await.unwrap();
             target.finish(&sftp).await.unwrap();
             let after = std::fs::read_to_string(remote.join("notes.txt")).unwrap();
             let left = names(&remote);
             std::fs::remove_dir_all(&root).unwrap();
-            assert_eq!(after, "new", "posix-rename offered: {offered}");
-            assert_eq!(left, ["notes.txt"], "posix-rename offered: {offered}");
-            assert_eq!(counts.renames(), if offered { 0 } else { 2 });
+            assert_eq!(after, "new", "{renames} renames");
+            assert_eq!(left, ["notes.txt"], "{renames} renames");
+            assert_eq!(counts.renames(), renames);
         }
     }
 
+    /// A folder that went where a file is written meanwhile stays there, not moved aside.
+    #[tokio::test]
+    async fn a_folder_in_the_way_is_left_where_it_is() {
+        for posix_rename in [PosixRename::Renames, PosixRename::NotOffered] {
+            let (root, _, remote) = folders("folder-in-the-way");
+            let counts = Counts::default();
+            counts.posix_rename(posix_rename);
+            let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+            let mut target = RemoteTarget::create(&sftp, "/notes.txt", None, true).await.unwrap();
+            target.file.write_all(b"new").await.unwrap();
+            std::fs::create_dir(remote.join("notes.txt")).unwrap();
+            let error = target.finish(&sftp).await.unwrap_err();
+            let folder = remote.join("notes.txt").is_dir();
+            let left = names(&remote);
+            std::fs::remove_dir_all(&root).unwrap();
+            assert!(error.chain().any(|cause| cause.downcast_ref::<Error>().map(Error::code) == Some("transfer.folderInTheWay")));
+            assert!(folder);
+            assert_eq!(left, ["notes.txt"]);
+        }
+    }
+
+    /// A posix-rename answered too late went through: the file is in place, and nothing is
+    /// left beside it.
+    #[tokio::test]
+    async fn a_posix_rename_answered_too_late_is_found_done() {
+        let (root, _, remote) = folders("posix-rename-late");
+        std::fs::write(remote.join("notes.txt"), "old").unwrap();
+        let counts = Counts::default();
+        counts.posix_rename(PosixRename::AnswersAfter(Duration::from_millis(1300)));
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        sftp.set_timeout(1);
+        let mut target = RemoteTarget::create(&sftp, "/notes.txt", None, false).await.unwrap();
+        target.file.write_all(b"new").await.unwrap();
+        let finished = target.finish(&sftp).await;
+        let after = std::fs::read_to_string(remote.join("notes.txt")).unwrap();
+        let left = names(&remote);
+        std::fs::remove_dir_all(&root).unwrap();
+        finished.unwrap();
+        assert_eq!(after, "new");
+        assert_eq!(left, ["notes.txt"]);
+    }
+
+    /// A file put in place by a posix-rename whose answer the lost connection took is found in
+    /// place on resuming, not written again.
+    #[tokio::test]
+    async fn a_file_put_in_place_as_the_connection_is_lost_is_found_on_resuming() {
+        let (root, _, remote) = folders("posix-rename-lost");
+        std::fs::write(remote.join("notes.txt"), "old").unwrap();
+        let counts = Counts::default();
+        counts.posix_rename(PosixRename::Renames);
+        let (_connection, stall, sftp) = connect(&remote, &counts).await;
+        counts.posix_rename(PosixRename::StallsAfter(stall));
+        let mut target = RemoteTarget::create(&sftp, "/notes.txt", None, true).await.unwrap();
+        target.file.write_all(b"new").await.unwrap();
+        let (_, partial) = target.finish_or_suspend(&sftp, true).await.unwrap_err();
+        counts.posix_rename(PosixRename::Renames);
+        let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+        let resumed = RemoteTarget::resume(&sftp, partial.expect("kept"), Some).await.unwrap();
+        let after = std::fs::read_to_string(remote.join("notes.txt")).unwrap();
+        let left = names(&remote);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(matches!(resumed, Resumed::Placed(true)));
+        assert_eq!(after, "new");
+        assert_eq!(left, ["notes.txt"]);
+    }
+
+    /// A folder for a test, with `local` and `remote` folders in it.
     fn folders(name: &str) -> (PathBuf, PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("zshell-{name}-{}", uuid::Uuid::new_v4()));
         let (local, remote) = (root.join("local"), root.join("remote"));

@@ -3,13 +3,15 @@
 //! are `/`-separated paths under the folder. It answers as OpenSSH's does where transfers
 //! tell the difference: a rename doesn't replace a file, and creating a folder that is there
 //! fails. It counts the bytes it reads and writes, which tells how much a transfer copied, and
-//! the renames, and offers OpenSSH's `posix-rename@openssh.com` only when asked to.
+//! the renames, and offers OpenSSH's `posix-rename@openssh.com` only when asked to (see
+//! [`PosixRename`]).
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use russh::server::{ChannelOpenHandle, Msg, Session};
 use russh::{Channel, ChannelId};
@@ -32,8 +34,25 @@ pub struct Counts {
     written: Arc<AtomicU64>,
     stall: Arc<Mutex<Option<(u64, Stall)>>>,
     lstat_fails: Arc<AtomicBool>,
-    posix_rename: Arc<AtomicBool>,
+    posix_rename: Arc<Mutex<PosixRename>>,
     renames: Arc<AtomicU64>,
+}
+
+/// What the server does with `posix-rename@openssh.com`.
+#[derive(Clone, Default)]
+pub enum PosixRename {
+    /// Doesn't offer it.
+    #[default]
+    NotOffered,
+    /// Renames, replacing what is there, as OpenSSH's does.
+    Renames,
+    /// Offers it, but answers every one with a failure.
+    Refuses,
+    /// Renames, then answers only after this long.
+    AnswersAfter(Duration),
+    /// Renames, then stalls the connection (see `ssh::testing::connect_stalling`) before it
+    /// answers.
+    StallsAfter(Stall),
 }
 
 impl Counts {
@@ -56,9 +75,9 @@ impl Counts {
         self.lstat_fails.store(true, Ordering::Relaxed);
     }
 
-    /// Offers `posix-rename@openssh.com`, as OpenSSH's server does, to sessions opened from now.
-    pub fn offer_posix_rename(&self) {
-        self.posix_rename.store(true, Ordering::Relaxed);
+    /// What `posix-rename@openssh.com` does from now; offered to sessions opened from now.
+    pub fn posix_rename(&self, posix_rename: PosixRename) {
+        *self.posix_rename.lock().unwrap() = posix_rename;
     }
 
     /// The plain renames (SFTP v3's, which don't replace a file) done.
@@ -180,7 +199,7 @@ impl russh_sftp::server::Handler for Fs {
 
     async fn init(&mut self, _version: u32, _extensions: HashMap<String, String>) -> Result<Version, Self::Error> {
         let mut version = Version::new();
-        if self.counts.posix_rename.load(Ordering::Relaxed) {
+        if !matches!(*self.counts.posix_rename.lock().unwrap(), PosixRename::NotOffered) {
             version.extensions.insert(POSIX_RENAME.to_owned(), "1".to_owned());
         }
         Ok(version)
@@ -322,8 +341,12 @@ impl russh_sftp::server::Handler for Fs {
 
     /// `posix-rename@openssh.com` (old path, new path), when offered: a rename that replaces.
     async fn extended(&mut self, id: u32, request: String, data: Vec<u8>) -> Result<Packet, Self::Error> {
-        if request != POSIX_RENAME || !self.counts.posix_rename.load(Ordering::Relaxed) {
-            return Err(StatusCode::OpUnsupported);
+        let posix_rename = self.counts.posix_rename.lock().unwrap().clone();
+        match posix_rename {
+            _ if request != POSIX_RENAME => return Err(StatusCode::OpUnsupported),
+            PosixRename::NotOffered => return Err(StatusCode::OpUnsupported),
+            PosixRename::Refuses => return Err(StatusCode::Failure),
+            _ => {}
         }
         let mut rest = data.as_slice();
         let mut path = || {
@@ -334,6 +357,11 @@ impl russh_sftp::server::Handler for Fs {
         };
         let (Some(oldpath), Some(newpath)) = (path(), path()) else { return Err(StatusCode::BadMessage) };
         std::fs::rename(self.local(&oldpath)?, self.local(&newpath)?).map_err(code)?;
+        match posix_rename {
+            PosixRename::AnswersAfter(wait) => tokio::time::sleep(wait).await,
+            PosixRename::StallsAfter(stall) => stall.now(),
+            _ => {}
+        }
         Ok(ok(id).into())
     }
 }

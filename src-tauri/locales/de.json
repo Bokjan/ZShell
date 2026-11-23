@@ -197,6 +197,7 @@
       "deleteElsewhere": "Die Dateien wurden auf {server} hochgeladen, mit dem dieser Tab nicht mehr verbunden ist",
       "replaceFailed": "{path} wurde hochgeladen, konnte aber nicht an seinen Platz gebracht werden; der neue Inhalt liegt in {temporary}",
       "replaceInterrupted": "{path} wurde hochgeladen, konnte aber nicht an seinen Platz gebracht werden; der neue Inhalt liegt in {temporary}, der alte in {original}",
+      "folderInTheWay": "{path} kann nicht geschrieben werden: Dort liegt ein Ordner mit diesem Namen",
       "notResumable": "Diese Übertragung kann nicht mehr fortgesetzt werden",
       "resumeElsewhere": "Das Hochladen ging an {server}, mit dem dieser Tab nicht mehr verbunden ist"
     },

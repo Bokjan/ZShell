@@ -21,7 +21,7 @@ use super::{
 };
 use crate::error::Error;
 use crate::sftp::batch::{each, each_in_order, levels, Order};
-use crate::sftp::replace::{RemotePartial, RemoteTarget};
+use crate::sftp::replace::{RemotePartial, RemoteTarget, Resumed};
 use crate::sftp::{file_name, join};
 
 /// An upload into a remote folder, replacing files there, and how far it has got.
@@ -131,45 +131,57 @@ pub(super) async fn upload(
                         }
                     }
                 }
-                None => None,
+                None => Resumed::Over,
             };
-            let (mut dst, from) = match resumed {
-                Some(resumed) => resumed,
-                None if new => (RemoteTarget::create_new(sftp, remote, mode, aside).await?, 0),
-                None => (RemoteTarget::create(sftp, remote, mode, aside).await?, 0),
-            };
-            let replaces = dst.replaces();
-            let written = async {
-                if from > 0 {
-                    src.seek(SeekFrom::Start(from)).await.context(Error::new("transfer.readFailed").param("path", local.display()))?;
-                    run.advance(from);
+            let replaces = match resumed {
+                // Put in place as the connection was lost.
+                Resumed::Placed(replaces) => {
+                    run.advance(size);
+                    replaces
                 }
-                copy(&mut src, &mut dst.file, run).await
-            };
-            let result = match written.await {
-                // The last writes (`TRANSFER_WRITES_IN_FLIGHT`) are only acknowledged as it
-                // closes: a file cut short then is gone on with too.
-                Ok(()) => match dst.finish_or_suspend(sftp, aside).await {
-                    Ok(()) => Ok(()),
-                    Err((e, partial)) => {
-                        if let Some(partial) = partial {
-                            copied.lock().unwrap()[i] = Copied::Partly(partial);
+                resumed => {
+                    let (mut dst, from) = match resumed {
+                        Resumed::Writing(dst, from) => (*dst, from),
+                        _ if new => (RemoteTarget::create_new(sftp, remote, mode, aside).await?, 0),
+                        _ => (RemoteTarget::create(sftp, remote, mode, aside).await?, 0),
+                    };
+                    let replaces = dst.replaces();
+                    let written = async {
+                        if from > 0 {
+                            src.seek(SeekFrom::Start(from))
+                                .await
+                                .context(Error::new("transfer.readFailed").param("path", local.display()))?;
+                            run.advance(from);
                         }
-                        Err(e)
-                    }
-                },
-                Err(e) if aside && !is_cancelled(&e) => {
-                    if let Some(partial) = dst.suspend(sftp).await {
-                        copied.lock().unwrap()[i] = Copied::Partly(partial);
-                    }
-                    Err(e)
-                }
-                Err(e) => {
-                    dst.abandon(sftp).await;
-                    Err(e)
+                        copy(&mut src, &mut dst.file, run).await
+                    };
+                    let result = match written.await {
+                        // The last writes (`TRANSFER_WRITES_IN_FLIGHT`) are only acknowledged as it
+                        // closes: a file cut short then is gone on with too.
+                        Ok(()) => match dst.finish_or_suspend(sftp, aside).await {
+                            Ok(()) => Ok(()),
+                            Err((e, partial)) => {
+                                if let Some(partial) = partial {
+                                    copied.lock().unwrap()[i] = Copied::Partly(partial);
+                                }
+                                Err(e)
+                            }
+                        },
+                        Err(e) if aside && !is_cancelled(&e) => {
+                            if let Some(partial) = dst.suspend(sftp).await {
+                                copied.lock().unwrap()[i] = Copied::Partly(partial);
+                            }
+                            Err(e)
+                        }
+                        Err(e) => {
+                            dst.abandon(sftp).await;
+                            Err(e)
+                        }
+                    };
+                    result.map_err(failed)?;
+                    replaces
                 }
             };
-            result.map_err(failed)?;
             copied.lock().unwrap()[i] = Copied::Done(remote.clone());
             let mut files = files.lock().unwrap();
             // A file of the same name that this upload put there before is its own still: only
