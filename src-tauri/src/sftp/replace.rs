@@ -12,9 +12,9 @@
 //! permissions; a new file gets those it is created with (the file copied's, as `sftp put`
 //! and `get` give them). Hard links to the original keep its old contents.
 //!
-//! SFTP v3's rename doesn't replace an existing file, and OpenSSH's `posix-rename@openssh.com`
-//! (`SftpSession::posix_rename` since russh-sftp 4) isn't used yet, so the original is first
-//! renamed out of the way (to another
+//! SFTP v3's rename doesn't replace an existing file. Where the server has OpenSSH's
+//! `posix-rename@openssh.com`, the new file takes the original's place in one step; elsewhere
+//! (or when it refuses) the original is first renamed out of the way (to another
 //! `.<name>.zshell-<random>`), then removed once the new file is in place. A connection lost
 //! in between leaves both: the error names the files they are in.
 //!
@@ -175,6 +175,20 @@ impl RemoteTarget {
         // Nothing was there: put in place at once, unless something is there by now.
         if !self.existed && sftp.rename(temporary, &self.path).await.is_ok() {
             return Ok(());
+        }
+        match sftp.posix_rename(temporary.as_str(), self.path.as_str()).await {
+            Ok(true) => return Ok(()),
+            // Not offered, or refused: the renames below, which tell what is in the way.
+            Ok(false) | Err(SftpError::Status(_)) => {}
+            // No answer: the connection is likely gone, and the renames would fail too.
+            Err(e) => {
+                let error = anyhow::Error::from(e).context(Error::new("transfer.createFailed").param("path", &self.path));
+                if keep {
+                    return Err((error, self.suspend(sftp).await));
+                }
+                let _ = sftp.remove_file(temporary).await;
+                return Err((error, None));
+            }
         }
         let original = join(parent(&self.path), &temporary_name(file_name(&self.path)));
         if let Err(e) = sftp.rename(&self.path, &original).await {

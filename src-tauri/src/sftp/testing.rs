@@ -2,7 +2,8 @@
 //! transfers on every platform (OpenSSH's `sftp-server` is there on Unix only). Remote paths
 //! are `/`-separated paths under the folder. It answers as OpenSSH's does where transfers
 //! tell the difference: a rename doesn't replace a file, and creating a folder that is there
-//! fails. It counts the bytes it reads and writes, which tells how much a transfer copied.
+//! fails. It counts the bytes it reads and writes, which tells how much a transfer copied, and
+//! the renames, and offers OpenSSH's `posix-rename@openssh.com` only when asked to.
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -12,7 +13,8 @@ use std::sync::{Arc, Mutex};
 
 use russh::server::{ChannelOpenHandle, Msg, Session};
 use russh::{Channel, ChannelId};
-use russh_sftp::protocol::{Attrs, Data, File, FileAttributes, Handle, Name, OpenFlags, SftpHandle, Status, StatusCode, Version};
+use russh_sftp::extensions::POSIX_RENAME;
+use russh_sftp::protocol::{Attrs, Data, File, FileAttributes, Handle, Name, OpenFlags, Packet, SftpHandle, Status, StatusCode, Version};
 
 use crate::ssh::testing::Stall;
 
@@ -30,6 +32,8 @@ pub struct Counts {
     written: Arc<AtomicU64>,
     stall: Arc<Mutex<Option<(u64, Stall)>>>,
     lstat_fails: Arc<AtomicBool>,
+    posix_rename: Arc<AtomicBool>,
+    renames: Arc<AtomicU64>,
 }
 
 impl Counts {
@@ -50,6 +54,16 @@ impl Counts {
     /// Makes LSTAT fail, saying "failure" whether or not the path is there, as some servers do.
     pub fn fail_lstat(&self) {
         self.lstat_fails.store(true, Ordering::Relaxed);
+    }
+
+    /// Offers `posix-rename@openssh.com`, as OpenSSH's server does, to sessions opened from now.
+    pub fn offer_posix_rename(&self) {
+        self.posix_rename.store(true, Ordering::Relaxed);
+    }
+
+    /// The plain renames (SFTP v3's, which don't replace a file) done.
+    pub fn renames(&self) -> u64 {
+        self.renames.load(Ordering::Relaxed)
     }
 
     fn count(&self, counter: &AtomicU64, bytes: usize) {
@@ -165,7 +179,11 @@ impl russh_sftp::server::Handler for Fs {
     }
 
     async fn init(&mut self, _version: u32, _extensions: HashMap<String, String>) -> Result<Version, Self::Error> {
-        Ok(Version::new())
+        let mut version = Version::new();
+        if self.counts.posix_rename.load(Ordering::Relaxed) {
+            version.extensions.insert(POSIX_RENAME.to_owned(), "1".to_owned());
+        }
+        Ok(version)
     }
 
     async fn open(&mut self, id: u32, filename: String, pflags: OpenFlags, attrs: FileAttributes) -> Result<Handle, Self::Error> {
@@ -298,6 +316,24 @@ impl russh_sftp::server::Handler for Fs {
             return Err(StatusCode::Failure);
         }
         std::fs::rename(from, to).map_err(code)?;
+        self.counts.renames.fetch_add(1, Ordering::Relaxed);
         Ok(ok(id))
+    }
+
+    /// `posix-rename@openssh.com` (old path, new path), when offered: a rename that replaces.
+    async fn extended(&mut self, id: u32, request: String, data: Vec<u8>) -> Result<Packet, Self::Error> {
+        if request != POSIX_RENAME || !self.counts.posix_rename.load(Ordering::Relaxed) {
+            return Err(StatusCode::OpUnsupported);
+        }
+        let mut rest = data.as_slice();
+        let mut path = || {
+            let len = u32::from_be_bytes(rest.get(..4)?.try_into().ok()?) as usize;
+            let path = std::str::from_utf8(rest.get(4..4 + len)?).ok()?.to_owned();
+            rest = &rest[4 + len..];
+            Some(path)
+        };
+        let (Some(oldpath), Some(newpath)) = (path(), path()) else { return Err(StatusCode::BadMessage) };
+        std::fs::rename(self.local(&oldpath)?, self.local(&newpath)?).map_err(code)?;
+        Ok(ok(id).into())
     }
 }

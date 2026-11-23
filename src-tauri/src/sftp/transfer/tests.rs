@@ -274,6 +274,30 @@ mod resuming {
     }
 
     /// A folder for a test, with `local` and `remote` folders in it.
+    /// A file written over takes the original's place in one step where the server offers
+    /// posix-rename, and through plain renames where it doesn't; nothing is left beside it.
+    #[tokio::test]
+    async fn a_file_written_over_replaces_the_original_with_or_without_posix_rename() {
+        for offered in [true, false] {
+            let (root, _, remote) = folders("posix-rename");
+            std::fs::write(remote.join("notes.txt"), "old").unwrap();
+            let counts = Counts::default();
+            if offered {
+                counts.offer_posix_rename();
+            }
+            let (_connection, _stall, sftp) = connect(&remote, &counts).await;
+            let mut target = crate::sftp::replace::RemoteTarget::create(&sftp, "/notes.txt", None, false).await.unwrap();
+            target.file.write_all(b"new").await.unwrap();
+            target.finish(&sftp).await.unwrap();
+            let after = std::fs::read_to_string(remote.join("notes.txt")).unwrap();
+            let left = names(&remote);
+            std::fs::remove_dir_all(&root).unwrap();
+            assert_eq!(after, "new", "posix-rename offered: {offered}");
+            assert_eq!(left, ["notes.txt"], "posix-rename offered: {offered}");
+            assert_eq!(counts.renames(), if offered { 0 } else { 2 });
+        }
+    }
+
     fn folders(name: &str) -> (PathBuf, PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("zshell-{name}-{}", uuid::Uuid::new_v4()));
         let (local, remote) = (root.join("local"), root.join("remote"));
