@@ -12,8 +12,9 @@
 //! permissions; a new file gets those it is created with (the file copied's, as `sftp put`
 //! and `get` give them). Hard links to the original keep its old contents.
 //!
-//! SFTP v3's rename doesn't replace an existing file, and russh-sftp can't send OpenSSH's
-//! `posix-rename@openssh.com`, so the original is first renamed out of the way (to another
+//! SFTP v3's rename doesn't replace an existing file, and OpenSSH's `posix-rename@openssh.com`
+//! (`SftpSession::posix_rename` since russh-sftp 4) isn't used yet, so the original is first
+//! renamed out of the way (to another
 //! `.<name>.zshell-<random>`), then removed once the new file is in place. A connection lost
 //! in between leaves both: the error names the files they are in.
 //!

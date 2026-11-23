@@ -15,7 +15,6 @@
 | 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | tao、wry、webkit2gtk 升到 gtk 0.19，或 Tauri 的 Linux 后端迁到 GTK4 |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
 | 等待上游 | Linux：zbus 停在 5 | tauri-plugin-notification、tauri-plugin-opener 和 keyring（经 secret-service）都升到 zbus 6 |
-| 等待上游 | SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级 | 我们的 AspectUnk/russh-sftp#106 已合入，等发版 |
 | 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
@@ -98,14 +97,6 @@
 - **进展**：2026-11-17 核对，`notify-rust` 4.19.0（2026-11-08）已改用 zbus 6。tauri-plugin-notification 2.8 要求 `notify-rust ^4.18`，下次 `cargo update` 就会升上去（lock 里现在是 4.18.2），树里从此 5 和 6 各一份。还在 zbus 5 的：tauri-plugin-notification 2.8.1 自己的 `zbus ^5`，tauri-plugin-opener 2.7.3 的 `zbus ^5.9`，keyring 经 `secret-service` 5.2.0（`zbus ^5`）。plugins-workspace 里 Renovate 的 zbus 6 PR（#3722）因改动太多被关掉，只有单独给 single-instance 升 zbus 6 的 #3759 还开着。所以我们升到 6 不能让树里只剩一份，只是从「5 多、6 少」换成「6 多、5 少」。
 - **处理**：`dependabot.yml` 忽略 `zbus` 的 major 更新。等上面三处都升到 zbus 6（至少 notification 和 opener 两个 Tauri 插件），再删掉这条 ignore，按升级指南把上面几个文件改成异步 API（或在自己的线程里 `block_on`），交给 Linux 上的 CI 编译；`Cargo.toml` 里 zbus 上方说明它经哪些依赖已在树里的注释改成当时的情况（`cargo tree -i zbus@<版本> --target x86_64-unknown-linux-gnu`）。升完删掉这一条。
 - **登记**：2026-10-29。
-
-### SFTP：russh-sftp 列很大的文件夹时 CPU 开销是平方级
-
-- **现象**：列一个条目很多的文件夹时，除了等服务器，还要多花 CPU。2026-10-30 在 M5 Pro 上用进程内的客户端和服务端（release 构建，十万个条目，每批一百个）测：约 660 ms，修复后约 27 ms。文件面板、下载和删除文件夹都经 `SftpSession::read_dir`。远程服务器上这点开销被逐批往返的等待盖住，局域网或本机的服务器上才明显。
-- **原因**：russh-sftp 3.0.1 的 `read_dir`（`client/session.rs` 约 187–196 行）每收到服务器的一批条目（OpenSSH 每批约一百个），就把这一批接在已收到的全部条目前面，`collect` 成一个新的 `Vec`。已收到的条目每批都整体搬一次，总量与条目数的平方成正比。顺带，各批的先后也颠倒了（面板自己排序，不受影响）。
-- **上游**：之前没有相关的 issue 或 PR。我们提了 [AspectUnk/russh-sftp#106](https://github.com/AspectUnk/russh-sftp/pull/106)（2026-10-30）：每批 `extend` 到同一个 `Vec` 末尾，附了检查顺序的测试（在 master 上失败）。2026-11-16 合入，2026-11-17 时 crates.io 上最新仍是 3.0.1。
-- **处理**：包含 #106 的版本发布后升级 russh-sftp，删掉这一条。上游不修、又有人遇到时，可以用 `RawSftpSession` 的 `opendir` / `readdir` / `close` 在 `sftp/` 里自己读。
-- **登记**：2026-10-25（性能与架构评审 P2-12）。
 
 ### 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数
 

@@ -15,7 +15,7 @@
 //! replaced) decodes with replacement characters and can't be turned back into its bytes:
 //! such files are listed, but opening, downloading, renaming or deleting them fails, and a
 //! recursive download or delete may stop at them. Passing paths as raw bytes throughout would
-//! need russh-sftp to support it.
+//! take russh-sftp's `raw-string` feature (since 4.0), which turns every path into bytes.
 
 use encoding_rs::{Encoding, UTF_8};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
