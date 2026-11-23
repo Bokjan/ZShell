@@ -24,7 +24,7 @@ pub fn record_panics(path: PathBuf) {
 
 /// One line: when, which version on which system, the thread, where and the message.
 fn describe(info: &PanicHookInfo) -> String {
-    let time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%:z");
+    let time = jiff::ZonedDateTime::now().strftime("%Y-%m-%d %H:%M:%S%:z");
     let thread = std::thread::current();
     let message = info.payload_as_str().unwrap_or("(no message)");
     let place = info.location().map(|at| format!("{}:{}:{}", at.file(), at.line(), at.column())).unwrap_or_default();

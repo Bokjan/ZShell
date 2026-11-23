@@ -40,7 +40,8 @@ tauri-plugin-clipboard-manager = "2"
 # never ends (`printf '\e]'; yes`) grows a buffer without limit in every text log.
 vte = { version = "0.15", default-features = false }
 futures-util = "0.3"
-chrono = "0.4"
+# Local time for logs, crash reports and backup names (already in the tree through russh-sftp).
+jiff = "1.0.2"
 encoding_rs = "0.8"
 serialport = { version = "4.10", default-features = false }
 socket2 = { version = "0.6", features = ["all"] }

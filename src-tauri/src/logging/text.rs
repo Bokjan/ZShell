@@ -1,7 +1,8 @@
 //! Plain-text logs: the line being shown, with the cursor's column, as a shell's line editing
 //! leaves it (see the module docs of `logging`).
 
-use chrono::{Local, NaiveDateTime};
+use jiff::civil::DateTime;
+use jiff::ZonedDateTime;
 use unicode_width::UnicodeWidthChar;
 
 use super::TimeFormat;
@@ -59,7 +60,7 @@ pub(super) struct Line {
     /// How the time each line starts with is written, if it starts with one.
     pub(super) times: Option<TimeFormat>,
     /// When what the line shows started: its first character, since it was last emptied.
-    pub(super) started: Option<NaiveDateTime>,
+    pub(super) started: Option<DateTime>,
     /// The cells' text, kept to be reused.
     pub(super) text: String,
     pub(super) out: Vec<u8>,
@@ -93,7 +94,7 @@ impl Line {
     pub(super) fn start_out(&mut self) {
         let started = self.started.take();
         if let (Some(times), false) = (&self.times, self.spilled) {
-            let at = started.unwrap_or_else(|| Local::now().naive_local());
+            let at = started.unwrap_or_else(|| ZonedDateTime::now().datetime());
             self.out.extend(times.format(at).as_bytes());
             self.out.push(b' ');
         }
@@ -128,7 +129,7 @@ impl Line {
 impl vte::Perform for Line {
     fn print(&mut self, c: char) {
         if self.started.is_none() && self.times.is_some() {
-            self.started = Some(Local::now().naive_local());
+            self.started = Some(ZonedDateTime::now().datetime());
         }
         match c.width().unwrap_or(0) {
             0 => {

@@ -681,7 +681,7 @@ impl Vault {
             let mut state = self.state.lock().unwrap();
             let State::Locked { .. } = &*state else { return Err(Error::new("vault.notLocked")) };
             let path = self.path();
-            let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            let stamp = jiff::ZonedDateTime::now().strftime("%Y%m%d-%H%M%S");
             let aside = (0..)
                 .map(|n| {
                     path.with_file_name(if n == 0 {

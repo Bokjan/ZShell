@@ -25,7 +25,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use chrono::Local;
+use jiff::ZonedDateTime;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

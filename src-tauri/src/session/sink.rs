@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use chrono::Local;
+use jiff::ZonedDateTime;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::notice::{self, Tone};
@@ -254,7 +254,7 @@ impl SessionSink {
     }
 
     fn write_notice(&self, tone: Tone, text: &str, end_line: bool) {
-        let time = crate::logging::time_format::current().format(Local::now().naive_local());
+        let time = crate::logging::time_format::current().format(ZonedDateTime::now().datetime());
         let notice = notice::render(tone, text, &time, end_line);
         // Not twice in a log that starts its lines with the time itself.
         self.log_output(if self.log.stamps_lines() { &notice.unstamped } else { &notice.shown }.as_bytes());

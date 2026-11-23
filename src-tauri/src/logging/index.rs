@@ -345,20 +345,20 @@ fn modified(path: &Path) -> Option<SystemTime> {
 }
 
 fn now() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    ZonedDateTime::now().strftime("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 /// The template with the session's details and the time filled in, as a file name: path
 /// separators and characters Windows doesn't allow become `_`, and a Windows device name
 /// (`NUL`, `COM1.log`) gets a `_` in front.
 pub(super) fn file_name(template: &str, info: &LogInfo) -> String {
-    let time = Local::now();
+    let time = ZonedDateTime::now();
     let name = template
         .replace("{session}", &info.session)
         .replace("{host}", &info.host)
         .replace("{user}", &info.user)
-        .replace("{date}", &time.format("%Y-%m-%d").to_string())
-        .replace("{time}", &time.format("%H-%M-%S").to_string());
+        .replace("{date}", &time.strftime("%Y-%m-%d").to_string())
+        .replace("{time}", &time.strftime("%H-%M-%S").to_string());
     let name: String = name.chars().map(|c| if c.is_control() || r#"/\:*?"<>|"#.contains(c) { '_' } else { c }).collect();
     local_file_name(name.trim().trim_matches('.')).unwrap_or_else(|| "session.log".to_owned())
 }

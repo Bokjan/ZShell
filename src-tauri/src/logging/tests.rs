@@ -37,30 +37,30 @@ fn lines_start_with_the_time_they_started() {
     let mut line = Line { times: Some(times), ..Line::default() };
     let stamp = |line: &mut Line| {
         let out = String::from_utf8(std::mem::take(&mut line.out)).unwrap();
-        chrono::NaiveDateTime::parse_from_str(&out[..23], "%Y-%m-%d %H:%M:%S%.3f").unwrap()
+        jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M:%S%.3f", &out[..23]).unwrap()
     };
     let wait = Duration::from_millis(300);
 
-    let before = Local::now().naive_local();
+    let before = ZonedDateTime::now().datetime();
     parser.advance(&mut line, b"slow");
     thread::sleep(wait);
     parser.advance(&mut line, b" line\r\n");
-    assert!(stamp(&mut line) - before < chrono::TimeDelta::from_std(wait).unwrap() / 2);
+    assert!(stamp(&mut line).duration_since(before) < jiff::SignedDuration::try_from(wait / 2).unwrap());
 
     // A progress line written over starts again.
     parser.advance(&mut line, b"10%");
     thread::sleep(wait);
-    let rewritten = Local::now().naive_local();
+    let rewritten = ZonedDateTime::now().datetime();
     parser.advance(&mut line, b"\r\x1b[Kdone\r\n");
-    assert!(stamp(&mut line) >= rewritten - chrono::TimeDelta::milliseconds(1));
+    assert!(stamp(&mut line) >= rewritten - jiff::SignedDuration::from_millis(1));
 
     // A blank line finished at a note, left out, doesn't start the next one.
     parser.advance(&mut line, b"  ");
     line.finish();
     thread::sleep(wait);
-    let next = Local::now().naive_local();
+    let next = ZonedDateTime::now().datetime();
     parser.advance(&mut line, b"next\r\n");
-    assert!(stamp(&mut line) >= next - chrono::TimeDelta::milliseconds(1));
+    assert!(stamp(&mut line) >= next - jiff::SignedDuration::from_millis(1));
 }
 
 #[test]

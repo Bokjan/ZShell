@@ -8,7 +8,7 @@
 //! `DEFAULT_TIME_FORMAT_PARTS` before the first answer) and writes its own messages' times from
 //! them without parsing anything.
 
-use chrono::{Datelike, NaiveDateTime, Timelike};
+use jiff::civil::DateTime;
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -91,7 +91,7 @@ impl TimeFormat {
         Ok(Self(parts))
     }
 
-    pub fn format(&self, at: NaiveDateTime) -> String {
+    pub fn format(&self, at: DateTime) -> String {
         let mut out = String::new();
         for part in &self.0 {
             match part {
@@ -102,9 +102,8 @@ impl TimeFormat {
                 TimePart::Day => out.push_str(&format!("{:02}", at.day())),
                 TimePart::Hour => out.push_str(&format!("{:02}", at.hour())),
                 TimePart::Minute => out.push_str(&format!("{:02}", at.minute())),
-                // A leap second counts as the one before.
                 TimePart::Second => out.push_str(&format!("{:02}", at.second())),
-                TimePart::Millisecond => out.push_str(&format!("{:03}", at.nanosecond() % 1_000_000_000 / 1_000_000)),
+                TimePart::Millisecond => out.push_str(&format!("{:03}", at.millisecond())),
             }
         }
         out
@@ -119,12 +118,12 @@ impl Default for TimeFormat {
 
 #[cfg(test)]
 mod tests {
-    use chrono::NaiveDate;
+    use jiff::civil::date;
 
     use super::*;
 
-    fn at() -> NaiveDateTime {
-        NaiveDate::from_ymd_opt(2026, 3, 5).unwrap().and_hms_milli_opt(7, 8, 9, 45).unwrap()
+    fn at() -> DateTime {
+        date(2026, 3, 5).at(7, 8, 9, 45_000_000)
     }
 
     fn formatted(format: &str) -> String {

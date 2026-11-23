@@ -42,8 +42,6 @@ ignore-build-dependencies = true
 ignore-dev-dependencies = true
 # ZShell itself (publish = false).
 private = { ignore = true }
-# chrono puts both licenses in one file.
-workarounds = ["chrono"]
 
 # Crates whose license files cargo-about doesn't pick up because of their names
 # (license-mit, LICENSE_MIT); without these it falls back to the generic MIT text, which
