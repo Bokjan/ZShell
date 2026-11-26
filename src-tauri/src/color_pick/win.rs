@@ -158,7 +158,6 @@ unsafe fn show(owner: HWND, done: Done) -> std::result::Result<(), (Error, Done)
     // Shown at once, without fading in over the screen it shows.
     let disabled: i32 = 1;
     DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED as u32, (&disabled as *const i32).cast(), size_of::<i32>() as u32);
-    crate::window::need_pointer(true);
     ShowWindow(hwnd, SW_SHOW);
     SetForegroundWindow(hwnd);
     SetFocus(hwnd);
@@ -187,7 +186,6 @@ unsafe fn end(result: Result<Option<Rgb>>, destroy: bool) {
     SelectObject(picker.shot, picker.previous);
     DeleteObject(picker.bitmap);
     DeleteDC(picker.shot);
-    crate::window::need_pointer(false);
 }
 
 /// The screenshot's pixel at `point`, in the window's coordinates.

@@ -1477,7 +1477,6 @@ export type Commands = {
   window_busy_reply: { args: { query: number; count: number }; result: void };
   window_buttons: { args: Record<string, never>; result: WindowButton[] };
   window_close_empty: { args: Record<string, never>; result: boolean };
-  window_file_dialog: { args: { open: boolean }; result: void };
   window_list: { args: Record<string, never>; result: WindowInfo[] };
   window_open: { args: { content: WindowContent; sessions: number[]; dropped?: Dropped | null }; result: string };
   window_pane_stayed: { args: { target: string; pane: number }; result: void };

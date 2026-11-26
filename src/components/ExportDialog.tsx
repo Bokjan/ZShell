@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 
 import { errorMessage, sessionsFile } from "../ipc/api";
 import { announce } from "../lib/announce";
 import { useDialog } from "../hooks/dialogs";
-import { save as saveDialog } from "../ipc/fileDialog";
 import { attempt } from "../lib/attempt";
 import { ErrorText } from "./ErrorMessage";
 import { Modal } from "./Modal";

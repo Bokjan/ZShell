@@ -126,12 +126,6 @@ pub fn window_system_menu(window: WebviewWindow) -> Result<()> {
     Ok(window::system_menu(window)?)
 }
 
-/// See [`window::file_dialog`].
-#[tauri::command]
-pub fn window_file_dialog(window: WebviewWindow, open: bool) -> Result<()> {
-    Ok(window::file_dialog(window, open)?)
-}
-
 /// See [`window::set_drag_area`].
 #[tauri::command]
 pub fn window_set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> Result<()> {

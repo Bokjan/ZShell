@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import { errorMessage, sshConfig, type ImportCandidate } from "../ipc/api";
 import { useDialog } from "../hooks/dialogs";
 import { directory } from "../lib/directory";
-import { open } from "../ipc/fileDialog";
 import { isComposing } from "../lib/platform";
 import { attempt } from "../lib/attempt";
 import { CandidateList } from "./CandidateList";

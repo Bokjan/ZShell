@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import {
   DEFAULT_GROUP,
@@ -18,7 +19,6 @@ import { useDialog } from "../hooks/dialogs";
 import { useLocalAllowed, useLocalShells } from "../hooks/localShells";
 import { directory } from "../lib/directory";
 import { useDirectory, useQuickCommands } from "../hooks/stores";
-import { open as openDialog } from "../ipc/fileDialog";
 import { rovingTarget } from "../lib/listNavigation";
 import { passwordUpdate } from "../lib/password";
 import { contractHome, expandHome, startsWithHome } from "../lib/paths";

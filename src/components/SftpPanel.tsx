@@ -1,11 +1,11 @@
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import { announce } from "../lib/announce";
 import { sftp, type FileEntry, type SessionId } from "../ipc/api";
 import type { SftpDetail, SftpTraffic, TrafficMeter } from "../lib/traffic";
-import { open } from "../ipc/fileDialog";
 import { historyKey, historyKeyLabel } from "../lib/folderHistory";
 import { isKey } from "../lib/keys";
 import { filterEntries, sortedEntries, storeView, storedView, type FileView, type SortKey } from "../lib/fileList";

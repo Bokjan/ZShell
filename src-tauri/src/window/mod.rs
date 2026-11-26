@@ -57,7 +57,7 @@ mod win;
 #[cfg(windows)]
 use win as platform;
 #[cfg(windows)]
-pub use win::{keep_behind, need_pointer};
+pub use win::keep_behind;
 
 const MAIN: &str = "main";
 const LABEL_PREFIX: &str = "window-";
@@ -507,12 +507,6 @@ enum DoubleClick {
 /// pointer, as a right click on a native title bar does. Windows and Linux.
 pub fn system_menu(window: WebviewWindow) -> tauri::Result<()> {
     platform::system_menu(window)
-}
-
-/// A file dialog of the dialog plugin is opening (`open`) or has closed, for showing the
-/// pointer in it on Windows (see `win::file_dialog`).
-pub fn file_dialog(window: WebviewWindow, open: bool) -> tauri::Result<()> {
-    platform::file_dialog(window, open)
 }
 
 /// Where files can be dragged out of the window (the SFTP file list); `None` when there is

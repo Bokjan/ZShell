@@ -234,11 +234,6 @@ pub(super) fn system_menu(window: WebviewWindow) -> tauri::Result<()> {
     window.clone().run_on_main_thread(move || show_window_menu(&window))
 }
 
-/// File dialogs show the pointer by themselves.
-pub(super) fn file_dialog(_window: WebviewWindow, _open: bool) -> tauri::Result<()> {
-    Ok(())
-}
-
 /// A press in the background brings the window forward (`window::set_drag_area`).
 pub(super) fn set_drag_area(_window: WebviewWindow, _rect: Option<Rect>) -> tauri::Result<()> {
     Ok(())

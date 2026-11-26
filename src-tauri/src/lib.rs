@@ -417,7 +417,6 @@ pub fn run() {
             commands::window::window_set_connected,
             commands::window::window_title_double_click,
             commands::window::window_system_menu,
-            commands::window::window_file_dialog,
             commands::window::window_set_drag_area,
             commands::window::window_buttons,
             commands::window::window_set_theme,

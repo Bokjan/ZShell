@@ -1,9 +1,9 @@
 import { useEffect, useInsertionEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { zmodem, type ZmodemPhase } from "../../ipc/api";
-import { open as openDialog } from "../../ipc/fileDialog";
 import { isAppLocked, whenUnlocked } from "../../lib/appLock";
 import type { PaneSession } from "../../lib/paneSession";
 import { useSettings } from "../../hooks/settings";

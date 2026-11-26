@@ -327,11 +327,6 @@ pub(super) fn system_menu(_window: WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
-/// File dialogs show the pointer by themselves.
-pub(super) fn file_dialog(_window: WebviewWindow, _open: bool) -> tauri::Result<()> {
-    Ok(())
-}
-
 /// See `window::set_drag_area`.
 pub(super) fn set_drag_area(window: WebviewWindow, rect: Option<Rect>) -> tauri::Result<()> {
     let label = window.label().to_owned();

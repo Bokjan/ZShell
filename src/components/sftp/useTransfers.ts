@@ -1,10 +1,10 @@
 import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { dirname, join } from "@tauri-apps/api/path";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { announce } from "../../lib/announce";
 import { errorCode, errorMessage, notConnected, sftp, type FileEntry, type SessionId, type TransferEnd } from "../../ipc/api";
-import { open, save } from "../../ipc/fileDialog";
 import { basename } from "../../lib/format";
 import { storedString, storeString } from "../../lib/storage";
 import { finished, NO_DELETION, transferLabel, type Deletion, type Transfer } from "../TransferList";

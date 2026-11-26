@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import type { Release } from "../ipc/bindings";
 import { announce } from "../lib/announce";
@@ -9,7 +10,6 @@ import { duplicateProfile, errorMessage, logs, tree, type Folder, type Profile, 
 import { directory, recentProfiles as recentOf } from "../lib/directory";
 import { useDirectory } from "../hooks/stores";
 import { usePressDrag } from "../hooks/drag";
-import { open as openDialog } from "../ipc/fileDialog";
 import { clampIndex, navigateList } from "../lib/listNavigation";
 import { followsMenuKey, isMenuKey, openedByMenuKey } from "../lib/menuKey";
 import { matches } from "../lib/keymap";

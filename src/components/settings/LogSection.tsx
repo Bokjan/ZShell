@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { DEFAULT_SETTINGS, errorMessage, logs } from "../../ipc/api";
 import { useConfirmButton } from "../../hooks/confirm";
-import { open as openDialog } from "../../ipc/fileDialog";
 import { isComposing } from "../../lib/platform";
 import type { LogFormat, LogSettings } from "../../hooks/settings";
 import { useWindowFocus } from "../../hooks/windowEvents";
