@@ -11,10 +11,10 @@
 | 等待上游 | SSH：重交换时不比对主机密钥 | russh 在重交换时交出主机密钥（russh#812） |
 | 等待上游 | SSH：一个通道没读，整条连接的接收都停下（已绕过） | 维护者拒绝过同样做法的 PR（russh#730）；考虑用 `[patch]` 维护分支 |
 | 等待上游 | SSH：对端关闭通道后，等窗口的写入一直挂着（已绕过） | 我们的 russh#826 合入并发版 |
-| 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | 稳定版 157 已带上修复；等新运行时普及后验证并删掉绕过 |
-| 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | tao、wry、webkit2gtk 升到 gtk 0.19，或 Tauri 的 Linux 后端迁到 GTK4 |
+| 等待上游 | Windows：打字后弹出的文件对话框没有指针（已绕过） | 稳定版 157 已带上修复，维护者的 Windows 上已是 158；在 Windows 上实测确认后删掉绕过 |
+| 等待上游 | Linux：依赖里的 glib 0.18 有一条中等级别的安全公告 | tao、wry、webkit2gtk 已改用 gtk 0.19，等 tauri 跟上（或 Linux 后端迁到 GTK4） |
 | 等待上游 | Windows：windows-rs 0.100 只发了一部分 | `windows` 0.100 发布后三个 crate 一起升 |
-| 等待上游 | Linux：zbus 停在 5 | tauri-plugin-notification、tauri-plugin-opener 和 keyring（经 secret-service）都升到 zbus 6 |
+| 等待上游 | Linux：zbus 停在 5 | tauri-plugin-notification、tauri-plugin-opener 和 keyring（经 zbus-secret-service-keyring-store）都升到 zbus 6 |
 | 等待上游 | 前端：Babel 8 下 React Compiler 编译不了带默认值的解构参数 | react/react#36868 修复并发布 `babel-plugin-react-compiler` |
 | 等待上游 | 前端：升级到 xterm.js 的下一个正式版，同时做 M43、M44 | xterm.js 发布 6.0.0 之后的正式版（版本号可能是 7.0.0） |
 | 等待上游 | 前端：后台终端滚动时重建整屏 DOM（已用补丁绕过） | xterm.js#6208 修复并发布 |
@@ -33,7 +33,7 @@
 ### SSH：一个通道没读，整条连接的接收都停下（已绕过）
 
 - **现象**：终端输出积压到暂停读取（`session::Flow`）时，同一连接上的 SFTP、端口转发和复制出来的标签页一起停住，直到终端赶上。这是 ARCHITECTURE.md「背压」里写的代价。
-- **原因**：russh 0.65.1 收到 `CHANNEL_DATA` 时（`client/encrypted.rs` 约 600 行），只要窗口降到一半以下，就立即发 `WINDOW_ADJUST`（`session.rs` 的 `adjust_window_size`），不管应用读没读走；随后用 `chan.send(...).await` 把数据放进按条数计的有界队列，队列满了，整个连接任务就停在这里。SSH 本有按通道的窗口，却没有用来做背压，所以我们只能停读整条连接。`Handler::adjust_window` 帮不上忙：它只能改下次的目标大小，而 0.65 调整时用的是 `config.window_size`，返回值没有生效（就是下面的 #770）；即使生效，它也是整个会话一个值，调小会拖慢所有通道。russh 也没有手动发窗口调整的公开 API。
+- **原因**：russh 0.65.4（0.65.1 起这部分没有变）收到 `CHANNEL_DATA` 时（`client/encrypted.rs` 约 610 行），只要窗口降到一半以下，就立即发 `WINDOW_ADJUST`（`session.rs` 的 `adjust_window_size`），不管应用读没读走；随后用 `chan.send(...).await` 把数据放进按条数计的有界队列，队列满了，整个连接任务就停在这里。SSH 本有按通道的窗口，却没有用来做背压，所以我们只能停读整条连接。`Handler::adjust_window` 帮不上忙：它只能改下次的目标大小，而 0.65 调整时用的是 `config.window_size`，返回值没有生效（就是下面的 #770）；即使生效，它也是整个会话一个值，调小会拖慢所有通道。russh 也没有手动发窗口调整的公开 API。
 - **绕过**：`ssh::KeepReading`（Windows、Linux 拖出文件时照常读）；SFTP 打开通道的超时只计 russh 等服务器的时间（`ssh::Connection::waited_for_server`）。后者仍有漏洞：经跳板机的连接，跳板机自己的标签页积压输出时，内层连接看起来在等服务器，计时照算，可能误报 `sftp.openTimeout`；需要跳板机上的标签页积压 30 秒以上，暂不处理。
 - **上游**：
   - [Eugeny/russh#770](https://github.com/Eugeny/russh/issues/770)（2026-09-05，别人提的，没有回复）报的是 `adjust_window` 在客户端不生效，附了复现和一行的修法（客户端也读 `target_window_size`，与服务端一致），顺带问维护者是否考虑按通道设窗口。
@@ -51,17 +51,17 @@
 ### SSH：对端关闭通道后，等窗口的写入一直挂着（已绕过）
 
 - **现象**：往通道写数据时窗口用完，这时对端关闭通道（例如经端口转发上传大文件，远端服务中途回错并断开），这次写入永远不返回，SSH 连接断开后也不返回。用 `copy_bidirectional` 转发的连接因此一直不结束：规则的连接计数降不下来，转发期间退出的 shell 一直等它。
-- **原因**：russh 0.65.1（main 上的 0.65.2 相同）的写入在窗口为 0 时等通道窗口的 `Notify`：`ChannelTx::poll_writable`（`make_writer`、`into_stream` 和 `data()` 都走这里）和 `ChannelWriteHalf::reserve_writable_chunk`（`data_bytes()`）。能唤醒它的只有 `WINDOW_ADJUST` 和通道打开确认。对端不会给已关闭的通道补窗口，`CHANNEL_CLOSE` 的处理只转发 `ChannelMsg::Close`、把通道从表里删掉，会话结束时也没有人唤醒它。另外，窗口还有余量时，关闭之后的写入返回 Ok，数据被会话丢掉（`Encrypted::data_with_writer` 找不到通道，只打一条 debug 日志）。
+- **原因**：russh 0.65.4（main 相同）的写入在窗口为 0 时等通道窗口的 `Notify`：`ChannelTx::poll_writable`（`make_writer`、`into_stream` 和 `data()` 都走这里）和 `ChannelWriteHalf::reserve_writable_chunk`（`data_bytes()`）。能唤醒它的只有 `WINDOW_ADJUST` 和通道打开确认。对端不会给已关闭的通道补窗口，`CHANNEL_CLOSE` 的处理只转发 `ChannelMsg::Close`、把通道从表里删掉，会话结束时也没有人唤醒它。0.65.4 为 GHSA-m6v5-wqxv-mffh 把这里改成 `close_from_peer`，丢掉通道还没发出的数据，但同样不唤醒等窗口的写入。另外，窗口还有余量时，关闭之后的写入返回 Ok，数据被会话丢掉（`Encrypted::data_with_writer` 找不到通道，只打一条 debug 日志）。
 - **绕过**：`forward/mod.rs` 的 `bridge` 不用 `copy_bidirectional`，收到 `ChannelMsg::Close` 就结束（提交 1fab582）。`ssh/tests.rs` 的 `a_channel_closed_while_out_of_window_holds_up_only_itself` 最后要 `writer.abort()`，也是因为写入一直挂着。没有绕过的路径有 SFTP（russh-sftp 跑在 `into_stream()` 上）、agent 转发（`ssh/handler.rs` 的 `copy_bidirectional`）和跳板机隧道（`ssh/mod.rs` 的 `into_stream()`）。它们要对端在传输中途关闭通道、本地还有超过剩余窗口的数据要发才会遇到，都很少见，没有实测。
-- **上游**：之前没有人报过。同在关闭路径上的 [Eugeny/russh#789](https://github.com/Eugeny/russh/issues/789)（窗口重复计数，#790 已修）和 [Eugeny/russh#806](https://github.com/Eugeny/russh/issues/806)（对端关闭仍有待发数据的通道后，整个会话发不出东西；开着，没有 PR）是别的问题。我们提了 [Eugeny/russh#826](https://github.com/Eugeny/russh/pull/826)（2026-11-17，fork `Bokjan/russh` 的 `fix/wake-writers-on-channel-close` 分支）：`WindowSizeRef` 加一个关闭标记，对端的 `CHANNEL_CLOSE` 到达时和会话被丢弃时标上并唤醒等待的写入，之后的写入一律失败（`AsyncWrite` 返回 `BrokenPipe`，`data_bytes()` 返回 `Error::SendError`）。russh 自己的 `tests/test_window_adjust.rs` 原本也要 `abort()` 上传任务，PR 把它改成等任务自己结束。维护者拒绝过范围更大的按通道流控 PR（#730），所以这个 PR 只修 bug，写明不涉及流控。
+- **上游**：之前没有人报过。同在关闭路径上的 [Eugeny/russh#789](https://github.com/Eugeny/russh/issues/789)（窗口重复计数，#790 已修）和 [Eugeny/russh#806](https://github.com/Eugeny/russh/issues/806)（对端关闭仍有待发数据的通道后，整个会话发不出东西；开着，没有 PR）是别的问题。我们提了 [Eugeny/russh#826](https://github.com/Eugeny/russh/pull/826)（2026-11-17，fork `Bokjan/russh` 的 `fix/wake-writers-on-channel-close` 分支）：`WindowSizeRef` 加一个关闭标记，对端的 `CHANNEL_CLOSE` 到达时和会话被丢弃时标上并唤醒等待的写入，之后的写入一律失败（`AsyncWrite` 返回 `BrokenPipe`，`data_bytes()` 返回 `Error::SendError`）。russh 自己的 `tests/test_window_adjust.rs` 原本也要 `abort()` 上传任务，PR 把它改成等任务自己结束。维护者拒绝过范围更大的按通道流控 PR（#730），所以这个 PR 只修 bug，写明不涉及流控。2026-11-26 核对：维护者发了 0.65.3、0.65.4 两个安全修复版，#826 还没有人评审，与 main 没有冲突。
 - **处理**：包含 #826 的版本发布后升级 russh，把 `ssh/tests.rs` 里的 `writer.abort()` 改成断言写入返回错误，删掉 `bridge` 注释里「russh 不唤醒」那句。`bridge` 本身不用改回 `copy_bidirectional`：服务器关闭通道就结束连接，本来就该这样。评审要求修改时，在本地 clone 的同一分支上改，推到 fork。
 - **登记**：2026-11-17。
 
 ### SSH：重交换时不比对主机密钥
 
 - **现象**：会话中途的密钥重交换不检查服务器的主机密钥。已经握有会话密钥的一方（实际上就是服务器本身）可以在重交换时换一把主机密钥而不被发现；网络上的中间人做不到。
-- **原因**：russh 0.65.1 只在初次密钥交换（`encrypted.is_some()` 的 else 分支，`client/mod.rs` 约 2060–2083 行）调用 `Handler::check_server_key`，重交换那一支（约 2036 行起）不调用。0.65.1 修复的 GHSA-9264-jvgf-6w2f 只是把初次交换里的 `kex_done` 挪到主机密钥验证之后，重交换照旧。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
-- **上游**：[Eugeny/russh#812](https://github.com/Eugeny/russh/issues/812)（2026-11-03，别人提的，2026-11-17 时没有回复）请求在每次重交换时把主机密钥或主机证书交给应用决定，问维护者倾向新加一个回调还是扩展 `check_server_key`。我们 2026-11-17 在下面附了 OpenSSH 的做法，并表示倾向新加一个带默认实现的回调（再调一次 `check_server_key` 会让会询问用户的 handler 在会话中途又问一次）。还没有修复。
+- **原因**：russh 0.65.4 只在初次密钥交换（`encrypted.is_some()` 的 else 分支，`client/mod.rs` 约 2060–2085 行）调用 `Handler::check_server_key`，重交换那一支（约 2038 行起）不调用。0.65.1 修复的 GHSA-9264-jvgf-6w2f 只是把初次交换里的 `kex_done` 挪到主机密钥验证之后，0.65.3 修复的 GHSA-66vf-xq4p-pg7q 只要求主机密钥和签名的算法与协商的一致，重交换照旧不把主机密钥交给应用。`kex_done` 回调只拿到算法名，拿不到主机密钥，ZShell 这边也补不上。
+- **上游**：[Eugeny/russh#812](https://github.com/Eugeny/russh/issues/812)（2026-11-03，别人提的，2026-11-17 时没有回复）请求在每次重交换时把主机密钥或主机证书交给应用决定，问维护者倾向新加一个回调还是扩展 `check_server_key`。我们 2026-11-17 在下面附了 OpenSSH 的做法，并表示倾向新加一个带默认实现的回调（再调一次 `check_server_key` 会让会询问用户的 handler 在会话中途又问一次）。2026-11-26 仍没有维护者回复，也没有修复。
 - **处理**：russh 在重交换时也调用 `check_server_key`（或把主机密钥交给 `kex_done`）之后，在 `ssh/handler.rs` 里记下初次接受的密钥，重交换时要求同一把，不再询问用户。之前那段比对代码因为永远走不到，已经删掉（v2.11.1）。
 - **补充给 #812 的**：重交换时 `KexProgress::Done` 带着 `server_host_key` 和 `server_host_certificate`，只是没有交给 handler。OpenSSH 每次密钥交换都验证主机密钥（`sshconnect2.c` 的 `verify_host_key_callback`）：和上次验证过的那把相同就直接通过（`sshconnect.c` 的 `previous_host_key`），不同就照初次那样重新查 known_hosts，并不要求和初次的一致。ZShell 打算更严一些，是因为会话中途不便在终端里询问。
 - **登记**：2026-10-12（代码审查 L10）。
@@ -70,7 +70,7 @@
 
 - **现象**：系统开着「鼠标 → 指针选项 → 打字时隐藏指针」（默认开）时，在终端输入 `rz` 回车，弹出的文件选择框里看不到指针，只要指针不回到网页上就一直看不到。凡是打字后紧接着弹出的原生对话框都会这样。
 - **原因**：Chromium 的「打字时隐藏指针」（`features::kHideCursorWhileTyping`，`ui/wm/core/cursor_manager.cc`）在 Windows 上通过 `DesktopWindowTreeHostWin::OnCursorVisibilityChangedNative` 调用 `::ShowCursor(FALSE)`，把共享输入队列的指针显示计数降到 0 以下；只有指针在网页上移动时它才会把计数加回来。文件对话框和 WebView2 的窗口共用这个计数，所以对话框里也看不到指针。
-- **上游修复**：Chromium 提交「Restore mouse cursor for native dialogs on Windows」（Cr-Commit-Position `refs/heads/main@{#1716435}`，2026-10-11，bug 567626032）不再调用 `::ShowCursor()`，并在模态对话框弹出时（`HandleCancelMode`）恢复指针。它在 M157 里（M156 的分支点是 1706539，M157 是 1717349），Edge 稳定版 157.0.4341.60 于 2026-11-15 发布，WebView2 运行时跟着 Edge 的版本走（2026-11-17 维护者的 Windows 上已是 157.0.4341.46）。
+- **上游修复**：Chromium 提交「Restore mouse cursor for native dialogs on Windows」（Cr-Commit-Position `refs/heads/main@{#1716435}`，2026-10-11，bug 567626032）不再调用 `::ShowCursor()`，并在模态对话框弹出时（`HandleCancelMode`）恢复指针。它在 M157 里（M156 的分支点是 1706539，M157 是 1717349），Edge 稳定版 157.0.4341.60 于 2026-11-15 发布，WebView2 运行时跟着 Edge 的版本走（维护者的 Windows 上 2026-11-17 已是 157.0.4341.46，2026-11-26 是 158.0.4370.33）。
 - **绕过**（v3.0.2）：前端的文件对话框都通过 `src/ipc/fileDialog.ts` 打开（`fileDialog.test.ts` 检查有没有直接用插件的），它在对话框前后调用 `window_file_dialog`。后端 `src-tauri/src/window/win.rs` 的 `need_pointer` 在主线程把计数加到 0 以上，最后一个需要指针的窗口关掉后再减回同样的次数。取色窗口（`src-tauri/src/color_pick/win.rs`）也调用它：用键盘打开吸管时，同样可能刚打过字。
 - **处理**：等 WebView2 稳定版运行时用上包含 #1716435 的 Chromium 版本，并在 Windows 上确认：关掉绕过后，打开「打字时隐藏指针」，输入 `rz`，对话框里有指针。确认之后删掉 `fileDialog.ts`、`fileDialog.test.ts`、`window_file_dialog`、`win::file_dialog` 和 `win::need_pointer`（连同取色窗口里对它的调用），各组件改回直接用 `@tauri-apps/plugin-dialog`。WebView2 运行时随系统自动更新，但旧版 Windows 10 上可能停在较老的版本，可以等新版普及一段时间再删。
 - **登记**：2026-10-13。
@@ -78,7 +78,7 @@
 ### Linux：依赖里的 glib 0.18 有一条中等级别的安全公告
 
 - **现象**：Dependabot 报 `src-tauri/Cargo.lock` 里的 `glib` 0.18.5 不安全（[警告 #1](https://github.com/Bokjan/ZShell/security/dependabot/1)），要求 0.20.0 以上。问题出在 `glib::VariantStrIter` 的 `Iterator` / `DoubleEndedIterator` 实现，只有调用 `Variant::array_iter_str` 才会碰到。
-- **原因**：glib 是 Tauri 在 Linux 上用的 GTK3 绑定（`gtk` 0.18、`webkit2gtk` 2.0，经 tao、wry、muda 引入）的底层，固定在 0.18。0.18 到更新的 glib 是不兼容升级，`cargo update` 升不上去。gtk-rs 后来又发了 GTK3 绑定 `gtk` 0.19（2026-09-08，用 glib 0.22），但 2026-11-06 核对时 tao 0.37.2、wry 0.57.1、webkit2gtk 2.0.2 和 tauri 2.12.5 都还要求 `gtk` 0.18，ZShell 的 `sftp/drag/linux.rs` 要用和它们同一个 gtk，也只能停在 0.18。
+- **原因**：glib 是 Tauri 在 Linux 上用的 GTK3 绑定（`gtk` 0.18、`webkit2gtk` 2.0，经 tao、wry、muda 引入）的底层，固定在 0.18。0.18 到更新的 glib 是不兼容升级，`cargo update` 升不上去。gtk-rs 后来又发了 GTK3 绑定 `gtk` 0.19（2026-09-08，用 glib 0.22），2026-11-26 核对：tao 0.38.0、wry 0.58.1、muda 0.22.0 已要求 `gtk` 0.19，webkit2gtk 3.0.0 已用 `gtk` 0.19 和 glib 0.22，但最新的 tauri 2.12.7 还依赖 `gtk` 0.18 和 `webkit2gtk` 2，tauri 仓库里也还没有升级它们的 PR。ZShell 的 `sftp/drag/linux.rs` 要用和 tauri 同一个 gtk，所以在 tauri 换过去之前只能停在 0.18。
 - **影响**：macOS 和 Windows 的包不编译这些 crate。2026-10-16 在 Linux 已发布之后（3.3.0 的依赖树）重新核对：Linux 目标下依赖 glib 的 22 个 crate（tauri 2.12.3、wry 0.57.0、tao 0.37.1、muda 0.20.0、webkit2gtk 2.0.2 等）和 ZShell 自己都没有调用 `array_iter_str`。该警告已在 GitHub 上以“代码未用到”关闭。
 - **处理**：tao、wry 和 webkit2gtk 升到 `gtk` 0.19（或 Tauri 把 Linux 后端迁到 GTK4）后，glib 会跟着升到 0.20 以上，ZShell 的 `gtk` 一起升。在那之前，每次升级 Tauri 或 GTK 相关依赖后重新检查：`cargo tree -i glib@0.18.5 --target x86_64-unknown-linux-gnu` 列出的 crate 源码里有没有 `array_iter_str`。
 - **登记**：2026-10-11。
@@ -94,7 +94,7 @@
 
 - **现象**：Dependabot 提了把 `zbus` 从 5.19.0 升到 6.1.0 的 PR（#23，2026-10-29），Linux 上编译失败，已关闭。
 - **原因**：zbus 6 删掉了整个 blocking API（`zbus::blocking`），而 `dbus.rs`、`desktop.rs` 和 `applock/`、`color_pick/`、`keep_awake/`、`screen_reader/` 的 `linux.rs` 都用它；`Value` 也改名为 `Variant`，`Value::Value` 的模式匹配要改成 `Variant::Variant`。完整的变更见 zbus 的「Upgrading to zbus 6.0」。另外，zbus 本来就由 keyring（经 `zbus-secret-service-keyring-store`、`secret-service`）、tauri-plugin-opener 和 tauri-plugin-notification（自己直接依赖，也经 `notify-rust`）带进依赖树，我们用同一个版本，不多编译一份。
-- **进展**：2026-11-17 核对，`notify-rust` 4.19.0（2026-11-08）已改用 zbus 6。tauri-plugin-notification 2.8 要求 `notify-rust ^4.18`，下次 `cargo update` 就会升上去（lock 里现在是 4.18.2），树里从此 5 和 6 各一份。还在 zbus 5 的：tauri-plugin-notification 2.8.1 自己的 `zbus ^5`，tauri-plugin-opener 2.7.3 的 `zbus ^5.9`，keyring 经 `secret-service` 5.2.0（`zbus ^5`）。plugins-workspace 里 Renovate 的 zbus 6 PR（#3722）因改动太多被关掉，只有单独给 single-instance 升 zbus 6 的 #3759 还开着。所以我们升到 6 不能让树里只剩一份，只是从「5 多、6 少」换成「6 多、5 少」。
+- **进展**：2026-11-17 核对，`notify-rust` 4.19.0（2026-11-08）已改用 zbus 6。tauri-plugin-notification 2.8 要求 `notify-rust ^4.18`，下次 `cargo update` 就会升上去（lock 里现在是 4.18.2），树里从此 5 和 6 各一份。还在 zbus 5 的：tauri-plugin-notification 2.8.1 自己的 `zbus ^5`，tauri-plugin-opener 2.7.3 的 `zbus ^5.9`，keyring 经 `secret-service` 5.2.0（`zbus ^5`）。plugins-workspace 里 Renovate 的 zbus 6 PR（#3722）因改动太多被关掉，只有单独给 single-instance 升 zbus 6 的 #3759 还开着。所以我们升到 6 不能让树里只剩一份，只是从「5 多、6 少」换成「6 多、5 少」。2026-11-26 再核对：`secret-service` 6.0.0 已改用 zbus 6，但 keyring 用的 `zbus-secret-service-keyring-store` 1.0.1 仍要求 `secret-service ^5`；两个 Tauri 插件没有新版。
 - **处理**：`dependabot.yml` 忽略 `zbus` 的 major 更新。等上面三处都升到 zbus 6（至少 notification 和 opener 两个 Tauri 插件），再删掉这条 ignore，按升级指南把上面几个文件改成异步 API（或在自己的线程里 `block_on`），交给 Linux 上的 CI 编译；`Cargo.toml` 里 zbus 上方说明它经哪些依赖已在树里的注释改成当时的情况（`cargo tree -i zbus@<版本> --target x86_64-unknown-linux-gnu`）。升完删掉这一条。
 - **登记**：2026-10-29。
 
@@ -142,7 +142,7 @@
 - **上游**：
   - 第 1 条是 [xtermjs/xterm.js#4922](https://github.com/xtermjs/xterm.js/issues/4922)，由 [xtermjs/xterm.js#5529](https://github.com/xtermjs/xterm.js/pull/5529) 修复（2025-12-28 合入 master，晚于 6.0.0）：重设画布后发出 `sync: true`，同步重画。6.1.0-beta 已包含，正式版尚未发布（见上面的升级一条）。
   - 第 2 条是我们提的 [xtermjs/xterm.js#6239](https://github.com/xtermjs/xterm.js/issues/6239)（2026-10-17 提出，之前上游没有人报过），修复是 [xtermjs/xterm.js#6240](https://github.com/xtermjs/xterm.js/pull/6240)。master 的 `RenderService.refreshRows` 先看 `_isPaused`，暂停时连同步请求一起丢掉，`setRenderer` 的刷新也要等暂停结束，所以只升到包含 #5529 的版本，有隐藏页移出视口时仍会空白一帧。正确的修法是画布已经空了时不因暂停而不画：`refreshRows` 收到 `sync` 时先执行 `_pausedResizeTask` 再同步绘制，`setRenderer` 同步画一次。两处缺一不可：只改前者，整数缩放下换渲染器后仍空白；只改后者，小数缩放下画布随后又被清空。#6240 就是这样改的，附了单元测试；issue 里有最小复现（npm 6.1.0-beta.315 上每次切换都空白一帧）。
-  - #6240 的评审（2026-10-29，`xtermjs-bot`，要求修改）确认复现已修好，但暂停中的 WebGL 终端改大小时会栈溢出：`WebglRenderer.handleResize` 末尾发同步重画，`refreshRows` 又去 flush 正在执行的那个 resize 任务，`handleResize` 无限递归。2026-10-30 推了第二个提交 `4f678152`：`RenderService` 在调用 `renderer.handleResize` 期间置 `_isResizingRenderer`，这时的同步重画只绘制、不 flush；评审要的三种情形都补了测试，两条行内意见已回复，等再次评审。ZShell 的绕过直接调 `_renderRows`，不经过 flush，没有这个问题。
+  - #6240 的评审（2026-10-29，`xtermjs-bot`，要求修改）确认复现已修好，但暂停中的 WebGL 终端改大小时会栈溢出：`WebglRenderer.handleResize` 末尾发同步重画，`refreshRows` 又去 flush 正在执行的那个 resize 任务，`handleResize` 无限递归。2026-10-30 推了第二个提交 `4f678152`：`RenderService` 在调用 `renderer.handleResize` 期间置 `_isResizingRenderer`，这时的同步重画只绘制、不 flush；评审要的三种情形都补了测试，两条行内意见已回复，等再次评审。2026-11-14 在 PR 里请维护者再看一次（首次贡献，CI 也要维护者批准才跑），2026-11-26 还没有回应。ZShell 的绕过直接调 `_renderRows`，不经过 flush，没有这个问题。
 - **关注**：
   - `@xterm/xterm` 下一个正式版的发布。它若只带第 1 条的修复，绕过要保留。
   - #6239 和 #6240：再次评审的意见（要改时，从 fork `Bokjan/xterm.js` 的 `paused-blank-render` 分支继续，分支基于 10 月中的 master，没有 rebase），是否合入、进了哪个版本（看 PR 的 milestone 或 release notes）。
