@@ -68,7 +68,7 @@ sys-locale = "0.3.2"
 # Looking for the start of a ZMODEM transfer in all terminal output (already in the tree
 # through serde_json, futures-util and vte).
 memchr = "2"
-notify = "8.2"
+notify = "9.0"
 tauri-plugin-notification = "2.7.0"
 # The debug log: the facade russh and russh-sftp log through (already in the tree), with
 # key-values for the connection a record is about (`debug_log/`).
